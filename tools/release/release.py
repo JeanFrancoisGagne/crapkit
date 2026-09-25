@@ -1,9 +1,8 @@
 """Bump, publish and verify crapkit's version surfaces from one table.
 
-Nine strings in six files say which version this is (pyproject, the package,
-three README lines, the Claude Code and Codex plugin manifests, the registry
-manifest twice), and a
-release then has to reach six places (git tag, PyPI, GitHub release, plugin,
+Ten strings in six files say which version this is (pyproject, the package,
+four README strings, the Claude Code and Codex plugin manifests, the registry
+manifest twice), and a release then has to reach six places (git tag, PyPI, GitHub release, plugin,
 Pages, the MCP registry, plus Glama's sync). Eight releases re-scripted that
 chain by hand and the surfaces drifted once. The table below is the one place
 the surfaces are named; `check` refuses a tree whose surfaces disagree, `bump`

@@ -1,0 +1,27 @@
+{
+  "case": "vscode_read_file",
+  "why": "VS Code drops the plugin's Edit|Write matcher and runs the hook on every tool call. A read of a breaching file is not an edit, so it is silent, and nothing is judged.",
+  "fixture": "measured_breach",
+  "argv": [
+    "claude-hook",
+    "--protocol",
+    "1"
+  ],
+  "payload": {
+    "timestamp": "2026-09-25T17:00:51.656Z",
+    "hook_event_name": "PostToolUse",
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "tool_name": "read_file",
+    "tool_input": {
+      "filePath": "{REPO}/calc/grade.py",
+      "startLine": 1,
+      "endLine": 16
+    },
+    "tool_response": "",
+    "tool_use_id": "call_2"
+  },
+  "expect": {
+    "exit": 0,
+    "stderr": []
+  }
+}

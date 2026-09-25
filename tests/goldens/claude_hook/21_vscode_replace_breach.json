@@ -1,0 +1,33 @@
+{
+  "case": "vscode_replace_breach",
+  "why": "VS Code loads the plugin with its own tool names and names the file in tool_input.filePath. It turns a PostToolUse exit 2 into a blocking error on the tool result, so the advisory goes out as hookSpecificOutput.additionalContext on exit 0.",
+  "fixture": "measured_breach",
+  "argv": [
+    "claude-hook",
+    "--protocol",
+    "1"
+  ],
+  "payload": {
+    "timestamp": "2026-09-25T17:00:51.656Z",
+    "hook_event_name": "PostToolUse",
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "tool_name": "replace_string_in_file",
+    "tool_input": {
+      "filePath": "{REPO}/calc/grade.py",
+      "oldString": "def grade(n):",
+      "newString": "def sprawl(n):"
+    },
+    "tool_response": "",
+    "tool_use_id": "call_1"
+  },
+  "expect": {
+    "exit": 0,
+    "stderr": [],
+    "stdout": {
+      "hookSpecificOutput": {
+        "hookEventName": "PostToolUse",
+        "additionalContext": "crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)\n  ccn 8  calc/grade.py:1  sprawl( n )\nthe commit gate enforces this; decompose there or mark the debt"
+      }
+    }
+  }
+}

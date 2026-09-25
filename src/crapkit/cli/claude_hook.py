@@ -1,16 +1,27 @@
-"""Protocol 1: one Claude Code PostToolUse payload on stdin, a ccn advisory out.
+"""Protocol 1: one PostToolUse payload on stdin, a ccn advisory out.
 
-Exit 2 with three lines of stderr is the only thing this ever says, and it says
-it about exactly one thing: a function the edit changed, in a scope crapkit
-measures, over its ceiling, carrying no ratchet mark. Everything else is exit 0
-and silence: the malformed payload, the unmeasured repo, the half-typed source
-and the internal exception included.
+The advisory is the only thing this ever says, and it says it about exactly one
+thing: a function the edit changed, in a scope crapkit measures, over its
+ceiling, carrying no ratchet mark. Everything else is exit 0 and silence: the
+malformed payload, the unmeasured repo, the half-typed source and the internal
+exception included.
 
-An Edit, Write or MultiEdit event names its file in `tool_input.file_path` and
-is judged as that one file. A Bash event carries `tool_input.command` instead —
-a heredoc or `python - <<'PY'` writes source no file_path ever names — so it
-falls back to the working tree: the changed *.py files fresh enough for this
-command to have plausibly written, each through the same per-file ladder.
+The plugin's one handler runs under several harnesses, and each sends the event
+in its own words. Claude Code and Cursor name the written file in
+`tool_input.file_path`, GitHub Copilot CLI in `tool_input.path`, and VS Code in
+`tool_input.filePath` or its patch text; Cursor also spells the event
+`postToolUse`. Each file is judged on its own, and only when its suffix is one
+crapkit measures. A Bash event carries `tool_input.command` instead (a heredoc
+or `python - <<'PY'` writes source no file_path ever names), so it falls back to
+the working tree: the changed *.py files fresh enough for this command to have
+plausibly written, each through the same per-file ladder.
+
+Where the advisory goes depends on who reads the exit code. Claude Code and
+Copilot CLI hand exit 2's stderr to the model, so there it is three lines of
+stderr and exit 2. Cursor reads exit 2 as a deny and VS Code as a blocking
+error, so there it is exit 0 and one line of JSON on stdout, in the field each
+of them hands the model: `additional_context` for Cursor,
+`hookSpecificOutput.additionalContext` for VS Code.
 
 That silence is the design, not laziness. On PostToolUse a nonzero exit that is
 not 2 is invisible and a 2 is text the model has to read, so a hook that fires
@@ -35,6 +46,7 @@ Two constraints shape the code rather than the contract:
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import time
@@ -42,6 +54,26 @@ from collections.abc import Iterator
 from pathlib import Path
 
 PROTOCOL = "1"
+
+# The one event judged, as Claude Code, Copilot CLI and VS Code spell it, then
+# as Cursor does.
+_EVENTS = ("PostToolUse", "postToolUse")
+
+# Where an Edit or Write names its file: Claude Code and Cursor, then Copilot CLI.
+_PATH_KEYS = ("file_path", "path")
+
+# VS Code's tools that write a file. VS Code runs every plugin hook on every
+# tool call and drops the `Edit|Write` matcher, so this set is that matcher in
+# VS Code's own tool names.
+_VSCODE_WRITES = frozenset({"create_file", "insert_edit_into_file", "replace_string_in_file",
+                            "multi_replace_string_in_file", "apply_patch"})
+
+# The file lines of an apply_patch body that leave a file written.
+_PATCHED = re.compile(r"^\*\*\* (?:Update File|Add File|Move to): (.+?)[ \t\r]*$", re.MULTILINE)
+
+# The shell tool, as Claude Code and Copilot CLI name it and as Cursor maps a
+# Bash matcher onto its own.
+_SHELL_TOOLS = frozenset({"Bash", "Shell"})
 
 # Git state meaning the working tree holds content this edit did not author.
 _SEQUENCING_MARKERS = ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD")
@@ -74,18 +106,28 @@ def _advise(args, stream) -> int:
     payload = _payload(stream)
     if args.protocol != PROTOCOL:
         return 0
-    edited = _edited_file(payload)
+    return _deliver(payload, _advisory(payload))
+
+
+def _advisory(payload: dict) -> list[str]:
+    """Every advisory line this event earns: the edited files' when it names
+    any, else the Bash fallback's."""
+    edited = _edited_files(payload)
     if edited:
-        return _judge_path(_edited_path(payload, edited))
+        return _judge_paths(_measured(payload, edited))
     return _advise_command(payload)
 
 
-def _judge_path(path: Path) -> int:
+def _judge_paths(paths: list[Path]) -> list[str]:
+    return [line for path in paths for line in _judge_path(path)]
+
+
+def _judge_path(path: Path) -> list[str]:
     """Root discovery and judgement for one absolute file path: the tail every
     event shape shares once it holds a file to answer for."""
     root = _repo_root(path.parent)
     if root is None or _sequencing(root):
-        return 0
+        return []
     return _judge(root, path.relative_to(root).as_posix())
 
 
@@ -95,21 +137,60 @@ def _payload(stream) -> dict:
     return event if isinstance(event, dict) else {}
 
 
-def _edited_file(payload: dict) -> str:
-    """The path this event edited, or "" when protocol 1 does not judge the event.
+def _edited_files(payload: dict) -> list[str]:
+    """The paths this event wrote, or [] when protocol 1 does not judge the event.
 
     PostToolUse only: PreToolUse arrives before the edit lands and judges source
     that does not exist yet, and a Stop hook's exit 2 blocks the stop, which on a
     verdict read off the filesystem is an infinite loop generator. NotebookEdit
     carries `notebook_path`, so it falls out here rather than needing a rule.
     """
-    if payload.get("hook_event_name") != "PostToolUse":
-        return ""
     tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return ""
-    edited = tool_input.get("file_path")
-    return edited if isinstance(edited, str) else ""
+    if payload.get("hook_event_name") not in _EVENTS or not isinstance(tool_input, dict):
+        return []
+    if payload.get("tool_name") in _VSCODE_WRITES:
+        return _vscode_files(tool_input)
+    return _named_file(tool_input)
+
+
+def _named_file(tool_input: dict) -> list[str]:
+    """The one file an Edit or Write names, under whichever key its harness uses."""
+    for key in _PATH_KEYS:
+        if isinstance(tool_input.get(key), str):
+            return [tool_input[key]]
+    return []
+
+
+def _vscode_files(tool_input: dict) -> list[str]:
+    """The files one of VS Code's writing tools names, each once: `filePath`,
+    every replacement's `filePath`, and every file an apply_patch body leaves
+    written."""
+    named = [tool_input.get("filePath"), *(r.get("filePath") for r in _replacements(tool_input))]
+    patch = tool_input.get("input")
+    patched = _PATCHED.findall(patch) if isinstance(patch, str) else []
+    return list(dict.fromkeys(p for p in [*named, *patched] if isinstance(p, str)))
+
+
+def _replacements(tool_input: dict) -> list[dict]:
+    """multi_replace_string_in_file's edits, one object per replacement."""
+    items = tool_input.get("replacements")
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
+def _measured(payload: dict, edited: list[str]) -> list[Path]:
+    """The edited files a scope could hold, absolute, each once: on disk, with a
+    suffix crapkit measures. The plugin's per-file-type `if` rules used to screen
+    the suffix before the spawn; one handler now serves every edit, so the screen
+    runs here, before any config is read."""
+    suffixes = _suffixes()
+    paths = dict.fromkeys(_edited_path(payload, p) for p in edited)
+    return [path for path in paths if path.suffix in suffixes and path.is_file()]
+
+
+def _suffixes() -> frozenset[str]:
+    from ..languages import LANGUAGE_EXTENSIONS
+
+    return frozenset(e for extensions in LANGUAGE_EXTENSIONS.values() for e in extensions)
 
 
 def _edited_path(payload: dict, edited: str) -> Path:
@@ -128,35 +209,35 @@ def _edited_path(payload: dict, edited: str) -> Path:
 
 
 def _command_event(payload: dict) -> bool:
-    """Whether this is a PostToolUse for a tool that wrote through the shell.
+    """Whether this is a PostToolUse for the shell tool, carrying its command.
 
     Bash carries `tool_input.command` and never `file_path`, so protocol 1 has
-    no single file to judge and reads the working tree instead. Shape-based like
-    `_edited_file`: NotebookEdit and friends carry no `command` and fall out
-    here rather than needing a rule.
+    no single file to judge and reads the working tree instead. Named rather
+    than shape-based: Codex's apply_patch carries its patch in `command`, and
+    VS Code's terminal tool reaches the hook whatever the matcher says, and
+    neither was registered for the working-tree scan.
     """
-    if payload.get("hook_event_name") != "PostToolUse":
+    if payload.get("hook_event_name") not in _EVENTS or payload.get("tool_name") not in _SHELL_TOOLS:
         return False
     tool_input = payload.get("tool_input")
     return isinstance(tool_input, dict) and isinstance(tool_input.get("command"), str)
 
 
-def _advise_command(payload: dict) -> int:
+def _advise_command(payload: dict) -> list[str]:
     """The Bash fallback: judge the fresh *.py files the working tree changed.
 
     A shell heredoc or `python - <<'PY'` writes source no Edit event ever names,
     so judging only `file_path` left every Bash-written breach unadvised. Each
     file takes the same per-file ladder an Edit takes, so a file under no
-    crapkit root, mid-sequencing, unscoped or marked stays silent, and exit 2
-    means what it always means.
+    crapkit root, mid-sequencing, unscoped or marked stays silent, and the
+    advisory means what it always means.
     """
     if not _command_event(payload):
-        return 0
+        return []
     top = _repo_top(Path(payload.get("cwd") or "."))
     if top is None:
-        return 0
-    verdicts = [_judge_path(path) for path in _fresh_python(top)]
-    return 2 if 2 in verdicts else 0
+        return []
+    return _judge_paths(_fresh_python(top))
 
 
 def _repo_top(cwd: Path) -> Path | None:
@@ -253,8 +334,8 @@ def _sequencing(root: Path) -> bool:
     return any((git_dir / marker).exists() for marker in _SEQUENCING_MARKERS)
 
 
-def _judge(root: Path, rel: str) -> int:
-    """Rungs 6 to 9: scope, analysis, verdict, output.
+def _judge(root: Path, rel: str) -> list[str]:
+    """Rungs 6 to 9: scope, analysis, verdict, the advisory's lines.
 
     The statement order is the latency budget. `git diff` on one file costs
     31.4 ms and importing lizard costs 38.1, so the diff is started first and
@@ -263,7 +344,7 @@ def _judge(root: Path, rel: str) -> int:
     cfg = _config(root)
     in_scope = _scoped(cfg, rel)
     if in_scope is None:
-        return 0
+        return []
     diff = _diff_proc(root, rel)
     try:
         records = _records(root, rel)
@@ -402,19 +483,15 @@ def _keys(records: list) -> dict:
     return key_names(records)
 
 
-def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int, records: list) -> int:
-    """Rung 9. stdout stays empty whatever happens: protocol 1 reserves it for a
-    future JSON channel, and Claude Code parses stdout JSON on exit 0."""
+def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int, records: list) -> list[str]:
+    """Rung 9: the advisory for the breaches no ratchet mark covers, or [] when
+    every one is marked. `_deliver` decides where the lines go."""
     from ..keys import key_of
 
     keys = _keys(records)
     marked = _marks_for(root / cfg.ratchet_file, rel, records)
     unmarked = [rec for rec in breaches if key_of(keys, rec)[1] not in marked]
-    if not unmarked:
-        return 0
-    for line in _advisory_lines(rel, unmarked, ceiling):
-        print(line, file=sys.stderr)
-    return 2
+    return _advisory_lines(rel, unmarked, ceiling) if unmarked else []
 
 
 def _marks_for(marks_path: Path, rel: str, records=()) -> set[str]:
@@ -491,3 +568,45 @@ def _advisory_lines(rel: str, breaches: list, ceiling: int) -> list[str]:
     body = [f"  ccn {rec.ccn}  {rel}:{rec.start}  {rec.long_name}" for rec in breaches]
     return [head, *body,
             "the commit gate enforces this; decompose there or mark the debt"]
+
+
+def _deliver(payload: dict, lines: list[str]) -> int:
+    """Hand the advisory to the harness that sent the event, or stay silent.
+
+    stdout carries nothing for Claude Code and Copilot CLI: Claude Code parses
+    stdout JSON on exit 0, and exit 2's stderr is the text both hand the model.
+    """
+    if not lines:
+        return 0
+    return _channel(payload)("\n".join(lines))
+
+
+def _channel(payload: dict):
+    """The writer for this event's harness, told apart by the payload itself:
+    Cursor by its camelCase event name, VS Code by its own tool names."""
+    if payload.get("hook_event_name") == "postToolUse":
+        return _to_cursor
+    if payload.get("tool_name") in _VSCODE_WRITES:
+        return _to_vscode
+    return _to_stderr
+
+
+def _to_stderr(text: str) -> int:
+    print(text, file=sys.stderr)
+    return 2
+
+
+def _to_cursor(text: str) -> int:
+    """Cursor records a postToolUse exit 2 as a deny and shows the model
+    nothing; `additional_context` on exit 0 is what it adds to the conversation."""
+    print(json.dumps({"additional_context": text}))
+    return 0
+
+
+def _to_vscode(text: str) -> int:
+    """VS Code turns a PostToolUse exit 2 into a blocking error on the tool
+    result; `hookSpecificOutput.additionalContext` on exit 0 reaches the model
+    beside it."""
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse",
+                                             "additionalContext": text}}))
+    return 0

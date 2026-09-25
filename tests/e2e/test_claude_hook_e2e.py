@@ -1,16 +1,18 @@
-"""Protocol 1: a recorded Claude Code hook payload on stdin, an exit code and a
-line of stderr out.
+"""Protocol 1: a recorded PostToolUse payload on stdin, an exit code and the
+advisory out, on stderr or as one line of JSON on stdout.
 
 Each golden under tests/goldens/claude_hook/ carries a payload shaped the way a
-live PostToolUse event arrives, the fixture repo it was recorded against, and
-the verdict it must draw. The test builds the repo, spawns the real subcommand,
-and diffs. Nothing here reaches into the module: an adapter for another harness
-maps its own payload onto the same JSON and these files still decide.
+live PostToolUse event arrives from one harness (Claude Code unless the case
+names Copilot CLI, Cursor or VS Code), the fixture repo it was recorded
+against, and the verdict it must draw. The test builds the repo, spawns the
+real subcommand, and diffs. Nothing here reaches into the module.
 
 Two rules hold across every case, so they are asserted on every case:
 
-- stdout is always empty. Protocol 1 reserves it for a future JSON channel, and
-  Claude Code parses stdout JSON on exit 0.
+- stdout is empty unless the golden records the JSON a harness reads there.
+  Claude Code parses stdout JSON on exit 0, so its cases and Copilot CLI's
+  print nothing there; Cursor and VS Code read exit 2 as a deny or a block, so
+  theirs carry the advisory as one JSON object on exit 0.
 - the process runs from a directory that is not the repo. The root comes from
   the edited file's own path, never from cwd and never from
   ${CLAUDE_PROJECT_DIR}, which stays at the session root while an edit follows a
@@ -200,6 +202,8 @@ def _resolved(value, repo: str):
         return value.replace("{REPO}", repo)
     if isinstance(value, dict):
         return {key: _resolved(item, repo) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_resolved(item, repo) for item in value]
     return value
 
 
@@ -239,12 +243,17 @@ def test_the_recorded_payload_draws_the_recorded_verdict(golden: dict, tmp_path)
 
 
 @pytest.mark.parametrize("golden", CASES, ids=IDS)
-def test_stdout_stays_empty_whatever_the_verdict(golden: dict, tmp_path):
-    """Protocol 1 reserves stdout for a future JSON channel, and Claude Code
-    parses stdout JSON on exit 0. A stray print there is a protocol break."""
+def test_stdout_carries_only_the_json_the_harness_reads(golden: dict, tmp_path):
+    """Claude Code parses stdout JSON on exit 0, so a stray print there is a
+    protocol break. The one thing stdout may carry is the single JSON object a
+    Cursor or VS Code golden records."""
     done = run_hook(golden, _built(golden, tmp_path), tmp_path)
 
-    assert done.stdout == ""
+    expected = golden["expect"].get("stdout")
+    if expected is None:
+        assert done.stdout == ""
+    else:
+        assert done.stdout.count("\n") == 1 and json.loads(done.stdout) == expected
 
 
 # --- import hygiene, and the store that is never opened ----------------------
