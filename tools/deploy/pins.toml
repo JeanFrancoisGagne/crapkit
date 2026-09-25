@@ -495,6 +495,15 @@ sha256 = "c15a5636bf93a3937507d8da2302b074b0946b3d35882471b002ea93586728d8"
 os = "windows"
 arch = "x86_64"
 
+# gha-action-windows runs deploy.yml's job under act on a Windows machine, so
+# toolchain.py installs act and checks out the actions act runs offline, as the
+# ci image's act-tools stage does.
+[binary.act-windows-x64]
+url = "https://github.com/nektos/act/releases/download/v0.2.89/act_Windows_x86_64.zip"
+sha256 = "0f8cf866ad7e32421a219fc551a0a0ea5d12ead464de12ebfeafd334a5973b50"
+os = "windows"
+arch = "x86_64"
+
 [binary.goose-windows-x64]
 url = "https://github.com/aaif-goose/goose/releases/download/v1.52.0/goose-x86_64-pc-windows-msvc.zip"
 sha256 = "13f51e2294a8c92ce440988beb1873ed688e33d8fc72c0f75755b2ed5b3d54bc"

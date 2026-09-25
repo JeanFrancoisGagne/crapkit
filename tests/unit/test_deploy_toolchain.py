@@ -7,6 +7,7 @@ Every download is checked against its pin before anything unpacks it.
 """
 import io
 import json
+import re
 import sys
 import tarfile
 import zipfile
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT / "tools" / "deploy"))
 
 import pins as pinsfile  # noqa: E402
+import run  # noqa: E402
 import toolchain  # noqa: E402
 
 PINS = pinsfile.load()
@@ -48,11 +50,70 @@ def test_the_runner_venv_is_never_on_the_described_path(tmp_path):
 
 
 @pytest.mark.parametrize("stem", ["uv-windows", "node-windows", "portable-git-windows", "pwsh-windows",
-                                  "prek-windows"])
+                                  "prek-windows", "act-windows"])
 def test_every_windows_tool_has_a_pinned_download(stem):
     spec = toolchain.binary(PINS, stem, "windows")
 
     assert spec["os"] == "windows" and len(spec["sha256"]) == 64
+
+
+# The kit reads each toolchain.json key where it finds the tool. A key it reads
+# that no toolchain writes is always absent: the gha-action-windows cell read
+# "act" and "act_actions", which nothing wrote once the Windows act pin went,
+# and stopped on "this toolchain holds no act" on every machine.
+
+KIT_READ = re.compile(r"""toolchain(?:\.get\(|\[)["']([a-z_]+)["']""")
+
+
+def kit_reads() -> set[str]:
+    sources = [*(ROOT / "tests" / "deploy").rglob("*.py"), *(ROOT / "tools" / "deploy").glob("*.py")]
+    return {key for path in sources for key in KIT_READ.findall(path.read_text(encoding="utf-8"))}
+
+
+def windows_description(monkeypatch, tmp_path) -> dict:
+    """toolchain.json as toolchain.py writes it on Windows, with each download
+    and git command recorded instead of run."""
+    monkeypatch.setattr(toolchain, "install_archive", lambda pins, stem, os_name, root, arch=None: root / stem)
+    monkeypatch.setattr(toolchain, "run_step", lambda argv, **kwargs: None)
+    tools = toolchain._windows_tools(PINS, tmp_path, "x86_64")
+    tools.update(pipx="/t/pipx", runner="/t/runner")
+    return toolchain.describe(tmp_path, tools, {"3.12": "/t/python3.12"}, ["core"])
+
+
+def test_every_toolchain_key_the_kit_reads_is_one_a_toolchain_writes(monkeypatch, tmp_path):
+    written = set(image_toolchain()) | set(windows_description(monkeypatch, tmp_path))
+
+    assert kit_reads() - written == set()
+
+
+def test_a_windows_toolchain_names_the_act_and_the_action_checkouts_it_installs(monkeypatch, tmp_path):
+    described = windows_description(monkeypatch, tmp_path)
+
+    assert described["act"] == str(tmp_path / "act-windows" / "act.exe")
+    assert described["act_actions"] == str(tmp_path / "act-actions")
+
+
+def test_windows_act_is_the_release_the_ci_image_runs():
+    release = f"/v{PINS['toolchain']['act']}/"
+
+    assert release in toolchain.binary(PINS, "act-windows", "windows")["url"]
+    assert release in PINS["binary"]["act-linux-x64"]["url"]
+
+
+def test_each_pinned_action_is_checked_out_where_act_reads_it(monkeypatch, tmp_path):
+    """The ci image's act-tools stage checks out the same actions, named
+    <owner>-<name>@<sha>, which act's --local-repository maps each `uses:` to."""
+    ran = []
+    monkeypatch.setattr(toolchain, "run_step", lambda argv, **kwargs: ran.append([str(part) for part in argv]))
+    found = toolchain.install_actions(PINS, "git", tmp_path)
+    checkout = PINS["actions"]["checkout"]
+    fetches = [argv for argv in ran if "fetch" in argv]
+
+    assert found == tmp_path / "act-actions"
+    assert run.build_args(PINS)["ACTIONS"].split() == pinsfile.act_actions(PINS)
+    assert len(fetches) == len(pinsfile.act_actions(PINS))
+    assert ["git", "init", "-q", str(found / checkout.replace("/", "-", 1))] in ran
+    assert fetches[0][-2:] == ["https://github.com/actions/checkout", checkout.split("@")[1]]
 
 
 class _Response(io.BytesIO):

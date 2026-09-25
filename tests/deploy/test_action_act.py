@@ -39,6 +39,7 @@ import pytest
 
 from kit import act, docsnip, gitmirror, wheels
 from kit.cells import cell
+from kit.sandbox import Toolchain
 
 PACKET = "deploy-action"
 DEPLOY_TOOLS = wheels.SRC / "tools" / "deploy"
@@ -673,6 +674,36 @@ def test_a_cell_brings_its_checks_and_the_run_brings_its_event(monkeypatch):
     monkeypatch.delenv("GITHUB_EVENT_NAME")
     with pytest.raises(SystemExit):
         module.parse(["--cell", "gha-action-consumer", "--outcome", "failure"])
+
+
+@pytest.mark.kit
+def test_act_and_the_pinned_actions_come_from_toolchain_json(tmp_path):
+    (tmp_path / "act.exe").write_text("", encoding="utf-8")
+    (tmp_path / "actions").mkdir()
+    chain = Toolchain({"act": str(tmp_path / "act.exe"), "act_actions": str(tmp_path / "actions")},
+                      tmp_path / "toolchain.json")
+
+    assert act.act_binary(chain) == str(tmp_path / "act.exe")
+    assert act.actions_dir(chain) == tmp_path / "actions"
+
+
+@pytest.mark.kit
+@pytest.mark.parametrize("find", ["act_binary", "actions_dir"])
+def test_a_toolchain_json_that_names_no_act_gets_the_command_that_installs_it(find, tmp_path, monkeypatch):
+    """A directory under the toolchain root that toolchain.json does not name
+    is never used: the cell found a hand-unpacked act-windows/ on one machine
+    and failed on every machine whose toolchain.py had put act elsewhere."""
+    monkeypatch.setattr(act, "IMAGE_ACT", str(tmp_path / "opt" / "act"))
+    monkeypatch.setattr(act, "IMAGE_ACTIONS", str(tmp_path / "opt" / "cache"))
+    (tmp_path / "act-windows").mkdir()
+    (tmp_path / "act-windows" / "act.exe").write_text("", encoding="utf-8")
+    (tmp_path / "act-actions").mkdir()
+    chain = Toolchain({}, tmp_path / "toolchain.json")
+
+    with pytest.raises(AssertionError) as refused:
+        getattr(act, find)(chain)
+    assert str(tmp_path / "toolchain.json") in str(refused.value)
+    assert "python tools/deploy/toolchain.py" in str(refused.value)
 
 
 @pytest.mark.kit

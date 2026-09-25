@@ -30,6 +30,12 @@ installs the pinned uv, CPythons, Node, PortableGit, pwsh, wheelhouse and npm
 caches under `%LOCALAPPDATA%\crapkit-deploy` (or
 `~/Library/Caches/crapkit-deploy`).
 
+`--harness core` (the default) or `--harness full` adds the harnesses that
+image holds. On Windows the toolchain also holds act and a checkout of each
+action act runs offline, for the gha-action-windows cell. The kit finds every
+tool through the `toolchain.json` that `toolchain.py` writes beside them, so
+rerun `toolchain.py` after a pin changes; a warm rerun takes seconds.
+
 Output lands in `.crapkit/deploy-out/` (`--out` moves it):
 
 | File | Holds |

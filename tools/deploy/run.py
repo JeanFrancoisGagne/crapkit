@@ -111,7 +111,7 @@ def build_args(pins: dict, image: str = "") -> dict[str, str]:
     """Every build arg an image's build passes. Only full-latest gets the
     weekly @latest args, so no pinned image's inputs move with the calendar."""
     args = pinsfile.build_args(pins)
-    args["ACTIONS"] = " ".join([pins["actions"]["checkout"], pins["actions"]["setup_python"]])
+    args["ACTIONS"] = " ".join(pinsfile.act_actions(pins))
     if image.endswith(pinsfile.LATEST):
         args.update(pinsfile.latest_args(pins, iso_week()))
     return args

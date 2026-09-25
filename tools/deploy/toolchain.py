@@ -9,8 +9,10 @@ tools in a cache directory and writes the toolchain.json the kit reads:
   uv, and every CPython in pins.toml, under <root>/python (uv checks hashes)
   Node; pwsh on Windows and macOS; prek on Windows and Linux; on Windows also
   PortableGit (first on the sandbox PATH; its system gitconfig applies, as it
-  does for a user). A Linux run (the bare ubuntu runner of lin-native-start)
-  keeps the runner's own git and /usr/bin/python3, as a user's machine does
+  does for a user), and act with the [actions] it runs offline checked out
+  under <root>/act-actions, for gha-action-windows. A Linux run (the bare
+  ubuntu runner of lin-native-start) keeps the runner's own git and
+  /usr/bin/python3, as a user's machine does
   pipx (the pinned zipapp)
   each pinned harness binary for this OS whose image the --harness level
   holds (the Cursor agent at core, Goose at full on Windows)
@@ -28,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import functools
 import hashlib
 import json
 import os
@@ -49,11 +52,14 @@ DOCKER = ROOT / "tests" / "deploy" / "docker"
 WINDOWS = os.name == "nt"
 # The pinned downloads every native toolchain installs, by pins.toml stem; the
 # harness binaries come on top, chosen by their `image`.
-BASE_TOOLS = {"windows": ("uv", "node", "portable-git", "pwsh", "prek"), "macos": ("uv", "node", "pwsh"),
+BASE_TOOLS = {"windows": ("uv", "node", "portable-git", "pwsh", "prek", "act"), "macos": ("uv", "node", "pwsh"),
               "linux": ("uv", "node", "prek")}
 HARNESS_LEVELS = {"core": ["core"], "full": ["core", "full"], "none": []}
 ROOT_ENV = "CRAPKIT_DEPLOY_TOOLCHAIN_ROOT"
 BASETEMP_ENV = "CRAPKIT_DEPLOY_BASETEMP"
+# toolchain.json keys only a native Windows toolchain writes; the ci image
+# keeps act and its actions at the fixed paths kit/act.py knows.
+NATIVE_ONLY = ("act", "act_actions")
 SYSTEM_DIRS = ["System32", "", r"System32\Wbem", r"System32\WindowsPowerShell\v1.0"]
 
 
@@ -320,6 +326,30 @@ def drop_native_less_launchers(pins: dict, harness_dir: Path) -> list[Path]:
     return launchers
 
 
+def action_dir(root: Path, pinned: str) -> Path:
+    """Where one pinned action is checked out, named as the ci image names it:
+    actions/checkout@<sha> -> <root>/act-actions/actions-checkout@<sha>."""
+    repo, sha = pinned.split("@")
+    return root / "act-actions" / f"{repo.replace('/', '-')}@{sha}"
+
+
+def checkout_action(git: str, pinned: str, target: Path) -> None:
+    repo, sha = pinned.split("@")
+    run_step([git, "init", "-q", target])
+    run_step([git, "-C", target, "fetch", "-q", "--depth", "1", f"https://github.com/{repo}", sha])
+    run_step([git, "-C", target, "-c", "advice.detachedHead=false", "checkout", "-q", "FETCH_HEAD"])
+
+
+def install_actions(pins: dict, git: str, root: Path) -> Path:
+    """Each action act runs offline, checked out once at its pinned SHA, as the
+    ci image's act-tools stage does: the directory kit/act.py maps `uses:` into."""
+    (root / "act-actions").mkdir(parents=True, exist_ok=True)
+    for pinned in pinsfile.act_actions(pins):
+        target = action_dir(root, pinned)
+        _once(target, functools.partial(checkout_action, git, pinned, target), pinned)
+    return root / "act-actions"
+
+
 # --- toolchain.json ---------------------------------------------------------------
 
 def system_path() -> list[str]:
@@ -342,7 +372,8 @@ def describe(root: Path, tools: dict, pythons: dict, harness: list[str]) -> dict
             "wheelhouse": str(root / "wheelhouse"), "npm_cache": str(root / "npm-cache"),
             "npm_fixtures": str(root / "npm-fixtures"), "runner_python": tools["runner"],
             "harness_bin": [*(str(root / f"harness-{name}" / "node_modules" / ".bin") for name in harness),
-                            *tools.get("harness_dirs", [])]}
+                            *tools.get("harness_dirs", [])],
+            **{key: tools[key] for key in NATIVE_ONLY if key in tools}}
 
 
 def base_tools(pins: dict, os_name: str, root: Path, arch: str) -> dict[str, Path]:
@@ -384,10 +415,12 @@ def install_harness_binaries(pins: dict, os_name: str, root: Path, harness: list
 
 def _windows_tools(pins: dict, root: Path, arch: str) -> dict:
     found = base_tools(pins, "windows", root, arch)
-    uv, node, git, pwsh, prek = (found[stem] for stem in BASE_TOOLS["windows"])
+    uv, node, git, pwsh, prek, act = (found[stem] for stem in BASE_TOOLS["windows"])
+    git_exe = str(git / "cmd" / "git.exe")
     return {"uv": str(uv / "uv.exe"), "uvx": str(uv / "uvx.exe"), "node": str(node / "node.exe"),
-            "npm": str(node / "npm.cmd"), "git": str(git / "cmd" / "git.exe"), "prek": str(prek / "prek.exe"),
-            "bash": str(git / "bin" / "bash.exe"),
+            "npm": str(node / "npm.cmd"), "git": git_exe, "prek": str(prek / "prek.exe"),
+            "bash": str(git / "bin" / "bash.exe"), "act": str(act / "act.exe"),
+            "act_actions": str(install_actions(pins, git_exe, root)),
             "path": [str(git / "cmd"), str(root / "bin"), str(uv), str(node), str(pwsh)]}
 
 
@@ -435,8 +468,11 @@ def read(root: Path) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--root", type=Path, default=None)
-    parser.add_argument("--harness", default="core", choices=sorted(HARNESS_LEVELS))
+    parser.add_argument("--root", type=Path, default=None,
+                        help=f"where to install (default: ${ROOT_ENV}, else the OS cache directory)")
+    parser.add_argument("--harness", default="core", choices=sorted(HARNESS_LEVELS),
+                        help="core (the default): the harnesses the core image holds; full: the full "
+                             "image's as well; none: the base tools only")
     args = parser.parse_args(argv)
     root = (args.root or default_root()).resolve()
     install(pinsfile.load(), root, HARNESS_LEVELS[args.harness])

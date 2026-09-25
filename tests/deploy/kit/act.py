@@ -17,8 +17,9 @@ with --action-offline-mode, so nothing is fetched:
 
   actions   every `actions/<name>@<ref>` the workflow and the crapkit action
             use resolves (--local-repository) to the checkout of that action
-            pins.toml [actions] pins, which the ci image pre-fetched (and a
-            Windows toolchain holds in act-actions/); a ref other than the
+            pins.toml [actions] pins, which the ci image pre-fetched (and
+            toolchain.py checks out on Windows, naming the directory in
+            toolchain.json as act_actions); a ref other than the
             pinned SHA is noted in the transcript
   crapkit   `JeanFrancoisGagne/crapkit@v<version>` resolves to that tag of the
             sandbox's git mirror, exported to a directory
@@ -430,23 +431,24 @@ def windows_tool_python(box, python: Path, dest: Path) -> None:
 
 # --- where act and the pinned actions are ----------------------------------------------
 
-def native_root(toolchain) -> Path:
-    """The directory toolchain.json sits in: a native toolchain's root."""
-    return Path(toolchain.source).parent
+NO_ACT = ("kit: this toolchain holds no {what}: {source} names no \"{key}\" and {image} (the ci image's) is "
+          "absent. On Windows, run `python tools/deploy/toolchain.py`: it installs act from "
+          "[binary.act-windows-x64], checks out the pinned [actions], and names both in toolchain.json. On "
+          "Linux, run the cell in the ci image (run.py --image ci).")
+
+
+def _act_path(toolchain, key: str, image: str, what: str) -> Path:
+    """toolchain.json's `key`, which toolchain.py writes on Windows, else the ci image's path."""
+    found = next((Path(path) for path in (toolchain.get(key), image) if path and Path(path).exists()), None)
+    if found is None:
+        raise AssertionError(NO_ACT.format(what=what, source=toolchain.source, key=key, image=image))
+    return found
 
 
 def act_binary(toolchain) -> str:
-    """act from toolchain.json, the ci image, or a Windows toolchain's act-windows/."""
-    found = [toolchain.get("act"), IMAGE_ACT, str(native_root(toolchain) / "act-windows" / "act.exe")]
-    present = next((path for path in found if path and Path(path).exists()), None)
-    if not present:
-        raise AssertionError(f"kit: this toolchain holds no act; the ci image has it at {IMAGE_ACT}, and a "
-                             "Windows toolchain needs [binary.act-windows-x64] unpacked into act-windows/")
-    return present
+    return str(_act_path(toolchain, "act", IMAGE_ACT, "act"))
 
 
 def actions_dir(toolchain) -> Path:
-    """The pinned action checkouts: toolchain.json's, the ci image's, or a
-    Windows toolchain's act-actions/ (named <owner>-<name>@<sha> like the image's)."""
-    found = [toolchain.get("act_actions"), IMAGE_ACTIONS, str(native_root(toolchain) / "act-actions")]
-    return next((Path(path) for path in found if path and Path(path).is_dir()), Path(IMAGE_ACTIONS))
+    """The pinned action checkouts, each named <owner>-<name>@<sha>."""
+    return _act_path(toolchain, "act_actions", IMAGE_ACTIONS, "checkout of the pinned actions")

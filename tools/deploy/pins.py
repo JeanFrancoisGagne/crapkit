@@ -63,6 +63,12 @@ def _binary_args(pins: dict) -> dict[str, str]:
     return args
 
 
+def act_actions(pins: dict) -> list[str]:
+    """The [actions] act runs offline, each `<owner>/<name>@<sha>`: the ci
+    image checks them out at build time, toolchain.py on Windows."""
+    return [pins["actions"]["checkout"], pins["actions"]["setup_python"]]
+
+
 def build_args(pins: dict) -> dict[str, str]:
     """Every ARG the Dockerfile declares, and nothing else."""
     images, python = pins["images"], pins["python"]
