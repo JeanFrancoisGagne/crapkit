@@ -16,6 +16,11 @@ source of every version and hash.
     python tools/deploy/run.py --native                        # on Windows or macOS: the same cells, natively
     python tools/deploy/run.py --build-only --image gui        # build one image, or skip it when unchanged
     python tools/deploy/run.py --repeat 2 ...                  # two fresh containers; exit 1 if a verdict differs
+    python tools/deploy/run.py --faketime +400d ...            # every process in the container 400 days ahead
+    python tools/deploy/run.py --image cells-arm64 --cadence weekly --cell lin-arm64
+                                                               # arm64: native on an arm64 host, else under QEMU
+    python tools/deploy/run.py --online --image full-latest --cadence weekly
+                                                               # the weekly cells with every harness at its newest release
 
 A Linux run builds `crapkit-deploy:<image>` (default `core`) or reuses it when
 its label says it was built from the same Dockerfile, context files and pins.
@@ -164,3 +169,14 @@ Rules the kit holds a cell to:
 - Linux cells run in a container, where crapkit's container guard refuses a
   coverage.py lane. Assert that refusal, or apply the `container_ok` key from
   docs/lanes.md#containers, as the cell's scenario says.
+
+Then map the cell. `tests/deploy/MAP.toml` lists every cell under `[cell]`
+with the packet, cadence, os and image its `@cell` gives (`os` as a list when
+the tests run on Linux and Windows), and names it wherever a doc fence, a
+channel or a use case it proves is listed. Each cell needs a run that selects
+it on every cadence and OS it names: ci.yml's push jobs take any push cell,
+and the map's `[jobs]` entries run the rest. The nightly Windows entries run
+one packet per call, so a packet with a nightly Windows cell needs its own
+`--packet` call there. `tests/unit/test_deploy_map.py` names each cell the map
+lacks or gives other fields, and `tests/unit/test_deploy_workflows.py` names
+each cell, cadence and OS no run selects.

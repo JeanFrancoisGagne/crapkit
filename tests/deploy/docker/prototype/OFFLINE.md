@@ -81,7 +81,8 @@ Raw output: `logs/serves-<image>.log`, in the same line format.
 ## The arm64 cells image
 
 `cells-arm64` is the cells target built for linux/arm64, for the weekly
-lin-arm64 job. On an x86_64 host it runs under QEMU, registered once with
+lin-arm64 job, which deploy.yml runs on the ubuntu-24.04-arm runner with no
+emulation. On an x86_64 host it runs under QEMU, registered once with
 `docker run --privileged --rm tonistiigi/binfmt --install arm64`; Docker
 Desktop drops that handler on some restarts, and `run.py` then names this
 command before it builds or runs the image.

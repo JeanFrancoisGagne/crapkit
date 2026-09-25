@@ -693,6 +693,13 @@ nothing. Each of these now gets a line naming the object and the next step:
   run `init` leaves, `doctor: no problems found`, where it showed two FAIL lines for
   scopes `init` already marks `coverage_optional = true`.
 
+### CI and release tooling
+
+- The deploy workflow runs the arm64 cells on an arm64 runner, the start on the 3.15
+  prerelease, every harness at its newest release and the Docker product image, and a
+  release's run includes them. Its map, `tests/deploy/MAP.toml`, lists the cells the docs
+  and fixes checks added, and the unit tests name any cell no job runs on each OS it names.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

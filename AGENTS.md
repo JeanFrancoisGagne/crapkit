@@ -715,7 +715,10 @@ ci.yml runs the push set in `deploy-linux`, `deploy-linux-native`, `deploy-windo
 on a pull request only when it changes an install surface or carries the `deploy-full`
 label. `tests/deploy/MAP.toml` maps every documented install command, channel, harness and
 upgrade source to its cells, and `tests/unit/test_deploy_map.py` fails on a doc fence the
-map does not cover. `tools/deploy/README.md` is the full guide.
+map does not cover. A new `@cell` goes into the map with its packet, cadence, os and image,
+and into a run that selects it; `tests/unit/test_deploy_map.py` and
+`tests/unit/test_deploy_workflows.py` name each cell missing from either.
+`tools/deploy/README.md` is the full guide.
 
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
 `cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives

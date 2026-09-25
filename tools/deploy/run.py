@@ -15,7 +15,8 @@ version, else on a docker-container builder running the pinned BuildKit image
 An image whose label says it was built from the same Dockerfile, context files
 and pins is not rebuilt; `--no-cache` rebuilds cold. Every image targets
 linux/amd64 except cells-arm64, the cells target built for linux/arm64 (the
-weekly lin-arm64 job; an x86_64 host builds and runs it under emulation).
+weekly lin-arm64 job, on deploy.yml's arm64 runner; an x86_64 host builds and
+runs it under emulation).
 full-latest (the weekly latest-harnesses job, with --online) adds every
 harness at its newest release over full, rebuilt once an ISO week, and
 writes <out>/latest-drift.txt. The tree under test is never in an image, so
