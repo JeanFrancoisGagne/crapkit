@@ -1638,7 +1638,9 @@ whole answer:
 "truncated": {"fields": {"active": {"kept": 19, "of": 50}}, "full": "crapkit worklist --top 50 --json --repo /home/me/app"}
 ```
 
-A field shorter than 500 characters, such as a path or a commit, is never cut.
+A field shorter than 500 characters, such as a path or a commit, is never cut. A failing
+`check_config`'s report is cut the same way and stays a tool error with no
+`structuredContent`.
 `isError` is true whenever the underlying CLI call exited
 non-zero, and then the text is what the CLI printed: for `doctor` that is still the JSON
 report (it exits 1 on any FAIL, so a failing `doctor` answers JSON text with `isError: true`

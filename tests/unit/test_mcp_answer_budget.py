@@ -198,3 +198,23 @@ def test_the_pages_state_the_budget_the_server_holds():
     assert f"One answer is {ANSWER_CHARS:,} characters or shorter" in page
     assert f"shorter than {mcp_server._CUTTABLE_CHARS} characters" in page
     assert f"An answer over {ANSWER_CHARS:,} characters" in agents
+
+
+def test_a_failing_doctor_report_is_cut_to_the_budget_and_stays_an_error(monkeypatch, tmp_path):
+    """check_config answers doctor's JSON report even when doctor exits 1 on a
+    FAIL. A repo with 40 lanes that cannot start printed 18 KB of it."""
+    report = {"problems": [f"lane 'l{n}': sh cannot run 'nosuchtool{n}' (exit 127) - the lane cannot "
+                           "start, so its scopes can only ever score no-lane" for n in range(80)],
+              "schema": 1, "warnings": []}
+    stdout = json.dumps(report, sort_keys=True) + "\n"
+    monkeypatch.setattr(mcp_server, "run_owned",
+                        lambda argv, **_: subprocess.CompletedProcess(argv, 1, stdout, ""))
+
+    result = mcp_server._call_tool(_measured(tmp_path / "repo"), "check_config", {})
+
+    assert result["isError"] is True and "structuredContent" not in result
+    assert _embedded(result) <= ANSWER_CHARS
+    answer = json.loads(result["content"][0]["text"])
+    assert _assert_cut_to_prefixes(answer, report) == {
+        "problems": {"kept": len(answer["problems"]), "of": 80}}
+    assert answer["truncated"]["full"].startswith("crapkit doctor --json --repo ")

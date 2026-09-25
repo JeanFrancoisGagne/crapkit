@@ -2019,23 +2019,29 @@ def _structured(result: dict, full=lambda: "") -> dict:
     The --json commands print for machines; a client on the 2025-06-18 revision
     reads structuredContent directly. Prose, JSON arrays and error text stay
     text-only rather than getting wrapped into shapes the tools never promised.
+    An error whose text is a JSON object, such as a failing doctor's report,
+    stays text-only and is cut the same way.
     """
-    if result["isError"]:
+    parsed = _json_object(result["content"][0]["text"])
+    if parsed is None:
         return result
+    if _text_chars(parsed) > ANSWER_CHARS:
+        parsed = _budgeted(parsed, full)
+        result = _json_result(parsed, is_error=result["isError"])
+    return result if result["isError"] else {**result, "structuredContent": parsed}
+
+
+def _json_object(text: str) -> dict | None:
     try:
-        parsed = json.loads(result["content"][0]["text"])
+        parsed = json.loads(text)
     except ValueError:
-        return result
-    if not isinstance(parsed, dict):
-        return result
-    return _fitted(result, parsed, full)
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
-def _fitted(result: dict, parsed: dict, full) -> dict:
-    if _text_chars(parsed) <= ANSWER_CHARS:
-        return {**result, "structuredContent": parsed}
-    cut = _budgeted(parsed, full)
-    return {**_result(json.dumps(cut, sort_keys=True) + "\n", is_error=False), "structuredContent": cut}
+def _json_result(payload: dict, *, is_error: bool) -> dict:
+    """A result whose text is `payload` printed the way the CLI prints it."""
+    return _result(json.dumps(payload, sort_keys=True) + "\n", is_error=is_error)
 
 
 def _respond(msg_id, result=None, error=None) -> dict:
