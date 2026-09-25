@@ -15,7 +15,6 @@ to one row per function.
 """
 import csv
 import hashlib
-import importlib.util
 import io
 import json
 from pathlib import Path
@@ -23,7 +22,7 @@ import sys
 
 import pytest
 
-from accuracy.corpus_goldens import golden_runs
+from accuracy.corpus_goldens import golden_runs, releases
 from accuracy.kit import runlog
 
 pytestmark = pytest.mark.process
@@ -34,16 +33,7 @@ WORKLIST_COLUMNS = ("path", "long_name", "occurrence", "start", "ccn", "cov", "c
                     "authors", "weight", "risk", "remedy", "flag")
 
 
-def _load():
-    spec = importlib.util.spec_from_file_location("accuracy_wheel_diff_xplat",
-                                                  REPO / "tools" / "accuracy" / "wheel_diff.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-wheel_diff = _load()
+wheel_diff = releases.wheel_diff()
 
 
 def worklist_tsv(text: str) -> str:

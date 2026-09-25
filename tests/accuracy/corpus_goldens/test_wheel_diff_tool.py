@@ -11,18 +11,17 @@
   ulp cases, worked from math.ulp.
 """
 import csv
-import importlib.util
 import io
 import json
 import math
 from pathlib import Path
-import sys
 import time
 import zipfile
 
 from hypothesis import given, strategies as st
 import pytest
 
+from accuracy.corpus_goldens import releases
 from accuracy.kit import repos
 from accuracy.kit.settings import pure
 
@@ -55,16 +54,7 @@ TINY = {
 }
 
 
-def _load():
-    spec = importlib.util.spec_from_file_location("accuracy_wheel_diff",
-                                                  REPO / "tools" / "accuracy" / "wheel_diff.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-wheel_diff = _load()
+wheel_diff = releases.wheel_diff()
 COLUMNS = ("path", "long_name", "occurrence", "ccn", "crap", "remedy")
 
 
@@ -316,3 +306,56 @@ def test_the_full_corpus_diff_reads_every_member(tmp_path):
 
     assert sorted(exports) == ["one/inventory.tsv", "two/inventory.tsv"]
     assert wheel_diff.diff_exports(exports, exports) == []
+
+
+def _files(*kinds: str, yanked: bool = False) -> list[dict]:
+    return [{"packagetype": kind, "yanked": yanked} for kind in kinds]
+
+
+def test_the_releases_are_pypi_s_newest_final_wheels(monkeypatch):
+    """0.10.0 sorts above 0.9.1 as a version, not as text; a pre-release, a
+    release with only an sdist and a yanked wheel are left out."""
+    listing = {"0.9.0": _files("bdist_wheel", "sdist"), "0.9.1": _files("bdist_wheel"),
+               "0.10.0": _files("bdist_wheel"), "0.11.0rc1": _files("bdist_wheel"),
+               "0.10.1": _files("sdist"), "0.10.2": _files("bdist_wheel", yanked=True),
+               "0.8.0": _files("bdist_wheel")}
+    asked = []
+
+    def fetch(url):
+        asked.append(url)
+        return json.dumps({"releases": listing}).encode()
+    monkeypatch.setattr(wheel_diff, "_fetch", fetch)
+
+    assert wheel_diff.releases(3) == ["0.10.0", "0.9.1", "0.9.0"]
+    assert wheel_diff.releases(2, at_most="0.9.1") == ["0.9.1", "0.9.0"]
+    assert asked == ["https://pypi.org/pypi/crapkit/json"] * 2
+
+
+def test_the_upload_date_is_the_wheel_s(monkeypatch):
+    release = {"urls": [{"packagetype": "sdist", "upload_time_iso_8601": "2026-09-22T23:59:00Z"},
+                        {"packagetype": "bdist_wheel", "filename": "crapkit-0.9.0-py3-none-any.whl",
+                         "upload_time_iso_8601": "2026-09-23T20:04:49.119305Z"}]}
+    monkeypatch.setattr(wheel_diff, "_fetch", lambda url: json.dumps(release).encode())
+
+    assert wheel_diff.upload_date("0.9.0") == "2026-09-23"
+
+
+def test_the_wheelhouse_is_the_one_the_environment_names(monkeypatch, tmp_path):
+    monkeypatch.setenv(wheel_diff.WHEELHOUSE_ENV, str(tmp_path))
+
+    assert wheel_diff.default_wheelhouse() == tmp_path
+
+
+def test_a_failed_release_fetch_is_noted_as_an_infra_miss(monkeypatch, tmp_path):
+    log = tmp_path / "log.jsonl"
+    monkeypatch.setenv("CRAPKIT_ACCURACY_LOG", str(log))
+
+    def fetch(url):
+        raise wheel_diff.WheelDiffError(f"fetching {url} failed: offline")
+    monkeypatch.setattr(wheel_diff, "_fetch", fetch)
+
+    with pytest.raises(wheel_diff.WheelDiffError):
+        releases.last(5)
+    notes = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert [(note["kind"], note["message"]) for note in notes] == [
+        ("infra", "fetching https://pypi.org/pypi/crapkit/json failed: offline")]

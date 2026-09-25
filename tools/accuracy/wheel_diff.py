@@ -7,7 +7,8 @@
 
 A SIDE is a wheel file, a CI hand-off directory (.crapkit/ci-measure/<side>:
 one *.whl, or failure.json when that side's measurement stopped), or
-`crapkit==VERSION`, fetched once from PyPI into the wheelhouse. When a side
+`crapkit==VERSION`, fetched once from PyPI into the wheelhouse
+(CRAPKIT_ACCURACY_WHEELHOUSE, or a per-user cache directory). When a side
 handed off failure.json there is nothing to compare: `diff` prints one skip
 line and exits 0.
 
@@ -52,6 +53,8 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
+
+from packaging.version import Version
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tests"))
@@ -216,6 +219,30 @@ def download(version: str, wheelhouse: Path) -> Path:
     return target
 
 
+def _serves_a_wheel(files: list) -> bool:
+    return any(entry["packagetype"] == "bdist_wheel" and not entry.get("yanked")
+               for entry in files)
+
+
+def _kept(version: Version, at_most: str | None) -> bool:
+    return not version.is_prerelease and (at_most is None or version <= Version(at_most))
+
+
+def releases(count: int, at_most: str | None = None) -> list[str]:
+    """The newest `count` crapkit releases PyPI serves an unyanked wheel for,
+    newest first, none above `at_most`; pre-releases are left out."""
+    listing = json.loads(_fetch(PYPI.replace("/{version}", "")))["releases"]
+    served = [Version(name) for name, files in listing.items() if _serves_a_wheel(files)]
+    final = sorted(filter(lambda version: _kept(version, at_most), served), reverse=True)
+    return [str(version) for version in final[:count]]
+
+
+def upload_date(version: str) -> str:
+    """The UTC date (YYYY-MM-DD) PyPI received the release's wheel."""
+    entry = _wheel_entry(json.loads(_fetch(PYPI.format(version=version))), version)
+    return entry["upload_time_iso_8601"][:10]
+
+
 def cached(version: str, wheelhouse: Path) -> Path | None:
     found = sorted(wheelhouse.glob(f"crapkit-{version}-*.whl"))
     return found[0] if found else None
@@ -376,7 +403,14 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+WHEELHOUSE_ENV = "CRAPKIT_ACCURACY_WHEELHOUSE"
+
+
 def default_wheelhouse() -> Path:
+    """CRAPKIT_ACCURACY_WHEELHOUSE (a CI cache), else a per-user cache directory."""
+    named = os.environ.get(WHEELHOUSE_ENV)
+    if named:
+        return Path(named)
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.cache")
     return Path(base) / "crapkit-accuracy" / "wheelhouse"
 

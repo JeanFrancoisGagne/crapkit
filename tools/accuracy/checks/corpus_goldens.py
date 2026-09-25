@@ -23,6 +23,8 @@ CHECKS = [
      "pytest": [_PACKET + "test_xplat_digest.py"]},
     {"name": "printed commands run in every shell", "seconds": 12,
      "pytest": [_PACKET + "test_printed_commands.py"]},
+    {"name": "the Action's verdict and comment on three pull requests", "seconds": 10,
+     "pytest": [_PACKET + "test_action_scenarios.py"]},
     {"name": "two runs normalize to one golden", "seconds": 15, "tiers": ["nightly"],
      "pytest": [_PACKET + "test_normalized_twice.py"]},
 ]
