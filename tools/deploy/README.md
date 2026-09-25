@@ -3,9 +3,9 @@
 `tests/deploy` holds the deploy cells. Each cell installs crapkit the way a
 user does (pip, pipx, uv, a plugin marketplace, a hook route) and drives it
 through the surface that user touches. The tools here build the images the
-Linux cells run in, install the same toolchain natively on Windows and macOS,
-and run any cell, packet or cadence in either place. `pins.toml` is the one
-source of every version and hash.
+Linux cells run in, install the same toolchain natively on Windows, macOS and
+a bare Linux runner, and run any cell, packet or cadence in either place.
+`pins.toml` is the one source of every version and hash.
 
 ## Run
 
@@ -13,7 +13,10 @@ source of every version and hash.
     python tools/deploy/run.py --cell lin-pip-start-py311      # one cell (repeat --cell for more)
     python tools/deploy/run.py --packet deploy-channels -n 4   # one packet's cells, 4 xdist workers
     python tools/deploy/run.py --cadence nightly --image full  # every nightly Linux cell the full image holds
-    python tools/deploy/run.py --native                        # on Windows or macOS: the same cells, natively
+    python tools/deploy/run.py --cadence weekly --image cells-arm64 --cell lin-arm64   # linux/arm64, under QEMU on x86_64
+    python tools/deploy/run.py --cadence weekly --image full-latest --online --cell latest-harnesses
+    python tools/deploy/run.py --faketime +400d --packet deploy-kit   # every process 400 days ahead
+    python tools/deploy/run.py --native                        # the same cells on this machine, no container
     python tools/deploy/run.py --build-only --image gui        # build one image, or skip it when unchanged
     python tools/deploy/run.py --repeat 2 ...                  # two fresh containers; exit 1 if a verdict differs
     python tools/deploy/run.py --faketime +400d ...            # every process in the container 400 days ahead
@@ -30,10 +33,17 @@ container as uid 1000 with `--network none`. Inside, `entry.sh` builds the
 candidate wheel and sdist (`candidate.py`) before pytest starts. The source
 tree is never in an image, so a crapkit change rebuilds nothing.
 
-`--native` needs the toolchain first: `python tools/deploy/toolchain.py`
-installs the pinned uv, CPythons, Node, PortableGit, pwsh, wheelhouse and npm
-caches under `%LOCALAPPDATA%\crapkit-deploy` (or
-`~/Library/Caches/crapkit-deploy`).
+The other flags:
+
+| Flag | What it does |
+|---|---|
+| `--os linux`, `windows`, `macos` | selects the cells marked for that OS; the default is `linux` in a container and this machine's OS with `--native` |
+| `--online` | runs the cells marked online, and only those, in a container with the network; without it no online cell runs |
+| `--bake` | copies `<out>/in` into a `crapkit-deploy:<image>-baked` image, so the cells run from the copy inside the image and not from the mounted `<out>/in` |
+| `--no-cache` | builds cold |
+| `--cache local` or `gha` | where BuildKit keeps its layer cache; `gha` reads and writes the GitHub Actions cache on a docker-container builder |
+| `--builder NAME` | the buildx builder; the default is the daemon's own when it runs the pinned BuildKit, else `crapkit-deploy` running the pinned BuildKit image |
+| `--out DIR` | where the output below lands |
 
 `--harness core` (the default) or `--harness full` adds the harnesses that
 image holds. On Windows the toolchain also holds act and a checkout of each
@@ -49,41 +59,131 @@ Output lands in `.crapkit/deploy-out/` (`--out` moves it):
 | `transcripts/<test>.txt` and `.json` | every command a test ran, with cwd, exit code, output and duration |
 | `build.json` | build seconds, image size, builder, `docker system df` before and after |
 | `versions-<image>.txt` | what each tool in a new image prints, held to `pins.toml` |
+| `build-<image>.log` | the whole build log; a failed build prints its path and last 30 lines |
+| `latest-drift.txt` | `full-latest` only: each harness whose newest release prints other than its pin |
+
+## Native runs
+
+`--native` runs the cells on this machine instead of in a container. Windows
+and macOS cells always run this way, and so does lin-native-start on a bare
+ubuntu runner. It needs the toolchain first: `python tools/deploy/toolchain.py
+[--harness core|full|none]` installs the pinned uv, CPythons, Node, pipx,
+prek (Windows and Linux), pwsh (Windows and macOS), PortableGit (Windows), the
+harness binaries for this OS, the wheelhouse rows and the npm caches. On Linux
+it keeps the machine's own git and `/usr/bin/python3`, as a user's machine
+does. A rerun skips each step whose output is already there. The toolchain
+root:
+
+| OS | Toolchain root |
+|---|---|
+| Windows | `%LOCALAPPDATA%\crapkit-deploy` |
+| macOS | `~/Library/Caches/crapkit-deploy` |
+| Linux | `~/.cache/crapkit-deploy` |
+
+`CRAPKIT_DEPLOY_TOOLCHAIN_ROOT` moves it (see Environment). A native run
+passes pytest `--basetemp C:\dt` on Windows, a path with no 8.3 short name a
+tool could print back in another spelling, and `$TMPDIR/crapkit-deploy-tmp`
+elsewhere. pytest empties its basetemp when it starts, so a second native run
+on the same machine deletes the first one's sandboxes mid-run. Give each run
+its own `CRAPKIT_DEPLOY_BASETEMP`.
+
+## A fake clock
+
+`--faketime SPEC` runs every process in the container under libfaketime, which
+every image holds (the lin-clock cell). `HH:MM:SS` starts the run's clock at
+that UTC time today; any other value is libfaketime's own spec, so `+400d`
+runs 400 days ahead. run.py writes the library's path to `/etc/ld.so.preload`
+and the offset to `/etc/faketimerc` and mounts both read-only, so a crapkit
+that a cell starts from the sandbox's allowlisted environment still sees the
+fake clock. Every process gets the same offset, and the clock keeps moving.
+A native run has no libfaketime, so `--native --faketime` is refused. Two
+limits:
+
+- uv and other statically linked binaries never load the preload and keep the
+  real clock. The images' uv is `x86_64-unknown-linux-musl`.
+- Claude Code hangs under the preload, whatever the offset. In
+  `crapkit-deploy:core`, `claude --version` returns at once on the real clock
+  and was still running after 40 s under the preload at `+0` and at `+400d`,
+  while `node` printed the faked date at once. A cell that starts Claude Code
+  cannot run under `--faketime`.
+
+## Environment
+
+| Variable | Read by | Why it exists |
+|---|---|---|
+| `CRAPKIT_DEPLOY_REPO` | run.py | The repository every image is tagged under, `crapkit-deploy` when unset. A second checkout building other pins on the same Docker daemon sets its own, so neither replaces the other's tags. `lock.py manifest --image` then takes `<repo>:<image>`. |
+| `CRAPKIT_DEPLOY_TOOLCHAIN_ROOT` | toolchain.py, `run.py --native` | The native toolchain's root, in place of the OS default above, so two checkouts on one machine each keep their own pins. |
+| `CRAPKIT_DEPLOY_BASETEMP` | `run.py --native` | pytest's basetemp for native runs. pytest empties it when it starts, so two native runs at once on the default `C:\dt` wipe each other. |
 
 ## Images
 
-One Dockerfile, `tests/deploy/docker/Dockerfile`, five targets:
+One Dockerfile, `tests/deploy/docker/Dockerfile`, six targets, seven images.
+Every image is linux/amd64 except `cells-arm64`, the `cells` target built for
+linux/arm64:
 
-| Target | Holds |
+| Image | Holds |
 |---|---|
-| `cells` | Debian trixie (snapshot.debian.org), uv, CPython 3.10 to 3.14, Node 22, git, pipx, prek, the npm fixture cache, the runner venv, the wheelhouse |
+| `cells` | Debian trixie (snapshot.debian.org), uv, CPython 3.10 (below the floor, for the refusal cell) to 3.14 and the 3.15 prerelease, Node 22, git, pipx, prek, libfaketime, the npm fixture cache, the runner venv, the wheelhouse |
+| `cells-arm64` | cells, built for linux/arm64 with the aarch64 binaries and wheel rows (the weekly lin-arm64 cell) |
 | `core` | cells + Claude Code (and floors 2.1.139, 2.1.138), Codex (and floor 0.121.0), the Cursor agent |
 | `full` | core + Gemini CLI, OpenCode, Copilot CLI, Cline, Continue, Crush, Amp, oh-my-pi, Junie, Goose, Aider, both Agent SDKs |
+| `full-latest` | full + every harness again at its newest release, first on PATH (the weekly latest-harnesses cells, with `--online`) |
 | `ci` | cells + act, actions/checkout and actions/setup-python at their pinned SHAs, a runner tool-cache Python |
 | `gui` | full + xvfb, VS Code, Zed |
 
 The wheelhouse is the last layer of every target, so a crapkit release
 rebuilds one small layer. A new image must print every pinned version
-(`entry.sh versions`) or `run.py` removes its tag.
+(`entry.sh versions`) or `run.py` removes its tag. `full-latest` is held to
+its pinned tools the same way. Its build args change once an ISO week, so it
+rebuilds on the first run of each week, and every run writes
+`<out>/latest-drift.txt`.
 
-Measured on 2026-09-24 with Docker Desktop 29.8.0 and the daemon's BuildKit
-0.33.0 on a 24-core Windows machine. "Warm" changed entry.sh, which rebuilds
-the last two layers; a new crapkit release also refetches the wheelhouse stage
-(39 s in the prototype). "Compressed" is the content a registry or the GitHub
-Actions cache would hold.
+### cells-arm64 on an x86_64 machine
+
+An x86_64 Docker host builds and runs `cells-arm64` under QEMU, which needs a
+binfmt handler for arm64. Before it builds `cells-arm64`, run.py starts the
+pinned Debian image for linux/arm64 once. When that fails it builds nothing
+and prints the fix:
+
+    run: this Docker host cannot run linux/arm64 containers (<docker's last line>); register QEMU once with `docker run --privileged --rm tonistiigi/binfmt --install arm64`, or build cells-arm64 on an arm64 host
+
+Run the `docker run --privileged --rm tonistiigi/binfmt --install arm64` line
+and start run.py again. Docker Desktop dropped the handler twice in one day on
+the machine that measured the table below, so expect to run it more than
+once. A handler lost in the middle of a build ends it with
+`exec format error` in the log; run.py then prints the log's path, its last
+30 lines and the same QEMU line.
+
+### Measured
+
+Sizes on disk are `docker image ls` on 2026-09-25. The other columns were
+measured on 2026-09-24 with Docker Desktop 29.8.0 and the daemon's BuildKit
+0.33.0 on a 24-core Windows machine, before the 3.15 prerelease and the
+aarch64 wheel rows added about 0.18 GB to each image. "Warm" changed
+entry.sh, which rebuilds the last two layers; a new crapkit release also
+refetches the wheelhouse stage (39 s in the prototype). "Compressed" is the
+content a registry or the GitHub Actions cache would hold.
 
 | Image | On disk | Compressed | Cold (`--no-cache`) | Warm | No change |
 |---|---|---|---|---|---|
-| `cells` | 1.83 GB | 494 MB | 356 s | 22.5 s | 0.9 s |
-| `core` | 5.29 GB | 1.40 GB | 455 s | 26.3 s | 1.2 s |
-| `full` | 13.62 GB | 3.71 GB | 1178 s | 22.3 s | 0.8 s |
-| `ci` | 1.87 GB | 506 MB | 231 s | 21.2 s | 2.2 s |
-| `gui` | 15.96 GB | 4.31 GB | 1402 s | 41.8 s | 1.1 s |
+| `cells` | 2.01 GB | 494 MB | 356 s | 22.5 s | 0.9 s |
+| `cells-arm64` | 1.90 GB | 508 MB | 1028 s | 27.8 s | 0.3 s |
+| `core` | 5.46 GB | 1.40 GB | 455 s | 26.3 s | 1.2 s |
+| `full` | 13.8 GB | 3.71 GB | 1178 s | 22.3 s | 0.8 s |
+| `full-latest` | 22.1 GB | not measured | 3553 s | not measured | not measured |
+| `ci` | 2.05 GB | 506 MB | 231 s | 21.2 s | 2.2 s |
+| `gui` | 16.1 GB | 4.31 GB | 1402 s | 41.8 s | 1.1 s |
+
+The `cells-arm64` and `full-latest` rows are from 2026-09-25. The
+`cells-arm64` cold build is its first build under QEMU, and its warm build
+followed a wheel lock change. The `full-latest` 3553 s is a weekly rebuild:
+every `@latest` layer over a cached `full`, with other builds running on the
+machine.
 
 About 6 minutes of each cold `full` and `gui` build is the export of their
 layers into the daemon. The cold rebuilds reproduced `image-manifest.lock` for
-all five images: every tool version, Debian package, npm package integrity,
-runner package, wheel sha256 and downloaded-binary tree hash.
+all five amd64 images: every tool version, Debian package, npm package
+integrity, runner package, wheel sha256 and downloaded-binary tree hash.
 
 The kit's own tests (`--packet deploy-kit -n 4`) pass in every image, twice
 from fresh containers with the same verdicts: 48 pass and 1 skips (a

@@ -466,14 +466,18 @@ def read(root: Path) -> dict:
     return json.loads((root / "toolchain.json").read_text(encoding="utf-8"))
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=None,
                         help=f"where to install (default: ${ROOT_ENV}, else the OS cache directory)")
     parser.add_argument("--harness", default="core", choices=sorted(HARNESS_LEVELS),
                         help="core (the default): the harnesses the core image holds; full: the full "
                              "image's as well; none: the base tools only")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     root = (args.root or default_root()).resolve()
     install(pinsfile.load(), root, HARNESS_LEVELS[args.harness])
     print(root / "toolchain.json")

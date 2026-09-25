@@ -520,7 +520,7 @@ def differing(runs: list[dict[str, str]]) -> list[str]:
 
 # --- command line -----------------------------------------------------------------
 
-def parse(argv: list[str] | None) -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--cadence", default="push", choices=sorted(CADENCES))
     parser.add_argument("--cell", action="append", default=[])
@@ -545,6 +545,11 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
                              "(tests/deploy/kit/clock.py)")
     parser.add_argument("-n", type=int, default=0)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    return parser
+
+
+def parse(argv: list[str] | None) -> argparse.Namespace:
+    parser = build_parser()
     args = parser.parse_args(argv)
     if args.faketime and args.native:
         parser.error("--faketime runs cells in an image; a native run has no libfaketime to load")
