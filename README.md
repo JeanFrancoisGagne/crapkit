@@ -460,12 +460,13 @@ in silence.
 **The Crapkit root can sit below the Git top.** A config in `packages/api` gates
 that package's staged files as project-relative paths such as `app/m.py`.
 [Path and root rules](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery)
-also cover absolute arguments, literal filenames and Git diff settings. Every route below
-works unchanged in such a monorepo. Git runs the hook at the repository's top, and with no
-`crapkit.toml` there the gate runs in each crapkit root below that owns a staged file and
-names paths from the top (`packages/api/app/m.py`). A commit that stages nothing under any
-`crapkit.toml`, a docs-only commit or any commit in a repo armed before `crapkit init`,
-passes with one note on stderr.
+also cover absolute arguments, literal filenames and Git diff settings. Routes 1 to 3
+below need no `--repo` in such a monorepo when you run them at the git top. Git runs the
+hook there, and with no `crapkit.toml` at the top the gate runs in each crapkit root below
+that owns a staged file and names paths from the top (`packages/api/app/m.py`). A commit
+that stages nothing under any `crapkit.toml`, a docs-only commit or any commit in a repo
+armed before `crapkit init`, passes with one note on stderr. Route 4's `crapkit verify`
+takes `--repo packages/api`.
 
 The hook runs the first of three that git's PATH offers: the `crapkit` command (pipx, uv
 tool, or a venv whose `bin` is on PATH), then `uvx crapkit`, then `python -m crapkit`. Git
