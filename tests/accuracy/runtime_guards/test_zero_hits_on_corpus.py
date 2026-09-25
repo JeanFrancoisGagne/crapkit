@@ -49,9 +49,10 @@ def test_every_checked_command_answers_on_the_seed_corpus(seed, tmp_path):
     assert [(result.argv, result.code) for result in done if result.code != 0] == []
 
 
-def repo_stops(root, name: str, date_now: int | None = None) -> list[str]:
-    """Every stop the checked commands print on a repo that holds no run yet."""
-    driver = drive.Driver(root, date_now=date_now, spawn=True)
+def repo_stops(root, name: str, date_now: int | None = None, spawn: bool = True) -> list[str]:
+    """Every stop the checked commands print on a repo that holds no run yet.
+    A repo past 32 files reaches the analysis pool, which needs a spawned CLI."""
+    driver = drive.Driver(root, date_now=date_now, spawn=spawn)
     done = [driver.run(*argv) for argv in corpora.FIRST_RUN] + _answers(driver)
     return [f"{name}: {stop}" for result in done for stop in corpora.stops(result)]
 
@@ -90,7 +91,7 @@ def _past_half(weights: dict) -> dict:
 @pytest.mark.process
 def test_a_dated_history_s_worklist_meets_the_churn_bound(make_repo):
     root = make_repo(dated_history()).root
-    assert repo_stops(root, "dated history", NEWEST + DAY) == []
+    assert repo_stops(root, "dated history", NEWEST + DAY, spawn=False) == []
     listed = _active(root, NEWEST + DAY)
     weights = {entry["path"]: (entry["commits"], entry["weight"]) for entry in listed}
     assert sorted(commits for commits, _ in weights.values()) == [1, 2, 3, 4]
