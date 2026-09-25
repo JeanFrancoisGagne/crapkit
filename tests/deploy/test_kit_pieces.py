@@ -7,8 +7,10 @@ model stubs answer a harness-shaped request, and every repo template builds.
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
+import re
 import threading
 import urllib.request
 from pathlib import Path
@@ -363,3 +365,45 @@ def test_a_sandbox_can_be_made_twice_from_one_toolchain(tmp_path, toolchain):
     second = sandbox.make(tmp_path / "b", Transcript("b"), toolchain=toolchain)
 
     assert first.home != second.home and first.env["PATH"] == second.env["PATH"]
+
+
+# --- the kit names its pieces -----------------------------------------------------------
+
+# A name in the first column of kit/__init__.py's list: `  sandbox       an environment ...`,
+# `  stub_anthropic, stub_openai` or `  stub_gh/` on a line of its own.
+FIRST_COLUMN = re.compile(r"^  (\w[\w/, ]*?)(?: {2,}|$)", re.MULTILINE)
+
+
+def kit_pieces(kit: Path = KIT) -> list[str]:
+    """The kit's modules and resource folders."""
+    return sorted({path.stem for pattern in ("*.py", "*/") for path in kit.glob(pattern)} - {"__init__", "__pycache__"})
+
+
+def listed_pieces(kit: Path = KIT) -> set[str]:
+    """The names in the first column of kit/__init__.py's list, read with its indent kept."""
+    text = ast.get_docstring(ast.parse((kit / "__init__.py").read_text(encoding="utf-8")), clean=False) or ""
+    return {name.strip(" /") for column in FIRST_COLUMN.findall(text) for name in column.split(",")}
+
+
+def unlisted_pieces(kit: Path = KIT) -> list[str]:
+    """The pieces kit/__init__.py's list does not name."""
+    listed = listed_pieces(kit)
+    return [piece for piece in kit_pieces(kit) if piece not in listed]
+
+
+def test_kit_init_names_every_module_and_folder_the_kit_holds():
+    unlisted = unlisted_pieces()
+
+    assert unlisted == [], (f"tests/deploy/kit/__init__.py does not name {', '.join(unlisted)}: add a line to its "
+                            "list saying what each is for, which is where tools/deploy/README.md sends a cell's author")
+
+
+def test_a_piece_is_listed_only_by_its_name_in_the_first_column(tmp_path):
+    listed = '"""The kit.\n\n  sandbox       the state a cell runs in\n  stub_a, stub_b\n                two stubs\n  stub_gh/\n"""\n'
+    (tmp_path / "__init__.py").write_text(listed, encoding="utf-8")
+    for name in ("sandbox.py", "state.py", "stub_a.py", "stub_b.py", "stub_gh/gh", "shim_pkg/x.py", "__pycache__/x.pyc",
+                 "client.mjs"):
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        (tmp_path / name).write_text("", encoding="utf-8")
+
+    assert unlisted_pieces(tmp_path) == ["shim_pkg", "state"]

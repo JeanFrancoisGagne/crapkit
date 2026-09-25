@@ -112,8 +112,10 @@ def test_readme_install_line(box, candidate):
 
 The fixtures (`tests/deploy/conftest.py`): `box` is a fresh sandbox, `candidate`
 the build under test, `templates` the session's fixture-repo cache,
-`toolchain` the pinned tools, `transcript` this test's record. The modules
-are listed in `tests/deploy/kit/__init__.py`.
+`toolchain` the pinned tools, `transcript` this test's record.
+`tests/deploy/kit/__init__.py` lists every kit module and resource folder with
+what it is for, and `test_kit_pieces` fails on one the list does not name, so
+a packet that adds a piece adds its line there.
 
 Rules the kit holds a cell to:
 
