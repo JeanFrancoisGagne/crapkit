@@ -3,8 +3,9 @@
 The reports under recorded/ are real: pytest 8.3, 9.0 and 9.1, vitest 5.0.1
 and jest-junit 17 ran the suites record_junit.py writes (a pass, a failure,
 setup and teardown errors, a skip, an xfail and an xpass, a parametrized id,
-a class method; a collection error; a crashed xdist worker; a suite with no
-tests). Two outside readers say what each holds:
+a class method; a teardown error alone after a pass and alone after a failed
+call; a collection error; a crashed xdist worker; a suite with no tests). Two
+outside readers say what each holds:
 
 - junitparser 5 reads the XML: a test failed when its <testcase> holds a
   <failure> or an <error>, and its id is `classname::name` (agent-json.md,
@@ -34,6 +35,8 @@ RECORDED = Path(__file__).resolve().parent / "recorded"
 PYTESTS = ("8.3", "9.0", "9.1")
 MIXED = [f"pytest-{version}/mixed.xml" for version in PYTESTS] + [
     "vitest-5.0.1/mixed.xml", "jest-junit-17.0.0/mixed.xml"]
+TEARDOWN_SUITES = [f"pytest-{version}/{suite}.xml" for version in PYTESTS
+                   for suite in ("mixed", "teardown_after_pass", "teardown_after_fail")]
 # docs/lanes.md#a-junit-that-says-the-run-did-not-finish, and :1339 for zero testcases.
 REFUSED = {f"pytest-{version}/{suite}.xml": reason for version in PYTESTS
            for suite, reason in (("collection_error", "collection failure"),
@@ -96,7 +99,7 @@ def _text(name: str) -> str:
 
 # --- the two readers agree before crapkit is asked ------------------------------------------
 
-@pytest.mark.parametrize("name", [n for n in MIXED if n.startswith("pytest")])
+@pytest.mark.parametrize("name", TEARDOWN_SUITES)
 def test_junitparser_and_reportlog_name_the_same_failures(name):
     report = RECORDED / name
     assert junitparser_reading(report).failed == reportlog_failures(report.with_suffix(".jsonl"))
@@ -130,18 +133,20 @@ def test_new_failures_are_the_report_s_failures(clean, tmp_path, name):
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("version", cadence.tiered(PYTESTS, push=PYTESTS[-1:]))
-def test_teardown_errors_across_pytest(clean, tmp_path, version):
+@pytest.mark.parametrize("name", cadence.tiered(TEARDOWN_SUITES, push=[
+    "pytest-9.1/mixed.xml", "pytest-8.3/teardown_after_pass.xml"]))
+def test_teardown_errors_across_pytest(clean, tmp_path, name):
     """A teardown error fails its test, on a test that passed and on one that
-    had already failed, in every pytest the lanes are recorded under."""
-    name = f"pytest-{version}/mixed.xml"
+    had already failed, in every pytest the lanes are recorded under, and the
+    report is a finished run: pytest wrote every record, whichever total its
+    tests= declares (records before 9.1, testcases from 9.1)."""
     scenario = _with_report(clean, tmp_path, _text(name))
 
-    failures = frozenset(scenario.json("coverage")["lanes"]["a"]["failures"])
+    result = scenario.run("coverage", "--json")
 
-    teardown = {"tests.test_mixed::test_teardown_error", "tests.test_mixed::test_fail_and_teardown_error"}
-    assert teardown <= reportlog_failures(RECORDED / name.replace(".xml", ".jsonl"))
-    assert teardown <= failures
+    assert result.code == 0, result.stdout + result.stderr
+    failures = frozenset(result.json()["lanes"]["a"]["failures"])
+    assert failures == reportlog_failures(RECORDED / name.replace(".xml", ".jsonl"))
 
 
 # --- reports that say the run did not finish ----------------------------------------------------

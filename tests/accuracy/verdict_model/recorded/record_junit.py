@@ -85,8 +85,33 @@ class TestGroup:
     def test_method_fails(self):
         assert False
 '''
+# One teardown error per suite, so no other shape offsets its count: pytest
+# before 9.1 declares one more test than it writes testcases after a pass, and
+# one fewer after a failed call, whose teardown error opens a second testcase
+# with the same id.
+TEARDOWN = '''\
+import pytest
+
+
+@pytest.fixture
+def broken_teardown():
+    yield
+    raise RuntimeError("teardown broke")
+
+
+def test_plain():
+    pass
+
+
+def test_then_teardown_error(broken_teardown):
+    assert CALL_PASSES
+'''
 PYTEST_SUITES = {
     "mixed": ({"tests/__init__.py": "", "tests/test_mixed.py": MIXED}, []),
+    "teardown_after_pass": ({"tests/__init__.py": "",
+                             "tests/test_td.py": "CALL_PASSES = True\n\n\n" + TEARDOWN}, []),
+    "teardown_after_fail": ({"tests/__init__.py": "",
+                             "tests/test_td.py": "CALL_PASSES = False\n\n\n" + TEARDOWN}, []),
     "collection_error": ({"tests/__init__.py": "", "tests/test_ok.py": "def test_ok():\n    pass\n",
                           "tests/test_broken.py": "def test_broken(:\n    pass\n"},
                          ["--continue-on-collection-errors"]),
