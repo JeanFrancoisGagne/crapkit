@@ -93,6 +93,22 @@ def _tables(probes: tuple) -> list[Truth]:
     return [row for language in languages for row in load(language)]
 
 
+def dark(producer: str, scenario: str, probes: tuple) -> dict[str, set[int]]:
+    """{probe path: lines holding a statement the driver never ran}: a line in a
+    measured function's stmts but not its stmts_run. Every module-level
+    statement runs at import, so no other line is dark."""
+    found: dict[str, set[int]] = {}
+    for row in rows_for(producer, scenario, probes):
+        found.setdefault(row.path, set()).update(_unrun(row))
+    return found
+
+
+def _unrun(row: Truth) -> set[int]:
+    if not row.modelled or row.unmeasured:
+        return set()
+    return {int(line) for line in row.stmts if line not in row.stmts_run}
+
+
 def expected(row: Truth) -> Fraction:
     """README.md: branches in the span, else statements, else called or not."""
     if row.arms:

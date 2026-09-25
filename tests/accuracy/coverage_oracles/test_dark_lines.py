@@ -25,7 +25,7 @@ import xml.etree.ElementTree as ElementTree
 from hypothesis import given, strategies as st
 import pytest
 
-from accuracy.coverage_oracles import ground_table, probe_repo, under_test
+from accuracy.coverage_oracles import counts_table, ground_table, probe_repo, under_test
 from accuracy.kit import rulings
 from accuracy.kit.settings import pure
 
@@ -38,17 +38,8 @@ UNCOVERED, CONFIG, ISTANBUL, COVERAGE_PY = (under_test.crapkit(name) for name in
     "uncovered", "config", "coverage_istanbul", "coverage_py"))
 
 
-def _numbers(cells) -> set[int]:
-    return {int(cell) for cell in cells}
-
-
 def hand_dark(producer: str, scenario: str) -> dict[str, set[int]]:
-    """{probe path: lines holding a statement the driver never ran}."""
-    dark: dict[str, set[int]] = {}
-    for row in ground_table.rows_for(producer, scenario, PROBES[producer]):
-        if row.modelled and not row.unmeasured:
-            dark.setdefault(row.path, set()).update(_numbers(set(row.stmts) - set(row.stmts_run)))
-    return dark
+    return ground_table.dark(producer, scenario, PROBES[producer])
 
 
 def _python(producer: str) -> bool:
@@ -118,27 +109,8 @@ def test_every_function_gets_the_dark_lines_inside_its_span(probe_run):
 
 # --- 3. D6: the lcov line rule ------------------------------------------------------------------
 
-def lcov_lines(text: str) -> dict[str, dict[int, int]]:
-    """{SF path: {DA line: count}} from an lcov tracefile."""
-    found: dict[str, dict[int, int]] = {}
-    current = None
-    for line in text.splitlines():
-        tag, _, rest = line.partition(":")
-        if tag == "SF":
-            current = found.setdefault(rest, {})
-        elif tag == "DA":
-            number, count = rest.split(",")[:2]
-            current[int(number)] = int(count)
-    return found
-
-
-def mixed_lines(data: dict) -> set[int]:
-    """Lines where one statement that starts there ran and another did not,
-    read straight off an istanbul file entry."""
-    hits: dict[int, set[bool]] = {}
-    for index, statement in data.get("statementMap", {}).items():
-        hits.setdefault(statement["start"]["line"], set()).add(data["s"].get(index, 0) > 0)
-    return {line for line, ran in hits.items() if ran == {True, False}}
+lcov_lines = counts_table.lcov_lines
+mixed_lines = counts_table.mixed_lines
 
 
 def _d6_split(scenario: str) -> tuple[dict, dict, dict]:

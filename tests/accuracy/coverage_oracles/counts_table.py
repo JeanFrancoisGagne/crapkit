@@ -220,6 +220,39 @@ def istanbul_rows(artifact: dict, rule: str = "line", root: str = "") -> list[Co
             for row in _istanbul_file(relative_key(key, root), data, rule)]
 
 
+def mixed_lines(data: dict) -> set[int]:
+    """Lines of one istanbul file entry where a statement that starts there ran
+    and another did not."""
+    hits: dict[int, set[bool]] = {}
+    for index, statement in data.get("statementMap", {}).items():
+        hits.setdefault(statement["start"]["line"], set()).add(data["s"].get(index, 0) > 0)
+    return {line for line, ran in hits.items() if ran == {True, False}}
+
+
+# --- lcov ----------------------------------------------------------------------------------
+
+def _source_file(rest: str, found: dict, current: list) -> None:
+    current[:] = [found.setdefault(rest, {})]
+
+
+def _line_count(rest: str, found: dict, current: list) -> None:
+    number, count = rest.split(",")[:2]
+    current[0][int(number)] = int(count)
+
+
+LCOV_LINE_TAGS = {"SF": _source_file, "DA": _line_count}
+
+
+def lcov_lines(text: str) -> dict[str, dict[int, int]]:
+    """{SF path: {DA line: count}} from an lcov tracefile."""
+    found: dict[str, dict[int, int]] = {}
+    current: list = []
+    for line in text.splitlines():
+        tag, _, rest = line.partition(":")
+        LCOV_LINE_TAGS.get(tag, lambda *_: None)(rest, found, current)
+    return found
+
+
 # --- a corpus's recorded artifacts ---------------------------------------------------------
 
 def _copied(command: str) -> dict[str, str]:
