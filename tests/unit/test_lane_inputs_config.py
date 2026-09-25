@@ -34,7 +34,9 @@ def test_a_lane_that_declares_none_keeps_the_strict_rule():
     assert load_config_text(_config(None)).lanes[0].inputs == ()
 
 
-@pytest.mark.parametrize("entry", ["../shared", "src/../../x", "/abs/src", "C:/repo/src", ""])
+@pytest.mark.parametrize("entry", ["../shared", "src/../../x", "/abs/src", "C:/repo/src", "",
+                                   "..\\src", "\\\\server\\share\\src", "//server/share/src",
+                                   "/c/repo/src", "/mnt/c/repo/src", "C:src"])
 def test_an_input_outside_the_root_is_refused_at_load(entry):
     with pytest.raises(ConfigError) as raised:
         load_config_text(_config(json.dumps([entry])))

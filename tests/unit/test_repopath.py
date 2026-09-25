@@ -288,6 +288,15 @@ def test_a_declared_directory_takes_the_case_its_directory_lists(tmp_path, kind)
     assert declared("BACKEND", kind) == "BACKEND"
 
 
+@pytest.mark.parametrize("kind", ["scope", "prefix", "input"])
+def test_a_declared_directory_in_another_case_names_another_directory_on_ext4(tmp_path, kind):
+    """On a case-sensitive disk `Backend` is not backend/; folding it would
+    name a directory git never lists under that name."""
+    need_case_sensitive(tmp_path)
+
+    assert declared("Backend", kind, _declared_tree(tmp_path)) == "Backend"
+
+
 def test_a_fragment_folds_case_where_the_disk_under_the_root_does(tmp_path):
     from path_spellings import case_insensitive
     from crapkit.repopath import fragments
