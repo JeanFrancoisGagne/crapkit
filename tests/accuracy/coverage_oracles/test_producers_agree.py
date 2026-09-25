@@ -21,7 +21,7 @@ import json
 
 import pytest
 
-from accuracy.coverage_oracles import counts_table, ground_table, probe_repo, under_test
+from accuracy.coverage_oracles import counts_table, ground_table, mini_repo, probe_repo, under_test
 from accuracy.kit import rulings
 
 RECORDED = probe_repo.RECORDED
@@ -71,6 +71,30 @@ def test_negative_derived_counters_clamp_to_not_taken(capsys):
 
     assert (sum(negatives.values()), len(negatives)) == (74, 25)
     assert f"{sum(negatives.values())} negative derived branch count(s) in {len(negatives)} file(s)" in note
+
+
+@pytest.mark.process
+def test_recorded_v8_negative_counters_clamp(tmp_path):
+    """R36 through the CLI: one negative derived branch count in a lane's
+    artifact is clamped and named, the run scores, and the arm reads not taken
+    (ifElse's if, called with true only: 1 of 2 arms)."""
+    artifact = json.loads((RECORDED / "vitest-v8-5.0.1" / "call.json").read_bytes())
+    entry = artifact["js/shapes.js"]
+    branch = next(index for index, arm in entry["branchMap"].items() if arm["loc"]["start"]["line"] == 4)
+    entry["b"][branch] = [entry["b"][branch][0], -1]
+    toml = mini_repo.config([mini_repo.scope("js", ["js"], ["javascript"])],
+                            [mini_repo.lane("js", "istanbul", ["js"])])
+    driver = mini_repo.build(tmp_path / "repo", {
+        "crapkit.toml": toml, "js/shapes.js": (probe_repo.PROBES / "js/shapes.js").read_bytes(),
+        "recorded/js.json": json.dumps({"js/shapes.js": entry}).encode()})
+
+    result = driver.run("coverage", "--export", "scored.tsv")
+
+    assert result.code == 0, result.stderr
+    assert "1 negative derived branch count(s) in 1 file(s)" in result.stderr
+    rows = {line.split("\t")[3]: line.split("\t")[11] for line in
+            (driver.root / "scored.tsv").read_text(encoding="utf-8").splitlines()[1:]}
+    assert float(rows["3"]) == 0.5
 
 
 # --- the providers agree --------------------------------------------------------------------------

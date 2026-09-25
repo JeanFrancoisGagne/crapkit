@@ -329,3 +329,89 @@ def test_other_checkout_refuses(tmp_path, prefix, key, said):
     result = driver.run("coverage", "--export", "scored.tsv")
 
     assert (result.code, said in result.stderr) == (5, True), result.stderr
+
+
+# --- report shapes a lane still scores (R89) -------------------------------------------------------
+
+def _without_branches(region: dict) -> dict:
+    summary = {key: value for key, value in region["summary"].items() if "branch" not in key}
+    kept = {key: value for key, value in region.items() if "branch" not in key}
+    return {**kept, "summary": summary}
+
+
+def _shape_report(shape: str) -> bytes:
+    """no_branch: `pytest --cov` without --cov-branch; no_regions: a second file a
+    plugin reporter measured, with no "functions" key."""
+    region = _region()
+    files = {"src/a.py": {"functions": {"f": region}, "missing_lines": [4]}}
+    if shape == "no_branch":
+        files["src/a.py"]["functions"]["f"] = _without_branches(region)
+        return json.dumps({"meta": {"format": 3, "version": "7.16.1", "branch_coverage": False},
+                           "files": files}).encode()
+    files["src/page.html"] = {"missing_lines": [], "executed_lines": [1]}
+    return mini_repo.coveragepy_report(files)
+
+
+# (shape, crapkit's cov for f): with no branch data the README falls back to
+# statement coverage, 2 of 3 lines; with a regionless file beside it, f keeps its
+# branch coverage, 1 of 2 arms (docs/lanes.md#a-file-the-report-carries-no-regions-for).
+SHAPES = [("no_branch", 2 / 3), ("no_regions", 0.5)]
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("shape, cov", SHAPES, ids=[shape for shape, _ in SHAPES])
+def test_report_shapes(tmp_path, shape, cov):
+    """R89: a report carrying less than crapkit asked for still scores the rest."""
+    toml = mini_repo.config([mini_repo.scope("s", ["src"], ["python"])],
+                            [mini_repo.lane("py", "coveragepy", ["s"])])
+    driver = mini_repo.build(tmp_path / "repo", {"crapkit.toml": toml, "src/a.py": SOURCE,
+                                                 "recorded/py.json": _shape_report(shape)})
+
+    result = driver.run("coverage", "--export", "scored.tsv")
+
+    assert result.code == 0, result.stderr
+    row = (driver.root / "scored.tsv").read_text(encoding="utf-8").splitlines()[1].split("\t")
+    assert (row[2].split("(")[0].strip(), float(row[11]), row[12]) == ("f", cov, "measured")
+
+
+# --- the same refusals through a lane (R27, R28) -----------------------------------------------------
+
+JS_SOURCE = "function f(x) {\n  return x;\n}\n"
+
+
+def _coveragepy_lane(summary: dict) -> tuple[str, bytes]:
+    region = {**_region(), "summary": {**_region()["summary"], **summary}}
+    return "coveragepy", mini_repo.coveragepy_report({"src/a.py": {"functions": {"f": region},
+                                                                   "missing_lines": [4]}})
+
+
+def _istanbul_lane(count: str) -> tuple[str, bytes]:
+    text = ISTANBUL_FILE.replace('"a.js"', '"src/a.js"').replace("COUNT", count)
+    return "istanbul", text.encode()
+
+
+# (case, lane): RFC 8259 section 6 has no NaN or Infinity; docs/lanes.md refuses a
+# count that is not a nonnegative integer and a covered count over its total.
+LANE_REFUSALS = [
+    ("coveragepy-nan", _coveragepy_lane({"covered_lines": float("nan")})),
+    ("coveragepy-covered-over-total", _coveragepy_lane({"covered_branches": 3})),
+    ("coveragepy-string", _coveragepy_lane({"num_statements": "3"})),
+    ("istanbul-infinity", _istanbul_lane("Infinity")),
+    ("istanbul-fraction", _istanbul_lane("1.5")),
+    ("istanbul-negative-statement", _istanbul_lane("-1")),
+]
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("case, lane", LANE_REFUSALS, ids=[case for case, _ in LANE_REFUSALS])
+def test_impossible_counts_refuse_through_a_lane(tmp_path, case, lane):
+    """R27 and R28: the lane fails, exit 5, and no row scores off the bad count."""
+    parser, artifact = lane
+    language, source = ("python", SOURCE) if parser == "coveragepy" else ("javascript", JS_SOURCE)
+    suffix = "py" if parser == "coveragepy" else "js"
+    toml = mini_repo.config([mini_repo.scope("s", ["src"], [language])],
+                            [mini_repo.lane("cov", parser, ["s"])])
+    driver = mini_repo.build(tmp_path / "repo", {"crapkit.toml": toml, f"src/a.{suffix}": source,
+                                                 "recorded/cov.json": artifact})
+
+    assert driver.run("coverage").code == 5

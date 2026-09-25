@@ -204,6 +204,14 @@ def test_signature_layouts_floor_by_body_line(floored):
                      "own_called": (1.0, "measured", "ok"), "own_idle": (0.0, "measured", "add-tests")}
 
 
+@pytest.mark.process
+def test_one_line_def_call_and_no_call(floored):
+    """R46: a one-line def floors whether a test called it or not."""
+    rows = _python_rows(floored[2])
+
+    assert [_verdict(rows[f"one_{twin}"]) for twin in ("called", "idle")] == [FLOOR, FLOOR]
+
+
 # --- JS: two arrows on one line ------------------------------------------------------------------
 
 @pytest.mark.process

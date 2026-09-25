@@ -118,7 +118,7 @@ def test_changed_file_absent_from_artifacts_counts(verified):
     mentions counts every line of its functions."""
     _, payload = verified
 
-    assert _crapkit_lines(payload)["py/new.py"] == {1, 2, 3, 4}
+    assert _crapkit_lines(payload).get("py/new.py", set()) == {1, 2, 3, 4}
 
 
 # --- diff-cover on the same diff -----------------------------------------------------------------
