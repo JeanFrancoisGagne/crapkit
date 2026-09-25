@@ -240,6 +240,26 @@ def disk_usage() -> str:
     return subprocess.run(["docker", "system", "df"], capture_output=True, text=True).stdout
 
 
+QEMU_FIX = "docker run --privileged --rm tonistiigi/binfmt --install arm64"
+
+
+def emulation_problem(pins: dict, image: str, runner=subprocess.run) -> str | None:
+    """Why this Docker host cannot run the image's platform, or None. An x86_64
+    host with no QEMU handler registered fails the cells-arm64 build ten minutes
+    in with 'Exec format error'; one `docker run` of the pinned Debian says so
+    first. The pinned platform is the host's own and needs no check."""
+    platform = pinsfile.platform(pins, image)
+    if platform == pins["images"]["platform"]:
+        return None
+    done = runner(["docker", "run", "--rm", "--platform", platform, pins["images"]["debian"], "true"],
+                  capture_output=True, text=True)
+    if done.returncode == 0:
+        return None
+    said = (done.stderr.strip().splitlines() or ["no output"])[-1]
+    return (f"run: this Docker host cannot run {platform} containers ({said}); register QEMU once with "
+            f"`{QEMU_FIX}`, or build {image} on an arm64 host")
+
+
 def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, requested: str | None = None) -> dict:
     """Build one target and record its time, its size, the builder and
     `docker system df` before and after in <out>/build.json. An image already
@@ -249,6 +269,9 @@ def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, request
     if unchanged(tag, inputs, no_cache):
         return _record(out, {"image": image, "skipped": "inputs unchanged", "size_bytes": image_size(tag),
                              "seconds": round(time.monotonic() - started, 1)})
+    problem = emulation_problem(pins, image)
+    if problem:
+        raise SystemExit(problem)
     builder = choose_builder(pins, requested, cache)
     before = disk_usage()
     with (out / f"build-{image}.log").open("w", encoding="utf-8") as stream:

@@ -141,10 +141,14 @@ RUN arch=$([ "$TARGETARCH" = arm64 ] && echo aarch64 || echo x86_64); \
     rm -rf /tmp/lock
 
 # ------------------------------------------------------ harness-core -------
+# Each harness `npm ci` runs up to three times, the later runs reading what the
+# earlier ones cached: on a loaded network one registry download can stall past
+# the TCP timeout (ETIMEDOUT), and that failed two cold full builds in a row.
 FROM base AS harness-core
 COPY tests/deploy/docker/harness-core/ /opt/harness-core/
 RUN cd /opt/harness-core; \
-    npm ci --no-audit --no-fund --cache /tmp/npm-cache; rm -rf /tmp/npm-cache; \
+    for try in 1 2 3; do npm ci --no-audit --no-fund --cache /tmp/npm-cache && break; [ "$try" != 3 ]; done; \
+    rm -rf /tmp/npm-cache; \
     mkdir bin; ln -s ../node_modules/.bin/claude ../node_modules/.bin/codex bin/; \
     for alias in node_modules/claude-code-* node_modules/codex-*; do \
       name=$(basename "$alias"); tool=${name%%-[0-9]*}; \
@@ -180,7 +184,9 @@ RUN fetch "$BUN_LINUX_X64_URL" "$BUN_LINUX_X64_SHA256" /tmp/bun.zip; \
 # Other postinstalls also write under that HOME (bun, node-gyp and opencode
 # caches); only Junie's files stay.
 RUN cd /opt/harness-full; export PATH=/opt/bun/bin:$PATH; \
-    HOME=/opt/junie-home npm ci --no-audit --no-fund --cache /tmp/npm-cache; rm -rf /tmp/npm-cache; \
+    for try in 1 2 3; do HOME=/opt/junie-home npm ci --no-audit --no-fund --cache /tmp/npm-cache && break; \
+      [ "$try" != 3 ]; done; \
+    rm -rf /tmp/npm-cache; \
     cd /opt/junie-home; rm -rf .bun .cache .config .local/state .local/share/opencode
 # npm links no .bin/cline: cline and its platform package both claim the name.
 # Junie's shim reads its versions from $JUNIE_DATA, else from $HOME, which a

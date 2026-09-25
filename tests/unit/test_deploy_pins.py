@@ -400,6 +400,44 @@ def test_an_arm64_tag_runs_under_its_own_platform_and_an_amd64_one_under_the_def
     assert pinsfile.platform_flags("crapkit-deploy:cells-arm64-baked") == ["--platform", "linux/arm64"]
 
 
+def _docker(code, stderr=""):
+    """A stand-in for subprocess.run that records the argv and answers with `code`."""
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        return run.subprocess.CompletedProcess(argv, code, "", stderr)
+    return runner, calls
+
+
+def test_an_amd64_image_needs_no_emulation_check():
+    runner, calls = _docker(1)
+
+    assert run.emulation_problem(PINS, "core", runner) is None and calls == []
+
+
+def test_a_host_that_cannot_run_arm64_is_told_the_fix_before_the_build(monkeypatch, tmp_path):
+    """cells-arm64 failed ten minutes into its build with `cut: Exec format
+    error` once Docker Desktop's QEMU handler was gone."""
+    runner, calls = _docker(1, "exec /usr/bin/true: exec format error\n")
+    problem = run.emulation_problem(PINS, "cells-arm64", runner)
+
+    assert calls[0][:5] == ["docker", "run", "--rm", "--platform", "linux/arm64"]
+    assert "cannot run linux/arm64 containers (exec /usr/bin/true: exec format error)" in problem
+    assert run.QEMU_FIX in problem
+    monkeypatch.setattr(run, "unchanged", lambda *a: False)
+    monkeypatch.setattr(run, "emulation_problem", lambda pins, image: problem)
+    monkeypatch.setattr(run, "choose_builder", lambda *a: pytest.fail("built on a host that cannot run it"))
+    with pytest.raises(SystemExit, match="tonistiigi/binfmt"):
+        run.build(PINS, "cells-arm64", "local", False, tmp_path)
+
+
+def test_a_host_that_runs_arm64_goes_on_to_build():
+    runner, _ = _docker(0)
+
+    assert run.emulation_problem(PINS, "cells-arm64", runner) is None
+
+
 def test_the_arm64_manifest_is_read_under_its_platform(monkeypatch):
     calls = []
     monkeypatch.setattr(lock.subprocess, "run",
@@ -515,6 +553,16 @@ def test_each_build_arg_sits_just_above_the_run_that_reads_it():
              if f"${name}" not in run_line and "${" + name not in run_line]
 
     assert stray == []
+
+
+def test_each_harness_npm_ci_runs_again_from_the_cache_it_kept():
+    """One registry download stalled past the TCP timeout on a loaded network and
+    failed two cold full builds; a second `npm ci` reads what the first cached."""
+    installs = [line for line in _instructions(DOCKERFILE) if line.startswith("RUN") and "npm ci --no-audit" in line]
+
+    assert len(installs) == 2
+    assert all(re.search(r'for try in 1 2 3; do [^;]*npm ci [^;]*&& break; +\[ "\$try" != 3 \]; done;', line)
+               for line in installs)
 
 
 def test_a_stray_arg_above_an_unrelated_run_is_caught():
