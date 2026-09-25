@@ -18,9 +18,9 @@ from ..doctor import Finding
 from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
-from ..repopath import typed_path
 from ..lane_command import (LaunchSpec, expand_launchers, first_word, launch_spec,
                             pytest_head, pytest_python, python_token)
+from ..repopath import typed_path
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
