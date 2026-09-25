@@ -188,32 +188,44 @@ def test_every_input_the_readme_names_exists_on_the_action():
 
 
 # --- a crapkit root below the repository top -----------------------------------
+#
+# Every crapkit step ran at the workspace root. A monorepo whose crapkit.toml sits
+# in packages/api got coverage exit 3 there and a failed gate on every pull
+# request. tests/unit/test_action_monorepo.py runs the steps on such a repo;
+# these pin the shape that makes it hold for a step added later.
 
-# The steps that run crapkit or read the paths it ranks. The install, the state
-# directory, the comment and the exit code read absolute paths only.
-_ROOTED_STEPS = ("score the base commit", "score the checkout", "the verdict",
-                 "the ranked worklist", "the changed files")
+_ROOTED = "${{ inputs.working-directory }}"
 
 
-def test_the_working_directory_defaults_to_the_repository_top():
-    """A monorepo's crapkit.toml sits below the top, and every crapkit step ran
-    at the top: coverage found no crapkit.toml and the gate exited 3 (measured
-    under act on a packages/api layout). The input moves those steps; its
-    default keeps every existing consumer where it was."""
+def test_the_working_directory_defaults_to_the_checkout_itself():
+    """The default keeps every consumer whose crapkit.toml is at the top where
+    it was."""
     assert _action()["inputs"]["working-directory"]["default"] == "."
 
 
-@pytest.mark.parametrize("name", _ROOTED_STEPS)
-def test_every_step_that_runs_crapkit_runs_in_the_working_directory(name):
-    assert _step_named(name).get("working-directory") == "${{ inputs.working-directory }}"
+def _reads_the_crapkit_root(step: dict) -> bool:
+    """A step that runs crapkit, or lists the files the worklist is joined to."""
+    body = step.get("run", "")
+    return bool(_CALL.search(body)) or "git diff" in body
 
 
-def test_no_step_that_invokes_crapkit_is_left_at_the_top():
-    """Guards the list above from the other side: a step added later that runs
-    crapkit has to join it."""
-    invoking = {step["name"] for step in _steps() if "run" in step and _CALL.search(step["run"])}
+def test_every_step_that_reads_the_crapkit_root_runs_in_the_working_directory():
+    rooted = [step["name"] for step in _steps() if _reads_the_crapkit_root(step)]
+    stray = [name for name in rooted if _step_named(name).get("working-directory") != _ROOTED]
 
-    assert invoking <= set(_ROOTED_STEPS)
+    assert len(rooted) == 5, rooted
+    assert stray == [], f"these steps still run at the repository top: {stray}"
+
+
+def test_the_steps_that_read_only_absolute_paths_stay_at_the_top():
+    """The install, the state directory, the comment and the exit code read
+    $GITHUB_ACTION_PATH and $CRAPKIT_STATE, which a working directory does not
+    move; leaving them where they were keeps a typo in the input from also
+    killing the steps that explain it."""
+    moved = [step.get("name") for step in _steps() if "working-directory" in step
+             and not _reads_the_crapkit_root(step)]
+
+    assert moved == []
 
 
 def test_the_base_run_scores_the_same_directory_inside_the_fork_point_worktree():

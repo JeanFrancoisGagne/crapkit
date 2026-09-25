@@ -503,6 +503,18 @@ nothing. Each of these now gets a line naming the object and the next step:
   Setting `HOME` never helped, because Python ignores it on Windows. When nothing names
   a home, the command exits 5 with `no home directory` and names the variable to set.
 
+### The GitHub Action scores a crapkit root below the repository top
+
+- The Action takes a `working-directory` input: the directory that holds
+  `crapkit.toml`, relative to the checkout, `"."` by default. Every step ran at the
+  workspace root, so a monorepo whose `crapkit.toml` sits in `packages/api` got
+  `crapkit coverage` exit 3 (`no crapkit.toml at ... - nothing to analyze`) and, with
+  gate `"true"`, a failed check on every pull request. The coverage, verdict, worklist
+  and changed-file steps now run in that directory, the base run scores the same
+  directory at the fork point, and the changed files are named from it, the way the
+  worklist names them. Set `working-directory: packages/api` on the crapkit step and on
+  the job's own `pip install -e ".[dev]"` step; README's "The inputs" shows both.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

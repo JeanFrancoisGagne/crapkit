@@ -35,10 +35,11 @@ inputs:
     default: "3.12"
   working-directory:
     description: >-
-      The directory holding crapkit.toml, relative to the checkout, where
-      every crapkit step runs. Set it when the crapkit root sits below the
-      repository top, as a package in a monorepo does (packages/api); at the
-      top, coverage finds no crapkit.toml there and exits 3.
+      The directory that holds crapkit.toml, relative to the checkout. Every
+      step that runs crapkit or lists the changed files runs there. Set it when
+      crapkit.toml sits below the repository top, as a package of a monorepo
+      does (packages/api): at the top, coverage finds no crapkit.toml and
+      exits 3.
     required: false
     default: "."
 
@@ -87,9 +88,10 @@ runs:
     # written to crapkit-base.reason: the comment quotes it in place of
     # "verify passed", and with gate "true" the exit step fails the check on it.
     #
-    # The worktree holds the whole repository. `below` is the working
-    # directory's path under the repository top, so a monorepo's crapkit root
-    # is scored at the same place in the fork point's tree.
+    # The fork point's worktree holds the whole repository. `below` is the
+    # working directory's path under the repository top (`packages/api/`, or
+    # empty at the top), so the base run scores the same crapkit root in the
+    # fork point's tree and its store is read from there.
     - name: isolate this invocation's state
       id: state
       shell: bash
@@ -213,7 +215,8 @@ runs:
     # empty on a push, and a shallow clone does not hold the commit it names;
     # either way the list is empty and the comment ranks the whole repository
     # instead of a slice of it. `--relative` keeps the files under the working
-    # directory and names them from it, the way the worklist names them.
+    # directory and names them from there, the way the worklist names them: a
+    # top-relative packages/api/calc/grade.py matches no row it ranks.
     - name: the changed files
       shell: bash
       working-directory: ${{ inputs.working-directory }}

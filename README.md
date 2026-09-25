@@ -809,8 +809,8 @@ the pull request's own new function. A pull request that touches no ranked funct
 the heading and no table.
 
 The two file counts describe the same diff, counted twice. `39 changed files` is
-`git diff --name-only base.sha...HEAD`, the branch's own commits, and it is what the
-table is filtered to. The count on the verdict line is what `verify` measured from the
+`git diff --name-only --relative base.sha...HEAD` run in `working-directory`, the
+branch's own commits under it, and it is what the table is filtered to. The count on the verdict line is what `verify` measured from the
 same fork point. With `delta: "false"` the second one is 0, because there is nothing
 behind the checkout to measure from.
 
@@ -822,7 +822,16 @@ behind the checkout to measure from.
 | `delta` | `"true"` | scores the pull request's base commit first, so the verdict covers the commits the pull request adds. Costs a second lane run; `"false"` scores the checkout alone, and the verdict then judges no changed function |
 | `top` | `"5"` | worklist rows rendered in the table |
 | `python-version` | `"3.12"` | the interpreter `actions/setup-python` installs crapkit into. Match it to the version your own setup-python step named, or the lanes run on an interpreter your dependencies never reached |
-| `working-directory` | `"."` | the directory holding `crapkit.toml`, relative to the checkout; every crapkit step runs there. Set it when the crapkit root sits below the repository top, as a package in a monorepo does (`packages/api`): at the top, `crapkit coverage` finds no `crapkit.toml` and the gate fails with exit 3 |
+| `working-directory` | `"."` | the directory that holds `crapkit.toml`, relative to the checkout. Every step that runs crapkit or lists the changed files runs there, and the base run scores the same directory at the fork point. Set it when `crapkit.toml` sits below the repository top: at the top, `crapkit coverage` finds no `crapkit.toml` and exits 3 |
+
+On a monorepo whose `crapkit.toml` sits in `packages/api`, the crapkit step takes
+`working-directory: packages/api` under `with:`, and the job's own `pip install -e
+".[dev]"` step takes the same key at step level, because `.[dev]` names that package's
+`pyproject.toml` and the top has none. The changed files are then listed from
+`packages/api`, the way the worklist names them, and a change elsewhere in the
+repository is not part of the table. Point it at the directory that holds
+`crapkit.toml` itself, not at one below it. The input is new in 0.8.1: an action pinned
+to an older tag warns `Unexpected input(s) 'working-directory'` and scores the top.
 
 `gate: "false"` is the default on purpose. A team adopts the action before it has decided
 which findings should stop a merge, and a check that fails on day one gets turned off on
@@ -841,8 +850,9 @@ The fork point is `git merge-base` of `base.sha` and HEAD, not `base.sha` itself
 after the branch forked carries commits HEAD never saw, and a run there would be neither
 the baseline verify wants nor a diff anyone is reviewing.
 
-The base run happens in a detached worktree under `RUNNER_TEMP`, and its store is copied
-over the checkout's so both runs sit in one place. The cost is **two lane runs on a pull
+The base run happens in a detached worktree under `RUNNER_TEMP`, in the same
+`working-directory` inside it, and its store is copied over the checkout's so both runs
+sit in one place. The cost is **two lane runs on a pull
 request**: your suite runs once at the fork point and once on the checkout. Set `delta:
 "false"` to skip the base run, and the verdict falls back to the checkout against its own
 run, which reports the tree's own health and judges no changed function. The comment says
