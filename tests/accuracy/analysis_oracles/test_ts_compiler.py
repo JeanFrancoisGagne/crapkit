@@ -71,6 +71,7 @@ def _start(pair: tuple) -> int:
 # The first difference of each file that has one, and the rulings row that
 # records it. A defect row is a strict xfail until the fix lands.
 DECLARATIONS = {"ts/generic.ts": "D1a", "ts/regex.ts": "D1c", "vue/label.vue": "AO-VUE-ROWS",
+                "vue/equivalence.vue": "AO-VUE-ROWS",
                 "js/object_methods.js": "AO-JS-OBJECT-MEMBERS",
                 "js/template_arrow.js": "AO-JS-TEMPLATE-ARROW", "js/overloads.ts": "AO-TS-OVERLOADS"}
 ENDS = {"ts/flow.ts": "AO-TS-END-SPAN", "ts/shapes.ts": "AO-TS-END-SPAN",

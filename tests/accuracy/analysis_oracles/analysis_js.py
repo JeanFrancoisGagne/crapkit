@@ -73,7 +73,8 @@ ORACLES = {
     # "nesting"); ESLint's max-depth counts nested blocks. They agree on if,
     # loop and block nesting only: a function holding any other construct is
     # compared by its N-row's hand case instead.
-    "max-depth": Oracle("nesting", _same, {}, zero_when_silent=True, heads=False,
+    "max-depth": Oracle("nesting", _same, {"nested_loop": "AO-ND-LOOPS"}, zero_when_silent=True,
+                        heads=False,
                         only_without=frozenset({"else", "switch", "ternary", "label", "try",
                                                 "and", "or", "nullish", "negated_logical"})),
 }

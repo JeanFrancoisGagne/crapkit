@@ -16,7 +16,8 @@
 // way: "or", "and", "nullish" (?? and ??=), "optional" (?.), "ternary",
 // "nested_ternary", "negated_logical" (! over a parenthesized && or ||),
 // "else", "switch", "label", "try", "recursion" (a call of the function's own
-// name) and "nested_function". A .vue file is read
+// name), "nested_loop" (a loop inside a loop) and "nested_function". A .vue
+// file is read
 // from its first <script> block, parsed as TypeScript when lang="ts", with
 // lines counted from the top of the file (Vue SFC spec, "Language Blocks").
 // No crapkit: this file only reads the compiler.
@@ -105,6 +106,20 @@ function nestedTernary(node) {
     (branch) => ts.isConditionalExpression(unwrap(branch)));
 }
 
+const LOOPS = new Set([
+  ts.SyntaxKind.ForStatement, ts.SyntaxKind.ForInStatement, ts.SyntaxKind.ForOfStatement,
+  ts.SyntaxKind.WhileStatement, ts.SyntaxKind.DoStatement,
+]);
+
+// A loop with another loop between it and the function that holds it.
+function nestedLoop(node, fn) {
+  if (!LOOPS.has(node.kind)) return false;
+  for (let up = node.parent; up && up !== fn; up = up.parent) {
+    if (LOOPS.has(up.kind)) return true;
+  }
+  return false;
+}
+
 function negatedLogical(node) {
   return ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken &&
     logical(unwrap(node.operand));
@@ -116,6 +131,7 @@ const TESTS = [
   ["negated_logical", negatedLogical],
   ["else", (node) => ts.isIfStatement(node) && Boolean(node.elseStatement)],
   ["recursion", (node, fn) => calls(node, nameOf(fn))],
+  ["nested_loop", nestedLoop],
 ];
 
 // The features one node adds, each a name the header lists.

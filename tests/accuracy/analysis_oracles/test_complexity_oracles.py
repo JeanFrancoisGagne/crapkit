@@ -17,11 +17,20 @@ import ast
 import pytest
 
 from accuracy.analysis_oracles import (analysis_js, analysis_pydiff, analysis_shapes,
-                                       py_defect_shapes)
+                                       analysis_tables, py_defect_shapes)
 from accuracy.analysis_oracles.oracles import radon_mccabe
 from accuracy.kit import rulings, runlog
 
 pytestmark = pytest.mark.process
+
+
+def analysis_tables_marks(ruling_id: str):
+    """The strict-xfail mark of an open defect row, applied as a decorator."""
+    def apply(test):
+        for mark in analysis_tables.marks(ruling_id):
+            test = mark(test)
+        return test
+    return apply
 
 
 def _radon(fn, source: str, path: str):
@@ -124,15 +133,24 @@ def test_every_transform_has_a_hand_case():
 
 def _gate_problems(rows) -> list:
     return [row for row in rows
-            if not (row["ccn"] == min(row["ccn_std"], row["ccn_mod"]) and row["ccn"] >= 1
-                    and row["ccn_mod"] <= row["ccn_std"])]
+            if not (row["ccn"] == min(row["ccn_std"], row["ccn_mod"]) and row["ccn"] >= 1)]
 
 
 def test_ccn_is_the_smaller_of_std_and_mod_on_every_row(src_inventory, probe_inventory):
     """docs/agent-json.md "ccn": min(ccn_std, ccn_mod), and a function is at least
-    one path; lizard -m only ever merges a switch's cases, so mod <= std."""
+    one path."""
     assert _gate_problems(src_inventory.rows) == []
     assert _gate_problems(probe_inventory.rows) == []
+
+
+@analysis_tables_marks("AO-PS-MOD-OVER-STD")
+def test_ccn_mod_never_exceeds_ccn_std(src_inventory, probe_inventory):
+    """lizard -m only ever merges a switch's cases into one decision, so a row's
+    ccn_mod is at most its ccn_std."""
+    over = [row for row in [*src_inventory.rows, *probe_inventory.rows]
+            if row["ccn_mod"] > row["ccn_std"]]
+
+    analysis_tables.check(str(len(over)), "0", "AO-PS-MOD-OVER-STD")
 
 
 def _modified(fn, source: str, path: str) -> int:
