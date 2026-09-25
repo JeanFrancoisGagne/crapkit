@@ -228,3 +228,61 @@ INJECT = Spec(steps=(
 ))
 INJECT_LANDS = EPOCH + 4 * DAY
 INJECT_NOW = EPOCH + 10 * DAY
+
+
+# --- a file of five gated functions and the edits a diff makes to it ----------------------
+# Each function has ccn 5 against a target of 3, so every function a diff touches is
+# over its ceiling and named by the gate. f2's docstring carries a line starting "-- ",
+# and an edit may add one starting "++ ": in a -U0 diff they read "--- " and "+++ ".
+
+
+def gated(name: str, tag: str = "a", doc: str = "") -> str:
+    ifs = "".join(f"    if x == {i}:\n        return {i}\n" for i in range(4))
+    return f'def {name}(x):\n    """{name}\n{doc}"""\n{ifs}    return \'{tag}\'\n\n\n'
+
+
+GATED_TEXT = (gated("f0") + gated("f1") + gated("f2", doc="-- note\n") + gated("f3")
+              + gated("f4"))
+GATED = Spec(steps=(Commit(files={"crapkit.toml": config(), "src/m.py": GATED_TEXT},
+                           date=EPOCH, message="five gated functions"),))
+GATED_NOW = EPOCH + DAY
+GATED_EDITS = {
+    # name: (new text of src/m.py, the functions the edit changes, worked by hand)
+    "plus_plus": (gated("f0") + gated("f1", doc="++ marker\n") + gated("f2", doc="-- note\n")
+                  + gated("f3", tag="b") + gated("f4"), {"f1", "f3"}),
+    "mixed": (gated("f0") + gated("f1", doc="++ marker\n") + gated("f2") + gated("f3", tag="b")
+              + gated("f4", tag="b").rstrip("\n"), {"f1", "f2", "f3", "f4"}),
+    "deletion_only": (gated("f0") + gated("f1") + gated("f2") + gated("f3") + gated("f4"),
+                      {"f2"}),
+}
+
+
+# --- diffs a -U0 reader must survive: CRLF, no final newline, a non-ASCII name, lines
+# starting "++ " and "-- ", and a move read with --no-renames ---------------------------
+DIFF_BASE = {
+    "src/crlf.py": b"a\r\nb\r\nc\r\nd\r\n",
+    "src/noeol.py": b"x\ny\nz\n",
+    "src/\u00fc.py": "1\n2\n3\n4\n5\n6\n".encode(),
+    "src/plus.py": b"p1\np2\np3\np5\np6\np7\n-- removed\np8\n",
+    "src/old.py": b"r1\nr2\nr3\n",
+}
+DIFF_EDIT = {
+    "src/crlf.py": b"a\r\nb\r\nC\r\nd\r\n",
+    "src/noeol.py": b"x\ny\nZ",
+    "src/\u00fc.py": "1\nTWO\n3\n4\nFIVE\n6\n".encode(),
+    "src/plus.py": b"p1\np2\np3\n++ added\np5\np6\np7\np8\n",
+}
+# Worked by hand from the two versions: the new-side lines each edit changed, and for
+# the removed "-- removed" line the line before it (ruling H9).
+DIFF_HAND = {
+    "src/crlf.py": [(3, 3)],
+    "src/noeol.py": [(3, 3)],
+    "src/\u00fc.py": [(2, 2), (5, 5)],
+    "src/plus.py": [(4, 4), (7, 7)],
+    "src/new.py": [(1, 3)],
+}
+DIFF_CASES = Spec(steps=(
+    Commit(files=DIFF_BASE, date=EPOCH, message="base"),
+    Commit(files=DIFF_EDIT, renames={"src/old.py": "src/new.py"}, date=EPOCH + DAY,
+           message="edits"),
+))

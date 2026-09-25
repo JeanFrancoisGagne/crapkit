@@ -17,4 +17,8 @@ CHECKS = [
      "pytest": [_HISTORY + "test_coupling_oracle.py"]},
     {"name": "coupling at the parser", "seconds": 3,
      "pytest": [_HISTORY + "test_coupling_properties.py"]},
+    {"name": "changed ranges through the gates", "seconds": 4,
+     "pytest": [_HISTORY + "test_changed_ranges.py"]},
+    {"name": "changed ranges at the reader", "seconds": 3,
+     "pytest": [_HISTORY + "test_diff_ranges_api.py"]},
 ]
