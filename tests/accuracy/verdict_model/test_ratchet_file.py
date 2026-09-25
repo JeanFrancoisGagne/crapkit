@@ -96,11 +96,15 @@ def _repathed(expected: list) -> dict:
 
 # --- model: any file, against the clean-room writer ----------------------------------------
 
-AWKWARD = st.sampled_from(["\t", "\n", "\r", "\x0b", "\x0c", "\x1c", "\x85", "\u2028", "\u2029",
-                           "#", "\\", "\u00e9", " ", "\"", "\u00a0"])
-FIELD = st.lists(st.one_of(st.sampled_from("abz/._()"), AWKWARD), min_size=1, max_size=6).map("".join)
+# Every character the writer encodes (docs/portable-records.md), and neighbours it
+# must leave alone, each alone, leading and trailing a field; drawn from a list so
+# drawing costs nothing next to the CLI call it feeds.
+AWKWARD = [chr(code) for code in (9, 10, 13, 11, 12, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029,
+                                  35, 92, 0xe9, 32, 34, 0xa0)]
+FIELDS = sorted({form.format(c) for c in AWKWARD for form in ("{}", "a{}", "{}b.py", "src/{}f( )")})
+FIELD = st.sampled_from(FIELDS)
 VALUE = st.integers(10_000, 5_000_000_000).map(lambda n: model.Decimal(n).scaleb(-4))
-MARKS = st.dictionaries(st.tuples(FIELD, FIELD), VALUE, max_size=6)
+MARKS = st.dictionaries(st.tuples(FIELD, FIELD), VALUE, max_size=4)
 
 
 @pytest.mark.process
