@@ -29,6 +29,7 @@ def _tree(tmp_path: Path, version: str = "0.5.1", heading: str = "0.5.2") -> Pat
     root = tmp_path / "repo"
     (root / "src" / "crapkit").mkdir(parents=True)
     (root / "plugin" / ".claude-plugin").mkdir(parents=True)
+    (root / "plugin" / ".codex-plugin").mkdir(parents=True)
     (root / "pyproject.toml").write_text(f'[project]{NL}name = "crapkit"{NL}version = "{version}"{NL}',
                                          encoding="utf-8")
     (root / "src" / "crapkit" / "__init__.py").write_text(f'__version__ = "{version}"{NL}',
@@ -37,8 +38,9 @@ def _tree(tmp_path: Path, version: str = "0.5.1", heading: str = "0.5.2") -> Pat
         f"# crapkit{NL}{NL}```{NL}$ crapkit --version{NL}crapkit {version}{NL}```{NL}{NL}"
         f"    rev: v{version}{NL}{NL}uses: JeanFrancoisGagne/crapkit@v{version}{NL}"
         f"uses: JeanFrancoisGagne/crapkit@v{version}{NL}", encoding="utf-8")
-    (root / "plugin" / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": "crapkit", "version": version}, indent=2) + NL, encoding="utf-8")
+    for manifest in (".claude-plugin", ".codex-plugin"):
+        (root / "plugin" / manifest / "plugin.json").write_text(
+            json.dumps({"name": "crapkit", "version": version}, indent=2) + NL, encoding="utf-8")
     (root / "server.json").write_text(
         json.dumps({"name": "io.github.JeanFrancoisGagne/crapkit", "version": version,
                     "packages": [{"identifier": "crapkit", "version": version}]}, indent=2) + NL,
@@ -54,7 +56,8 @@ def _tree(tmp_path: Path, version: str = "0.5.1", heading: str = "0.5.2") -> Pat
 def test_the_table_names_every_surface_a_release_touches():
     files = {s.path for s in release.SURFACES}
     assert files == {"pyproject.toml", "src/crapkit/__init__.py", "README.md",
-                     "plugin/.claude-plugin/plugin.json", "server.json"}
+                     "plugin/.claude-plugin/plugin.json", "plugin/.codex-plugin/plugin.json",
+                     "server.json"}
 
 
 def test_check_passes_on_a_tree_whose_surfaces_agree(tmp_path):

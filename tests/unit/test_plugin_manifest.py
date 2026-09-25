@@ -20,6 +20,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent.parent
 PLUGIN = "plugin"
 PLUGIN_JSON = f"{PLUGIN}/.claude-plugin/plugin.json"
+CODEX_JSON = f"{PLUGIN}/.codex-plugin/plugin.json"
+ONBOARD_OPENAI_YAML = f"{PLUGIN}/skills/crapkit-onboard/agents/openai.yaml"
 MARKETPLACE_JSON = ".claude-plugin/marketplace.json"
 HOOKS_JSON = f"{PLUGIN}/hooks/hooks.json"
 MCP_JSON = f"{PLUGIN}/.mcp.json"
@@ -211,6 +213,54 @@ def test_both_manifests_ask_for_the_cli_release_doctor_accepts():
     for name, description in _cli_requirements().items():
         assert not _FLOOR.search(description), f"{name} names an older CLI floor"
         assert _SAME_RELEASE in description, f"{name} no longer names the CLI it needs"
+
+
+def test_the_codex_manifest_ships_the_release_version_and_no_hooks():
+    """Codex reads .codex-plugin/plugin.json before .claude-plugin/plugin.json,
+    and installs the plugin under the version it finds there. Without `hooks`
+    it also discovers hooks/hooks.json, Claude Code's 50 PostToolUse handlers,
+    and runs each without its args: a bare `crapkit` on every edit. A path
+    there would only add to that default discovery; the empty object is the
+    value that leaves it out. Measured on Codex 0.156.1: 50 hooks with no Codex
+    manifest or one without the key, 0 with `"hooks": {}`, and 12 tools and 3
+    skills in every case."""
+    codex, claude = _json(CODEX_JSON), _json(PLUGIN_JSON)
+    pyproject = tomllib.loads(_doc("pyproject.toml"))
+
+    assert codex["version"] == claude["version"] == pyproject["project"]["version"]
+    assert codex["name"] == claude["name"] == "crapkit"
+    assert codex["hooks"] == {}
+
+
+def test_the_codex_manifest_points_at_the_skills_and_the_mcp_server_the_plugin_holds():
+    codex = _json(CODEX_JSON)
+
+    assert (ROOT / PLUGIN / codex["skills"] / "crapkit" / "SKILL.md").is_file()
+    assert (ROOT / PLUGIN / codex["mcpServers"]).resolve() == (ROOT / MCP_JSON).resolve()
+
+
+def test_the_codex_manifest_asks_for_the_cli_release_doctor_accepts():
+    """Same rule as the Claude Code manifest: the MCP server and the skills run
+    this release's commands, so an older CLI floor is a wrong pointer."""
+    description = _json(CODEX_JSON)["description"]
+
+    assert _SAME_RELEASE in description
+    assert not _FLOOR.search(description)
+
+
+def test_codex_leaves_the_onboarding_skill_out_of_every_turn():
+    """Adopting crapkit happens once per repo. Claude Code keeps the skill out
+    of the model's context through its frontmatter; Codex reads
+    agents/openai.yaml instead, and without it listed crapkit-onboard in every
+    turn's instructions (Codex 0.156.1, one request body against a stub model:
+    three crapkit skills without the file, two with it)."""
+    import yaml
+
+    policy = yaml.safe_load(_doc(ONBOARD_OPENAI_YAML))["policy"]
+    assert policy == {"allow_implicit_invocation": False}
+    others = sorted(p.relative_to(ROOT).as_posix()
+                    for p in (ROOT / PLUGIN / "skills").glob("*/agents/openai.yaml"))
+    assert others == [ONBOARD_OPENAI_YAML], "the two working skills stay implicit"
 
 
 def test_the_plugin_ships_the_three_skills_the_repo_holds():

@@ -1,7 +1,8 @@
 """Bump, publish and verify crapkit's version surfaces from one table.
 
-Seven strings in five files say which version this is (pyproject, the package,
-three README lines, the plugin manifest, the registry manifest twice), and a
+Nine strings in six files say which version this is (pyproject, the package,
+three README lines, the Claude Code and Codex plugin manifests, the registry
+manifest twice), and a
 release then has to reach six places (git tag, PyPI, GitHub release, plugin,
 Pages, the MCP registry, plus Glama's sync). Eight releases re-scripted that
 chain by hand and the surfaces drifted once. The table below is the one place
@@ -91,6 +92,7 @@ SURFACES = (
     Surface("README.md", "rev: v{v}", 1),
     Surface("README.md", REPO_SLUG + "@v{v}", 2),
     Surface("plugin/.claude-plugin/plugin.json", '"version": "{v}"', 1),
+    Surface("plugin/.codex-plugin/plugin.json", '"version": "{v}"', 1),
     Surface("server.json", '"version": "{v}"', 2),
 )
 

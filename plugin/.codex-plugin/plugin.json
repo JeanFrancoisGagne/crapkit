@@ -1,0 +1,22 @@
+{
+  "name": "crapkit",
+  "version": "0.8.0",
+  "description": "crapkit's agent tools for Codex: three skills and the MCP server for score inspection and gate checks. The MCP server spawns the bare `crapkit` console script, so it has to be on PATH, and it has to be the same crapkit release as the plugin, since the skills run that release's commands and flags. `hooks` is empty on purpose: hooks/hooks.json is Claude Code's advisory hook, and Codex would run each of its handlers without their args, a bare `crapkit` on every edit.",
+  "author": {
+    "name": "Jean-Francois Gagne"
+  },
+  "homepage": "https://github.com/JeanFrancoisGagne/crapkit",
+  "repository": "https://github.com/JeanFrancoisGagne/crapkit",
+  "license": "MIT",
+  "keywords": [
+    "crap",
+    "code-quality",
+    "complexity",
+    "coverage",
+    "ratchet",
+    "technical-debt"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": {}
+}
