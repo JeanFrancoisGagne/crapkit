@@ -546,6 +546,85 @@ def test_each_break_names_its_facts_and_the_command_that_fixes_it(name):
         _facts(name, head)
 
 
+# --- rulings and hand rows: which ones cover a move -------------------------------------------
+
+B8_HAND = "add one to that calc's packet, citing its source"
+OTHER_HAND = "tests/accuracy/verdict_model/hand_verdict.tsv"
+OTHER_CALCS = "tests/accuracy/verdict_model/calcs.tsv"
+SAVOIA = "Savoia and Evans (2007): cov 1 leaves ccn"
+
+
+def _f1_at_1_25_cited_under(tree: dict, ruling: str) -> dict:
+    """f1's CRAP set to 1.25 where the formula gives 1.0, citing `ruling`."""
+    return seeds.fixed_crap(tree, new="1.25", listed=[
+        (seeds.SCORED, "src/a.py", "f1", "crap", "1.5", "1.25", "kit.exact", "1.0", ruling)])
+
+
+def _with_ruling(tree: dict, *cells: str) -> dict:
+    head = seeds.append(tree, seeds.RULINGS, *cells, "definition", "https://example.org/rule",
+                        "", f"{seeds.SEED_TEST}::test_cognitive", "")
+    return seeds.relock(head, "C2", seeds.RULINGS)
+
+
+def _unsourced_hand_row(tree: dict) -> dict:
+    head = seeds.replace(_declared_definition(tree), seeds.HAND, SAVOIA, "observed")
+    return seeds.relock(head, "C3", seeds.HAND)
+
+
+def _other_packet() -> dict:
+    tree = {**BASE, OTHER_HAND: "ccn\tcov\tcrap\tsource\n", OTHER_CALCS: seeds._tsv(
+        ("calc", "independent_test", "modules", "functions"),
+        [("Pre-commit gate", "t::x", seeds.HOOK, f"{seeds.HOOK}:violations")])}
+    return seeds.relock(tree, "C1", OTHER_HAND)
+
+
+def _hand_row_in_another_packet(tree: dict) -> dict:
+    head = seeds.replace(_declared_definition(tree), seeds.HAND, f"1\t1.0\t1.0\t{SAVOIA}\n", "")
+    head = seeds.append(head, OTHER_HAND, 1, "1.0", "1.0", "Savoia and Evans (2007)")
+    return seeds.relock(head, "C3", seeds.HAND, OTHER_HAND)
+
+
+def _ruling_fixed_under_a_definition(tree: dict) -> dict:
+    head = seeds.replace(tree, seeds.RULINGS, "\t2\t1\tdefect\t", "\t1\t1\tfixed\t")
+    head = seeds.change(head, "C3", "definition", "Cognitive complexity")
+    head = seeds.append(head, seeds.HAND, 1, "1.0", "1.0", "Sonar cognitive complexity v1.7 B1")
+    head = seeds.changelog(seeds.relock(head, "C3", seeds.RULINGS, seeds.HAND), "C3")
+    return seeds.replace(head, "README.md", "+ ccn.", "+ ccn; `??` adds one to cognitive.")
+
+
+RULING_WITH_KIT = _with_ruling(BASE, "R-X", "Cognitive complexity", "kit.exact", "x", "1", "1")
+COVERING = {
+    "a disagreement cited under its own calc's ruling": (
+        BASE, lambda tree: _f1_at_1_25_cited_under(tree, "R-D5"), []),
+    "a ruling of another calc that names the same oracle": (
+        RULING_WITH_KIT, lambda tree: _f1_at_1_25_cited_under(tree, "R-X"), [(
+            "B11", "changes/C3.moved.tsv: src/a.py:f1 crap 1.25 disagrees with kit.exact 1.0 "
+                   "and ruling R-X does not cover that calc and oracle",
+            "fix the code, or name the covering ruling with --against-oracle")]),
+    "a definition whose new hand row has no outside source": (BASE, _unsourced_hand_row, [(
+        "B8", "definition C3: no hand or probe row with an outside source exercises CRAP score",
+        B8_HAND)]),
+    "a definition whose sourced hand row sits in another packet": (
+        _other_packet(), _hand_row_in_another_packet, [
+            ("B5", f"{OTHER_HAND} moved under C3, which names no calc of packet verdict_model "
+                   "(Pre-commit gate)", "name the calc in C3's calcs column"),
+            ("B8", "definition C3: no hand or probe row with an outside source exercises CRAP "
+                   "score", B8_HAND)]),
+    "a ruling fixed under a definition naming its calc": (
+        BASE, _ruling_fixed_under_a_definition, []),
+}
+
+
+@pytest.mark.parametrize("name", sorted(COVERING))
+def test_a_ruling_or_hand_row_covers_only_its_own_calc(name):
+    base, edit, expected = COVERING[name]
+    head = edit(base)
+
+    problems, _ = cc.verdict(_tree(base), _tree(head), cc.running(_tree(head), LIZARD))
+
+    assert [(problem.rule, problem.text, problem.fix) for problem in problems] == expected
+
+
 def test_before_the_first_lock_only_the_in_tree_rules_hold():
     """Neither side locked: a calc-module diff passes, a lockable file waits for
     the lock (T2); an emptied CHANGES.tsv on a locked base still fails B2."""
@@ -672,10 +751,11 @@ def outer(x):
 
 
 def test_radon_answers_for_a_method_and_a_nested_function(oracle):
-    """McCabe by hand: put is 1 + if + `and` = 3 (line 2); inner is 1 + if = 2 (line 9)."""
+    """McCabe by hand: put is 1 + if + `and` = 3 (line 2); inner is 1 + if = 2 (line 9);
+    line 1 holds a class, no function."""
     oracle("radon")
 
-    assert [cc.radon_ccn({"start": str(line)}, BOX) for line in (2, 9)] == ["3", "2"]
+    assert [cc.radon_ccn({"start": str(line)}, BOX) for line in (1, 2, 9)] == [None, "3", "2"]
 
 
 def test_a_stopped_measurement_with_no_phase_or_error_says_so(tmp_path):

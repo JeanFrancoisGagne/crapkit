@@ -139,18 +139,18 @@ def test_declare_on_the_command_line_reads_a_calc_name_that_holds_commas(make_re
 @pytest.mark.process
 def test_declare_on_the_command_line_names_rulings_regenerates_and_dates_the_change(
         make_repo, oracle, capsys):
-    """parse at ccn 9 where radon says 7, covered by the second --against-oracle, R-CCN;
-    a definition cites the first named ruling of each cell's calc, so the CRAP cell
-    cites R-D5. With no --no-regenerate the tool looks for the regenerator, which
-    this tree lacks."""
+    """parse at ccn 9 where radon says 7, covered by the last --against-oracle, R-CCN;
+    the first names no rulings row and covers nothing. A definition cites the first
+    named ruling of each cell's calc, so the CRAP cell cites R-D5. With no
+    --no-regenerate the tool looks for the regenerator, which this tree lacks."""
     oracle("radon")
     top = seeds.seeded(make_repo, BASE)
     seeds.write(top, BASE, seeds.ccn9(BASE))
     before = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     code = cc.main(["declare", "C3", "--kind", "definition", "--calcs", seeds.CCN,
-                    "--reason", "parse reads 9", "--against-oracle", "R-D5",
-                    "--against-oracle", "R-CCN", "--repo", str(top)])
+                    "--reason", "parse reads 9", "--against-oracle", "R-NONE",
+                    "--against-oracle", "R-D5", "--against-oracle", "R-CCN", "--repo", str(top)])
 
     after = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     out = capsys.readouterr().out
@@ -324,17 +324,28 @@ def _push_line(top: Path) -> str:
     return f"refs/heads/main {sha} refs/heads/main {'0' * 40}\n"
 
 
+IN_TREE_SOURCE = "def test_in_tree():\n    assert True\n"
+DIRTY_ANALYZE = ("import lizard  # an edit nobody committed\n\n"
+                 "ANALYSIS_VERSION = 11  # the reader's version\n")
+
+
 @pytest.mark.process
 def test_pre_push_refuses_an_undeclared_module_change_and_runs_its_calc_checks(make_repo,
                                                                                capfd):
+    """score.py changes in the pushed commit: CRAP score's test runs, with the in-tree
+    rules. analyze.py changes only in the working tree, so its two calcs' tests do not."""
     top = _pushed(make_repo, seeds.module_changed(BASE))
+    (top / cc.IN_TREE_TEST).write_text(IN_TREE_SOURCE)
+    repos.git(top, "add", cc.IN_TREE_TEST)
+    repos.git(top, "commit", "-q", "-m", "in-tree rules", date=repos.EPOCH + 300)
+    (top / seeds.ANALYZE).write_text(DIRTY_ANALYZE)
 
     code = cc.pre_push(top, "origin", _push_line(top))
 
     out = capfd.readouterr().out
     assert code == 1
     assert "B6 src/crapkit/score.py holds CRAP score and changed with no declared change" in out
-    assert "1 passed" in out
+    assert "2 passed" in out
 
 
 @pytest.mark.nightly
@@ -402,12 +413,16 @@ def test_a_push_that_only_deletes_a_branch_judges_nothing(make_repo, capfd):
 @pytest.mark.nightly
 @pytest.mark.process
 def test_the_pre_push_command_reads_the_refs_git_hands_it(make_repo, monkeypatch, capfd):
-    top = _pushed(make_repo, seeds.module_changed(BASE))
-    monkeypatch.chdir(top)
+    """git starts the hook from the top of the checkout; started from src/ the tool
+    still finds it, and the base is the main of the remote it was handed."""
+    top = seeds.seeded(make_repo, BASE, seeds.module_changed(BASE))
+    repos.git(top, "update-ref", "refs/remotes/upstream/main", "HEAD~1")
+    monkeypatch.chdir(top / "src")
     monkeypatch.setattr(sys, "stdin", io.StringIO(_push_line(top)))
 
-    assert cc.main(["pre-push", "origin", "https://example.invalid/crapkit.git"]) == 1
-    assert "B6 src/crapkit/score.py" in capfd.readouterr().out
+    assert cc.main(["pre-push", "upstream", "https://example.invalid/crapkit.git"]) == 1
+    out = capfd.readouterr().out
+    assert "B6 src/crapkit/score.py" in out and "1 passed" in out
 
 
 def _push(top: Path, remote: Path) -> tuple:
@@ -892,3 +907,42 @@ def test_the_command_line_is_read_from_sys_argv(monkeypatch, capsys):
 
     assert (shown.value.code, empty.value.code) == (0, 2)
     assert capsys.readouterr().out.startswith("usage: change_control.py counts")
+
+
+def _plan(*judged, kind="fix", digest=None):
+    request = cc.Request("C3", kind, ("CRAP score",) if kind != "none" else (), "f1 fixed.")
+    return cc.Plan(request, list(judged), {}, ["a", "b"], digest, "11")
+
+
+F1_CRAP = cc.Cell(seeds.SCORED, "src/a.py", "f1", "crap", "1.5", "1.0")
+F1_NESTING = cc.Cell(seeds.SCORED, "src/a.py", "f1", "nesting", "0", "1")
+
+
+def test_moved_tsv_is_written_under_a_new_directory_and_rewritten(tmp_path):
+    plan = _plan((cc.Judgement(F1_CRAP, "kit.exact", "1.0"), "R-D5"))
+
+    cc._write_moved(tmp_path, plan)
+    cc._write_moved(tmp_path, plan)
+
+    assert (tmp_path / cc.MOVED / "C3.moved.tsv").read_text() == (
+        "golden\tpath\thandle\tcolumn\told\tnew\toracle\toracle_value\truling\n"
+        f"{seeds.SCORED}\tsrc/a.py\tf1\tcrap\t1.5\t1.0\tkit.exact\t1.0\tR-D5\n")
+
+
+def test_the_declare_summary_counts_cells_oracles_rulings_and_the_digest_row():
+    plan = _plan((cc.Judgement(F1_CRAP, "kit.exact", "1.0"), "R-D5"),
+                 (cc.Judgement(F1_NESTING, "", ""), ""), digest={"digest": "x"})
+
+    text = cc.summary(plan, cc.Running("12", "1.24.0"))
+
+    assert text.splitlines() == [
+        "declared C3 (fix: CRAP score): 2 locked files relocked, 2 golden cells moved, 1 judged "
+        "by an oracle, ruling(s) R-D5 cover a difference",
+        "1 moved cells have no oracle here; their packet's oracle checks judge them",
+        "metric-digests: new row for analysis 12, lizard 1.24.0 (ANALYSIS_VERSION was 11 at the "
+        "base)",
+        "add to CHANGELOG.md under ## Unreleased:",
+        "- f1 fixed. (accuracy change C3)"]
+    assert cc.summary(_plan(kind="none"), cc.Running("11", "1.24.0")) == (
+        "declared C3 (none: no calc): 2 locked files relocked, 0 golden cells moved, 0 judged "
+        "by an oracle")
