@@ -924,9 +924,38 @@ def test_a_venv_already_built_is_reused(tmp_path, monkeypatch):
     venv = tmp_path / "abc-venv-3.12-wheel"
     retro.venv_python(venv).parent.mkdir(parents=True)
     retro.venv_python(venv).write_bytes(b"")
+    (venv / retro.BUILT).write_bytes(b"")
     monkeypatch.setattr(retro, "_create_venv", lambda *args: pytest.fail("built again"))
 
     assert retro.build_venv(tmp_path / "abc", "3.12", retro.Site(work=tmp_path)) == retro.venv_python(venv)
+
+
+def test_a_venv_whose_install_failed_is_built_again(tmp_path, monkeypatch):
+    """A replay killed or refused mid-install leaves an interpreter with no
+    crapkit or no lizard in it; the next replay must not take that venv as built."""
+    built = []
+
+    def create(venv, python):
+        assert not venv.exists(), "the half-built venv was not removed first"
+        retro.venv_python(venv).parent.mkdir(parents=True)
+        retro.venv_python(venv).write_bytes(b"")
+        built.append(venv)
+
+    def install_once(interpreter, tree, how):
+        if len(built) == 1:
+            raise retro.RetroError("uv pip install: interrupted")
+
+    monkeypatch.setattr(retro, "_create_venv", create)
+    monkeypatch.setattr(retro, "_install", install_once)
+    monkeypatch.setattr(retro, "_packages", lambda interpreter, packages: None)
+    site = retro.Site(work=tmp_path)
+
+    with pytest.raises(retro.RetroError):
+        retro.build_venv(tmp_path / "abc", "3.12", site)
+    interpreter = retro.build_venv(tmp_path / "abc", "3.12", site)
+
+    assert len(built) == 2
+    assert (interpreter.parents[1] / retro.BUILT).is_file()
 
 
 # --- the pytest child ------------------------------------------------------------------------------

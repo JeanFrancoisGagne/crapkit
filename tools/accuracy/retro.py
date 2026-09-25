@@ -52,6 +52,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -380,14 +381,21 @@ def _packages(interpreter: Path, packages: list[str]) -> None:
         _checked(["uv", "pip", "install", "-q", "--python", interpreter, *packages])
 
 
+BUILT = "retro-built"  # written last, so a venv without it never finished its installs
+
+
 def build_venv(tree: Path, python: str, site: Site = Site(), extra: tuple = ()) -> Path:
-    """A venv beside the worktree holding its crapkit, the site's packages and `extra`."""
+    """A venv beside the worktree holding its crapkit, the site's packages and `extra`.
+    A venv left without BUILT by a failed or killed install is removed and built again."""
     venv = tree.parent / f"{tree.name}-venv-{python}-{site.install}"
     interpreter = venv_python(venv)
-    if not interpreter.exists():
+    if not (venv / BUILT).is_file():
+        shutil.rmtree(venv, ignore_errors=True)
         _create_venv(venv, python)
         _install(interpreter, tree, site.install)
         _packages(interpreter, [*site.packages, *extra])
+        venv.mkdir(parents=True, exist_ok=True)
+        _write(venv / BUILT, "")
     return interpreter
 
 
