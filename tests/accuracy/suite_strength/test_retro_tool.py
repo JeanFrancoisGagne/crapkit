@@ -1292,14 +1292,35 @@ def test_every_replaying_command_hands_on_its_python_and_leaves_the_ledger(table
     assert tables.ledger.read_bytes() == before
 
 
-def test_a_replay_prints_its_verdicts_and_records_why_it_contradicts_nothing_recorded(monkeypatch, capsys):
+def test_a_refused_replay_leaves_the_row_pending_with_the_refusal_in_its_note(monkeypatch, capsys):
+    """The plan: a check that passes on its before commit is refused, and the fix must
+    pass. A refused replay is not evidence, so --record keeps the row pending."""
     _replays(monkeypatch, before="green")
 
     problem, row = retro._replay_one(_bug_row("R1"), {}, "3.99")
 
     assert problem == "R1: the check passes on its before commit, so it catches nothing"
-    assert row["note"] == problem
+    assert (row["before"], row["fix"], row["digest"]) == ("pending", "pending", "")
+    assert row["note"] == f"refused {datetime.date.today().isoformat()}: {problem}"
     assert capsys.readouterr().out == f"retro: R1 {NODE}: before green, fix pass\n"
+
+
+def test_a_not_replayable_before_is_recorded_with_the_probe_it_needs(monkeypatch):
+    _replays(monkeypatch, before="not replayable")
+
+    problem, row = retro._replay_one(_bug_row("R1"), {}, "3.99")
+
+    assert problem == ""
+    assert (row["before"], row["fix"]) == ("not replayable", "pass")
+    assert row["note"] == retro.PROBE_NOTE
+
+
+def test_an_accepted_red_replay_is_recorded_with_no_note(monkeypatch):
+    _replays(monkeypatch, before="red")
+
+    problem, row = retro._replay_one(_bug_row("R1"), {}, "3.99")
+
+    assert (problem, row["before"], row["fix"], row["note"]) == ("", "red", "pass", "")
 
 
 @pytest.mark.parametrize("day, expected", [(None, "today"), (4, 4)])

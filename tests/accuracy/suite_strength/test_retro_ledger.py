@@ -165,8 +165,8 @@ REPLAYED_RULES = (
     ("before is red or not replayable", lambda row: row["before"] in ("red", "not replayable")),
     ("red only on an assertion",
      lambda row: row["before"] != "red" or row["failure_class"] in ASSERTIONS),
-    ("not replayable names its class",
-     lambda row: row["before"] != "not replayable" or bool(row["failure_class"] + row["note"])),
+    ("not replayable names its class and the probe it needs",
+     lambda row: row["before"] != "not replayable" or bool(row["failure_class"]) and "probe" in row["note"]),
     ("the fix passed", lambda row: row["fix"] == "pass"),
     ("the replay's lizard and digest", lambda row: bool(row["lizard"]) and
      re.fullmatch(r"[0-9a-f]{16}", row["digest"]) is not None),
@@ -196,10 +196,28 @@ def _ledger_problem(row: dict) -> str | None:
     if state == ("open", "open"):
         return None if row["id"] in ("R98", "R99") else f"{row['id']}: only an unmerged fix is open"
     if state == ("pending", "pending"):
-        return (f"{row['id']} {row['test']}: the check exists, replay it with "
-                f"`python tools/accuracy/retro.py run {row['id']} --record`"
-                if _function_exists(row["test"]) else None)
+        return f"{row['id']} {row['test']}: {_waiting_for(row)}" if _function_exists(row["test"]) else None
     return _replayed_problem(row)
+
+
+def _waiting_for(row: dict) -> str:
+    """What a pending row whose check exists waits for: its packet's fix of a refused
+    replay, or a first replay."""
+    if row["note"].startswith("refused"):
+        return f"{row['note']}; fix the check, then replay it"
+    return f"the check exists, replay it with `python tools/accuracy/retro.py run {row['id']} --record`"
+
+
+def test_a_pending_row_whose_check_exists_says_what_it_waits_for():
+    here = "tests/accuracy/suite_strength/test_retro_ledger.py::test_every_ledger_row_follows_the_replay_rules"
+    row = {"id": "R1", "test": here, "before": "pending", "fix": "pending", "note": "no replay yet"}
+    refused = {**row, "note": "refused 2026-09-25: R1: the check fails on its fix commit: x"}
+
+    assert _ledger_problem(row) == (f"R1 {here}: the check exists, replay it with "
+                                    "`python tools/accuracy/retro.py run R1 --record`")
+    assert _ledger_problem(refused) == (f"R1 {here}: refused 2026-09-25: R1: the check fails on its "
+                                        "fix commit: x; fix the check, then replay it")
+    assert _ledger_problem({**row, "test": "tests/nowhere.py::test_t"}) is None
 
 
 def test_every_ledger_row_follows_the_replay_rules():

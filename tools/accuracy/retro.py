@@ -24,8 +24,10 @@ The verdict is strict. Before counts as red only when the check fails on an
 AssertionError (a pin_ruling mismatch is one): the check saw the wrong value.
 Any other failure (DriveUnsupported, a refused config, an ImportError, a
 KeyError on an older schema) is `not replayable`, and the row needs an API
-probe. A check that passes on its before commit catches nothing and is refused.
-The fix commit must pass.
+probe; its ledger note says so. A check that passes on its before commit
+catches nothing and is refused. The fix commit must pass. `run --record` keeps a
+refused row pending, with the refusal and its date in the note, since a refused
+replay is no evidence.
 
 The ledger row carries a digest over the check's file, its static import
 closure under tests/ and tools/, and the data files of its packet, so a replay
@@ -641,7 +643,19 @@ def _replay_one(row: dict, ledger: dict, python: str) -> tuple[str, dict]:
     before, fix = replay(bug, python)
     print(f"retro: {bug.id} {bug.test}: before {before.verdict}, fix {fix.verdict}")
     problem = contradiction(ledger.get(row_key(row), {"id": bug.id}), before, fix)
-    return problem, ledger_row(bug, before, fix, note=problem)
+    return problem, recorded_row(row, before, fix, problem)
+
+
+PROBE_NOTE = "not replayable before the fix: the row needs an API-level probe under retro/probes/"
+
+
+def recorded_row(row: dict, before: Outcome, fix: Outcome, problem: str) -> dict:
+    """The ledger row a replay leaves. A refused replay is no evidence, so the row
+    stays pending and its note says why; a not-replayable before names the probe it needs."""
+    if problem:
+        return {**_waiting(row), "note": f"refused {datetime.date.today().isoformat()}: {problem}"}
+    note = PROBE_NOTE if before.verdict == "not replayable" else ""
+    return ledger_row(bug_of(row), before, fix, note=note)
 
 
 def _replay_rows(rows: list[dict], ledger: dict, python: str, record: bool = False) -> int:
