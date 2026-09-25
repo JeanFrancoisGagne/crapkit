@@ -42,6 +42,12 @@ def _prose(text: str) -> str:
     return " ".join(text.split())
 
 
+def _readme_row(command: str) -> str:
+    """The README subcommand table's row for COMMAND."""
+    return next(line for line in _page("README.md").splitlines()
+                if line.startswith(f"| `{command} "))
+
+
 def _release(version: str = "0.8.1") -> str:
     """The CHANGELOG section of one release, heading to the next release."""
     text = _page("CHANGELOG.md")
@@ -168,21 +174,28 @@ _COUPLING_KEY_WORDS = {"head": "HEAD", "months": "the churn window", "date": "th
                        "tracked": "a digest of the tracked set"}
 
 
+def _unnamed(words: dict, text: str) -> list[str]:
+    """The words TEXT does not name."""
+    return [word for word in words.values() if word not in text]
+
+
+def _handbook_sentence(opening: str) -> str:
+    """The handbook's one sentence that starts with OPENING."""
+    return next(s for s in _prose(_page("docs/handbook.html")).split(". ") if s.startswith(opening))
+
+
 @landed(_has_history_depth(), "the history depth in the churn and coupling keys")
 def test_the_pages_name_every_part_of_the_coupling_cache_key(tmp_path):
     from crapkit import coupling_cache
 
     _one_commit_repo(tmp_path)
     key = coupling_cache._cache_key(tmp_path, 12, ["a.py"])
-    sentence = next(s for s in _prose(_page("docs/handbook.html")).split(". ")
-                    if s.startswith("Its key is HEAD"))
-
-    row = next(line for line in _page("README.md").splitlines() if line.startswith("| `coupling "))
-    readme = {**_COUPLING_KEY_WORDS, "date": "today's UTC date"}
+    sentence = _handbook_sentence("Its key is HEAD")
+    row = _readme_row("coupling")
 
     assert set(key) == set(_COUPLING_KEY_WORDS)
-    assert [word for word in _COUPLING_KEY_WORDS.values() if word not in sentence] == []
-    assert [word for word in readme.values() if word not in row] == []
+    assert _unnamed(_COUPLING_KEY_WORDS, sentence) == []
+    assert _unnamed({**_COUPLING_KEY_WORDS, "date": "today's UTC date"}, row) == []
     assert "git fetch --unshallow</code> rebuilds it the same day" in sentence
     assert "`git fetch --unshallow` rebuilds them the same day" in row
 
@@ -238,16 +251,22 @@ def test_the_watch_row_names_the_edit_under_an_old_mtime_as_a_limit():
     assert "an edit written under the file's old mtime (`cp -p`, `touch -r`) is not seen" in row
 
 
-@landed(_watch_polls_content(), "watch's content check")
-def test_the_changelog_and_the_help_agree_on_what_watch_rescores():
+def _help_line(command: str) -> str:
+    """The one-line help `crapkit --help` prints for COMMAND."""
     from crapkit.cli.parser import build_parser
 
     parser = build_parser()
     sub = next(a for a in parser._actions if a.__class__.__name__ == "_SubParsersAction")
-    help_line = next(c.help for c in sub._choices_actions if c.dest == "watch")
+    return next(c.help for c in sub._choices_actions if c.dest == command)
+
+
+@landed(_watch_polls_content(), "watch's content check")
+def test_the_changelog_and_the_help_agree_on_what_watch_rescores():
+    help_line = _help_line("watch")
     section = _prose(_release())
 
-    assert "from start" not in help_line and "a touch does not" in help_line
+    assert "from start" not in help_line
+    assert "a touch does not" in help_line
     assert "`watch` rescores a file when its bytes change, not when its mtime moves" in section
 
 
@@ -486,11 +505,6 @@ def test_agents_brief_table_reads_scored_changes_before_stale():
 
 
 # -- S26, c26: counts that name their files ----------------------------------------
-
-def _readme_row(command: str) -> str:
-    """The README subcommand table's row for COMMAND."""
-    return next(line for line in _page("README.md").splitlines()
-                if line.startswith(f"| `{command} "))
 
 
 _VERDICT = re.compile(r"^ *verify (OK|FAILED) @ .*\((\d+) changed files\)")
