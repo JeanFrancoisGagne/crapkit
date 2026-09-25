@@ -5,7 +5,7 @@ laptop and in CI.
         [--cell ID ...] [--packet KEY] [--os linux|windows|macos]
         [--image cells|core|full|ci|gui|cells-arm64] [--native] [--build-only] [--bake]
         [--online] [--repeat N] [--no-cache] [--cache local|gha] [--builder NAME]
-        [-n N] [--out DIR]
+        [--faketime HH:MM:SS|+400d] [-n N] [--out DIR]
 
 Linux runs build the image, export the tree under test with export.py into
 <out>/in, and run tests/deploy inside the image as uid 1000 with no network.
@@ -16,8 +16,8 @@ An image whose label says it was built from the same Dockerfile, context files
 and pins is not rebuilt; `--no-cache` rebuilds cold. Every image targets
 linux/amd64 except cells-arm64, the cells target built for linux/arm64 (the
 weekly lin-arm64 job; an x86_64 host builds and runs it under emulation). The
-tree under test is
-never in an image, so a crapkit source change rebuilds nothing:
+tree under test is never in an image, so a crapkit source change rebuilds
+nothing:
 
     docker run --rm --network none --user 1000:1000 -v <out>:/out -e CRAPKIT_DEPLOY=1 \\
         crapkit-deploy:<image> sh /out/in/entry.sh -m '<expr>' -n <N>
@@ -25,15 +25,19 @@ never in an image, so a crapkit source change rebuilds nothing:
 `--native` runs the same cells on this machine against the toolchain
 toolchain.py installed (Windows and macOS always run native). `--repeat N`
 runs the selection N times from fresh containers and fails when any cell's
-verdict differs between runs. Output: <out>/junit*.xml, <out>/transcripts/,
+verdict differs between runs. `--faketime` runs the container under
+libfaketime (lin-clock): HH:MM:SS starts the clock at that UTC time today,
++400d runs 400 days ahead. Output: <out>/junit*.xml, <out>/transcripts/,
 <out>/build.json (build times and image sizes).
 """
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -355,14 +359,55 @@ def image_digest(tag: str) -> str:
     return done.stdout.strip()
 
 
-def container_command(tag: str, out: Path, selected: list[str], online: bool, run_index: int) -> list[str]:
+def container_command(tag: str, out: Path, selected: list[str], online: bool, run_index: int,
+                      mounts: list[str] = ()) -> list[str]:
     """One fresh container per run. A baked tag carries <out>/in at /opt/deploy/in."""
     inside = "/opt/deploy/in" if tag.endswith("-baked") else "/out/in"
-    argv = ["docker", "run", "--rm", "--user", "1000:1000", "-v", f"{out.resolve()}:/out",
+    argv = ["docker", "run", "--rm", "--user", "1000:1000", "-v", f"{out.resolve()}:/out", *mounts,
             "-e", "CRAPKIT_DEPLOY=1", "-e", f"CRAPKIT_DEPLOY_IMAGE={tag}",
             "-e", f"CRAPKIT_DEPLOY_IMAGE_DIGEST={image_digest(tag)}", "-e", f"CRAPKIT_DEPLOY_IN={inside}"]
     argv += pinsfile.platform_flags(tag) + ([] if online else ["--network", "none"])
     return argv + [tag, "sh", f"{inside}/entry.sh", *selected, f"--junitxml=/out/junit-{run_index}.xml"]
+
+
+# --- the clock (lin-clock) ---------------------------------------------------------
+# `--faketime SPEC` runs every process in the container under libfaketime, which
+# the images hold (Debian's faketime package). It is loaded through
+# /etc/ld.so.preload and set through /etc/faketimerc, two files mounted
+# read-only, and not through LD_PRELOAD and FAKETIME: the kit builds each
+# cell's environment from an allowlist, so a crapkit a cell starts would run on
+# the real clock. Every process gets the same offset, so the run's clock moves
+# as the real one does. Statically linked tools (uv, Go and Rust binaries) keep
+# the real clock.
+
+FAKETIME_LIBRARY = "/usr/lib/{triplet}/faketime/libfaketime.so.1"
+TRIPLETS = {"linux/amd64": "x86_64-linux-gnu", "linux/arm64": "aarch64-linux-gnu"}
+CLOCK_TIME = re.compile(r"\d\d:\d\d:\d\d")
+
+
+def faketime_offset(spec: str, now: datetime.datetime) -> str:
+    """What /etc/faketimerc holds for --faketime SPEC. HH:MM:SS starts the run's
+    clock at that UTC time today, as a signed offset in seconds from `now`; any
+    other SPEC is libfaketime's own (+400d is 400 days ahead)."""
+    if not CLOCK_TIME.fullmatch(spec):
+        return spec
+    start = datetime.datetime.combine(now.date(), datetime.time.fromisoformat(spec), datetime.timezone.utc)
+    return f"{round((start - now).total_seconds()):+d}"
+
+
+def faketime_mounts(out: Path, spec: str | None, platform: str, now: datetime.datetime | None = None) -> list[str]:
+    """The `docker run` flags that put a run under libfaketime, or none."""
+    if not spec:
+        return []
+    clock = out / "faketime"
+    clock.mkdir(exist_ok=True)
+    offset = faketime_offset(spec, now or datetime.datetime.now(datetime.timezone.utc))
+    library = FAKETIME_LIBRARY.format(triplet=TRIPLETS[platform])
+    (clock / "ld.so.preload").write_text(library + "\n", encoding="utf-8", newline="\n")
+    (clock / "faketimerc").write_text(offset + "\n", encoding="utf-8", newline="\n")
+    print(f"run: --faketime {spec}: every process runs at libfaketime offset {offset}")
+    return ["-v", f"{(clock / 'ld.so.preload').resolve()}:/etc/ld.so.preload:ro",
+            "-v", f"{(clock / 'faketimerc').resolve()}:/etc/faketimerc:ro"]
 
 
 # --- native runs -----------------------------------------------------------------
@@ -441,9 +486,14 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--builder", default=None,
                         help="buildx builder, created with the pinned BuildKit image when absent (default: the "
                              "daemon's builder when it runs the pinned BuildKit, else " + CONTAINER_BUILDER + ")")
+    parser.add_argument("--faketime", metavar="HH:MM:SS|SPEC",
+                        help="run the container under libfaketime: HH:MM:SS starts the clock at that UTC time "
+                             "today, any other value is libfaketime's own (+400d)")
     parser.add_argument("-n", type=int, default=0)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args(argv)
+    if args.faketime and args.native:
+        parser.error("--faketime runs cells in an image; a native run has no libfaketime to load")
     args.os = args.os or host_os(args.native)
     return args
 
@@ -458,7 +508,8 @@ def host_os(native: bool) -> str:
 def _run_once(args, out: Path, run_index: int) -> int:
     if args.native:
         return run_native(args, out, run_index)
-    command = container_command(args.tag, out, pytest_args(args), args.online, run_index)
+    clock = faketime_mounts(out, args.faketime, pinsfile.platform(pinsfile.load(), args.image))
+    command = container_command(args.tag, out, pytest_args(args), args.online, run_index, clock)
     return subprocess.run(command).returncode
 
 

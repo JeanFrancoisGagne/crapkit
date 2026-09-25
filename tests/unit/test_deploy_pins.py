@@ -8,6 +8,7 @@ Linux, Windows and macOS platform packages, or a lock written on one OS installs
 nothing on another. The workflow jobs that run the suite pin actions by SHA and
 runners by label.
 """
+import datetime
 import io
 import json
 import re
@@ -649,3 +650,51 @@ def test_every_pinned_download_names_a_user_agent_the_cursor_cdn_serves(monkeypa
 
     assert seen[0].get_header("User-agent") == lock.USER_AGENT
     assert toolchain.download.__defaults__ == (lock.urlopen,) and lock.fetch.__defaults__ == (lock.urlopen,)
+
+
+# --- the clock (lin-clock) -----------------------------------------------------------
+
+NOW = datetime.datetime(2026, 9, 25, 9, 30, 0, tzinfo=datetime.timezone.utc)
+
+
+@pytest.mark.parametrize("spec, offset", [("23:59:50", "+52190"), ("09:29:00", "-60"), ("+400d", "+400d")])
+def test_a_clock_spec_becomes_one_libfaketime_offset(spec, offset):
+    assert run.faketime_offset(spec, NOW) == offset
+
+
+def test_a_faketime_run_mounts_the_preload_and_the_offset_read_only(tmp_path):
+    """The kit builds each cell's environment from an allowlist, so LD_PRELOAD
+    and FAKETIME would never reach the crapkit a cell starts; two system files do."""
+    clock = tmp_path / "faketime"
+    flags = run.faketime_mounts(tmp_path, "+400d", "linux/amd64", NOW)
+
+    assert flags == ["-v", f"{(clock / 'ld.so.preload').resolve()}:/etc/ld.so.preload:ro",
+                     "-v", f"{(clock / 'faketimerc').resolve()}:/etc/faketimerc:ro"]
+    assert (clock / "ld.so.preload").read_text(encoding="utf-8") == (
+        "/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1\n")
+    assert (clock / "faketimerc").read_text(encoding="utf-8") == "+400d\n"
+    run.faketime_mounts(tmp_path, "23:59:50", "linux/arm64", NOW)
+    assert "/aarch64-linux-gnu/" in (clock / "ld.so.preload").read_text(encoding="utf-8")
+    assert (clock / "faketimerc").read_text(encoding="utf-8") == "+52190\n"
+    assert run.faketime_mounts(tmp_path, None, "linux/amd64") == []
+
+
+def test_the_container_command_carries_the_clock_mounts_before_the_image(monkeypatch, tmp_path):
+    monkeypatch.setattr(run, "image_digest", lambda tag: "")
+    argv = run.container_command("crapkit-deploy:core", tmp_path, [], online=False, run_index=0,
+                                 mounts=["-v", "rc:/etc/faketimerc:ro"])
+
+    assert argv[argv.index("rc:/etc/faketimerc:ro") - 1] == "-v"
+    assert argv.index("rc:/etc/faketimerc:ro") < argv.index("crapkit-deploy:core")
+
+
+def test_a_native_run_refuses_faketime(capsys):
+    with pytest.raises(SystemExit):
+        run.parse(["--native", "--faketime", "+1d"])
+
+    assert "a native run has no libfaketime" in capsys.readouterr().err
+    assert run.parse(["--faketime", "23:59:50"]).faketime == "23:59:50"
+
+
+def test_every_image_holds_libfaketime():
+    assert re.search(r"apt-get install [^;]*\bfaketime\b", DOCKERFILE)
