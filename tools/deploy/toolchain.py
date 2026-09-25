@@ -153,11 +153,13 @@ def _once(target: Path, make, pin: str = "") -> Path:
     """Make target once per pin. Each step records what it was made from (a
     sha256, a lock's digest) in <target>.pin, so a changed pin, or a step that
     stopped halfway, removes the old output and makes it again, and a rerun
-    with nothing changed costs nothing."""
+    with nothing changed costs nothing. The old stamp goes before make runs,
+    so a make that dies leaves no stamp for its half-made output to match."""
     stamp = target.with_name(target.name + ".pin")
     if target.exists() and _read_stamp(stamp) == pin:
         return target
     _remove(target)
+    _remove(stamp)
     make()
     stamp.write_text(pin, encoding="utf-8")
     return target

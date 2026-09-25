@@ -945,6 +945,22 @@ def test_a_step_that_stopped_halfway_is_made_again(tmp_path):
     assert [path.name for path in target.iterdir()] == ["whole"]
 
 
+def test_a_step_that_stopped_halfway_is_made_again_when_its_old_pin_comes_back(tmp_path):
+    """A pin moved, its remake died mid-download, then the pin moved back (a
+    branch switch, a revert): the old stamp still matched the half-made output."""
+    target = tmp_path / "tool"
+    toolchain._once(target, _make_dir(target, "whole"), "sha-1")
+
+    def stop_halfway():
+        _make_dir(target, "partial")()
+        raise OSError("connection reset")
+    with pytest.raises(OSError):
+        toolchain._once(target, stop_halfway, "sha-2")
+    toolchain._once(target, _make_dir(target, "whole"), "sha-1")
+
+    assert [path.name for path in target.iterdir()] == ["whole"]
+
+
 def test_a_read_only_file_does_not_stop_a_step_from_being_made_again(tmp_path):
     """git packs and some npm files are read-only on Windows."""
     target = tmp_path / "tool"
