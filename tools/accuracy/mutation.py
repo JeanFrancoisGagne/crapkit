@@ -626,10 +626,11 @@ def _key(args) -> int:
 
 
 def killer_env(cwd: Path, environ: dict) -> dict:
-    """The environment the killer suite runs under: this tree's src/ and tests/ first."""
+    """The environment the killer suite runs under: this tree's src/ and tests/ first,
+    and the push tier whatever tier the caller runs."""
     paths = [str(cwd / "src"), str(cwd / "tests"), environ.get("PYTHONPATH", "")]
     return {**environ, "PYTHONPATH": os.pathsep.join(filter(None, paths)),
-            "PYTHONDONTWRITEBYTECODE": "1"}
+            "PYTHONDONTWRITEBYTECODE": "1", "CRAPKIT_ACCURACY_TIER": "push"}
 
 
 def killer_argv(extra: list[str]) -> list[str]:

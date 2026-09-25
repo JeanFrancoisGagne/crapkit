@@ -355,6 +355,14 @@ def test_the_killer_suite_imports_this_tree_s_code_first(tmp_path):
     assert env["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
+def test_the_killer_suite_runs_the_push_tier_whatever_tier_started_it(tmp_path):
+    """A nightly run.py that starts the killer must not hand it 20,000-example
+    Hypothesis settings per mutant: the killer's cost is the push tier's."""
+    env = mutation.killer_env(tmp_path, {"CRAPKIT_ACCURACY_TIER": "nightly"})
+
+    assert env["CRAPKIT_ACCURACY_TIER"] == "push"
+
+
 def test_the_killer_suite_deselects_every_dependent_method():
     argv = mutation.killer_argv([])
     marks = argv[argv.index("-m", 3) + 1]
