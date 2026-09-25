@@ -214,6 +214,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   `--version` names its installer's reinstall (`uv tool install --force crapkit`, `pipx
   reinstall crapkit`, pip's `--force-reinstall`), since each upgrade leaves a launcher
   whose environment lost its python as broken as it was.
+- `doctor --help` says an agreeing check exits 0 after naming a root it found rather than
+  the one you typed, where it said "silent when they agree" over a run that printed
+  `crapkit doctor: checking ROOT`.
 
 ## 0.8.0 — 2026-09-23
 

@@ -1070,8 +1070,9 @@ neither notices when they drift. This is the check, and it reads no repo at all.
 It compares the plugin's `.claude-plugin/plugin.json` version against **the `crapkit` on
 PATH**, and every `--protocol` in its `hooks/hooks.json` against the protocol `claude-hook`
 answers, read off a handler's `args` or off its shell-form command string. One line per
-disagreement, each naming the command that closes it, silence when they agree, exit 1 when
-it printed anything:
+disagreement, each naming the command that closes it, and exit 1 when there is one. When
+they agree it exits 0 with no such line (a root it found rather than one you typed is still
+named first, as `crapkit doctor: checking ROOT`). Two disagreements:
 
 ```
 $ crapkit doctor --plugin-root crapkit

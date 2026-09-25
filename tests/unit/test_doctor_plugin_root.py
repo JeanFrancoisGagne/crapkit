@@ -604,3 +604,19 @@ def test_the_help_says_where_a_bare_plugin_root_looks_and_what_it_names(capsys):
             "local directory marketplace is checked in that directory, where Claude Code loads "
             "it), else the newest in Claude Code's plugin cache, else the newest in Codex's") in text
     assert "each line names the command that closes it" in text
+
+
+def test_the_help_says_what_an_agreeing_check_prints(tmp_path, capsys):
+    """The help said "silent when they agree", and a root doctor found under
+    the PATH given, rather than the root itself, printed `crapkit doctor:
+    checking ROOT` on agreement."""
+    cache = tmp_path / "cache" / "crapkit" / "crapkit"
+    plugin(cache / CLI)
+
+    code, lines, _ = check(tmp_path / "cache", capsys)
+    text = _doctor_help(capsys)
+
+    assert (code, lines) == (0, [f"crapkit doctor: checking {cache / CLI}"])
+    assert "silent when they agree" not in text
+    assert ("exit 0 when they agree, after naming a root it found under PATH rather than the "
+            "root PATH named") in text
