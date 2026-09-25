@@ -736,7 +736,7 @@ def shell_out_refusal(found: dict[str, list[str]]) -> str:
     return "\n".join([*named, "Start it with box.run or box.script, which run it in the sandbox and record it in the "
                               "transcript. A module that has to start it itself (a process box.run cannot wait on, "
                               "or one only the runner's own environment answers) needs an entry in "
-                              "REACHES_THE_MACHINE in tests/deploy/test_kit_isolation.py: the names it uses and why."])
+                              "REACHES_THE_MACHINE in tests/deploy/test_kit_isolation.py: the names above and why."])
 
 
 def deploy_modules(folder: Path = DEPLOY) -> dict[str, ast.Module]:
@@ -767,6 +767,7 @@ def test_a_shell_out_failure_names_each_module_and_both_ways_to_pass():
                                         "test_y.py starts a process with os.popen, past the sandbox"]
     assert "Start it with box.run or box.script" in refusal
     assert "an entry in REACHES_THE_MACHINE in tests/deploy/test_kit_isolation.py" in refusal
+    assert refusal.endswith(": the names above and why.")
 
 
 @pytest.mark.parametrize("source, reached", [
