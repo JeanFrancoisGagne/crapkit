@@ -1535,13 +1535,14 @@ client started it in ([ADR 0002](adr/0002-configuration-is-found-upward-nearest-
 so a server started in a monorepo workspace serves the root configuration that claims the
 workspace; a tool's `repo` argument is walked the same way, and a `.git` entry without a
 configuration stops the walk. A given `--repo` names an exact root, as on every
-subcommand, and each tool's command runs at the root the server found, so `path` stays
-repo-relative wherever the server was started.
+subcommand: the server serves that directory or refuses it with `no crapkit.toml in
+<dir>`, and none of the rules below replaces it. Each tool's command runs at the root the
+server found, so `path` stays repo-relative wherever the server was started.
 
 Not every client starts the server in the workspace. VS Code starts a server from the
 user profile's `mcp.json` in the home directory and a plugin's server in the plugin's
 directory, and GitHub Copilot CLI starts a plugin's server in
-`~/.copilot/installed-plugins/<marketplace>/<plugin>`. Two rules cover them:
+`~/.copilot/installed-plugins/<marketplace>/<plugin>`. Three rules cover them:
 
 - A start directory at or below the plugin directory the client names in `PLUGIN_ROOT`,
   `COPILOT_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT` serves nothing, and the server does not
@@ -1553,10 +1554,19 @@ directory, and GitHub Copilot CLI starts a plugin's server in
   serves the first workspace folder a `crapkit.toml` at or above it claims. A call that
   arrives before the answer waits for it, up to 10 seconds. VS Code answers with the open
   folders.
+- After the client's folders, the server serves the folder its GitHub Copilot CLI session
+  works in. Copilot CLI declares no roots, and it moves a plugin server's `cwd` back into
+  the plugin's install directory when the plugin's config names one outside it, so nothing
+  the client sends names the workspace. It gives every MCP server
+  `COPILOT_AGENT_SESSION_ID`, and the session keeps its working directory as `cwd:` in
+  `session-state/<id>/workspace.yaml` under `COPILOT_HOME` (`~/.copilot` by default). The
+  server reads it at each call and walks up from it, so a session moved with `/cwd` is
+  followed.
 
-Copilot CLI declares no roots, so nothing on the wire names the workspace. There the
-`initialize` instructions and each tool result ask the model to pass the workspace's
-absolute path as the tool's `repo` argument:
+When no session record names a folder either (a Copilot CLI older than the
+`COPILOT_AGENT_SESSION_ID` variable, or a config directory set with the deprecated
+`--config-dir` instead of `COPILOT_HOME`), the `initialize` instructions and each tool
+result ask the model to pass the workspace's absolute path as the tool's `repo` argument:
 
 ```
 this crapkit MCP server started in /home/me/.copilot/installed-plugins/crapkit/crapkit, the plugin's install directory, not in your workspace, and the client names no workspace folders. Pass this tool a `repo` argument with the absolute path of the repo you want scored.
@@ -1567,7 +1577,10 @@ answers `initialize` and `tools/list`. Each `tools/call` there comes
 back as a tool result, not a JSON-RPC error, and that result carries `isError: true` with
 text naming the missing config and `crapkit init`. When the client named folders, the
 text names them after the start directory
-(`no crapkit.toml in /home/me or in the workspace folders the client named (/home/me/notes) - nothing measured here. ...`):
+(`no crapkit.toml in /home/me or in the workspace folders the client named (/home/me/notes) - nothing measured here. ...`),
+and a Copilot CLI plugin's server names the session's folder in place of its install
+directory
+(`no crapkit.toml in the folder the GitHub Copilot CLI session works in (/home/me/notes) - nothing measured here. ...`):
 
 ```json
 {"jsonrpc": "2.0", "id": 3, "result": {"content": [{"type": "text", "text": "no crapkit.toml in .../noconfig - nothing measured here. Run `crapkit init` in the repo you want scored, or pass this tool a `repo` argument (or start the server with --repo) pointing at one."}], "isError": true}}

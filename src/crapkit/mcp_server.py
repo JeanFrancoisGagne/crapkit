@@ -1823,6 +1823,53 @@ def _folder_root(folder: Path) -> Path | None:
     return find_root(folder.resolve()) if folder.is_dir() else None
 
 
+# The one line of a GitHub Copilot CLI session's workspace.yaml that names the
+# folder the session works in, as the CLI writes it at the file's top level.
+_CWD_LINE = re.compile(r"^cwd:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
+
+
+def _yaml_string(value: str) -> str:
+    """A scalar as a YAML writer quotes it: plain unless the value needs
+    quotes, then single-quoted with '' for a quote, or double-quoted with the
+    escapes JSON shares. A double-quoted value that does not parse is empty."""
+    if value[:1] == "'":
+        return value[1:-1].replace("''", "'")
+    if value[:1] != '"':
+        return value
+    try:
+        return json.loads(value)
+    except ValueError:
+        return ""
+
+
+def _session_cwd(record: Path) -> Path | None:
+    """The `cwd` a Copilot CLI session's workspace.yaml names, or None."""
+    try:
+        match = _CWD_LINE.search(record.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    value = _yaml_string(match.group(1)) if match else ""
+    return Path(value) if value else None
+
+
+def copilot_workspace() -> Path | None:
+    """The folder the GitHub Copilot CLI session that started this server
+    works in, or None outside one.
+
+    Copilot CLI starts a plugin's server in the plugin's install directory,
+    puts any `cwd` the plugin's config names outside it back there, and
+    declares no roots, so nothing on the wire names the workspace. It gives
+    every MCP server COPILOT_AGENT_SESSION_ID, and the session keeps its
+    working directory in `session-state/<id>/workspace.yaml` under
+    COPILOT_HOME, `~/.copilot` by default. Read at each call, so a session
+    that moves with /cwd is followed."""
+    session = os.environ.get("COPILOT_AGENT_SESSION_ID")
+    if not session:
+        return None
+    home = Path(os.path.expanduser(os.environ.get("COPILOT_HOME") or Path.home() / ".copilot"))
+    return _session_cwd(home / "session-state" / session / "workspace.yaml")
+
+
 def _cancelled(owner) -> None:
     if getattr(owner, "cancelled", False):
         raise CommandCancelled("request was cancelled while it waited for the client's roots")
@@ -1841,10 +1888,13 @@ class _Session:
     nothing asks once the client says it is initialized, and again whenever
     the client says they changed, and serves the first folder a crapkit.toml
     claims. A call that arrives before the answer waits for it in the worker
-    thread, never in the loop that reads the answer."""
+    thread, never in the loop that reads the answer. A GitHub Copilot CLI
+    session names its folder in its own record instead (copilot_workspace),
+    which comes after the client's folders. A start given with --repo is
+    `exact`: it is served or refused as named, and nothing replaces it."""
 
-    def __init__(self, start: Path, *, plugin: bool = False):
-        self.start, self.plugin = start, plugin
+    def __init__(self, start: Path, *, plugin: bool = False, exact: bool = False):
+        self.start, self.plugin, self.exact = start, plugin, exact
         self.capable = self.timed_out = False
         self.asked, self.pending, self.folders = 0, None, None
         self.answered = threading.Event()
@@ -1869,7 +1919,7 @@ class _Session:
         """What the instructions add when nothing on the wire can name the
         workspace: GitHub Copilot CLI starts a plugin's server in the plugin's
         install directory and declares no roots."""
-        if self.plugin and not self.capable:
+        if self.plugin and not self.capable and not os.environ.get("COPILOT_AGENT_SESSION_ID"):
             return (" This server started in its plugin's install directory, not in your "
                     "workspace, and the client names no workspace folders: pass a `repo` "
                     "argument with the absolute path of the repo you want scored on every call.")
@@ -1880,7 +1930,7 @@ class _Session:
 
     def ask(self) -> dict | None:
         """The roots/list request to send, or None when nothing needs it."""
-        if not self.capable or self.claims_start():
+        if not self.capable or self.exact or self.claims_start():
             return None
         self.asked += 1
         self.pending, self.folders, self.timed_out = f"crapkit-roots-{self.asked}", None, False
@@ -1902,12 +1952,22 @@ class _Session:
         answer is still out, or None when nothing is measured."""
         if self.claims_start():
             return str(self.start)
+        if self.exact:
+            return None
         if self.pending is not None and not self.timed_out:
             return self
         return self._claimed_folder()
 
+    def _session_folder(self) -> Path | None:
+        return None if self.exact else copilot_workspace()
+
+    def _named(self) -> list[Path]:
+        """The client's workspace folders, then its Copilot CLI session's."""
+        session = self._session_folder()
+        return [*(self.folders or ()), *([session] if session else [])]
+
     def _claimed_folder(self) -> str | None:
-        found = next(filter(None, map(_folder_root, self.folders or ())), None)
+        found = next(filter(None, map(_folder_root, self._named())), None)
         return str(found) if found else None
 
     def run(self, tool: dict, arguments: dict, owner=None) -> dict:
@@ -1922,7 +1982,7 @@ class _Session:
         return _run_cli(tool, arguments, root, owner=owner) if isinstance(root, str) else self.missing()
 
     def missing(self) -> dict:
-        if self.plugin and not self.folders:
+        if self.plugin and not self._named():
             return _result(f"this crapkit MCP server started in {self.start}, the plugin's install "
                            "directory, not in your workspace, and the client names no workspace "
                            "folders. Pass this tool a `repo` argument with the absolute path of "
@@ -1930,15 +1990,23 @@ class _Session:
         return _no_config_result(self._searched())
 
     def _searched(self) -> str:
-        if self.timed_out:
-            return (f"{self.start}, and the client did not name its workspace folders within "
-                    f"{ROOTS_SECONDS} s")
-        if self.folders is None:
-            return str(self.start)
+        """Where the refusal says the server looked, in the order it looked: a
+        plugin's install directory is never one of them."""
+        places = ([] if self.plugin else [str(self.start)]) + self._folder_places()
+        session = self._session_folder()
+        if session:
+            places.append(f"the folder the GitHub Copilot CLI session works in ({session})")
+        return " or in ".join(places) + self._silence()
+
+    def _folder_places(self) -> list[str]:
         if not self.folders:
-            return f"{self.start}, and the client named no workspace folder"
-        named = ", ".join(map(str, self.folders))
-        return f"{self.start} or in the workspace folders the client named ({named})"
+            return []
+        return [f"the workspace folders the client named ({', '.join(map(str, self.folders))})"]
+
+    def _silence(self) -> str:
+        if self.timed_out:
+            return f", and the client did not name its workspace folders within {ROOTS_SECONDS} s"
+        return ", and the client named no workspace folder" if self.folders == [] else ""
 
 
 def _session(root) -> _Session:
@@ -2167,10 +2235,11 @@ def _reply(root, msg: dict, run_cli=None) -> dict | None:
                                           "message": f"{type(exc).__name__}: {exc}"})
 
 
-def serve(root: Path, *, plugin: bool = False) -> int:
+def serve(root: Path, *, plugin: bool = False, exact: bool = False) -> int:
     """Newline-delimited JSON-RPC; EOF cancels active work and closes the session.
     `plugin` says the client started the server in its plugin's install
-    directory, which serves nothing whatever lies above it."""
+    directory, which serves nothing whatever lies above it; `exact` says
+    `root` came from --repo, which no folder the client names replaces."""
     from ._mcp_stdio import serve as stdio
-    session = _Session(root, plugin=plugin)
+    session = _Session(root, plugin=plugin, exact=exact)
     return stdio(sys.stdin, sys.stdout, lambda msg, run: _reply(session, msg, run), session.run_cli)

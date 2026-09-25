@@ -102,7 +102,7 @@ def test_a_server_started_in_its_plugin_directory_is_not_walked_up_from(monkeypa
 
     assert analyses.cmd_mcp(argparse.Namespace(repo=None)) == 0
 
-    assert served == [(plugin.resolve(), {"plugin": True})]
+    assert served == [(plugin.resolve(), {"plugin": True, "exact": False})]
 
 
 def test_a_cwd_outside_every_plugin_directory_is_no_plugin_start(monkeypatch, tmp_path):

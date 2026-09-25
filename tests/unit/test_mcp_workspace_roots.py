@@ -30,6 +30,8 @@ from hang_guard import exited, next_line
 
 _CONFIG = '[crapkit]\ntarget = 6\n[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n'
 _PLUGIN_VARS = ("PLUGIN_ROOT", "COPILOT_PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT")
+# What GitHub Copilot CLI gives its MCP servers that names its session.
+_SESSION_VARS = ("COPILOT_AGENT_SESSION_ID", "COPILOT_HOME")
 _ROOTS = {"roots": {"listChanged": True}}
 
 
@@ -47,10 +49,13 @@ def _plain(path: Path) -> Path:
 class Client:
     """A client on the real stdio server, one frame at a time."""
 
-    def __init__(self, cwd: Path, plugin: dict | None = None, capabilities: dict | None = None):
-        env = {key: value for key, value in os.environ.items() if key not in _PLUGIN_VARS}
+    def __init__(self, cwd: Path, plugin: dict | None = None, capabilities: dict | None = None,
+                 args: tuple = ()):
+        env = {key: value for key, value in os.environ.items()
+               if key not in _PLUGIN_VARS + _SESSION_VARS}
         env.update(plugin or {}, PYTHONDONTWRITEBYTECODE="1")
-        self.process = subprocess.Popen([sys.executable, "-m", "crapkit", "mcp"], cwd=cwd, env=env,
+        self.process = subprocess.Popen([sys.executable, "-m", "crapkit", "mcp", *args], cwd=cwd,
+                                        env=env,
                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
         self.init = self.ask({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
@@ -217,6 +222,70 @@ def test_a_copilot_plugin_server_says_it_started_in_the_plugin_directory(tmp_pat
     assert "pass a `repo` argument" in session.init["result"]["instructions"]
 
 
+def _copilot_session(tmp_path: Path, cwd_line: str, session: str = "4b1d") -> dict:
+    """The environment Copilot CLI gives a plugin's server, and the record its
+    session keeps under COPILOT_HOME, which names the folder it works in."""
+    home = tmp_path / "home" / ".copilot"
+    record = home / "session-state" / session / "workspace.yaml"
+    record.parent.mkdir(parents=True)
+    record.write_text("\n".join((f"id: {session}", cwd_line, "branch: main",
+                                 "client_name: github/cli", "")), encoding="utf-8")
+    plugin = _plain(home / "installed-plugins" / "crapkit" / "crapkit")
+    return {"COPILOT_HOME": str(home), "COPILOT_AGENT_SESSION_ID": session,
+            "COPILOT_PLUGIN_ROOT": str(plugin), "PLUGIN_ROOT": str(plugin),
+            "CLAUDE_PLUGIN_ROOT": str(plugin)}
+
+
+def test_a_copilot_plugin_server_serves_the_folder_its_session_works_in(tmp_path, client):
+    """Copilot CLI starts a plugin's server in the plugin's install directory,
+    puts any `cwd` the plugin asks for back inside it, and declares no roots.
+    It gives the server COPILOT_AGENT_SESSION_ID, and the session's
+    workspace.yaml names the folder it works in, which is walked up from."""
+    workspace = _measured(tmp_path / "work" / "app")
+    env = _copilot_session(tmp_path, f"cwd: {_plain(workspace / 'src')}")
+    session = client(Path(env["PLUGIN_ROOT"]), plugin=env)
+
+    _assert_served_at(session.call(2), workspace)
+    assert "pass a `repo` argument" not in session.init["result"]["instructions"]
+
+
+def test_a_copilot_session_folder_without_a_config_is_named(tmp_path, client):
+    folder = _plain(tmp_path / "docs")
+    env = _copilot_session(tmp_path, f"cwd: {folder}")
+    session = client(Path(env["PLUGIN_ROOT"]), plugin=env)
+
+    text = session.call(2)["result"]["content"][0]["text"]
+
+    assert text.startswith(f"no crapkit.toml in the folder the GitHub Copilot CLI session works "
+                           f"in ({folder.resolve()}) - nothing measured here."), text
+
+
+def test_a_copilot_session_without_a_record_asks_for_repo(tmp_path, client):
+    env = {**_copilot_session(tmp_path, "cwd: x"), "COPILOT_AGENT_SESSION_ID": "gone"}
+    session = client(Path(env["PLUGIN_ROOT"]), plugin=env)
+
+    text = session.call(2)["result"]["content"][0]["text"]
+
+    assert text.startswith(f"this crapkit MCP server started in {Path(env['PLUGIN_ROOT']).resolve()}, "
+                           "the plugin's install directory"), text
+
+
+def test_a_repo_the_server_was_started_with_is_never_replaced(tmp_path, client):
+    """`--repo` names an exact root: a directory without a crapkit.toml is
+    refused there, never swapped for a folder the client or its session names."""
+    given, workspace = _plain(tmp_path / "given"), _measured(tmp_path / "app")
+    env = _copilot_session(tmp_path, f"cwd: {workspace}")
+    env = {key: value for key, value in env.items() if key not in _PLUGIN_VARS}
+    session = client(_plain(tmp_path / "home2"), plugin=env, capabilities=_ROOTS,
+                     args=("--repo", str(given)))
+
+    assert session.ask({"jsonrpc": "2.0", "id": 2, "method": "ping"}) == {
+        "jsonrpc": "2.0", "id": 2, "result": {}}, "no roots/list request may come first"
+    text = session.call(3)["result"]["content"][0]["text"]
+
+    assert text.startswith(f"no crapkit.toml in {given.resolve()} - nothing measured here."), text
+
+
 def test_a_repo_argument_is_served_wherever_the_server_started(tmp_path, client):
     workspace = _measured(tmp_path / "app")
     plugin = _plain(tmp_path / "plugin")
@@ -256,6 +325,52 @@ def test_a_posix_folder_uri_is_a_path():
 @pytest.mark.parametrize("uri", ["vscode-remote://ssh-remote+box/home/me", "", None, 7])
 def test_a_folder_that_is_not_a_local_file_is_skipped(uri):
     assert mcp_server._folder_path(uri) is None
+
+
+@pytest.mark.parametrize("line, expected", [
+    (r"cwd: C:\work\app", r"C:\work\app"),
+    ("cwd: /home/me/app  ", "/home/me/app"),
+    (r"cwd: 'C:\it''s: here'", r"C:\it's: here"),
+    (r'cwd: "/home/me/back\\slash"', r"/home/me/back\slash"),
+])
+def test_the_session_record_cwd_is_read_as_copilot_writes_it(tmp_path, line, expected):
+    record = tmp_path / "workspace.yaml"
+    record.write_text("\n".join(("id: x", line, "git_root: /elsewhere", "")), encoding="utf-8")
+
+    assert mcp_server._session_cwd(record) == Path(expected)
+
+
+@pytest.mark.parametrize("text", ["id: x\n", "cwd: \n", 'cwd: "unterminated\n', "not yaml at all"])
+def test_a_session_record_without_a_cwd_names_nothing(tmp_path, text):
+    record = tmp_path / "workspace.yaml"
+    record.write_text(text, encoding="utf-8")
+
+    assert mcp_server._session_cwd(record) is None
+
+
+def test_a_missing_or_unreadable_session_record_names_nothing(tmp_path):
+    assert mcp_server._session_cwd(tmp_path / "absent.yaml") is None
+    (tmp_path / "bad.yaml").write_bytes(b"cwd: \xff\xfe\n")
+    assert mcp_server._session_cwd(tmp_path / "bad.yaml") is None
+
+
+def test_copilot_home_defaults_to_the_home_directory(monkeypatch, tmp_path):
+    record = tmp_path / ".copilot" / "session-state" / "s1" / "workspace.yaml"
+    record.parent.mkdir(parents=True)
+    record.write_text(f"cwd: {tmp_path / 'app'}\n", encoding="utf-8")
+    monkeypatch.delenv("COPILOT_HOME", raising=False)
+    monkeypatch.setenv("COPILOT_AGENT_SESSION_ID", "s1")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+    assert mcp_server.copilot_workspace() == tmp_path / "app"
+
+
+
+
+def test_no_copilot_session_names_no_folder(monkeypatch):
+    monkeypatch.delenv("COPILOT_AGENT_SESSION_ID", raising=False)
+
+    assert mcp_server.copilot_workspace() is None
 
 
 def test_a_client_that_never_answers_gets_the_missing_config_answer(monkeypatch, tmp_path):

@@ -62,3 +62,18 @@ def test_an_expanded_repo_is_still_an_exact_root(monkeypatch, tmp_path, capsys):
 
     assert _served(monkeypatch, elsewhere, str(repo)) == repo.resolve()
     assert "did not expand" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("given, exact", [("repo", True), ("${workspaceFolder}", False),
+                                          (None, False)])
+def test_only_an_expanded_repo_is_served_exactly(monkeypatch, tmp_path, capsys, given, exact):
+    """An exact root is never replaced by a folder the client names; a dropped
+    variable leaves the server free to look, as if no --repo was given."""
+    repo = _measured(tmp_path / "repo")
+    options = []
+    monkeypatch.setattr(mcp_server, "serve", lambda root, **kw: options.append(kw) or 0)
+    monkeypatch.chdir(repo)
+
+    assert analyses.cmd_mcp(argparse.Namespace(repo=str(repo) if given == "repo" else given)) == 0
+
+    assert options == [{"plugin": False, "exact": exact}]

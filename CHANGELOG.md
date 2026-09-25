@@ -378,16 +378,23 @@ nothing. Each of these now gets a line naming the object and the next step:
   plugin's server in the plugin directory, so every call from a VS Code user answered `no
   crapkit.toml in <home>` inside a measured repo. The server asks after
   `notifications/initialized` and again after `notifications/roots/list_changed`, and a
-  call that arrives before the answer waits for it, up to 10 seconds. A response the
+  call that arrives before the answer waits for it, up to 10 seconds. A server started
+  with `--repo` never asks: it serves or refuses that directory as named. A response the
   server never asked for gets no reply; it used to get a `-32601` error.
 - A server started at or below the plugin directory the client names in `PLUGIN_ROOT`,
   `COPILOT_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT` no longer walks up from there. A plugin
   loaded from a crapkit checkout found crapkit's own `crapkit.toml` above the plugin
   directory and served crapkit's repo, answering `no snapshot in <checkout>`.
-- GitHub Copilot CLI starts a plugin's server in `~/.copilot/installed-plugins/...` and
-  declares no roots, so nothing on the wire names the workspace. The `initialize`
-  instructions and each tool result there now say the server started in the plugin's
-  install directory and ask the model to pass the workspace as the `repo` argument.
+- A GitHub Copilot CLI plugin's server serves the folder its Copilot session works in.
+  Copilot starts a plugin's server in `~/.copilot/installed-plugins/crapkit/crapkit`, moves
+  a `cwd` the plugin's config names outside that directory back into it, and declares no
+  roots, so every call answered `no crapkit.toml in ...installed-plugins/crapkit/crapkit`
+  inside a measured repo. Copilot gives the server `COPILOT_AGENT_SESSION_ID`, and the
+  session keeps its working directory in `session-state/<id>/workspace.yaml` under
+  `COPILOT_HOME`; the server reads it at each call and walks up from it. Where no session
+  record names a folder, the `initialize` instructions and each tool result say the server
+  started in the plugin's install directory and ask for the workspace as the `repo`
+  argument.
 - The MCP page drops the claim that a globally registered server serves the workspace it
   starts in, and says where each client starts it.
 

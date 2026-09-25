@@ -179,7 +179,7 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     root = Path.cwd().resolve() if plugin else _command_root(repo)
     if not plugin and (root / "crapkit.toml").is_file():
         _load_repo_config(root)
-    return serve(root, plugin=plugin)
+    return serve(root, plugin=plugin, exact=repo is not None)
 
 
 # `${workspaceFolder}`, `${userHome}`, `${env:NAME}`: the variables MCP client
