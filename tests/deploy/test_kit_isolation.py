@@ -659,7 +659,10 @@ def test_odd_home_and_repo_names_survive(tmp_path, transcript, toolchain, templa
 
 # --- every deploy test goes through the kit -----------------------------------------------
 
-SHELL_OUTS = {"subprocess", "os.system", "os.popen", "os.spawnv", "os.spawnl", "os.execv", "os.startfile"}
+# The names a module starts a process with, past box.run and box.script: a module that exists
+# to start them, or a call by its dotted name.
+SHELL_OUTS = re.compile(r"subprocess|pty|multiprocessing|hang_guard\.run|asyncio\.create_subprocess_\w+"
+                        r"|os\.(system|popen|startfile|fork\w*|exec\w+|spawn\w+|posix_spawnp?)")
 # A module that must reach this machine on purpose: the names it may use, and why.
 REACHES_THE_MACHINE = {
     "test_harness_profiles.py": ({"subprocess"}, "win-profiles-sim asks PowerShell for the CI runner's own $PROFILE, "
@@ -671,18 +674,23 @@ REACHES_THE_MACHINE = {
 }
 
 
+def _imported(node: ast.ImportFrom) -> list[str]:
+    """`from os import system` reaches os and os.system."""
+    return [str(node.module), *(f"{node.module}.{alias.name}" for alias in node.names)]
+
+
 def _reached(node) -> list[str]:
     """What an import or attribute node names: 'subprocess', 'os.system' ..."""
     if isinstance(node, ast.Import):
         return [alias.name for alias in node.names]
     if isinstance(node, ast.ImportFrom):
-        return [str(node.module)]
+        return _imported(node)
     return [ast.unparse(node)] if isinstance(node, ast.Attribute) else []
 
 
 def shell_outs(tree: ast.AST) -> list[str]:
     """Every way a module starts a process without box.run or box.script."""
-    return [name for node in ast.walk(tree) for name in _reached(node) if name in SHELL_OUTS]
+    return [name for node in ast.walk(tree) for name in _reached(node) if SHELL_OUTS.fullmatch(name)]
 
 
 def unexplained_shell_outs(name: str, tree: ast.AST) -> list[str]:
@@ -700,8 +708,10 @@ def shell_out_refusal(found: dict[str, list[str]]) -> str:
                               "REACHES_THE_MACHINE in tests/deploy/test_kit_isolation.py: the names it uses and why."])
 
 
-def deploy_modules() -> dict[str, ast.Module]:
-    return {path.name: ast.parse(path.read_text(encoding="utf-8")) for path in sorted(DEPLOY.glob("test_*.py"))}
+def deploy_modules(folder: Path = DEPLOY) -> dict[str, ast.Module]:
+    """Every module at the top of the deploy folder: the cells and the helpers and conftest they run.
+    The kit package below it is where box.run starts processes, so the rule leaves it out."""
+    return {path.name: ast.parse(path.read_text(encoding="utf-8")) for path in sorted(folder.glob("*.py"))}
 
 
 def test_no_deploy_test_module_starts_a_process_past_the_sandbox():
@@ -726,6 +736,39 @@ def test_a_shell_out_failure_names_each_module_and_both_ways_to_pass():
                                         "test_y.py starts a process with os.popen, past the sandbox"]
     assert "Start it with box.run or box.script" in refusal
     assert "an entry in REACHES_THE_MACHINE in tests/deploy/test_kit_isolation.py" in refusal
+
+
+@pytest.mark.parametrize("source, reached", [
+    ("from os import system\nsystem('crapkit')\n", "os.system"),
+    ("from subprocess import Popen\n", "subprocess"),
+    ("import os\nos.execvp('crapkit', ['crapkit'])\n", "os.execvp"),
+    ("import os\nos.spawnlp(os.P_WAIT, 'crapkit', 'crapkit')\n", "os.spawnlp"),
+    ("import os\nos.posix_spawnp('crapkit', ['crapkit'], {})\n", "os.posix_spawnp"),
+    ("import os\nos.forkpty()\n", "os.forkpty"),
+    ("import asyncio\nasyncio.create_subprocess_exec('crapkit')\n", "asyncio.create_subprocess_exec"),
+    ("from asyncio import create_subprocess_shell\n", "asyncio.create_subprocess_shell"),
+    ("import pty\npty.spawn(['crapkit'])\n", "pty"),
+    ("import multiprocessing\n", "multiprocessing"),
+    ("import hang_guard\nhang_guard.run(['crapkit'])\n", "hang_guard.run"),
+    ("from hang_guard import run\n", "hang_guard.run"),
+], ids=lambda value: value.splitlines()[0])
+def test_every_way_a_module_starts_a_process_is_a_shell_out(source, reached):
+    assert reached in shell_outs(ast.parse(source))
+
+
+def test_the_kits_own_calls_and_the_os_helpers_are_not_shell_outs():
+    source = ("import os, asyncio, hang_guard\nfrom os import environ\nfrom . import runner\n"
+              "hang_guard.wait_until(ready)\nhang_guard.exited(process)\nbox.run(['crapkit'])\nos.path.join('a')\n")
+
+    assert shell_outs(ast.parse(source)) == []
+
+
+def test_the_rule_reads_every_module_at_the_top_of_the_deploy_folder_and_leaves_the_kit_out(tmp_path):
+    for path in ("test_cell.py", "packet_support.py", "conftest.py", "kit/sandbox.py", "notes.txt"):
+        (tmp_path / path).parent.mkdir(exist_ok=True)
+        (tmp_path / path).write_text("import subprocess\n", encoding="utf-8")
+
+    assert sorted(deploy_modules(tmp_path)) == ["conftest.py", "packet_support.py", "test_cell.py"]
 
 
 def test_every_deploy_test_is_a_kit_test_or_a_cell(request):

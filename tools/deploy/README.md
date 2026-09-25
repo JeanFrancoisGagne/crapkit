@@ -119,11 +119,17 @@ Rules the kit holds a cell to:
 
 - Run every command through `box.run` or `box.script`. They use the sandbox
   environment (an allowlist, a fresh HOME, offline pip and uv) and write the
-  transcript. A bare `subprocess` call sees this machine instead, so
-  `test_kit_isolation` fails any `tests/deploy/test_*.py` that imports
-  `subprocess` or calls `os.system`, unless `REACHES_THE_MACHINE` there names
-  the module and why. It also fails on any collected test that is neither a
-  `@cell` nor marked `kit`: no job selects it. Several tests may share a cell
+  transcript. A process started any other way sees this machine instead, so
+  `test_kit_isolation` fails any module at the top of `tests/deploy` (the
+  cells, their helpers and `conftest.py`; the `kit` package is exempt) that
+  imports `subprocess`, `pty` or `multiprocessing`, or calls `os.system`,
+  `os.popen`, `os.startfile`, `os.exec*`, `os.spawn*`, `os.posix_spawn*`,
+  `os.fork*`, `asyncio.create_subprocess_*` or `hang_guard.run`. The failure
+  names each module and what it starts. A module that has to start a process
+  itself, such as Zed, which runs until its window closes while `box.run`
+  waits for the child to exit, needs an entry in `REACHES_THE_MACHINE` there:
+  the names it uses and why. The rule also fails on any collected test that
+  is neither a `@cell` nor marked `kit`: no job selects it. Several tests may share a cell
   id. A helper test marked `@pytest.mark.kit` runs in every job and under
   `--packet` for the packet its module's `PACKET` names.
 - Each command gets the 120 s hang bound. A whole package install (`npm ci`,
