@@ -143,14 +143,26 @@ def test_ccn_is_the_smaller_of_std_and_mod_on_every_row(src_inventory, probe_inv
     assert _gate_problems(probe_inventory.rows) == []
 
 
-@analysis_tables_marks("AO-PS-MOD-OVER-STD")
-def test_ccn_mod_never_exceeds_ccn_std(src_inventory, probe_inventory):
+# The languages whose rows break the rule below, each under its rulings row.
+MOD_OVER_STD = {".ps1": "AO-PS-MOD-OVER-STD", ".psm1": "AO-PS-MOD-OVER-STD",
+                ".zig": "AO-ZIG-MOD-OVER-STD"}
+
+
+def _mod_over_std_ruling(path: str) -> str:
+    return MOD_OVER_STD.get("." + path.rpartition(".")[2].lower(), "")
+
+
+@pytest.mark.parametrize("ruling_id", [
+    pytest.param(ruling_id, id=ruling_id or "every other language",
+                 marks=analysis_tables.marks(ruling_id))
+    for ruling_id in sorted({"", *MOD_OVER_STD.values()})])
+def test_ccn_mod_never_exceeds_ccn_std(ruling_id, src_inventory, probe_inventory):
     """lizard -m only ever merges a switch's cases into one decision, so a row's
     ccn_mod is at most its ccn_std."""
     over = [row for row in [*src_inventory.rows, *probe_inventory.rows]
-            if row["ccn_mod"] > row["ccn_std"]]
+            if row["ccn_mod"] > row["ccn_std"] and _mod_over_std_ruling(row["path"]) == ruling_id]
 
-    analysis_tables.check(str(len(over)), "0", "AO-PS-MOD-OVER-STD")
+    analysis_tables.check(str(len(over)), "0", ruling_id)
 
 
 def _modified(fn, source: str, path: str) -> int:
