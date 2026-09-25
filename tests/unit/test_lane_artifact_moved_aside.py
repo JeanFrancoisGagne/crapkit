@@ -188,3 +188,105 @@ def test_the_retest_counts_the_report_it_wrote_and_only_that_one(name, tmp_path)
     assert passed == ({"tests::t1"} if flake else set())
     if not flake:
         assert (tmp_path / "junit.xml").read_text(encoding="utf-8") == FAILING, "the lane's report"
+
+
+# --- an attempt that never finished -------------------------------------------------
+#
+# A kill (taskkill /F, SIGKILL, a CI job timeout) runs no cleanup, so the files
+# an attempt set aside stay under .crapkit/aside/. `--reuse-artifacts` then found
+# no artifact and exited 5 without naming the copy, and the next attempt's exit
+# removed the aside directory with the previous artifact in it. Whoever next
+# holds the lane's measurement lock puts the copy back where nothing was
+# written since, and names it where something was.
+
+KILLED = """import os, sys, time
+sys.path.insert(0, {src!r})
+from pathlib import Path
+from crapkit.lane_outputs import owned
+owned(Path({root!r}), {owner!r}, ({name!r},)).__enter__()
+{write}
+print("aside", flush=True)
+time.sleep({hold})
+"""
+
+
+def _killed_attempt(root: Path, owner: str, name: str, write: str = "") -> None:
+    """A child that sets `name` aside as `owner`'s attempt, is killed, and never
+    runs its exit."""
+    import subprocess
+
+    import crapkit
+    from hang_guard import CHILD_HOLD, exited, next_line
+
+    script = KILLED.format(src=str(Path(crapkit.__file__).parents[1]), root=str(root),
+                           owner=owner, name=name, write=write, hold=CHILD_HOLD)
+    child = subprocess.Popen([sys.executable, "-c", script], cwd=root, stdout=subprocess.PIPE,
+                             text=True)
+    assert next_line(child).strip() == "aside"
+    child.kill()
+    exited(child)
+    child.stdout.close()
+
+
+def _reused(root: Path, lane: Lane):
+    return run_lane(root, lane, reuse_artifact=True)
+
+
+# (the lane's command, what the lane run after the kill must leave at cov.json)
+AFTER_KILL = {
+    "reuse": (None, ISTANBUL),
+    "run-writes-nothing": (SCRIPTS["nothing"], ISTANBUL),
+    "run-writes-new-bytes": (SCRIPTS["new-bytes"], ISTANBUL + " "),
+}
+
+
+@pytest.mark.parametrize("next_command", sorted(AFTER_KILL))
+def test_a_killed_attempt_s_leftover_is_back_for_the_next_command(next_command, tmp_path, capsys):
+    _previous_run(tmp_path)
+    _killed_attempt(tmp_path, "py", "cov.json")
+    assert not (tmp_path / "cov.json").exists(), "the kill left the artifact aside"
+    script, kept = AFTER_KILL[next_command]
+
+    if script is None:
+        assert _reused(tmp_path, _lane(tmp_path, SCRIPTS["nothing"])).provenance["exit_code"] is None
+    elif kept == ISTANBUL:
+        with pytest.raises(ToolError, match="wrote no artifact this run") as raised:
+            run_lane(tmp_path, _lane(tmp_path, script))
+        assert raised.value.refused == {"cov.json": _sha(tmp_path / "cov.json")}
+    else:
+        run_lane(tmp_path, _lane(tmp_path, script))
+
+    assert (tmp_path / "cov.json").read_text(encoding="utf-8") == kept
+    assert "lane 'py': cov.json is back at its path" in capsys.readouterr().err
+    assert not (tmp_path / ".crapkit" / "aside").exists()
+
+
+def test_a_killed_retest_s_report_is_back_for_the_next_command(tmp_path, capsys):
+    (tmp_path / "cov.json").write_text(ISTANBUL, encoding="utf-8")
+    (tmp_path / "junit.xml").write_text(FAILING, encoding="utf-8")
+    _killed_attempt(tmp_path, "py retest", "junit.xml")
+    lane = Lane(name="py", command="unused", artifact="cov.json", parser="istanbul", scopes=(),
+                results_artifact="junit.xml")
+
+    _reused(tmp_path, lane)
+
+    assert (tmp_path / "junit.xml").read_text(encoding="utf-8") == FAILING
+    assert "lane 'py': junit.xml is back at its path" in capsys.readouterr().err
+
+
+def test_a_file_the_killed_attempt_wrote_stays_and_the_copy_it_set_aside_is_named(tmp_path, capsys):
+    """A file at the declared path may be one written after the kill, by hand or
+    by the test command run alone, so crapkit never writes over it."""
+    _previous_run(tmp_path)
+    _killed_attempt(tmp_path, "py", "cov.json",
+                    write="open('cov.json', 'w', encoding='utf-8').write('{\"partial')")
+
+    with pytest.raises(ToolError):
+        _reused(tmp_path, _lane(tmp_path, SCRIPTS["nothing"]))
+
+    err = capsys.readouterr().err
+    copy = next((tmp_path / ".crapkit" / "aside").glob("py-*/0-cov.json"))
+    assert copy.read_text(encoding="utf-8") == ISTANBUL
+    assert (tmp_path / "cov.json").read_text(encoding="utf-8") == '{"partial'
+    assert f"the previous one is at {copy.relative_to(tmp_path).as_posix()}" in err
+    assert "move it back to cov.json to reuse it, or rerun the lane" in err

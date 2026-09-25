@@ -214,3 +214,34 @@ def test_reuse_unchanged_reruns_a_lane_whose_last_attempt_wrote_nothing(repo: Pa
     assert res.returncode == 0, res.stderr
     assert "reusing without rerun" not in res.stderr
     assert _run_count(repo) == 2, "the lane whose last attempt failed has to run again"
+
+
+def _killed_attempt(repo: Path) -> None:
+    """What a kill during the lane's attempt leaves: the artifact set aside under
+    .crapkit/aside/ by an attempt that never ran its exit."""
+    from crapkit.lane_outputs import owned
+
+    owned(repo, "unit", (ARTIFACT.as_posix(),)).__enter__()
+    assert not (repo / ARTIFACT).exists()
+
+
+# (the flag, the words the lane line prints once the artifact is back)
+AFTER_KILL = {"--reuse-artifacts": "reuses", "--reuse-unchanged": "reusing without rerun"}
+
+
+@pytest.mark.parametrize("flag", sorted(AFTER_KILL))
+def test_the_artifact_a_killed_attempt_set_aside_is_reused(repo: Path, flag):
+    """A kill or a CI timeout runs no cleanup. `--reuse-artifacts` exited 5 with
+    "produced no artifact" and never named the copy, and the next attempt
+    removed it."""
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    _killed_attempt(repo)
+
+    res = run_cli(repo, "coverage", flag, "--json")
+
+    assert res.returncode == 0, res.stderr
+    assert ("crapkit: lane 'unit': coverage/coverage-final.json is back at its path; an "
+            "attempt that did not finish (a kill or a timeout) had set it aside under "
+            ".crapkit/aside/") in res.stderr, res.stderr
+    assert _run_count(repo) == 1, "the artifact the killed attempt set aside was reused"
+    assert not (repo / ".crapkit" / "aside").exists()

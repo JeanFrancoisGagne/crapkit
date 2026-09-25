@@ -202,7 +202,8 @@ still holds by its modification time until the lane runs again.
 the artifact and results files a lane declares out of the way before its attempts start,
 and puts one back only where no attempt wrote a new one. A lane command that reads or
 appends to its own previous report finds nothing at that path; write the report fresh
-each run.
+each run. When crapkit is killed while a lane runs, the next command that measures or
+reuses that lane puts the files back before it reads them, and prints a line for each.
 
 **A same-size edit that keeps the old modification time can pass unseen.**
 `cp -p`, `tar -x`, `rsync -t` and `touch -r` write new bytes under the file's old

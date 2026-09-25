@@ -18,7 +18,7 @@ import socket
 import sys
 import time
 import warnings
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import IO, NamedTuple
 
@@ -30,7 +30,7 @@ from .gitio import GitFacts, untracked_files
 from .lane_command import launch_spec, pytest_python
 from .lane_freshness import (Freshness, Proof, ReuseVerdict, measurement_proof,  # noqa: F401
                              sample, uncommitted_changes, unproved)
-from .lane_outputs import declared_files, declared_outputs, owned
+from .lane_outputs import declared_files, declared_outputs, owned, owners, put_back, retest_owner
 from .lane_sources import lane_matchers, lane_record, settled
 from .lane_stamps import (STAMPS_FILE, Stamps, file_sha256, read, read_stamps,  # noqa: F401
                           recorded_seconds, refusal_entry, stamp_for, unreadable_stamps,
@@ -814,7 +814,7 @@ def _retest_owned(root: Path, lane: Lane, tests: set[str], owner) -> set[str]:
     command, additions = _retest_template(lane.retest_command, tests)
     kwargs = launch_spec(root, lane).popen_kwargs(additions)
     log_path = _lane_log_path(root, lane)
-    with owned(root, f"{lane.name} retest", (lane.results_artifact,)) as outputs:
+    with owned(root, retest_owner(lane), (lane.results_artifact,)) as outputs:
         with command_log(log_path, max_bytes=lane.log_max_bytes, append=True) as fh:
             fh.write(f"\n--- flake retest ---\n$ {command}\n")
             fh.flush()
@@ -976,11 +976,39 @@ def _output_lock(path: Path) -> Path:
     return directory / ("measurement-" + hashlib.sha256(key).hexdigest() + ".lock")
 
 
+@contextmanager
 def measurement_owner(root: Path, lanes):
-    """Own resolved outputs, plus this checkout's shared log and stamp state."""
+    """Own resolved outputs, plus this checkout's shared log and stamp state.
+
+    While it is held no attempt at these lanes runs anywhere, so a declared file
+    under .crapkit/aside/ was left by an attempt that never finished (a kill, a
+    CI timeout): it goes back before anything reads the lane's paths. Without
+    that, --reuse-artifacts found no artifact and the next attempt's exit
+    removed the copy."""
     if not lanes:
-        return nullcontext(None)
+        yield None
+        return
     outputs = {root / name for lane in lanes for name in declared_files(lane)}
     paths = {_output_lock(path) for path in outputs}
     paths.add(root / ".crapkit" / "measurement.lock")
-    return own_processes(sorted(paths))
+    with own_processes(sorted(paths)) as owner:
+        _put_back_strays(root, lanes)
+        yield owner
+
+
+def _put_back_strays(root: Path, lanes) -> None:
+    for lane in lanes:
+        for owner, names in owners(lane):
+            for stray in put_back(root, owner, names):
+                print(f"crapkit: lane {lane.name!r}: {_stray_line(root, stray)}", file=sys.stderr)
+
+
+def _stray_line(root: Path, stray) -> str:
+    """What happened to a file an attempt that never finished set aside, and
+    what to do when crapkit could not put it back."""
+    if stray.back:
+        return (f"{stray.name} is back at its path; an attempt that did not finish (a kill "
+                "or a timeout) had set it aside under .crapkit/aside/")
+    return (f"an attempt that did not finish (a kill or a timeout) wrote {stray.name}, and the "
+            f"previous one is at {stray.copy.relative_to(root).as_posix()}: move it back to "
+            f"{stray.name} to reuse it, or rerun the lane, which removes it")

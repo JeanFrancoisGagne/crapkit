@@ -122,6 +122,14 @@
   and a retest that rewrote its junit inside the old file's time tick is read. A lane
   command that reads its previous report back finds no file at the declared path while it
   runs.
+- A kill or a CI timeout while a lane runs no longer loses the lane's previous artifact.
+  The files an attempt that never finished set aside stayed under `.crapkit/aside/`,
+  `--reuse-artifacts` exited 5 with `produced no artifact` and never named them, and the
+  next attempt removed them. The next command that measures or reuses the lane now puts
+  each back first and says so: `crapkit: lane 'unit': coverage/coverage-final.json is
+  back at its path; an attempt that did not finish (a kill or a timeout) had set it aside
+  under .crapkit/aside/`. A file written at the path since stays, and the line names
+  where the copy sits.
 - A failed attempt's leftover stays refused while it holds the same bytes. The refusal was
   keyed on the leftover's modification time, so a `touch`, a copy of the checkout that
   drops times, or a same-bytes rewrite handed the dead lane's numbers back to

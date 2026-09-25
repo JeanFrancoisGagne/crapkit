@@ -13,6 +13,11 @@ So the declared files move aside under .crapkit/ before an attempt starts. A
 file at a declared path afterwards is one the attempt wrote, whatever its time
 or bytes. When the attempt is over, a leftover goes back only where the attempt
 wrote nothing, and its sha256 is what a refusal records.
+
+A kill runs no cleanup, so an attempt that never finished leaves its copies
+under .crapkit/aside/. The next holder of the lane's measurement lock puts each
+back where nothing was written since (`put_back`), and names the ones it must
+leave: no attempt of that lane can be running while the lock is held.
 """
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ import re
 import shutil
 from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 
 from .errors import ToolError
 
@@ -33,6 +39,10 @@ def _aside_dir(root: Path, owner: str) -> Path:
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", owner)[:40]
     tag = hashlib.sha256(owner.encode("utf-8")).hexdigest()[:8]
     return root / ".crapkit" / "aside" / f"{safe}-{tag}"
+
+
+def _aside_path(directory: Path, index: int, name: str) -> Path:
+    return directory / f"{index}-{Path(name).name}"
 
 
 def _move(source: Path, target: Path) -> None:
@@ -66,8 +76,8 @@ class Outputs:
     def _set_aside(self, index: int, name: str) -> None:
         path = self._root / name
         if path.is_file():
-            _move(path, self._dir / f"{index}-{path.name}")
-            self._aside[name] = self._dir / f"{index}-{path.name}"
+            self._aside[name] = _aside_path(self._dir, index, name)
+            _move(path, self._aside[name])
 
     def clear(self) -> None:
         """Before a later attempt: drop what an earlier one of this run left at
@@ -109,6 +119,49 @@ def owned(root: Path, owner: str, names) -> Outputs:
     """The declared files `names` of `owner` (a lane's name), to hold through
     its attempts."""
     return Outputs(root, owner, names)
+
+
+def owners(lane) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Each owner that sets a lane's declared files aside, with the files it
+    sets aside: the lane's attempts, and its flake retest."""
+    attempts = ((lane.name, declared_files(lane)),)
+    if not lane.results_artifact:
+        return attempts
+    return (*attempts, (retest_owner(lane), (lane.results_artifact,)))
+
+
+def retest_owner(lane) -> str:
+    return f"{lane.name} retest"
+
+
+class Stray(NamedTuple):
+    """A declared file an attempt that never finished left under
+    .crapkit/aside/: `copy` is where it sits, and `back` whether it went back
+    to its path, which it does only where no file was written since."""
+    name: str
+    copy: Path
+    back: bool
+
+
+def put_back(root: Path, owner: str, names) -> list[Stray]:
+    """What an attempt of `owner` that never finished left aside, each copy
+    moved back to its declared path where that path holds no file. A file there
+    was written after the attempt set the copy aside, by the attempt itself or
+    by hand, so it stays. Call it only holding the lane's measurement lock."""
+    directory = _aside_dir(root, owner)
+    strays = [Stray(name, _aside_path(directory, index, name), False)
+              for index, name in enumerate(dict.fromkeys(names))]
+    found = [_returned(root, stray) for stray in strays if stray.copy.is_file()]
+    _prune_empty(directory)
+    _prune_empty(directory.parent)
+    return found
+
+
+def _returned(root: Path, stray: Stray) -> Stray:
+    if (root / stray.name).exists():
+        return stray
+    _move(stray.copy, root / stray.name)
+    return stray._replace(back=True)
 
 
 # --- which files are lane outputs --------------------------------------------------
