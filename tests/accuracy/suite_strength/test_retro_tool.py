@@ -409,6 +409,7 @@ def test_a_bug_s_replayed_fix_is_its_last_fix_commit():
 
     assert retro.bug_of(row) == retro.Bug("R1", NODE, "a" * 12, "b" * 12, "R1.py")
     assert retro.bug_of({**row, "fix_commits": ""}).fix == ""
+    assert retro.bug_of({**row, "fix_commits": "aaaa,bbbb"}).fix == "bbbb"
 
 
 # --- sync: bugs.tsv follows the check names each packet landed -----------------------------------
@@ -856,6 +857,7 @@ def test_a_venv_already_built_is_reused(tmp_path, monkeypatch):
 
 def test_the_child_s_environment_names_the_venv_the_outcomes_and_this_tree(monkeypatch):
     monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
     monkeypatch.setenv("RETRO_PROBE", "kept")
 
     env = retro._pytest_env(Path("venv-python"), Path("out.jsonl"))
@@ -923,7 +925,7 @@ def test_the_plugin_appends_each_call_and_each_failing_phase(tmp_path, monkeypat
     out.write_bytes(b"kept\n")
     monkeypatch.setenv(retro.OUTCOMES_ENV, str(out))
 
-    assert retro.pytest_runtest_makereport(_Report("t::a"), _call(None, "setup")) is None
+    assert retro.pytest_runtest_makereport(_Report("t::setup"), _call(None, "setup")) is None
     assert retro.pytest_runtest_makereport(_Report("t::a"), _call(None)) is None
     assert retro.pytest_runtest_makereport(_Report("t::é"), _call(OSError("lock"), "teardown")) is None
 
@@ -950,11 +952,12 @@ def _file(tmp_path: Path, body: str, name: str = "RX.py") -> Path:
 
 
 def test_a_probe_s_header_names_its_packages_and_its_install(tmp_path):
-    header = _file(tmp_path, "# requires: a==1 b==2\n# install: editable \n# requires: c==3\nx = 1\n")
+    header = _file(tmp_path, "# requires: a==1 b@file:///w/b.whl\n# install: editable \n"
+                             "# requires: c==3\nx = 1\n")
     late = _file(tmp_path, "x = 1\n" * 20 + "# requires: late==1\n# install: editable\n", "late.py")
     wheel = _file(tmp_path, "#  requires: no==1\n# install: wheel\n", "wheel.py")
 
-    assert retro.probe_header(header) == (["a==1", "b==2", "c==3"], True)
+    assert retro.probe_header(header) == (["a==1", "b@file:///w/b.whl", "c==3"], True)
     assert retro.probe_header(late) == ([], False)
     assert retro.probe_header(wheel) == ([], False)
 
@@ -1246,7 +1249,7 @@ def test_the_retro_parser_says_what_the_tool_and_record_do(capsys):
         "retro.py", "Replay every past calculation bug's check on the commit before its fix and on the fix.")
     with pytest.raises(SystemExit):
         parser.parse_args(["run", "-h"])
-    assert "rewrite the replayed ledger rows" in " ".join(capsys.readouterr().out.split())
+    assert "--record rewrite the replayed ledger rows" in " ".join(capsys.readouterr().out.split())
 
 
 # --- git, for real ------------------------------------------------------------------------------------

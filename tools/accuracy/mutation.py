@@ -149,9 +149,9 @@ def mutant_key(diff_text: str) -> str:
 def split_name(mutant_name: str) -> tuple[str, str]:
     """(dotted module, qualified function) of a mutmut mutant name such as
     crapkit.score.x_crap__mutmut_3 or crapkit.store.xǁStoreǁwrite__mutmut_2."""
-    prefix, _, number = mutant_name.rpartition("__mutmut_")
+    prefix, _, number = mutant_name.partition("__mutmut_")
     module, _, mangled = prefix.rpartition(".")
-    if not (prefix and module and number):
+    if not (prefix and module and number.isdigit()):
         raise MutationError(f"{mutant_name!r} is not a mutmut mutant name")
     return module, _unmangled(mangled, mutant_name)
 
@@ -204,7 +204,7 @@ class Result:
         return self.module, self.function, self.key
 
 
-def result(name: str, status: str, diff_text: str = "", repo: Path = REPO) -> Result:
+def result(name: str, status: str, diff_text: str | None, repo: Path = REPO) -> Result:
     dotted, function = split_name(name)
     key = mutant_key(diff_text) if diff_text else ""
     return Result(name, module_path(dotted, repo), function, status, key)
@@ -543,7 +543,10 @@ def uncovered(changed: list[tuple[str, str]], diffs: list[dict]) -> list[str]:
 
 # --- equivalence evidence -------------------------------------------------------------------------
 
-def equivalence_evidence(original, mutant, strategy, examples: int = 10_000) -> str:
+EXAMPLES = 10_000  # the plan: an equivalent carries 10,000-example evidence
+
+
+def equivalence_evidence(original, mutant, strategy, examples: int = EXAMPLES) -> str:
     """Run both on `examples` argument tuples from `strategy`; the evidence line,
     or MutationError naming the first input on which they differ."""
     from hypothesis import given, settings
@@ -634,7 +637,7 @@ def collect(repo: Path, wanted: list[str] | None = None, mutmut: tuple = LAUNCH)
     statuses = {name: status for name, status in sorted(_meta_statuses(repo).items())
                 if _wanted(name, wanted)}
     diffs = _diffs(repo, keyed_names(statuses), mutmut)
-    return [result(name, status, diffs.get(name, ""), repo) for name, status in statuses.items()]
+    return [result(name, status, diffs.get(name), repo) for name, status in statuses.items()]
 
 
 def _rerun_timeouts(repo: Path, rows: list[Result], mutmut: tuple = LAUNCH,
@@ -834,11 +837,11 @@ def staged_run(where: Path, targets: dict, globs: list[str], env: dict, children
     """mutmut over `globs` in a stage whose [tool.mutmut] names `targets`: the results,
     and whether the run finished inside `budget` seconds (a capped run reruns nothing)."""
     stage = _prepare_stage(targets, where)
-    code = _run_mutmut(stage, ["run", "--max-children", str(children), *globs], budget, LAUNCH, env)
-    rows = collect(stage, globs, LAUNCH)
+    code = _run_mutmut(stage, ["run", "--max-children", str(children), *globs], budget, env=env)
+    rows = collect(stage, globs)
     if code == -1:
         return rows, False
-    return _rerun_timeouts(stage, rows, LAUNCH, env), True
+    return _rerun_timeouts(stage, rows, env=env), True
 
 
 def _tools(args) -> int:
@@ -957,7 +960,7 @@ def _key(args) -> int:
 def killer_env(cwd: Path, environ: dict) -> dict:
     """The environment the killer suite runs under: this tree's src/ and tests/ first,
     and the push tier whatever tier the caller runs."""
-    paths = [str(cwd / "src"), str(cwd / "tests"), environ.get("PYTHONPATH", "")]
+    paths = [str(cwd / "src"), str(cwd / "tests"), environ.get("PYTHONPATH")]
     return {**environ, "PYTHONPATH": os.pathsep.join(filter(None, paths)),
             "PYTHONDONTWRITEBYTECODE": "1", "CRAPKIT_ACCURACY_TIER": "push"}
 

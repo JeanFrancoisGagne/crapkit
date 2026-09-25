@@ -13,10 +13,13 @@ import datetime
 import hashlib
 import importlib.util
 import inspect
+import io
 import json
+import os
 import re
 from pathlib import Path
 import sys
+import time
 
 from hypothesis import given, strategies as st
 import pytest
@@ -639,7 +642,7 @@ def test_the_launcher_names_a_module_the_way_its_tests_import_it(tmp_path):
 # call is logged, so a test sees how often mutmut would have started.
 
 FAKE_LAUNCHER = '''\
-import json, pathlib, sys
+import json, os, pathlib, sys
 here = pathlib.Path.cwd()
 with open(here / "calls.log", "a", encoding="utf-8") as log:
     log.write(json.dumps(sys.argv[1:]) + "\\n")
@@ -648,6 +651,8 @@ if sys.argv[1:2] == ["diffs"]:
         if "silent" not in name:
             print(json.dumps([name, "-    return a\\n+    return " + name]))
 elif sys.argv[1:2] == ["run"]:
+    with open(here / "env.log", "a", encoding="utf-8") as log:
+        log.write(os.environ.get("MUTATION_PROBE", "-") + "\\n")
     meta = here / "mutants" / "src" / "crapkit" / "score.py.meta"
     codes = json.loads(meta.read_text(encoding="utf-8"))
     for name in sys.argv[2:]:
@@ -773,10 +778,10 @@ def test_the_covered_command_names_each_changed_function_no_diff_run_mutated(
     seen = []
     monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
     monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: seen.append(
-        (base, modules)) or [("src/crapkit/score.py", "crap"), ("src/crapkit/score.py", "grade")])
+        (repo, base, modules)) or [("src/crapkit/score.py", "crap"), ("src/crapkit/score.py", "grade")])
 
     assert mutation.main(["covered", "--receipts", str(receipts)]) == 1
-    assert seen == [(HEAD_A, ["src/crapkit/score.py"])]
+    assert seen == [(mutation.REPO, HEAD_A, ["src/crapkit/score.py"])]
     assert capsys.readouterr().out == (
         f"mutation: src/crapkit/score.py:grade changed since the weekly run at {HEAD_A[:12]} "
         "and no complete diff run mutated it\n")
@@ -861,7 +866,7 @@ def test_raising_another_exception_type_is_a_difference():
 def test_equivalence_evidence_takes_ten_thousand_examples_unless_told():
     signature = inspect.signature(mutation.equivalence_evidence)
 
-    assert signature.parameters["examples"].default == 10_000
+    assert signature.parameters["examples"].default == mutation.EXAMPLES == 10_000
 
 
 def test_a_floor_rate_is_rounded_to_two_places():
@@ -892,6 +897,8 @@ def test_two_heads_are_both_named():
 @pytest.mark.parametrize("call, says", [
     (lambda: mutation.split_name("crap__mutmut_3"), "'crap__mutmut_3' is not a mutmut mutant name"),
     (lambda: mutation.split_name("a.b__mutmut_"), "'a.b__mutmut_' is not a mutmut mutant name"),
+    (lambda: mutation.split_name("a.x_f__mutmut_x__mutmut_3"),
+     "'a.x_f__mutmut_x__mutmut_3' is not a mutmut mutant name"),
     (lambda: mutation.split_name("crapkit.store.xǁA__mutmut_1"),
      "'crapkit.store.xǁA__mutmut_1' names no function mutmut mangles"),
     (lambda: mutation.module_path("crapkit.nope", REPO),
@@ -1155,9 +1162,23 @@ class _Recorder:
         return self.rows, self.complete
 
 
+def _fake_git(monkeypatch, answers: dict | None = None) -> list:
+    """Stand in for _git: record each (repo, args) and answer by the git command."""
+    calls = []
+
+    def git(repo, *args):
+        calls.append((repo, list(args)))
+        return (answers or {}).get(args[0], "")
+
+    monkeypatch.setattr(mutation, "_git", git)
+    return calls
+
+
 def _commands_on(tmp_path, monkeypatch, rows, complete=True) -> _Recorder:
-    repo, _ = _repo_with_a_commit(tmp_path)
-    monkeypatch.setattr(mutation, "REPO", repo)
+    """A repo whose HEAD is HEAD_A, empty tables and staged_run stood in for."""
+    (tmp_path / "repo").mkdir()
+    monkeypatch.setattr(mutation, "REPO", tmp_path / "repo")
+    _fake_git(monkeypatch, {"rev-parse": HEAD_A + "\n"})
     _tables(tmp_path)
     monkeypatch.setattr(mutation, "TABLES", tmp_path)
     recorder = _Recorder(rows, complete)
@@ -1169,7 +1190,6 @@ def _saved(name: str) -> dict:
     return json.loads((mutation.REPO / mutation.RECEIPTS / name).read_text(encoding="utf-8"))
 
 
-@pytest.mark.process
 def test_weekly_mutates_its_shard_and_the_canary_and_writes_its_receipt(tmp_path, monkeypatch):
     modules = ["src/crapkit/digest.py", "src/crapkit/score.py", "src/crapkit/worklist.py"]
     monkeypatch.setattr(mutation, "calc_modules", lambda: modules)
@@ -1189,11 +1209,12 @@ def test_weekly_mutates_its_shard_and_the_canary_and_writes_its_receipt(tmp_path
     assert saved["results"] == [canary.__dict__]
 
 
-@pytest.mark.process
 def test_tools_mutates_every_target_here_and_writes_its_receipt(tmp_path, monkeypatch):
     targets = {"tools/accuracy/retro.py": ("t",), "tests/accuracy/kit/exact.py": ("u",)}
-    monkeypatch.setattr(mutation, "present", lambda wanted: targets)
-    recorder = _commands_on(tmp_path, monkeypatch, [_crap(KEYS[0], "survived")])
+    asked = []
+    monkeypatch.setattr(mutation, "present", lambda wanted: asked.append(wanted) or targets)
+    survivor = _crap(KEYS[0], "survived")
+    recorder = _commands_on(tmp_path, monkeypatch, [survivor])
 
     assert mutation.main(["tools", "--max-children", "5"]) == 1
 
@@ -1202,10 +1223,11 @@ def test_tools_mutates_every_target_here_and_writes_its_receipt(tmp_path, monkey
     assert call["globs"] == ["tools.accuracy.retro.*", "accuracy.kit.exact.*"]
     assert call["env"]["CRAPKIT_ACCURACY_COLLECT_ALL"] == "1"
     saved = _saved("tools.json")
-    assert (saved["kind"], saved["modules"]) == ("tools", sorted(targets))
+    assert (saved["kind"], saved["modules"], saved["results"]) == (
+        "tools", sorted(targets), [survivor.__dict__])
+    assert asked == [mutation.TOOL_TARGETS]
 
 
-@pytest.mark.process
 @pytest.mark.parametrize("complete, code", [(True, 0), (False, 1)])
 def test_a_diff_run_mutates_the_changed_functions_and_says_when_its_cap_stopped_it(
         tmp_path, monkeypatch, capsys, complete, code):
@@ -1242,7 +1264,7 @@ def test_a_diff_with_no_changed_function_starts_no_mutmut(monkeypatch):
 STAGE_LAUNCHER = FAKE_LAUNCHER.replace(
     'if sys.argv[1:2] == ["diffs"]:',
     'if sys.argv[1:2] == ["run"] and "--sleep" in open("mode.txt").read():\n'
-    '    import time; time.sleep(30)\n'
+    '    import time; time.sleep(5)\n'
     'if sys.argv[1:2] == ["diffs"]:', 1)
 
 
@@ -1320,3 +1342,321 @@ def test_a_prepared_stage_holds_its_table_and_the_launcher(tmp_path, monkeypatch
     assert table["tool"]["mutmut"]["source_paths"] == ["m.py"]
     assert table["tool"]["mutmut"]["also_copy"] == ["m.py", "pyproject.toml"]
     assert (stage / mutation.LAUNCHER_FILE).read_text(encoding="utf-8") == mutation.LAUNCHER
+
+
+# --- what the second tools run left alive -----------------------------------------------------------
+#
+# Each test below pins a value the tools run at da63f7b2 showed no in-process
+# test looked at. Git is stood in for, since the killer deselects every test
+# that spawns it.
+
+@pytest.mark.parametrize("body, says", [
+    ("", "{path}: the header must be module function diff_sha256 reason added (tab-separated)"),
+    ("module\tfunction\tdiff_sha256\treason\tadded\t\n",
+     "{path}: the header must be module function diff_sha256 reason added (tab-separated)"),
+    ("module\tfunction\tdiff_sha256\treason\tadded\n\nm\tf\tk\tr\td\nm\tf\n",
+     "{path}:3: 2 cells, the header has 5"),
+])
+def test_a_table_it_cannot_read_is_refused_by_file_and_line(tmp_path, body, says):
+    path = tmp_path / "survivors.tsv"
+    path.write_bytes(body.encode())
+
+    with pytest.raises(mutation.MutationError) as refused:
+        mutation.read_table(path, mutation.SURVIVOR_COLUMNS)
+
+    assert str(refused.value) == says.format(path=path)
+
+
+def test_the_equivalents_come_from_their_own_table(tmp_path, monkeypatch):
+    proven = {**_row("src/crapkit/score.py", "crap", KEYS[0]), "evidence": "e", "strategy": "s",
+              "checked": "d"}
+    _tables(tmp_path)
+    mutation.write_table(tmp_path / "equivalent.tsv", mutation.EQUIVALENT_COLUMNS, [proven])
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
+
+    assert mutation._tables()[1] == [proven]
+
+
+def test_five_unjudged_mutants_are_all_named_with_nothing_left_over():
+    run = [_result("m.py", "f", f"{n:06x}".ljust(64, "0"), "not checked") for n in range(5)]
+
+    assert mutation.unjudged_problem(run).endswith(": m.py:f:000000, m.py:f:000001, "
+                                                   "m.py:f:000002, m.py:f:000003, m.py:f:000004")
+
+
+def test_a_floor_prints_its_rate_or_that_nothing_was_mutated(capsys):
+    mutation._print_floor(mutation.Floor("core", None, 95.0, 0, 0))
+    mutation._print_floor(mutation.Floor("core", 50.0, 95.0, 1, 2))
+
+    assert capsys.readouterr().out == ("mutation: floor core: not mutated, floor 95.0% ok\n"
+                                       "mutation: floor core: 50.0% (1/2), floor 95.0% BELOW\n")
+
+
+def test_an_exit_code_mutmut_has_no_name_for_reads_suspicious(tmp_path):
+    tree = _mutmut_tree(tmp_path, {"crapkit.score.x_crap__mutmut_6": 99})
+
+    assert mutation._meta_statuses(tree) == {"crapkit.digest.x_totals__mutmut_1": "survived",
+                                             "crapkit.score.x_crap__mutmut_6": "suspicious"}
+
+
+def test_a_mutant_s_module_is_found_in_the_tree_mutmut_ran_in(tmp_path):
+    tree = _mutmut_tree(tmp_path)
+    (tree / "src" / "crapkit" / "planted.py").write_bytes(b"x = 1\n")
+    codes = {"crapkit.planted.x_f__mutmut_1": 1, "crapkit.planted.x_f__mutmut_2": 0}
+    (tree / "mutants" / "src" / "crapkit" / "planted.py.meta").write_bytes(
+        json.dumps({"exit_code_by_key": codes}).encode())
+
+    rows = mutation.collect(tree, ["crapkit.planted.*"], ("fake_launch.py",))
+
+    assert rows == [
+        mutation.Result("crapkit.planted.x_f__mutmut_1", "src/crapkit/planted.py", "f", "killed", ""),
+        mutation.Result("crapkit.planted.x_f__mutmut_2", "src/crapkit/planted.py", "f", "survived",
+                        _key_of("crapkit.planted.x_f__mutmut_2"))]
+
+
+def test_results_from_several_receipts_are_all_read(tmp_path):
+    first, second = tmp_path / "a.json", tmp_path / "b.json"
+    first.write_bytes(json.dumps({"results": [_crap(KEYS[0], "killed").__dict__]}).encode())
+    second.write_bytes(json.dumps({"results": [_crap(KEYS[1], "survived").__dict__]}).encode())
+
+    assert mutation.load_results([first, second]) == [_crap(KEYS[0], "killed"),
+                                                      _crap(KEYS[1], "survived")]
+
+
+def _refusing(error: Exception):
+    def command(args):
+        raise error
+    return command
+
+
+def test_a_refusal_exits_one_and_missing_receipts_exit_three(monkeypatch, capsys):
+    monkeypatch.setitem(mutation.COMMANDS, "key", _refusing(mutation.MutationError("no")))
+    assert mutation.main(["key"]) == 1
+    monkeypatch.setitem(mutation.COMMANDS, "key", _refusing(mutation.MissingReceipts("gone")))
+    assert mutation.main(["key"]) == 3
+
+    assert capsys.readouterr().err == "mutation.py: no\nmutation.py: gone\n"
+
+
+def test_main_reads_its_command_from_the_command_line_and_key_reads_stdin(monkeypatch, capsys):
+    monkeypatch.setattr(mutation.sys, "argv", ["mutation.py", "key"])
+    monkeypatch.setattr(mutation.sys, "stdin", io.StringIO(SHOW_3))
+
+    assert mutation.main() == 0
+    assert capsys.readouterr().out == mutation.mutant_key(SHOW_3) + "\n"
+
+
+def test_the_killer_suite_adds_no_empty_path_when_none_was_set(tmp_path):
+    paths = mutation.killer_env(tmp_path, {})["PYTHONPATH"].split(mutation.os.pathsep)
+
+    assert paths == [str(tmp_path / "src"), str(tmp_path / "tests")]
+
+
+STAGED = ("[project]\nname = 'x'\n\n[tool.mutmut]\nsource_paths = ['a']\n\n"
+          "[tool.pytest.ini_options]\n# [tool.mutmut] above names what mutmut mutates\nx = 1\n\n"
+          "[tool.other]\ny = 2\n")
+
+
+def test_the_stage_config_keeps_every_other_table_where_it_was():
+    targets = {"tools/accuracy/retro.py": ("t",)}
+
+    assert mutation.stage_config(STAGED, targets, ["src"]) == (
+        "[project]\nname = 'x'\n\n[tool.pytest.ini_options]\n"
+        "# [tool.mutmut] above names what mutmut mutates\nx = 1\n\n[tool.other]\ny = 2\n\n"
+        + mutation._stage_table(targets, ["src"]))
+
+
+def test_the_stage_table_is_exactly_what_mutmut_reads():
+    table = mutation._stage_table({"b.py": ("t2", "t1"), "a.py": ("t1",)}, ["src", "tests"])
+
+    assert table == ('[tool.mutmut]\nsource_paths = ["a.py", "b.py"]\n'
+                     'pytest_add_cli_args_test_selection = ["t1", "t2"]\n'
+                     f'pytest_add_cli_args = ["-p", "no:cacheprovider", "-m", "{mutation.FLOOR_SUITE}"]\n'
+                     'also_copy = ["src", "tests"]\n')
+
+
+def test_the_stage_copies_all_but_mutmut_s_own_folder(monkeypatch):
+    calls = _fake_git(monkeypatch, {"ls-tree": "src\nmutants\nREADME.md\n"})
+
+    assert mutation.stage_copies(Path("stage")) == ["README.md", "src"]
+    assert calls == [(Path("stage"), ["ls-tree", "--name-only", "HEAD"])]
+
+
+def test_a_new_stage_is_a_detached_worktree_of_head_in_a_new_folder(tmp_path, monkeypatch):
+    calls = _fake_git(monkeypatch, {"rev-parse": HEAD_A + "\n"})
+    stage = tmp_path / "a" / "b" / "stage"
+
+    assert mutation._stage(tmp_path, stage) == stage
+
+    assert stage.parent.is_dir()
+    assert calls == [(tmp_path, ["rev-parse", "HEAD"]),
+                     (tmp_path, ["worktree", "add", "-f", "--detach", str(stage), HEAD_A]),
+                     (stage, ["checkout", "-q", "-f", "--detach", HEAD_A])]
+
+
+def test_a_stage_already_there_is_moved_to_head_and_nothing_else(tmp_path, monkeypatch):
+    calls = _fake_git(monkeypatch, {"rev-parse": HEAD_A})
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    (stage / ".git").write_bytes(b"gitdir: elsewhere\n")
+
+    mutation._stage(tmp_path, stage)
+
+    assert calls == [(tmp_path, ["rev-parse", "HEAD"]),
+                     (stage, ["checkout", "-q", "-f", "--detach", HEAD_A])]
+
+
+def test_the_weekly_base_asks_git_for_the_newest_first_parent_commit_before_the_run(monkeypatch):
+    calls = _fake_git(monkeypatch, {"rev-list": HEAD_A + "\n"})
+
+    assert mutation.weekly_base(Path("r"), _utc(2026, 9, 24, 12, 0)) == HEAD_A
+    assert calls == [(Path("r"), ["rev-list", "-1", "--first-parent",
+                                  "--before=2026-09-19T06:00:00Z", "HEAD"])]
+
+
+def test_no_commit_before_the_weekly_run_is_refused_with_its_time(monkeypatch):
+    _fake_git(monkeypatch, {"rev-list": "\n"})
+
+    with pytest.raises(mutation.MutationError) as refused:
+        mutation.weekly_base(Path("r"), _utc(2026, 9, 17, 12, 0))
+
+    assert str(refused.value) == "no commit before the weekly run of 2026-09-12T06:00:00Z"
+
+
+def test_changed_functions_diff_each_module_from_the_base_and_skip_what_is_gone(tmp_path, monkeypatch):
+    source = "def a():\n    return 1\n\n\ndef b():\n    return 2\n"
+    for name in ("m.py", "n.py"):
+        (tmp_path / name).write_bytes(source.encode())
+    diffs = {"m.py": "@@ -2 +2 @@\n", "n.py": "@@ -6 +6 @@\n"}
+    calls = []
+
+    def git(repo, *args):
+        calls.append((repo, list(args)))
+        return diffs[args[-1]]
+
+    monkeypatch.setattr(mutation, "_git", git)
+
+    assert mutation.changed_functions(tmp_path, "base", ["gone.py", "m.py", "n.py"]) == [
+        ("m.py", "a"), ("n.py", "b")]
+    assert calls == [(tmp_path, ["diff", "-U0", "base", "--", "m.py"]),
+                     (tmp_path, ["diff", "-U0", "base", "--", "n.py"])]
+
+
+@pytest.fixture
+def local_zone_five_hours_behind():
+    """Local time five hours behind UTC where the platform can switch zones. Windows
+    cannot, and its host zone is not UTC either on the machines that run this."""
+    if not hasattr(time, "tzset"):
+        yield
+        return
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = "EST+05"
+    time.tzset()
+    yield
+    os.environ.pop("TZ")
+    if old is not None:
+        os.environ["TZ"] = old
+    time.tzset()
+
+
+def test_the_weekly_start_is_six_utc_in_any_local_zone_to_the_second(local_zone_five_hours_behind):
+    now = datetime.datetime(2026, 9, 19, 7, 30, 15, 500,
+                            tzinfo=datetime.timezone(datetime.timedelta(hours=-5)))
+
+    start = mutation.last_weekly(now)
+
+    assert (start, start.tzinfo) == (_utc(2026, 9, 19, 6, 0), datetime.timezone.utc)
+
+
+def test_a_receipt_is_stamped_in_utc_and_names_head(monkeypatch, local_zone_five_hours_behind):
+    _fake_git(monkeypatch, {"rev-parse": HEAD_A + "\n"})
+    before = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+
+    receipt = mutation._receipt("diff", base="b")
+
+    created = datetime.datetime.strptime(receipt.pop("created"), "%Y-%m-%dT%H:%M:%SZ")
+    assert before <= created.replace(tzinfo=datetime.timezone.utc) <= datetime.datetime.now(
+        datetime.timezone.utc)
+    assert receipt == {"schema": 1, "kind": "diff", "head": HEAD_A, "base": "b"}
+
+
+def test_receipts_go_under_the_repo_s_receipt_folder_one_after_another(tmp_path, monkeypatch):
+    monkeypatch.setattr(mutation, "REPO", tmp_path)
+
+    first = mutation._write_receipt({"a": 1}, "one.json")
+    second = mutation._write_receipt({"b": 2}, "two.json")
+
+    assert first == tmp_path / mutation.RECEIPTS / "one.json"
+    assert (first.read_bytes(), second.read_bytes()) == (b'{\n "a": 1\n}\n', b'{\n "b": 2\n}\n')
+
+
+def _judged(monkeypatch) -> list:
+    seen = []
+    monkeypatch.setattr(mutation, "_judge", lambda rows, update, canary=True: seen.append(
+        (rows, update, canary)) or 0)
+    return seen
+
+
+@pytest.mark.parametrize("argv, canary", [
+    (["tools"], False), (["weekly", "--shard", "1", "--of", "1"], True), (["diff", "--base", "b"], False)])
+def test_each_run_judges_its_rows_without_rewriting_the_tables(tmp_path, monkeypatch, argv, canary):
+    _commands_on(tmp_path, monkeypatch, [])
+    monkeypatch.setattr(mutation, "present", lambda wanted: {})
+    monkeypatch.setattr(mutation, "calc_modules", lambda: [])
+    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [])
+    judged = _judged(monkeypatch)
+
+    assert mutation.main(argv) == 0
+    assert judged == [([], False, canary)]
+
+
+def test_a_weekly_run_that_did_not_mutate_the_canary_is_void(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/digest.py"])
+    _commands_on(tmp_path, monkeypatch, [_result("src/crapkit/digest.py", "totals", KEYS[0], "killed")])
+
+    assert mutation.main(["weekly", "--shard", "1", "--of", "1"]) == 1
+    assert "void: the canary score.crap was not mutated" in capsys.readouterr().out
+
+
+def test_a_diff_run_with_no_base_starts_from_the_last_weekly_run(tmp_path, monkeypatch):
+    _commands_on(tmp_path, monkeypatch, [])
+    asked, changed = [], []
+    monkeypatch.setattr(mutation, "weekly_base", lambda repo, now: asked.append((repo, now)) or "w" * 40)
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
+    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: changed.append(
+        (repo, base, modules)) or [])
+    _judged(monkeypatch)
+
+    assert mutation.main(["diff"]) == 0
+
+    ((repo, now),) = asked
+    assert (repo, now.tzinfo) == (mutation.REPO, datetime.timezone.utc)
+    assert abs((datetime.datetime.now(datetime.timezone.utc) - now).total_seconds()) < 60
+    assert changed == [(mutation.REPO, "w" * 40, ["src/crapkit/score.py"])]
+    saved = _saved(f"diff-{HEAD_A[:12]}.json")
+    assert (saved["kind"], saved["base"], saved["results"]) == ("diff", "w" * 40, [])
+
+
+@pytest.mark.parametrize("cpus, children", [(None, 2), (7, 7)])
+def test_a_diff_run_uses_every_cpu_or_two(monkeypatch, cpus, children):
+    recorder = _Recorder([])
+    monkeypatch.setattr(mutation, "staged_run", recorder)
+    monkeypatch.setattr(mutation.os, "cpu_count", lambda: cpus)
+    monkeypatch.setenv("CRAPKIT_ACCURACY_COLLECT_ALL", "1")
+
+    assert mutation._run_changed([("src/crapkit/score.py", "crap")], 60) == ([], True)
+
+    (call,) = recorder.calls
+    assert (call["children"], call["budget"], call["env"]["CRAPKIT_ACCURACY_TIER"]) == (children, 60, "push")
+    assert "CRAPKIT_ACCURACY_COLLECT_ALL" not in call["env"]
+
+
+def test_staged_run_hands_its_environment_to_each_mutmut_run_and_keeps_to_its_globs(tmp_path,
+                                                                                    monkeypatch):
+    stage, _ = _fake_stage(tmp_path, monkeypatch)
+
+    rows, complete = mutation.staged_run(Path("w"), {}, ["crapkit.score.*"],
+                                         {**mutation.os.environ, "MUTATION_PROBE": "kept"}, 2)
+
+    assert complete and (stage / "env.log").read_bytes().split() == [b"kept", b"kept"]
+    assert {row.module for row in rows} == {"src/crapkit/score.py"}

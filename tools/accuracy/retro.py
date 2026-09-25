@@ -135,7 +135,7 @@ def write_table(path: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
 
 
 def _cell(value: str) -> str:
-    return " ".join(str(value).replace("\t", " ").split())
+    return " ".join(str(value).split())
 
 
 def row_key(row: dict) -> tuple[str, str]:
@@ -324,7 +324,7 @@ def have_commit(sha: str, repo: Path = REPO) -> bool:
 
 
 def fetch_bundle(sha: str, repo: Path = REPO) -> None:
-    bundle = os.environ.get(BUNDLE_ENV, "")
+    bundle = os.environ.get(BUNDLE_ENV)
     if not bundle:
         raise RetroError(f"{sha} is not in this clone; set {BUNDLE_ENV} to the history bundle")
     _checked(["git", "fetch", "-q", bundle, "+refs/*:refs/retro-bundle/*"], cwd=repo)
@@ -354,7 +354,7 @@ CURRENT = f"{sys.version_info.major}.{sys.version_info.minor}"
 def _create_venv(venv: Path, python: str) -> None:
     """The standard library's venv for this interpreter's version; uv for another."""
     if python == CURRENT:
-        venv_module.EnvBuilder(with_pip=False, symlinks=not WINDOWS).create(venv)
+        venv_module.EnvBuilder(symlinks=not WINDOWS).create(venv)
     else:
         _checked(["uv", "venv", "-q", "--python", python, venv])
 
