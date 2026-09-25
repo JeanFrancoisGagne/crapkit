@@ -66,4 +66,5 @@ def test_the_no_config_lines_are_ascii(tmp_path: Path):
         raise AssertionError("a directory with no crapkit.toml must be refused")
 
     assert over_mcp.startswith(f"no crapkit.toml in {tmp_path} - nothing measured here.")
-    assert at_cli == f"no crapkit.toml at {tmp_path} - nothing to analyze"
+    assert at_cli.startswith(f"no crapkit.toml at {tmp_path} - nothing to analyze; run `")
+    assert at_cli.isascii()

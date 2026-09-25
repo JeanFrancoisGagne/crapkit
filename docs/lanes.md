@@ -946,7 +946,9 @@ decompose before committing (coverage cannot save a function above the target).
 
 Exit 6, and the path in the row is root-relative like every other crapkit row. A staged file
 that sits **above** the crapkit root is outside the diff by design, and is no longer named
-in that warning.
+in that warning. The hook git runs needs no `cd`: git starts it at the top, and with no
+`crapkit.toml` there the gate runs in `packages/api` itself and prints the same row from the
+top, `packages/api/calc/grade.py:17`.
 
 ---
 

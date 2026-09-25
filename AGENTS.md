@@ -388,7 +388,8 @@ not.
 
 A staged file above the crapkit root is outside the diff by design, and the gate does not
 name it. `.git` is found by walking up from the root, so the HEAD fast path fires down
-here too.
+here too. The commit hook needs no `--repo`: git runs it at the top, and with no
+`crapkit.toml` there the gate runs in each root below that owns a staged file.
 
 ## Which scope owns a file
 

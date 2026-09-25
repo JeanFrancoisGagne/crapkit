@@ -237,6 +237,35 @@ nothing. Each of these now gets a line naming the object and the next step:
 - The taint rule is unchanged: a failed verify still stands in front of the runs made
   after it, whichever branch it ran on.
 
+### The commit gate finds the crapkit root below the git top, and judges CI's `--all-files`
+
+- git runs a pre-commit hook at the repository's top. With `crapkit.toml` in
+  `packages/api`, README Route 2's hook and the handbook's refused every commit, a
+  docs-only one included, with `no crapkit.toml at TOP - nothing to analyze`. With no
+  `crapkit.toml` at or above where it runs, the hook now runs the gate in each crapkit
+  root below that owns a staged file, nearest configuration winning, and prints paths
+  from the top: `ccn   8  packages/api/app/route.py:1  route( a , b , c , d )`. A commit
+  that stages nothing under any `crapkit.toml` passes with one note on stderr, and so
+  does every commit in a repo whose gate was armed before `crapkit init`, where each
+  one was refused. `--repo DIR` still names an exact root and refuses one without a
+  configuration.
+- `pre-commit run --all-files`, the form pre-commit.ci and pre-commit/action run,
+  stages nothing and starts no commit, and the hook read only the staged diff, so it
+  passed a breach committed from a clone with no hook installed. Outside a commit (git
+  sets `GIT_INDEX_FILE` for the hooks a commit runs) and with nothing staged, the hook
+  now judges every tracked file's indexed content: `crapkit gate: 1 tracked
+  function(s) exceed the complexity ceiling of 6`, exit 6, with the functions the
+  committed ratchet marks exempt as before. Inside a commit, and under `--base REF`,
+  nothing changes.
+- The refusal every command gives in a directory with no `crapkit.toml` names both ways
+  forward and the configurations the checkout tracks, spelled from where you stand:
+  ``no crapkit.toml at /repo/packages/web - nothing to analyze; run `crapkit init` there
+  to adopt it, or pass --repo DIR to name a directory that holds one; this checkout
+  holds ../api/crapkit.toml``.
+- The handbook's Enforcement block writes the hook through `git rev-parse --git-path
+  hooks`, so it arms a working gate from a crapkit root below the git top, where
+  `.git/hooks/pre-commit` named a directory that does not exist.
+
 ### Marks a newer crapkit wrote are sent to an upgrade, not a re-seed
 
 - A team upgrades one member at a time. When the upgraded teammate's re-seeded marks

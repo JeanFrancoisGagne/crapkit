@@ -886,9 +886,9 @@ codex plugin list --marketplace crapkit --json</code></pre>
 <pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv
 git add crapkit-ratchet.tsv &amp;&amp; git commit -m "seed the crapkit ratchet"
 
-printf '#!/bin/sh\nif command -v crapkit &gt;/dev/null 2&gt;&amp;1; then exec crapkit hook-precommit; fi\nif command -v uvx &gt;/dev/null 2&gt;&amp;1; then exec uvx crapkit hook-precommit; fi\nexec python -m crapkit hook-precommit\n' &gt; .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit</code></pre>
-<p>From here every commit is judged, new debt only. Seed <em>before</em> arming, or the first commit on a brownfield repo refuses everything. The plugin is optional and the hook is not: the advisory annotates, this blocks.</p>
+printf '#!/bin/sh\nif command -v crapkit &gt;/dev/null 2&gt;&amp;1; then exec crapkit hook-precommit; fi\nif command -v uvx &gt;/dev/null 2&gt;&amp;1; then exec uvx crapkit hook-precommit; fi\nexec python -m crapkit hook-precommit\n' &gt; "$(git rev-parse --git-path hooks)/pre-commit"
+chmod +x "$(git rev-parse --git-path hooks)/pre-commit"</code></pre>
+<p>From here every commit is judged, new debt only. Seed <em>before</em> arming, or the first commit on a brownfield repo refuses everything. The plugin is optional and the hook is not: the advisory annotates, this blocks. <code>git rev-parse --git-path hooks</code> names the hooks directory from anywhere in the checkout, a linked worktree and a <code>crapkit.toml</code> below the git top included, so the block runs as written from your crapkit root.</p>
 <div class="callout info"><p>Two things bite here. The hook reaches crapkit through the <code>crapkit</code> command on git's PATH, then <code>uvx crapkit</code>, then <code>python -m crapkit</code>. Git runs hooks outside your shell's activated venv, so crapkit installed only in a venv needs its launcher's absolute path in the hook. And a hook in <code>.git/hooks/</code> is not committed, so teammates get nothing. The README's gate section has the committed-hooks-directory route, the pre-commit-framework route, and CI.</p></div>
 
 <h3>Then, whenever</h3>
@@ -981,7 +981,7 @@ $ python -m crapkit hook-precommit          # what the git hook runs
 crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
   ccn  10  app/route.py:1  route( kind , hot , live , admin )
 decompose before committing (coverage cannot save a function above the target).</code></pre>
-<p>A file staged <em>above</em> the crapkit root is outside that diff by design, and the gate no longer names it.</p>
+<p>A file staged <em>above</em> the crapkit root is outside that diff by design, and the gate no longer names it. The hook git runs does the <code>cd</code> for you: git starts it at the top, and with no <code>crapkit.toml</code> there the gate runs in each crapkit root below that owns a staged file and prints paths from the top, <code>packages/api/app/route.py:1</code>. The Enforcement block above arms it from <code>packages/api</code> as written, and a docs-only commit at the top passes with one note.</p>
 
 <h3>Everyday lookups</h3>
 <div class="tw" role="region" aria-label="Commands by task" tabindex="0"><table>

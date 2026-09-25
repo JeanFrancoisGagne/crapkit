@@ -114,6 +114,24 @@ def ls_files(root: Path) -> list[str]:
     return _git_paths(root, "ls-files", "-z")
 
 
+def staged_names(root: Path) -> list[str]:
+    """The paths the index changes against HEAD, relative to `root`."""
+    return _diff_names(root, "--cached")
+
+
+def tracked_configs(root: Path) -> list[str]:
+    """Every crapkit.toml the checkout around `root` tracks or has staged, spelled
+    from `root` (`../api/crapkit.toml`); [] outside a repository."""
+    if not root.is_dir():
+        return []
+    res = _spawn(root, ("ls-files", "-z", "--", ":(top,glob)**/crapkit.toml"))
+    return _nul_records(res.stdout) if res.returncode == 0 else []
+
+
+def _nul_records(out: str) -> list[str]:
+    return [record for record in out.split("\0") if record]
+
+
 def untracked_files(root: Path) -> list[str]:
     """Paths `git add` would pick up: untracked and not ignored.
 
@@ -499,6 +517,9 @@ class GitReads:
     def staged_blobs(self, rel_paths: list[str]) -> dict[str, bytes]:
         return staged_blobs(self.root, rel_paths)
 
+    def tracked(self) -> list[str]:
+        return ls_files(self.root)
+
 
 class _StartedReads:
     """The same two answers, from processes that are already running.
@@ -523,6 +544,10 @@ class _StartedReads:
             return _individual_blobs(self._root, rel_paths)
         stream = self._batch.result(_batch_requests(rel_paths))
         return _framed_blobs(stream, rel_paths)
+
+    def tracked(self) -> list[str]:
+        """Only asked when nothing is staged outside a commit, so not started early."""
+        return ls_files(self._root)
 
     def close(self) -> None:
         self._diff.close()

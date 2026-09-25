@@ -127,10 +127,13 @@ def test_the_merge_driver_both_pages_configure_is_the_console_script():
         assert "python -m crapkit ratchet merge" not in _doc(page), page
 
 
-def test_the_crapkit_description_quotes_the_gate_refusal_the_hook_prints():
+def test_the_crapkit_description_quotes_the_gate_refusal_the_hook_prints(capsys):
     from crapkit.cli import verifying
+    from crapkit.hook import Violation
 
-    emitted = Path(verifying.__file__).read_text(encoding="utf-8")
+    verifying._print_breaches([Violation("app/m.py", "route( a )", 1, 9)], 6, "", "staged")
+
+    emitted = capsys.readouterr().out
     assert f"staged function(s) {GATE_REFUSAL} of " in emitted, "the hook reworded its refusal"
     assert GATE_REFUSAL in _frontmatter(CRAPKIT_SKILL), "the description quotes something else"
 

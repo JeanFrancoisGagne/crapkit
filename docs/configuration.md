@@ -39,7 +39,14 @@ an unknown parser, a lane naming an undeclared scope, a negative `timeout_second
 
 Without `--repo`, CLI commands find the nearest `crapkit.toml` at or above the
 current directory. A `.git` entry stops the search. With `--repo PATH`, that path
-names the exact project root; the flag belongs after the subcommand.
+names the exact project root; the flag belongs after the subcommand. A directory with
+none refuses with exit 3 and a line that names `crapkit init`, `--repo`, and the
+`crapkit.toml` files the checkout tracks, spelled from where you stand.
+
+`hook-precommit` also looks down. Git runs a hook at the repository's top, so when
+no `crapkit.toml` sits at or above it, the gate runs in each root below that owns a
+staged file, nearest configuration winning, and prints paths from the top. Outside a
+commit with nothing staged it runs in every root whose `crapkit.toml` git tracks.
 
 | File argument | Meaning |
 |---|---|

@@ -340,7 +340,14 @@ def build_parser() -> argparse.ArgumentParser:
     ver.add_argument("--json", action="store_true", help="print the verdict as JSON")
     ver.set_defaults(func=_Handler("verifying", "cmd_verify"))
 
-    hook = sub.add_parser("hook-precommit", help="gate staged functions at min-CCN <= target; exit 6 on violation")
+    hook = sub.add_parser(
+        "hook-precommit", help="gate staged functions at min-CCN <= target; exit 6 on violation",
+        description="Gate the staged functions at min-CCN <= their scope's target; exit 6 on a "
+                    "violation. Outside a commit (git sets GIT_INDEX_FILE for the hooks a commit "
+                    "runs) with nothing staged, as under `pre-commit run --all-files`, it judges "
+                    "every tracked file instead. With no crapkit.toml at or above the working "
+                    "directory, as at the git top of a monorepo, it gates in each crapkit root "
+                    "below that owns a staged file.")
     hook.add_argument("--base", metavar="REF",
                       help="compare the index with merge-base(REF, HEAD), for CI checkouts")
     hook.add_argument("--repo", **_REPO_FLAG)

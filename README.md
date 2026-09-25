@@ -460,7 +460,12 @@ in silence.
 **The Crapkit root can sit below the Git top.** A config in `packages/api` gates
 that package's staged files as project-relative paths such as `app/m.py`.
 [Path and root rules](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery)
-also cover absolute arguments, literal filenames and Git diff settings.
+also cover absolute arguments, literal filenames and Git diff settings. Every route below
+works unchanged in such a monorepo. Git runs the hook at the repository's top, and with no
+`crapkit.toml` there the gate runs in each crapkit root below that owns a staged file and
+names paths from the top (`packages/api/app/m.py`). A commit that stages nothing under any
+`crapkit.toml`, a docs-only commit or any commit in a repo armed before `crapkit init`,
+passes with one note on stderr.
 
 The hook runs the first of three that git's PATH offers: the `crapkit` command (pipx, uv
 tool, or a venv whose `bin` is on PATH), then `uvx crapkit`, then `python -m crapkit`. Git
@@ -566,6 +571,14 @@ pre-commit install
 `pre-commit install` is the line every clone needs, the way Route 2 needs its
 `git config core.hooksPath` line. `crapkit doctor` WARNs on a config naming `crapkit-gate`
 while the hook git runs is not the one the framework writes.
+
+`pre-commit run --all-files`, the form pre-commit.ci and pre-commit/action run, starts no
+commit and stages nothing. Outside a commit, with nothing staged, the hook judges every
+tracked file instead of a staged diff that is empty: a function over its ceiling fails
+unless the committed ratchet marks it. So a breach committed from a clone that never ran
+`pre-commit install` fails the CI job. Inside a commit the hook judges only what is staged,
+as before. It tells the two apart by `GIT_INDEX_FILE`, which git sets for the hooks a
+commit runs. For a CI gate that also weighs coverage and the marks, use Route 4.
 
 `rev` is a git ref pre-commit resolves against that remote. Pin a release tag, not a
 branch: `pre-commit autoupdate` only moves between tags, and a moving `main` would change
@@ -917,7 +930,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `coupling [--min-support N] [--min-confidence F] [--top N] [--json]` | File pairs that keep landing in the same commits. Defaults: `--min-support 5` shared commits, `--min-confidence 0.5` max-direction ratio, `--top 50`. Bulk commits never couple pairs, and a young repo returns nothing at the default support. The ranked pairs are cached in `.crapkit/coupling-cache-v1.json`, keyed on HEAD, the churn window, today's UTC date, the path format and a digest of the tracked set, and shared with `brief` and `worklist --batches` (warm: 1.05 s to 0.11 s on a 72k-commit repo). The date is part of that key, so the first run after midnight UTC rebuilds the pairs on an unchanged HEAD. `--top` reads the cache, because it truncates that same order; `--min-support` or `--min-confidence` off their defaults ask a wider question than the file answers, so they bypass it and recompute. |
 | `mutate [--files F ...] [--max-mutants N] [--drop-pool] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. Both lists pass through the scored corpus first, the same predicate `coverage` uses (scopes, excludes, the test-file cut, `max_file_bytes`): a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims is named on stderr and never mutated, `--json` lists it under `outside_corpus`, and when nothing is left stdout says `nothing to mutate` at exit 0 without starting the suite. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell and PowerShell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. Every worker uses a kept worktree, including one; see [mutation worktrees](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees). `--drop-pool` removes them and exits. |
 | `test-scoped FILE ...` | Runs each owning scope's `[crapkit.scoped_tests]` template on the files (quoted, longest-prefix scope wins). A template with no `{files}` runs as written, which is how a scope whose tests live outside its own paths runs its whole suite. Exit code only; a nonzero runner exits 1. |
-| `hook-precommit [--base REF]` | The cc-only gate on staged blobs. No coverage, no snapshot, no repo-wide cache. Exit 6 on a violation. `--base REF` compares the index with the merge base of REF and HEAD, the form a CI checkout runs. |
+| `hook-precommit [--base REF]` | The cc-only gate on staged blobs. No coverage, no snapshot, no repo-wide cache. Exit 6 on a violation. `--base REF` compares the index with the merge base of REF and HEAD, the form a CI checkout runs. Outside a commit with nothing staged, as under `pre-commit run --all-files`, it judges every tracked file. With no `crapkit.toml` at or above where it runs, it gates in each root below that owns a staged file. |
 | `claude-hook [--protocol N]` | Reads one PostToolUse payload from stdin, as Claude Code, Copilot CLI, Cursor or VS Code sends it, and judges each file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only: the edit has landed, and `hook-precommit` stays the enforcement point. The advisory is the only thing it ever says, one block per judged file (a head line, one line per breaching function, a closing line): on stderr with exit 2 for Claude Code, and as one JSON object on stdout with exit 0 for Copilot CLI, Cursor and VS Code, which read exit 2 otherwise. A file type crapkit does not measure, no `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure all exit 0 in silence. The root is the first `crapkit.toml` above the edited file; the walk stops at a `.git` entry, so a worktree never borrows its parent's config. A `Bash` event names no file, so it judges the working tree instead: the dirty or untracked `*.py` files touched in the last 12 seconds, 25 at most, each through the same ladder, and silence for a clean tree or a cwd outside any repo. That half fires only where you register a `Bash` matcher ([The Claude Code plugin](#the-claude-code-plugin)). It opens no snapshot and writes nothing. |
 | `watch [--interval SECONDS] [--cycles N]` | Rescores tracked files as they change (mtime polling, default 2s, subprocess-isolated so a half-saved syntax error never kills the watcher). `--cycles N` polls exactly N times and exits 0; without it the loop runs until ctrl-c. |
 | `help [TOPIC]` | The help git, npm and docker answer to. With no TOPIC it prints the command list; with one it prints that subcommand's own help, the same page as `crapkit TOPIC --help`. A TOPIC that names no subcommand exits 3. |

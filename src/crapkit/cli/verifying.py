@@ -18,7 +18,7 @@ from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
                       _ratchet_key_version, _repo_out_path, _repo_relative, _stand, _write_tsv,
-                      behind_head, repo_text)
+                      behind_head, no_config, repo_text)
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -935,7 +935,7 @@ def cmd_test_scoped(args: argparse.Namespace) -> int:
     return 0
 
 
-def _note_stale_staged(root: Path, flagged_paths: set) -> None:
+def _note_stale_staged(root: Path, flagged_paths: set, shown: str = "") -> None:
     """A developer who fixed the file but forgot `git add` gets told exactly that.
 
     The difference is git's to decide, through its own filters: a byte compare
@@ -945,7 +945,7 @@ def _note_stale_staged(root: Path, flagged_paths: set) -> None:
     from ..gitio import unstaged_paths
 
     for path in sorted(flagged_paths & unstaged_paths(root)):
-        print(f"  note: {path} differs from the working tree — the STAGED blob is "
+        print(f"  note: {shown}{path} differs from the working tree — the STAGED blob is "
               "what commits; re-stage with `git add` if you already fixed it.")
 
 
@@ -1037,16 +1037,16 @@ def _split_marked(violations: list, entries: list) -> tuple[list, list]:
     return gated, exempt
 
 
-def _note_marked_staged(exempt: list) -> None:
+def _note_marked_staged(exempt: list, noun: str = "staged") -> None:
     """One line, never a list. The count says the exemption fired; the marks
     themselves are in the committed TSV, and naming them at every commit would
     reprint debt the repo reads through `crapkit ratchet report`."""
     if exempt:
-        print(f"crapkit gate: {len(exempt)} staged function(s) carry a ratchet mark and "
+        print(f"crapkit gate: {len(exempt)} {noun} function(s) carry a ratchet mark and "
               "were not gated — `crapkit verify` fails a mark that rises", file=sys.stderr)
 
 
-def _gated_violations(root: Path, cfg, violations: list, records=()) -> list:
+def _gated_violations(root: Path, cfg, violations: list, records=(), noun: str = "staged") -> list:
     """The breaches the commit is actually refused for.
 
     The marks file is read only once something breached: a clean commit is the
@@ -1061,11 +1061,11 @@ def _gated_violations(root: Path, cfg, violations: list, records=()) -> list:
     entries = _load_ratchet_or_die(root / cfg.ratchet_file, cfg.ratchet_file)
     _ratchet_key_version(root, cfg, records, entries=entries)
     gated, exempt = _split_marked(violations, entries)
-    _note_marked_staged(exempt)
+    _note_marked_staged(exempt, noun)
     return gated
 
 
-def _staged_gate(root: Path, cfg, base: str | None = None):
+def _staged_gate(root: Path, cfg, base: str | None = None, *, whole: bool = False):
     """The gate's verdict, with both git reads started before lizard is imported.
 
     Neither answer is needed until the import is paid for and the two do not
@@ -1079,30 +1079,126 @@ def _staged_gate(root: Path, cfg, base: str | None = None):
         _analysis_tools()  # importing crapkit.hook reaches lizard too, so it waits its turn
         from ..hook import gate_staged
 
-        return gate_staged(root, cfg, reads)
+        gate = gate_staged(root, cfg, reads, whole=whole)
+    if gate.whole:
+        print("crapkit gate: nothing is staged and no commit is running, so every tracked "
+              "file was judged", file=sys.stderr)
+    return gate
+
+
+def _in_a_commit() -> bool:
+    """git sets GIT_INDEX_FILE for the hooks `git commit` runs; `pre-commit run
+    --all-files` in CI and a command typed at a shell run without it."""
+    import os
+
+    return "GIT_INDEX_FILE" in os.environ
 
 
 def cmd_hook_precommit(args: argparse.Namespace) -> int:
-    import os
+    """The commit gate, in every crapkit root that owns what the commit holds."""
+    base = getattr(args, "base", None)
+    roots = _hook_roots(args.repo, base)
+    if not roots:
+        print(f"crapkit gate: no staged file sits under a crapkit.toml at or below "
+              f"{Path.cwd()}, so nothing was gated; `{_self()} init` adopts a directory "
+              "for the gate", file=sys.stderr)
+        return 0
+    return max(_hook_gate(root, shown, base) for root, shown in roots)
 
-    root = _command_root(args.repo)
+
+def _hook_roots(repo: str | None, base: str | None) -> list[tuple[Path, str]]:
+    """The roots this gate runs in, each with the prefix its printed paths take.
+
+    `--repo`, or a crapkit.toml at or above the working directory, names the one
+    root, as for every command (ADR 0002). git runs the hook at the top, so a
+    monorepo whose crapkit.toml sits in packages/api has none there, and the
+    gate refused every commit, a docs-only one included. It now runs in each
+    root below that owns a staged file and names paths from where git stands.
+    """
+    from ..rootfind import find_root
+
+    cwd = Path.cwd().resolve()
+    if repo is not None or find_root(cwd) is not None:
+        return [(_command_root(repo), "")]
+    roots = _roots_below(cwd, base)
+    for root in roots:
+        print(f"crapkit: using crapkit.toml at {root}", file=sys.stderr)
+    return [(root, f"{root.relative_to(cwd).as_posix()}/") for root in roots]
+
+
+def _roots_below(top: Path, base: str | None) -> list[Path]:
+    """The roots below `top` that own the paths the gate judges, nearest
+    crapkit.toml winning. A directory outside any repository has no staged
+    file to place, and keeps the no-configuration refusal it always got."""
+    from ..errors import GitError
+    from ..rootfind import find_root
+
+    try:
+        paths = _owned_paths(top, base)
+    except GitError:
+        raise ConfigError(no_config(top)) from None
+    return sorted({find_root((top / path).parent) for path in paths} - {None})
+
+
+def _owned_paths(top: Path, base: str | None) -> list[str]:
+    """What places the roots: the staged files inside a commit, and every tracked
+    crapkit.toml when a `--base` diff or the tracked-file check is what runs."""
+    from ..gitio import staged_names, tracked_configs
+
+    if base is not None:
+        return tracked_configs(top)
+    staged = staged_names(top)
+    if staged or _in_a_commit():
+        return staged
+    return tracked_configs(top)
+
+
+def _hook_gate(root: Path, shown: str, base: str | None) -> int:
+    """One root's verdict. `shown` prefixes every path it prints: "" at the
+    command's own root, `packages/api/` for a root found below the top."""
     cfg = _load_repo_config(root)
-    gate = _staged_gate(root, cfg, getattr(args, "base", None))
-    _warn_unscoped_staged(gate.unscoped)
-    violations = _gated_violations(root, cfg, gate.violations, gate.records)
+    gate = _staged_gate(root, cfg, base, whole=_may_judge_tracked(base))
+    _warn_unscoped_staged([shown + path for path in gate.unscoped])
+    violations = _gated_violations(root, cfg, gate.violations, gate.records, _judged(gate))
     if not violations:
         return 0
-    print(f"crapkit gate: {len(violations)} staged function(s) exceed the complexity ceiling of {cfg.target}:")
-    for v in violations:
-        print(f"  ccn {v.ccn:>3}  {v.path}:{v.start}  {v.long_name}")
-    _note_stale_staged(root, {v.path for v in violations})
+    _print_breaches(violations, cfg.target, shown, _judged(gate))
+    if gate.whole:
+        return _refuse_tracked()
+    return _refuse_staged(root, cfg, shown, violations, gate.records)
 
+
+def _may_judge_tracked(base: str | None) -> bool:
+    """An empty staged diff judges every tracked file only outside a commit and
+    with no `--base`, whose own diff is the question asked."""
+    return base is None and not _in_a_commit()
+
+
+def _judged(gate) -> str:
+    return "tracked" if gate.whole else "staged"
+
+
+def _print_breaches(violations: list, target: int, shown: str, judged: str) -> None:
+    print(f"crapkit gate: {len(violations)} {judged} function(s) exceed the complexity ceiling of {target}:")
+    for v in violations:
+        print(f"  ccn {v.ccn:>3}  {shown}{v.path}:{v.start}  {v.long_name}")
+
+
+def _refuse_tracked() -> int:
+    """No commit to refuse or grant: the breach is already committed."""
+    print("decompose them and commit the split (coverage cannot save a function above the target).")
+    return 6
+
+
+def _refuse_staged(root: Path, cfg, shown: str, violations: list, records) -> int:
+    import os
+
+    _note_stale_staged(root, {v.path for v in violations}, shown)
     # CRAPKIT_OVERRIDE_REASON is not a bypass: it routes through the full
     # three-record audit and the gate holds unless all three land.
     reason = os.environ.get("CRAPKIT_OVERRIDE_REASON", "").strip()
     if reason:
-        _grant_env_override(root, cfg, violations, reason, gate.records)
+        _grant_env_override(root, cfg, violations, reason, records)
         return 0
-
     print("decompose before committing (coverage cannot save a function above the target).")
     return 6

@@ -208,8 +208,23 @@ def _analysis_tools():
 def _load_repo_config(root: Path):
     config_path = root / "crapkit.toml"
     if not config_path.is_file():
-        raise ConfigError(f"no crapkit.toml at {root} - nothing to analyze")
+        raise ConfigError(no_config(root))
     return load_config_text(repo_text(config_path, "crapkit.toml"), root=root)
+
+
+def no_config(root: Path) -> str:
+    """The refusal for a directory with no crapkit.toml, with both ways forward.
+
+    It named neither, so a monorepo command run one package over, or a hook
+    armed before `init`, left the reader to guess. The configurations the
+    checkout holds are spelled from `root`, the way `--repo` takes them.
+    """
+    from ..gitio import tracked_configs
+
+    held = tracked_configs(root)
+    nearby = f"; this checkout holds {', '.join(held[:3])}" if held else ""
+    return (f"no crapkit.toml at {root} - nothing to analyze; run `{_self()} init` there to "
+            f"adopt it, or pass --repo DIR to name a directory that holds one{nearby}")
 
 
 def _file_sizer(root: Path):
