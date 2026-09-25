@@ -1,7 +1,7 @@
 """Repo sniffing for `crapkit init`: tracked files in, a starter crapkit.toml out. Pure."""
 from __future__ import annotations
 
-import json
+from collections.abc import Mapping
 from typing import NamedTuple
 
 from .config import PYTEST_CONFIG_FILES, pytest_testpaths_texts as pytest_testpaths
@@ -213,30 +213,30 @@ def _js_runner_command(dev_dependencies: frozenset[str]) -> str | None:
     return None
 
 
-def _load_json(text: str) -> dict:
-    try:
-        data = json.loads(text)
-    except ValueError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-class _NpmPackage(NamedTuple):
+class NpmPackage(NamedTuple):
     """The two package.json fields init reads, in the shapes npm reads them.
 
-    Parsed once here so no reader meets a raw value: `.get("scripts", {})`
-    covered an absent key only, and a key present as null, a number, a list or
-    a string reached `in` and ended init in a TypeError, or named a script npm
-    does not have.
+    Built once, where init reads the file (`cli.admin._package_json`), so no
+    reader meets a raw value: `.get("scripts", {})` covered an absent key only,
+    and a key present as null, a number, a list or a string reached `in` and
+    ended init in a TypeError, or named a script npm does not have.
     """
     scripts: dict[str, str]
     dev_dependencies: frozenset[str]
 
 
-def _npm_package(text: str) -> _NpmPackage:
-    data = _load_json(text)
-    return _NpmPackage(_npm_scripts(data.get("scripts")),
-                       _dependency_names(data.get("devDependencies")))
+# What a directory with no package.json reads as: no scripts, no runner.
+NO_PACKAGE = NpmPackage({}, frozenset())
+# package.json per directory holding one, "" for the root; a bare package is the
+# root's alone, and None a repo with none.
+Packages = Mapping[str, NpmPackage]
+PackageJson = NpmPackage | Packages | None
+
+
+def npm_package(data: dict) -> NpmPackage:
+    """The fields init reads out of one package.json object."""
+    return NpmPackage(_npm_scripts(data.get("scripts")),
+                      _dependency_names(data.get("devDependencies")))
 
 
 def _npm_scripts(value) -> dict[str, str]:
@@ -296,14 +296,14 @@ def _npm_test_command(scripts: dict) -> str | None:
     return f"npm run {script} -- --coverage" if script else None
 
 
-def _js_command(package: _NpmPackage) -> str | None:
+def _js_command(package: NpmPackage) -> str | None:
     """What npm would run tests with, or the runner's own command when the
     package declares no test script at all."""
     return (_npm_test_command(package.scripts)
             or _js_runner_command(package.dev_dependencies))
 
 
-def _js_routed_lane(package: _NpmPackage, command: str, runner: str, cwd: str) -> LaneSpec:
+def _js_routed_lane(package: NpmPackage, command: str, runner: str, cwd: str) -> LaneSpec:
     """The lane with both of its reports routed under .crapkit/, run from `cwd`.
 
     Every path in the command is written from `cwd`, so a lane running in a
@@ -318,7 +318,7 @@ def _js_routed_lane(package: _NpmPackage, command: str, runner: str, cwd: str) -
                     _JS_ARTIFACT, "istanbul", _JS_LANGUAGES, results, env, cwd)
 
 
-def _js_root_lane(package: _NpmPackage) -> LaneSpec | None:
+def _js_root_lane(package: NpmPackage) -> LaneSpec | None:
     """A test script, or vitest/jest in devDependencies: either says the repo
     already knows how to produce istanbul coverage.
 
@@ -336,15 +336,15 @@ def _js_root_lane(package: _NpmPackage) -> LaneSpec | None:
     return _js_routed_lane(package, command, runner, "")
 
 
-def _runner_workspaces(packages: dict[str, str]) -> list[tuple[str, str]]:
+def _runner_workspaces(packages: Packages) -> list[tuple[str, str]]:
     """The workspace directories whose own devDependencies name one runner,
     each paired with the runner it named, so no caller asks twice."""
-    named = ((directory, _js_runner(_npm_package(text).dev_dependencies))
-             for directory, text in packages.items() if directory)
+    named = ((directory, _js_runner(package.dev_dependencies))
+             for directory, package in packages.items() if directory)
     return sorted((directory, runner) for directory, runner in named if runner)
 
 
-def _js_workspace_lane(packages: dict[str, str]) -> LaneSpec | None:
+def _js_workspace_lane(packages: Packages) -> LaneSpec | None:
     """The lane for the one workspace that owns a runner, or None when the
     workspaces name none or several.
 
@@ -361,21 +361,24 @@ def _js_workspace_lane(packages: dict[str, str]) -> LaneSpec | None:
     if len(named) != 1:
         return None
     directory, runner = named[0]
-    package = _npm_package(packages[directory])
+    package = packages[directory]
     command = _npm_test_command(package.scripts) or _JS_RUNNER_COMMAND[runner]
     return _js_routed_lane(package, command, runner, directory)
 
 
-def _packages(package_json: str | dict[str, str]) -> dict[str, str]:
-    """package.json texts keyed by the directory holding them, "" for the root.
+def _packages(package_json: PackageJson) -> Packages:
+    """Packages keyed by the directory holding them, "" for the root.
 
-    A bare string is the root's text and nothing else, which is what init read
+    A bare package is the root's and nothing else, which is what init read
     before workspaces got their turn and what a caller passing one still means.
+    None is a repo with no package.json.
     """
-    return {"": package_json} if isinstance(package_json, str) else package_json
+    if isinstance(package_json, NpmPackage):
+        return {"": package_json}
+    return package_json or {}
 
 
-def _js_lane(package_json: str | dict[str, str]) -> LaneSpec | None:
+def _js_lane(package_json: PackageJson) -> LaneSpec | None:
     """The js lane, from the root package.json and the workspaces beside it.
 
     The root wins when it names a runner itself. Only a root that names none
@@ -383,7 +386,7 @@ def _js_lane(package_json: str | dict[str, str]) -> LaneSpec | None:
     the lane it always got.
     """
     packages = _packages(package_json)
-    root = _npm_package(packages.get("", ""))
+    root = packages.get("", NO_PACKAGE)
     if _js_runner(root.dev_dependencies) is None:
         workspace = _js_workspace_lane(packages)
         if workspace is not None:
@@ -391,7 +394,7 @@ def _js_lane(package_json: str | dict[str, str]) -> LaneSpec | None:
     return _js_root_lane(root)
 
 
-def detect_lanes(markers: frozenset[str], package_json: str | dict[str, str], *,
+def detect_lanes(markers: frozenset[str], package_json: PackageJson, *,
                  interpreter: str = "python") -> tuple[LaneSpec, ...]:
     """The lanes this repo can already run, decided from files alone.
 
@@ -588,7 +591,7 @@ class _ScopedFacts(NamedTuple):
     tested: frozenset[str]     # scopes whose own paths hold a test file
     test_dir: str              # the one test directory outside every scope, or ""
     covered: bool              # does pytest's testpaths already collect test_dir?
-    packages: dict[str, str]   # package.json texts by directory, "" for the root
+    packages: Packages         # package.json fields by directory, "" for the root
 
 
 # The shape that marks a detected lane as the pytest lane, read in one place:
@@ -683,8 +686,8 @@ def _python_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
     return ScopedEntry(command, _suite_why(name, facts), live)
 
 
-def _workspace_script(packages: dict[str, str], directory: str) -> str | None:
-    return _npm_test_script(_npm_package(packages.get(directory, "")).scripts)
+def _workspace_script(packages: Packages, directory: str) -> str | None:
+    return _npm_test_script(packages.get(directory, NO_PACKAGE).scripts)
 
 
 def _js_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
@@ -697,7 +700,7 @@ def _js_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
         return ScopedEntry(_NPM_WORKSPACE.format(script=script, directory=name),
                            f"{name}/ is an npm workspace with its own {script} script, "
                            "run from the root with -w", True)
-    runner = _js_runner(_npm_package(facts.packages.get("", "")).dev_dependencies)
+    runner = _js_runner(facts.packages.get("", NO_PACKAGE).dev_dependencies)
     if runner:
         return ScopedEntry(_JS_RELATED[runner], f"{runner}'s related-tests mode, keyed by "
                            "the runner package.json names", False)
@@ -732,7 +735,7 @@ def _scoped_lines(scopes: dict[str, tuple[str, ...]],
 
 def _scoped_facts(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...],
                   launcher: str, testpaths: tuple[str, ...], tracked,
-                  package_json: str | dict[str, str]) -> _ScopedFacts:
+                  package_json: PackageJson) -> _ScopedFacts:
     test_dir = _repo_test_dir(tracked, scopes)
     return _ScopedFacts(launcher, _confirmed_languages(lanes),
                         scopes_with_tests(tracked, {name: (name,) for name in scopes}),
@@ -767,7 +770,7 @@ def _commented_block(rest: list[str], has_live: bool) -> list[str]:
     return header + rest
 
 
-def runner_workspaces(package_json: str | dict[str, str]) -> list[tuple[str, str]]:
+def runner_workspaces(package_json: PackageJson) -> list[tuple[str, str]]:
     """Every workspace directory whose package.json names one runner, paired
     with that runner, for init's summary to name when it could not pick a lane
     among them."""
@@ -804,7 +807,7 @@ def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]],
 def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...] = (),
                  *, interpreter: str = _DEFAULT_PYTHON,
                  testpaths: tuple[str, ...] = (), tracked=(),
-                 package_json: str | dict[str, str] = "") -> str:
+                 package_json: PackageJson = None) -> str:
     """The starter crapkit.toml. `interpreter` is the python a committed config
     on this repo can call, the lockfile's manager prefix included; every python
     line the file holds names it, commented templates as much as live lanes.
@@ -813,7 +816,7 @@ def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...]
     and the file also carries the fallback for a suite that cannot collect them
     together, commented out: one lane per testpath at `full_suite = false`.
 
-    `tracked` is the repo's tracked file list and `package_json` the texts
+    `tracked` is the repo's tracked file list and `package_json` the packages
     `detect_lanes` read; together they decide which scoped-test form each scope
     gets. A caller passing neither gets the whole-suite form for python and
     the placeholder for js, the two forms that cannot collect nothing.

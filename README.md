@@ -1025,12 +1025,13 @@ carry the same launcher, so uncommenting one cannot hand the bare `python` back.
 it writes reports into `.crapkit/cov/`, which is why the `.gitignore` list is so short: see
 [Where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live).
 
-`init` reads a root `package.json` past a UTF-8 byte-order mark, as npm does. A root
-`package.json` in UTF-16 (what PowerShell 5.1's `Out-File` writes) or holding a byte that is
-not UTF-8 stops `init` at exit 3 before it writes any file, since a lane read off a file it
-could not read would be a guess: `init wrote no file: package.json is not UTF-8 (byte e9 at
-offset 36); save it as UTF-8`. A nested one, a test fixture say, is skipped with one warning
-line naming it.
+`init` reads each `package.json` past a UTF-8 byte-order mark, as npm does. A root
+`package.json` that is not one UTF-8 JSON object stops `init` at exit 3 before it writes any
+file, naming the file and the fix, since a lane read off such a file would be a guess: one in
+UTF-16 (what PowerShell 5.1's `Out-File` writes), one holding a byte that is not UTF-8, one
+that does not parse and one that holds an array or another value, as in
+`init wrote no file: package.json is not UTF-8 (byte e9 at offset 36); save it as UTF-8`. A
+nested one, a test fixture say, is skipped with one warning line naming it.
 
 `init` writes `.gitignore` before `crapkit.toml`, and appends in that file's own line ending
 without touching a byte already there. A UTF-16 `.gitignore`, which git cannot read either, is

@@ -11,6 +11,8 @@ where a UTF-16 file was a traceback instead of a sentence.
 - A file the repository owns and crapkit must read exactly (crapkit.toml, a
   portable baseline, each package.json init reads) is UTF-8, a byte-order mark
   read past, or refused with a sentence naming the byte: `repo_text`.
+- JSON a repository wrote (each package.json init reads) reads by the same rule
+  and must hold one JSON object, or is refused naming the file: `repo_json`.
 - The marks file, today's copy, every past revision and each side git hands the
   merge driver, goes through `marks_text`: UTF-16 when a byte-order mark says
   so, else UTF-8 with a BOM dropped, and each byte neither reads as U+FFFD. A
@@ -50,6 +52,7 @@ from __future__ import annotations
 
 import codecs
 import io
+import json
 import os
 from pathlib import Path
 from typing import BinaryIO
@@ -58,6 +61,7 @@ from .errors import ConfigError
 
 _UTF16 = ((codecs.BOM_UTF16_LE, "utf-16-le"), (codecs.BOM_UTF16_BE, "utf-16-be"))
 _C1 = "crapkit-c1"
+_JSON_KINDS = {list: "an array", str: "a string", bool: "a boolean", type(None): "null"}
 
 
 # --- a file the repository owns ---------------------------------------------
@@ -98,6 +102,28 @@ def _not_utf8(what: str, data: bytes, exc: UnicodeDecodeError) -> str:
         offset = exc.start + (len(data) - len(exc.object))
         reason = f"byte {data[offset]:02x} at offset {offset}"
     return f"{what} is not UTF-8 ({reason}); save it as UTF-8"
+
+
+def repo_json(path: Path, what: str) -> dict:
+    """The one JSON object a file holds, read by `repo_text`'s rule: a BOM read
+    past, as npm reads past it, and UTF-16 or a byte that is not UTF-8 refused
+    by name.
+
+    A file that does not parse, or parses to something other than an object, is
+    refused too, naming `what` and the line where the parse stopped. init read
+    such a package.json as an empty object, so a stray comma cost the js lane
+    without a word. Every refusal is a ConfigError, so a caller that can go on
+    without the file catches one type and prints its sentence.
+    """
+    try:
+        value = json.loads(repo_text(path, what))
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"{what} is not valid JSON ({exc.msg} at line {exc.lineno} "
+                          f"column {exc.colno}); fix that line") from None
+    if not isinstance(value, dict):
+        kind = _JSON_KINDS.get(type(value), "a number")
+        raise ConfigError(f"{what} holds {kind}, not a JSON object; save one object there")
+    return value
 
 
 # --- the marks file -----------------------------------------------------------

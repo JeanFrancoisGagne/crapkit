@@ -5,7 +5,6 @@ not exist, a flag whose position is never shown: each one costs a reader a
 failed command and a hunt. Every assertion here compares a documented string
 against the code, the git history or the scaffolder that produces it.
 """
-import json
 import re
 import subprocess
 import sys
@@ -17,7 +16,8 @@ import pytest
 from crapkit.config import Config
 from crapkit.churn import parse_git_log
 from crapkit.cli.parser import build_parser
-from crapkit.scaffold import detect_lanes, gitignore_entries, live_lanes, starter_toml
+from crapkit.scaffold import (detect_lanes, gitignore_entries, live_lanes, npm_package,
+                              starter_toml)
 from crapkit.score import grade
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -25,8 +25,8 @@ PY_SCOPES = {"calc": ("python",)}
 JS_SCOPES = {"src": ("typescript",)}
 # The package.json the TypeScript quickstart's repo carries: a `test` script and
 # vitest in devDependencies is what makes it "a vitest repo".
-TS_PACKAGE = json.dumps({"scripts": {"test": "vitest run"},
-                         "devDependencies": {"vitest": "^2.0.0"}})
+TS_PACKAGE = npm_package({"scripts": {"test": "vitest run"},
+                          "devDependencies": {"vitest": "^2.0.0"}})
 # `N functions scored: 2 measured / 1 no-lane, 1 over ceiling 6, CRAP load 3.0, grade F`,
 # zero buckets dropped, the ceiling labelled one way or the other.
 _SUMMARY = re.compile(
@@ -101,7 +101,7 @@ def test_every_lane_example_in_the_docs_comes_back_from_doctor_clean():
 
 
 def _py_lanes():
-    return detect_lanes(frozenset({"pyproject.toml"}), "")
+    return detect_lanes(frozenset({"pyproject.toml"}), None)
 
 
 def _js_lanes():

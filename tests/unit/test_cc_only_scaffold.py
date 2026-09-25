@@ -13,7 +13,7 @@ whole scope into `ok`.
 """
 from crapkit.config import SUPPORTED_LANGUAGES, load_config_text
 from crapkit.scaffold import (COVERABLE_LANGUAGES, cc_only_scope, detect_lanes,
-                              starter_toml)
+                              npm_package, starter_toml)
 
 GO_SCOPES = {"cmd": ("go",)}
 PY_SCOPES = {"calc": ("python",)}
@@ -21,7 +21,7 @@ MIXED_SCOPES = {"calc": ("python",), "cmd": ("go",)}
 
 
 def _py_lanes():
-    return detect_lanes(frozenset({"pyproject.toml"}), "")
+    return detect_lanes(frozenset({"pyproject.toml"}), None)
 
 
 # --- which scopes have no parser to wait for ---------------------------------
@@ -56,7 +56,7 @@ def test_every_language_a_detectable_lane_measures_is_coverable():
     can claim but this set calls cc-only would get both a lane and the key that
     says it needs none."""
     lanes = detect_lanes(frozenset({"pyproject.toml"}),
-                         '{"scripts": {"test": "vitest run"}}')
+                         npm_package({"scripts": {"test": "vitest run"}}))
     measured = {lang for lane in lanes for lang in lane.languages}
 
     assert measured <= COVERABLE_LANGUAGES

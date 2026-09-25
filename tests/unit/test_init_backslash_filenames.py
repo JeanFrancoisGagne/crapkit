@@ -9,7 +9,7 @@ from crapkit.scaffold import detect_lanes, sniff_scopes, source_candidates, star
 from crapkit.universe import scopes_with_tests
 
 PY = {"pkg": ("python",)}
-PY_LANES = detect_lanes(frozenset({"pyproject.toml"}), "")
+PY_LANES = detect_lanes(frozenset({"pyproject.toml"}), None)
 
 
 def _line(text: str, prefix: str) -> str:

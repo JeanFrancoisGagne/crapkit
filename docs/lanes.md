@@ -214,8 +214,11 @@ that package's business and is not warned about.
 `init` reads those two fields the way npm reads them. A `scripts` value that is not an object,
 null included, is no scripts, and so is a script whose command is not a string. A
 `devDependencies` list names the strings in it; null or any other value that is not an object
-names no package. A `package.json` that does not parse, or parses to something other than an
-object, detects no lane.
+names no package. A root `package.json` that does not parse, parses to something other than an
+object, or is not UTF-8 stops `init` at exit 3 before it writes any file, naming the file and
+where the parse stopped, as in `init wrote no file: package.json is not valid JSON (Expecting
+value at line 1 column 1); fix that line`. A nested one is skipped with one warning line naming
+it, and `init` writes what it writes when that file is not there.
 
 ### What the istanbul parser reads
 
