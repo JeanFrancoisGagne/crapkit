@@ -157,13 +157,19 @@ def _ordinal(row: Row, rows: list[Row]) -> int:
     return sorted(same, key=lambda r: (r.start, r.occurrence)).index(row) + 1
 
 
+def _is_twin(row: Row, rows: list[Row]) -> bool:
+    return sum(1 for r in rows if (r.path, r.long_name) == (row.path, row.long_name)) > 1
+
+
 def handle(row: Row, rows: list[Row]) -> str:
-    """The bare identifier, NAME#N for a twin past the first, (anonymous)#N for
-    a function with no name (CONTEXT.md:32-33)."""
+    """The bare identifier, NAME#N for a twin (every member of the group
+    numbered in file order), (anonymous)#N for a function with no name
+    (CONTEXT.md:32-33). A key differs: the first twin's key keeps the bare
+    long name (docs/ratchet.md:42-59)."""
     number, bare = _ordinal(row, rows), bare_name(row.long_name)
     if bare in ("(anonymous)", ""):
         return f"(anonymous)#{number}"
-    return bare if number == 1 else f"{bare}#{number}"
+    return f"{bare}#{number}" if _is_twin(row, rows) else bare
 
 
 def worst_twin(rows: list[Row], path: str, bare: str) -> Row:
