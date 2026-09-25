@@ -9,7 +9,8 @@
   so a lost stamps file took the refusal with it and `coverage
   --reuse-artifacts` scored the dead lane's leftover. Stamps written by crapkit
   0.4.15 never held a refusal: the upgrade limit and its remedy.
-- a coverage.py report missing a member every current producer writes.
+- a coverage.py report missing a member every current producer writes, and an
+  istanbul branch record with fewer or more hit counts than its locations.
 
 Every variation runs, the passing ones included. A case whose fix has not
 landed yet is a strict xfail that says what fixes it: when the fix lands the
@@ -525,6 +526,27 @@ def summary_missing(region: dict) -> None:
     del region["summary"]
 
 
+def no_branch(region: dict) -> None:
+    """hot as coverage.py writes a function with no branch: 0 of 0."""
+    region["summary"].update(num_branches=0, covered_branches=0)
+
+
+def statement_counts_missing_with_no_branch(region: dict) -> None:
+    no_branch(region)
+    statement_counts_missing(region)
+
+
+def test_a_function_with_no_branch_scores_from_its_statements(tmp_path: Path):
+    """The control for the refusal below: with 0 of 0 branches the statement
+    pair decides, and hot(1) ran all 4 of its statements."""
+    repo = coverage_py_report(tmp_path, no_branch)
+
+    res = run_cli(repo, "coverage", "--reuse-artifacts")
+
+    assert res.returncode == 0, res.stderr
+    assert scored_cov(repo) == 1.0
+
+
 def branch_counts_missing(region: dict) -> None:
     del region["summary"]["num_branches"], region["summary"]["covered_branches"]
 
@@ -537,6 +559,9 @@ def start_line_missing(region: dict) -> None:
 @pytest.mark.parametrize("edit, names", [
     pytest.param(summary_missing, ("coverage.json", "hot", "summary"), id="function-summary-missing"),
     pytest.param(branch_counts_missing, ("hot", "branch counts"), id="branch-counts-missing"),
+    pytest.param(statement_counts_missing_with_no_branch,
+                 ("coverage.json", "src/a.py: hot", "no statement counts and no branch"),
+                 id="statement-counts-missing-with-no-branch"),
     pytest.param(start_line_missing, ("coverage.json", "hot", "start_line", "7.13.1"),
                  id="start-line-missing", marks=pytest.mark.xfail(
                      strict=True, reason="a region without start_line still scores; it holds "
@@ -551,3 +576,50 @@ def test_a_report_missing_a_member_is_refused_by_name(edit, names, tmp_path: Pat
     assert res.returncode == 5, res.stdout + res.stderr
     for name in names:
         assert name in res.stderr, f"{name!r} missing from: {res.stderr}"
+
+
+# --- an istanbul branch record with fewer or more hit counts than locations ---
+
+BRANCH_FILES = {
+    "src/a.py": HOT,
+    "crapkit.toml": toml({"src": "src"}, istanbul_lane("js", "src", "never runs", "cov.json")),
+    ".gitignore": ".crapkit/\ncov.json\n",
+}
+
+
+def istanbul_report(repo: Path, hits: list) -> Path:
+    """hot's istanbul record: an if/else at line 2 with two locations, `hits`
+    as its `b` array, every statement run."""
+    key = str(repo / "src" / "a.py")
+    record = {"path": key,
+              "fnMap": {"0": {"name": "hot", "decl": {"start": {"line": 1}},
+                              "loc": {"start": {"line": 1}, "end": {"line": 4}}}},
+              "f": {"0": 1},
+              "branchMap": {"0": {"loc": {"start": {"line": 2}}, "type": "if",
+                                  "locations": [{"start": {"line": 3}}, {"start": {"line": 4}}]}},
+              "b": {"0": hits},
+              "statementMap": {"0": {"start": {"line": 2}}, "1": {"start": {"line": 3}}},
+              "s": {"0": 1, "1": 1}}
+    (repo / "cov.json").write_text(json.dumps({key: record}), encoding="utf-8")
+    return repo
+
+
+def test_a_complete_branch_record_scores_its_paths(tmp_path: Path):
+    repo = istanbul_report(committed(tmp_path, BRANCH_FILES), [1, 0])
+
+    res = run_cli(repo, "coverage", "--reuse-artifacts")
+
+    assert res.returncode == 0, res.stderr
+    assert scored_cov(repo) == 0.5
+
+
+@pytest.mark.parametrize("hits", [[1], [], [1, 0, 1]], ids=["one-of-two", "none-of-two",
+                                                         "three-of-two"])
+def test_a_branch_record_that_miscounts_its_locations_is_refused_by_name(hits, tmp_path: Path):
+    repo = istanbul_report(committed(tmp_path, BRANCH_FILES), hits)
+
+    res = run_cli(repo, "coverage", "--reuse-artifacts", encoding="utf-8", errors="replace")
+
+    assert res.returncode == 5, res.stdout + res.stderr
+    assert (f"cov.json: src/a.py: branch '0' has {len(hits)} hit count(s) in `b` for its 2 "
+            "location(s)") in res.stderr, res.stderr

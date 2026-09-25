@@ -180,3 +180,62 @@ def test_the_lanes_page_quotes_the_refusal_a_dropped_counter_draws():
 
     reason = str(raised.value).split(": ", 1)[1]
     assert f"coverage/ui.json: {reason}" in (root / "docs" / "lanes.md").read_text(encoding="utf-8")
+
+
+# --- a branch whose hit counts do not match its locations ---------------------
+#
+# istanbul writes one hit count in `b` per location of a branchMap entry. The
+# attribution counted the hit counts, so an if/else whose array was cut to [1]
+# scored 1 of 1 branches, where [1, 0] scored 1 of 2, and an empty array read as
+# a function with no branch and fell back to its statements.
+
+def _branch_hits(hits: list) -> dict:
+    artifact = copy.deepcopy(STATEMENTS)
+    artifact[KEY]["b"]["0"] = hits
+    return artifact
+
+
+MISCOUNTED = {"one-of-two": [1], "none-of-two": [], "three-of-two": [1, 0, 1]}
+
+
+@pytest.mark.parametrize("form", sorted(MISCOUNTED))
+def test_a_branch_whose_hit_counts_do_not_match_its_locations_refuses_the_artifact(form):
+    hits = MISCOUNTED[form]
+
+    with pytest.raises(ToolError) as raised:
+        parse_istanbul(json.dumps(_branch_hits(hits)), repo_root="C:\\repo")
+
+    message = str(raised.value)
+    assert (f"src/hot.ts: branch '0' has {len(hits)} hit count(s) in `b` for its 2 location(s), "
+            "so crapkit cannot tell which of its paths ran (1 such in this file)") in message, message
+    assert message.endswith("regenerate the artifact with the coverage tool, or merge shards "
+                            "with one that keeps every counter"), message
+
+
+def test_the_dead_line_reader_refuses_a_branch_cut_short_too():
+    from coverage_readers import parse_istanbul_missing
+
+    with pytest.raises(ToolError, match="branch '0' has 1 hit count"):
+        parse_istanbul_missing(json.dumps(_branch_hits([1])), repo_root="C:\\repo")
+
+
+def test_the_lanes_page_quotes_the_refusal_a_branch_cut_short_draws():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+
+    with pytest.raises(ToolError) as raised:
+        parse_istanbul(json.dumps(_branch_hits([1])), repo_root="C:\\repo")
+
+    reason = str(raised.value).split(": ", 1)[1]
+    assert f"coverage/ui.json: {reason}" in (root / "docs" / "lanes.md").read_text(encoding="utf-8")
+
+
+def test_a_branch_record_with_no_locations_counts_its_hit_counts():
+    """A hand-built branchMap entry may carry only `loc`. Its hit counts are then
+    the only count of its paths there is, and they are read as before."""
+    artifact = copy.deepcopy(STATEMENTS)
+    del artifact[KEY]["branchMap"]["0"]["locations"]
+
+    (hot,) = parse_istanbul(json.dumps(artifact), repo_root="C:\\repo")["src/hot.ts"]
+    assert (hot.branches_total, hot.branches_covered) == (2, 1)

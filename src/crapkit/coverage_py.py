@@ -58,7 +58,18 @@ def _summary_counts(name: str, summary: object) -> dict:
         counts.update(_admit_pair(name, summary, total, covered))
     if not counts:
         raise ValueError(f"{name}: summary holds neither statement nor branch counts")
+    _require_deciding_statements(name, counts)
     return counts
+
+
+def _require_deciding_statements(name: str, counts: dict) -> None:
+    """With 0 of 0 branches the statement pair decides the function's coverage,
+    so a summary without it read as a function that never ran: cov 0 for one
+    that ran every line. With branches, the branch pair decides and the missing
+    statement pair changes nothing."""
+    if "num_statements" not in counts and counts["num_branches"] == 0:
+        raise ValueError(f"{name}: summary holds no statement counts and no branch, so "
+                         "crapkit cannot tell how much of it ran")
 
 
 def _admit_pair(name: str, summary: dict, total: str, covered: str) -> dict:
@@ -87,6 +98,8 @@ def _fn_coverage(name: str, fn: dict, path: str = "") -> FnCoverage:
     lines = list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
     start = fn.get("start_line") or (min(lines) if lines else 0)
     end = max(lines) if lines else start
+    # A kind the summary lacks reads 0 of 0 below only where it cannot decide:
+    # _admit_summary refused every summary whose missing kind would.
     return FnCoverage(name=name, start=start, end=end,
                       invoked=summary.get("covered_lines", 0) > 0,
                       branches_total=summary.get("num_branches", 0),

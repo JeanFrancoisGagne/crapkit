@@ -109,10 +109,12 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   mangled entry.
 - A coverage artifact that lacks a count is refused and names it, where the parser read
   the absent count as a zero and the score moved with nothing said. In istanbul that is
-  a `fnMap`, `statementMap` or `branchMap` id with no counter in `f`, `s` or `b`: a
-  dropped branch counter flipped a function from `add-tests` to `ok`. In coverage.py it is
-  a function with no `summary`, one count of a pair without its partner, or no count of
-  either kind: a function that ran scored cov 0, or, in a report that measures branches, a
+  a `fnMap`, `statementMap` or `branchMap` id with no counter in `f`, `s` or `b`, or a
+  `b` array whose hit counts do not match its branch's `locations`: a dropped branch
+  counter flipped a function from `add-tests` to `ok`, and an if/else whose array was cut
+  to `[1]` scored 1 of 1. In coverage.py it is a function with no `summary`, one count of a
+  pair without its partner, no count of either kind, or no statement counts beside 0 of 0
+  branches: a function that ran scored cov 0, or, in a report that measures branches, a
   function with no branch counts, which scored from its statements. A report with no `meta`
   is judged by the counts its functions carry, where it said its term was statement-based
   while scoring on branches. Each refusal names the source file and the function, and ends

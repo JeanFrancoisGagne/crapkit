@@ -189,6 +189,14 @@ def _drop(*keys):
     return edit
 
 
+def _no_branch_and(edit):
+    """The function as coverage.py writes one with no branch, 0 of 0, then `edit`."""
+    def edited(fn):
+        fn["summary"].update(num_branches=0, covered_branches=0)
+        edit(fn)
+    return edited
+
+
 REFUSED = {
     "function-summary-missing": (lambda fn: fn.pop("summary"),
                                  "summary is missing, so crapkit cannot tell how much of it ran"),
@@ -198,6 +206,10 @@ REFUSED = {
     "num-statements-missing": (_drop("num_statements"), "covered_lines without num_statements"),
     "summary-empty": (_drop("covered_lines", "num_statements", "num_branches", "covered_branches"),
                       "summary holds neither statement nor branch counts"),
+    "statement-counts-missing-with-no-branch": (
+        _no_branch_and(_drop("covered_lines", "num_statements")),
+        "summary holds no statement counts and no branch, so crapkit cannot tell how much "
+        "of it ran"),
     "count-not-a-count": (lambda fn: fn["summary"].update(covered_lines=-1),
                           "covered_lines must be a nonnegative integer count, got -1"),
 }
@@ -227,6 +239,16 @@ def test_statement_counts_alone_missing_still_score_on_branches():
 
     guarded = {f.name: f for f in per_file["pylib/mod.py"]}["guarded"]
     assert guarded.coverage == 0.75
+
+
+def test_a_function_with_no_branch_scores_from_its_statements():
+    """The control for the refusal above: 0 of 0 branches and both statement
+    counts kept, so the statements decide, 3 of 4."""
+    per_file = parse_coveragepy(json.dumps(_edited(_no_branch_and(lambda fn: None))),
+                                path_prefix="")
+
+    guarded = {f.name: f for f in per_file["pylib/mod.py"]}["guarded"]
+    assert (guarded.branches_total, guarded.coverage) == (0, 0.75)
 
 
 def test_a_start_line_missing_takes_the_first_measured_line():

@@ -226,18 +226,27 @@ artifact fails its lane with the input named in the error.
 A count that is missing is refused the same way, never read as a zero. In istanbul every
 `fnMap`, `statementMap` and `branchMap` id needs its counter in `f`, `s` and `b`: a
 dropped counter read as a function never called, a statement that never ran or a branch
-pair that did not exist, and the score moved with nothing said. The refusal names the file
-and the first id:
+pair that did not exist, and the score moved with nothing said. A `b` array also needs one
+hit count per location its `branchMap` entry lists, since crapkit counts a branch's paths
+by its hit counts: an if/else cut to `[1]` scored 1 of 1, and `[]` fell back to the
+statements. An entry with no `locations` list is counted by its hit counts. The refusal
+names the file and the first id:
 
 ```
 crapkit: lane 'ui' FAILED: unparseable istanbul artifact coverage/ui.json: src/hot.ts: statement '3' has no hit count in `s`, so crapkit cannot tell whether it ran (1 such in this file); regenerate the artifact with the coverage tool, or merge shards with one that keeps every counter
 ```
 
+```
+crapkit: lane 'ui' FAILED: unparseable istanbul artifact coverage/ui.json: src/hot.ts: branch '0' has 1 hit count(s) in `b` for its 2 location(s), so crapkit cannot tell which of its paths ran (1 such in this file); regenerate the artifact with the coverage tool, or merge shards with one that keeps every counter
+```
+
 A coverage.py function needs its `summary`, and each kind of count in it as a pair:
-`num_statements` with `covered_lines`, `num_branches` with `covered_branches`. A kind with
-neither count is one the report did not measure; a summary with neither kind, or one count
-without its partner, is refused, since each read as 0 of 0 and a function that ran scored
-cov 0.
+`num_statements` with `covered_lines`, `num_branches` with `covered_branches`. A summary
+with neither kind, one count without its partner, or no statement counts beside 0 of 0
+branches is refused: each read as 0 of 0 where that count decides, and a function that ran
+scored cov 0. A kind with neither count and nothing to decide is one the report did not
+measure: branches in a report run without `--cov-branch`, or statements beside branches,
+which decide on their own.
 
 crapkit scores functions, so `fnMap` is the part that decides everything. Per file in the
 artifact:
