@@ -16,12 +16,12 @@ or `python - <<'PY'` writes source no file_path ever names), so it falls back to
 the working tree: the changed *.py files fresh enough for this command to have
 plausibly written, each through the same per-file ladder.
 
-Where the advisory goes depends on who reads the exit code. Claude Code and
-Copilot CLI hand exit 2's stderr to the model, so there it is three lines of
-stderr and exit 2. Cursor reads exit 2 as a deny and VS Code as a blocking
-error, so there it is exit 0 and one line of JSON on stdout, in the field each
-of them hands the model: `additional_context` for Cursor,
-`hookSpecificOutput.additionalContext` for VS Code.
+Where the advisory goes depends on who reads the exit code. Claude Code hands
+exit 2's stderr to the model, so there it is three lines of stderr and exit 2.
+Cursor reads exit 2 as a deny, VS Code as a blocking error, and Copilot CLI
+shows it to the user alone, so for those three it is exit 0 and one line of
+JSON on stdout, the text under both keys they read: `additionalContext` (Copilot
+CLI, Cursor) and `hookSpecificOutput.additionalContext` (VS Code).
 
 That silence is the design, not laziness. On PostToolUse a nonzero exit that is
 not 2 is invisible and a 2 is text the model has to read, so a hook that fires
@@ -573,40 +573,29 @@ def _advisory_lines(rel: str, breaches: list, ceiling: int) -> list[str]:
 def _deliver(payload: dict, lines: list[str]) -> int:
     """Hand the advisory to the harness that sent the event, or stay silent.
 
-    stdout carries nothing for Claude Code and Copilot CLI: Claude Code parses
-    stdout JSON on exit 0, and exit 2's stderr is the text both hand the model.
+    Claude Code gets three lines of stderr and exit 2, which `asyncRewake`
+    hands the model; its stdout stays empty, because it parses stdout JSON on
+    exit 0. Every other harness gets exit 0 and one JSON object carrying the
+    text under both keys harnesses read: top-level `additionalContext` for
+    Copilot CLI and Cursor, `hookSpecificOutput.additionalContext` for VS Code.
     """
     if not lines:
         return 0
-    return _channel(payload)("\n".join(lines))
-
-
-def _channel(payload: dict):
-    """The writer for this event's harness, told apart by the payload itself:
-    Cursor by its camelCase event name, VS Code by its own tool names."""
-    if payload.get("hook_event_name") == "postToolUse":
-        return _to_cursor
-    if payload.get("tool_name") in _VSCODE_WRITES:
-        return _to_vscode
-    return _to_stderr
-
-
-def _to_stderr(text: str) -> int:
-    print(text, file=sys.stderr)
-    return 2
-
-
-def _to_cursor(text: str) -> int:
-    """Cursor records a postToolUse exit 2 as a deny and shows the model
-    nothing; `additional_context` on exit 0 is what it adds to the conversation."""
-    print(json.dumps({"additional_context": text}))
+    text = "\n".join(lines)
+    if not _reads_context(payload):
+        print(text, file=sys.stderr)
+        return 2
+    print(json.dumps({"additionalContext": text,
+                      "hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
     return 0
 
 
-def _to_vscode(text: str) -> int:
-    """VS Code turns a PostToolUse exit 2 into a blocking error on the tool
-    result; `hookSpecificOutput.additionalContext` on exit 0 reaches the model
-    beside it."""
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse",
-                                             "additionalContext": text}}))
-    return 0
+def _reads_context(payload: dict) -> bool:
+    """Whether the harness that sent this event reads exit 2 as something
+    other than text for the model, told apart by its own payload: Cursor (a
+    deny) by its camelCase event, VS Code (a blocking error) by its own tool
+    names, Copilot CLI (shown to the user only) by `tool_result`, where Claude
+    Code sends `tool_response`."""
+    return (payload.get("hook_event_name") == "postToolUse"
+            or payload.get("tool_name") in _VSCODE_WRITES
+            or "tool_result" in payload)

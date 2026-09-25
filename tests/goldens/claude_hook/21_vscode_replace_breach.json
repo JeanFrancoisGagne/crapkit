@@ -24,6 +24,7 @@
     "exit": 0,
     "stderr": [],
     "stdout": {
+      "additionalContext": "crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)\n  ccn 8  calc/grade.py:1  sprawl( n )\nthe commit gate enforces this; decompose there or mark the debt",
       "hookSpecificOutput": {
         "hookEventName": "PostToolUse",
         "additionalContext": "crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)\n  ccn 8  calc/grade.py:1  sprawl( n )\nthe commit gate enforces this; decompose there or mark the debt"

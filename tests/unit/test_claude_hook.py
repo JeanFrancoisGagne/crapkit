@@ -571,9 +571,12 @@ def test_a_configuration_saved_with_a_bom_reads_as_the_same_configuration(tmp_pa
 
 # --- where the advisory goes, per harness ---------------------------------------
 #
-# Exit 2 is feedback to the model in Claude Code and Copilot CLI. Cursor reads it
-# as a deny and VS Code as a blocking error, so there the advisory goes out on
-# stdout as the JSON each one reads on exit 0, and the exit stays 0.
+# Exit 2's stderr is text for the model in Claude Code alone. Cursor reads it as
+# a deny, VS Code as a blocking error, and Copilot CLI shows it to the user and
+# not the model (1.0.88, a stub-model session: of stderr on exit 2, a nested
+# hookSpecificOutput, a systemMessage and a top-level additionalContext, only
+# the last reached the model request). So those three get exit 0 and one JSON
+# object carrying the text under both keys they read.
 
 def _run(payload: dict, capsys, monkeypatch) -> tuple[int, str, str]:
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
@@ -589,37 +592,41 @@ def _aimed(payload: dict, edited: Path, root: Path) -> dict:
     return dict(payload, tool_input=tool_input, cwd=str(root))
 
 
-def test_copilot_hears_the_advisory_through_exit_2(tmp_path, capsys, monkeypatch):
+def test_claude_code_hears_the_advisory_through_exit_2_and_stdout_stays_empty(
+        tmp_path, capsys, monkeypatch):
     edited = _breaching_repo(tmp_path)
 
-    code, out, err = _run(_aimed(COPILOT_EDIT, edited, tmp_path), capsys, monkeypatch)
+    code, out, err = _run(_aimed(EVENT, edited, tmp_path), capsys, monkeypatch)
 
     assert (code, out) == (2, "")
     assert err.startswith("crapkit advisory: 1 function(s) over ceiling 6 in calc/café.py"), err
 
 
-def test_cursor_hears_the_advisory_as_additional_context_and_nothing_is_denied(
-        tmp_path, capsys, monkeypatch):
+@pytest.mark.parametrize("payload", [COPILOT_EDIT, CURSOR_WRITE, VSCODE_REPLACE],
+                         ids=["copilot", "cursor", "vscode"])
+def test_every_other_harness_hears_it_as_context_on_exit_0(payload, tmp_path, capsys,
+                                                          monkeypatch):
+    """Nothing is denied, blocked or left on a terminal the model never reads."""
     edited = _breaching_repo(tmp_path)
 
-    code, out, err = _run(_aimed(CURSOR_WRITE, edited, tmp_path), capsys, monkeypatch)
+    code, out, err = _run(_aimed(payload, edited, tmp_path), capsys, monkeypatch)
 
     assert (code, err) == (0, "")
-    context = json.loads(out)["additional_context"]
+    answer = json.loads(out)
+    context = answer["additionalContext"]
+    assert answer["hookSpecificOutput"] == {"hookEventName": "PostToolUse",
+                                            "additionalContext": context}
     assert context.startswith("crapkit advisory: 1 function(s) over ceiling 6"), context
     assert context.endswith("decompose there or mark the debt"), context
 
 
-def test_vscode_hears_the_advisory_as_additional_context_and_nothing_is_blocked(
-        tmp_path, capsys, monkeypatch):
-    edited = _breaching_repo(tmp_path)
+def test_copilots_bash_half_hears_it_as_context_too(tmp_path, capsys, monkeypatch):
+    """The Bash entry a Copilot user adds to .claude/settings.json sends the
+    same `tool_result` key, so its fallback verdict takes the same channel."""
+    payload = dict(COPILOT_EDIT, tool_name="Bash", tool_input={"command": "python gen.py"})
 
-    code, out, err = _run(_aimed(VSCODE_REPLACE, edited, tmp_path), capsys, monkeypatch)
-
-    assert (code, err) == (0, "")
-    specific = json.loads(out)["hookSpecificOutput"]
-    assert specific["hookEventName"] == "PostToolUse"
-    assert specific["additionalContext"].splitlines()[1].startswith("  ccn 8  calc/café.py:1")
+    assert claude_hook._reads_context(payload) is True
+    assert claude_hook._reads_context(BASH_EVENT) is False
 
 
 def test_the_json_channel_stays_ascii_whatever_the_console_code_page(tmp_path, capsys,
@@ -630,10 +637,11 @@ def test_the_json_channel_stays_ascii_whatever_the_console_code_page(tmp_path, c
 
     _, out, _ = _run(_aimed(CURSOR_WRITE, edited, tmp_path), capsys, monkeypatch)
 
-    assert out.isascii() and r"calc/caf\u00e9.py" in out
+    assert out.isascii() and json.dumps("calc/café.py")[1:-1] in out
 
 
-@pytest.mark.parametrize("payload", [CURSOR_WRITE, VSCODE_REPLACE], ids=["cursor", "vscode"])
+@pytest.mark.parametrize("payload", [EVENT, COPILOT_EDIT, CURSOR_WRITE, VSCODE_REPLACE],
+                         ids=["claude", "copilot", "cursor", "vscode"])
 def test_a_clean_edit_prints_nothing_on_either_channel(payload, tmp_path, capsys, monkeypatch):
     edited = _breaching_repo(tmp_path)
     edited.write_text("def calm(n):\n    return n\n", encoding="utf-8")
