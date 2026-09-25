@@ -31,6 +31,7 @@ import sys
 import pytest
 
 from accuracy.kit import drive, repos, rulings
+from accuracy.verdict_model import cadence
 
 RECORD = ("import json, sys\n"
           "with open('argv.jsonl', 'a', encoding='utf-8') as out:\n"
@@ -78,10 +79,14 @@ SCOPES = {"app": ("src",), "core": ("src/core",), "lib": ("lib",)}
 TEST_DIR = re.compile(r"(^|/)(tests?|__tests__)/", re.IGNORECASE)
 
 
-def spelled(path: str, cwd: str = "") -> str:
-    """The root-relative spelling: backslashes as slashes, ./ and .. resolved,
-    a cwd below the root prefixed."""
-    return posixpath.normpath(f"/{cwd}/{path}".replace("\\", "/")).lstrip("/")
+def spelled(path: str, cwd: str = "", platform: str = sys.platform) -> str:
+    """The root-relative spelling: ./ and .. resolved, a cwd below the root
+    prefixed, and on Windows backslashes read as slashes. docs/configuration.md
+    (path spellings): a backslash is a directory separator on Windows and a
+    literal filename character on POSIX, so on Linux `src\a.py` is a file in
+    the root that no scope owns."""
+    slashed = path.replace("\\", "/") if platform == "win32" else path
+    return posixpath.normpath(f"/{cwd}/{slashed}").lstrip("/")
 
 
 def _under(path: str, prefix: str) -> bool:
@@ -136,9 +141,11 @@ def test_every_file_reaches_its_scope_as_one_word(make_repo):
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("typed, cwd", [("./src/a.py", ""), ("src\\a.py", ""), ("a.py", "src"),
-                                        ("core/c.py", "src"), ("./src/core/../a.py", "")],
-                         ids=["dot-slash", "backslash", "from-src", "nested-from-src", "dot-dot"])
+@pytest.mark.parametrize("typed, cwd", cadence.tiered(
+    [("./src/a.py", ""), ("src\\a.py", ""), ("a.py", "src"), ("core/c.py", "src"),
+     ("./src/core/../a.py", "")],
+    push={"dot-slash", "backslash"},
+    ids=["dot-slash", "backslash", "from-src", "nested-from-src", "dot-dot"], unpack=True))
 def test_every_spelling_routes_as_the_root_relative_path(make_repo, typed, cwd):
     driver = _built(make_repo)
     assert _ran(driver, typed, where=cwd)[:2] == expected_runs([spelled(typed, cwd)], TWO)
@@ -203,6 +210,7 @@ INIT_LAYOUT = {"pkg/__init__.py": "", "pkg/x.py": "def x(a):\n    return a\n",
                "tests/test_x.py": "from pkg.x import x\n\n\ndef test_x():\n    assert x(1) == 1\n"}
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_init_s_scoped_command_collects_a_test(make_repo):
     """docs/configuration.md, scoped_tests: with no test file under pkg/, init

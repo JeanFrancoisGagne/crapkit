@@ -19,6 +19,7 @@ import sys
 import pytest
 
 from accuracy.kit import drive, repos
+from accuracy.verdict_model import cadence
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
 
@@ -43,7 +44,8 @@ def _marks(sc) -> dict:
 # --- the override reason -------------------------------------------------------------------------
 
 @pytest.mark.process
-@pytest.mark.parametrize("reason", ["", "   ", "\t"], ids=["empty", "blank", "tab"])
+@pytest.mark.parametrize("reason", cadence.tiered(["", "   ", "\t"], push={"blank"},
+                                                  ids=["empty", "blank", "tab"]))
 def test_empty_override_reason_refuses(make_repo, reason):
     """An empty or blank reason is refused (exit 3) before any lane runs: no
     run is stored, no mark changes, no lane log moves."""
@@ -58,6 +60,7 @@ def test_empty_override_reason_refuses(make_repo, reason):
     assert (sc.root / ".crapkit" / "lane-a.log").stat().st_mtime_ns == log
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_override_reads_a_marks_file_with_a_bom(make_repo):
     """A marks file PowerShell 5.1 saved starts with a UTF-8 byte-order mark.
@@ -85,8 +88,8 @@ if sys.platform == "win32":
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("old, new, where", SPELLINGS,
-                         ids=[f"{o}->{n}@{w}" for o, n, w in SPELLINGS])
+@pytest.mark.parametrize("old, new, where", cadence.tiered(
+    SPELLINGS, push=SPELLINGS[-1:], ids=[f"{o}->{n}@{w}" for o, n, w in SPELLINGS], unpack=True))
 def test_ratchet_move_path_spellings(make_repo, old, new, where):
     """Every spelling of the same move files a3's mark under lib/new.py, the
     path a scored row there would carry; nothing else moves."""
@@ -129,7 +132,7 @@ GATES = {"hook": _hook,
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("gate", sorted(GATES))
+@pytest.mark.parametrize("gate", cadence.tiered(sorted(GATES), push={"verify"}))
 def test_nested_root_gates(make_repo, gate):
     """a1 touched to ccn 8 under a root one directory below the top: each gate
     refuses it with exit 6, as the model's gates say."""
@@ -168,7 +171,8 @@ TOP_BELOW_ONE = [("next-item", "--top", "0", "--claim"), ("duplication", "--top"
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("args", TOP_BELOW_ONE, ids=[" ".join(a[:3]) for a in TOP_BELOW_ONE])
+@pytest.mark.parametrize("args", cadence.tiered(TOP_BELOW_ONE, push=TOP_BELOW_ONE[:1],
+                                                ids=[" ".join(a[:3]) for a in TOP_BELOW_ONE]))
 def test_boundary_arguments_refuse(measured, args):
     """README, Commands: --top is a count of rows, so below 1 there is nothing
     to hand out. The command refuses, naming the bound, and claims nothing."""
@@ -178,7 +182,7 @@ def test_boundary_arguments_refuse(measured, args):
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("command", ["worklist", "next-item"])
+@pytest.mark.parametrize("command", cadence.tiered(["worklist", "next-item"], push={"worklist"}))
 def test_unknown_scope_refuses(measured, command):
     """README: an --scope no [[scope]] declares is a configuration error, exit
     3, naming the declared scopes."""

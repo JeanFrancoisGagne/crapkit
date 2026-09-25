@@ -17,6 +17,7 @@ import pytest
 
 from accuracy.kit import repos
 from accuracy.kit.settings import process
+from accuracy.verdict_model import cadence
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
 
@@ -83,7 +84,7 @@ def test_claim_on_a_finished_queue_holds_nothing(make_repo):
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("name", ["b2", "b2( x )"])
+@pytest.mark.parametrize("name", cadence.tiered(["b2", "b2( x )"], push={"b2( x )"}))
 def test_release_by_hand_takes_any_name_form(claimed, name):
     released = claimed.run("claims", "release", "lib/util.py", name, "--json")
     assert (released.code, released.json()["released"]) == (0, 1) and _open(claimed) == set()
@@ -102,6 +103,7 @@ def _b2(decisions: int, share: int) -> vw.Fn:
     return vw.Fn("b2", decisions, covered)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 @process
 @given(decisions=st.integers(0, 7), share=st.integers(0, 4))

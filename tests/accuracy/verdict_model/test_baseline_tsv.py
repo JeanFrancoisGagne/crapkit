@@ -25,6 +25,7 @@ import pytest
 
 from accuracy.kit import rulings
 from accuracy.kit.settings import process
+from accuracy.verdict_model import cadence
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
 
@@ -71,7 +72,7 @@ def every_kind(repo_templates, tmp_path_factory):
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("wanted", [2, 3, 4, 6, 99])
+@pytest.mark.parametrize("wanted", cadence.tiered([2, 3, 4, 6, 99], push={2}))
 def test_a_named_baseline_that_cannot_serve_is_refused_with_its_reason(every_kind, wanted):
     runs = _runs(every_kind)
     assert [run.kind for run in runs] == ["coverage", "verify", "inventory", "partial", "coverage",
@@ -86,6 +87,7 @@ def test_a_named_baseline_that_cannot_serve_is_refused_with_its_reason(every_kin
     assert (newest in result.stderr) is (wanted != 99), result.stderr
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_named_baseline_steps_past_the_taint_rule(every_kind):
     """Run 2 failed and nothing has passed since, so plain verify measures
@@ -136,6 +138,7 @@ def _record_rows(rows: list[dict]) -> dict:
             for row in rows}
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 @process
 @given(decisions=st.integers(1, 9), covered=st.integers(0, 18))
@@ -185,7 +188,7 @@ CHANGES = {"nothing": lambda w: w, "gate": lambda w: w.with_fn("app", WORSE),
 
 @pytest.mark.process
 @pytest.mark.parametrize("columns", [17, 16])
-@pytest.mark.parametrize("change", sorted(CHANGES))
+@pytest.mark.parametrize("change", cadence.tiered(sorted(CHANGES), push={"regression"}))
 def test_the_record_and_the_store_give_one_verdict(make_repo, tmp_path, change, columns):
     """Seeded marks, then one change. verify against the store baseline and
     verify --baseline-tsv on a clone with no store, from the 17-column record
@@ -203,6 +206,7 @@ def test_the_record_and_the_store_give_one_verdict(make_repo, tmp_path, change, 
     assert from_store[0] == {"nothing": 0, "gate": 6, "new failure": 8, "regression": 7}[change]
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 @rulings.applies("V8")
 def test_a_failure_the_baseline_had_is_not_new_under_the_record(make_repo, tmp_path):

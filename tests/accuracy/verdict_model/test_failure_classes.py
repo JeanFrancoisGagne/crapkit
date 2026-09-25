@@ -22,6 +22,7 @@ from hypothesis import given, strategies as st
 import pytest
 
 from accuracy.kit.settings import process
+from accuracy.verdict_model import cadence
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
 
@@ -105,8 +106,9 @@ def test_ok_line_names_forgiven_failures(clean, tmp_path):
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("retests, new", [((), ("tests.shared::both",)), (("a",), ("tests.shared::both",)),
-                                          (("a", "b"), ())], ids=["no-retest", "one-lane", "both-lanes"])
+@pytest.mark.parametrize("retests, new", cadence.tiered(
+    [((), ("tests.shared::both",)), (("a",), ("tests.shared::both",)), (("a", "b"), ())],
+    push={"one-lane"}, ids=["no-retest", "one-lane", "both-lanes"], unpack=True))
 def test_two_lanes_failing_one_id(clean, tmp_path, retests, new):
     """lanes.md#flake-retest: a test several lanes failed drops out only when
     each of those lanes reran it and it passed."""
@@ -119,6 +121,7 @@ def test_two_lanes_failing_one_id(clean, tmp_path, retests, new):
     assert result.new == new
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_retried_pass_never_forgives_a_later_failure(clean, tmp_path):
     """CONTEXT.md, Retried pass: a later verify never forgives it as a baseline
@@ -136,6 +139,7 @@ def test_retried_pass_never_forgives_a_later_failure(clean, tmp_path):
         (8, ["tests.test_a::flaky"], [])
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_retried_pass_is_not_forgiven(clean, tmp_path):
     """The baseline verify's retried pass is left out of the baseline's
@@ -151,7 +155,8 @@ def test_a_retried_pass_is_not_forgiven(clean, tmp_path):
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("retried", [True, False], ids=["retried", "not-retried"])
+@pytest.mark.parametrize("retried", cadence.tiered([True, False], push={"retried"},
+                                                   ids=["retried", "not-retried"]))
 def test_dirty_failures_drop_a_retried_pass(clean, tmp_path, retried):
     """agent-json.md, Dirty attribution: dirty_failures is the subset of
     new_failures whose test file has uncommitted edits; a retried pass is not
@@ -175,6 +180,7 @@ NAMES = st.sampled_from(["t1", "t2", "t3"])
 KEYS = st.tuples(st.sampled_from(["a", "b"]), NAMES, st.sampled_from(["", SHARED]))
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 @process
 @given(base=st.dictionaries(KEYS, st.booleans(), max_size=4),

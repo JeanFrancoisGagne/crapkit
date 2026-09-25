@@ -76,13 +76,17 @@ TRIPLES = [(b, o, t) for b in VALUES for o in VALUES for t in VALUES]
 
 
 def git_merge(tmp: Path, name: str, base, ours, theirs) -> tuple[bool, str | None]:
-    """git merge-file on three one-line files: (clean, merged value or None)."""
+    """git merge-file on three one-line files: (clean, merged value or None).
+    git-merge-file(1): the exit is the number of conflicts, at most 127, and
+    negative on error, so only 1 to 127 reads as a conflict; any other exit
+    is the oracle failing, never an answer."""
     files = []
     for side, value in (("o", ours), ("b", base), ("t", theirs)):
         path = tmp / f"{name}.{side}"
         path.write_bytes(b"" if value is None else f"{value}\n".encode("ascii"))
         files.append(str(path))
-    done = repos.hang_guard.run(["git", "merge-file", "-p", *files])
+    done = repos.hang_guard.run(["git", "merge-file", "-p", *files], cwd=tmp)
+    assert 0 <= done.returncode <= 127, done.stderr
     text = done.stdout.decode("ascii").strip()
     return done.returncode == 0, (text or None) if done.returncode == 0 else None
 

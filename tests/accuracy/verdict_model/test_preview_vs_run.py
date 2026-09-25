@@ -127,6 +127,7 @@ def test_shared_span_preview_equals_next_run(ts_edited):
     assert want["f ( a )"][4] == "split-lines"
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_check_gate_answers_as_rescore_gate_on_a_shared_span(ts_edited):
     driver, _ = ts_edited

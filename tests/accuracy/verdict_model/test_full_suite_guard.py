@@ -26,6 +26,7 @@ import itertools
 import pytest
 
 from accuracy.kit import rulings
+from accuracy.verdict_model import cadence
 from accuracy.verdict_model import guard_repo as g
 
 OK = "ok"
@@ -129,6 +130,10 @@ UNKNOWN_FLAG = [
 ROWS = (FLAG_VALUES + CHAINS + MID_TOKEN + CARET + TESTPATHS_FILE + COVER_ALL + SHELL_READING
         + SEMICOLON + REDIRECTS + VITEST_OPTIONS + WORD_BREAKS + QUOTED_OPERATOR + EMPTY_ARGUMENT
         + CJS + SHLEX + UNKNOWN_FLAG)
+# The shell-word check runs, on push, the first row of each group whose answer
+# turns on the shell's quoting; nightly it runs every row.
+PUSH_ROWS = {group[0][0] for group in (FLAG_VALUES, CHAINS, MID_TOKEN, CARET, SHELL_READING,
+                                       WORD_BREAKS, QUOTED_OPERATOR, EMPTY_ARGUMENT, SHLEX)}
 
 
 def expected(row) -> str:
@@ -182,6 +187,7 @@ def test_fix_5643945(guard):
     _agree(guard, CARET)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_fix_8cbbb87(guard):
     """testpaths come from the one config file pytest reads."""
@@ -247,7 +253,7 @@ def _runner(lane: g.Lane) -> str:
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("row", ROWS, ids=_ids(ROWS))
+@pytest.mark.parametrize("row", cadence.tiered(ROWS, push=PUSH_ROWS, ids=_ids(ROWS)))
 def test_the_refused_word_is_one_the_shell_hands_the_runner(guard, row):
     """Run through sh (POSIX) or cmd.exe (Windows) with the runner swapped for
     an argv recorder: the word crapkit names must reach the runner as a whole

@@ -37,6 +37,7 @@ import pytest
 
 from accuracy.kit import drive, repos, rulings
 from accuracy.kit.settings import process
+from accuracy.verdict_model import cadence
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
 
@@ -131,12 +132,14 @@ def _env_driver(sc, **env) -> drive.Driver:
     return drive.Driver(sc.root, date_now=sc.date + vw.DAY, env=env)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_an_unchanged_tree_reuses_every_lane(make_repo):
     sc = _measured(make_repo)
     _check(_reasons(sc), {})
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 @pytest.mark.parametrize("change", sorted(WHOLE_TREE))
 def test_each_reuse_input_forces_rerun(make_repo, change):
@@ -146,6 +149,7 @@ def test_each_reuse_input_forces_rerun(make_repo, change):
     _check(_reasons(sc), facts)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_an_inherited_variable_forces_a_rerun(make_repo):
     sc = _measured(make_repo)
@@ -154,6 +158,7 @@ def test_an_inherited_variable_forces_a_rerun(make_repo):
     assert reasons["a"].endswith("CRAPKIT_ACCURACY_PROBE")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_stamp_measured_on_a_dirty_tree_holds_no_proof(make_repo):
     """Measurements made while their proof did not hold (a dirty tree) cannot
@@ -199,6 +204,7 @@ def test_the_first_failed_condition_names_the_rerun(repo_templates, tmp_path_fac
     _check(_reasons(sc, _env_driver(sc, **env)), facts)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 @pytest.mark.parametrize("what", ["cd", "own output"])
 def test_cd_and_own_output_never_force_a_rerun(make_repo, what):
@@ -216,6 +222,7 @@ def test_cd_and_own_output_never_force_a_rerun(make_repo, what):
     _check(_reasons(sc, _env_driver(sc, **shell)), {})
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_nested_root_reuse_reads_the_whole_worktree(make_repo):
     """README: a crapkit root may sit below the git top. Without inputs, reuse
@@ -268,6 +275,7 @@ WITH_INPUTS = {"docs commit": _docs_commit, "untracked elsewhere": _untracked_el
                "committed input": _committed_input, "dirty input": _dirty_input}
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 @pytest.mark.parametrize("change", sorted(WITH_INPUTS))
 def test_a_lane_with_inputs_reruns_only_for_what_it_reads(make_repo, change):
@@ -285,8 +293,9 @@ def test_a_lane_with_inputs_ignores_the_inherited_environment(make_repo):
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("spelling", ["src", "./src/", "src\\\\app.py", "src/app.py"],
-                         ids=["plain", "dot-slash", "backslash", "file"])
+@pytest.mark.parametrize("spelling", cadence.tiered(["src", "./src/", "src\\\\app.py", "src/app.py"],
+                                                    push={"backslash"},
+                                                    ids=["plain", "dot-slash", "backslash", "file"]))
 def test_lane_inputs_take_the_scope_path_spelling(make_repo, spelling):
     """docs/configuration.md, lane inputs: literal paths from the root, spelled
     as scope paths are, so ./ and a backslash name the same file."""
@@ -304,6 +313,7 @@ def test_a_glob_in_lane_inputs_is_refused(make_repo):
     assert result.code != 0 and "literal paths" in result.stderr, result.stderr
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_dirty_non_ascii_file_forces_a_rerun(make_repo):
     """git's core.quotePath (on by default) must not hide a dirty src/bêta.py:
@@ -330,7 +340,7 @@ def _touch(sc) -> None:
 
 @pytest.mark.process
 @rulings.applies("V7")
-@pytest.mark.parametrize("case", ["touch", "fresh checkout"])
+@pytest.mark.parametrize("case", cadence.tiered(["touch", "fresh checkout"], push={"touch"}))
 def test_same_bytes_touch_changes_nothing(make_repo, case):
     """A file whose bytes match HEAD is no change, whatever diff.autoRefreshIndex
     the repo sets: `git status`, which compares content, reads the tree clean.
@@ -389,6 +399,7 @@ def test_failed_lane_leftover_artifact_never_scores(make_repo):
     assert sc.run("coverage", "--reuse-artifacts").code == 0
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_refusal_persists_within_one_mtime_tick(make_repo):
     """The refusal rides on the failed attempt, not on the lane log's mtime: a
@@ -401,6 +412,7 @@ def test_a_refusal_persists_within_one_mtime_tick(make_repo):
     assert reused.code == 5 and "lane 'b'" in reused.stderr, reused.stderr
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_failed_attempt_reruns_under_reuse_unchanged(make_repo):
     sc = _measured(make_repo)
@@ -445,7 +457,8 @@ def _app_item(driver: drive.Driver) -> dict:
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("change", sorted(LINE_CHANGES))
+@pytest.mark.parametrize("change", cadence.tiered(sorted(LINE_CHANGES),
+                                                  push=sorted(LINE_CHANGES)[:1]))
 def test_line_freshness_reads_source_changes_only(make_repo, change):
     """docs/lanes.md: a stale artifact silences the dark-line fields with a
     note naming the lane; only a change under the lane's scopes makes it stale."""
@@ -541,6 +554,7 @@ def _write_lane_a(sc, keys: list[str]) -> None:
     (sc.root / ".crapkit" / "cov" / "a.json").write_text(json.dumps(report), encoding="utf-8")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 @pytest.mark.parametrize("case", sorted(REACH))
 def test_an_artifact_that_reaches_no_scope_gets_the_docs_verdict(make_repo, case):
@@ -580,7 +594,8 @@ DROP_LINE = re.compile(r"lane 'b' ran (\d+) tests, (\d+) fewer than the last tru
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("before, now", [(10, 9), (10, 8), (20, 12)])
+@pytest.mark.parametrize("before, now", cadence.tiered([(10, 9), (10, 8), (20, 12)],
+                                                       push=[(10, 9)], unpack=True))
 def test_coverage_warns_past_a_tenth_drop(make_repo, before, now):
     sc = _measured(make_repo, _b_tests(WORLD, before))
     sc.set(_b_tests(WORLD, now))
@@ -591,6 +606,7 @@ def test_coverage_warns_past_a_tenth_drop(make_repo, before, now):
     assert (tuple(map(int, found.groups())) if found else None) == want, result.stderr
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_countless_run_between_counted_runs_compares_nothing(make_repo):
     """The comparison is against the last trusted run's count; a run whose lane

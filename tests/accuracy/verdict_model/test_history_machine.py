@@ -477,6 +477,7 @@ def _machine(tmp_path, templates):
                                                                               templates)})
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_run_history_follows_the_model(repo_templates, tmp_path):
     run_state_machine_as_test(_machine(tmp_path, repo_templates), settings=process)
@@ -559,6 +560,7 @@ def _metric(scenario: vw.Scenario, run: int = -1) -> str:
     return f"crapkit-analysis={versions['analysis_version']} lizard={versions['lizard']}"
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_seed_then_verify_same_run_passes(make_repo):
     """docs/ratchet.md: a mark is CRAP to four decimals and verify compares at
@@ -572,6 +574,7 @@ def test_seed_then_verify_same_run_passes(make_repo):
     assert model.parse_marks(scenario.marks_text()).marks == model.seed({}, scores(world), vw.TARGET)[0]
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_passing_verify_advances_baseline_and_trend(make_repo):
     """README, The trusted baseline: a passing verify qualifies, so the next
@@ -585,6 +588,7 @@ def test_passing_verify_advances_baseline_and_trend(make_repo):
     assert [run["run_id"] for run in trend] == [r.id for r in runs if model.trusted(r)] == [1, 2, 3]
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_failed_verify_never_serves_as_baseline(make_repo):
     """README: a failed verify never qualifies, so the next verify still
@@ -596,6 +600,7 @@ def test_failed_verify_never_serves_as_baseline(make_repo):
     assert (code, payload["baseline_run"]) == (6, 1)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_coverage_never_retires_a_failed_verify(make_repo):
     """README, The taint rule: a coverage run taken after a failed verify does
@@ -610,6 +615,7 @@ def test_coverage_never_retires_a_failed_verify(make_repo):
     assert "run 2" in scenario.run("verify").stderr
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_seed_reads_the_run_verify_reads(make_repo):
     """README: seed asks verify's question. After [coverage, failed verify,
@@ -627,6 +633,7 @@ def test_seed_reads_the_run_verify_reads(make_repo):
     assert marks == model.seed({}, scores(first), vw.TARGET)[0]
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_bouncing_measurement_holds_marks(make_repo):
     """docs/ratchet.md, damping: one commit measured twice cannot have improved.
@@ -671,6 +678,7 @@ def _stamp(scenario: vw.Scenario) -> str | None:
     return model.parse_marks(scenario.marks_text()).stamp
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_seed_stamps_the_metric_of_the_run_it_read(make_repo):
     """docs/ratchet.md, The metric stamp: seed leaves the metric the run it read
@@ -682,6 +690,7 @@ def test_seed_stamps_the_metric_of_the_run_it_read(make_repo):
     assert _stamp(scenario) == model.stamp_after("seed", None, running, run=old) == old != running
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 @pytest.mark.parametrize("write", ["prune", "move"])
 def test_a_write_that_adds_no_number_keeps_the_recorded_stamp(make_repo, write):
@@ -698,6 +707,7 @@ def test_a_write_that_adds_no_number_keeps_the_recorded_stamp(make_repo, write):
     assert after.stamp == model.stamp_after(write, OLD_METRIC, _metric(scenario)) == OLD_METRIC
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_prune_creates_a_file_under_the_running_metric(make_repo):
     """A marks file prune creates holds no mark and takes the running metric,
@@ -712,6 +722,7 @@ def test_prune_creates_a_file_under_the_running_metric(make_repo):
     assert scenario.run("verify").code != 3
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_hook_s_grant_keeps_the_recorded_stamp(make_repo):
     """The hook's override adds ccn-only numbers and compares no mark, so it
@@ -748,6 +759,7 @@ def _start_line_owner(world: vw.World, scope: str, line: int) -> str:
                 if start == line)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_explain_reads_the_run_brief_reads(make_repo):
     """agent-json.md, Name resolution: explain resolves a start line against the
@@ -766,6 +778,7 @@ def test_explain_reads_the_run_brief_reads(make_repo):
     assert [f["long_name"] for f in explained] == [brief["function"]] == [want] == ["a1( x )"]
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_explain_reads_the_newest_trusted_run_that_holds_the_file(make_repo):
     """agent-json.md: when the newest trusted run dropped the file, explain

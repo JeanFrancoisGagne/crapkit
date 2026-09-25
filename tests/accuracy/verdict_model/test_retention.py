@@ -24,6 +24,7 @@ import pytest
 
 from accuracy.kit import drive, repos, rulings
 from accuracy.kit.settings import process
+from accuracy.verdict_model import cadence
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
 
@@ -158,7 +159,7 @@ HAND = {
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("rule", sorted(HAND))
+@pytest.mark.parametrize("rule", cadence.tiered(sorted(HAND), push={"passing verify"}))
 def test_each_keep_rule_keeps_its_run(make_repo, rule):
     """The store after the prune holds exactly the model's set, the literal set
     this row was built for, and every read answers as before."""
@@ -190,6 +191,7 @@ def test_the_taint_rule_s_runs_survive_a_prune(make_repo):
 
 # --- any history --------------------------------------------------------------------------------
 
+@pytest.mark.nightly
 @pytest.mark.process
 @process
 @given(steps=st.lists(st.sampled_from(sorted(set(STEPS) - {"coverage"})), min_size=1, max_size=4))

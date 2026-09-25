@@ -26,6 +26,7 @@ import re
 import pytest
 
 from accuracy.kit import drive, exact, repos
+from accuracy.verdict_model import cadence
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
 
@@ -227,7 +228,8 @@ def test_the_advisory_reads_an_encoded_mark(seeded, tmp_path):
 
 @pytest.mark.process
 @pytest.mark.cross_surface
-@pytest.mark.parametrize("case", ["grow-marked", "touch-marked", "new-complex"])
+@pytest.mark.parametrize("case", cadence.tiered(["grow-marked", "touch-marked", "new-complex"],
+                                                push={"grow-marked"}))
 def test_mcp_check_gate_answers_as_rescore_gate(seeded, tmp_path, case):
     scenario = seeded.copy(tmp_path / "repo")
     scenario.set(CASES[case])

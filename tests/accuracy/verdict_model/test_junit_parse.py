@@ -27,6 +27,7 @@ from pathlib import Path
 from junitparser import Error, Failure, JUnitXml, Skipped, TestSuite
 import pytest
 
+from accuracy.verdict_model import cadence
 from accuracy.verdict_model import verdict_world as vw
 
 RECORDED = Path(__file__).resolve().parent / "recorded"
@@ -104,7 +105,7 @@ def test_junitparser_and_reportlog_name_the_same_failures(name):
 # --- what crapkit reads ------------------------------------------------------------------------
 
 @pytest.mark.process
-@pytest.mark.parametrize("name", MIXED)
+@pytest.mark.parametrize("name", cadence.tiered(MIXED, push={"pytest-9.1/mixed.xml"}))
 def test_lane_failures_and_counts_match_junitparser(clean, tmp_path, name):
     scenario = _with_report(clean, tmp_path, _text(name))
     expected = junitparser_reading(RECORDED / name)
@@ -115,6 +116,7 @@ def test_lane_failures_and_counts_match_junitparser(clean, tmp_path, name):
         (expected.failed, expected.total, expected.skipped)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 @pytest.mark.parametrize("name", MIXED)
 def test_new_failures_are_the_report_s_failures(clean, tmp_path, name):
@@ -128,7 +130,7 @@ def test_new_failures_are_the_report_s_failures(clean, tmp_path, name):
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("version", PYTESTS)
+@pytest.mark.parametrize("version", cadence.tiered(PYTESTS, push=PYTESTS[-1:]))
 def test_teardown_errors_across_pytest(clean, tmp_path, version):
     """A teardown error fails its test, on a test that passed and on one that
     had already failed, in every pytest the lanes are recorded under."""
@@ -153,7 +155,8 @@ def _refusal(scenario: vw.Scenario) -> str:
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("name", sorted(REFUSED))
+@pytest.mark.parametrize("name", cadence.tiered(
+    sorted(REFUSED), push=[name for name in REFUSED if name.startswith("pytest-9.1")]))
 def test_collection_error_and_worker_crash_refuse(clean, tmp_path, name):
     """The lane fails, its scope scores no-lane, the run is partial; the
     refusal names what the report admits."""
@@ -200,7 +203,8 @@ HAND = [
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("case", HAND, ids=[row[0] for row in HAND])
+@pytest.mark.parametrize("case", cadence.tiered(HAND, push={"count-short", "no-count", "session-error"},
+                                                ids=[row[0] for row in HAND]))
 def test_hand_written_reports_follow_the_docs_table(clean, tmp_path, case):
     _, text, refused, _source = case
     scenario = _with_report(clean, tmp_path, text)
