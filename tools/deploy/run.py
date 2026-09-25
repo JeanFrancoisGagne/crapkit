@@ -3,8 +3,8 @@ laptop and in CI.
 
     python tools/deploy/run.py [--cadence push|nightly|weekly|release|published]
         [--cell ID ...] [--packet KEY] [--os linux|windows|macos]
-        [--image cells|core|full|ci|gui|cells-arm64] [--native] [--build-only] [--bake]
-        [--online] [--repeat N] [--no-cache] [--cache local|gha] [--builder NAME]
+        [--image cells|cells-arm64|core|full|full-latest|ci|gui] [--native] [--build-only]
+        [--bake] [--online] [--repeat N] [--no-cache] [--cache local|gha] [--builder NAME]
         [--faketime HH:MM:SS|+400d] [-n N] [--out DIR]
 
 Linux runs build the image, export the tree under test with export.py into
@@ -26,16 +26,37 @@ a crapkit source change rebuilds nothing:
         crapkit-deploy:<image> sh /out/in/entry.sh -m '<expr>' -n <N>
 
 `--native` runs the same cells on this machine against the toolchain
-toolchain.py installed (Windows and macOS always run native). `--repeat N`
-runs the selection N times from fresh containers and fails when any cell's
-verdict differs between runs. `--faketime` runs the container under
-libfaketime (lin-clock): HH:MM:SS starts the clock at that UTC time today,
-+400d runs 400 days ahead. A program that names no dynamic loader keeps the
-real clock: uv, Crush, act, the Codex CLI, and the rg and sandbox helpers
-Codex, the Cursor agent and VS Code ship (tests/deploy/kit/clock.py
-REAL_CLOCK lists each); a cell that starts Claude Code 2.1.281, which
-never starts under libfaketime, is skipped at that step. Output: <out>/junit*.xml, <out>/transcripts/,
-<out>/build.json (build times and image sizes).
+toolchain.py installed (Windows and macOS always run native, and so does
+lin-native-start on a bare Linux runner). `--repeat N` runs the selection
+N times from fresh containers and fails when any cell's verdict differs
+between runs. `--faketime` runs the container under libfaketime (lin-clock):
+HH:MM:SS starts the clock at that UTC time today, +400d runs 400 days ahead.
+A program that names no dynamic loader keeps the real clock: uv, Crush, act,
+the Codex CLI, and the rg and sandbox helpers Codex, the Cursor agent and VS
+Code ship (tests/deploy/kit/clock.py REAL_CLOCK lists each); a cell that
+starts Claude Code 2.1.281, which never starts under libfaketime, is skipped
+at that step. Output: <out>/junit*.xml, <out>/transcripts/, <out>/build.json
+(build times and image sizes).
+
+An x86_64 host builds and runs cells-arm64 under QEMU. When it cannot run an
+arm64 container, run.py stops before the build; register the handler with
+
+    docker run --privileged --rm tonistiigi/binfmt --install arm64
+
+and run it again. Environment:
+
+    CRAPKIT_DEPLOY_REPO            the repository images are tagged under
+                                   (default crapkit-deploy); a second checkout
+                                   building other pins on the same daemon sets
+                                   its own, so neither replaces the other's tags
+    CRAPKIT_DEPLOY_TOOLCHAIN_ROOT  --native: the toolchain toolchain.py put
+                                   there, in place of the OS's cache directory
+    CRAPKIT_DEPLOY_BASETEMP        --native: pytest's basetemp (C:\\dt on
+                                   Windows); pytest empties it when it starts,
+                                   so each native run at once needs its own
+
+tools/deploy/README.md has what each image holds, their sizes and build
+times, and the fake clock's limits.
 """
 from __future__ import annotations
 
@@ -521,19 +542,32 @@ def differing(runs: list[dict[str, str]]) -> list[str]:
 # --- command line -----------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--cadence", default="push", choices=sorted(CADENCES))
-    parser.add_argument("--cell", action="append", default=[])
-    parser.add_argument("--packet")
-    parser.add_argument("--os", choices=["linux", "windows", "macos"])
-    parser.add_argument("--image", default="core", choices=sorted(pinsfile.IMAGE_CHAIN))
-    parser.add_argument("--native", action="store_true")
-    parser.add_argument("--build-only", action="store_true")
-    parser.add_argument("--bake", action="store_true")
-    parser.add_argument("--online", action="store_true")
-    parser.add_argument("--repeat", type=int, default=1)
-    parser.add_argument("--no-cache", action="store_true")
-    parser.add_argument("--cache", default="local", choices=["local", "gha"])
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--cadence", default="push", choices=sorted(CADENCES),
+                        help="the cadence whose cells run (default push); release is push, nightly, weekly and "
+                             "online together")
+    parser.add_argument("--cell", action="append", default=[], metavar="ID",
+                        help="run this cell; repeat for more")
+    parser.add_argument("--packet", metavar="KEY", help="run one packet's cells, e.g. deploy-kit")
+    parser.add_argument("--os", choices=["linux", "windows", "macos"],
+                        help="run the cells marked for this OS (default: linux in a container, this machine's OS "
+                             "with --native)")
+    parser.add_argument("--image", default="core", choices=sorted(pinsfile.IMAGE_CHAIN),
+                        help="the image to build and run in (default core); cells-arm64 is linux/arm64, "
+                             "full-latest adds every harness at its newest release")
+    parser.add_argument("--native", action="store_true",
+                        help="run the cells on this machine against the toolchain toolchain.py installed")
+    parser.add_argument("--build-only", action="store_true",
+                        help="build the image, or keep it when its inputs are unchanged, and run nothing")
+    parser.add_argument("--bake", action="store_true",
+                        help="copy the exported tree into an <image>-baked image and run the cells from that copy")
+    parser.add_argument("--online", action="store_true",
+                        help="run the cells marked online, and only those, with the network on")
+    parser.add_argument("--repeat", type=int, default=1, metavar="N",
+                        help="run the selection N times from fresh containers; exit 1 when a verdict differs")
+    parser.add_argument("--no-cache", action="store_true", help="build cold")
+    parser.add_argument("--cache", default="local", choices=["local", "gha"],
+                        help="BuildKit's layer cache: local (default) or gha, the GitHub Actions cache")
     parser.add_argument("--builder", default=None,
                         help="buildx builder, created with the pinned BuildKit image when absent (default: the "
                              "daemon's builder when it runs the pinned BuildKit, else " + CONTAINER_BUILDER + ")")
@@ -543,8 +577,11 @@ def build_parser() -> argparse.ArgumentParser:
                              "loader, such as uv, Codex or Crush, keeps the real clock, and a cell skips at a "
                              "release that cannot start under it "
                              "(tests/deploy/kit/clock.py)")
-    parser.add_argument("-n", type=int, default=0)
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    parser.add_argument("-n", type=int, default=0, metavar="N",
+                        help="pytest-xdist workers (default 0: one process)")
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, metavar="DIR",
+                        help="where the JUnit files, transcripts and build records land (default "
+                             ".crapkit/deploy-out)")
     return parser
 
 

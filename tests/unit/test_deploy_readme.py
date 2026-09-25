@@ -1,11 +1,14 @@
-"""tools/deploy/README.md, held to the code it describes.
+"""tools/deploy/README.md and the --help of run.py and toolchain.py, held to
+the code they describe.
 
 The README described the kit as it was before the images packet: no
 cells-arm64 or full-latest image, no --faketime, no Linux toolchain root,
 none of the environment variables that keep two checkouts on one machine
 apart, and not the QEMU line run.py prints when a host cannot run arm64
-containers. These tests read the images, flags and variables from the code,
-so a new one fails here until the page names it.
+containers. run.py's --help printed half of its docstring's first sentence
+and said nothing about 14 of its 16 flags, and the docstring's usage lines
+left out full-latest. These tests read the images, flags and variables from
+the code, so a new one fails here until the page and the help name it.
 """
 import re
 import shlex
@@ -24,6 +27,7 @@ import run  # noqa: E402
 import toolchain  # noqa: E402
 
 README = (DEPLOY / "README.md").read_text(encoding="utf-8")
+TOOLS = [run, toolchain]
 
 
 def section(heading: str) -> str:
@@ -55,10 +59,10 @@ def long_options(parser) -> list[str]:
     return sorted(flag for action in options(parser) for flag in action.option_strings if flag.startswith("--"))
 
 
-def variables() -> list[str]:
-    """Every environment variable a tool here reads from its user: the
-    `*_ENV = "..."` constants."""
-    source = "".join(path.read_text(encoding="utf-8") for path in sorted(DEPLOY.glob("*.py")))
+def variables(paths=None) -> list[str]:
+    """Every environment variable the tools here (or these files) read from
+    their user: the `*_ENV = "..."` constants."""
+    source = "".join(path.read_text(encoding="utf-8") for path in sorted(paths or DEPLOY.glob("*.py")))
     return sorted(set(re.findall(r'^\w+_ENV = "(\w+)"', source, re.M)))
 
 
@@ -119,3 +123,39 @@ def test_the_readme_names_the_toolchain_root_on_each_os(platform_name, monkeypat
 @pytest.mark.parametrize("argv", run_lines(), ids=" ".join)
 def test_every_run_py_line_in_the_readme_is_one_run_py_takes(argv):
     run.parse(argv)
+
+
+@pytest.mark.parametrize("tool", TOOLS, ids=lambda tool: tool.__name__)
+def test_help_prints_the_whole_docstring(tool):
+    assert tool.__doc__.strip() in tool.build_parser().format_help()
+
+
+@pytest.mark.parametrize("tool", TOOLS, ids=lambda tool: tool.__name__)
+def test_help_names_each_variable_its_tool_defines(tool):
+    shown = tool.build_parser().format_help()
+
+    for name in variables([Path(tool.__file__)]):
+        assert name in shown, f"{tool.__name__}.py --help never names {name}"
+
+
+def test_run_py_usage_lines_name_every_image_and_flag():
+    usage = run.__doc__.split("\n\n")[1]
+
+    for said in [*pinsfile.IMAGE_CHAIN, *long_options(run.build_parser())]:
+        assert re.search(rf"[\s\[|]{re.escape(said)}[\s\]|]", usage), f"run.py's usage lines leave out {said}"
+
+
+def test_run_py_help_names_each_variable_the_readme_and_the_qemu_line():
+    shown = run.build_parser().format_help()
+
+    for said in [*variables(), "tools/deploy/README.md", run.QEMU_FIX]:
+        assert said in shown, f"run.py --help never says {said}"
+
+
+@pytest.mark.parametrize("tool, flag", [(tool, action.option_strings[0]) for tool in TOOLS
+                                        for action in options(tool.build_parser())],
+                         ids=lambda value: getattr(value, "__name__", value))
+def test_every_flag_says_what_it_does(tool, flag):
+    action = next(action for action in options(tool.build_parser()) if flag in action.option_strings)
+
+    assert action.help, f"{tool.__name__}.py --help says nothing about {flag}"
