@@ -77,3 +77,37 @@ Same images and host as above. Seconds per probe; every probe passed:
 | `agent --version` | | 1.2 | | 0.8 | 1.1 |
 
 Raw output: `logs/serves-<image>.log`, in the same line format.
+
+## The arm64 cells image
+
+`cells-arm64` is the cells target built for linux/arm64, for the weekly
+lin-arm64 job. On an x86_64 host it runs under QEMU, registered once with
+`docker run --privileged --rm tonistiigi/binfmt --install arm64`; Docker
+Desktop drops that handler on some restarts, and `run.py` then names this
+command before it builds or runs the image.
+
+    docker run --rm --platform linux/arm64 --network none --user 1000:1000 \
+        -v <tree>:/src:ro crapkit-deploy:cells-arm64 \
+        sh /src/tests/deploy/docker/prototype/probe_serves.sh
+
+The first run on 2026-09-25 failed one probe: the image holds the 3.15
+prerelease like every image, but the wheelhouse had no aarch64 row for it,
+so `pip install crapkit[py]` on 3.15 stopped at "No matching distribution
+found for coverage>=7.10.6". With the `linux-aarch64-cp315` row every probe
+passed, emulated, on the same host (`logs/serves-cells-arm64.log`):
+
+| Probe | seconds |
+|---|---|
+| `pip install pipx` | 7.9 |
+| `pipx --version` | 4.4 |
+| `pip install crapkit[py]==0.8.0 pytest` on 3.11 / 3.12 / 3.13 / 3.14 / 3.15.0rc2 | 12.9 / 13.7 / 12.6 / 16.3 / 14.6 |
+| `crapkit --version` (each CPython, slowest) | 2.0 |
+| `npm i -D vitest@5.0.2` | 10.5 |
+| `npm i -D "@vitest/coverage-v8@5"` (the README line) | 8.3 |
+
+In the same image under `--network none`: the kit's own tests
+(`run.py --packet deploy-kit --image cells-arm64 -n 4`) gave 48 pass and 1
+skip (the Windows-only path test) in 335 s, and the transcripts name the
+platform `Linux-...-aarch64-with-glibc2.41`. The lin-arm64 cell (the README
+start on 3.12, then Route 1) passed in 105 s, and lin-pip-start-py311 and
+lin-pip-start-py314 passed with the same strict xfail as on x86_64.

@@ -1,0 +1,15 @@
+crapkit 0.8.0 is the newest release in the wheelhouse; aarch64
+pipx-from-pip|0|7894|pass|Successfully installed argcomplete-3.7.2 click-8.5.0 filelock-4.0.3 packaging-26.3 pipx-1.17.6 platformdirs-4.11.14 userpath-1.9.2
+pipx-runs|0|4421|pass|1.17.6
+crapkit-py-3.11|0|12889|pass|Successfully installed coverage-7.16.1 crapkit-0.8.0 iniconfig-2.3.0 lizard-1.24.0 packaging-26.3 pathspec-1.1.1 pluggy-1.6.0 pygments-2.21.0 pytest-9.1.1 pytes
+crapkit-version-3.11|0|1072|pass|crapkit 0.8.0
+crapkit-py-3.12|0|13726|pass|Successfully installed coverage-7.16.1 crapkit-0.8.0 iniconfig-2.3.0 lizard-1.24.0 packaging-26.3 pathspec-1.1.1 pluggy-1.6.0 pygments-2.21.0 pytest-9.1.1 pytes
+crapkit-version-3.12|0|1165|pass|crapkit 0.8.0
+crapkit-py-3.13|0|12609|pass|Successfully installed coverage-7.16.1 crapkit-0.8.0 iniconfig-2.3.0 lizard-1.24.0 packaging-26.3 pathspec-1.1.1 pluggy-1.6.0 pygments-2.21.0 pytest-9.1.1 pytes
+crapkit-version-3.13|0|1129|pass|crapkit 0.8.0
+crapkit-py-3.14|0|16280|pass|Successfully installed coverage-7.16.1 crapkit-0.8.0 iniconfig-2.3.0 lizard-1.24.0 packaging-26.3 pathspec-1.1.1 pluggy-1.6.0 pygments-2.21.0 pytest-9.1.1 pytes
+crapkit-version-3.14|0|2037|pass|crapkit 0.8.0
+crapkit-py-3.15|0|14561|pass|Successfully installed coverage-7.16.1 crapkit-0.8.0 iniconfig-2.3.0 lizard-1.24.0 packaging-26.3 pathspec-1.1.1 pluggy-1.6.0 pygments-2.21.0 pytest-9.1.1 pytes
+crapkit-version-3.15|0|1173|pass|crapkit 0.8.0
+npm-vitest|0|10545|pass|added 35 packages in 9s
+npm-readme-provider|0|8304|pass|added 14 packages in 7s
