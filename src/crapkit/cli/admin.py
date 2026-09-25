@@ -918,9 +918,17 @@ def _lizard_version() -> str | None:
 
 
 def _doctor_tools() -> list[Finding]:
+    """lizard's version, or a FAIL naming the install for the python running
+    crapkit. `pip install lizard` landed in whatever environment the shell's pip
+    belongs to, and a `uv tool install` of crapkit runs in a venv uv made, which
+    holds no pip of its own."""
+    from ..launchers import pip_install
+
     version = _lizard_version()
     if version is None:
-        return [Finding("FAIL", "lizard is not importable — pip install lizard")]
+        install = pip_install(sys.executable, "lizard", _shell_quote(sys.executable))
+        return [Finding("FAIL", f"lizard is not importable by the python running crapkit "
+                                f"({sys.executable}) - run `{install}`, or reinstall crapkit")]
     return [Finding("ok", f"lizard {version}")]
 
 

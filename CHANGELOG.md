@@ -157,6 +157,10 @@ nothing. Each of these now gets a line naming the object and the next step:
   missing pytest-cov or an old coverage.py, and the one `coverage` prints when pytest
   rejects `--cov`, read `uv pip install --python <that python> ...`. The `<python> -m
   pip install` they printed failed there with "No module named pip".
+- A lizard that crapkit cannot import FAILs naming the install for the python running
+  crapkit (`uv pip install --python <it> lizard` for a `uv tool install`). The `pip
+  install lizard` it printed ran the shell's pip, which installed elsewhere or was refused
+  as an externally managed environment.
 
 `crapkit doctor --plugin-root`:
 

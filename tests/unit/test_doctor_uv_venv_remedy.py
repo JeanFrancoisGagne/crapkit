@@ -61,3 +61,25 @@ def test_the_coverage_floor_names_uv_pip_in_a_venv_uv_made(tmp_path):
 
     assert (f'`uv pip install --python {admin._shell_quote(str(python))} "coverage>=7.6"`'
             in finding.text), finding.text
+
+
+# --- lizard missing from the environment running crapkit ---------------------------------
+#
+# The FAIL said `pip install lizard`, which lands in whatever environment the
+# shell's pip belongs to. crapkit installed with `uv tool install` runs in a venv
+# uv made, where no pip lives, so the shell's pip is some other environment's.
+
+@pytest.mark.parametrize("uv", [True, False], ids=["uv-made", "venv-made"])
+def test_a_missing_lizard_names_the_install_for_the_python_running_crapkit(tmp_path, monkeypatch,
+                                                                          uv):
+    python = venv(tmp_path, uv=uv)
+    monkeypatch.setattr(admin, "_lizard_version", lambda: None)
+    monkeypatch.setattr(admin.sys, "executable", str(python))
+
+    (finding,) = admin._doctor_tools()
+
+    assert finding.level == "FAIL"
+    install = pip_install(str(python), "lizard", admin._shell_quote(str(python)))
+    assert finding.text == (f"lizard is not importable by the python running crapkit ({python}) "
+                            f"- run `{install}`, or reinstall crapkit"), finding.text
+    assert install.startswith("uv pip install --python" if uv else admin._shell_quote(str(python)))
