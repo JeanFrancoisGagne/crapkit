@@ -27,7 +27,7 @@ well, so two checkouts on one machine each keep their own pins. Every path is
 resolved before a sandbox rewrites LOCALAPPDATA, and each step is skipped when
 its output already exists, so a warm rerun costs seconds.
 
-`run.py --native` gives pytest --basetemp C:\dt on Windows (no 8.3 short
+`run.py --native` gives pytest --basetemp C:\\dt on Windows (no 8.3 short
 name in it), $TMPDIR/crapkit-deploy-tmp elsewhere, or $CRAPKIT_DEPLOY_BASETEMP.
 pytest empties its basetemp when it starts, so two native runs at once on one
 machine each need their own CRAPKIT_DEPLOY_BASETEMP.
