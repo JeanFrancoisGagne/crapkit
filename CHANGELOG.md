@@ -566,6 +566,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   `crapkit: not found`. The section takes out the hook and the merge driver first, then the
   files crapkit wrote, then the package and the plugins, with each gate route's pieces and
   each installer's removal line.
+- The handbook's Install section names the PEP 668 refusal, the 3.10 route through
+  `uvx crapkit`, what each Windows installer does under a live session, and links the
+  upgrade table and the removal steps. Its Windows paragraph had named only `os error 32`.
 - An override or `digest --alert` with no `alert_command` now prints a line to paste:
   `alert_command = "cat >> .crapkit/alerts.log"`, and on Windows, whose cmd.exe has no
   `cat`, `alert_command = 'findstr "^" >> .crapkit/alerts.log'`. The configuration and

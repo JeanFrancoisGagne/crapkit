@@ -223,3 +223,40 @@ def test_the_readme_points_at_the_removal_and_names_both_failures():
 
     assert "upgrading.md#removing-crapkit" in removing
     assert "`No module named crapkit`" in removing and "`crapkit: not found`" in removing
+
+
+# --- the handbook's Install section, the other page a team installs from ----------------
+
+def _handbook_install() -> str:
+    """The handbook's Install section as text: tags dropped, entities read."""
+    import html
+
+    page = _doc("docs/handbook.html")
+    start = page.index('<h2 id="install">')
+    body = page[start:page.index("<h2", start + 1)]
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", body)).split())
+
+
+@pytest.mark.parametrize("line", ["error: externally-managed-environment", "pipx install crapkit",
+                                  "uv tool install crapkit", "No matching distribution found for crapkit",
+                                  "uvx crapkit"])
+def test_the_handbook_install_names_the_refusals_and_the_way_past_them(line):
+    assert line in _handbook_install(), line
+
+
+@pytest.mark.parametrize("line", ["os error 32", "Access is denied. (os error 5)", "pip exits 0",
+                                  "uv tool install crapkit@latest"])
+def test_the_handbook_windows_upgrade_says_what_each_installer_does(line):
+    upgrade = _handbook_install()
+    upgrade = upgrade[upgrade.index("Upgrading on Windows"):]
+
+    assert line in upgrade, line
+
+
+@pytest.mark.parametrize("link", ["docs/upgrading.md\">upgrade table", "docs/upgrading.md#removing-crapkit",
+                                  "README.md#when-pip-refuses", "docs/upgrading.md#windows-launcher-locks"])
+def test_the_handbook_install_links_the_upgrade_table_the_refusal_and_the_removal(link):
+    page = _doc("docs/handbook.html")
+    install = page[page.index('<h2 id="install">'):page.index('<h2 id="uses">')]
+
+    assert link in install, link
