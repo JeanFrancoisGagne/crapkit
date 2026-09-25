@@ -270,11 +270,13 @@ def _counts(path: Path) -> list:
 
 
 def _fn_coverage(path: Path, kind: str) -> dict:
-    from crapkit.coverage_istanbul import parse_istanbul_both_file
-    from crapkit.coverage_py import parse_coveragepy_both_file
+    """crapkit's parse, loaded at run time: an expected value here never comes from it."""
+    import importlib
     if kind == "python":
-        return parse_coveragepy_both_file(path, path_prefix="")[0]
-    return parse_istanbul_both_file(path, repo_root="")[0]
+        reader = importlib.import_module("crapkit.coverage_py")
+        return reader.parse_coveragepy_both_file(path, path_prefix="")[0]
+    reader = importlib.import_module("crapkit.coverage_istanbul")
+    return reader.parse_istanbul_both_file(path, repo_root="")[0]
 
 
 def differences(producer: Producer, fresh: Path, committed: Path) -> list[str]:

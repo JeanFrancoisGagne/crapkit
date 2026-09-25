@@ -12,17 +12,21 @@ model and the driver's calls, never from a producer's output. Three checks:
    over those counts, after the README floor for a Python def-line layout.
    Where crapkit and the ground truth part, a rulings row says why.
 
-Every producer's recording is replayed on push; regenerate.py reruns the
-producers in the nightly tier.
+Every producer's recording is replayed on push. In the nightly tier
+regenerate.py reruns each producer over the probes and the fresh artifact must
+equal the committed one three ways (counts_table, crapkit's parse, the
+canonical form), so the ground truth holds for the producer as installed.
 """
 import dataclasses
 from fractions import Fraction
 import json
+import sys
 
 import pytest
 
+import hang_guard
 from accuracy.coverage_oracles import counts_table, ground_table, probe_repo
-from accuracy.kit import rulings
+from accuracy.kit import rulings, runlog, tiers
 
 LIVE = "coveragepy-live"
 RECORDED = sorted(name for name in ground_table.FAMILIES if name != LIVE)
@@ -223,3 +227,24 @@ def test_a_function_with_no_arms_and_no_statements_reads_called_or_not():
 
     assert ground_table.expected(row) == Fraction(1)
     assert ground_table.expected(dataclasses.replace(row, scenario="idle")) == 0
+
+
+# --- nightly: the producers rerun ---------------------------------------------------------------
+
+REGENERATE = probe_repo.HERE / "regenerate.py"
+MISSING = 3
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.parametrize("producer", sorted([*probe_repo.PRODUCERS, "coveragepy-reports-7.16.1",
+                                             "pytest-cov-7.1.0-contexts"]))
+def test_the_producer_rerun_matches_its_recording(producer):
+    """regenerate.py check: exit 0 when the fresh run equals the recording, 1
+    when it differs, 3 when the producer cannot run here (an infra miss)."""
+    tiers.require_process(producer)
+    done = hang_guard.run([sys.executable, str(REGENERATE), "check", "--producer", producer],
+                          text=True, encoding="utf-8", errors="replace")
+    if done.returncode == MISSING:
+        runlog.note("infra", message=done.stderr.strip())
+    assert done.returncode == 0, done.stderr
