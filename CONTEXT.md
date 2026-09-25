@@ -48,6 +48,16 @@ _Avoid_: dependencies, sources (a scope's paths are its sources)
 The coverage file a lane writes and crapkit reads.
 _Avoid_: report (a report is crapkit's own HTML page)
 
+**Stamp**:
+What a lane run records beside its artifact in `.crapkit/artifacts.json`: the commit, the reuse proof or why it did not hold, and the lane's content record. Read once per command.
+
+**Content record**:
+The git blob id of each file, the id `git add` would store, taken when a lane or a scored run read it. Freshness compares these ids with the tree; git's index answers for a file its stat cache calls unchanged, so a same-size edit under a restored modification time is a named limit.
+_Avoid_: digest, snapshot (a snapshot is a run in the store)
+
+**Leftover**:
+The artifact a lane's failed attempt left in place, which is the previous run's file. Reuse refuses it while it holds the same bytes.
+
 **Exclude**:
 A glob that removes files from the corpus before inventory.
 

@@ -229,3 +229,13 @@ def test_lane_sources_unchanged_still_answers_and_warns_that_it_goes_in_0_9(tmp_
     assert (fresh, moved) == (True, False)
     assert [w.category for w in caught] == [DeprecationWarning, DeprecationWarning]
     assert "goes in 0.9" in str(caught[0].message)
+
+
+def test_the_lanes_page_quotes_the_reuse_line_a_lane_prints(tmp_path, capsys):
+    page = (Path(__file__).resolve().parents[2] / "docs" / "lanes.md").read_text(encoding="utf-8")
+    root = stale_tree.measure(stale_tree.build(tmp_path / "repo"))
+
+    line = _reuse_line(root, capsys)
+    tail = line.split("(artifact built at ", 1)[1].split(")", 1)[1]
+
+    assert f"reusing without rerun (artifact built at 525a3276065){tail}\n" in page, line

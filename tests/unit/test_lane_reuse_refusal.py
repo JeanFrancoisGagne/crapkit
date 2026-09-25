@@ -374,3 +374,20 @@ def test_the_lanes_page_quotes_the_leftover_refusal_a_run_prints(tmp_path):
 
     assert printed.startswith("lane 'py' wrote no artifact this run"), printed
     assert f"crapkit: lane 'py' FAILED: {printed}; lane log:" in lanes_page, printed
+
+
+def test_the_lanes_page_quotes_the_unreadable_record_refusal(tmp_path, monkeypatch):
+    import sys
+
+    lanes_page = (Path(__file__).resolve().parents[2] / "docs" / "lanes.md").read_text(
+        encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
+    lane = Lane(name="py", command="python -m pytest --cov", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("src",))
+    _plant(tmp_path, lane.artifact, BEFORE)
+    (tmp_path / ".crapkit" / "artifacts.json").write_text("{cut", encoding="utf-8")
+
+    with pytest.raises(ToolError) as raised:
+        run_lane(tmp_path, lane, reuse_artifact=True)
+
+    assert f"crapkit: lane 'py' FAILED: {raised.value}\n" in lanes_page, str(raised.value)
