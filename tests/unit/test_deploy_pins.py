@@ -116,14 +116,20 @@ def test_every_binary_has_an_https_url_and_a_sha256(key):
     assert spec["os"] in ("linux", "windows", "macos", "any")
 
 
+ARCH = {"windows": "x86_64", "macos": "aarch64", "linux": "x86_64"}
+
+
 def _requested(monkeypatch, tmp_path, os_name, harness):
     """The pins toolchain.py downloads for one OS and harness level, recorded
     instead of fetched."""
     asked = []
-    monkeypatch.setattr(toolchain, "install_archive",
-                        lambda pins, stem, os, root: asked.append(toolchain.binary(pins, stem, os)["url"]) or root)
-    toolchain.base_tools(PINS, os_name, tmp_path)
-    toolchain.install_harness_binaries(PINS, os_name, tmp_path, harness)
+
+    def record(pins, stem, os, root, arch=None):
+        asked.append(toolchain.binary(pins, stem, os, arch)["url"])
+        return root
+    monkeypatch.setattr(toolchain, "install_archive", record)
+    toolchain.base_tools(PINS, os_name, tmp_path, ARCH[os_name])
+    toolchain.install_harness_binaries(PINS, os_name, tmp_path, harness, ARCH[os_name])
     return {key for key, spec in PINS["binary"].items() if spec["url"] in asked}
 
 
@@ -137,11 +143,53 @@ def test_toolchain_installs_every_pin_for_its_os_and_no_other(monkeypatch, tmp_p
     assert installed == pinned
 
 
+@pytest.mark.parametrize("level, harness", [("none", set()), ("core", {"cursor-agent-linux-x64"})])
+def test_a_native_linux_run_installs_its_base_pins_and_its_levels_harness_binaries(monkeypatch, tmp_path, level,
+                                                                                    harness):
+    """lin-native-start runs on the bare ubuntu runner: toolchain.py had no Linux
+    uv or Node pin, so the job stopped before its one cell."""
+    installed = _requested(monkeypatch, tmp_path, "linux", toolchain.HARNESS_LEVELS[level])
+
+    assert installed == {"uv-linux-x64", "node-linux-x64", "prek-linux-x64"} | harness
+
+
+def test_a_native_only_linux_pin_feeds_no_image_build_arg():
+    args = run.build_args(PINS)
+
+    assert "UV_LINUX_X64_URL" not in args and "NODE_LINUX_X64_URL" not in args
+    assert args["PREK_LINUX_X64_URL"] == PINS["binary"]["prek-linux-x64"]["url"]
+
+
+@pytest.mark.parametrize("arch, suffix", [("x86_64", "x86_64-unknown-linux-gnu.tar.gz"),
+                                          ("aarch64", "aarch64-unknown-linux-gnu.tar.gz")])
+def test_a_linux_download_is_the_one_for_the_hosts_architecture(arch, suffix):
+    assert toolchain.binary(PINS, "prek-linux", "linux", arch)["url"].endswith(suffix)
+
+
+def test_a_linux_toolchain_keeps_the_systems_git_and_python3_and_adds_prek(monkeypatch, tmp_path):
+    monkeypatch.setattr(toolchain, "install_archive", lambda pins, stem, os, root, arch=None: tmp_path / stem)
+    linux = toolchain._posix_tools(PINS, tmp_path, "linux", "x86_64")
+    mac = toolchain._posix_tools(PINS, tmp_path, "macos", "aarch64")
+
+    assert linux["system_python"] == "/usr/bin/python3" and linux["prek"] == str(tmp_path / "prek-linux" / "prek")
+    assert linux["path"] == [str(tmp_path / name) for name in ("bin", "uv-linux", "node-linux/bin")]
+    assert mac["prek"] == "" and mac["path"][-1] == str(tmp_path / "pwsh-macos")
+
+
+@pytest.mark.parametrize("system, expected", [("/usr/bin/python3", "/usr/bin/python3"), ("", "/t/python3.12")])
+def test_the_described_system_python_is_the_oss_own_else_the_pinned_one(tmp_path, system, expected):
+    tools = {name: f"/t/{name}" for name in ("uv", "uvx", "node", "npm", "git", "prek", "pipx", "runner", "bash")}
+    tools.update(path=["/t/bin"], system_python=system)
+
+    assert toolchain.describe(tmp_path, tools, {"3.12": "/t/python3.12"}, [])["system_python"] == expected
+
+
 @pytest.mark.parametrize("os_name, level, keys", [
     ("windows", "none", set()),
     ("windows", "core", {"cursor-agent-windows-x64"}),
     ("windows", "full", {"cursor-agent-windows-x64", "goose-windows-x64"}),
     ("macos", "core", {"cursor-agent-macos-arm64"}),
+    ("linux", "none", set()),
 ])
 def test_a_harness_level_installs_the_binaries_its_images_hold(os_name, level, keys):
     assert set(toolchain.harness_downloads(PINS, os_name, toolchain.HARNESS_LEVELS[level])) == keys

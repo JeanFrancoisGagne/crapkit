@@ -1,14 +1,16 @@
 """Install the deploy toolchain natively, from the same pins the images use.
 
-Linux cells run in the images; Windows and macOS cells cannot, so this puts
-the same pinned tools in a cache directory and writes the toolchain.json the
-kit reads:
+Linux cells run in the images; Windows and macOS cells cannot, and
+lin-native-start runs on the bare ubuntu runner, so this puts the same pinned
+tools in a cache directory and writes the toolchain.json the kit reads:
 
     python tools/deploy/toolchain.py [--root DIR] [--harness core|full|none]
 
   uv, and every CPython in pins.toml, under <root>/python (uv checks hashes)
-  Node and pwsh; on Windows also PortableGit (first on the sandbox PATH; its
-  system gitconfig applies, as it does for a user) and prek
+  Node; pwsh on Windows and macOS; prek on Windows and Linux; on Windows also
+  PortableGit (first on the sandbox PATH; its system gitconfig applies, as it
+  does for a user). A Linux run (the bare ubuntu runner of lin-native-start)
+  keeps the runner's own git and /usr/bin/python3, as a user's machine does
   pipx (the pinned zipapp)
   each pinned harness binary for this OS whose image the --harness level
   holds (the Cursor agent at core, Goose at full on Windows)
@@ -16,11 +18,11 @@ kit reads:
   the runner venv from runner-requirements.txt
   `npm ci` of the npm fixtures and the harness locks, into <root>/npm-cache
 
-The root is %LOCALAPPDATA%\\crapkit-deploy on Windows and
-~/Library/Caches/crapkit-deploy on macOS, or $CRAPKIT_DEPLOY_TOOLCHAIN_ROOT,
-which `run.py --native` reads as well. Every path is resolved before a
-sandbox rewrites LOCALAPPDATA, and each step is skipped when its output
-already exists, so a warm rerun costs seconds.
+The root is %LOCALAPPDATA%\\crapkit-deploy on Windows,
+~/Library/Caches/crapkit-deploy on macOS and ~/.cache/crapkit-deploy on
+Linux, or $CRAPKIT_DEPLOY_TOOLCHAIN_ROOT, which `run.py --native` reads as
+well. Every path is resolved before a sandbox rewrites LOCALAPPDATA, and each
+step is skipped when its output already exists, so a warm rerun costs seconds.
 """
 from __future__ import annotations
 
@@ -45,7 +47,8 @@ DOCKER = ROOT / "tests" / "deploy" / "docker"
 WINDOWS = os.name == "nt"
 # The pinned downloads every native toolchain installs, by pins.toml stem; the
 # harness binaries come on top, chosen by their `image`.
-BASE_TOOLS = {"windows": ("uv", "node", "portable-git", "pwsh", "prek"), "macos": ("uv", "node", "pwsh")}
+BASE_TOOLS = {"windows": ("uv", "node", "portable-git", "pwsh", "prek"), "macos": ("uv", "node", "pwsh"),
+              "linux": ("uv", "node", "prek")}
 HARNESS_LEVELS = {"core": ["core"], "full": ["core", "full"], "none": []}
 ROOT_ENV = "CRAPKIT_DEPLOY_TOOLCHAIN_ROOT"
 BASETEMP_ENV = "CRAPKIT_DEPLOY_BASETEMP"
@@ -126,18 +129,20 @@ def _once(target: Path, make) -> Path:
 
 # --- steps -------------------------------------------------------------------------
 
-def binary(pins: dict, stem: str, os_name: str) -> dict:
+def binary(pins: dict, stem: str, os_name: str, arch: str | None = None) -> dict:
+    """The first pin whose key starts with stem for this OS, and for this
+    architecture when one is named: Linux pins prek for x86_64 and aarch64."""
     key = next(key for key, spec in pinsfile.binaries(pins, os_name).items()
-               if key.startswith(stem) and spec["os"] in (os_name, "any"))
+               if key.startswith(stem) and arch in (None, spec["arch"], "any"))
     return pins["binary"][key]
 
 
-def install_archive(pins: dict, stem: str, os_name: str, root: Path) -> Path:
+def install_archive(pins: dict, stem: str, os_name: str, root: Path, arch: str | None = None) -> Path:
     """Download and unpack one pinned archive into <root>/<stem>, once."""
     target = root / stem
 
     def make():
-        archive = download(binary(pins, stem, os_name), root / "downloads")
+        archive = download(binary(pins, stem, os_name, arch), root / "downloads")
         if archive.name.endswith(".7z.exe"):
             subprocess.run([str(archive), "-y", f"-o{target}"], check=True, capture_output=True)
         else:
@@ -219,26 +224,31 @@ def system_path() -> list[str]:
 
 
 def describe(root: Path, tools: dict, pythons: dict, harness: list[str]) -> dict:
-    """toolchain.json: the same keys the images' /opt/deploy/toolchain.json holds."""
+    """toolchain.json: the same keys the images' /opt/deploy/toolchain.json holds.
+    The system Python is the OS's own where a user meets one first (Linux's
+    /usr/bin/python3), else the pinned 3.12."""
     runner_python = pythons["3.12"]
     path = [*tools["path"], str(Path(runner_python).parent), *system_path()]
     return {"os": host()[0], "path": path, "git": tools["git"], "bash": tools["bash"], "uv": tools["uv"], "uvx": tools["uvx"],
             "node": tools["node"], "npm": tools["npm"], "pipx": tools["pipx"], "prek": tools["prek"],
-            "pythons": pythons, "python_install_dir": str(root / "python"), "system_python": runner_python,
+            "pythons": pythons, "python_install_dir": str(root / "python"),
+            "system_python": tools.get("system_python") or runner_python,
             "wheelhouse": str(root / "wheelhouse"), "npm_cache": str(root / "npm-cache"),
             "npm_fixtures": str(root / "npm-fixtures"), "runner_python": tools["runner"],
             "harness_bin": [*(str(root / f"harness-{name}" / "node_modules" / ".bin") for name in harness),
                             *tools.get("harness_dirs", [])]}
 
 
-def base_tools(pins: dict, os_name: str, root: Path) -> dict[str, Path]:
+def base_tools(pins: dict, os_name: str, root: Path, arch: str) -> dict[str, Path]:
     """stem -> the unpacked directory of each base tool this OS installs."""
-    return {stem: install_archive(pins, f"{stem}-{os_name}", os_name, root) for stem in BASE_TOOLS[os_name]}
+    return {stem: install_archive(pins, f"{stem}-{os_name}", os_name, root, arch) for stem in BASE_TOOLS[os_name]}
 
 
-def harness_downloads(pins: dict, os_name: str, harness: list[str]) -> list[str]:
-    """The pinned harness binaries for this OS that the chosen images hold."""
-    return sorted(key for key, spec in pinsfile.binaries(pins, os_name).items() if spec.get("image") in harness)
+def harness_downloads(pins: dict, os_name: str, harness: list[str], arch: str | None = None) -> list[str]:
+    """The pinned harness binaries for this OS (and architecture, when named)
+    that the chosen images hold."""
+    return sorted(key for key, spec in pinsfile.binaries(pins, os_name).items()
+                  if spec.get("image") in harness and arch in (None, spec["arch"]))
 
 
 def harness_spec(pins: dict, key: str) -> dict:
@@ -254,18 +264,19 @@ def alias_launchers(directory: Path, spec: dict) -> list[Path]:
             for alias in spec.get("aliases", []) for launcher in launchers]
 
 
-def install_harness_binaries(pins: dict, os_name: str, root: Path, harness: list[str]) -> list[str]:
+def install_harness_binaries(pins: dict, os_name: str, root: Path, harness: list[str],
+                             arch: str | None = None) -> list[str]:
     """Each harness binary unpacked once; the directories that go on harness_bin."""
     directories = []
-    for key in harness_downloads(pins, os_name, harness):
+    for key in harness_downloads(pins, os_name, harness, arch):
         directory = install_archive(pins, key, os_name, root)
         alias_launchers(directory, harness_spec(pins, key))
         directories.append(str(directory))
     return directories
 
 
-def _windows_tools(pins: dict, root: Path) -> dict:
-    found = base_tools(pins, "windows", root)
+def _windows_tools(pins: dict, root: Path, arch: str) -> dict:
+    found = base_tools(pins, "windows", root, arch)
     uv, node, git, pwsh, prek = (found[stem] for stem in BASE_TOOLS["windows"])
     return {"uv": str(uv / "uv.exe"), "uvx": str(uv / "uvx.exe"), "node": str(node / "node.exe"),
             "npm": str(node / "npm.cmd"), "git": str(git / "cmd" / "git.exe"), "prek": str(prek / "prek.exe"),
@@ -273,22 +284,33 @@ def _windows_tools(pins: dict, root: Path) -> dict:
             "path": [str(git / "cmd"), str(root / "bin"), str(uv), str(node), str(pwsh)]}
 
 
-def _posix_tools(pins: dict, root: Path, os_name: str) -> dict:
-    found = base_tools(pins, os_name, root)
-    uv, node, pwsh = found["uv"], found["node"] / "bin", found["pwsh"]
+# What a POSIX system brings itself: its git, and on Linux the python3 a user
+# meets first (Debian's and Ubuntu's refuse `pip install`, PEP 668).
+SYSTEM_PYTHON = {"linux": "/usr/bin/python3", "macos": ""}
+
+
+def _found(found: dict[str, Path], stem: str, name: str = "") -> list[str]:
+    """[the tool's directory, or the file `name` in it] when this OS installs it, else []."""
+    return [str(found[stem] / name if name else found[stem])] if stem in found else []
+
+
+def _posix_tools(pins: dict, root: Path, os_name: str, arch: str) -> dict:
+    found = base_tools(pins, os_name, root, arch)
+    uv, node = found["uv"], found["node"] / "bin"
     return {"uv": str(uv / "uv"), "uvx": str(uv / "uvx"), "node": str(node / "node"), "npm": str(node / "npm"),
-            "git": shutil.which("git") or "/usr/bin/git", "prek": "", "bash": "/bin/bash",
-            "path": [str(root / "bin"), str(uv), str(node), str(pwsh)]}
+            "git": shutil.which("git") or "/usr/bin/git", "prek": "".join(_found(found, "prek", "prek")),
+            "bash": "/bin/bash", "system_python": SYSTEM_PYTHON[os_name],
+            "path": [str(root / "bin"), str(uv), str(node), *_found(found, "pwsh")]}
 
 
 def install(pins: dict, root: Path, harness: list[str]) -> dict:
     os_name, arch = host()
     (root / "bin").mkdir(parents=True, exist_ok=True)
-    tools = _windows_tools(pins, root) if WINDOWS else _posix_tools(pins, root, os_name)
+    tools = _windows_tools(pins, root, arch) if WINDOWS else _posix_tools(pins, root, os_name, arch)
     pythons = install_pythons(pins, Path(tools["uv"]), root)
     tools["pipx"] = str(install_pipx(pins, pythons["3.12"], root))
     tools["runner"] = install_runner(Path(tools["uv"]), pythons["3.12"], root)
-    tools["harness_dirs"] = install_harness_binaries(pins, os_name, root, harness)
+    tools["harness_dirs"] = install_harness_binaries(pins, os_name, root, harness, arch)
     lock.fetch(lock.read(), lock.row_names(pins, os_name, arch), root / "wheelhouse")
     env = dict(os.environ, PATH=os.pathsep.join([str(Path(tools["node"]).parent), os.environ["PATH"]]))
     fixtures = root / "npm-fixtures" / "node_modules"

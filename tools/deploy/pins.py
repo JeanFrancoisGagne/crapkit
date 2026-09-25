@@ -49,10 +49,13 @@ def binaries(pins: dict, os_name: str) -> dict[str, dict]:
 
 
 def _binary_args(pins: dict) -> dict[str, str]:
+    """URL and sha256 of each download an image stage fetches: the linux rows
+    that name an image. A linux row with none is for native runs only."""
     args = {}
     for key, spec in binaries(pins, "linux").items():
-        args[f"{arg_name(key)}_URL"] = spec["url"]
-        args[f"{arg_name(key)}_SHA256"] = spec["sha256"]
+        if "image" in spec:
+            args[f"{arg_name(key)}_URL"] = spec["url"]
+            args[f"{arg_name(key)}_SHA256"] = spec["sha256"]
     return args
 
 

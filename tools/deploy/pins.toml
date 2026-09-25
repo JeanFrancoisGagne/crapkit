@@ -316,8 +316,9 @@ image = "full"
 # Dockerfile and toolchain.py check the sha256 before anything unpacks it.
 # `image` names the image that holds it: on a linux row the stage that fetches
 # it, on a windows or macos row the `toolchain.py --harness` level that
-# installs it natively. A windows or macos row with no `image` is a base tool
-# toolchain.py always installs.
+# installs it natively. A row with no `image` is a base tool toolchain.py
+# always installs natively; the images take uv and Node from their pinned
+# Docker images instead, so a linux row with no `image` feeds no build arg.
 
 [binary.cursor-agent-linux-x64]
 url = "https://downloads.cursor.com/lab/2026.09.23-86fc751/linux/x64/agent-cli-package.tar.gz"
@@ -405,6 +406,20 @@ os = "linux"
 arch = "x86_64"
 image = "gui"
 version = "1.21.0"
+
+# The bare ubuntu runner (lin-native-start) installs these; its git and
+# python3 are the runner's own, as a user's are.
+[binary.uv-linux-x64]
+url = "https://github.com/astral-sh/uv/releases/download/0.12.18/uv-x86_64-unknown-linux-gnu.tar.gz"
+sha256 = "89eadd7c76fc063887959510d5ba0ab1264dfd5f1143b925ddb73021a40acf16"
+os = "linux"
+arch = "x86_64"
+
+[binary.node-linux-x64]
+url = "https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.xz"
+sha256 = "df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de"
+os = "linux"
+arch = "x86_64"
 
 [binary.uv-windows-x64]
 url = "https://github.com/astral-sh/uv/releases/download/0.12.18/uv-x86_64-pc-windows-msvc.zip"
