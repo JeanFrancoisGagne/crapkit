@@ -285,7 +285,7 @@ def test_the_scope_summary_names_the_cadence_and_why(tmp_path):
     assert written["GITHUB_STEP_SUMMARY"].startswith("deploy scope: weekly (schedule 17 7 * * 1); jobs: ")
 
 
-FAKE_RUN = """import pathlib, sys
+FAKE_RUN = """import sys
 with open("calls.txt", "a", encoding="utf-8") as calls:
     calls.write(" ".join(sys.argv[1:]) + "\\n")
 sys.exit(int(sys.argv[1]))
