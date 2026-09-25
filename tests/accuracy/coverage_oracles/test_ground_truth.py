@@ -25,7 +25,7 @@ import sys
 import pytest
 
 import hang_guard
-from accuracy.coverage_oracles import counts_table, ground_table, probe_repo
+from accuracy.coverage_oracles import counts_table, ground_table, mini_repo, probe_repo
 from accuracy.kit import rulings, runlog, tiers
 
 LIVE = "coveragepy-live"
@@ -227,6 +227,65 @@ def test_a_function_with_no_arms_and_no_statements_reads_called_or_not():
 
     assert ground_table.expected(row) == Fraction(1)
     assert ground_table.expected(dataclasses.replace(row, scenario="idle")) == 0
+
+
+# --- one language per repo: the shapes past fixes named -------------------------------------------
+
+# (case, probe, recording, functions). A repo holding one probe file and one
+# recording, scored by `crapkit coverage --export`, read by column name: the
+# oldest CLI that fixed these shapes runs it too, so the retro replay reaches
+# the join and the ratio themselves.
+# R02: a nested function joins its own region, never its encloser's.
+# R03: a callback's branch counts against the callback, not the function around it.
+# R07: a function with no branch reads its statement ratio, 2 of 4 lines.
+ONE_LANGUAGE = [
+    ("py", "py/shapes.py", "coveragepy-7.16.1", ("outer", "outer.inner", "branchless")),
+    ("js", "js/shapes.js", "vitest-istanbul-5.0.1", ("withCallback", "withCallback.callback")),
+    ("ts", "ts/shapes.ts", "vitest-istanbul-5.0.1", ("withCallback", "withCallback.callback")),
+]
+
+
+def _one_language_rows(tmp_path, probe: str, recording: str) -> dict[int, probe_repo.Row]:
+    suffix = probe.split("/")[0]
+    parser = "coveragepy" if suffix == "py" else "istanbul"
+    toml = mini_repo.config([mini_repo.scope("s", [suffix], [probe_repo.LANGUAGES["." + suffix]])],
+                            [mini_repo.lane("cov", parser, ["s"])])
+    artifact = json.loads((probe_repo.RECORDED / recording / "call.json").read_bytes())
+    driver = mini_repo.build(tmp_path / "repo", {
+        "crapkit.toml": toml, probe: (probe_repo.PROBES / probe).read_bytes(),
+        "recorded/cov.json": json.dumps(_only(artifact, probe, parser)).encode()})
+    result = driver.run("coverage", "--export", "scored.tsv")
+    assert result.code == 0, result.stderr
+    text = (driver.root / "scored.tsv").read_bytes().decode("utf-8")
+    return {row.start: row for row in probe_repo.read_scored(text)}
+
+
+def _only(artifact: dict, probe: str, parser: str) -> dict:
+    """The recording cut to the one probe file the repo holds."""
+    if parser == "coveragepy":
+        return {**artifact, "files": {probe: artifact["files"][probe]}}
+    return {probe: artifact[probe]}
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("case, probe, recording, functions", ONE_LANGUAGE,
+                         ids=[case for case, *_ in ONE_LANGUAGE])
+def test_nested_and_branchless_functions_read_their_own_counts(tmp_path, case, probe, recording,
+                                                               functions):
+    rows = _one_language_rows(tmp_path, probe, recording)
+    truth = {row.function: row for row in ground_table.rows_for(recording, "call", (probe,))}
+
+    assert _scored_covs(rows, truth, functions) == _truth_covs(truth, functions)
+
+
+def _scored_covs(rows: dict, truth: dict, functions: tuple) -> dict:
+    """{function: crapkit's cov, or None when no row starts on its line}."""
+    found = {name: rows.get(truth[name].start) for name in functions}
+    return {name: row.cov if row else None for name, row in found.items()}
+
+
+def _truth_covs(truth: dict, functions: tuple) -> dict:
+    return {name: float(ground_table.crapkit_expected(truth[name])[0]) for name in functions}
 
 
 # --- nightly: the producers rerun ---------------------------------------------------------------
