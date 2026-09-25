@@ -414,3 +414,38 @@ class Scenario:
     def runs(self) -> list[dict]:
         return self.driver.store("SELECT id, kind, verdict_ok, commit_sha, tool_versions "
                                  "FROM runs ORDER BY id")
+
+
+# --- legacy-format marks beside same-line callbacks (docs/ratchet.md, Same-line function
+# identity) ---------------------------------------------------------------------------------
+
+LEGACY_CFG = ('[crapkit]\ntarget = 1\n\n[[scope]]\nname = "web"\npaths = ["web"]\n'
+              'languages = ["typescript"]\ncoverage_optional = true\n')
+LEGACY_FILES = {"crapkit.toml": LEGACY_CFG,
+                "web/a.ts": "function f(x: number) {\n  if (x > 1) { return 1; }\n  return 2;\n}\n",
+                "web/b.ts": ("export const h = (a: number) => [a].map(x => x > 1 ? 1 : 2)"
+                             ".filter(y => y > 2 || y < 0);\n")}
+LEGACY_DATE = repos.EPOCH + 60
+
+
+def legacy_keys(root) -> None:
+    """The marks file as one written before the key-format line: that line dropped."""
+    path = root / "crapkit-ratchet.tsv"
+    lines = path.read_bytes().decode("utf-8").split("\n")
+    assert "# crapkit-keys=1" in lines
+    path.write_bytes("\n".join(line for line in lines if line != "# crapkit-keys=1").encode("utf-8"))
+
+
+def legacy_group(make_repo, *change: str) -> tuple[repos.Built, drive.Driver]:
+    """Seeded from run 1, with the marks then put in the legacy key format;
+    `change` (a git command that edits the tree) is committed, and run 2
+    measures the result."""
+    built = make_repo(repos.Spec(steps=(repos.Commit(files=LEGACY_FILES, message="seed"),)))
+    driver = drive.Driver(built.root)
+    assert driver.run("coverage").code == 0 and driver.run("ratchet", "seed").code == 0
+    legacy_keys(built.root)
+    if change:
+        repos.git(built.top, *change)
+        repos.git(built.top, "commit", "-q", "-m", "change", date=LEGACY_DATE)
+    assert driver.run("coverage").code == 0
+    return built, driver

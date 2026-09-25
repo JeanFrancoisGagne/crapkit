@@ -832,3 +832,79 @@ def test_override_records_canonical_key(make_repo):
     assert marks.marks == {key: model.mark_value(3)} == {("py/twins.py", "dup( x )#2"): model.Decimal("3.0000")}
     logged = driver.json("overrides")["overrides"]
     assert [(row["path"], row["function"], row["crap"]) for row in logged] == [(*key, 3.0)]
+
+
+# --- legacy identity: renames and runs that lost same-line order -----------------------------------
+
+def _marks_of(built) -> dict:
+    return model.parse_marks((built.root / "crapkit-ratchet.tsv").read_bytes().decode("utf-8")).marks
+
+
+def _keys_of(driver: vw.drive.Driver, run: int) -> set:
+    """The keys docs/ratchet.md gives run `run`'s rows, read with sqlite3."""
+    found = driver.store("SELECT i.path, i.long_name, f.start, f.crap, f.occurrence FROM functions f "
+                         "JOIN identities i ON i.id = f.identity_id WHERE f.run_id = ?", (run,))
+    rows = [model.Row(r["path"], r["long_name"], r["start"], model.Fraction(r["crap"]),
+                      occurrence=r["occurrence"]) for r in found]
+    return set(model.keys(rows).values())
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_prune_across_a_rename_follows_current_keys(make_repo):
+    """git renamed web/b.ts to web/c.ts. Under `# crapkit-keys=1` marks, prune
+    moves both callback marks to the new path (docs/ratchet.md, A rename
+    follows instead of dropping), and every key it writes is one run 2 holds."""
+    built = make_repo(repos.Spec(steps=(repos.Commit(files=vw.LEGACY_FILES, message="seed"),)))
+    driver = vw.drive.Driver(built.root)
+    assert driver.run("coverage").code == 0 and driver.run("ratchet", "seed").code == 0
+    marks = _marks_of(built)
+    repos.git(built.top, "mv", "web/b.ts", "web/c.ts")
+    repos.git(built.top, "commit", "-q", "-m", "rename", date=vw.LEGACY_DATE)
+    assert driver.run("coverage").code == 0
+    placed = _keys_of(driver, 2)
+    assert driver.run("ratchet", "prune").code == 0
+    want = model.prune(model.follow_renames(marks, placed, {"web/b.ts": "web/c.ts"}), placed)
+    assert _marks_of(built) == want and set(want) <= placed and len(want) == 3
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_prune_across_a_rename_writes_a_placeable_key(make_repo):
+    """The same rename under legacy-format marks: the callbacks' group shares
+    line 1, so it needs review before any mark moves (docs/ratchet.md,
+    Same-line collisions). prune refuses, names the old path and writes nothing."""
+    built, driver = vw.legacy_group(make_repo, "mv", "web/b.ts", "web/c.ts")
+    before = (built.root / "crapkit-ratchet.tsv").read_bytes()
+    result = driver.run("ratchet", "prune")
+    assert result.code != 0 and "web/b.ts" in result.stderr, result.stdout + result.stderr
+    assert (built.root / "crapkit-ratchet.tsv").read_bytes() == before
+
+
+def _forget_order(root, run: int) -> None:
+    """Run `run` as a store written before same-line order was recorded holds it."""
+    import sqlite3
+    connection = sqlite3.connect(root / ".crapkit" / "crap.sqlite")
+    with connection:
+        connection.execute("UPDATE functions SET occurrence = 0 WHERE run_id = ?", (run,))
+    connection.close()
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.parametrize("path, name, runs", [("web/b.ts", "(anonymous)#2", [2]),
+                                              ("web/b.ts", "(anonymous)#1", [2]),
+                                              ("web/a.ts", "f", [1, 2])])
+def test_history_leaves_out_only_runs_that_cannot_place_twins(make_repo, path, name, runs):
+    """CONTEXT.md, Legacy run: run 1 lost the order of web/b.ts's two line-1
+    callbacks, so their histories leave run 1 out and answer from run 2; f,
+    alone in its group, keeps both runs."""
+    built = make_repo(repos.Spec(steps=(repos.Commit(files=vw.LEGACY_FILES, message="seed"),)))
+    driver = vw.drive.Driver(built.root)
+    assert driver.run("coverage").code == 0
+    _forget_order(built.root, 1)
+    assert driver.run("coverage").code == 0
+    result = driver.run("explain", path, name, "--json")
+    assert result.code == 0, result.stdout + result.stderr
+    (function,) = result.json()["functions"]
+    assert [row["run_id"] for row in function["history"]] == runs

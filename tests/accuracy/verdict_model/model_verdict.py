@@ -374,6 +374,17 @@ def prune(marks: dict, present: set) -> dict:
     return {key: value for key, value in marks.items() if key in present}
 
 
+def follow_renames(marks: dict, present: set, renames: dict) -> dict:
+    """docs/ratchet.md:417-423: a mark moves to the path git renamed its file
+    to when its function is gone from the recorded path and the same key name
+    exists at the destination. `renames` maps old path to new path."""
+    out = {}
+    for (path, name), value in marks.items():
+        moved = (renames.get(path), name)
+        out[moved if (path, name) not in present and moved in present else (path, name)] = value
+    return out
+
+
 # --- the metric stamp (docs/ratchet.md:296-331) ----------------------------------------------
 
 STAMP_OF_WRITE = {"seed": "run", "prune": "recorded", "move": "recorded", "merge": "recorded",

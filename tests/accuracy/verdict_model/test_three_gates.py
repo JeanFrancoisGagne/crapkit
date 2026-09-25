@@ -333,3 +333,58 @@ def test_advisory_reads_a_non_ascii_payload_under_cp1252(seeded, tmp_path):
         "claude-hook", "--protocol", "1", stdin=json.dumps(payload, ensure_ascii=False))
 
     assert (result.code, listed(result.stderr)) == (2, frozenset({(path, "big( x )")}))
+
+
+# --- the hook's grant on an anonymous callback under an old stamp ---------------------------------
+
+LOGGED_ALERT = "python -c \\\"import sys; open('alerts.log', 'a').write(sys.stdin.read())\\\""
+CALLBACK_CFG = (f'[crapkit]\ntarget = 2\nalert_command = "{LOGGED_ALERT}"\n\n[[scope]]\nname = "web"\n'
+                'paths = ["web"]\nlanguages = ["typescript"]\ncoverage_optional = true\n')
+NAMED_TS = "function f(x: number) {\n  if (x > 1) { return 1; }\n  return 2;\n}\n"
+# McCabe 3: two ternaries. Over the ceiling (2), so the hook needs a grant.
+CALLBACK_TS = "export const h = (a: number) => [a].map(x => x > 1 ? 1 : x > 0 ? 2 : 3);\n"
+
+
+def _hook_grant_on_a_callback(make_repo, stamp_of) -> tuple:
+    """A committed marks file with no rows under the stamp stamp_of(running)
+    returns, then a staged callback over the ceiling and a hook run with an
+    override reason. Returns the hook's result, the marks before and after,
+    and the store's override rows."""
+    built = make_repo(repos.Spec(steps=(repos.Commit(
+        files={"crapkit.toml": CALLBACK_CFG, "web/a.ts": NAMED_TS}, message="seed"),)))
+    driver = drive.Driver(built.root)
+    assert driver.run("coverage").code == 0
+    versions = json.loads(driver.store("SELECT tool_versions FROM runs ORDER BY id DESC")[0]["tool_versions"])
+    running = f"crapkit-analysis={versions['analysis_version']} lizard={versions['lizard']}"
+    marks = built.root / "crapkit-ratchet.tsv"
+    marks.write_bytes(f"# {stamp_of(running)}\n# crapkit-keys=1\npath\tlong_name\tcrap\n".encode("utf-8"))
+    (built.root / "web" / "a.ts").write_bytes((NAMED_TS + CALLBACK_TS).encode("utf-8"))
+    repos.git(built.top, "add", "--", "crapkit-ratchet.tsv", "web/a.ts")
+    before = marks.read_bytes()
+    result = drive.Driver(built.root, env={"CRAPKIT_OVERRIDE_REASON": "reviewed"}).run("hook-precommit")
+    logged = (built.root / "alerts.log").exists()
+    return result, before, marks.read_bytes(), logged, driver.json("overrides")["overrides"]
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_hook_grant_checks_reader_proof_on_the_text_it_publishes(make_repo):
+    """docs/ratchet.md: under a stamp older than analysis version 10, the
+    (anonymous) mark the grant would add has no reader proof, so the hook
+    refuses it and writes no alert line, no store row and no mark."""
+    result, before, after, logged, overrides = _hook_grant_on_a_callback(
+        make_repo, lambda running: "crapkit-analysis=9 lizard=1.24.0")
+    assert result.code != 0, result.stdout + result.stderr
+    assert (after, logged, overrides) == (before, False, [])
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_hook_grant_under_the_running_stamp_marks_the_callback(make_repo):
+    """The control: under the running stamp the same grant goes through, and
+    the mark is the hook's worst case for ccn 3, ccn^2 + ccn = 12."""
+    result, _, after, logged, overrides = _hook_grant_on_a_callback(make_repo, lambda running: running)
+    assert result.code == 0, result.stdout + result.stderr
+    marks = model.parse_marks(after.decode("utf-8")).marks
+    assert marks == {("web/a.ts", "(anonymous)"): model.mark_value(exact.crap(3, 0))}
+    assert logged and [(row["path"], row["function"]) for row in overrides] == [("web/a.ts", "(anonymous)")]

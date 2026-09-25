@@ -26,6 +26,7 @@ import pytest
 
 from accuracy.kit import drive, repos
 from accuracy.verdict_model import model_verdict as model
+from accuracy.verdict_model import verdict_world as vw
 
 TWINS = ("def dup(x):\n    if x:\n        return 1\n    return 2\n\n\n"
          "def dup(x):\n    if x > 1:\n        return 1\n    if x > 2:\n        return 2\n"
@@ -274,3 +275,72 @@ def test_the_model_s_keys_and_handles_on_a_written_example():
         ["__post_init__#1", "__post_init__#2", "route", "(anonymous)#1"]
     assert model.worst_twin(run, "calc/iso_cost.py", "__post_init__") == first
     assert json.dumps(model.bare_name("route cmd : & Cmd")) == '"route"'
+
+
+# --- the legacy mark proof: which files a reader proves ---------------------------------------------
+#
+# docs/ratchet.md, Same-line function identity: a marks file with no
+# `# crapkit-keys=1` line keys twins by the old start-only rule. When such a
+# legacy marked name has two functions starting on the same line, its entire
+# name group needs review, and available historical runs take part in that
+# check. A reader of another file's mark has no such group to read. web/b.ts
+# holds two callbacks on line 1 (McCabe 2 each: a ternary, an ||); web/a.ts
+# holds f (McCabe 2).
+
+def _a_mark(built) -> tuple:
+    (key,) = [key for key in _marks(built) if key[0] == "web/a.ts"]
+    return key
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_legacy_marks_hold_the_seeded_values(make_repo):
+    """Seed marked f and both callbacks at their McCabe counts, the callbacks
+    under (anonymous) and (anonymous)#2 (docs/ratchet.md, Twins)."""
+    built, _ = vw.legacy_group(make_repo)
+    assert _marks(built) == {_a_mark(built): model.Decimal("2.0000"),
+                             ("web/b.ts", "(anonymous)"): model.Decimal("2.0000"),
+                             ("web/b.ts", "(anonymous)#2"): model.Decimal("2.0000")}
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_brief_proves_only_its_own_file(make_repo):
+    """brief of f reads one mark, f's, and answers it; brief of the second
+    callback reads the group run 1 cannot order, and refuses naming its file."""
+    built, driver = vw.legacy_group(make_repo)
+    answered = driver.run("brief", "web/a.ts", "f", "--json")
+    assert answered.code == 0, answered.stdout + answered.stderr
+    assert answered.json()["ratchet_mark"] == 2.0
+    refused = driver.run("brief", "web/b.ts", "(anonymous)#2", "--json")
+    assert refused.code != 0 and "web/b.ts" in refused.stderr
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_explain_on_a_dropped_file_proves_the_run_that_holds_it(make_repo):
+    """Run 2 dropped web/a.ts. explain resolves f in run 1, the newest trusted
+    run that holds the file (agent-json.md), and proves f's file there only."""
+    built, driver = vw.legacy_group(make_repo, "rm", "-q", "--", "web/a.ts")
+    result = driver.run("explain", "web/a.ts", "f", "--json")
+    assert result.code == 0, result.stdout + result.stderr
+    (function,) = result.json()["functions"]
+    assert ([row["run_id"] for row in function["history"]], function["ratchet_mark"]) == ([1], 2.0)
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_a_deleted_file_s_legacy_group_refuses_only_seed_and_prune(make_repo):
+    """The tree deleted web/b.ts. brief, explain and worklist read web/a.ts
+    and answer. Seed and prune decide what becomes of b.ts's marks, so they
+    read its group and refuse, leaving the marks file as it was."""
+    built, driver = vw.legacy_group(make_repo, "rm", "-q", "--", "web/b.ts")
+    for args in (("brief", "web/a.ts", "f", "--json"), ("explain", "web/a.ts", "f", "--json"),
+                 ("worklist", "--json")):
+        result = driver.run(*args)
+        assert result.code == 0, (args, result.stdout, result.stderr)
+    before = (built.root / "crapkit-ratchet.tsv").read_bytes()
+    for action in ("seed", "prune"):
+        result = driver.run("ratchet", action)
+        assert result.code != 0 and "web/b.ts" in result.stderr, (action, result.stderr)
+    assert (built.root / "crapkit-ratchet.tsv").read_bytes() == before
