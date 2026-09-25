@@ -61,4 +61,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_c_family_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
     {"name": "shell ccn against shellmetrics", "seconds": 30,
      "pytest": [_PACKET + "test_shell_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "Swift ccn against SwiftLint", "seconds": 40,
+     "pytest": [_PACKET + "test_swift_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
 ]
