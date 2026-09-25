@@ -6,10 +6,10 @@ failure is `not replayable`; the fix must pass. The planted repo below has a
 `crapkit` whose `double` answers 3n at its first commit and 2n at its second,
 so the expected verdicts are known before anything runs.
 
-The planted replays build two worktrees and two venvs each (about 10 s), and
-the bundle fetch runs about fifteen git commands, so they run nightly; the
-verdict, digest and slicing rules and the plumbing, with git and uv stood in
-for, run on every push.
+The planted replays build two worktrees and two venvs each (about 10 s), the
+bundle fetch runs about fifteen git commands and the probe and command tests
+start a Python child each, so they run nightly; the verdict, digest and slicing
+rules and the plumbing, with git and uv stood in for, run on every push.
 """
 from __future__ import annotations
 
@@ -638,8 +638,8 @@ def test_the_closure_reaches_through_both_tool_roots(small_tree, edited, moves):
 #
 # The planted repo above drives worktrees, venvs and the pytest child end to
 # end, nightly. These tests pin each piece on its own, with the commands it
-# hands git and uv recorded, so the push tier and the mutation killer see
-# every branch.
+# hands git and uv recorded. The few that start a Python child run nightly too;
+# the tools mutation run counts every tier, so each still kills its mutants.
 
 def _commands(monkeypatch) -> list[tuple[list[str], Path | None]]:
     """Stand in for _checked: record each (argv, cwd) and answer with no output."""
@@ -653,6 +653,7 @@ def _commands(monkeypatch) -> list[tuple[list[str], Path | None]]:
     return seen
 
 
+@pytest.mark.nightly
 def test_a_run_passes_each_argument_as_text_and_decodes_what_the_child_wrote(tmp_path):
     code = ("import sys; sys.stdout.buffer.write(repr(sys.argv[1:]).encode() + b'\\xff');"
             " sys.stderr.buffer.write(b'e\\xff'); sys.exit(4)")
@@ -662,6 +663,7 @@ def test_a_run_passes_each_argument_as_text_and_decodes_what_the_child_wrote(tmp
     assert (done.returncode, done.stdout, done.stderr) == (4, "['a']�", "e�")
 
 
+@pytest.mark.nightly
 def test_a_run_runs_in_its_folder_with_its_environment(tmp_path):
     code = "import os, sys; sys.stdout.write(os.getcwd() + '|' + os.environ['RETRO_PROBE'])"
 
@@ -671,10 +673,12 @@ def test_a_run_runs_in_its_folder_with_its_environment(tmp_path):
     assert done.stdout == f"{tmp_path}|kept"
 
 
+@pytest.mark.nightly
 def test_a_checked_command_answers_its_output(tmp_path):
     assert retro._checked([sys.executable, "-c", "import sys; sys.stdout.write('ok')"], tmp_path) == "ok"
 
 
+@pytest.mark.nightly
 def test_a_failed_command_names_its_argv_and_the_last_400_characters_it_said(tmp_path):
     argv = [Path(sys.executable), "-c", "import sys; sys.stderr.write('d' + 'e' * 500 + '  '); sys.exit(2)"]
 
@@ -813,6 +817,7 @@ def test_a_linked_commit_is_one_pth_line_naming_its_src(tmp_path, monkeypatch):
     assert seen == []
 
 
+@pytest.mark.nightly
 def test_a_venv_s_purelib_is_what_its_interpreter_says():
     assert retro._purelib(Path(sys.executable)) == Path(sysconfig.get_path("purelib"))
 
@@ -965,6 +970,7 @@ def test_a_probe_s_header_names_its_packages_and_its_install(tmp_path):
 LONG = "x" * 400
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("body, record", [
     ("import sys\nassert sys.argv[1]\n",
      {"outcome": "passed", "exc_type": "", "assertion": False, "message": ""}),
@@ -988,6 +994,7 @@ def test_a_probe_passes_on_exit_zero_and_fails_on_its_last_stderr_line(tmp_path,
     assert retro.replay_probe(probe, Path(sys.executable), tmp_path) == [{"nodeid": "RX.py", **record}]
 
 
+@pytest.mark.nightly
 def test_a_probe_runs_in_the_tree_without_this_tree_s_pythonpath(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", "elsewhere")
     monkeypatch.setenv("RETRO_PROBE", "kept")

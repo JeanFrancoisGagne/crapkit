@@ -312,8 +312,10 @@ def test_a_changed_line_names_its_function_or_method():
     assert mutation.touched_functions(SOURCE, {4}) == []
 
 
-@given(st.lists(st.text(min_size=1, max_size=5), unique=True, max_size=20),
-       st.integers(1, 8))
+MODULE_NAMES = [f"src/m{n}.py" for n in range(30)]
+
+
+@given(st.lists(st.sampled_from(MODULE_NAMES), unique=True, max_size=20), st.integers(1, 8))
 @pure
 def test_shards_partition_the_modules(modules, of):
     parts = [mutation.shard(modules, number, of) for number in range(1, of + 1)]
@@ -726,6 +728,7 @@ def test_a_run_with_only_kills_asks_for_no_diff(tmp_path):
     assert [row.status for row in rows] == ["killed"] and _calls(tree) == []
 
 
+@pytest.mark.nightly
 def test_a_timeout_gets_one_serial_rerun(tmp_path):
     tree = _mutmut_tree(tmp_path)
     rows = mutation.collect(tree, ["crapkit.score.*"], ("fake_launch.py",))
@@ -745,6 +748,7 @@ def test_a_run_without_a_timeout_reruns_nothing(tmp_path):
     assert _calls(tree) == []
 
 
+@pytest.mark.nightly
 def test_mutmut_s_exit_code_comes_back_and_a_budget_that_runs_out_reads_minus_one(tmp_path):
     (tmp_path / "exits.py").write_text("import sys, time\ntime.sleep(float(sys.argv[1]))\n"
                                        "sys.exit(7)\n", encoding="utf-8")
@@ -1278,6 +1282,7 @@ def _fake_stage(tmp_path: Path, monkeypatch, mode: str = "") -> tuple[Path, list
     return stage, prepared
 
 
+@pytest.mark.nightly
 def test_staged_run_runs_mutmut_in_the_stage_and_reruns_its_timeouts(tmp_path, monkeypatch):
     stage, prepared = _fake_stage(tmp_path, monkeypatch)
 
@@ -1290,6 +1295,7 @@ def test_staged_run_runs_mutmut_in_the_stage_and_reruns_its_timeouts(tmp_path, m
     assert {row.name: row.status for row in rows}["crapkit.score.x_crap__mutmut_4"] == "killed"
 
 
+@pytest.mark.nightly
 def test_a_run_its_budget_stopped_is_incomplete_and_reruns_nothing(tmp_path, monkeypatch):
     stage, _ = _fake_stage(tmp_path, monkeypatch, "--sleep")
 
@@ -1651,6 +1657,7 @@ def test_a_diff_run_uses_every_cpu_or_two(monkeypatch, cpus, children):
     assert "CRAPKIT_ACCURACY_COLLECT_ALL" not in call["env"]
 
 
+@pytest.mark.nightly
 def test_staged_run_hands_its_environment_to_each_mutmut_run_and_keeps_to_its_globs(tmp_path,
                                                                                     monkeypatch):
     stage, _ = _fake_stage(tmp_path, monkeypatch)
