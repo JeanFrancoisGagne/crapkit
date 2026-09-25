@@ -15,6 +15,7 @@ import os
 import platform
 import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -31,25 +32,33 @@ GUARD = "runs the python suite, which is host-only (container runs OOM)"
 
 # --- the 60-second start -------------------------------------------------------------
 
-def _init(box, repo, line):
+@dataclass(frozen=True)
+class Expect:
+    """What the start prints for one fixture repo: the lane init detects and the
+    worklist row its over-ceiling function makes."""
+    lane: str = "py"
+    row: str = r"calc/grade\.py:\d+\s+grade\( score , attempts , late , bonus \)"
+
+
+def _init(box, repo, line, want: Expect):
     step = box.script(line, cwd=repo, expect=0)
-    assert "detected 1 lane(s) from this repo's own files: py - next: run `crapkit coverage`" in step.stdout
+    assert f"detected 1 lane(s) from this repo's own files: {want.lane} - next: run `crapkit coverage`" in said(step)
     hint = PYCOV_HINT.search(said(step))
     if hint:
         box.script(hint[1], cwd=repo, expect=0, note="the command init's note names")
     return step
 
 
-def _doctor(box, repo, line):
+def _doctor(box, repo, line, want: Expect):
     step = box.script(line, cwd=repo, expect=0)
     assert "ok   lizard 1.24.0" in step.stdout
     return step
 
 
-def _coverage(box, repo, line):
+def _coverage(box, repo, line, want: Expect):
     """A coverage.py lane in a container meets the guard first; the user applies
     the rule the refusal names from docs/lanes.md#containers and reruns."""
-    if installers.in_container():
+    if installers.in_container() and want.lane == "py":
         refused = box.script(line, cwd=repo, expect=5)
         assert GUARD in said(refused) and "set container_ok = true" in said(refused)
         box.transcript.note(f"applied docs/lanes.md#containers: {installers.allow_containers(repo)}")
@@ -58,19 +67,19 @@ def _coverage(box, repo, line):
     return step
 
 
-def _worklist(box, repo, line):
+def _worklist(box, repo, line, want: Expect):
     step = box.script(line, cwd=repo, expect=0)
-    assert re.search(r"calc/grade\.py:\d+\s+grade\( score , attempts , late , bonus \)", step.stdout)
+    assert re.search(want.row, step.stdout), step.stdout
     return step
 
 
-def _seed(box, repo, line):
+def _seed(box, repo, line, want: Expect):
     step = box.script(line, cwd=repo, expect=0)
     assert said(step).startswith("crapkit-ratchet.tsv: added 1, tightened 0")
     return step
 
 
-def _plain(box, repo, line):
+def _plain(box, repo, line, want: Expect):
     return box.script(line, cwd=repo, expect=0, env=box.commit_env())
 
 
@@ -82,14 +91,14 @@ def _step_rule(line: str):
     return next((rule for prefix, rule in START_STEPS.items() if line.startswith(prefix)), _plain)
 
 
-def readme_start(box, repo: Path) -> dict[str, object]:
+def readme_start(box, repo: Path, want: Expect = Expect()) -> dict[str, object]:
     """The README's 60-second start after its install line, then the verify its
     prose says establishes the first passing verdict. `cd your-repo` is the
     cell's cwd."""
     steps = {}
     for line in installers.fence_commands(README, START)[1:]:
         if not line.startswith("cd "):
-            steps[line] = _step_rule(line)(box, repo, line)
+            steps[line] = _step_rule(line)(box, repo, line, want)
     box.run(["git", "commit", "-q", "-m", "adopt crapkit"], cwd=repo, env=box.commit_env(), expect=0)
     verify = installers.inline(README, START, "crapkit verify")
     steps[verify] = box.script(verify, cwd=repo, expect=0)
@@ -222,14 +231,20 @@ def _doc_step(heading: str, *, index: int = 0) -> tuple[str, str]:
 def _row(line: str) -> str:
     """A printed line by shape, a row cut after its `path:line`: the page's repo
     names its function classify, the fixture's is grade."""
-    return re.sub(r"(\.(py|ts):<n>) .*$", r"\1", shape(line))
+    return re.sub(r"(\.(py|ts|js):<n>) .*$", r"\1", shape(line))
+
+
+ROW = re.compile(r"\.(py|ts|js):<n>$")
 
 
 def _held_to_the_page(step, printed: str) -> None:
-    """Each line the page prints under a command, by shape, in what the command printed."""
+    """Each line the page prints under a command, by shape, in what the command
+    printed. A table row names a function the page's repo has and the fixture
+    may not, so rows count only as present: the page prints some, so must we."""
     mine = {_row(line) for line in said(step).splitlines()}
     wanted = [_row(line) for line in printed.splitlines() if line.strip()]
-    assert [line for line in wanted if line not in mine] == [], said(step)
+    assert [line for line in wanted if line not in mine and not ROW.search(line)] == [], said(step)
+    assert any(ROW.search(line) for line in mine) or not any(ROW.search(line) for line in wanted), said(step)
 
 
 def _doctor_lines(text: str) -> list[str]:
@@ -292,6 +307,124 @@ def test_the_python_quickstart_prints_what_the_page_prints(box, templates):
     assert item["item"]["path"] == "calc/grade.py" and item["item"]["remedy"] == "decompose"
     assert done["empty"] is True
     assert "calc/grade.py" not in (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8")
+
+
+# --- the TypeScript quickstart ------------------------------------------------------------
+
+TS_FIXED = '''function top(score: number, late: boolean): string | null {
+  return score > 90 && !late ? "A" : null;
+}
+
+function high(score: number, attempts: number): string | null {
+  if (score <= 80) return null;
+  return attempts < 3 ? "B" : "C";
+}
+
+function low(attempts: number, late: boolean, bonus: boolean): string {
+  if (bonus) return "C";
+  return late && attempts > 2 ? "F" : "D";
+}
+
+export function grade(score: number, attempts: number, late: boolean, bonus: boolean): string {
+  return top(score, late) ?? high(score, attempts) ?? low(attempts, late, bonus);
+}
+'''
+TS_TABLE = '''import { describe, expect, it } from "vitest";
+import { grade } from "./grade";
+
+describe("grade", () => {
+  it("gives an early high score an A", () => expect(grade(95, 1, false, false)).toBe("A"));
+  it.each([
+    [95, 1, true, false, "B"], [85, 5, false, false, "C"], [50, 1, false, true, "C"],
+    [50, 3, true, false, "F"], [50, 1, false, false, "D"],
+  ])("grade(%i, %i, %s, %s) is %s", (score, attempts, late, bonus, letter) =>
+    expect(grade(score, attempts, late, bonus)).toBe(letter));
+});
+'''
+TS_LANE_SPAN = "npm run test -- --coverage"
+MISSING = "MISSING DEPENDENCY"
+
+
+def _ts_scaffold(box, repo) -> None:
+    """Step 1: init's three lines as printed, the lane the prose names, and the
+    WARN doctor gives a scope with no scoped_tests template."""
+    command, printed = docsnip.outputs(installers.section_fences(README, "1. Scaffold the config", 1)[0])[0]
+    assert said(box.script(command, cwd=repo, expect=0)).splitlines() == printed.splitlines()
+    lane = installers.inline(README, "Quickstart: TypeScript", TS_LANE_SPAN)
+    assert f'command = "{lane}"' in (repo / "crapkit.toml").read_text(encoding="utf-8")
+    warn = installers.inline(README, "Quickstart: TypeScript", "scope 'src' has a lane but no")
+    assert warn in said(box.run(["crapkit", "doctor"], cwd=repo, expect=0))
+
+
+def _ts_provider(box, repo) -> None:
+    """Step 2: coverage exits 5 on the missing provider and writes no store; the
+    page's `npm i -D` line with the vitest major filled in installs it offline."""
+    command, printed = docsnip.outputs(installers.section_fences(README, "2. Install a coverage provider")[0])[0]
+    failed = box.script(command, cwd=repo, expect=5)
+    assert MISSING in said(failed) and MISSING in printed
+    assert said(failed).splitlines()[-1] == printed.splitlines()[-1]
+    assert not (repo / ".crapkit" / "crap.sqlite").exists()
+    major = json.loads((repo / "package.json").read_text(encoding="utf-8"))["devDependencies"]["vitest"].split(".")[0]
+    install = installers.section_fences(README, "2. Install a coverage provider")[1].text
+    box.script(install.replace("<your vitest major>", major), cwd=repo, expect=0, env={"npm_config_offline": "true"})
+
+
+def _ts_fix(box, repo) -> None:
+    """Steps 5 and 6: the split passes rescore --gate, the table tests pass vitest."""
+    (repo / "src" / "grade.ts").write_text(TS_FIXED, encoding="utf-8")
+    _run_step(box, repo, "5. Fix it")
+    (repo / "src" / "grade.test.ts").write_text(TS_TABLE, encoding="utf-8")
+    _run_step(box, repo, "6. Cover the new pieces")
+
+
+def ts_quickstart(box, templates) -> Path:
+    """The TypeScript quickstart from step 1 to step 7 on a vitest-only repo
+    whose node_modules the user already installed."""
+    repo = repos.checkout(box, "ts-vitest-only", cache=templates)
+    box.run(["npm", "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=repo, expect=0)
+    _ts_scaffold(box, repo)
+    _ts_provider(box, repo)
+    _run_step(box, repo, "3. Score the repo")
+    _run_step(box, repo, "4. Seed the ratchet and commit")
+    _ts_fix(box, repo)
+    _run_step(box, repo, "7. Verify")
+    return repo
+
+
+@cell("lin-uvtool-ts-quickstart", channel="uv tool", harness="none (sh + node)",
+      scenario="fresh: vitest-only repo; step 2 exits 5 'MISSING DEPENDENCY'; README npm i -D line with major filled, "
+               "offline; coverage, rescore --gate, verify", use_cases="TypeScript quickstart, istanbul coverage",
+      os="linux", image="core", cadence="push")
+def test_the_typescript_quickstart_from_a_uv_tool_install(box, templates, candidate):
+    install = installers.uv_tool(box)
+    repo = ts_quickstart(box, templates)
+
+    assert candidate.version in install.run(box, repo, "--version").stdout
+    assert "src/grade.ts" not in (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8")
+
+
+@cell("win-ts-quickstart", channel="uv tool", harness="node via cmd.exe", scenario="fresh: TS quickstart on Windows",
+      use_cases="TypeScript quickstart", os="windows", image=None, cadence="nightly")
+def test_the_typescript_quickstart_on_windows(box, templates, candidate):
+    install = installers.uv_tool(box)
+    repo = ts_quickstart(box, templates)
+
+    assert install.launcher.suffix == ".exe"
+    assert "src/grade.ts" not in (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8")
+
+
+@cell("lin-jest-start", channel="pip venv", harness="none (node)",
+      scenario="fresh: init's jest lane with jest-junit, coverage, worklist", use_cases="istanbul coverage",
+      os="linux", image="core", cadence="nightly")
+def test_the_readme_start_on_a_jest_repo_writes_a_jest_junit_lane(box, templates, candidate):
+    installers.pip_venv(box, "3.12")
+    repo = repos.checkout(box, "jest", cache=templates)
+    box.run(["npm", "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=repo, expect=0)
+    readme_start(box, repo, Expect(lane="js", row=r"src/grade\.js:\d+\s+grade \( score , attempts , late , bonus \)"))
+    config = (repo / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert "npm run test -- --coverage" in config and "--reporters=jest-junit" in config
+    assert (repo / ".crapkit" / "cov").is_dir()
 
 
 # --- Route 1, for the bare-runner start ------------------------------------------------

@@ -353,12 +353,14 @@ def commit(box, repo: Path, message: str, *paths: str) -> None:
 
 # cmd.exe echoes each line of a .cmd script after its prompt: `C:\repo>crapkit init`.
 CMD_ECHO = re.compile(r"^[A-Za-z]:\\[^>\n]*>.*\n?", re.M)
+# The colors vitest prints through npm whether or not its stdout is a terminal.
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def said(step) -> str:
     """What the command printed, stdout then stderr, without cmd.exe's echo of
-    the script's own lines and the blank lines around the output."""
-    text = (step.stdout + step.stderr).replace("\r\n", "\n")
+    the script's own lines, terminal colors and the blank lines around it."""
+    text = ANSI.sub("", (step.stdout + step.stderr).replace("\r\n", "\n"))
     return CMD_ECHO.sub("", text).strip("\n")
 
 
