@@ -140,6 +140,16 @@ def test_both_pages_give_a_uvx_clone_a_driver_git_can_start():
         assert "git merge --abort" in _doc(page), page
 
 
+def test_ratchet_help_names_the_driver_the_pages_give_a_uvx_clone(capsys):
+    from crapkit.cli import main
+
+    with pytest.raises(SystemExit):
+        main(["ratchet", "--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+
+    assert UVX_MERGE_DRIVER.split('"')[1] in help_text
+
+
 def test_the_crapkit_description_quotes_the_gate_refusal_the_hook_prints(capsys):
     from crapkit.cli import verifying
     from crapkit.hook import Violation

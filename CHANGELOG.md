@@ -447,7 +447,7 @@ nothing. Each of these now gets a line naming the object and the next step:
   documented `crapkit ratchet merge %O %A %B` failed every marks-file merge there with
   `crapkit: not found` and left your side in crapkit-ratchet.tsv with no conflict markers.
   The page and the recover skill quote that failure and say to run `git merge --abort`
-  rather than stage the file.
+  rather than stage the file, and `crapkit ratchet --help` names the uvx line.
 - README says a Python repo installs crapkit with pip, `uv tool install` or `pipx install`
   rather than running it through uvx: uvx puts its own interpreter first on the PATH the
   lane inherits, so the lane's `python` has neither the suite's packages nor pytest-cov.

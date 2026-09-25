@@ -411,7 +411,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="seed: mark over-target functions from the latest run; "
                           "prune: drop marks whose functions left the codebase "
                           "(a mark whose file git renamed follows it instead); "
-                          "merge: 3-way git merge driver (BASE OURS THEIRS); "
+                          "merge: 3-way git merge driver (BASE OURS THEIRS), which a "
+                          "clone running crapkit through uvx configures as "
+                          "`uvx crapkit ratchet merge %%O %%A %%B`; "
                           "move: re-path marks at their recorded values (OLD NEW); "
                           "report: burn-down from the marks file's git history")
     # default=[] and not just nargs="*": argparse calls a ZERO_OR_MORE positional
