@@ -133,10 +133,10 @@ reads as `inputs`, and `--reuse-unchanged` then reuses it across commits while
 nothing under those paths, its lane table or its `env` changed. The reuse proof
 covers that field, so the first `--reuse-unchanged` after upgrading to 0.8.0 reruns
 every lane once, and an older stamp without the proof reruns its lane; each rerun
-prints `lane 'x': rerunning:` and the reason. Since 0.8.1 the proof of a lane without
-`inputs` also holds the crapkit version, so each upgrade reruns those lanes once with
-`the crapkit version changed`. Ignored files, installed dependencies and
-external services remain outside this proof. See
+prints `lane 'x': rerunning:` and the reason. Since 0.8.1 every lane's proof also holds
+the crapkit version, so each upgrade reruns every lane once with `the crapkit version
+changed`. Ignored files, installed dependencies and external services remain outside
+this proof, and the line that reuses a lane names what its proof leaves out. See
 [artifact reuse](lanes.md#reusing-artifacts) before choosing an explicit
 saved-artifact read.
 

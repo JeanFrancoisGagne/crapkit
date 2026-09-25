@@ -811,3 +811,73 @@ def test_the_changelog_quotes_the_worklist_warning_when_git_cannot_read_the_tree
 
     assert fresh.envelope()["scored_changes"] is None
     assert f"`{head}`" in _prose(_release())
+
+
+def test_the_changelog_limit_names_every_reader_s_blind_spot_and_the_touch_that_clears_it():
+    section = _prose(_release())
+
+    assert "or a second same-size write inside one clock tick" in section
+    assert "a symlink re-pointed to a same-size target with the same time" in section
+    assert "`touch` the files after restoring them, and every reader compares their content" in section
+
+
+# -- arch-13, arch-14, Q38: one verdict per lane, and a reuse line that names its limits
+
+_FRESHNESS = _module("lane_freshness")
+_ONE_VERDICT = _FRESHNESS is not None
+
+
+@landed(_ONE_VERDICT, "the reuse line naming what its proof leaves out")
+def test_the_changelog_quotes_the_reuse_line_and_what_each_lane_kind_leaves_out(capsys):
+    from crapkit.cli import scoring
+
+    verdict = _FRESHNESS.ReuseVerdict("8c14f3daa8e" + "0" * 29, "")
+    scoring._report_reuse("py", verdict, _FRESHNESS._UNPROVED[False])
+    line = capsys.readouterr().err.strip()
+    section = _prose(_release())
+
+    assert f"`{line}`" in section
+    assert f"For a lane with `inputs` it names {_FRESHNESS._UNPROVED[True]}" in section
+    assert "each reuse names what its proof leaves out" in _prose(_page("docs/handbook.html"))
+    assert "the line that reuses a lane names what its proof leaves out" in _prose(_page("docs/upgrading.md"))
+
+
+@landed(_ONE_VERDICT, "a rerun naming the uncommitted changes a stamp was measured over")
+def test_the_changelog_quotes_why_a_stamp_holds_no_proof():
+    proof = _FRESHNESS.Proof("", {}, "x", ("calc/grade.py", "calc/report.py"))
+    why = _FRESHNESS.unproved(proof, proof)
+
+    assert f"`its stamp holds no proof: {why}`" in _prose(_release())
+
+
+@landed(_ONE_VERDICT, "PSModulePath among the session variables")
+def test_the_session_variables_the_changelog_names_are_the_ones_the_proof_leaves_out():
+    session = _FRESHNESS._SESSION_VARIABLES
+    section = _prose(_release())
+
+    for name in ("SSH_AUTH_SOCK", "SSH_AGENT_PID", "TMUX", "VSCODE_GIT_IPC_HANDLE", "PSModulePath"):
+        assert name.upper() in session and f"`{name}`" in section
+    assert "PATHEXT" not in session and "names `PATHEXT` alone" in section
+
+
+@landed(_ONE_VERDICT, "the crapkit version in both proofs")
+@pytest.mark.parametrize("inputs", [(), ("calc",)], ids=["tree", "inputs"])
+def test_both_lane_kinds_prove_the_crapkit_version(tmp_path, inputs):
+    from crapkit import __version__
+    from crapkit.config import Lane
+
+    _one_commit_repo(tmp_path)
+    (tmp_path / "crapkit.toml").write_text("[crapkit]\n", encoding="utf-8")
+    lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("calc",), inputs=inputs)
+
+    parts = _FRESHNESS.proof_parts(tmp_path, lane, "f" * 40)
+
+    assert parts["crapkit"] == __version__
+    assert "A lane's proof holds the crapkit version, with `inputs` or without" in _prose(_release())
+
+
+@landed(_ONE_VERDICT, "staleness_reads replaced by lane_freshness.Freshness")
+def test_the_changelog_names_the_0_8_0_library_name_that_is_gone():
+    assert not hasattr(lanes, "staleness_reads") and hasattr(_FRESHNESS, "Freshness")
+    assert "`lanes.staleness_reads`, which 0.8.0 exported, is gone" in _prose(_release())

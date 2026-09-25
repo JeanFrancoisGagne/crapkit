@@ -33,9 +33,17 @@
   new one, the warning and the note say so and quote git's error. The note said "files in its scopes
   changed" for that case, for an artifact no stamp vouches for and for a stamp commit
   HEAD does not descend from, and the warning printed nothing at all.
+- The `--reuse-artifacts` warning, the dark-line note, the report banner and
+  `--reuse-unchanged` read one verdict per lane, taken from one read of
+  `.crapkit/artifacts.json` per command. On a 0.8.0 stamp the warning skipped the ancestry
+  and refusal checks the note ran, so after an amend the warning said nothing while the
+  note called the lane stale. A 0.8.0 stamp whose commit this clone does not hold now
+  says `git cannot say which files in its scopes changed since` that commit, where it said
+  the commit was not behind HEAD.
 - Library API: `lanes.lane_sources_unchanged` keeps its 0.8.0 arguments and its bool
   answer through 0.8.x, and warns with a `DeprecationWarning` when called; 0.9.0 removes
-  it. `MissingLines` takes an optional third field, `drift`, and `uncovered.lane_views`
+  it. `lanes.staleness_reads`, which 0.8.0 exported, is gone: `lane_freshness.Freshness`
+  answers each lane from one read of the stamp file. `MissingLines` takes an optional third field, `drift`, and `uncovered.lane_views`
   returns each lane's note with `blackout`, whether it withholds every file's lines.
 
 ### `--reuse-unchanged` reuses a lane whose inputs did not move, and reruns one whose inputs did, whatever git's diff skips
@@ -51,20 +59,35 @@
   only `.crapkit/`, the first run's own output left its stamp without a proof, and the
   lane never reused.
 - A same-size edit whose old modification time was put back (`cp -p`, `tar -x`,
-  `rsync -t`, `touch -r`) is still not seen, by reuse or by any other reader: git's
-  index answers "unchanged" from its stat data, and crapkit trusts that answer rather
-  than read every file on every run. The cost of hashing every source is measured for
-  0.9.0 before that changes.
+  `rsync -t`, `touch -r`), or a second same-size write inside one clock tick, is still not
+  seen, by reuse or by any other reader: git's index answers "unchanged" from its stat
+  data, and crapkit trusts that answer rather than read every file on every run. The
+  analysis cache and `watch` compare the modification time and size the same way, and
+  the analysis cache also misses a symlink re-pointed to a same-size target with the same
+  time. `touch` the files after restoring them, and every reader compares their content.
+  The cost of hashing every source is measured for 0.9.0 before that changes.
 - An edit git's own diff skips is a change: a file flagged `--skip-worktree` or
   `--assume-unchanged` whose bytes differ from the index, and an edit inside a
   submodule whose `.gitmodules` entry says `ignore = dirty`. Lane reuse, verify's split
   of committed and dirty findings, and the working-tree copy `mutate` hands its workers
   all read it; `mutate` judged every mutant against the index's copy of such a test.
-- The proof of a lane without `inputs` holds the crapkit version, so an upgrade reruns
-  those lanes once and says `the crapkit version changed`. It reads `crapkit.toml` with
-  CRLF as LF, so a checkout under `core.autocrlf=true` is no longer a config change.
-  `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `TMUX` and `VSCODE_GIT_IPC_HANDLE` join the session
-  variables it leaves out, so a new terminal or login reruns nothing.
+- A lane's proof holds the crapkit version, with `inputs` or without, so an upgrade reruns
+  every lane once and says `the crapkit version changed`. A lane with `inputs` records the
+  parts of its proof too, so its rerun names what moved, as a lane without them does. The
+  proof reads `crapkit.toml` with CRLF as LF, so a checkout under `core.autocrlf=true` is
+  no longer a config change. `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `TMUX`,
+  `VSCODE_GIT_IPC_HANDLE` and `PSModulePath` join the session variables it leaves out,
+  so a new terminal or login reruns nothing. `PATHEXT` stays in it, because it decides
+  what `cmd.exe` starts for a lane's first word, so a switch from PowerShell to Git Bash
+  reruns and names `PATHEXT` alone.
+- The line that reuses a lane names what its proof leaves out, since an edit there reuses
+  the artifact by design: `crapkit: lane 'py': measurement inputs unchanged; reusing
+  without rerun (artifact built at 8c14f3daa8e); its proof leaves out gitignored files and
+  anything outside the repository`. For a lane with `inputs` it names gitignored files,
+  files outside its inputs and inherited environment variables.
+- A lane measured over uncommitted changes has no proof, and its rerun now names them:
+  `its stamp holds no proof: it was measured with 2 uncommitted change(s): calc/grade.py,
+  calc/report.py`.
 - On Windows a same-bytes touch could make a lane's change read fail with `index file
   open failed: Permission denied`, which read as a changed file: 7 to 12 of 300 touches
   on git's default config. The staged diff and the untracked listing now start after
