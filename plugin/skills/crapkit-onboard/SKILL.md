@@ -44,10 +44,10 @@ agree with the `crapkit` on PATH, which is the one the hooks spawn. Otherwise it
 one line per disagreement, at exit 1. Finding no install at all is its own line, and which
 line you get depends on how you asked. Both exit 1.
 
-With no path, the search looks in Claude Code's plugin directory and names Claude Code's
-install command. In Codex, pass the Codex path above instead:
+With no path, the search looks in Claude Code's plugin directory, then Codex's, and names
+the commands that fix it:
 
-    crapkit doctor: no installed crapkit plugin under DIR (install with `claude plugin install crapkit@crapkit`, or pass --plugin-root PATH)
+    crapkit doctor: no installed crapkit plugin under DIR or CODEX_DIR. Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit`, then `claude plugin install crapkit@crapkit`; Codex with `codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, pass --plugin-root PATH.
 
 With a PATH you typed that holds no `.claude-plugin/plugin.json` at or under it, the line
 names the path and nothing else:

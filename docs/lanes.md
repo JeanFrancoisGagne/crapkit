@@ -978,6 +978,15 @@ container_ok = true
 
 `istanbul` lanes are never refused.
 
+`crapkit doctor` reads the same two triggers, so a devcontainer, a Codespace, a Codex cloud
+task or a CI job in a container hears about the guard before the first `coverage` run
+refuses. It prints one WARN per `coveragepy` lane that has no `container_ok`, naming the
+trigger it found:
+
+```
+WARN lane 'py' runs a coverage.py suite and this is a container (/.dockerenv exists): `crapkit coverage` refuses it with exit 5; if the container is sized for the suite, set container_ok = true on the lane (docs/lanes.md#containers)
+```
+
 ---
 
 ## Reusing artifacts

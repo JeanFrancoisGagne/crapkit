@@ -218,7 +218,18 @@ crapkit doctor --plugin-root
 Restart existing Claude Code sessions to apply the plugin update. The doctor check
 compares the installed plugin with the `crapkit` launcher on PATH. It does not reload
 an existing session. A failed, malformed or undecodable launcher probe is a failure,
-not a version match.
+not a version match. When the two disagree, its line says which side is behind and
+prints the commands that move that side: these update lines for the plugin, or the
+upgrade for the installer that owns the launcher (`uv tool upgrade crapkit`, `pipx
+upgrade crapkit`, or pip for that launcher's python). Between releases the plugin keeps
+the release's version string and `claude plugin update` answers "already at the latest
+version"; doctor then compares the installed files with the marketplace's copy and, when
+they differ, prints the `claude plugin uninstall` and `claude plugin install` lines that
+replace them.
+
+`crapkit doctor` in a repo adds a note naming every `crapkit` launcher on PATH, with its
+version, once there are two or more. The shell, a git hook, the plugin's hooks and an MCP
+client each run the first their own PATH lists, so an upgrade has to reach each of them.
 
 For an installed Codex plugin, refresh its marketplace and install the current copy:
 
@@ -232,7 +243,9 @@ crapkit doctor --plugin-root PATH
 Use the installed Codex plugin directory for `PATH`, not the marketplace's source
 checkout. In the default cache this is
 `~/.codex/plugins/cache/crapkit/crapkit/VERSION`, using the installed version from
-the listing. With no explicit path, doctor checks Claude Code's cache instead.
+the listing. With no explicit path, doctor checks Claude Code's cache, and Codex's
+when Claude Code has no install. A version gap on a Codex install names Codex's refresh
+lines above, never a `claude` command.
 Use the three skills and MCP server in Codex. Codex loads no crapkit hook: the
 plugin's Codex manifest leaves hooks out. Start a new Codex task to load updated
 plugin skills and tools.

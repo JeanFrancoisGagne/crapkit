@@ -127,6 +127,56 @@ version stays 11, so no repo re-seeds.
   `gemini skills disable crapkit-onboard --scope user` takes it out once the repo is
   adopted.
 
+### `doctor` names the setups the next command refuses, and `--plugin-root` names repairs that close the gap
+
+`crapkit doctor` said "no problems found" over setups that `coverage` then refused with
+exit 5, over gates git never ran, and over plugin gaps whose printed repair changed
+nothing. Each of these now gets a line naming the object and the next step:
+
+- A `pytest --cov` lane whose coverage.py is older than 7.6 FAILs. That coverage writes
+  no function regions, so `crapkit coverage` refuses the lane's report with exit 5. The
+  lane probe asks coverage's version on the start it already made, prints it beside
+  pytest's and pytest-cov's, and names the install line for that interpreter.
+- A `coveragepy` lane with no `container_ok` WARNs inside a container (`/.dockerenv` or
+  `CRAPKIT_INSIDE_CONTAINER=1`), which the lane runner refuses with exit 5.
+- A commit gate git never runs WARNs: Route 1's hook under a global `core.hooksPath`,
+  Route 2's committed hook in a clone that skipped its `git config core.hooksPath` line,
+  either one after husky's `npm install` took `core.hooksPath` back to `.husky/_` (the
+  WARN names `.husky/pre-commit` as the file to call crapkit from), and a
+  `.pre-commit-config.yaml` naming `crapkit-gate` before `pre-commit install`. A CI file
+  that runs pre-commit over that config WARNs too, since the hook judges an empty index
+  there.
+- A marks file whose merge attribute names a driver this clone never defined WARNs with
+  the `git config merge.crapkit-ratchet.driver` line, since git otherwise merges it as
+  text.
+- Two or more `crapkit` launchers on PATH get a note naming each with its version. The
+  shell, a git hook, the plugin's hooks and an MCP client each run the first one their
+  own PATH lists.
+
+`crapkit doctor --plugin-root`:
+
+- A version gap names the side that is behind and the commands that move it. The old
+  line sent every gap to `claude plugin install crapkit@crapkit`, which prints "already
+  installed" over an older copy, and to `pip install -U crapkit`, which reaches no uv tool
+  or pipx install. A plugin behind now gets `claude plugin marketplace update crapkit`
+  and `claude plugin update crapkit@crapkit --scope user`, or for a plugin Codex
+  installed, `codex plugin marketplace upgrade crapkit` and `codex plugin add
+  crapkit@crapkit`. A CLI behind gets `uv tool upgrade crapkit`, `pipx upgrade crapkit`,
+  or pip for the python its launcher starts (`uv pip` in a venv uv made). A pre-release
+  or local build names both repairs.
+- An install whose files differ from its marketplace's copy at one version is named, with
+  the `claude plugin uninstall` and `claude plugin install` lines for its scope. Between
+  releases main keeps the release's version string, so `claude plugin update` answers
+  "already at the latest version" and the install keeps the release's files.
+- Run under uvx or `pipx run`, it looks past the environment that runner built for this
+  one command. `uvx crapkit doctor --plugin-root` found crapkit there and exited 0 while
+  `claude mcp list` failed with ENOENT; it now FAILs naming `uv tool install crapkit`.
+- With no PATH it looks in Codex's plugin cache when Claude Code has no install, checks a
+  marketplace added from a local directory in that directory (Claude Code loads it in
+  place), and the no-install line names both harnesses' install commands.
+- A hook's `--protocol` is read from a shell-form command string as well as from `args`,
+  and the Claude Code 2.1.139 line prints only for a plugin whose hooks pass `args`.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

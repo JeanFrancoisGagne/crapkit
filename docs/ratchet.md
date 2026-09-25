@@ -507,6 +507,15 @@ git config merge.crapkit-ratchet.name "crapkit ratchet 3-way merge"
 The `.driver` line is the one that matters; `.name` is only a description git shows. Put
 both in your CONTRIBUTING setup steps.
 
+A clone that skipped step 2 merges the marks file as text, because git falls back without a
+word when no driver by that name is defined. `crapkit doctor` asks `git check-attr` which
+driver the attributes name for the marks file and WARNs when this clone's git config defines
+none, with the line that defines it:
+
+```
+WARN crapkit-ratchet.tsv has merge=crapkit-ratchet in its git attributes, but merge.crapkit-ratchet.driver is not set in this clone, so git merges the marks file as text and leaves its conflicts to be resolved by hand; run `git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"` (docs/ratchet.md#the-git-merge-driver)
+```
+
 `%O %A %B` are base, ours, theirs. The driver writes the merged result **in place over
 `%A`** and exits 0, which is what git requires of a merge driver.
 

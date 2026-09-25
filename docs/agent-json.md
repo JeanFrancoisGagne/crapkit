@@ -1069,13 +1069,40 @@ neither notices when they drift. This is the check, and it reads no repo at all.
 
 It compares the plugin's `.claude-plugin/plugin.json` version against **the `crapkit` on
 PATH**, and every `--protocol` in its `hooks/hooks.json` against the protocol `claude-hook`
-answers. One line per disagreement, silence when they agree, exit 1 when it printed anything:
+answers, read off a handler's `args` or off its shell-form command string. One line per
+disagreement, silence when they agree, exit 1 when it printed anything:
 
 ```
 $ crapkit doctor --plugin-root crapkit
-crapkit doctor: the plugin at crapkit is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. Update whichever is behind: the plugin with `claude plugin marketplace update crapkit` then `claude plugin update crapkit@crapkit --scope user`, or the CLI with `pip install -U crapkit`.
+crapkit doctor: the plugin at crapkit is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. The plugin is behind; update it with `claude plugin marketplace update crapkit`, then `claude plugin update crapkit@crapkit --scope user`, and restart Claude Code's sessions.
 crapkit doctor: the plugin at crapkit asks for hook protocol 2; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit.
 ```
+
+The version line names the side that is behind and the commands that move it. `claude
+plugin install` over an older install prints "already installed" and moves nothing, so the
+plugin's repair is Claude Code's update pair, or for a plugin under `~/.codex` (or
+`CODEX_HOME`) Codex's `codex plugin marketplace upgrade crapkit`, then `codex plugin add
+crapkit@crapkit`. The CLI's repair is the upgrade for the installer that owns the launcher:
+`uv tool upgrade crapkit`, `pipx upgrade crapkit`, `uv pip install --python <that python>
+--upgrade crapkit` in a venv uv made, else `<that python> -m pip install --upgrade crapkit`.
+Two plain releases order; a pre-release or a local build names both repairs:
+
+```
+crapkit doctor: the plugin at <root> is version 0.9.0, and the crapkit its hooks spawn (/home/you/.local/bin/crapkit) is <version>. The CLI is behind; upgrade it with `uv tool upgrade crapkit`.
+```
+
+Between releases main keeps the release's version string, `claude plugin update` answers
+"already at the latest version", and the install keeps the release's files. When the
+install and its marketplace's copy (the clone `known_marketplaces.json` names) carry one
+version and different files, doctor names the reinstall for the scope the install was made
+in:
+
+```
+crapkit doctor: the plugin at <root> is version <version>, and so is the marketplace's copy at <clone>/plugin, but 1 file differs between them (skills/crapkit/SKILL.md); `claude plugin update` keeps an install whose version did not move, so reinstall it with `claude plugin uninstall crapkit@crapkit --scope user`, then `claude plugin install crapkit@crapkit --scope user`, and restart Claude Code's sessions.
+```
+
+A plugin whose hooks pass `args` also gets a line when the `claude` on PATH is older than
+2.1.139, the first release that passes them; a shell-form hook runs as written on any release.
 
 PATH's `crapkit`, not the module answering the question: `hooks/hooks.json` and `.mcp.json`
 both spawn that bare name, so on a machine with a venv crapkit and an older pipx one the
@@ -1089,7 +1116,10 @@ crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and 
 ```
 
 Exit 1. A `pip install` into a project `.venv` is the usual way to land here: the console
-script goes into that venv's `Scripts` and nothing else on the machine sees it.
+script goes into that venv's `Scripts` and nothing else on the machine sees it. Under
+`uvx crapkit doctor --plugin-root` (or `pipx run`) the PATH doctor inherits starts with the
+environment uvx built for that one command, which the plugin's hooks never inherit, so the
+lookup leaves it out and the FAIL names it with `uv tool install crapkit`.
 
 A root doctor found rather than one you typed gets a `crapkit doctor: checking <that root>`
 line first, naming the install the verdict is about: the search reaches three levels under
@@ -1105,12 +1135,14 @@ crapkit doctor: checking plugin
 ```
 
 With no `PATH` at all it reads Claude Code's own plugin directory (`CLAUDE_CONFIG_DIR`, else
-`~/.claude`), and when nothing is installed there it names the directory it looked in and
-exits 1:
+`~/.claude`), then Codex's plugin cache (`CODEX_HOME`, else `~/.codex`). A marketplace added
+from a local directory is checked in that directory, because Claude Code loads its plugin in
+place; the `checking` line says so. When nothing is installed in either, it names both
+directories and both harnesses' install lines and exits 1:
 
 ```
 $ crapkit doctor --plugin-root
-crapkit doctor: no installed crapkit plugin under ...\.claude\plugins (install with `claude plugin install crapkit@crapkit`, or pass --plugin-root PATH)
+crapkit doctor: no installed crapkit plugin under ...\.claude\plugins or ...\.codex. Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit`, then `claude plugin install crapkit@crapkit`; Codex with `codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, pass --plugin-root PATH.
 ```
 
 (The absolute path is elided; the line prints it in full.)
@@ -1126,8 +1158,8 @@ Code keeps an install at `cache/<marketplace>/<plugin>/<version>/` and leaves th
 beside the new one after an update, so among the manifests named `crapkit` under `PATH` the
 newest install is the one checked; the other plugins sharing that cache are never read. With no `PATH` at
 all, doctor looks in Claude Code's plugin directory (`CLAUDE_CONFIG_DIR`, else `~/.claude`),
-through `installed_plugins.json` and the cache, and names that directory when nothing is
-installed there.
+through `installed_plugins.json` and the cache, then in Codex's cache, and names both
+directories when nothing is installed there.
 
 ---
 
