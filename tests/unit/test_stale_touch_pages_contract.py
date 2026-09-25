@@ -759,7 +759,8 @@ def test_a_touch_after_restoring_an_old_mtime_lets_git_read_the_content(tmp_path
     touched = status_names(tmp_path)
 
     assert (restored, touched) == ([], ["a.py"])
-    assert "`touch` the files after restoring them that way, and every reader compares their content" in _upgrading_freshness()
+    assert ("`touch` the files after restoring them that way, and every reader compares their "
+            "content") in _upgrading_freshness()
 
 
 # -- S12, S13: explain reads the run's lines, not HEAD's ------------------------------
@@ -919,3 +920,51 @@ def test_the_onboard_skill_quotes_what_init_says_when_no_source_is_tracked(tmp_p
 
     assert f"``{reason[reason.index('run `git add` first'):]}``" in skill
     assert "`init` exits 3 and names up to three of the files it found" in skill
+
+
+# -- the handbook, in the words the behaviour has now ---------------------------------
+
+def _handbook() -> str:
+    return _prose(_page("docs/handbook.html"))
+
+
+@landed(hasattr(_module("lane_sources"), "record"), "the blob-id content record")
+def test_the_handbook_says_the_stamp_holds_blob_ids_and_staleness_is_per_file(tmp_path):
+    _one_commit_repo(tmp_path)
+
+    recorded = _module("lane_sources").record(tmp_path, ["a.py"])
+
+    assert recorded == {"a.py": _hash_object(tmp_path, "a.py")}
+    assert ("the git blob id of each file under the lane's scopes, so its line numbers go stale "
+            "for the files whose bytes moved and for no others") in _handbook()
+
+
+@landed(_module("lane_outputs") is not None, "declared outputs moved aside per attempt")
+def test_the_handbook_says_a_touch_does_not_lift_a_leftover_s_refusal(tmp_path):
+    report = tmp_path / "py.json"
+    report.write_text("{}", encoding="utf-8")
+
+    with _module("lane_outputs").owned(tmp_path, "py", ("py.json",)):
+        during = report.exists()
+
+    assert during is False
+    assert "Its declared files sit under <code>.crapkit/aside/</code> while it runs" in _handbook()
+    assert "a <code>touch</code> does not lift the refusal, new bytes do" in _handbook()
+
+
+@landed(_watch_polls_content(), "watch's content check")
+def test_the_handbook_lookup_row_says_watch_rescores_on_new_bytes(tmp_path):
+    import os
+
+    from crapkit import watch
+
+    _one_commit_repo(tmp_path)
+    first = watch.snapshot(tmp_path, ["a.py"])
+    later = (tmp_path / "a.py").stat().st_mtime + 5
+    os.utime(tmp_path / "a.py", (later, later))
+    _, moved = watch.poll(tmp_path, ["a.py"], first)
+    row = next(r for r in _handbook().split("<tr>") if '<td class="mono">watch</td>' in r)
+
+    assert moved == []
+    assert "when its bytes change, not when its mtime moves" in row
+    assert "Rescores tracked files as they change" not in row
