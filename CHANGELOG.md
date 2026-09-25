@@ -14,6 +14,12 @@ version stays 11, so no repo re-seeds.
 - Codex users: Codex refreshes git marketplaces each time it starts, so upgrade the CLI
   before the next Codex start, and the plugin arrives with a `.codex-plugin/plugin.json`
   that keeps Claude Code's hook out of Codex.
+- Restart each MCP session after the upgrade. A 0.8.0 server does not notice the new
+  files under it; from 0.8.1 on, a server that outlives an upgrade says so on every call.
+- An MCP client that negotiates `2024-11-05` or `2025-03-26` no longer gets
+  `structuredContent`, which those revisions do not define; the text carries the same
+  object. An answer longer than 7,500 characters carries `truncated`, and its `full`
+  command prints the whole answer from the CLI.
 
 ### Agents
 
@@ -382,7 +388,7 @@ nothing. Each of these now gets a line naming the object and the next step:
 
 ### An MCP answer fits in one tool result
 
-- Every tool answer is 7,500 characters or shorter, counted as its text takes them inside a
+- Every JSON answer is 7,500 characters or shorter, counted as its text takes them inside a
   client's JSON of the result. Cline keeps 8,000 characters of that JSON and cuts the
   middle out, and a brief on a 300-line function ran to 15 KB and more, so its model got
   `get_function_brief` and `list_worklist` top 50 as JSON it could not parse. A longer
