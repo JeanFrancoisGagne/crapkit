@@ -13,4 +13,8 @@ CHECKS = [
      "pytest": [_HISTORY + "test_churn_properties.py"]},
     {"name": "churn on git's clock and mid-walk", "seconds": 4,
      "pytest": [_HISTORY + "test_churn_clock.py", _HISTORY + "test_churn_concurrency.py"]},
+    {"name": "coupling against the pair count", "seconds": 5,
+     "pytest": [_HISTORY + "test_coupling_oracle.py"]},
+    {"name": "coupling at the parser", "seconds": 3,
+     "pytest": [_HISTORY + "test_coupling_properties.py"]},
 ]

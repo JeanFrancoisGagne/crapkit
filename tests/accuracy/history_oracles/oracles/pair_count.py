@@ -11,7 +11,8 @@ No crapkit.
 - docs/agent-json.md#the-coupling-cache: ranking drops any pair naming a file
   `git ls-files` no longer lists.
 - The rank order is support times confidence, highest first, then the two
-  paths (ruling H8: the docs name no order).
+  paths. The docs name no order (a doc gap); this is the order crapkit prints,
+  written down so that a change to it shows.
 """
 from __future__ import annotations
 
@@ -30,7 +31,7 @@ BULK = 30
 class Pair:
     files: tuple[str, str]
     support: int
-    confidence: Decimal  # half-even to 4 places
+    confidence: Decimal | Fraction  # exact, then half-even to 4 places
 
     @property
     def rank(self):
@@ -51,12 +52,23 @@ def confidence(files: Counter, pair: tuple[str, str], support: int) -> Fraction:
     return max(Fraction(support, files[pair[0]]), Fraction(support, files[pair[1]]))
 
 
+def _tracked_pairs(file_sets: list[frozenset], tracked: set[str]) -> list[Pair]:
+    files, pairs = counts(file_sets)
+    return [Pair(pair, support, confidence(files, pair, support))
+            for pair, support in pairs.items() if set(pair) <= tracked]
+
+
 def ranked(file_sets: list[frozenset], tracked: set[str], min_support: int = 1,
            min_confidence: Fraction = Fraction(0)) -> list[Pair]:
-    """Every pair of tracked files at or over both thresholds, in rank order."""
-    files, pairs = counts(file_sets)
-    kept = [Pair(pair, support, exact.half_even(confidence(files, pair, support), 4))
-            for pair, support in pairs.items()
-            if set(pair) <= tracked and support >= min_support
-            and confidence(files, pair, support) >= min_confidence]
-    return sorted(kept, key=lambda pair: pair.rank)
+    """Every pair of tracked files at or over both thresholds, in rank order,
+    its confidence rounded half-even to 4 places."""
+    kept = [pair for pair in _tracked_pairs(file_sets, tracked)
+            if pair.support >= min_support and pair.confidence >= min_confidence]
+    rounded = [Pair(pair.files, pair.support, exact.half_even(pair.confidence, 4))
+               for pair in kept]
+    return sorted(rounded, key=lambda pair: pair.rank)
+
+
+def change_sets(commits) -> list[frozenset]:
+    """Each walked commit's paths as one change set; a merge's empty set pairs nothing."""
+    return [frozenset(commit.paths) for commit in commits]
