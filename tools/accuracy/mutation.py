@@ -15,8 +15,10 @@ mutates one shard of the modules every tests/accuracy/*/calcs.tsv row names;
 at its cap, reporting `incomplete`, never `pass`. Both run in a detached
 worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose [tool.mutmut]
 names the modules and the suite, tests/unit and tests/accuracy at the push tier
-with the dependent methods deselected, then write a receipt under
-.crapkit/accuracy/mutation/ and run the gate.
+with the dependent methods deselected, less each test an open defect row of
+rulings.tsv names as failing on a clean tree (mutmut judges no mutant when its
+stats run fails), then write a receipt under .crapkit/accuracy/mutation/ and run
+the gate.
 
 The gate is a survivor set, not a rate. A survivor is keyed by (module,
 function, sha256 of its mutant diff with line numbers and mutmut's numbering
@@ -830,11 +832,33 @@ def calc_targets(modules: list[str]) -> dict:
     return {module: CALC_TESTS for module in sorted({*modules, CANARY[0]})}
 
 
-def calc_env(environ: dict) -> dict:
-    """The push tier on this platform: every tier would bring in tests marked for
-    another platform, which fail mutmut's stats run."""
+def calc_env(environ: dict, deselect: list[str] | tuple = ()) -> dict:
+    """The push tier on this platform, less the `deselect` tests: every tier would
+    bring in tests marked for another platform, and each of those, like a test an
+    open ruling names, fails mutmut's stats run, which then judges no mutant."""
     env = {key: value for key, value in environ.items() if key != "CRAPKIT_ACCURACY_COLLECT_ALL"}
-    return {**env, "CRAPKIT_ACCURACY_TIER": "push", "PYTHONDONTWRITEBYTECODE": "1"}
+    addopts = [env.get("PYTEST_ADDOPTS", ""), *(f"--deselect {node}" for node in deselect)]
+    return {**env, "CRAPKIT_ACCURACY_TIER": "push", "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTEST_ADDOPTS": " ".join(filter(None, addopts))}
+
+
+RULING_COLUMNS = ("id", "calc", "oracle", "construct", "crapkit_value", "oracle_value", "ruling",
+                  "outside_support", "docs_anchor", "test", "issue")
+
+
+def _failing_tests(row: dict) -> list[str]:
+    """The node ids an open defect row names as failing on a clean tree."""
+    if row["ruling"] != "defect":
+        return []
+    return [value for value in row["crapkit_value"].split(",") if "::" in value]
+
+
+def open_failures(rulings: Path | None = None) -> list[str]:
+    """The tests this packet's open defect rulings (rulings.tsv beside the mutation
+    tables) name, SS3 and SS4: each fails on a clean tree in the image, so the calc
+    stage deselects it until its row is fixed."""
+    rows = read_table(rulings or TABLES.parent / "rulings.tsv", RULING_COLUMNS)
+    return sorted({node for row in rows for node in _failing_tests(row)})
 
 
 def _prepare_stage(targets: dict, where: Path = TOOLS_STAGE) -> Path:
@@ -907,10 +931,11 @@ def _print_floor(floor: Floor) -> None:
 def _weekly(args) -> int:
     modules = shard(calc_modules(), args.shard, args.of)
     globs = _globs_for(modules) + _canary_globs()
-    rows, _ = staged_run(CALC_STAGE, calc_targets(modules), globs, calc_env(dict(os.environ)),
-                         args.max_children)
+    deselected = open_failures()
+    rows, _ = staged_run(CALC_STAGE, calc_targets(modules), globs,
+                         calc_env(dict(os.environ), deselected), args.max_children)
     receipt = _receipt("weekly", shard=args.shard, of=args.of, modules=modules,
-                       results=[asdict(row) for row in rows])
+                       deselected=deselected, results=[asdict(row) for row in rows])
     _write_receipt(receipt, f"weekly-{args.shard}.json")
     return _judge(rows, update=False)
 
@@ -922,7 +947,7 @@ def _run_changed(changed: list, budget: float) -> tuple[list[Result], bool]:
         return [], True
     targets = calc_targets([path for path, _ in changed])
     return staged_run(CALC_STAGE, targets, [mutmut_glob(*pair) for pair in changed],
-                      calc_env(dict(os.environ)), os.cpu_count() or 2, budget)
+                      calc_env(dict(os.environ), open_failures()), os.cpu_count() or 2, budget)
 
 
 def _diff_receipt(base: str, changed: list, rows: list[Result], complete: bool) -> dict:

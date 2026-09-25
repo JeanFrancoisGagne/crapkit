@@ -1724,3 +1724,78 @@ def test_a_child_that_runs_the_launcher_again_as_its_main_starts_nothing(tmp_pat
     assert importlib.util.spec_from_file_location is loader
     assert "CONFIG" not in namespace and "cli" not in namespace
     assert sorted(path.name for path in tmp_path.iterdir()) == [mutation.LAUNCHER_FILE]
+
+
+# --- the calc stage leaves out the tests an open ruling names ---------------------------------------
+
+RULINGS_HEADER = "\t".join(mutation.RULING_COLUMNS)
+
+
+def _ruling(ruling_id: str, value: str, ruling: str = "defect") -> str:
+    cells = dict.fromkeys(mutation.RULING_COLUMNS, "x")
+    return "\t".join({**cells, "id": ruling_id, "crapkit_value": value, "ruling": ruling}.values())
+
+
+def test_the_calc_stage_deselects_each_test_an_open_defect_row_names(tmp_path):
+    """mutmut's stats run stopped at `failed to collect stats` on the five tests
+    SS3 and SS4 name, and judged no mutant. A fixed row, a value that is not a node
+    id and a definition row deselect nothing."""
+    table = tmp_path / "rulings.tsv"
+    table.write_bytes("\n".join([
+        RULINGS_HEADER, _ruling("A", "tests/unit/test_b.py::test_y,tests/unit/test_a.py::test_x"),
+        _ruling("B", "tests/unit/test_c.py::test_z", "fixed"), _ruling("C", "survived"),
+        _ruling("D", "tests/unit/test_d.py::test_w", "definition"),
+        _ruling("E", "tests/unit/test_a.py::test_x")]).encode() + b"\n")
+
+    assert mutation.open_failures(table) == ["tests/unit/test_a.py::test_x",
+                                             "tests/unit/test_b.py::test_y"]
+
+
+def test_the_open_failures_here_are_the_five_tests_ss3_and_ss4_name():
+    assert mutation.open_failures() == [
+        "tests/unit/test_lane_reuse_refusal.py::test_the_lanes_page_quotes_the_leftover_refusal_a_run_prints",
+        "tests/unit/test_lane_starts_through_its_launch_spec.py::"
+        "test_a_silent_lane_is_killed_and_named_from_its_own_directory",
+        "tests/unit/test_lanes_infra.py::test_a_lane_that_left_coverage_shards_is_told_they_are_there",
+        "tests/unit/test_lanes_infra.py::test_the_shard_hint_looks_in_the_directory_the_lane_ran_in",
+        "tests/unit/test_one_hang_bound.py::test_no_wait_spells_a_bound_under_the_hang_bound"]
+
+
+def test_the_deselected_tests_reach_pytest_through_its_addopts():
+    env = mutation.calc_env({"PYTEST_ADDOPTS": "-q"}, ["t.py::a", "t.py::b"])
+
+    assert env["PYTEST_ADDOPTS"] == "-q --deselect t.py::a --deselect t.py::b"
+    assert mutation.calc_env({})["PYTEST_ADDOPTS"] == ""
+
+
+def _open_ruling_beside_the_tables(tmp_path: Path, monkeypatch) -> None:
+    """Move the stood-in tables into a folder whose rulings.tsv holds one open failure."""
+    tables = tmp_path / "suite" / "mutation"
+    tables.mkdir(parents=True)
+    _tables(tables)
+    monkeypatch.setattr(mutation, "TABLES", tables)
+    (tables.parent / "rulings.tsv").write_bytes(
+        f"{RULINGS_HEADER}\n{_ruling('A', 'tests/unit/t.py::f')}\n".encode())
+
+
+def test_a_weekly_shard_deselects_the_open_failures_and_its_receipt_names_them(tmp_path, monkeypatch):
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
+    recorder = _commands_on(tmp_path, monkeypatch, [_crap(KEYS[0], "killed")])
+    _open_ruling_beside_the_tables(tmp_path, monkeypatch)
+
+    assert mutation.main(["weekly", "--shard", "1", "--of", "1"]) == 0
+
+    assert recorder.calls[0]["env"]["PYTEST_ADDOPTS"].endswith("--deselect tests/unit/t.py::f")
+    assert _saved("weekly-1.json")["deselected"] == ["tests/unit/t.py::f"]
+
+
+def test_a_diff_run_deselects_the_open_failures(tmp_path, monkeypatch):
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
+    monkeypatch.setattr(mutation, "changed_functions",
+                        lambda repo, base, modules: [("src/crapkit/score.py", "crap")])
+    recorder = _commands_on(tmp_path, monkeypatch, [_crap(KEYS[0], "killed")])
+    _open_ruling_beside_the_tables(tmp_path, monkeypatch)
+
+    assert mutation.main(["diff", "--base", "b" * 40]) == 0
+
+    assert recorder.calls[0]["env"]["PYTEST_ADDOPTS"].endswith("--deselect tests/unit/t.py::f")
