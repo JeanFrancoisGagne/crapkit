@@ -80,7 +80,7 @@
   string`; both end `reinstall the plugin or repair that file`. A number or a list there
   also ended a search over several installs in a traceback.
 
-### `init` reads package.json and .gitignore the way npm and git do, and finishes a half-done init
+### `init` reads package.json by one JSON rule, appends to .gitignore as git reads it, and finishes a half-done init
 
 - `init` no longer ends in a TypeError, before it writes `crapkit.toml`, on a
   `package.json` whose `scripts` or `devDependencies` is null or a number, at the root or in
@@ -90,8 +90,8 @@
 - A `scripts` list such as `["test"]`, or a string such as `"vitest run"`, no longer writes
   an `npm run test` lane: npm has no such script, and the lane failed on its first run.
 - `init` reads each `package.json` past a UTF-8 byte-order mark, as npm does; a BOM cost the
-  js lane in silence. A root `package.json` npm could not read either stops `init` at exit 3
-  before it writes any file, naming the file and the fix: one in UTF-16 or holding a byte
+  js lane in silence. A root `package.json` that is not one UTF-8 JSON object stops `init` at
+  exit 3 before it writes any file, naming the file and the fix: one in UTF-16 or holding a byte
   that is not UTF-8 (`init wrote no file: package.json is not UTF-8 (byte e9 at offset 36);
   save it as UTF-8`), where 0.8.0 ended in a traceback after `crapkit.toml` was written, and
   one that does not parse or holds something other than a JSON object (`package.json holds

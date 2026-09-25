@@ -140,8 +140,8 @@ NOT_ONE_OBJECT = [
                          ids=[row[0] for row in NOT_ONE_OBJECT])
 def test_init_refuses_a_root_package_json_that_is_not_one_json_object(tmp_path, capsys, body,
                                                                        said):
-    """npm refuses each of these with EJSONPARSE. init read them as an empty
-    object and wrote a config with no js lane and no word about why."""
+    """None of these holds a test script npm could run. init read each as an
+    empty object and wrote a config with no js lane and no word about why."""
     root, code, err = _init(tmp_path, {b"package.json": body, b".gitignore": b"build/\n"},
                             capsys)
 
