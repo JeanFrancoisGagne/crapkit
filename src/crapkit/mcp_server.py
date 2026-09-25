@@ -1504,12 +1504,14 @@ _CUTTABLE_CHARS = 500
 _TRUNCATED = {
     "type": "object",
     "description": ("present only when the whole answer was longer than one tool result the "
-                    f"server sends ({ANSWER_CHARS:,} characters): each list or string field it cut "
-                    "keeps its start, and full is the CLI command that prints the whole answer"),
+                    f"server sends ({ANSWER_CHARS:,} characters): each list, string or object "
+                    "field it cut, at any depth, keeps its start, and full is the CLI command "
+                    "that prints the whole answer"),
     "properties": {
         "fields": {"type": "object",
-                   "description": ("each cut field -> kept and of: elements for a list, "
-                                   "characters for a string"),
+                   "description": ("each cut field, named by its keys joined with dots "
+                                   "(gate.breaches) -> kept and of: elements for a list, entries "
+                                   "for an object, characters for a string"),
                    "additionalProperties": {
                        "type": "object",
                        "properties": {
@@ -1632,39 +1634,85 @@ def _text_chars(payload: dict) -> int:
     return len(json.dumps(json.dumps(payload, sort_keys=True) + "\n"))
 
 
-def _cuttable(payload: dict) -> list[str]:
-    """The list and string fields worth cutting, in the order they are cut:
-    lists before strings, since a list's first rows still answer while a
-    brief's `source` is what the edit is made from, and the largest first."""
-    sizes = {key: len(json.dumps(value)) for key, value in payload.items()
-             if isinstance(value, (list, str))}
-    return sorted((key for key, size in sizes.items() if size >= _CUTTABLE_CHARS),
-                  key=lambda key: (isinstance(payload[key], str), -sizes[key], key))
+def _fields(value: dict, path: tuple = ()):
+    """Every list, string and object below `value` that object keys reach,
+    with its path of keys. A list's elements are cut with the list, never one
+    by one, so nothing inside a list is a field of its own."""
+    for key, child in value.items():
+        if isinstance(child, (list, str, dict)):
+            yield (*path, key), child
+        if isinstance(child, dict):
+            yield from _fields(child, (*path, key))
 
 
-def _fitting(payload: dict, field: str) -> int:
-    """The longest start of `field` with which `payload` fits, 0 when none does."""
-    whole, low, high = payload[field], 0, len(payload[field])
+def _cut_order(path: tuple, value) -> tuple:
+    """Lists first, since a list's first rows still answer; then strings, since
+    a brief's `source` is what the edit is made from; objects last, deepest
+    first, so a map keyed by data (check_gate's `gate.ceilings`, one entry per
+    file) goes before the object whose named fields hold it. The largest first
+    within each."""
+    size = -len(json.dumps(value))
+    if isinstance(value, dict):
+        return (2, -len(path), size, path)
+    return (int(isinstance(value, str)), 0, size, path)
+
+
+def _cuttable(payload: dict) -> list[tuple]:
+    """The paths of the fields worth cutting, in the order they are cut."""
+    worth = [(path, value) for path, value in _fields(payload)
+             if len(json.dumps(value)) >= _CUTTABLE_CHARS]
+    return [path for path, _ in sorted(worth, key=lambda field: _cut_order(*field))]
+
+
+def _at(payload, path: tuple):
+    """The field at `path`, or None where a cut ancestor no longer holds it."""
+    for key in path:
+        payload = payload.get(key) if isinstance(payload, dict) else None
+    return payload
+
+
+def _replaced(payload: dict, path: tuple, value) -> dict:
+    """`payload` with the field at `path` replaced, sharing everything else."""
+    head, rest = path[0], path[1:]
+    return {**payload, head: _replaced(payload[head], rest, value) if rest else value}
+
+
+def _start(value, count: int):
+    """The first `count` elements, entries or characters of `value`."""
+    return dict(list(value.items())[:count]) if isinstance(value, dict) else value[:count]
+
+
+def _fitting(payload: dict, path: tuple) -> int:
+    """The longest start of the field at `path` with which `payload` fits, 0
+    when none does."""
+    whole = _at(payload, path)
+    low, high = 0, len(whole)
     while low < high:
         middle = (low + high + 1) // 2
-        fits = _text_chars({**payload, field: whole[:middle]}) <= ANSWER_CHARS
+        fits = _text_chars(_replaced(payload, path, _start(whole, middle))) <= ANSWER_CHARS
         low, high = (middle, high) if fits else (low, middle - 1)
     return low
 
 
+def _counts(payload: dict, cut: dict, paths: list) -> dict:
+    """Each cut field, by its dotted path, with what it kept of what it had."""
+    counts = {".".join(path): {"kept": len(_at(cut, path) or ()), "of": len(_at(payload, path))}
+              for path in paths}
+    return {name: count for name, count in counts.items() if count["kept"] < count["of"]}
+
+
 def _budgeted(payload: dict, full) -> dict:
-    """`payload` cut to ANSWER_CHARS: the largest cuttable field first, each
-    keeping its start, then the next. `truncated` says what each kept of what
-    it had, and names the command that prints everything; the worst case of it
-    is counted while cutting, so the answer that carries it still fits."""
-    fields = _cuttable(payload)
-    kept = {"fields": {key: {"kept": len(payload[key]), "of": len(payload[key])} for key in fields},
-            "full": full()}
+    """`payload` cut to ANSWER_CHARS, one field at a time in _cuttable's
+    order, each keeping its start. `truncated` says what each kept of what it
+    had, and names the command that prints everything; the worst case of it is
+    counted while cutting, so the answer that carries it still fits."""
+    paths = _cuttable(payload)
+    kept = {"fields": {".".join(path): dict.fromkeys(("kept", "of"), len(_at(payload, path)))
+                       for path in paths}, "full": full()}
     cut = {**payload, "truncated": kept}
-    for field in fields:
-        cut[field] = payload[field][:_fitting(cut, field)]
-    kept["fields"] = {key: {"kept": len(cut[key]), "of": len(payload[key])}
-                      for key in fields if len(cut[key]) < len(payload[key])}
+    for path in paths:
+        cut = _replaced(cut, path, _start(_at(cut, path), _fitting(cut, path)))
+    kept["fields"] = _counts(payload, cut, paths)
     return cut
 
 

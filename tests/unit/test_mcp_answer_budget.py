@@ -91,11 +91,24 @@ def test_a_worklist_of_fifty_keeps_the_top_rows_that_fit_and_says_how_many(monke
     assert result["structuredContent"] == answer
 
 
+def _at(payload: dict, dotted: str):
+    for key in dotted.split("."):
+        payload = payload[key]
+    return payload
+
+
+def _start(node, count: int):
+    return dict(list(node.items())[:count]) if isinstance(node, dict) else node[:count]
+
+
 def _assert_cut_to_prefixes(answer: dict, payload: dict) -> dict:
+    """Each field `truncated` names, by its path of keys, is the start of the
+    whole answer's field, and says how much of it the answer kept."""
     cut = answer["truncated"]["fields"]
     for field, counts in cut.items():
-        assert answer[field] == payload[field][:counts["kept"]], field
-        assert counts == {"kept": len(answer[field]), "of": len(payload[field])}, field
+        kept, whole = _at(answer, field), _at(payload, field)
+        assert kept == _start(whole, counts["kept"]), field
+        assert counts == {"kept": len(kept), "of": len(whole)}, field
     return cut
 
 
@@ -218,3 +231,104 @@ def test_a_failing_doctor_report_is_cut_to_the_budget_and_stays_an_error(monkeyp
     assert _assert_cut_to_prefixes(answer, report) == {
         "problems": {"kept": len(answer["problems"]), "of": 80}}
     assert answer["truncated"]["full"].startswith("crapkit doctor --json --repo ")
+
+
+# --- fields below the top level ----------------------------------------------------
+
+def _gate(files: int = 1) -> dict:
+    """`rescore calc/big.py --gate --json` on a file with 60 raised functions:
+    the breaches sit inside `gate`, and `ceilings` has one entry per file."""
+    functions = [{"ccn": 9, "cov": 0.0, "crap": 90.0, "end": 318 + 20 * n, "flag": "measured",
+                  "function": f"f{n}( a , b )", "occurrence": 1, "path": "calc/big.py",
+                  "remedy": "decompose", "scope": "calc", "stale_coverage": True,
+                  "start": 305 + 20 * n} for n in range(61)]
+    breaches = [{"ccn": 9, "ceiling": 6, "cov": 0.0, "crap": 90.0, "function": f"f{n}( a , b )",
+                 "key_name": f"f{n}( a , b )", "path": "calc/big.py", "remedy": "decompose",
+                 "start": 305 + 20 * n} for n in range(60)]
+    ceilings = {f"src/pkg/module_{n:04}.py": 6 for n in range(files)}
+    return {"baseline_commit": "c" * 40, "baseline_run": 1, "functions": functions,
+            "gate": {"breaches": breaches, "ceilings": ceilings, "judged": 61, "ok": False,
+                     "untracked": []},
+            "note": "the gate judges the working tree against HEAD", "schema": 1}
+
+
+def _cline_answer(monkeypatch, tmp_path: Path, name: str, arguments: dict, payload: dict) -> dict:
+    """The result a 2024-11-05 client such as Cline gets; check_gate's CLI
+    exits 6 on a breach, the others 0."""
+    stdout, code = json.dumps(payload, sort_keys=True) + "\n", 6 if name == "check_gate" else 0
+    monkeypatch.setattr(mcp_server, "run_owned",
+                        lambda argv, **_: subprocess.CompletedProcess(argv, code, stdout, ""))
+    session = mcp_server._Session(_measured(tmp_path / "repo"))
+    mcp_server._initialize_result({"protocolVersion": "2024-11-05", "capabilities": {}}, session)
+    return session.run_cli(mcp_server._tool_named(name), arguments, str(tmp_path / "repo"))
+
+
+def test_a_gate_with_sixty_breaches_cuts_the_nested_breaches_and_keeps_the_verdict(monkeypatch,
+                                                                                 tmp_path):
+    """The breaches list sits inside `gate`; cutting only top-level fields left
+    10,692 characters that carried `truncated` and still overflowed Cline."""
+    payload = _gate()
+
+    result = _cline_answer(monkeypatch, tmp_path, "check_gate", {"path": "calc/big.py"}, payload)
+
+    answer = json.loads(result["content"][0]["text"])
+    assert _embedded(result) <= ANSWER_CHARS
+    assert _cline(result) <= 8000
+    cut = _assert_cut_to_prefixes(answer, payload)
+    assert "gate.breaches" in cut and cut["gate.breaches"]["of"] == 60
+    assert answer["gate"]["ok"] is False and answer["gate"]["judged"] == 61
+    assert answer["gate"]["breaches"][0]["function"] == "f0( a , b )"
+    assert answer["truncated"]["full"].endswith(
+        f"rescore --gate calc/big.py --json --repo {(tmp_path / 'repo').resolve()}")
+
+
+def test_a_map_keyed_by_file_is_cut_by_entries_after_the_lists(monkeypatch, tmp_path):
+    """`gate.ceilings` has one entry per rescored file; a gate over a large
+    dirty tree names hundreds. The map keeps its first entries, and the
+    verdict fields beside it stay whole."""
+    payload = {**_gate(files=800), "functions": []}
+    payload["gate"]["breaches"] = payload["gate"]["breaches"][:3]
+
+    result = _cline_answer(monkeypatch, tmp_path, "check_gate", {"path": "calc/big.py"}, payload)
+
+    answer = json.loads(result["content"][0]["text"])
+    assert _embedded(result) <= ANSWER_CHARS
+    cut = _assert_cut_to_prefixes(answer, payload)
+    assert set(cut) == {"gate.ceilings"} and cut["gate.ceilings"]["of"] == 800
+    assert answer["gate"]["breaches"] == payload["gate"]["breaches"]
+    assert answer["gate"]["ok"] is False and answer["gate"]["judged"] == 61
+
+
+def _filled(schema: dict, depth: int = 0):
+    """An answer as large as the output schema allows at each field: long
+    lists, long strings and large maps, at every depth the schema declares."""
+    kind = schema.get("type")
+    kind = next(k for k in kind if k != "null") if isinstance(kind, list) else kind
+    many = 400 if depth < 3 else 3
+    if kind == "object":
+        entries = schema.get("additionalProperties")
+        if isinstance(entries, dict) and not schema.get("properties"):
+            return {f"src/pkg/module_{n:04}.py": _filled(entries, depth + 1) for n in range(many)}
+        return {key: _filled(value, depth + 1) for key, value in schema.get("properties", {}).items()
+                if key != "truncated"}
+    if kind == "array":
+        return [_filled(schema.get("items", {"type": "string"}), depth + 1) for _ in range(many)]
+    return {"string": "s" * (3000 if depth < 3 else 30), "integer": 123456, "number": 1234.5,
+            "boolean": True}.get(kind)
+
+
+@pytest.mark.parametrize("entry", tool_listing(), ids=lambda entry: entry["name"])
+def test_every_tool_answer_as_large_as_its_schema_allows_fits(monkeypatch, tmp_path, entry):
+    """The budget holds for every shape a tool declares, whatever depth its
+    lists, strings and maps sit at, and every top-level field survives."""
+    payload = _filled(entry.get("outputSchema") or {"type": "object", "properties": {}})
+
+    result = _cline_answer(monkeypatch, tmp_path, entry["name"],
+                           {key: "a.py" for key in entry["inputSchema"].get("required", [])},
+                           payload)
+
+    answer = json.loads(result["content"][0]["text"])
+    assert _embedded(result) <= ANSWER_CHARS
+    assert _cline(result) <= 8000
+    assert set(payload) <= set(answer)
+    _assert_cut_to_prefixes(answer, payload)

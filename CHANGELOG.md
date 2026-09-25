@@ -405,11 +405,14 @@ nothing. Each of these now gets a line naming the object and the next step:
   middle out, and a brief on a 300-line function ran to 15 KB and more, so its model got
   `get_function_brief` and `list_worklist` top 50 as JSON it could not parse. A longer
   answer now loses the end of its list fields, largest first, then of its string fields,
-  such as a brief's `source`, and carries `truncated`: what each cut field kept of what it
-  had, and the CLI command that prints the whole answer. A worklist of 50 keeps its top
-  rows; a brief keeps its source ahead of the file's other functions. A failing
-  `check_config` report, 18 KB on a repo with 40 lanes that cannot start, is cut the same
-  way and stays a tool error. Every output schema declares the field.
+  such as a brief's `source`, then of its objects, at any depth: `check_gate` on a file
+  with 60 breaches cuts `gate.breaches` and keeps `gate.ok`, and a gate over hundreds of
+  files cuts the per-file `gate.ceilings` map by entries. It carries `truncated`: each cut
+  field by its dotted path, what it kept of what it had, and the CLI command that prints
+  the whole answer. A worklist of 50 keeps its top rows; a brief keeps its source ahead of
+  the file's other functions. A failing `check_config` report, 18 KB on a repo with 40
+  lanes that cannot start, is cut the same way and stays a tool error. Every output
+  schema declares the field.
 - `structuredContent` goes only to a client that negotiated `2025-06-18`, the revision
   that defines it. A `2024-11-05` client such as Cline got the answer twice, which
   doubled what it cut.

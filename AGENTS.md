@@ -623,8 +623,9 @@ versions and says to restart the server, instead of loading the new files into t
 process.
 `structuredContent` rides beside the text whenever the CLI exited 0 and the client
 negotiated `2025-06-18`; a client on an older revision gets the text alone. An answer over
-7,500 characters loses the end of its largest lists, then of its strings, and carries
-`truncated` with what each kept and the CLI command that prints it whole. A `doctor` that finds
+7,500 characters loses the end of its largest lists, then of its strings, then of its
+objects, at any depth (`gate.breaches` counts as a field), and carries `truncated` with
+what each kept and the CLI command that prints it whole. A `doctor` that finds
 a FAIL exits 1 and answers its JSON text with `isError: true` and no `structuredContent`.
 `check_gate` is the one tool whose non-zero exit is an answer: exit 6 (a breach) comes
 back with `isError: false`, `structuredContent` and `gate.ok` false; exits 3, 4 and 5 stay

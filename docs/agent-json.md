@@ -1641,14 +1641,18 @@ the field. A client on `2024-11-05` or `2025-03-26` gets the text alone.
 One answer is 7,500 characters or shorter, counted as the text takes them inside a client's
 JSON of the result. Cline keeps 8,000 characters of that JSON and cuts the middle out, and a
 brief on a 300-line function ran to 15 KB and more. A longer answer loses the end of its
-list fields, largest first, then of its string fields, such as a brief's `source`; each
-keeps its start, and the text and `structuredContent` stay the same object. It then carries
-`truncated`: `fields` gives each cut field what it `kept` and what it had (`of`), elements
-for a list and characters for a string, and `full` is the CLI command that prints the
-whole answer:
+list fields, largest first, then of its string fields, such as a brief's `source`, then
+of its objects, the deepest first; a field inside an object counts as much as one at the
+top, so `check_gate` cuts `gate.breaches` and keeps `gate.ok`. Each cut field keeps its
+start, a list's elements are kept or dropped whole, and the text and `structuredContent`
+stay the same object. It then carries `truncated`: `fields` names each cut field by its
+keys joined with dots and gives what it `kept` and what it had (`of`), elements for a
+list, entries for an object and characters for a string, and `full` is the CLI command
+that prints the whole answer:
 
 ```json
 "truncated": {"fields": {"active": {"kept": 19, "of": 50}}, "full": "crapkit worklist --top 50 --json --repo /home/me/app"}
+"truncated": {"fields": {"functions": {"kept": 0, "of": 61}, "gate.breaches": {"kept": 34, "of": 60}}, "full": "crapkit rescore --gate calc/big.py --json --repo /home/me/app"}
 ```
 
 A field shorter than 500 characters, such as a path or a commit, is never cut. A failing
