@@ -174,6 +174,9 @@ GENERATED = '''def generated(a, b):
 '''
 
 EMPTY_TS = "export function called(): void {}\nexport function idle(): void {}\n"
+# Two arrows on one line: README's other split-lines case, a span two functions share.
+PAIR_TS = ("export const pair = [(x: number) => (x ? 1 : x === 0 ? 2 : 3), "
+           "(y: number) => (y ? 3 : y === 0 ? 4 : 5)];\n")
 
 # The coverage.py run: every probe module is imported, so the artifact speaks
 # about it; src/wide/unimported.py is not, so no artifact mentions it.
@@ -198,7 +201,7 @@ FILES = {"crapkit.toml": CONFIG + LANES, "src/core/shapes.py": SHAPES, "src/wide
          "src/wide/lines.py": LINES, "src/wide/params.py": PARAMS,
          "src/wide/unimported.py": ONE_BRANCH.format(name="lonely"),
          "src/bare/plain.py": ONE_BRANCH.format(name="plain"), "src/gen/gen.py": GENERATED,
-         "src/ts/empty.ts": EMPTY_TS, "tests/drive_defs.py": DRIVER}
+         "src/ts/empty.ts": EMPTY_TS, "src/ts/pair.ts": PAIR_TS, "tests/drive_defs.py": DRIVER}
 SPEC = repos.Spec(steps=(repos.Commit(files=FILES, message="definition probes"),))
 
 
@@ -214,6 +217,31 @@ ISTANBUL = {"src/ts/empty.ts": {
     "path": "src/ts/empty.ts", "statementMap": {}, "branchMap": {}, "s": {}, "b": {},
     "fnMap": {"0": _istanbul_function("called", 1), "1": _istanbul_function("idle", 2)},
     "f": {"0": 1, "1": 0}}}
+
+
+def _at(start: int, end: int) -> dict:
+    return {"start": {"line": 1, "column": start}, "end": {"line": 1, "column": end}}
+
+
+def _ternaries(outer: int, inner: int, end: int) -> list[dict]:
+    """The two cond-expr branches of one arrow's nested ternary."""
+    return [{"type": "cond-expr", "line": 1, "loc": _at(outer, end),
+             "locations": [_at(outer + 4, outer + 5), _at(inner, end)]},
+            {"type": "cond-expr", "line": 1, "loc": _at(inner, end),
+             "locations": [_at(inner + 10, inner + 11), _at(end - 1, end)]}]
+
+
+# pair.ts: both arrows called once with a truthy argument, so each takes the
+# first arm of its outer ternary and neither arm of its inner one.
+ISTANBUL["src/ts/pair.ts"] = {
+    "path": "src/ts/pair.ts",
+    "statementMap": {"0": _at(0, 105), "1": _at(37, 60), "2": _at(79, 103)},
+    "fnMap": {"0": {"name": "(anonymous_0)", "line": 1, "decl": _at(21, 22), "loc": _at(21, 61)},
+              "1": {"name": "(anonymous_1)", "line": 1, "decl": _at(63, 64), "loc": _at(63, 104)}},
+    "branchMap": {str(n): branch for n, branch in
+                  enumerate(_ternaries(37, 45, 60) + _ternaries(79, 87, 103))},
+    "s": {"0": 1, "1": 1, "2": 1}, "f": {"0": 1, "1": 1},
+    "b": {"0": [1, 0], "1": [0, 0], "2": [1, 0], "3": [0, 0]}}
 
 
 @dataclass(frozen=True)
@@ -240,6 +268,8 @@ class Want:
 # - lonely: no test imports its file, so no artifact names it: untested, 0.
 # - plain: its scope has no lane: no-lane, 0. generated: cc-only, 0.
 # - called, idle: no statements, so invoked-or-not: 1 and 0.
+# - the two pair.ts arrows share line 1, so no artifact can tell them apart:
+#   0, untested, two ternaries each for ccn 3, split-lines at CRAP 12.
 EXPECTED = {
     ("src/core/shapes.py", "half"): Want(2, Fraction(1, 2), "measured", 3),
     ("src/core/shapes.py", "both"): Want(2, Fraction(1), "measured", 3),
@@ -255,12 +285,15 @@ EXPECTED = {
     ("src/gen/gen.py", "generated"): Want(3, Fraction(0), "cc-only", 6),
     ("src/ts/empty.ts", "called"): Want(1, Fraction(1), "measured", 6),
     ("src/ts/empty.ts", "idle"): Want(1, Fraction(0), "measured", 6),
+    ("src/ts/pair.ts", "(anonymous)#1"): Want(3, Fraction(0), "untested", 6, shared=True),
+    ("src/ts/pair.ts", "(anonymous)#2"): Want(3, Fraction(0), "untested", 6, shared=True),
 }
 # The remedy each row must carry, read off README's table by hand.
 REMEDIES = {"half": "ok", "both": "ok", "straight": "ok", "untaken": "add-tests",
             "split_up": "decompose", "five": "decompose", "one_line": "split-lines",
             "both_wrapped": "ok", "wrapped_sig": "split-lines",
-            "lonely": "ok", "plain": "ok", "generated": "ok", "called": "ok", "idle": "ok"}
+            "lonely": "ok", "plain": "ok", "generated": "ok", "called": "ok", "idle": "ok",
+            "(anonymous)#1": "split-lines", "(anonymous)#2": "split-lines"}
 # coverage.py's own summary counts for the probes, by hand: (branches, covered
 # branches, statements, covered statements).
 COUNTS = {"half": (2, 1, 3, 2), "both": (0, 0, 1, 1), "straight": (0, 0, 3, 2),
@@ -298,7 +331,13 @@ def _scored(root, out) -> tuple[dict, dict]:
     assert done.code == 0, done.stderr
     _, rows = surfaces.read_tsv((out / "scored.tsv").read_text(encoding="utf-8"))
     sarif = json.loads((out / "coverage.sarif").read_text(encoding="utf-8"))
-    return {(row["path"], surfaces.bare_name(row["long_name"])): row for row in rows}, sarif
+    return {(row["path"], _key_name(row)): row for row in rows}, sarif
+
+
+def _key_name(row: dict) -> str:
+    """The bare name, and `(anonymous)#N` by occurrence for the arrows one line holds."""
+    name = surfaces.bare_name(row["long_name"])
+    return f"{name}#{row['occurrence']}" if name == "(anonymous)" else name
 
 
 def _briefs(root) -> dict:
@@ -457,6 +496,7 @@ def test_est_uncovered_paths_rounds_half_to_even(measured):
 LONG_NAMES = {"untaken": "untaken( x )", "split_up": "split_up( a , b , c )",
               "five": "five( a , b , c , d )", "one_line": "one_line( a , b )",
               "wrapped_sig": "wrapped_sig( a , b )",
+              "(anonymous)#1": "(anonymous)", "(anonymous)#2": "(anonymous)",
               "flat": "flat( n )", "deep": "deep( a , b , c )",
               "with_in_if": "with_in_if( path , strict )"}
 NEST_WANT = {"flat": Want(8, Fraction(0), "measured", 6), "deep": Want(4, Fraction(0), "measured", 6),
