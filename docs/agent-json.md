@@ -1070,12 +1070,13 @@ neither notices when they drift. This is the check, and it reads no repo at all.
 It compares the plugin's `.claude-plugin/plugin.json` version against **the `crapkit` on
 PATH**, and every `--protocol` in its `hooks/hooks.json` against the protocol `claude-hook`
 answers, read off a handler's `args` or off its shell-form command string. One line per
-disagreement, silence when they agree, exit 1 when it printed anything:
+disagreement, each naming the command that closes it, silence when they agree, exit 1 when
+it printed anything:
 
 ```
 $ crapkit doctor --plugin-root crapkit
 crapkit doctor: the plugin at crapkit is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. The plugin is behind; update it with `claude plugin marketplace update crapkit`, then `claude plugin update crapkit@crapkit --scope user`, and restart Claude Code's sessions.
-crapkit doctor: the plugin at crapkit asks for hook protocol 2; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit.
+crapkit doctor: the plugin at crapkit asks for hook protocol 0; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit. The plugin is behind; update it with `claude plugin marketplace update crapkit`, then `claude plugin update crapkit@crapkit --scope user`, and restart Claude Code's sessions.
 ```
 
 The version line names the side that is behind and the commands that move it. `claude
@@ -1124,6 +1125,20 @@ crapkit doctor: the plugin at <root> is version <version>, and so is the marketp
 A plugin whose hooks pass `args` also gets a line when the `claude` on PATH is older than
 2.1.139, the first release that passes them; a shell-form hook runs as written on any release.
 
+The protocol line orders the protocols the way the version line orders versions: a hook
+asking for an older protocol than this CLI answers means the plugin is behind, a newer one
+means the CLI is, and the line names the same repair. A hooks file or manifest doctor
+cannot read names how the file comes back: the harness's reinstall once per scope that
+holds the install (`codex plugin remove crapkit@crapkit`, then `codex plugin add
+crapkit@crapkit` for Codex), or for a plugin Claude Code loads in place from a checkout,
+`git -C <root> checkout -- <file>`. A directory with no manifest at all is no plugin root,
+and its line names the search that finds the installs:
+
+```
+crapkit doctor: the plugin at <root> has no readable hooks/hooks.json; reinstall it with `claude plugin uninstall crapkit@crapkit --scope user`, then `claude plugin install crapkit@crapkit --scope user`, and restart Claude Code's sessions before relying on its advisory hook.
+crapkit doctor: the plugin at /tmp has no .claude-plugin/plugin.json, so it is no plugin root; name the plugin root or a directory above it, or run `crapkit doctor --plugin-root` with no PATH to check the installs Claude Code and Codex recorded.
+```
+
 PATH's `crapkit`, not the module answering the question: `hooks/hooks.json` and `.mcp.json`
 both spawn that bare name, so on a machine with a venv crapkit and an older pipx one the
 check ran in the first and the hook started the second. The version comes off that
@@ -1145,6 +1160,16 @@ pipx's, and the FAIL names the one doctor runs in. An environment in uv's cache 
 tool install crapkit`, or `pipx install crapkit` for a `pipx run`: pipx 1.17 on its uv
 backend hands the command to `uv tool run`, so nothing in that environment says pipx
 started it. One in pipx's own cache (its pip backend) gets `pipx install crapkit`.
+
+A `crapkit` that answers no `--version` is a launcher the plugin starts and cannot use,
+most often one whose environment lost its python. Each installer's upgrade leaves it
+broken, so the FAIL names the reinstall for the install that owns it: `uv tool install
+--force crapkit`, `pipx reinstall crapkit`, or pip's `--force-reinstall` for the python
+it starts:
+
+```
+crapkit doctor: FAIL /home/you/.local/bin/crapkit did not answer `crapkit --version`. Reinstall the crapkit it belongs to with `uv tool install --force crapkit`, then run this check again.
+```
 
 A root doctor found rather than one you typed gets a `crapkit doctor: checking <that root>`
 line first, naming the install the verdict is about: the search reaches three levels under

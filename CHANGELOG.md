@@ -201,6 +201,16 @@ nothing. Each of these now gets a line naming the object and the next step:
   line names both harnesses' install commands.
 - A hook's `--protocol` is read from a shell-form command string as well as from `args`,
   and the Claude Code 2.1.139 line prints only for a plugin whose hooks pass `args`.
+- Every line it prints names the command that closes it, as `doctor --help` says. The
+  protocol line names the side that is behind and its repair, the same as the version
+  line. A hooks file or manifest it cannot read names the reinstall for each scope that
+  holds the install, Codex's `codex plugin remove` and `codex plugin add`, or `git -C
+  <root> checkout -- <file>` for a plugin Claude Code loads in place from a checkout,
+  where the old line said "reinstall the plugin or repair that file". A directory with no
+  manifest names `crapkit doctor --plugin-root` with no PATH. A launcher that answers no
+  `--version` names its installer's reinstall (`uv tool install --force crapkit`, `pipx
+  reinstall crapkit`, pip's `--force-reinstall`), since each upgrade leaves a launcher
+  whose environment lost its python as broken as it was.
 
 ## 0.8.0 — 2026-09-23
 
