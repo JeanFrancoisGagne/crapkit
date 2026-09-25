@@ -10,12 +10,14 @@ list` failed with ENOENT.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
 
 import pytest
 
+from cli_inproc_repo import repo, template_repo  # noqa: F401
 from crapkit.cli import admin, main
 from test_launchers import joined, shim
 
@@ -40,7 +42,7 @@ def test_two_launchers_at_different_versions_are_named_each_with_its_version(tmp
 
     (finding,) = admin._doctor_launchers()
 
-    assert finding.level == "note", "the machine, not this repo's setup"
+    assert finding.level == "WARN", "a git hook and the shell can record marks under two versions"
     assert finding.text == (
         f"PATH holds 2 crapkit launchers: {new} (0.8.1), {old} (0.7.6). The shell, a git hook, "
         "the plugin's hooks and an MCP client each run the first one their own PATH lists, so "
@@ -79,7 +81,22 @@ def test_a_launcher_that_answers_no_version_is_named_as_such(tmp_path, monkeypat
 
     (finding,) = admin._doctor_launchers()
 
+    assert finding.level == "WARN", "a launcher that cannot answer is one a hook cannot run"
     assert f"{broken} (no version answered)" in finding.text
+
+
+def test_doctor_reports_the_skew_among_its_warnings(repo, tmp_path, monkeypatch, capsys):  # noqa: F811
+    """Four launchers at three versions printed a note and then `doctor: no
+    problems found`, and --json carried nothing a wrapper reads as a warning.
+    The shims go first on the real PATH, which git and the lanes still need."""
+    new, old = shim(tmp_path / "new", "0.8.1"), shim(tmp_path / "old", "0.7.6")
+    monkeypatch.setenv("PATH", joined(tmp_path / "new", tmp_path / "old", os.environ["PATH"]))
+
+    assert main(["doctor", "--json", "--repo", str(repo)]) in (0, 1)
+
+    warnings = json.loads(capsys.readouterr().out)["warnings"]
+    (skew,) = [w for w in warnings if w.startswith("PATH holds ")]
+    assert f"{new} (0.8.1), {old} (0.7.6)" in skew, skew
 
 
 # --- doctor run from an environment built for one command ----------------------------

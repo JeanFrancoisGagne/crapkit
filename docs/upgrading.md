@@ -227,9 +227,10 @@ version"; doctor then compares the installed files with the marketplace's copy a
 they differ, prints the `claude plugin uninstall` and `claude plugin install` lines that
 replace them.
 
-`crapkit doctor` in a repo adds a note naming every `crapkit` launcher on PATH, with its
-version, once there are two or more. The shell, a git hook, the plugin's hooks and an MCP
-client each run the first their own PATH lists, so an upgrade has to reach each of them.
+`crapkit doctor` in a repo names every `crapkit` launcher on PATH, with its version, once
+there are two or more: a WARN when their versions differ, a note while they agree. The
+shell, a git hook, the plugin's hooks and an MCP client each run the first their own PATH
+lists, so an upgrade has to reach each of them.
 
 For an installed Codex plugin, refresh its marketplace and install the current copy:
 

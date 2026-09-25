@@ -855,15 +855,17 @@ def _one_version(launchers: tuple[tuple[str, str | None], ...]) -> str | None:
 
 def _skew_line(launchers: tuple[tuple[str, str | None], ...]) -> Finding:
     listed = ", ".join(f"{path} ({version or 'no version answered'})" for path, version in launchers)
-    return Finding("note", _LAUNCHER_SKEW.format(count=len(launchers), listed=listed))
+    return Finding("WARN", _LAUNCHER_SKEW.format(count=len(launchers), listed=listed))
 
 
 def launcher_skew(launchers: tuple[tuple[str, str | None], ...]) -> tuple[Finding, ...]:
-    """One note when PATH holds more than one launcher, naming each with its
-    version once they disagree. A note, not a WARN: it describes the machine,
-    not this repo's setup, and a wrapper reading --json warnings to judge a
-    repo must not flip on which crapkits the machine it ran on carries.
-    `launchers` is (path, version) in PATH order, None for no answer."""
+    """One finding when PATH holds more than one launcher: a WARN naming each
+    with its version once they disagree or one answers none, a note while they
+    agree. Disagreeing launchers are this repo's problem as much as the
+    machine's: the git hook can judge a commit with one version while the shell
+    records marks with another, and the plugin and MCP client run whichever
+    their PATH lists first. `launchers` is (path, version) in PATH order, None
+    for no answer."""
     if len(launchers) < 2:
         return ()
     version = _one_version(launchers)

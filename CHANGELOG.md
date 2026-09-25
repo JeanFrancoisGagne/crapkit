@@ -149,9 +149,10 @@ nothing. Each of these now gets a line naming the object and the next step:
 - A marks file whose merge attribute names a driver this clone never defined WARNs with
   the `git config merge.crapkit-ratchet.driver` line, since git otherwise merges it as
   text.
-- Two or more `crapkit` launchers on PATH get a note naming each with its version. The
-  shell, a git hook, the plugin's hooks and an MCP client each run the first one their
-  own PATH lists.
+- Two or more `crapkit` launchers on PATH are named, each with its version: a WARN when
+  their versions differ, a note while they agree. The shell, a git hook, the plugin's
+  hooks and an MCP client each run the first one their own PATH lists, so the hook can
+  judge a commit with one version while the shell records marks with another.
 - In a venv uv made, which holds no pip, the install lines `init` and `doctor` print for a
   missing pytest-cov or an old coverage.py read `uv pip install --python <that python>
   ...`. The `<python> -m pip install` they printed failed there with "No module named

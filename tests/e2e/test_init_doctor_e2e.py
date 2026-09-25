@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import cli_runner
+from conftest import cli_runner, repo_warns
 
 # PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
 run_cli = cli_runner(spawn=True)
@@ -336,7 +336,7 @@ def test_init_on_a_vitest_repo_writes_a_lane_doctor_does_not_warn_about(vitest_r
 
     assert res.returncode == 0, res.stdout + res.stderr
     assert "results_artifact" not in res.stdout, res.stdout
-    assert [line for line in res.stdout.splitlines() if line.startswith("WARN")] == [
+    assert repo_warns(res.stdout) == [
         line for line in res.stdout.splitlines() if "scoped_tests" in line]
 
 

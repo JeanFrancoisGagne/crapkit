@@ -7,7 +7,7 @@ import struct
 import subprocess
 from pathlib import Path
 
-from conftest import run_cli
+from conftest import repo_warns, run_cli
 
 
 def graph_bytes(*chunks: bytes) -> bytes:
@@ -46,7 +46,7 @@ def test_doctor_warns_and_still_exits_zero(tmp_path: Path):
     res = run_cli(root, "doctor")
 
     assert res.returncode == 0, res.stdout + res.stderr
-    warnings = [ln for ln in res.stdout.splitlines() if ln.startswith("WARN")]
+    warnings = repo_warns(res.stdout)
     assert len(warnings) == 1, res.stdout
     assert "git commit-graph write --reachable --changed-paths" in warnings[0]
 
@@ -70,4 +70,4 @@ def test_a_filtered_commit_graph_leaves_doctor_silent(tmp_path: Path):
     res = run_cli(root, "doctor")
 
     assert res.returncode == 0, res.stdout + res.stderr
-    assert [ln for ln in res.stdout.splitlines() if ln.startswith("WARN")] == []
+    assert repo_warns(res.stdout) == []

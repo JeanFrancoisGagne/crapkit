@@ -105,6 +105,24 @@ def in_process_hang_log(tmp_path_factory):
     log_hangs_to(sys.__stderr__)
 
 
+# doctor WARNs when the crapkit launchers on PATH answer different versions.
+# That line describes the machine running the suite (a pipx crapkit beside the
+# test environment's, say), so a test that pins the warnings a repo draws
+# leaves it out.
+_LAUNCHER_WARNING = "PATH holds "
+
+
+def repo_warnings(warnings: list[str]) -> list[str]:
+    """A --json report's warnings, less the one about the launchers on PATH."""
+    return [w for w in warnings if not w.startswith(_LAUNCHER_WARNING)]
+
+
+def repo_warns(stdout: str) -> list[str]:
+    """doctor's WARN lines, less the one about the launchers on PATH."""
+    return [line for line in stdout.splitlines()
+            if line.startswith("WARN") and not line.startswith("WARN " + _LAUNCHER_WARNING)]
+
+
 def git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 
