@@ -74,6 +74,12 @@ class Model:
     def __init__(self, box, writes: list[dict], marker: str, read: str):
         self.box, self.writes, self.marker, self.read = box, writes, marker, read
         self.baseline = hook_exits(box)
+        # With no shim on PATH nothing records a hook, and the five Reads are all the wait there is.
+        self.shimmed = (box.root / "shim-bin").is_dir()
+
+    def settle(self) -> None:
+        if self.shimmed:
+            hang_guard.wait_until(lambda: hook_exits(self.box) > self.baseline, what="the hook's exit in the shim log")
 
     def carries(self, body: dict) -> bool:
         return self.marker in json.dumps(body.get("messages", []))
@@ -81,7 +87,7 @@ class Model:
     def __call__(self, body: dict, turn: int) -> dict:
         if turn < len(self.writes):
             return self.writes[turn]
-        hang_guard.wait_until(lambda: hook_exits(self.box) > self.baseline, what="the hook's exit in the shim log")
+        self.settle()
         if self.carries(body) or turn >= len(self.writes) + READS:
             return {"text": "done"}
         return {"tool_use": {"name": "Read", "input": {"file_path": self.read}}}
