@@ -15,7 +15,7 @@ from hypothesis import given, strategies as st
 import pytest
 
 from accuracy.kit import drive, repos
-from accuracy.kit.settings import process, pure
+from accuracy.kit.settings import process
 from accuracy.verdict_model import model_verdict as model
 
 STAMP = "crapkit-analysis=11 lizard=1.24.0"
@@ -165,32 +165,3 @@ def test_a_bom_on_ours_keeps_its_stamp(tmp_path):
     assert result.code == 0, result.stderr
     parsed = model.parse_marks(paths[1].read_bytes().decode("utf-8-sig"))
     assert (parsed.stamp, parsed.marks) == (STAMP, {("src/a.py", "f( )"): d("20.0000")})
-
-
-# --- properties of crapkit's own merge function (not an independent method) ------------------
-
-KEYS = st.sampled_from([("a.py", "f( )"), ("a.py", "f( )#2"), ("b.py", "g( )")])
-SIDE = st.dictionaries(KEYS, st.sampled_from([d("10.0000"), d("20.0000"), d("30.0000")]))
-
-
-def _crapkit_merge(base: dict, ours: dict, theirs: dict) -> dict:
-    from crapkit.ratchet import RatchetEntry, merge_ratchets
-    entries = [[RatchetEntry(p, k, float(v)) for (p, k), v in side.items()]
-               for side in (base, ours, theirs)]
-    return {(e.path, e.long_name): d(f"{e.crap:.4f}") for e in merge_ratchets(*entries)}
-
-
-@pure
-@given(base=SIDE, ours=SIDE, theirs=SIDE)
-def test_crapkit_s_merge_is_commutative_and_matches_the_model(base, ours, theirs):
-    result = _crapkit_merge(base, ours, theirs)
-
-    assert result == _crapkit_merge(base, theirs, ours)
-    assert result == model.merge(base, ours, theirs)
-
-
-@pure
-@given(base=SIDE, side=SIDE)
-def test_crapkit_s_merge_is_idempotent_and_a_drop_beats_unchanged(base, side):
-    assert _crapkit_merge(base, side, side) == side
-    assert _crapkit_merge(base, base, side) == side

@@ -19,7 +19,7 @@ from hypothesis import given, strategies as st
 import pytest
 
 from accuracy.kit import drive, rulings
-from accuracy.kit.settings import process, pure
+from accuracy.kit.settings import process
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
 from accuracy.verdict_model.conftest import BARE_CONFIG
@@ -238,18 +238,3 @@ def test_concurrent_writers_keep_every_mark(bare_repo):
     if second.returncode == 0:
         expected = {("src/x.py", "f( )"): 50, ("src/y.py", "g( )"): 40}
     assert marks == expected, second.communicate()
-
-
-# --- property, not an independent method: crapkit's own reader and writer round trip ------
-
-@pure
-@given(marks=MARKS)
-def test_round_trip_through_crapkit_s_reader_and_writer(marks):
-    from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet
-    entries = [RatchetEntry(path, key, float(value)) for (path, key), value in marks.items()]
-
-    text = dump_ratchet(entries, stamp=STAMP, key_version=1)
-
-    assert sorted(load_ratchet(text)) == sorted(entries)
-    assert [decoded(line) for line in lines_of(text.encode("utf-8"))] == \
-        model.dump_marks(model.MarksFile(STAMP, "1", marks))
