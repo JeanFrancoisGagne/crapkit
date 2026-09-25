@@ -511,3 +511,306 @@ def test_every_step_in_one_scripted_history(repo_templates, tmp_path):
     for change, command in SCRIPT:
         machine.step(change, command)
         machine.agrees_with_the_model()
+
+
+# --- one history per past defect -------------------------------------------------------------
+# Each scenario is the shortest run history that shows one rule, with the
+# expected run, mark or exit taken from model_verdict. They read exit codes,
+# `verify --json` and the marks file, so an older crapkit replays them.
+
+WORSE = vw.Fn("a3", 7, 0)            # ccn 8, cov 0: CRAP 72, past the ceiling of 6
+# ccn 7, cov 2/3: CRAP 8.814814..., stored as 8.8148, so the fresh score sits
+# above its own mark until the two are compared at the mark's four decimals.
+ROUNDS_DOWN = vw.Fn("a3", 6, 8)
+
+
+def _measured(make_repo, world: vw.World = START) -> vw.Scenario:
+    scenario = vw.Scenario.build(make_repo, world)
+    assert scenario.run("coverage").code == 0
+    return scenario
+
+
+def _verify(scenario: vw.Scenario, *extra: str) -> tuple[int, dict]:
+    result = scenario.run("verify", "--json", *extra)
+    return result.code, result.json()
+
+
+def _runs(scenario: vw.Scenario) -> list[model.Run]:
+    kinds = {"coverage": model.COVERAGE, "verify": model.VERIFY, "partial": model.PARTIAL,
+             "inventory": model.INVENTORY, "hook": model.HOOK}
+    return [model.Run(row["id"], kinds[row["kind"]], row["commit_sha"],
+                      None if row["verdict_ok"] is None else bool(row["verdict_ok"]))
+            for row in scenario.runs()]
+
+
+def _failed_verify(scenario: vw.Scenario) -> None:
+    """Touch a3 past its ceiling and let verify refuse it (exit 6)."""
+    scenario.set(scenario.world.with_fn("app", WORSE))
+    assert _verify(scenario)[0] == 6
+
+
+def _metric(scenario: vw.Scenario, run: int = -1) -> str:
+    versions = json.loads(scenario.runs()[run]["tool_versions"])
+    return f"crapkit-analysis={versions['analysis_version']} lizard={versions['lizard']}"
+
+
+@pytest.mark.process
+def test_seed_then_verify_same_run_passes(make_repo):
+    """docs/ratchet.md: a mark is CRAP to four decimals and verify compares at
+    them, so the run a mark was seeded from never regresses against it."""
+    world = START.with_fn("app", ROUNDS_DOWN)
+    assert ROUNDS_DOWN.crap > model.mark_value(ROUNDS_DOWN.crap) == model.Decimal("8.8148")
+    scenario = _measured(make_repo, world)
+    assert scenario.run("ratchet", "seed").code == 0
+    scenario.commit("seed")
+    assert scenario.run("verify").code == model.exit_code(frozenset()) == 0
+    assert model.parse_marks(scenario.marks_text()).marks == model.seed({}, scores(world), vw.TARGET)[0]
+
+
+@pytest.mark.process
+def test_passing_verify_advances_baseline_and_trend(make_repo):
+    """README, The trusted baseline: a passing verify qualifies, so the next
+    verify measures against it and trend lists it."""
+    scenario = _measured(make_repo)
+    first, second = _verify(scenario), _verify(scenario)
+    runs = _runs(scenario)
+    assert (first[0], first[1]["baseline_run"]) == (0, model.baseline(runs[:1]).id) == (0, 1)
+    assert (second[0], second[1]["baseline_run"]) == (0, model.baseline(runs[:2]).id) == (0, 2)
+    trend = scenario.json("trend")["runs"]
+    assert [run["run_id"] for run in trend] == [r.id for r in runs if model.trusted(r)] == [1, 2, 3]
+
+
+@pytest.mark.process
+def test_failed_verify_never_serves_as_baseline(make_repo):
+    """README: a failed verify never qualifies, so the next verify still
+    measures against the coverage run and still reports the gate."""
+    scenario = _measured(make_repo)
+    _failed_verify(scenario)
+    code, payload = _verify(scenario)
+    assert model.baseline(_runs(scenario)[:2]).id == 1
+    assert (code, payload["baseline_run"]) == (6, 1)
+
+
+@pytest.mark.process
+def test_coverage_never_retires_a_failed_verify(make_repo):
+    """README, The taint rule: a coverage run taken after a failed verify does
+    not become the baseline until some verify passes."""
+    scenario = _measured(make_repo)
+    _failed_verify(scenario)
+    assert scenario.run("coverage").code == 0
+    before = _runs(scenario)
+    code, payload = _verify(scenario)
+    assert model.standing_failure(before).id == 2 and model.baseline(before).id == 1
+    assert (code, payload["baseline_run"]) == (6, 1)
+    assert "run 2" in scenario.run("verify").stderr
+
+
+@pytest.mark.process
+def test_seed_reads_the_run_verify_reads(make_repo):
+    """README: seed asks verify's question. After [coverage, failed verify,
+    coverage] it seeds from run 1, not from the coverage run the taint rule
+    refuses, and names the failed verify it stepped over."""
+    scenario = _measured(make_repo)
+    first = scenario.world
+    _failed_verify(scenario)
+    assert scenario.run("coverage").code == 0
+    picked = model.baseline(_runs(scenario))
+    result = scenario.run("ratchet", "seed")
+    assert (result.code, picked.id) == (0, 1)
+    assert "2" in result.stdout + result.stderr
+    marks = model.parse_marks(scenario.marks_text()).marks
+    assert marks == model.seed({}, scores(first), vw.TARGET)[0]
+
+
+@pytest.mark.process
+def test_bouncing_measurement_holds_marks(make_repo):
+    """docs/ratchet.md, damping: one commit measured twice cannot have improved.
+    b2 reads CRAP 72 on the seeded run, then 8.19 on a verify of the same commit
+    (a ratio past tighten_max_jump 2.0), so its mark is held at 72."""
+    low, high = vw.Fn("b2", 7, 0), vw.Fn("b2", 7, 12)
+    scenario = _measured(make_repo, START.with_fn("lib", low))
+    assert scenario.run("ratchet", "seed").code == 0
+    marks = model.parse_marks(scenario.marks_text()).marks
+    scenario.world = scenario.world.with_fn("lib", high)
+    scenario.write_plan()
+    key = ("lib/util.py", "b2( x )")
+    held = model.tighten(marks, scores(scenario.world), vw.TARGET, previous=scores(START.with_fn("lib", low)))
+    assert model.moved_past(low.crap, high.crap) and held[key] == marks[key] == model.Decimal("72.0000")
+    result = scenario.run("verify")
+    assert result.code == 0, result.stdout + result.stderr
+    assert model.parse_marks(scenario.marks_text()).marks == held
+    assert "b2" in result.stderr
+
+
+def _age_runs(scenario: vw.Scenario, analysis: int) -> str:
+    """Relabel every stored run as measured under an older analysis version,
+    as the store an upgrade finds holds them. Returns that metric."""
+    import sqlite3
+    connection = sqlite3.connect(scenario.root / ".crapkit" / "crap.sqlite")
+    with connection:
+        for run_id, text in connection.execute("SELECT id, tool_versions FROM runs").fetchall():
+            versions = {**json.loads(text), "analysis_version": analysis}
+            connection.execute("UPDATE runs SET tool_versions = ? WHERE id = ?",
+                               (json.dumps(versions), run_id))
+    connection.close()
+    return _metric(scenario)
+
+
+def _stamp_marks(scenario: vw.Scenario, stamp: str) -> None:
+    path = scenario.root / "crapkit-ratchet.tsv"
+    lines = path.read_bytes().decode("utf-8").split("\n")
+    path.write_bytes("\n".join([f"# {stamp}", *lines[1:]]).encode("utf-8"))
+
+
+def _stamp(scenario: vw.Scenario) -> str | None:
+    return model.parse_marks(scenario.marks_text()).stamp
+
+
+@pytest.mark.process
+def test_seed_stamps_the_metric_of_the_run_it_read(make_repo):
+    """docs/ratchet.md, The metric stamp: seed leaves the metric the run it read
+    was measured under, not the running one."""
+    scenario = _measured(make_repo)
+    running = _metric(scenario)
+    old = _age_runs(scenario, 7)
+    assert scenario.run("ratchet", "seed").code == 0
+    assert _stamp(scenario) == model.stamp_after("seed", None, running, run=old) == old != running
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("write", ["prune", "move"])
+def test_a_write_that_adds_no_number_keeps_the_recorded_stamp(make_repo, write):
+    """prune and move add no number: both stamps the file recorded stay."""
+    scenario = _measured(make_repo)
+    assert scenario.run("ratchet", "seed").code == 0
+    _stamp_marks(scenario, OLD_METRIC)
+    before = model.parse_marks(scenario.marks_text())
+    args = {"prune": ("ratchet", "prune"),
+            "move": ("ratchet", "move", "src/app.py", "src/moved.py")}[write]
+    assert scenario.run(*args).code == 0
+    after = model.parse_marks(scenario.marks_text())
+    assert (after.stamp, after.keys_version) == (before.stamp, before.keys_version)
+    assert after.stamp == model.stamp_after(write, OLD_METRIC, _metric(scenario)) == OLD_METRIC
+
+
+@pytest.mark.process
+def test_prune_creates_a_file_under_the_running_metric(make_repo):
+    """A marks file prune creates holds no mark and takes the running metric,
+    even when the run it read was measured under an older one; verify then
+    has nothing to refuse."""
+    scenario = _measured(make_repo)
+    running = _metric(scenario)
+    _age_runs(scenario, 7)
+    assert scenario.marks_text() is None
+    assert scenario.run("ratchet", "prune").code == 0
+    assert _stamp(scenario) == model.stamp_after("prune", None, running) == running
+    assert scenario.run("verify").code != 3
+
+
+@pytest.mark.process
+def test_the_hook_s_grant_keeps_the_recorded_stamp(make_repo):
+    """The hook's override adds ccn-only numbers and compares no mark, so it
+    keeps a stale stamp; verify keeps refusing that file."""
+    scenario = _measured(make_repo)
+    assert scenario.run("ratchet", "seed").code == 0
+    _stamp_marks(scenario, OLD_METRIC)
+    scenario.set(scenario.world.with_fn("app", vw.Fn("a1", 7, 14)))
+    repos.git(scenario.top, "add", "-A")
+    grant = vw.drive.Driver(scenario.root, env={"CRAPKIT_OVERRIDE_REASON": "reviewed"})
+    assert grant.run("hook-precommit").code == 0
+    assert _stamp(scenario) == model.stamp_after("hook-override", OLD_METRIC, _metric(scenario, 0))
+    assert _stamp(scenario) == OLD_METRIC
+    assert scenario.run("verify").code == 3
+
+
+@pytest.mark.process
+def test_override_checks_the_stamp(make_repo):
+    """docs/ratchet.md: verify --override stamps the running metric, so marks
+    another metric recorded are refused (exit 3) before anything is granted."""
+    scenario = _measured(make_repo)
+    assert scenario.run("ratchet", "seed").code == 0
+    _stamp_marks(scenario, OLD_METRIC)
+    before = scenario.marks_text()
+    scenario.set(scenario.world.with_fn("app", WORSE))
+    result = scenario.run("verify", "--override", "reviewed", "--json")
+    assert model.stamp_refused(OLD_METRIC, _metric(scenario)) and result.code == 3
+    assert scenario.marks_text() == before
+    assert scenario.json("overrides")["overrides"] == []
+
+
+def _start_line_owner(world: vw.World, scope: str, line: int) -> str:
+    return next(fn.long_name for fn, start, _ in vw.source(world.functions[scope])[1]
+                if start == line)
+
+
+@pytest.mark.process
+def test_explain_reads_the_run_brief_reads(make_repo):
+    """agent-json.md, Name resolution: explain resolves a start line against the
+    run brief reads, the newest trusted one. A failed verify that swapped a1 and
+    a2 moves neither command: line 1 is a1, as run 1 measured it."""
+    scenario = _measured(make_repo)
+    a1, a2, a3 = START.functions["app"]
+    swapped = replace(START, functions={**START.functions, "app": (a2, a1, a3)})
+    scenario.set(swapped.with_test(vw.Test("flaky", True)))
+    assert _verify(scenario)[0] == 8
+    newest_trusted = [run for run in _runs(scenario) if model.trusted(run)][-1]
+    assert newest_trusted.id == 1
+    want = _start_line_owner(START, "app", 1)
+    explained = scenario.run("explain", "src/app.py", "1", "--json").json()["functions"]
+    brief = scenario.run("brief", "src/app.py", "1", "--json").json()
+    assert [f["long_name"] for f in explained] == [brief["function"]] == [want] == ["a1( x )"]
+
+
+@pytest.mark.process
+def test_explain_reads_the_newest_trusted_run_that_holds_the_file(make_repo):
+    """agent-json.md: when the newest trusted run dropped the file, explain
+    reads the newest trusted run that still holds it. Run 2 measured lib/util.py
+    with no function left; b2's start line still resolves in run 1."""
+    scenario = _measured(make_repo)
+    line = vw.spans(START, "lib")["b2"][0]
+    scenario.set(replace(START, functions={**START.functions, "lib": ()}))
+    scenario.commit("drop lib")
+    assert scenario.run("coverage").code == 0
+    explained = scenario.run("explain", "lib/util.py", str(line), "--json")
+    assert explained.code == 0, explained.stdout + explained.stderr
+    functions = explained.json()["functions"]
+    assert [f["long_name"] for f in functions] == [_start_line_owner(START, "lib", line)]
+    assert [row["run_id"] for row in functions[0]["history"]] == [1]
+
+
+TWIN_ONE = "def dup(x):\n    return x\n\n\n"
+
+
+def _twin_two(branches: int) -> str:
+    ifs = "".join(f"    if x > {n}:\n        x += {n}\n" for n in range(branches))
+    return f"def dup(x):\n{ifs}    return x\n"
+
+
+def _twin_config() -> str:
+    return (f"[crapkit]\ntarget = 1\nalert_command = \"{vw.ALERT}\"\n\n"
+            '[[scope]]\nname = "py"\npaths = ["py"]\nlanguages = ["python"]\n'
+            "coverage_optional = true\n")
+
+
+@pytest.mark.process
+def test_override_records_canonical_key(make_repo):
+    """docs/ratchet.md, Overrides: the grant lands in the marks file and the
+    store's override log. Both name the second dup by its key, dup( x )#2
+    (docs/ratchet.md, Twins; the `function` field of agent-json.md's
+    `overrides --json`), and the mark is its CRAP: in a coverage_optional scope
+    with no lane, its ccn (McCabe: 2 ifs + 1)."""
+    spec = repos.Spec(steps=(repos.Commit(files={
+        "crapkit.toml": _twin_config(), "py/twins.py": TWIN_ONE + _twin_two(1)}, message="seed"),))
+    built = make_repo(spec)
+    driver = vw.drive.Driver(built.root)
+    assert driver.run("coverage").code == 0
+    (built.root / "py" / "twins.py").write_bytes((TWIN_ONE + _twin_two(2)).encode("utf-8"))
+    result = driver.run("verify", "--override", "reviewed debt", "--json")
+    assert result.code == 0, result.stdout + result.stderr
+    first = model.Row("py/twins.py", "dup( x )", 1, model.Fraction(1))
+    second = model.Row("py/twins.py", "dup( x )", 5, model.Fraction(3), ccn=3)
+    key = model.keys([first, second])[second]
+    marks = model.parse_marks((built.root / "crapkit-ratchet.tsv").read_bytes().decode("utf-8"))
+    assert marks.marks == {key: model.mark_value(3)} == {("py/twins.py", "dup( x )#2"): model.Decimal("3.0000")}
+    logged = driver.json("overrides", "--json")["overrides"]
+    assert [(row["path"], row["function"], row["crap"]) for row in logged] == [(*key, 3.0)]
