@@ -1501,3 +1501,34 @@ def test_the_lock_holds_exactly_the_plan_s_expected_value_files():
 
     assert sorted(cc.lockable(tree)) == sorted(path for path, locked in LOCK_CASES.items()
                                                if locked)
+
+
+def test_a_corpus_change_under_the_same_analysis_version_adds_a_metric_row():
+    """f12 joins the corpus and both goldens under ANALYSIS_VERSION 11: the corpus
+    digest is new, so no bump is asked for and the new row keeps version 11."""
+    source = seeds.SMALL + "\n\ndef f12(x):\n    return x\n"
+    rows = seeds.scored_rows()
+    rows.append({**rows[1], "long_name": "f12( x )", "start": 58, "end": 59})
+    head = {**BASE, seeds.SOURCE: source, seeds.SCORED: seeds.scored(rows),
+            seeds.INVENTORY: seeds.inventory(rows)}
+
+    plan = cc.plan_declare(_tree(BASE), _tree(head), _request(kind="feature", calcs=(cc.SPAN,)),
+                           cc.running(_tree(head), LIZARD))
+
+    assert (plan.digest["analysis_version"], plan.digest["corpus"]) == (
+        "11", seeds.corpus_digest(head))
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_the_check_reads_the_running_lizard_and_a_gone_row_at_the_base(make_repo):
+    """The check judges against the lizard it is told; a row that went is read at the
+    base, where ast still finds f11's def in the source."""
+    top = seeds.seeded(make_repo, BASE, seeds.bump(_without_f11(BASE, source=False), "12"))
+
+    code, text = cc.check(top, "HEAD~1", "HEAD", lizard="1.25.0")
+
+    assert code == 1
+    assert "metric-digests.tsv: the last row has lizard_version 1.24.0, the tree gives 1.25.0" \
+        in text
+    assert f"  {seeds.SCORED}\tsrc/a.py\tf11\trow\tpresent\tabsent\tast present" in text

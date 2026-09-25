@@ -311,9 +311,10 @@ def test_the_first_lock_covers_every_lockable_file_and_its_commit_passes(make_re
 
 @pytest.mark.nightly
 @pytest.mark.process
-def test_counts_says_which_packet_moved_and_write_records_it(make_repo, capsys):
+def test_counts_says_which_packet_moved_and_write_records_it(make_repo, capsys, monkeypatch):
     """The seeded conftest hides a nightly test unless the collect-all switch is set,
-    as the kit's does: counts include every tier."""
+    as the kit's does: counts include every tier, whatever this process's switch says."""
+    monkeypatch.delenv("CRAPKIT_ACCURACY_COLLECT_ALL", raising=False)
     top = seeds.seeded(make_repo, {**BASE, "tests/conftest.py": TIERED_CONFTEST})
     test_file = top / seeds.SEED_TEST
     test_file.write_text(test_file.read_text() + NIGHTLY_TEST)
@@ -1055,6 +1056,22 @@ def test_an_oracle_with_no_source_answers_nothing():
     row = {"start": "1", "long_name": "f( )"}
 
     assert (cc.ast_row(row, None), cc.complexipy_cognitive(row, None)) == (None, None)
+    assert cc.radon_ccn(row, None) is None
+    assert cc.corpus_source(cc.DictTree({}), cc.Cell(seeds.SCORED, "src/a.py", "f", "ccn",
+                                                     "1", "2")) is None
+
+
+def test_the_first_lock_writes_each_table_s_header_into_a_tree_without_it(tmp_path):
+    tree = {path: text for path, text in seeds.uninitialized().items()
+            if path not in (seeds.CHANGES, seeds.DIGESTS)}
+    for path, text in tree.items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_bytes(text.encode("utf-8"))
+
+    cc.lock_initial(tmp_path, cc.Running("11", "1.24.0"), "2026-09-25", {"score_model": 3})
+
+    assert (tmp_path / cc.CHANGES).read_text().splitlines()[0] == "\t".join(cc.CHANGE_COLUMNS)
+    assert (tmp_path / cc.DIGESTS).read_text().splitlines()[0] == "\t".join(cc.DIGEST_COLUMNS)
 
 
 def test_eslint_not_installed_names_the_install_command(tmp_path, monkeypatch):
