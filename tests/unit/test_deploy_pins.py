@@ -524,6 +524,32 @@ def test_a_host_that_runs_arm64_goes_on_to_build():
     assert run.emulation_problem(PINS, "cells-arm64", runner) is None
 
 
+def _fresh_build(monkeypatch, tmp_path, image):
+    """Build `image` with docker stood in; the docker calls made before the
+    size was read."""
+    runner, calls = _docker(0)
+    before_size = []
+    monkeypatch.setattr(run.subprocess, "run", runner)
+    monkeypatch.setattr(run, "unchanged", lambda *a: False)
+    monkeypatch.setattr(run, "emulation_problem", lambda pins, image: None)
+    monkeypatch.setattr(run, "choose_builder", lambda *a: "builder")
+    monkeypatch.setattr(run, "disk_usage", lambda: "df")
+    monkeypatch.setattr(run, "image_size", lambda tag: before_size.extend(calls) or 1)
+    run.build(PINS, image, "local", False, tmp_path)
+    return before_size
+
+
+@pytest.mark.parametrize("image, runs", [("cells-arm64", 1), ("core", 0)])
+def test_an_emulated_image_runs_once_before_its_size_is_read(monkeypatch, tmp_path, image, runs):
+    """Docker Desktop's image store unpacks an image built for another platform
+    only when it first runs, and reports its compressed size until then: the
+    cells-arm64 build recorded 508 MB for a 1.90 GB image."""
+    started = [argv for argv in _fresh_build(monkeypatch, tmp_path, image) if argv[:2] == ["docker", "run"]]
+
+    assert len(started) == runs
+    assert all(argv[-3:] == ["--entrypoint", "true", run.image_tag(image)] for argv in started)
+
+
 def test_the_arm64_manifest_is_read_under_its_platform(monkeypatch):
     calls = []
     monkeypatch.setattr(lock.subprocess, "run",

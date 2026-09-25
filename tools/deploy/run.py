@@ -250,6 +250,17 @@ def image_size(tag: str) -> int | None:
     return int(done.stdout.strip()) if done.returncode == 0 else None
 
 
+def unpack(tag: str) -> None:
+    """Run an image built for another platform once. Docker Desktop's image
+    store unpacks such an image only on its first run and reports its
+    compressed size until then (508 MB for the 1.90 GB cells-arm64); --load
+    unpacks an image of the host's own platform."""
+    flags = pinsfile.platform_flags(tag)
+    if flags:
+        subprocess.run(["docker", "run", "--rm", *flags, "--network", "none", "--entrypoint", "true", tag],
+                       capture_output=True)
+
+
 def disk_usage() -> str:
     return subprocess.run(["docker", "system", "df"], capture_output=True, text=True).stdout
 
@@ -307,9 +318,10 @@ def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, request
                               stderr=subprocess.STDOUT)
     if done.returncode != 0:
         raise SystemExit(build_failure(pins, image, out / f"build-{image}.log", done.returncode))
-    return _record(out, {"image": image, "builder": builder, "seconds": round(time.monotonic() - started, 1),
-                         "size_bytes": image_size(tag), "no_cache": no_cache, "df_before": before,
-                         "df_after": disk_usage()})
+    seconds = round(time.monotonic() - started, 1)
+    unpack(tag)
+    return _record(out, {"image": image, "builder": builder, "seconds": seconds, "size_bytes": image_size(tag),
+                         "no_cache": no_cache, "df_before": before, "df_after": disk_usage()})
 
 
 def _record(out: Path, record: dict) -> dict:
