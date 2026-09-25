@@ -664,6 +664,10 @@ SHELL_OUTS = {"subprocess", "os.system", "os.popen", "os.spawnv", "os.spawnl", "
 REACHES_THE_MACHINE = {
     "test_harness_profiles.py": ({"subprocess"}, "win-profiles-sim asks PowerShell for the CI runner's own $PROFILE, "
                                                  "which Zed's spawn runs and a sandbox HOME cannot stand in for"),
+    "test_gui_harnesses.py": ({"subprocess"}, "lin-zed-xvfb starts Zed under xvfb-run in a session of its own and "
+                                              "ends the process group once Zed.log holds a line: box.run waits for the "
+                                              "child to exit, and Zed runs until its window closes. The Popen call "
+                                              "passes box.env and box.resolve(argv[0]), so Zed still runs in the sandbox"),
 }
 
 
@@ -687,14 +691,23 @@ def unexplained_shell_outs(name: str, tree: ast.AST) -> list[str]:
     return [reached for reached in shell_outs(tree) if reached not in allowed]
 
 
+def shell_out_refusal(found: dict[str, list[str]]) -> str:
+    """What a packet author reads when the rule fails: each module, what it starts, and the two ways to pass."""
+    named = [f"{name} starts a process with {', '.join(names)}, past the sandbox" for name, names in found.items()]
+    return "\n".join([*named, "Start it with box.run or box.script, which run it in the sandbox and record it in the "
+                              "transcript. A module that has to start it itself (a process box.run cannot wait on, "
+                              "or one only the runner's own environment answers) needs an entry in "
+                              "REACHES_THE_MACHINE in tests/deploy/test_kit_isolation.py: the names it uses and why."])
+
+
 def deploy_modules() -> dict[str, ast.Module]:
     return {path.name: ast.parse(path.read_text(encoding="utf-8")) for path in sorted(DEPLOY.glob("test_*.py"))}
 
 
 def test_no_deploy_test_module_starts_a_process_past_the_sandbox():
-    found = {name: unexplained_shell_outs(name, tree) for name, tree in deploy_modules().items()}
+    found = {name: names for name, tree in deploy_modules().items() if (names := unexplained_shell_outs(name, tree))}
 
-    assert {name: names for name, names in found.items() if names} == {}
+    assert found == {}, shell_out_refusal(found)
 
 
 def test_a_shell_out_is_caught_unless_the_module_is_a_reviewed_exception():
@@ -703,6 +716,16 @@ def test_a_shell_out_is_caught_unless_the_module_is_a_reviewed_exception():
     assert shell_outs(tree) == ["subprocess", "os.system"]
     assert unexplained_shell_outs("test_x.py", tree) == ["subprocess", "os.system"]
     assert unexplained_shell_outs("test_harness_profiles.py", tree) == ["os.system"]
+    assert unexplained_shell_outs("test_gui_harnesses.py", tree) == ["os.system"]
+
+
+def test_a_shell_out_failure_names_each_module_and_both_ways_to_pass():
+    refusal = shell_out_refusal({"test_x.py": ["subprocess", "os.system"], "test_y.py": ["os.popen"]})
+
+    assert refusal.splitlines()[:2] == ["test_x.py starts a process with subprocess, os.system, past the sandbox",
+                                        "test_y.py starts a process with os.popen, past the sandbox"]
+    assert "Start it with box.run or box.script" in refusal
+    assert "an entry in REACHES_THE_MACHINE in tests/deploy/test_kit_isolation.py" in refusal
 
 
 def test_every_deploy_test_is_a_kit_test_or_a_cell(request):
