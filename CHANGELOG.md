@@ -139,6 +139,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   pytest's and pytest-cov's, and names the install line for that interpreter.
 - A `coveragepy` lane with no `container_ok` WARNs inside a container (`/.dockerenv` or
   `CRAPKIT_INSIDE_CONTAINER=1`), which the lane runner refuses with exit 5.
+- The closing line counts the WARNs above it (`doctor: no problems found, 1 warning
+  above`). A container run printed the lane's WARN and then closed on a bare "no problems
+  found", the one line a skimming reader reads.
 - A commit gate git never runs WARNs: Route 1's hook under a global `core.hooksPath`,
   Route 2's committed hook in a clone that skipped its `git config core.hooksPath` line,
   either one after husky's `npm install` took `core.hooksPath` back to `.husky/_` (the

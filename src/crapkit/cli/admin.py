@@ -1373,11 +1373,20 @@ def _resource_policy(cfg) -> dict:
             "test_retention_count": 0}
 
 
+def _doctor_verdict(findings: list[Finding]) -> str:
+    """The closing line, with the WARN count: a container's lane WARN closed
+    on a bare "no problems found", the one line a skimming reader reads."""
+    problems, warnings = len(_at_level(findings, "FAIL")), len(_at_level(findings, "WARN"))
+    verdict = f"doctor: {problems} problem(s)" if problems else "doctor: no problems found"
+    if not warnings:
+        return verdict
+    return f"{verdict}, {warnings} warning{'s' if warnings > 1 else ''} above"
+
+
 def _print_findings(findings: list[Finding]) -> None:
     for f in findings:
         print(f"{f.level:<4} {f.text}" if f.level else f.text)
-    problems = _at_level(findings, "FAIL")
-    print("doctor: no problems found" if not problems else f"doctor: {len(problems)} problem(s)")
+    print(_doctor_verdict(findings))
 
 
 def _emit_doctor(root: Path, cfg, findings: list[Finding], as_json: bool) -> None:

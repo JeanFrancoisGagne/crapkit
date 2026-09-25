@@ -45,7 +45,7 @@ ok   1 lane(s) declared
 WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
 ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.10.6)
 ok   lizard 1.24.0
-doctor: no problems found
+doctor: no problems found, 1 warning above
 ```
 
 A WARN, never a FAIL: the lane still scores. `crapkit init` writes both halves on the lanes
@@ -985,7 +985,11 @@ trigger it found:
 
 ```
 WARN lane 'py' runs a coverage.py suite and this is a container (/.dockerenv exists): `crapkit coverage` refuses it with exit 5; if the container is sized for the suite, set container_ok = true on the lane (docs/lanes.md#containers)
+doctor: no problems found, 1 warning above
 ```
+
+doctor exits 0 here, because the config is right and the machine is the question. The closing
+line counts the warnings, so a reader who reads only the last line still learns there is one.
 
 ---
 

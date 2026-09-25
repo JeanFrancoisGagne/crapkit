@@ -89,3 +89,33 @@ def test_the_doctor_command_reads_this_process_environment(monkeypatch):
     monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "0")
     monkeypatch.setattr(admin, "Path", lambda text: SimpleNamespace(exists=lambda: False))
     assert admin._doctor_container(cfg) == []
+
+
+# --- the closing line counts the warnings above it -----------------------------
+#
+# In a container doctor printed the lane's WARN and then closed with "doctor: no
+# problems found", the one line a reader skimming for the verdict reads, so the
+# refusal the WARN predicts still came as a surprise.
+
+@pytest.mark.parametrize("findings, closing", [
+    ([], "doctor: no problems found"),
+    ([("ok", "config keys all recognized")], "doctor: no problems found"),
+    ([("WARN", "container")], "doctor: no problems found, 1 warning above"),
+    ([("WARN", "a"), ("WARN", "b")], "doctor: no problems found, 2 warnings above"),
+    ([("FAIL", "a")], "doctor: 1 problem(s)"),
+    ([("FAIL", "a"), ("WARN", "b")], "doctor: 1 problem(s), 1 warning above"),
+])
+def test_the_closing_line_counts_the_warnings_above_it(capsys, findings, closing):
+    from crapkit.doctor import Finding
+
+    admin._print_findings([Finding(level, text) for level, text in findings])
+
+    assert capsys.readouterr().out.splitlines()[-1] == closing
+
+
+def test_a_container_run_closes_on_the_warning_it_printed(capsys):
+    admin._print_findings(list(container_lane_findings([lane("py")], "/.dockerenv exists")))
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("WARN lane 'py' runs a coverage.py suite"), lines
+    assert lines[-1] == "doctor: no problems found, 1 warning above", lines

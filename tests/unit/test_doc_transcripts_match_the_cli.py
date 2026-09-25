@@ -67,6 +67,26 @@ def test_each_doctor_report_opens_with_the_resources_line(page, repo, capsys):
         assert re.fullmatch(shape, report[0]), (page, report[:2])
 
 
+def _verdict_of(report: list[str]) -> str:
+    from crapkit.cli.admin import _doctor_verdict
+    from crapkit.doctor import Finding
+
+    return _doctor_verdict([Finding(line[:4].strip(), line[5:]) for line in report
+                            if line.startswith(FINDINGS)])
+
+
+@pytest.mark.parametrize("page", DOCTOR_PAGES)
+def test_each_doctor_report_closes_on_the_verdict_its_findings_print(page):
+    """The closing line counts the WARNs above it since a container's lane
+    WARN closed on a bare "no problems found"; a report still showing the bare
+    line under a WARN is one the reader's terminal no longer prints."""
+    reports = [b for b in _blocks(_page(page), "crapkit doctor") if b and b[-1].startswith("doctor:")]
+
+    assert reports, f"{page} prints no doctor verdict"
+    for report in reports:
+        assert report[-1] == _verdict_of(report), (page, report[-2:])
+
+
 def test_the_quickstarts_verify_ok_lines_carry_the_ratchet_tail_their_steps_write():
     """Step 6 (Python) and step 7 (TypeScript) repay the one seeded mark, so
     the tighten drops it and the OK line asks for the `git add`."""

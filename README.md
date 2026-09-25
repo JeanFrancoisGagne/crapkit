@@ -1188,7 +1188,8 @@ doctor: no problems found
 ```
 
 `doctor` prints one line per check and exits 1 only on a `FAIL`. `WARN` and `note` report
-and exit 0.
+and exit 0, and the closing line counts the WARNs above it (`doctor: no problems found, 1
+warning above`).
 
 ### 3. Score the repo, and read the queue
 
