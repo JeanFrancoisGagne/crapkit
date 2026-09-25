@@ -143,16 +143,20 @@ STOCK_PYTHON = ("-c", "; ".join((
 PLAIN = ("-m",)
 
 
-def run_inventory(root: Path, out: Path, spawn: bool = False, launch: tuple = PLAIN) -> Measured:
-    done = drive.Driver(root, spawn=spawn, launch=launch).run("inventory", "--export", str(out))
+def run_inventory(root: Path, out: Path, spawn: bool = False, launch: tuple = PLAIN,
+                  env: dict | None = None) -> Measured:
+    done = drive.Driver(root, spawn=spawn, launch=launch, env=env).run(
+        "inventory", "--export", str(out))
     rows = read_export(out.read_bytes().decode("utf-8")) if out.is_file() else []
     return Measured(tuple(rows), done.code, done.stderr, str(root))
 
 
-def measure(files: dict, work: Path, spawn: bool = False, launch: tuple = PLAIN) -> Measured:
-    """crapkit's inventory of `files` plus a crapkit.toml, unless `files` brings one."""
+def measure(files: dict, work: Path, spawn: bool = False, launch: tuple = PLAIN,
+            env: dict | None = None) -> Measured:
+    """crapkit's inventory of `files` plus a crapkit.toml, unless `files` brings one.
+    `env` adds to the child's environment."""
     tree = {"crapkit.toml": config(), **files}
-    return run_inventory(build(tree, work / "repo"), work / "inventory.tsv", spawn, launch)
+    return run_inventory(build(tree, work / "repo"), work / "inventory.tsv", spawn, launch, env)
 
 
 def _key(files: dict, launch: tuple = PLAIN) -> str:
