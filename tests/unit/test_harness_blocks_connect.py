@@ -96,7 +96,19 @@ MEASURED = [
     ("Junie", ".output.txt"),
     ("Kiro", "sign in"),
     ("Windsurf", "sign in"),
+    # `claude -p` refuses each crapkit call it has no permission for, in both routes
+    ("Claude Code", "--allowedTools mcp__crapkit"),
+    ("Claude Code", "--allowedTools mcp__plugin_crapkit_crapkit"),
+    ("Claude Agent SDK", "allowed_tools=[\"mcp__crapkit\"]"),
 ]
+
+
+def test_the_agent_sdk_example_lets_the_model_call_crapkit():
+    """The example as printed ran, and each call came back as a permission refusal."""
+    example = FENCE.findall(section("Claude Agent SDK"))[1]
+
+    assert example[0] == "ts"
+    assert 'allowedTools: ["mcp__crapkit"]' in example[1]
 
 
 @pytest.mark.parametrize("harness, fact", MEASURED)

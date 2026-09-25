@@ -392,6 +392,11 @@ install. For one made with `--scope project` or `--scope local`, doctor names th
 the project directory to run it in; for a plugin installed from a marketplace you added as a
 local directory, which Claude Code loads in place, it names `git -C <that directory> pull`.
 
+A headless `claude -p` has no one to grant a tool call, so it refuses every crapkit call
+and the model reads `Claude requested permissions to use ..., but you haven't granted it
+yet.` Pass `--allowedTools mcp__plugin_crapkit_crapkit` for the plugin's server, or
+`--allowedTools mcp__crapkit` for one you added yourself.
+
 The hook registers on `Edit|Write`, which is every write that names a file. An agent that
 writes its source through a shell heredoc names none, so a `Bash` event is judged off the
 working tree instead. That half is yours to register, because it costs two

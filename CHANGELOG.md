@@ -38,6 +38,11 @@ version stays 11, so no repo re-seeds.
   tools, because it drops every tool that would ask for a confirmation. Its section also
   says that an untrusted folder disables every server and that a project
   `.gemini/settings.json` is read only when Gemini starts in that directory.
+- The Claude Agent SDK example passes `allowedTools: ["mcp__crapkit"]`, and the Claude
+  Code section and the README's plugin section say that a headless `claude -p` needs
+  `--allowedTools mcp__crapkit`, or `mcp__plugin_crapkit_crapkit` for the plugin's server.
+  Without it, Claude Code 2.1.281 and both SDKs offered the tools and then answered every
+  call with `Claude requested permissions to use ..., but you haven't granted it yet.`
 - Goose: `goose plugin install` finds no plugin in crapkit's repository (`Error: No
   supported plugin format found`), and the Goose section says so and gives the
   `config.yaml` extension that connects.

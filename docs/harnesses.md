@@ -69,6 +69,12 @@ front of the real one and read what the agent passed it.
 }
 ```
 
+A headless `claude -p` asks permission for each crapkit call, finds no one to answer, and
+hands the model `Claude requested permissions to use mcp__crapkit__list_runs, but you
+haven't granted it yet.` in place of the answer (measured, 2.1.281). Pass
+`--allowedTools mcp__crapkit` for a server from this block, or
+`--allowedTools mcp__plugin_crapkit_crapkit` for the plugin's.
+
 | | Claude Code |
 |---|---|
 | Config file | The plugin carries this server already: `claude plugin install crapkit@crapkit` ([README](../README.md#the-claude-code-plugin)). Without the plugin, the block goes in `.mcp.json` at the repository root, or `claude mcp add --scope user crapkit -- crapkit mcp --repo /absolute/path/to/your/repo` writes it into `~/.claude.json`. A user entry named `crapkit` hides the plugin's server. |
@@ -114,7 +120,8 @@ front of the real one and read what the agent passed it.
 }
 ```
 
-The `mcpServers` object goes into the options of each query:
+The `mcpServers` object goes into the options of each query, with `allowedTools` naming
+the server:
 
 ```ts
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -125,15 +132,20 @@ for await (const message of query({
     mcpServers: {
       crapkit: { type: "stdio", command: "crapkit", args: ["mcp", "--repo", "/absolute/path/to/your/repo"] },
     },
+    allowedTools: ["mcp__crapkit"],
   },
 })) {
   console.log(message);
 }
 ```
 
+Without `allowedTools` the query has no one to grant each call, and every crapkit call
+comes back as `Claude requested permissions to use mcp__crapkit__list_runs, but you
+haven't granted it yet.`, with the tool's own name (measured, TypeScript SDK 0.3.281).
+
 | | Claude Agent SDK |
 |---|---|
-| Config file | `options.mcpServers` in TypeScript; `ClaudeAgentOptions(mcp_servers={"crapkit": {...}})` in Python, with the same keys. |
+| Config file | `options.mcpServers` and `options.allowedTools` in TypeScript; `ClaudeAgentOptions(mcp_servers={"crapkit": {...}}, allowed_tools=["mcp__crapkit"])` in Python, with the same keys. |
 | Starts in | `options.cwd`, else the process's working directory. |
 | Environment | `options.env` replaces the environment the SDK hands Claude Code and the server. Keep `PATH` in it, or `crapkit` is not found. |
 | Versions | The deploy suite runs the TypeScript SDK 0.3.281 and the Python SDK 0.2.159. |
