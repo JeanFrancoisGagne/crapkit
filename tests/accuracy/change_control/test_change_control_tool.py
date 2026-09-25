@@ -12,6 +12,7 @@ import hashlib
 import io
 import os
 from pathlib import Path
+import subprocess
 import sys
 import time
 
@@ -76,6 +77,45 @@ def test_a_base_that_names_no_commit_is_refused_with_the_fix(make_repo, capsys):
 def test_a_failed_git_call_names_its_command(tmp_path):
     with pytest.raises(cc.ChangeControlError, match="^git cat-file -t nope exited 128: "):
         cc.git(tmp_path, "cat-file", "-t", "nope")
+
+
+def _python(code: str) -> list[str]:
+    return [sys.executable, "-c", code]
+
+
+@pytest.mark.process
+def test_an_outside_process_answers_its_text_from_its_directory_and_environment(tmp_path):
+    code = "import os; print(os.getcwd()); print(os.environ['CC_PROBE'])"
+
+    out = cc._process("probe", _python(code), 60, tmp_path, {**os.environ, "CC_PROBE": "probe"})
+
+    assert [Path(out.splitlines()[0]).resolve(), out.splitlines()[1]] == [tmp_path.resolve(),
+                                                                          "probe"]
+
+
+@pytest.mark.process
+def test_a_failed_outside_process_names_itself_and_the_last_3000_characters():
+    """3,500 bytes of stdout, one byte that is not UTF-8, then the stderr line: the
+    message keeps the last 3,000 characters, the bad byte read as U+FFFD."""
+    code = ("import sys; sys.stdout.buffer.write(b'a' * 3500 + bytes([255])); "
+            "sys.stdout.flush(); sys.stderr.write('the end'); sys.exit(1)")
+
+    with pytest.raises(cc.ChangeControlError) as failed:
+        cc._process("probe", _python(code), 60)
+
+    head, _, tail = str(failed.value).partition("\n")
+    assert (head, len(tail), tail[-8:]) == ("probe exited 1:", 3000, "�the end")
+
+
+@pytest.mark.process
+def test_an_outside_process_stops_at_its_time_limit():
+    with pytest.raises(subprocess.TimeoutExpired):
+        cc._process("probe", _python("import time; time.sleep(30)"), 0.5)
+
+
+def test_a_test_that_spawns_a_process_without_the_marker_is_stopped():
+    with pytest.raises(AssertionError, match="^this test spawns node eslint_values.cjs: mark it"):
+        cc._node(REPO / cc.ESLINT, "x")
 
 
 # --- declare on the command line -----------------------------------------------------------------
@@ -256,7 +296,7 @@ def test_counts_says_which_packet_moved_and_write_records_it(make_repo, capsys):
 def test_a_collection_error_stops_the_count(make_repo):
     top = seeds.seeded(make_repo, {**BASE, seeds.SEED_TEST: "def broken(:\n"})
 
-    with pytest.raises(cc.ChangeControlError, match="collecting tests/accuracy failed"):
+    with pytest.raises(cc.ChangeControlError, match="^pytest --collect-only tests/accuracy exited [1-9]"):
         cc.collect_counts(top)
 
 

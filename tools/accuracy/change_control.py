@@ -770,14 +770,21 @@ ESLINT_RULES = {"ccn_std": ("classic",), "ccn_mod": ("modified",), "ccn": ("clas
 NODE_SECONDS = 180
 
 
-def _node(script: Path, *args: str) -> str:
-    tiers.require_process("node")
-    done = subprocess.run(["node", str(script), *args], capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=NODE_SECONDS)
+def _process(label: str, argv: list[str], seconds: float, cwd: Path | None = None,
+             env: dict | None = None) -> str:
+    """The text an outside process prints; ChangeControlError naming `label` with
+    the end of its output when it exits nonzero."""
+    tiers.require_process(label)
+    done = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=seconds)
     if done.returncode != 0:
-        raise ChangeControlError(f"node {script.name} exited {done.returncode}: "
-                                 f"{done.stderr.strip()[-2000:]}")
+        raise ChangeControlError(f"{label} exited {done.returncode}:\n"
+                                 f"{(done.stdout + done.stderr)[-3000:]}")
     return done.stdout
+
+
+def _node(script: Path, *args: str) -> str:
+    return _process(f"node {script.name}", ["node", str(script), *args], NODE_SECONDS)
 
 
 def eslint_values(source: str, suffix: str) -> dict:
@@ -2074,13 +2081,8 @@ def regenerate(root: Path) -> str:
     script = root / REGENERATE
     if not script.is_file():
         return f"{REGENERATE} is not in this tree; the goldens are judged as they are"
-    tiers.require_process("regenerate.py")
-    done = subprocess.run([sys.executable, str(script), "goldens"], cwd=root,
-                          env=_tests_env(root, {}), capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=GIT_SECONDS * 15)
-    if done.returncode != 0:
-        raise ChangeControlError(f"{REGENERATE} goldens exited {done.returncode}:\n"
-                                 f"{(done.stdout + done.stderr)[-3000:]}")
+    _process(f"{REGENERATE} goldens", [sys.executable, str(script), "goldens"],
+             GIT_SECONDS * 15, root, _tests_env(root, {}))
     return ""
 
 
@@ -2152,15 +2154,11 @@ def _tests_env(root: Path, extra: dict) -> dict:
 
 def collect_counts(root: Path) -> dict[str, int]:
     """{packet: collected tests} over tests/accuracy, every tier and platform."""
-    tiers.require_process("pytest")
     argv = [sys.executable, "-m", "pytest", "-o", "addopts=", "--collect-only", "-q",
             "-p", "no:randomly", "-p", "no:cacheprovider", "tests/accuracy"]
-    done = subprocess.run(argv, cwd=root, env=_tests_env(root, {tiers.COLLECT_ALL_ENV: "1"}),
-                          capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=GIT_SECONDS * 5)
-    if done.returncode != 0:
-        raise ChangeControlError(f"collecting tests/accuracy failed:\n{done.stdout[-2000:]}")
-    ids = [line.strip() for line in done.stdout.splitlines() if "::" in line]
+    out = _process("pytest --collect-only tests/accuracy", argv, GIT_SECONDS * 5, root,
+                   _tests_env(root, {tiers.COLLECT_ALL_ENV: "1"}))
+    ids = [line.strip() for line in out.splitlines() if "::" in line]
     return dict(sorted(Counter(packet_of(node.split("::")[0]) for node in ids).items()))
 
 
