@@ -76,6 +76,21 @@ def ranked(file_sets: list[frozenset], tracked: set[str], min_support: int = 1,
     return ranked_from(counts(file_sets), tracked, min_support, min_confidence)
 
 
+def tie_groups(rows: list[tuple]) -> list[tuple]:
+    """(files, support, confidence) rows cut into runs of one exact support x
+    confidence, each run a set: the rank order between runs and none inside
+    one. crapkit orders a run by float noise (ruling H14), so a comparison that
+    is not about that defect compares these."""
+    runs: list[tuple] = []
+    for row in rows:
+        product = row[1] * Decimal(row[2])
+        if runs and runs[-1][0] == product:
+            runs[-1][1].add(row)
+        else:
+            runs.append((product, {row}))
+    return [(product, frozenset(run)) for product, run in runs]
+
+
 def change_sets(commits) -> list[frozenset]:
     """Each walked commit's paths as one change set; a merge's empty set pairs nothing."""
     return [frozenset(commit.paths) for commit in commits]

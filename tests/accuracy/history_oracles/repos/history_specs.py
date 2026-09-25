@@ -200,6 +200,27 @@ COUPLED = Spec(steps=_coupled_steps())
 COUPLED_NOW = EPOCH + 60 * DAY
 
 
+
+# --- two pairs whose support x confidence tie exactly (H14) ---------------------------------
+# src/a.py and src/b.py share 1 of their 3 commits each: support 1, confidence 1/3 = 0.3333.
+# src/y.py and src/z.py share 3 of their 27 each: support 3, confidence 3/27 = 0.1111.
+# Both products are 0.3333, so the paths decide: a.py's pair first. In binary floating
+# point 3 * 0.1111 is 0.33330000000000004 and 1 * 0.3333 is 0.3333.
+
+
+def _tied_steps() -> tuple:
+    groups = ([("src/a.py", "src/b.py")] + [("src/a.py",), ("src/b.py",)] * 2
+              + [("src/y.py", "src/z.py")] * 3 + [("src/y.py",), ("src/z.py",)] * 24)
+    steps = [Commit(files={"crapkit.toml": config(), "README.md": "tied\n"}, date=EPOCH,
+                    message="seed")]
+    steps += [Commit(files=_touch(group, step), date=EPOCH + step * 3_600, message=f"t {step}")
+              for step, group in enumerate(groups, start=1)]
+    return tuple(steps)
+
+
+TIED = Spec(steps=_tied_steps())
+TIED_NOW = EPOCH + 10 * DAY
+
 # --- a month end: 6 months before Aug 31 is Mar 3, before Sep 1 it is Mar 1 (R59) ---------
 AUG_31 = 1_756_641_600  # 2025-08-31T12:00:00Z
 SEP_1 = AUG_31 + DAY
@@ -424,3 +445,51 @@ SKEW = Spec(steps=(
 SKEW_AUTHOR = EPOCH + SKEW_RANGE // 4  # t = 1/4 by the author's clock
 SKEW_COMMITTER = EPOCH + SKEW_RANGE * 9 // 10  # t = 9/10 by the committer's
 SKEW_LAST = EPOCH + SKEW_RANGE
+
+
+# --- a synthetic 60-commit history for the corpus checks ----------------------------------
+# Drawn once from a seeded generator, so every build is the same: 60 commits over 13
+# months (the oldest fall out of a 12-month window), four authors, a pool of paths with
+# a non-ASCII name and a space, a rename, a branch merged back, a commit on the last
+# day of a month and one of 31 files.
+_POOL = ("src/core.py", "src/util.py", "src/io.py", "src/cli.py", "src/\u00e9t\u00e9.py",
+         "src/with space.py", "src/model.py", "docs/guide.md", "tests/test_core.py",
+         "tests/test_io.py", "setup.cfg", "src/extra.py")
+_AUTHORS = (THOR, BEA, CHEN, THOR_AT_WORK)
+SYNTHETIC_START = 1_720_000_000  # 2024-07-03
+SYNTHETIC_NOW = SEP_1  # 12 months back drops the first nine weeks
+
+
+def _synthetic_commit(rng, step: int, when: int) -> Commit:
+    paths = rng.sample(_POOL, rng.randint(1, 4))
+    files = {path: functions("f", tag=f"{step}") for path in paths}
+    if step == 0:
+        files.update({"crapkit.toml": config(), **{p: functions("f") for p in _POOL}})
+    return Commit(files=files, date=when, message=f"step {step}", author=rng.choice(_AUTHORS))
+
+
+def _synthetic_steps() -> tuple:
+    import random
+
+    rng, steps = random.Random(60), []
+    for step in range(56):
+        steps.append(_synthetic_commit(rng, step, SYNTHETIC_START + step * 7 * DAY))
+        if step == 30:  # a branch whose one commit only it touches, merged back later
+            steps += [Branch("side"),
+                      Commit(files={"src/side.py": functions("s")}, date=SYNTHETIC_START + 211 * DAY,
+                             message="on a branch", author=BEA),
+                      Checkout("main")]
+    steps += [
+        Merge("side", message="merge side", date=SYNTHETIC_START + 395 * DAY),
+        Commit(files={"src/renamed.py": functions("f", tag="moved")},
+               renames={"src/extra.py": "src/renamed.py"}, date=SYNTHETIC_START + 396 * DAY,
+               message="rename extra"),
+        Commit(files={f"bulk/b{i:02d}.txt": f"{i}\n" for i in range(31)},
+               date=SYNTHETIC_START + 397 * DAY, message="a bulk commit"),
+        Commit(files={"src/core.py": functions("f", tag="month end")},
+               date=1_756_684_799, message="the last second of August 2025"),
+    ]
+    return tuple(steps)
+
+
+SYNTHETIC = Spec(steps=_synthetic_steps())

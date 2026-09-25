@@ -265,3 +265,32 @@ def test_bugspots_dates_a_commit_by_its_committer(make_repo, oracle):
 
     rulings.pin_ruling("H4", crapkit=stored["src/x.py"].weight,
                        oracle=bugspots_runner.scores(built.top)["src/x.py"])
+
+
+@pytest.mark.nightly
+@pytest.mark.platform("linux")
+def test_a_retimed_copy_makes_bugspots_read_author_time(make_repo, oracle, tmp_path):
+    """The H4 transform: with every committer date set to its author date,
+    bugspots scores the rebased commit's file at crapkit's weight."""
+    oracle("bugspots")
+    built = make_repo(specs.SKEW)
+    _commit_skewed(built)
+    copy = bugspots_runner.retimed(built.top, tmp_path / "retimed")
+
+    stored, _ = churn_reads.churn(built.root, specs.SKEW_LAST + specs.DAY)
+
+    assert bugspots_runner.scores(copy)["src/x.py"] == stored["src/x.py"].weight
+
+
+@rulings.applies("H13")
+@pytest.mark.nightly
+@pytest.mark.platform("linux")
+def test_bugspots_counts_a_merged_change_again_at_the_merge(make_repo, oracle):
+    oracle("bugspots")
+    built = make_repo(specs.MIXED)
+
+    stored, _ = churn_reads.churn(built.root, specs.MIXED_NOW)
+
+    depth = len(git_walk.walk(built.root, 12, now=specs.MIXED_NOW))  # the window's commits
+    rulings.pin_ruling("H13", crapkit=stored["src/core.py"].weight,
+                       oracle=bugspots_runner.scores(built.top, depth=depth)["src/core.py"])

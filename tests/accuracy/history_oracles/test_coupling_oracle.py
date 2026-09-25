@@ -95,6 +95,24 @@ def test_non_string_paths_pair(make_repo):
     assert said == coupling_reads.expected(built.root, NOW, **DEFAULTS)
 
 
+def _order(pairs: list[tuple]) -> str:
+    return ", ".join(" ".join(files) for files, _, _ in pairs if "src/a.py" in files
+                     or "src/y.py" in files)
+
+
+@rulings.applies("H14")
+def test_equal_products_rank_by_their_paths(make_repo):
+    """src/a.py and src/b.py share 1 of their 3 commits, src/y.py and src/z.py 3
+    of their 27: support x confidence is 0.3333 for both, so the paths order
+    them and a.py's pair ranks first."""
+    built = make_repo(specs.TIED)
+
+    said = coupling_reads.said(built.root, specs.TIED_NOW, *coupling_reads.ALL)
+
+    rulings.pin_ruling("H14", crapkit=_order(said),
+                       oracle=_order(coupling_reads.expected(built.root, specs.TIED_NOW)))
+
+
 def _walked(built) -> list:
     return git_walk.walk(built.root, 12, now=NOW)
 
