@@ -335,25 +335,33 @@ def test_the_dark_line_note_withholds_only_a_file_whose_bytes_moved(name, tmp_pa
     assert "coverage` to measure it again" in note
 
 
+def _banner(view: dict) -> str:
+    from crapkit.report import _stale_lane_reason
+
+    return "".join(_stale_lane_reason([view]))
+
+
+def _assert_named(view: dict, truth) -> None:
+    assert all(path in view["note"] for path in truth), view["note"]
+    assert "1 of 1 lanes are stale" in _banner(view), _banner(view)
+    assert "every other file keeps its own" in _banner(view)
+
+
 @pytest.mark.parametrize("name", sorted(EVENTS))
 def test_the_report_banner_names_the_moved_files_and_blacks_out_nothing_else(name, tmp_path,
                                                                             monkeypatch):
-    from crapkit.report import _stale_lane_reason
-
     root, truth = _prepared(name, tmp_path, monkeypatch)
 
     view = _lane_view(root)
 
     assert view["blackout"] is False, "a stamp with digests withholds only the files it names"
     if not truth:
-        assert view["note"] == "" and _stale_lane_reason([view]) == []
+        assert (view["note"], _banner(view)) == ("", "")
         return
     if EVENTS[name].unknown:
         assert "git cannot say which files in its scopes changed" in view["note"], view["note"]
         return
-    assert all(path in view["note"] for path in truth), view["note"]
-    banner = "".join(_stale_lane_reason([view]))
-    assert "1 of 1 lanes are stale" in banner and "every other file keeps its own" in banner
+    _assert_named(view, truth)
 
 
 # --- history: what the artifact measured, whatever git says -------------------

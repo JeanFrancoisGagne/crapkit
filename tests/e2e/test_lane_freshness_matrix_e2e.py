@@ -72,6 +72,10 @@ def _lane_lines(res) -> list[str]:
     return [line for line in res.stderr.splitlines() if "lane 'unit'" in line]
 
 
+def _names_all(text: str, truth) -> bool:
+    return all(path in text for path in truth)
+
+
 @pytest.mark.parametrize("name", CLI_EVENTS)
 def test_each_reader_names_exactly_the_files_whose_bytes_moved(name, tmp_path):
     root = _prepared(tmp_path, name)
@@ -84,9 +88,9 @@ def test_each_reader_names_exactly_the_files_whose_bytes_moved(name, tmp_path):
         assert packet["uncovered_lines"] == [9], packet["uncovered_lines_note"]
         assert (banner, warning) == ("", []), (banner, warning)
         return
-    assert all(path in banner for path in truth), banner
-    assert len(warning) == 1 and all(path in warning[0] for path in truth), warning
-    assert f"{len(truth)} file(s) in its scopes changed since it measured them" in warning[0]
+    (line,) = warning
+    assert _names_all(banner, truth) and _names_all(line, truth), (banner, line)
+    assert f"{len(truth)} file(s) in its scopes changed since it measured them" in line
     if REL in truth:
         assert packet["uncovered_lines"] is None
         assert f"{REL} changed since coverage/coverage-final.json measured it" in \

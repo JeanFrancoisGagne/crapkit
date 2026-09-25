@@ -113,16 +113,21 @@ def test_every_read_that_leaves_the_index_alone_starts_before_any_is_waited_on(r
     assert late and all(map(_opens_the_index, late)), late
 
 
+def _scope_reads(spawns: list) -> list:
+    """The argv of every diff and file listing git started."""
+    return [argv for kind, argv in spawns
+            if kind == "start" and ("diff" in argv or "ls-files" in argv)]
+
+
 def test_diff_and_untracked_reads_ask_only_about_lane_scopes(repo, git_spawns):
     root, cfg = repo
 
     lane_states(root, cfg)
 
-    reads = [argv for kind, argv in git_spawns
-             if kind == "start" and ("diff" in argv or "ls-files" in argv)]
+    reads = _scope_reads(git_spawns)
     assert any("ls-files" in argv for argv in reads)
-    for argv in reads:
-        assert _after(argv, "--") == ["src", "web"], "the two lanes git judges, lib has no stamp"
+    scopes = {tuple(_after(argv, "--")) for argv in reads}
+    assert scopes == {("src", "web")}, "the two lanes git judges, lib has no stamp"
 
 
 def test_with_no_stamped_lane_no_git_read_starts(tmp_path, git_spawns):
