@@ -11,16 +11,18 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 import pytest
 
-from kit import docsnip, repos
+from kit import docsnip, repos, stub_anthropic, stub_openai
 from kit.cells import cell
 from test_claude_hook_stub import bash_entry
-from test_claude_plugin import BREACH, cli_venv, crapkit, github, harness_on_path, measured_repo
+from test_claude_plugin import BREACH, cli_venv, crapkit, github, harness_on_path, measured_repo, plain_repo
+from test_codex_plugin import CodexSession
 
 PACKET = "deploy-plugins"
 ONBOARD = "plugin/skills/crapkit-onboard/SKILL.md"
@@ -254,3 +256,82 @@ def test_recover_table_row(box, templates, name):
 def lane_logs(repo: Path) -> str:
     return "".join(path.read_text(encoding="utf-8", errors="replace")
                    for path in (repo / ".crapkit").glob("lane-*.log"))
+
+
+# --- plugin/skills/* copied by hand ----------------------------------------------------------
+
+SKILL_NAMES = ["crapkit", "crapkit-onboard", "crapkit-recover"]
+
+
+def skill_dirs(box) -> dict[str, Path]:
+    """Where each runtime reads a user's skills: ~/.claude/skills as the onboard
+    skill names it, and each other runtime's own equivalent."""
+    return {"claude": Path(box.env["CLAUDE_CONFIG_DIR"]) / "skills",
+            "codex": Path(box.env["CODEX_HOME"]) / "skills",
+            "gemini": Path(box.env["GEMINI_CLI_HOME"]) / ".gemini" / "skills"}
+
+
+def copied_skills(box, candidate) -> Path:
+    """A clone of the repo, and plugin/skills/* copied into every runtime's
+    skills directory. Returns a plain repo to start the runtimes in."""
+    github(box, candidate)
+    clone = box.root / "crapkit-clone"
+    box.run(["git", "clone", "-q", "https://github.com/JeanFrancoisGagne/crapkit.git", str(clone)], expect=0)
+    for target in skill_dirs(box).values():
+        shutil.copytree(clone / "plugin" / "skills", target, dirs_exist_ok=True)
+    harness_on_path(box)
+    return plain_repo(box)
+
+
+def claude_offers(box, repo: Path) -> str:
+    """Every request body `claude -p` sent the Messages stub, as one text."""
+    with stub_anthropic.serve([{"text": "done"}]) as stub:
+        box.run(["claude", "-p", "which skills do you have"], cwd=repo, expect=0,
+                env={"ANTHROPIC_BASE_URL": stub.url, "ANTHROPIC_API_KEY": "sk-ant-stub"})
+    return json.dumps(stub.bodies())
+
+
+def codex_listed(box, repo: Path) -> list[str]:
+    with CodexSession(box) as codex:
+        entries = codex.client.request("skills/list", {"cwds": [str(repo)]})["data"][0]["skills"]
+    return sorted(skill["name"] for skill in entries if skill["name"].startswith("crapkit"))
+
+
+def gemini_listed(box, repo: Path) -> list[str]:
+    out = box.run(["gemini", "skills", "list"], cwd=repo, expect=0).stdout
+    return sorted(set(re.findall(r"^(crapkit[\w-]*) \[Enabled\]", out, re.MULTILINE)))
+
+
+def codex_offers(box, repo: Path) -> str:
+    """Every request body `codex exec` sent the Responses stub, as one text."""
+    with stub_openai.serve([{"text": "done"}]) as stub:
+        provider = f'model_providers.stub={{name="stub", base_url="{stub.url}/v1", wire_api="responses", env_key="STUB_KEY"}}'
+        box.run(["codex", "exec", "-c", 'model_provider="stub"', "-c", 'model="stub-model"', "-c", provider,
+                 "say hi"], cwd=repo, env={"STUB_KEY": "stub"}, input="", expect=0)
+    return json.dumps(stub.bodies())
+
+
+@cell("lin-skills-copy", channel="skills copy", harness="Claude Code, Codex, Gemini",
+      scenario="fresh: plugin/skills/* copied from a clone per the onboard fallback; each runtime lists the three; "
+      "Claude Code keeps crapkit-onboard out of the model's list", use_cases="skills", os="linux", image="full",
+      cadence="nightly")
+def test_copied_skills_load_in_each_runtime(box, candidate):
+    repo = copied_skills(box, candidate)
+    claude = claude_offers(box, repo)
+
+    assert codex_listed(box, repo) == SKILL_NAMES
+    assert gemini_listed(box, repo) == SKILL_NAMES
+    assert "crapkit-recover" in claude and "crapkit-onboard" not in claude
+
+
+@cell("lin-skills-copy", channel="skills copy", harness="Codex",
+      scenario="fresh: onboard is explicit-only in Codex: the model's skill list leaves it out", use_cases="skills",
+      os="linux", image="full", cadence="nightly")
+@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-plugins-9: Codex lists crapkit-onboard to the model as an "
+                   "implicit skill; its `disable-model-invocation: true` is Claude Code's key and the skill carries no "
+                   "agents/openai.yaml with allow_implicit_invocation false")
+def test_codex_keeps_onboard_explicit(box, candidate):
+    repo = copied_skills(box, candidate)
+    offered = codex_offers(box, repo)
+
+    assert "crapkit-recover" in offered and "crapkit-onboard" not in offered
