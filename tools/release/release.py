@@ -539,6 +539,21 @@ def _upload_prefix(surface: str, version: str) -> tuple:
             "github": ("gh", "release", "upload", f"v{version}", "--repo", GITHUB_REPO)}[surface]
 
 
+def _accuracy_step(version: str) -> Step:
+    branch = accuracy_branch(version)
+    return Step("accuracy", "accuracy", (
+        (PY, "tools/accuracy/run.py", "--tier", "release", "--receipt", accuracy_receipt(version)),
+        ("git", "push", "-q", "origin", f"v{version}^{{commit}}:refs/heads/{branch}"),
+        ("gh", "workflow", "run", "accuracy.yml", "--repo", GITHUB_REPO, "--ref", branch,
+         "-f", "mode=release", "-f", f"release_key={version}"),
+        ("gh", "run", "watch", ACCURACY_RUN_ARG, "--repo", GITHUB_REPO, "--exit-status"),
+        ("git", "push", "-q", "origin", "--delete", branch)), background=True,
+        note="the release tier here (30 min), then accuracy.yml's release mode on the tag "
+             "commit through a scratch branch (up to 90 min); a rerun reuses a passing receipt "
+             "and a run already passed or running. Stage 2b rereads the run from GitHub and "
+             "rehashes the pins, corpus and retro ledger; it trusts neither report")
+
+
 def plan(version: str) -> list:
     """The chain as a list a person reads before running it. Order is what the
     contracts require: the tag before the contract files (two of them read the
@@ -566,6 +581,7 @@ def plan(version: str) -> list:
              note=f"after a passing verify, against its run: a change verify, seed and prune make "
                   f"to {RATCHET_FILE} stops the release; the committed file goes back and the "
                   "computed one is saved under .crapkit/"),
+        _accuracy_step(version),
         Step("artifacts", "stage2b", ((PY, "-m", "build", "-q", "--outdir", RELEASE_DIST),
                                       (PY, "-m", "twine", "check", f"{RELEASE_DIST}/*")),
              note="build once, record wheel and sdist digests; retries verify and reuse these bytes"),
@@ -756,7 +772,7 @@ def _canonical_origin(root: Path) -> None:
             raise ReleaseError(f"origin fetch and push must each resolve to one HTTPS or SSH URL for {GITHUB_REPO}")
 
 
-def _guard_publish(root: Path, version: str) -> dict:
+def _guard_verified(root: Path, version: str) -> dict:
     receipt = _guard_receipt(root, version)
     after = receipt.get("verify_after")
     if type(after) is not int or after < 0:
@@ -768,10 +784,245 @@ def _guard_publish(root: Path, version: str) -> dict:
     return receipt
 
 
+def _guard_publish(root: Path, version: str) -> dict:
+    receipt = _guard_verified(root, version)
+    accuracy_gate(root, version, receipt["head"])
+    return receipt
+
+
 def _preflight(stage: str, root: Path, version: str) -> dict:
     guards = {"stage1": _guard_bump, "stage2a": _guard_contracts,
-              "verify": _guard_receipt, "stage2b": _guard_publish, "registry": _guard_publish}
+              "verify": _guard_receipt, "accuracy": _guard_verified,
+              "stage2b": _guard_publish, "registry": _guard_publish}
     return guards[stage](root, version) if stage in guards else {}
+
+
+# --- the accuracy gate -----------------------------------------------------------------
+#
+# The accuracy stage runs the release tier here and accuracy.yml's release mode
+# on GitHub, both on the tag commit. Stage 2b then believes neither report: it
+# reads the run from GitHub itself and hashes the files the receipt vouches for.
+
+ACCURACY_TIER = "tools/accuracy/run.py"
+ACCURACY_WORKFLOW = "accuracy.yml"
+# The oracle pins, the corpus the goldens come from, and the retro ledger. The
+# receipt records their sha256; stage 2b recomputes each from the tree.
+ACCURACY_DIGESTS = ("tools/accuracy/pins.toml", "tests/accuracy/corpus_goldens/corpus.toml",
+                    "tests/accuracy/suite_strength/retro/ledger.tsv")
+ACCURACY_OUTCOMES = frozenset({"pass", "empty"})  # empty: the row has no test in this tier
+ACCURACY_WATCH_SECONDS = 90 * 60
+ACCURACY_RUN_ARG = "$(the dispatched accuracy run)"
+
+
+def accuracy_receipt(version: str) -> str:
+    return f".crapkit/release-accuracy-{version}.json"
+
+
+def accuracy_title(version: str) -> str:
+    """accuracy.yml's run-name for a release dispatch: `accuracy <mode> <release_key>`."""
+    return f"accuracy release {version}"
+
+
+def accuracy_branch(version: str) -> str:
+    """The scratch branch that carries the tag commit to GitHub before stage 2b pushes
+    the tag: a dispatched run needs its commit on the remote."""
+    return f"accuracy-release/{version}"
+
+
+def _rerun(version: str) -> str:
+    return f"rerun `python tools/release/release.py run accuracy {version}`"
+
+
+def gates_accuracy(root: Path) -> bool:
+    """A tree that carries the accuracy suite is released only past it."""
+    return (root / ACCURACY_TIER).is_file()
+
+
+def _read_accuracy_receipt(root: Path, version: str) -> dict:
+    try:
+        saved = json.loads((root / accuracy_receipt(version)).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ReleaseError(f"no readable release accuracy receipt at {accuracy_receipt(version)}; "
+                           f"{_rerun(version)}") from exc
+    if not isinstance(saved, dict):
+        raise ReleaseError(f"{accuracy_receipt(version)} must be a JSON object; {_rerun(version)}")
+    return saved
+
+
+def _head_problems(saved: dict, head: str, version: str) -> list:
+    made = str(saved.get("head"))
+    if made == head:
+        return []
+    return [f"the release accuracy receipt was made at {made[:12]} and the release is at "
+            f"{head[:12]}; {_rerun(version)}"]
+
+
+def _tier_problems(saved: dict, version: str) -> list:
+    tier = saved.get("tier")
+    if tier == "release" and saved.get("outcome") == "pass":
+        return []
+    return [f"the release accuracy receipt records the {tier} tier with outcome "
+            f"{saved.get('outcome')}, not a passing release tier; {_rerun(version)}"]
+
+
+def _row_line(row, version: str) -> str | None:
+    fields = row if isinstance(row, dict) else {"key": row, "outcome": "unreadable"}
+    if fields.get("outcome") in ACCURACY_OUTCOMES:
+        return None
+    return (f"release accuracy row `{fields.get('key')}: {fields.get('name')}` "
+            f"{fields.get('outcome')}: fix what it names, then {_rerun(version)}")
+
+
+def _rows(saved: dict) -> list:
+    rows = saved.get("checks")
+    return rows if isinstance(rows, list) else []
+
+
+def _row_problems(saved: dict, version: str) -> list:
+    rows = _rows(saved)
+    lines = [_row_line(row, version) for row in rows]
+    if not rows:
+        return [f"the release accuracy receipt records no check; {_rerun(version)}"]
+    return [line for line in lines if line]
+
+
+def _file_sha256(path: Path) -> str | None:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+
+
+def _digest_problems(root: Path, saved: dict, version: str) -> list:
+    """Each vouched-for file hashed from the tree, never taken from the receipt."""
+    recorded = saved.get("digests") if isinstance(saved.get("digests"), dict) else {}
+    problems = []
+    for name in ACCURACY_DIGESTS:
+        found, claimed = _file_sha256(root / name), recorded.get(name)
+        if found != claimed:
+            problems.append(f"{name} hashes to {str(found)[:12]} here and the release accuracy "
+                            f"receipt says {str(claimed)[:12]}; {_rerun(version)}")
+    return problems
+
+
+def receipt_problems(root: Path, saved: dict, head: str, version: str) -> list:
+    """Every reason the local release-tier receipt cannot vouch for this release."""
+    return (_head_problems(saved, head, version) + _tier_problems(saved, version)
+            + _row_problems(saved, version) + _digest_problems(root, saved, version))
+
+
+def _accuracy_runs(head: str) -> list:
+    """accuracy.yml's dispatched runs at `head`, as GitHub reports them."""
+    url = (f"{GITHUB_API}repos/{REPO_SLUG}/actions/workflows/{ACCURACY_WORKFLOW}/runs"
+           f"?head_sha={head}&event=workflow_dispatch&per_page=100")
+    runs = _remote_json(url).get("workflow_runs")
+    if not isinstance(runs, list):
+        raise ReleaseError(f"cannot read accuracy.yml runs at {head[:12]}: no workflow_runs list")
+    return [run for run in runs if isinstance(run, dict)]
+
+
+def release_runs(runs: list, version: str, head: str) -> list:
+    """The release-mode runs for `version` at `head`: the run-name carries mode and version."""
+    return [run for run in runs
+            if (run.get("display_title"), run.get("head_sha")) == (accuracy_title(version), head)]
+
+
+def passing_run(runs: list, version: str, head: str) -> dict | None:
+    done = ("completed", "success")
+    return next((run for run in release_runs(runs, version, head)
+                 if (run.get("status"), run.get("conclusion")) == done), None)
+
+
+def _remote_problems(version: str, head: str) -> list:
+    if passing_run(_accuracy_runs(head), version, head):
+        return []
+    return [f"GitHub holds no successful accuracy.yml run named `{accuracy_title(version)}` at "
+            f"{head[:12]}; {_rerun(version)}"]
+
+
+def accuracy_gate(root: Path, version: str, head: str) -> None:
+    """Stage 2b's refusal: the local receipt must be this tree's passing release tier,
+    and GitHub must hold a successful release-mode run at the tag commit."""
+    if not gates_accuracy(root):
+        return
+    saved = _read_accuracy_receipt(root, version)
+    problems = receipt_problems(root, saved, head, version) + _remote_problems(version, head)
+    if problems:
+        raise ReleaseError(NL.join(problems))
+
+
+# --- the accuracy stage: the local tier, then the remote run -------------------------------
+
+def _local_problems(root: Path, version: str, head: str) -> list:
+    try:
+        saved = _read_accuracy_receipt(root, version)
+    except ReleaseError as missing:
+        return [str(missing)]
+    return receipt_problems(root, saved, head, version)
+
+
+def _local_accuracy(step: Step, root: Path, version: str, head: str) -> None:
+    """The release tier, unless this tree already holds its passing receipt: a rerun
+    after a remote timeout does not repeat half an hour of local checks."""
+    if not _local_problems(root, version, head):
+        return
+    failure = _attempt(root, step.commands[0])
+    problems = _local_problems(root, version, head)
+    if problems or failure:
+        raise ReleaseError(NL.join(problems) or f"the release tier failed: {failure}")
+
+
+def _in_flight(runs: list, version: str, head: str) -> dict | None:
+    return next((run for run in release_runs(runs, version, head)
+                 if run.get("status") != "completed"), None)
+
+
+def _dispatched(version: str, head: str, known: set, pause: Callable = time.sleep) -> dict:
+    """The run a dispatch just created: GitHub lists it within seconds."""
+    for attempt in range(READBACK_ATTEMPTS):
+        fresh = [run for run in release_runs(_accuracy_runs(head), version, head)
+                 if run.get("id") not in known]
+        if fresh:
+            return fresh[0]
+        pause(READBACK_PAUSE)
+    raise ReleaseError(f"accuracy.yml was dispatched but no run named `{accuracy_title(version)}` "
+                       f"appeared at {head[:12]}; {_rerun(version)}")
+
+
+def _watch(run: dict, root: Path, version: str) -> None:
+    argv = [_executable("gh"), "run", "watch", str(run["id"]), "--repo", GITHUB_REPO,
+            "--exit-status", "--interval", "60"]
+    page = f"https://{GITHUB_REPO}/actions/runs/{run['id']}"
+    try:
+        done = subprocess.run(argv, cwd=root, timeout=ACCURACY_WATCH_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        raise ReleaseError(f"{page} still runs after 90 minutes; {_rerun(version)} to keep "
+                           "waiting on it, which dispatches nothing new") from exc
+    if done.returncode:
+        raise ReleaseError(f"the release run of accuracy.yml failed: {page}; fix it, then "
+                           f"{_rerun(version)}")
+
+
+def _run_to_watch(step: Step, root: Path, version: str, head: str, runs: list) -> dict:
+    """A release run already going at the tag commit, else a new dispatch's run."""
+    run = _in_flight(runs, version, head)
+    if run is not None:
+        return run
+    _run_or_untag(step._replace(commands=step.commands[1:3]), root, version, False)
+    return _dispatched(version, head, {old.get("id") for old in runs})
+
+
+def _remote_accuracy(step: Step, root: Path, version: str, head: str) -> None:
+    """Watch a release-mode run of accuracy.yml at the tag commit to its end,
+    dispatching one only when none passed or is running there. The scratch branch
+    goes afterwards, whichever attempt pushed it; a branch already gone is fine."""
+    runs = _accuracy_runs(head)
+    if not passing_run(runs, version, head):
+        _watch(_run_to_watch(step, root, version, head, runs), root, version)
+    _attempt(root, step.commands[-1])
+
+
+def _run_accuracy(step: Step, root: Path, version: str, receipt: dict) -> None:
+    _local_accuracy(step, root, version, receipt["head"])
+    _remote_accuracy(step, root, version, receipt["head"])
+    accuracy_gate(root, version, receipt["head"])
 
 
 def _write_receipt(root: Path, receipt: dict) -> None:
@@ -1217,6 +1468,8 @@ def _stage_step(step: Step, root: Path, version: str, receipt: dict, before: int
                 marks: bytes | None = None) -> None:
     if step.stage == "stage2b":
         _publish_step(step, root, receipt)
+    elif step.name == "accuracy":
+        _run_accuracy(step, root, version, receipt)
     elif step.name == "ratchet":
         _check_ratchet(step, root, receipt, before, marks)
     else:

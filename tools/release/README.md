@@ -16,6 +16,7 @@ python tools/release/release.py plan VERSION
 python tools/release/release.py run stage1 VERSION
 python tools/release/release.py run stage2a VERSION
 python tools/release/release.py run verify VERSION
+python tools/release/release.py run accuracy VERSION
 python tools/release/release.py run stage2b VERSION
 python tools/release/release.py run registry VERSION
 python tools/release/release.py run glama VERSION
@@ -47,6 +48,38 @@ git commit --amend --no-edit
 Then rerun stage 2a and verify. `git add` comes first because `git commit -- PATH`
 refuses a marks file the release commit does not track yet.
 
+## The accuracy stage
+
+A tree that holds `tools/accuracy/run.py` publishes only past its calculation-accuracy
+suite. `run accuracy VERSION` comes after verify and does two things, both on the tag
+commit. Keep it in its own background process: it can take two hours.
+
+1. Here: `python tools/accuracy/run.py --tier release --receipt .crapkit/release-accuracy-VERSION.json`,
+   about 30 minutes. It runs the push tier, both wheel diffs, the store upgrade check,
+   the consumer replay, the retro replays and the mutation coverage check.
+2. On GitHub: it pushes the tag commit to the scratch branch `accuracy-release/VERSION`,
+   dispatches `accuracy.yml` with `mode=release` and `release_key=VERSION`, watches the run
+   for up to 90 minutes, and deletes the branch. A dispatched run needs its commit on the
+   remote, and the tag itself stays local until stage 2b pushes it.
+
+A rerun reuses a receipt that still passes and a run that passed or is still running,
+so it dispatches nothing new after a timeout.
+
+Stage 2b and the registry stage believe neither report. Before each publication they
+read accuracy.yml's runs at the tag commit from GitHub and require one named
+`accuracy release VERSION` that completed with success. They require the receipt's
+head to be the release HEAD, its tier `release` and every row `pass` (or `empty`, a row
+with no test in that tier). They also hash `tools/accuracy/pins.toml`,
+`tests/accuracy/corpus_goldens/corpus.toml` and
+`tests/accuracy/suite_strength/retro/ledger.tsv` themselves and compare the result with
+the receipt. Each refusal names the row, the file or the run, and ends with the rerun:
+
+```
+release accuracy row `corpus_goldens: wheel diff vs 0.8.0` fail: fix what it names, then rerun `python tools/release/release.py run accuracy VERSION`
+tests/accuracy/suite_strength/retro/ledger.tsv hashes to 3f1c09a2b7de here and the release accuracy receipt says 9a0e44c1d2f3; rerun `python tools/release/release.py run accuracy VERSION`
+GitHub holds no successful accuracy.yml run named `accuracy release VERSION` at 8fb7b45c7248; rerun `python tools/release/release.py run accuracy VERSION`
+```
+
 ## Preflight: prove the environment before anything is pushed
 
 Every fault in the 0.7.2 release fired after PyPI and the GitHub release were
@@ -54,8 +87,8 @@ already public, because nothing checked the machine first.
 
 `check VERSION` is stage 1's first command, so the chain stops before it builds or
 pushes anything. Besides the version surfaces and the changelog heading, it reads
-the two rows marked `check` below. Confirm the two rows marked `you` yourself:
-`check` never looks at PATH or at `gh`.
+the two rows marked `check` below. Confirm the three rows marked `you` yourself:
+`check` never looks at PATH, at `gh` or at the accuracy corpus.
 Each takes seconds. A missing credential or gh login shows up only after the push;
 a wrong PATH python or a missing build or twine stops the release before it.
 
@@ -65,6 +98,7 @@ a wrong PATH python or a missing build or twine stops the release before it.
 | The release interpreter imports build and twine | `check` | `python -c "import build, twine"` | Stage 2b runs `python -m build` and `python -m twine` through the interpreter that launched this script, and it builds before the push. |
 | PyPI credentials reach Twine | `check` | `TWINE_USERNAME` and `TWINE_PASSWORD` are set, or the token is in keyring | Twine 7 skips the named `.pypirc` entry whenever `--repository-url` is passed, and that flag is a fixed anti-redirect control. A `.pypirc` alone authenticates nothing. |
 | `gh` is authenticated | you | `gh auth status` | Publishing uses `gh`, and every readback now sends the same credential. GitHub's Pages API answers 404, not 403, to an anonymous reader. |
+| The full accuracy corpus is cached | you | `%LOCALAPPDATA%/crapkit-accuracy/corpus` (`~/.cache/crapkit-accuracy/corpus` where LOCALAPPDATA is unset) holds the tree corpus.toml pins | The accuracy stage runs the release tier natively, so Docker is not needed here, but its wheel diff and consumer replay read the full corpus from that cache. Without it the tier reports an infra miss and the stage stops before anything is dispatched. |
 
 A failed `check` row prints its line and `check` exits 1. The first line names only
 the tools that are missing:

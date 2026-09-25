@@ -65,7 +65,7 @@ class Mutated:
 def _toml(command: str, languages=("python",), workers: int | None = None) -> str:
     """The smallest config every crapkit since 0.2 reads: no key a release added later."""
     lines = ["[crapkit]", "target = 6", f"mutation_command = {json.dumps(command)}",
-             "mutation_timeout_seconds = 60"]
+             f"mutation_timeout_seconds = {hang_guard.HANG_SECONDS}"]
     lines += [f"mutation_workers = {workers}"] if workers else []
     lines += ["", "[[scope]]", 'name = "src"', 'paths = ["src"]',
               f"languages = {json.dumps(list(languages))}"]

@@ -218,6 +218,23 @@ def test_the_plan_orders_the_chain_the_way_the_contracts_require():
     assert names.index("github release") < names.index("registry")
 
 
+def test_the_accuracy_stage_follows_verify_and_publishes_no_release_ref():
+    """The accuracy suite runs on the tree verify passed, before the tag or main
+    leaves the machine: the remote run reaches its commit through a scratch branch."""
+    steps = release.plan("0.5.2")
+    names = [s.name for s in steps]
+    (accuracy,) = [s for s in steps if s.name == "accuracy"]
+    pushes = [command for command in accuracy.commands if command[:2] == ("git", "push")]
+
+    assert names.index("ratchet") < names.index("accuracy") < names.index("artifacts")
+    assert accuracy.stage == "accuracy" and accuracy.background
+    assert accuracy.commands[0][1:] == ("tools/accuracy/run.py", "--tier", "release", "--receipt",
+                                        ".crapkit/release-accuracy-0.5.2.json")
+    assert [command[-1] for command in pushes] == [
+        "v0.5.2^{commit}:refs/heads/accuracy-release/0.5.2", "accuracy-release/0.5.2"]
+    assert accuracy.commands[2][-4:] == ("-f", "mode=release", "-f", "release_key=0.5.2")
+
+
 def test_the_verify_step_is_marked_as_its_own_background_command():
     verify_step = next(s for s in release.plan("0.5.2") if s.name == "verify")
 
