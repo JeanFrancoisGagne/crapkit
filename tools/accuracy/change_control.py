@@ -534,6 +534,12 @@ def _rulings_table(path: str) -> bool:
     return matches(path, RULINGS)
 
 
+def changed_rulings(before: dict, after: dict) -> dict[str, tuple[dict, dict]]:
+    """{id: (base row, head row)} for each rulings row both sides hold whose line changed."""
+    return {key: (before[key][1], after[key][1]) for key in sorted(set(before) & set(after))
+            if before[key][2] != after[key][2]}
+
+
 def rulings_of(tree) -> dict[str, tuple[str, dict, str]]:
     """{id: (table path, row, raw line)} over every rulings.tsv."""
     found = {}
@@ -1252,9 +1258,7 @@ class Diff:
                 for calc in split_calcs(row.get("calcs", ""))}
 
     def changed_rulings(self) -> dict[str, tuple[dict, dict]]:
-        both = set(self.base_rulings) & set(self.head_rulings)
-        return {key: (self.base_rulings[key][1], self.head_rulings[key][1]) for key in sorted(both)
-                if self.base_rulings[key][2] != self.head_rulings[key][2]}
+        return changed_rulings(self.base_rulings, self.head_rulings)
 
     def packet_calcs(self, packet: str) -> set[str]:
         return {row.calc for row in self.calc_rows if row.packet == packet}
@@ -1951,12 +1955,6 @@ def _changed_goldens(base, head) -> frozenset[str]:
     return frozenset(path for path in _golden_paths(base, head) if base.id(path) != head.id(path))
 
 
-def _changed_rulings(base, head) -> dict:
-    before, after = rulings_of(base), rulings_of(head)
-    return {key: (before[key][1], after[key][1]) for key in set(before) & set(after)
-            if before[key][2] != after[key][2]}
-
-
 def _nothing_moved(request: Request, moves: Moves) -> list[str]:
     """A change of a kind other than none must move a golden or name a calc whose
     rulings row or module changed; a relocked hand table alone is kind none."""
@@ -1984,7 +1982,8 @@ def moves_of(base, head, changed: frozenset[str]) -> Moves:
 
 
 def _more(base, head, changed: frozenset[str]) -> set[str]:
-    rulings = {new.get("calc", "") for _, new in _changed_rulings(base, head).values()}
+    edited = changed_rulings(rulings_of(base), rulings_of(head))
+    rulings = {new.get("calc", "") for _, new in edited.values()}
     return rulings | unshown(touched_calcs(calcs_of(head), changed, base, head))
 
 

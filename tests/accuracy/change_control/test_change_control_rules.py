@@ -1090,6 +1090,20 @@ def test_a_row_that_goes_with_its_def_is_declared_and_passes_the_check(make_repo
 
 
 @pytest.mark.process
+def test_declare_reads_a_staged_edit_of_a_calc_module(make_repo):
+    """hook.py holds the pre-commit gate, a calc no golden shows: its fix moves no
+    golden, and a staged edit still counts as the diff's."""
+    top = _working(make_repo, BASE, seeds.replace(BASE, seeds.HOOK, "row not in marks",
+                                                  "row.key not in marks"))
+    repos.git(top, "add", "-A")
+
+    text = _declare(top, _request(calcs=("Pre-commit gate",)))
+
+    assert text.startswith("declared C3 (fix: Pre-commit gate): 0 locked files relocked, 0 "
+                           "golden cells moved, 0 judged by an oracle")
+
+
+@pytest.mark.process
 def test_declare_none_records_a_change_that_moves_nothing(make_repo):
     top = _working(make_repo, BASE, seeds.module_changed(BASE))
     lock = (top / cc.LOCK).read_bytes()

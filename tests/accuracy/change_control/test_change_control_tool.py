@@ -370,6 +370,35 @@ def test_pre_push_needs_a_fetched_main(make_repo):
         cc.remote_main(top, "upstream")
 
 
+@pytest.mark.process
+def test_pre_push_judges_the_pushed_commit_against_the_pushed_to_remote(make_repo, capfd):
+    """Two commits over the remote's main: an undeclared module edit, then its kind
+    none declaration. Pushing the first commit alone is refused though HEAD passes;
+    only upstream/main is fetched, so the base comes from the remote pushed to."""
+    bad = seeds.module_changed(BASE)
+    good = seeds.change(bad, "C3", "none", "", reason="a comment, nothing moves")
+    top = seeds.seeded(make_repo, BASE, bad, good)
+    repos.git(top, "update-ref", "refs/remotes/upstream/main", "HEAD~2")
+    first = repos.git(top, "rev-parse", "HEAD~1").strip()
+
+    code = cc.pre_push(top, "upstream", f"refs/heads/b {first} refs/heads/b {'0' * 40}\n")
+
+    out = capfd.readouterr().out
+    assert code == 1
+    assert "B6 src/crapkit/score.py holds CRAP score and changed with no declared change" in out
+    assert "no accuracy check to run" not in out and " passed" not in out
+
+
+@pytest.mark.process
+def test_a_push_that_only_deletes_a_branch_judges_nothing(make_repo, capfd):
+    top = _pushed(make_repo, seeds.module_changed(BASE))
+    sha = repos.git(top, "rev-parse", "HEAD").strip()
+
+    code = cc.pre_push(top, "origin", f"(delete) {'0' * 40} refs/heads/old {sha}\n")
+
+    assert (code, capfd.readouterr().out) == (0, "")
+
+
 @pytest.mark.nightly
 @pytest.mark.process
 def test_the_pre_push_command_reads_the_refs_git_hands_it(make_repo, monkeypatch, capfd):

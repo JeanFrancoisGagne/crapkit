@@ -127,6 +127,27 @@ RULING_ROWS = (
      f"{SEED_TEST}::test_crap", ""),
 )
 
+# The seeded packet's tests. The pre-push hook runs them at the push tier with the
+# checkout's tests/ first on PYTHONPATH, and test_crap checks both.
+SEED_SOURCE = '''import os
+from pathlib import Path
+
+
+def test_crap():
+    assert os.environ["CRAPKIT_ACCURACY_TIER"] == "push"
+    first = os.environ["PYTHONPATH"].split(os.pathsep)[0]
+    assert Path(first).resolve() == Path(__file__).resolve().parents[2]
+    assert 7 * 7 * 0.125 + 7 == 13.125
+
+
+def test_ccn():
+    assert 1 + 6 == 7
+
+
+def test_cognitive():
+    assert 8 == 8
+'''
+
 
 def base(rows: list[dict] | None = None) -> dict[str, str]:
     """The consistent tree every scenario starts from; `rows` replaces the goldens' rows."""
@@ -149,9 +170,7 @@ def base(rows: list[dict] | None = None) -> dict[str, str]:
             ("Cognitive complexity", f"{SEED_TEST}::test_cognitive", ANALYZE,
              f"{ANALYZE}:record"),
             ("Pre-commit gate", f"{SEED_TEST}::test_crap", HOOK, f"{HOOK}:violations")]),
-        SEED_TEST: "def test_crap():\n    assert 7 * 7 * 0.125 + 7 == 13.125\n\n\n"
-                   "def test_ccn():\n    assert 1 + 6 == 7\n\n\ndef test_cognitive():\n"
-                   "    assert 8 == 8\n",
+        SEED_TEST: SEED_SOURCE,
         RULINGS: _tsv(RULINGS_COLUMNS, RULING_ROWS),
         HAND: _tsv(("ccn", "cov", "crap", "source"),
                    [(7, "0.5", "13.125", "Savoia and Evans, artima weblog 210575 (2007)")]),
