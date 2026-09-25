@@ -1749,7 +1749,7 @@ def test_the_lookup_filter_holds_under_every_jq_engine(engine, page):
     on the Linux jobs, whose ci.yml step puts both there."""
     binary = shutil.which(engine)
     if binary is None:
-        pytest.skip(f"needs {engine} on PATH; ci.yml puts it there on the Linux jobs only")
+        pytest.skip(f"needs {engine} on PATH; every Linux CI job carries all three engines")
     comments, expected = _ENGINE_PAGES[page]
 
     done = subprocess.run([binary, "-r", _lookup_filter()], input=json.dumps(comments),
