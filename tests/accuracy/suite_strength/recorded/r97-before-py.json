@@ -1,0 +1,155 @@
+{
+ "files": {
+  "src\\crapkit\\cli\\__init__.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 19,
+    "num_statements": 19,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  },
+  "src\\crapkit\\cli\\_shared.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 74,
+    "num_statements": 74,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  },
+  "src\\crapkit\\cli\\admin.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 498,
+    "num_statements": 498,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  },
+  "src\\crapkit\\cli\\analyses.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 118,
+    "num_statements": 118,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  },
+  "src\\crapkit\\cli\\claude_hook.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 113,
+    "num_statements": 113,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  },
+  "src\\crapkit\\cli\\parser.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 242,
+    "num_statements": 242,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  },
+  "src\\crapkit\\cli\\queue.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 449,
+    "num_statements": 449,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  },
+  "src\\crapkit\\cli\\ratchet_cmds.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 117,
+    "num_statements": 117,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  },
+  "src\\crapkit\\cli\\reports.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 294,
+    "num_statements": 294,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  },
+  "src\\crapkit\\cli\\scoring.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 284,
+    "num_statements": 284,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  },
+  "src\\crapkit\\cli\\verifying.py": {
+   "executed_lines": [],
+   "summary": {
+    "covered_lines": 0,
+    "excluded_lines": 0,
+    "missing_lines": 391,
+    "num_statements": 391,
+    "percent_covered": 0.0,
+    "percent_covered_display": "0",
+    "percent_statements_covered": 0.0,
+    "percent_statements_covered_display": "0"
+   }
+  }
+ },
+ "meta": {
+  "branch_coverage": false,
+  "format": 3,
+  "show_contexts": false,
+  "timestamp": "2026-09-24T21:27:51.063605",
+  "version": "7.16.1"
+ },
+ "note": "coverage.py JSON of tests/e2e/test_init_doctor_e2e.py at the R97 before commit under pytest-cov 7.1.0, trimmed to crapkit/cli/ files and executed_lines"
+}

@@ -1,0 +1,2 @@
+calc	independent_test	modules	functions
+Mutation results	tests/accuracy/suite_strength/test_mutate_results.py::test_negation_dies_and_boundary_survives	src/crapkit/mutate.py,src/crapkit/mutate_pool.py,src/crapkit/cli/analyses.py	src/crapkit/mutate.py:file_mutants,src/crapkit/mutate.py:partition_by_corpus,src/crapkit/mutate_pool.py:run_mutants,src/crapkit/mutate_pool.py:run_one,src/crapkit/cli/analyses.py:cmd_mutate

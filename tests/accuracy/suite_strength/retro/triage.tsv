@@ -1,0 +1,484 @@
+sha	date	label	r_ids	reason	subject
+fe0de4c8acbfe87ff72bccb2160e0a961b12b1b2	2026-09-23	not-calc		release commit: version strings and the changelog	Release 0.8.0
+2a33d11c7d6682ee7b7b7f212d5a3265d3dc088f	2026-09-23	not-calc		refactor: the same outputs: explain's run lookup folded to one rule; AGENTS.md setup line	explain's newest-rowful-run lookup takes the one rule it is called with, and AGENTS.md quotes the xdist fixture's pytest command
+4ee35175208f9a38af6b1f013eb5330918aadddf	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The MCP schemas, the JSON page and AGENTS.md keep the edits made before three later doc fixes
+22ffc512d8c79403caa9836efbd126934515a847	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	ratchet --help says where move reads OLD and NEW from
+77a394df84a41bb867f4059b68c4827607646489	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The brief and duplication tool descriptions say twins come from the run's stored index
+42c716a95a9a7696abd7981360375219e435baec	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	list_worklist's schema says its remedy is the run's verdict, not the queue's
+a6d8ce7589a30d24546dca801953022acea12ebe	2026-09-23	calc-fix	R115	doctor --tune knobs and lane cost	doctor treats a lane left on .coverage as sharing data with a lane on .coverage.b
+811301fc92277857bcf6830c1f274965b8bd3f37	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the Action's post-step names the fork token only for a fork	The Action blames the fork token only when the pull request comes from a fork
+00e146c48465e078cb7bd0e8d7e0420710c8d684	2026-09-23	calc-fix	R128	Printed commands	The Windows override receipt names unset for Git Bash beside PowerShell and cmd.exe
+dbce475503e79ce53de1fc46ec4e0cae528d0a53	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	Printed transcripts match what the CLI prints for the same steps
+cd1c749ebcd4e9c3765ea331264c41dbd2191918	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	Route 1 says git refuses a commit whose hook file starts with a byte-order mark
+55dd1f459fdf8beb14931b50452dbcbe14d2fcc3	2026-09-23	calc-fix	R65	Audited override grant	verify refuses an empty or blank --override reason before any lane runs
+017a745322289f2e919bd24465e8751fddaca020	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the comment points at the job log for an every-lane-failed run	The Action's comment sends an every-lane-failed run to the job log
+d16ec08e1160eaf91a90a8abeded210e8ddc1652	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: seed, prune and verify advice text	Seed, prune and verify name what blocks a baseline instead of advising coverage
+0b347c6899332e13ab02f4d885f14c98580cb0ff	2026-09-23	not-calc		MCP schema or field declaration: the values are unchanged	MCP output schemas declare every field their results carry
+c7f421f220ab99e3076570e0c7fe52a7311d33b4	2026-09-23	not-calc		MCP schema or field declaration: the values are unchanged: next-item's item gains the occurrence field the docs listed	next-item's item carries occurrence, as the agent JSON page shows
+d8ae57ae29ce8ea038d8cf43bbf52fc515a3df78	2026-09-23	calc-fix	R114	doctor --tune knobs and lane cost	doctor keeps coveragepy lanes that share a data file from running at once
+8d4085c16e0652a2e411c588b9e070efb1e7e7a2	2026-09-23	calc-fix	R62	Diff coverage	diff_uncovered_max counts the function lines of a changed file no artifact mentions
+6b17b67afe13d2dc70aab404094ff5b2b20640fe	2026-09-23	calc-fix	R108	Ratchet file parse and dump	A green verify leaves a CRLF marks file alone when no mark moved
+21d1b71c4ae5e3e6f195c22f2e2cdf108cf5fe66	2026-09-23	not-calc		refactor: the same outputs: whitespace	The lane order assignment in _run_owned_lanes has its space back
+f41a62ec31652f504074a2888392d0c977442811	2026-09-23	not-calc		refactor: the same outputs: crapkit.toml decode goes through the shared reader	The reuse proof reads crapkit.toml's lane outputs through repotext
+df3fd8ad0a6d98538d64d88950adfe7c3990d471	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The pages name the rerun line, rerun_reason and what the reuse proof leaves out
+e7411873f5b072d56d47e024771686819f86917f	2026-09-23	calc-fix	R131	Lane reuse and artifact staleness	--reuse-unchanged names why each lane reruns, and a cd or a lane's own output no longer forces one
+c643e6d0b218e9fc60e5713f15b54d894319b9c8	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the twin-key note is capped at five files	One run's twin-key notes name five files and count the rest
+c3e6db3dcde77138293ee6a7a6a5f2770f2c64ee	2026-09-23	calc-fix	R45	JS/TS expression arrows and template literals	A cache written before the template-literal reader reads cold, and the upgrade guide lists the fix under version 11
+de9b9afbb3960182b8c80c4f216450517dc265d1	2026-09-23	calc-fix	R45	JS/TS expression arrows and template literals	A template literal nested in another's ${...} no longer hides the functions after it
+e8448eaf27e6551f18991f5198ab1259eb9ac3d8	2026-09-23	not-calc		feature: a new capability, no earlier value was wrong: doctor gains a check on lane inputs entries	doctor fails on a lane inputs entry that matches no file git sees
+8373f7d585b2f48436b8b34f32e0f737b5c3e492	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The pages and the remedy description name the inline body as a split-lines cause
+65281ecb56a5c9f2376cc0b0c4d2e8aa4c23d6e0	2026-09-23	calc-fix	R48	Shared span and def-line floor	A Python def whose body starts on its signature's last line scores as uncovered
+5d2926a4c3519e4a69c69a844252dc4965369024	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the refusal names prune first	A seed that would add same-line twin marks to legacy keys names prune first
+12579cbce4e5b3cbbd5954c1f27e66b505a6f6f9	2026-09-23	not-calc		tests or test tooling only	The lane reuse tests assert the commit lane_reuse_commit names, and lane_unchanged is gone
+0d0ccc19f13c12a82acb628be230af5784db6316	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the handle refusal names its run	A brief packet's handle names its run when legacy twins refuse it
+0f7b209a069d69817ceb78b99eac772583d78ffd	2026-09-23	not-calc		performance: the same outputs	The commit gate, verify, seed and prune parse a legacy marks file once
+59047df3b7165dd2cc82033432020df2fba046dd	2026-09-23	calc-fix	R132	Identity admission of saved marks	A legacy twin group on a file the tree deleted refuses only ratchet seed and prune
+c4d3f779a0df77a57eb536a67450b857a8d7cd8b	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	brief's twin index docstring names inventory beside coverage
+7934ee8042d8f68109be89069c43c829e00cf534	2026-09-23	not-calc		performance: the same outputs: the shingle index is stored at record time	inventory and coverage store their run's shingle index, and duplication reads it
+bc053e0c63c555d305c8d7623203a21d26ce2adc	2026-09-23	not-calc		refactor: the same outputs	SnapshotStore.close releases the store, so a one-read caller never reaches its connection
+b3745781479249bc0012ac50d07c5bef217a0dd4	2026-09-23	not-calc		refactor: the same outputs	lane_changes starts its git reads through gitio.start_read
+cab3c7b6fd168100a54291c73f801c7a54434993	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	Tool descriptions, help text and comments describe the rules the code runs
+0d49e79ee45d1d6b9b98244359b381629a3a282b	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the reuse line names the artifact's commit	coverage --reuse-unchanged names the commit a reused lane's artifact was built at
+feb29e8636c52d8bb48aba4d4b94b9659ba179ce	2026-09-23	not-calc		refactor: the same outputs: score.remedy made public	score.remedy is public, since packet imports it to rejudge a row
+3ed48c64966eb12d276b9654bfc7f5df7e16a7b3	2026-09-23	calc-fix	R49	Remedy label	A packet rejudges a one-line Python def to split-lines
+518d63669014d3a3804cefe3f2d63aa49dcfdf31	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the refusal names the baseline run	rescore's legacy-identity refusal names the baseline run it read
+c647d1abc11493a9a7193f6a2134fbb872541460	2026-09-23	not-calc		performance: the same outputs	A read command parses a legacy marks file once
+afb5df58bc6939ac4c3ab724693c562465973f4c	2026-09-23	calc-fix	R133	Identity admission of saved marks	explain on a dropped file proves the run that holds it, not every marked file
+158e5060449262381b7d29080b1b44ff7a0b5d5b	2026-09-23	calc-fix	R134	Identity admission of saved marks	brief proves legacy mark identity for its packet's file only
+7fdcae7049ca29a93f5cfb3d7fe8945afb163eb1	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the refusal names the run	brief and next-item name the run whose legacy twins they refuse
+4a61207d37f48146a93c96853fceb5e435febb9a	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	dup's module docstring names run_index as the one function that touches the store
+5816550934cf3da6e826dac5ce30793bf0e5210b	2026-09-23	calc-fix	R54	Near-duplicate functions	A twin index replaced mid-batch no longer empties the rest of the batch's twins
+6d3e153cf8f39cf77f618ad63d013f27a356685c	2026-09-23	not-calc		performance: the same outputs: brief reads one file and the stored twin index	brief reads only its own file and looks its twins up in the run's stored index
+b5db8036cb8c47e8f6dc3795702587640745c61b	2026-09-23	not-calc		performance: the same outputs: the shingle index is kept between processes; twins are unchanged within a run	A run's shingle index is stored once and read back by any later process
+cb60df381ab7fdf11c398fe321695bdcabe6640b	2026-09-23	not-calc		refactor: the same outputs: the advisory calls the ratchet's own framing and comment rules	The advisory frames ratchet rows and spots comments with the ratchet's own rules
+694c0633ca22e24dc9ed15ded51bce32adac4c62	2026-09-23	calc-fix	R125	Printed commands	A double-quoted handle pastes intact on Windows, and an encoded command wraps in its cell
+a71f047bcbe2daf4ae4431f7311264079722a832	2026-09-22	not-calc		message wording: the value and the exit code are unchanged: merge_base names why git found no fork point	merge_base says why git found no fork point, and names the fetch in a shallow clone
+07e12994db2da0480d82ff3f9792d8ee00324e55	2026-09-22	calc-fix	R135	init scaffolding	init reads a backslash in a git-listed name as part of the filename
+6ff4b08792bcb8dc60a4af2b31a03ecd85238073	2026-09-22	calc-fix	R55	Near-duplicate functions	brief's twin list applies the duplication threshold to the raw containment
+43424eaaf7fa4edfd60d6aa5ec2f6e914dd56fda	2026-09-22	not-calc		docs, help, description or comment text only; no value changes	mutate --files and claims release say where their paths are read from
+b43e72acaf7109a87cae1ef7943a714f07763ad6	2026-09-22	calc-fix	R124	Printed commands	A report row's explain command pastes intact into cmd.exe as well as PowerShell
+0fa975442f2a951788b73087f5d92020ea97f5bb	2026-09-22	calc-fix	R64	Claude-hook advisory and file choice	The advisory honours a mark written as an encoded record
+aeeea473eb59238465256033dbbf00c584afac28	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the advisory stays quiet on a half-typed file; the hang-guard test fixture	The advisory hook reads a half-typed file quietly, and the hang-guard holder writes its pid whole
+162d4f5531078cad6b5c4db488275aa7ed07f5e8	2026-09-23	calc-fix	R47	Shared span and def-line floor	rescore and check_gate floor a one-line Python def the way the coverage run does
+7d418e1b8bbb071bfc542d881f3173013628ead4	2026-09-23	calc-fix	R46	coverage.py per-function coverage	A one-line Python def under coverage.py scores as uncovered, with remedy split-lines
+c8c3b54ba4237edae864b9bb8424cf19d77edf03	2026-09-23	calc-fix	R44	Python reader: spans, names, inline_body, unread-def net	A Python body starts after its signature's colon, so a one-line def counts its body
+fe65f4d6027809ffc46895dce57a98a10eeb4902	2026-09-23	not-calc		message wording: the value and the exit code are unchanged	A plain verify's stamp refusal names the seed that clears it on a pinned store
+c5d72693952cbb11e12f60e60a8fb337e08baab2	2026-09-23	not-calc		message wording: the value and the exit code are unchanged	A seed from an older crapkit's pinned run names the run whose seed clears the stamp
+2ecc95ffe9e240b7643019d0d75662207d7bff5d	2026-09-23	not-calc		message wording: the value and the exit code are unchanged	A seed or prune legacy-identity refusal names the failed verify that verify's warning names
+44f1b0bb59eddd54d2209fbfb163e3d279d23f2c	2026-09-23	not-calc		message wording: the value and the exit code are unchanged	A seed or prune legacy-identity refusal names its run and the command that leaves it
+700d6ec7d9acb726f35659829e672062f324972f	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the stamp refusal is ordered after the baseline read and names the seed	verify reads its baseline before the stamp guard, and names the seed that clears it
+5d503b7e82a0b0560c7504d4541e2f04143c5b1d	2026-09-23	not-calc		message wording: the value and the exit code are unchanged	The seed and prune line names the newer run a failed verify kept them from
+4eb2cdca94b29934aa0cdcee64413b2ba9082a8f	2026-09-23	not-calc		feature: a new capability, no earlier value was wrong: seed and prune take --baseline ID	ratchet seed and prune take --baseline ID, admitted by the rule verify uses
+8b8008da2cdd5fd9c6728e8252c4ed74b6d1d51f	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The Python reader's docstring says a one-line def reads cognitive 0 and nesting 0
+b0de34cfbe1e7790aa18562ce9de87c088438785	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the unread-def refusal lists only real defs; the file was refused either way	The unread-def net names only real defs when a file ends inside a signature
+8fb838b9668598970a836260efdffc864fb5d7a8	2026-09-23	calc-fix	R43	Python reader: spans, names, inline_body, unread-def net	A one-line Python def whose body leaves a bracket open keeps the defs after it
+80f134cd3af0aaf0973443a1217b477d8f9b47aa	2026-09-23	not-calc		refactor: the same outputs: dead reader state removed; every reader test stayed green	The Python reader sets no nesting from a signature line, with no held level left over
+49e52e5652106b8fda38a07df254150df76b18ae	2026-09-23	not-calc		performance: the same outputs	The Python reader finds a body on the colon line from one flag per token
+793fd2495618dfe8578882b9b0b1ae9cd764a372	2026-09-23	calc-fix	R42	Python reader: spans, names, inline_body, unread-def net	A Python file that ends inside a def's signature is refused under either reader
+4456de798944363d17203a303411714aaa5c680f	2026-09-23	calc-fix	R41	Python reader: spans, names, inline_body, unread-def net	A Python def whose body sits on its colon line is listed as its own function
+4fd34cd4ed8cbbdec1b64292350eaeb85f4dd0ef	2026-09-23	not-calc		refactor: the same outputs: the stamp key renamed to proof	A lane stamp calls its reuse hash proof, apart from the lane's input paths
+86ef48f8b3239e01fc93779c227ce0e3a0746cd8	2026-09-23	calc-fix	R136	Lane reuse and artifact staleness	A lane input holding a glob is refused, and inputs take the scope-path spelling
+4e65c4cd2224ba61f38920a702b5334ab078897a	2026-09-23	calc-fix	R112	Lane reuse and artifact staleness	Lane staleness reads every lane's scope paths, stamped or not
+9daf678d3d46e7144268a124f4465e940c223ad1	2026-09-23	not-calc		process ownership, locks, worktrees or retention: no computed value: git reads are waited for instead of killed	Lane change reads wait for every git read they started instead of killing it
+951b9bfcae9110d91f6b396b638bc551f95adbaa	2026-09-22	not-calc		performance: the same outputs	Lane staleness starts its git reads together and scopes them to lane paths
+6823c4f9786d7cebad3140dd63cdb21f75c8e585	2026-09-22	not-calc		feature: a new capability, no earlier value was wrong: lanes may declare inputs	A lane that lists its inputs is reused while nothing under them changed
+c813fd924be81914dc24b54241bb8b81ce262882	2026-09-22	not-calc		refactor: the same outputs: coverage formats read through one adapter module	Each coverage format reads, keys and advises through one adapter module
+aea1fd836c5ecdc0681779cf694d89533969bb6e	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: doctor's WARN names which lane replaces a mangled stamp	Doctor tells a mangled stamp no lane writes from one its lane will replace
+5775e35ae4e38fd984a4e6328718827037592e37	2026-09-23	calc-fix	R137	Doctor lane and plugin checks	Doctor finds a bare lane word where cmd.exe does, from any directory
+bf7d155038cb6fca148edbedea8e5a4d1ec77701	2026-09-23	not-calc		refactor: the same outputs: import order	The lane_command import sits in module order in cli/admin.py
+5d88a5a64337c802debba0e607efc50419ebc53c	2026-09-22	calc-fix	R189	Doctor lane and plugin checks	Doctor finds a lane's words where the lane's shell finds them, from any directory
+6cf95fd8bcfd5b870fc3af14888276c57afab70c	2026-09-22	calc-fix	R190	Doctor lane and plugin checks	Doctor probes a lane's python with the lane's own environment and directory
+59afa1cd40ebf304b57266348057cf7b26ab8ca5	2026-09-22	not-calc		refactor: the same outputs: one launch spec for the lane run, the retest and doctor	One launch spec says where a lane's child starts and what environment it sees
+33f8b6155941ed2a0e69944394981af869321648	2026-09-22	not-calc		message wording: the value and the exit code are unchanged: the missing pytest-cov hint names the interpreter	The missing pytest-cov hint names the python heading a chained lane's pytest step
+16d7bfd30f8ef8d1889ba91efd91a2595b09368c	2026-09-22	calc-fix	R109	Doctor findings (unmeasured directories, nearby test)	The unmeasured-directory rule reads the per-path counts production feeds it
+24ccf00de0146c729f36c4eda9aa00f9e6b2c862	2026-09-22	calc-fix	R113	doctor --tune knobs and lane cost	Doctor --tune finds a lane's duration after its artifact moved, as the start order does
+16715d64b1ffa1c621be0aca2aaf3184ee220da7	2026-09-22	not-calc		a traceback becomes a refusal or a warning: no value was printed before: doctor read a non-object stamp entry as AttributeError	Doctor reads a non-object stamp entry as no stamp and names it
+ecc092fee9181d5b162aa2ab0574e81266c5f67e	2026-09-23	not-calc		refactor: the same outputs: local renamed before an import	packet.rejudged names its local verdict, leaving remedy free for score's export
+d1cda22d862609d27ac3fa86e532d3591e6c28c0	2026-09-23	not-calc		refactor: the same outputs: dead entry point removed	brief builds every packet through its loader, with no second entry point
+5616a6eaab43a4de0d5b6146ff1d7741e63be3b1	2026-09-23	not-calc		refactor: the same outputs: helper folded into rejudged	packet.rejudged applies the scoring rule itself, with no public helper beside it
+8cf5f5284c82436312b2949a9c2ed0baa1f0c18b	2026-09-23	not-calc		refactor: the same outputs: same remedies on every row	The queue reads each scope's ceiling through Config.ceiling_of
+7eac49c1d4495535a37d7a1e53d5a968eefa0424	2026-09-23	calc-fix	R51	Identity admission of saved marks	worklist again refuses a run whose same-line twins have no recorded order
+e9abef6180e3bdaaa69341391fd0cc799a5eaab5	2026-09-23	calc-fix	R105	Remedy label	worklist judges the remedy against today's ceiling, as next-item does
+ec070cf92b3d4de11a26f2e16464b77c82e631cd	2026-09-22	not-calc		performance: the same outputs: an empty next-item queue loads no artifact	An empty next-item queue reads no lane artifact and starts no git process
+3b2e6c22d1954c53128964cb364dce4a34c23d9c	2026-09-22	not-calc		message wording: the value and the exit code are unchanged: the no-run message names the store	duplication and worklist name the missing run when the store exists
+7199f1b7e128f6a5e7767768d4a44ed01f44c320	2026-09-22	calc-fix	R50	Remedy label	brief and next-item judge the remedy against today's ceiling
+f714c5d6b52839dc88bb16488f5669ab52392693	2026-09-22	calc-fix	R188	Claim ownership and closing	brief --batch skips a function another session holds under a claim
+6ef2dd9cc0f9204f31d753558fdbd162d7621868	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The byte budget's comment gives the whole range of lizard's cost a KB
+f00e44087b84aa8190ed745f43acf3a2f929d001	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	rescore's byte budget states what it measured end to end
+d6d3b270eb8a57789e5dbe8c34cb95793200bb5a	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	check_gate's title and the server instructions name rescore --gate
+635a5d4466896f7e9587b6def9344251302d2728	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: one unreadable-file note instead of two	rescore's in-process path runs the cache path's own per-file analysis
+7046e5db940a3cc862cf787c3dab333ecd1947bf	2026-09-23	not-calc		performance: the same outputs	rescore takes the cache path once the named files pass 256 KB
+a4267ba727263fd4c8233efbeeb51eb22396583a	2026-09-22	not-calc		refactor: the same outputs	rescore's analysis step says which files leave the shared cache alone
+27cbc7b9330655b855da4354ff1523b2ed0de08d	2026-09-22	not-calc		performance: the same outputs	rescore of a commit's worth of files runs lizard on them and skips the cache
+ab3638faf3181c5aad5bdbcd5ec4c0171b87ea9d	2026-09-22	not-calc		docs, help, description or comment text only; no value changes	check_gate's description names the mark rule it applies
+ee45e1d8c9ea5545842d50715b92753bb4990be4	2026-09-22	not-calc		MCP schema or field declaration: the values are unchanged: list_worklist's schema admits null remedy	list_worklist's schema admits the null remedy an inventory-only run returns
+1b3397a43aa4527df618fff5c451e032b748d215	2026-09-22	calc-fix	R26	Shared span and def-line floor	rescore scores a function on a shared line span as uncovered, as coverage does
+0ef99fdc6671696dd98a8c2b09c292c2a151810c	2026-09-22	not-calc		performance: the same outputs: a clean gate reads no marks	A clean rescore --gate reads no ratchet marks
+64fae457e3930c41d06fe6019ab8d6ca65c8588a	2026-09-23	not-calc		process ownership, locks, worktrees or retention: no computed value: test-evidence retention moves to the development runner	Test evidence retention lives in the development runner, and clean recovers mutations only
+cbeab2bcadc2513496ec251107be7ca2607feecd	2026-09-22	not-calc		process ownership, locks, worktrees or retention: no computed value	Clean on a linked .crapkit refuses in mutation recovery's name, not test evidence's
+933324cafb00df75e96dd6cdd45481a544cf6fe0	2026-09-22	not-calc		process ownership, locks, worktrees or retention: no computed value	An undeletable test-evidence directory no longer stops clean before mutation recovery
+67e1de89de423d314172f180ab96655505e38c6a	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	churn_log's module docstring and gitio's quotePath comment wrap at the file's width
+bcbc1956ea2c93df41bac4fe849ae8700de428b4	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The churn window's --since cutoff is called a cutoff, not a floor
+5acf6be2002e759cbfcc9bfccd239addde014468	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	covstream's window comment says most members fit, not that every one up to 4 MB does
+73be0cba6fda9ebd8f0c4ad78061b8d4fccccd07	2026-09-23	not-calc		refactor: the same outputs: dead churn walk removed	gitio no longer carries a churn log walk that nothing in crapkit calls
+98b49244040e83eaf8470beb63d0710255694a56	2026-09-23	not-calc		performance: the same outputs	Coupling sends only a quoted path line through the unquoter
+52fdfc59034181e87de8d58449858fc0f2438a69	2026-09-23	not-calc		performance: the same outputs	The churn log reaches coupling as it is stored, with no pass to strip commit dates
+e3f42138fa82b405f4cf03652de390b225e0180a	2026-09-23	calc-fix	R103	Churn counts and recency weight	An author whose last commit ages out leaves the churn commit table
+137a2ad1e05159d2d359fc8ebdcd21c7d64a2dfa	2026-09-23	not-calc		process ownership, locks, worktrees or retention: no computed value: the churn commit table is written aside and renamed; a torn table was refused by its CRC	The churn commit table is written aside and renamed over, never rewritten in place
+5a1c97d9e461045ba173b03f3b59ec6dcf99c31f	2026-09-23	calc-fix	R57	Churn counts and recency weight	A path's churn weight is an exact sum, whatever order its commits are listed in
+fcea3a555825fb34307e5e665efba933392ceb61	2026-09-23	not-calc		performance: the same outputs	A carry and the coupling refresh after it ask git each question once
+eb4f540c17b89c07564f428c89d46e10fd723efe	2026-09-23	calc-fix	R59	Churn counts and recency weight	A churn log cut at a higher floor is walked again, not re-dated
+0fca841902a2f25be1b5218e9f948c66755105ea	2026-09-23	calc-fix	R58	Churn counts and recency weight	The churn window is walked from the HEAD the map read, not from HEAD at spawn
+71ca462abb5df1ee603a9263dcd6baa3f04d443e	2026-09-23	not-calc		performance: the same outputs: incremental churn map; values equal a cold walk	A moved HEAD folds only its new commits into the churn map
+636b67ed666c57294dea711252078e4a13e292aa	2026-09-22	not-calc		performance: the same outputs	A churn map rebuild through the stored log makes one pass per line, not three
+c813cd6fd947564d511fef1ba19a7bbbd25d3f15	2026-09-22	not-calc		performance: the same outputs	A coverage member up to 4 MB decodes whole in C under the default window
+2c739daea71a1db01b453d4b5140d1a7ee6e7648	2026-09-23	not-calc		docs, help, description or comment text only; no value changes: a test pins the one short report the teardown rule admits	JUnit admission names the one short report its teardown rule admits
+3a3b6ba74c6ddb1b5e7c2314b7f4a38e6ce8b84d	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: a crashed worker named once	A report names a crashed worker once when the runner already recorded it
+91c56e5d41ea32ef57427ddcee0e43289a0e1180	2026-09-23	not-calc		performance: the same outputs	JUnit admission counts records only for a report holding a teardown error
+edee2e1c7aa7ab402d038f5eafbcc88d21faac32	2026-09-23	calc-fix	R63	JUnit results parsing	JUnit admission takes a suite's testcase total or its pre-9.1 record total
+171a8fa1bd473e4b69a86f1929c85d8b69e5d7bc	2026-09-22	calc-fix	R63	JUnit results parsing	A pytest run whose test errors in teardown is admitted as a finished run
+16c6e7bb7f1ae8b349afe7bad4da4be4dd492a75	2026-09-23	not-calc		refactor: the same outputs: a default parameter made required	ratchet move's path reader takes the typing directory with no default
+0d19e1b14e95e993dc2e554d3b0b5d9d18a22a36	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	docs/ratchet.md no longer says seed alone re-baselines the marks
+d3acf29df5b1fcdd55776f3e1bc0003f6ad959e2	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: every stamp refusal names coverage before seed	Every stamp refusal says to run coverage before the seed
+5a8911638d114d393488d51427132f0743ed5686	2026-09-23	calc-fix	R138	Metric stamp guard	A marks file ratchet prune creates takes the running metric
+4fe65f6f6ca4047d12c9785d3f5e9f5bf89759e2	2026-09-23	calc-fix	R107	Audited override grant	Every override grant names its metric, and a measured one cannot skip the stamp check
+cb37b3f118052bba09abcbe6e1641461e9bf17ab	2026-09-23	calc-fix	R139	Audited override grant	The hook's grant checks reader proof on the text it will publish
+efafe4d12dec94e97d330a891dd9c1223a207c97	2026-09-22	calc-fix	R56	Metric stamp guard	ratchet seed stamps the run it read, and prune keeps the recorded stamp
+ef20c0b8afbde5acc34b1de69a0387bcac901248	2026-09-22	calc-fix	R56	Metric stamp guard	The hook's override grant keeps the recorded metric stamp
+edb953da2e1a503eb55fae01d12bd6efc30c57d5	2026-09-22	calc-fix	R140	Metric stamp guard	The marks file owns both stamps on every publish
+7479386c14b79d3d95150539b40a4b885e69169e	2026-09-22	calc-fix	R66	Identity across renames and moves	ratchet move files marks under the repo-relative path a scored row carries
+20ffe787b0130747ab53321b125bce85a8cc03b6	2026-09-22	not-calc		performance: the same outputs	The legacy key check builds its group union once, not once per mark
+edd433a83ee203b323fe029f8340d5550dad5a17	2026-09-23	calc-fix	R141	Explain history	explain selects in the newest trusted run that holds the file, and its refusal names that run
+1e975b9d9e9120dba0c5b33fc6faf658bb4fc8bc	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The proved-paths docstring says an empty gate pays the whole proof
+446bf59ea79f9146877ee00c8bd4882ff8949027	2026-09-23	not-calc		performance: the same outputs	The lost-file check lists each folder once instead of stating every marked file
+01e2bdfb4cd3aeeb5096e241c3656590c8b4ed8d	2026-09-23	not-calc		refactor: the same outputs	The collision cache write drops a guard its read already covers
+80678b66d4c758967e95c794c21bb9820d074b8f	2026-09-23	calc-fix	R142	Identity admission of saved marks	The legacy mark proof covers a renamed file's marks and a file the newest run dropped
+15ad641103a8a068dad965b4bf6711c0fbbcf199	2026-09-22	not-calc		performance: the same outputs	Each run's same-line collision groups are scanned once, and a file is proved off its own history
+4bf53b6e01ccadd5d568c0c36ad8ff587fde873b	2026-09-22	not-calc		message wording: the value and the exit code are unchanged	The legacy-identity refusal names the run it read, and a caller can replace its advice
+2973ee6b2ce39ff89a1d0d499599d67a63117d84	2026-09-22	calc-fix	R143	Explain history	A function's history leaves out only the runs that cannot place its twins
+36ed71d589ea5bb653b312914a50cc4e717f244c	2026-09-23	calc-fix	R60	Test failure classes	A failure passes its flake retry only when every lane that failed it reran it
+d6363a0e60f0d646e9f69bae53455c6078494ae8	2026-09-23	not-calc		refactor: the same outputs	The override grant hands back one Verdict and the tighten reads it from there
+a65a8e8d8be5920c7fbf0af661ffadc4eaad20cb	2026-09-22	calc-fix	R61	Test failure classes	A test that passed only on its flake retry never enters a baseline's failures
+70d9c82ef43b04373b2c002f555d9c503cbd0620	2026-09-22	calc-fix	R144	Test failure classes	The OK line names a failure that passed its retry as a retried pass
+9655e460b4d5fbbdf2d2b18ceda79a1b03b1576e	2026-09-22	not-calc		refactor: the same outputs: the Verdict carries the finding classes	The Verdict names what it forgave, what passed its retry and what an override granted
+9b35768f86aeb84dce6425740f2130c60e402149	2026-09-22	calc-fix	R104	Test failure classes	A failure that passed its flake retry leaves dirty_failures with new_failures
+7e63faa7946325a56ee9ba885e16399b65d1a723	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The explain docs and get_function_history describe the resolver explain now runs
+9703a956107aa963a240f07bcd02598de01681ff	2026-09-23	calc-fix	R106	Handles and NAME resolution	A name reads only its own twins' positions, so a collision elsewhere does not refuse it
+8068df47a48b30de38e25dba81e5e5c29e7c8bcd	2026-09-22	calc-fix	R53	Explain history	explain reads a start line and an anonymous handle off the run brief reads
+6022796542628d5f651ec783a5889b76199e4ce8	2026-09-22	calc-fix	R52	Handles and NAME resolution	explain answers a bare twin name with the worst twin, as brief does
+6d63f19910290557fa99623b4f58d70defcbc2cf	2026-09-22	not-calc		refactor: the same outputs: naming rules move to keys.py	keys.py owns the function-naming rules and the one resolver brief runs
+6d012b1db3d4f3d4dc0db8f0769cfe0e6a974a78	2026-09-23	not-calc		message wording: the value and the exit code are unchanged: the lane log records a start failure	A lane attempt that failed to start writes its reason into the lane log
+7bf0978205f5e47095adf1a94fc3a8acf216529d	2026-09-23	not-calc		process ownership, locks, worktrees or retention: no computed value	A worktree teardown whose git failed to start still falls back
+b53120d41ff9baf1f743e924b9487de0d11550f3	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The docs say how a Windows owned command starts and where it can be orphaned
+570b81846b75c6d7e93fb326b3338e22f71ea897	2026-09-23	not-calc		refactor: the same outputs	One input-close helper serves procs and the guardian
+69558a6fbe0f135ceb0570fce54a1f3850692b7b	2026-09-23	not-calc		process ownership, locks, worktrees or retention: no computed value	A refused Windows command dies through its own handle, and the owner forgets it
+90013364e69fdc757fcd0c0db3789fda93f5828a	2026-09-23	not-calc		message wording: the value and the exit code are unchanged	A 0xC0000142 exit says a process failed to start, not that no work ran
+36a68bf7b7012e7a62011e786dcec7fbee1d5191	2026-09-23	not-calc		tests or test tooling only	A resume status other than zero refuses the command on every platform's test run
+e93707c9756654353c1ed9408d1bca9de57a86fe	2026-09-22	not-calc		process ownership, locks, worktrees or retention: no computed value	Windows starts an owned command suspended, with no Python launcher before it
+ec4ea303efec9c5f57f85dbe5be37cbae08d2e60	2026-09-22	not-calc		refactor: the same outputs	The command owner lives in one module, and procs uses only its public methods
+aa6066034981cc9fa1b722ffc189f327746e9b24	2026-09-23	not-calc		docs, help, description or comment text only; no value changes	The reader's docstring names the one-line def lizard leaves pending
+6eb809259ba405412a61faef50efd72c48a79c54	2026-09-23	calc-fix	R40	Python reader: spans, names, inline_body, unread-def net	A Python def nested three deep names each enclosing def once
+98cd38559266105a2d0b79ae6d003f1abc4c2c85	2026-09-22	not-calc		tests or test tooling only	A test holds the net to the rule that a parent read to its body keeps that
+f53e1b6bc0ade1c837a8f3b3912ae1caa30f5862	2026-09-22	not-calc		docs, help, description or comment text only; no value changes	The reader and net comments say what each now decides
+3b597d2d52503cbeee08f78f04edb268c9d4699e	2026-09-22	not-calc		docs, help, description or comment text only; no value changes	The Python reader's measurement notes name no consumer repo
+556cc4eae67f5ac8d42ab1bd14398bc9cce8459e	2026-09-22	calc-fix	R39	Python reader: spans, names, inline_body, unread-def net	The unread-def net counts a signature from its def keyword, so it holds under lizard's stock reader
+89ef4374a4d656ae1904ab720c32d86527832f04	2026-09-22	calc-fix	R38	Python reader: spans, names, inline_body, unread-def net	A generic Python def is named by its name, not by the bracket before its (
+d4afd984b178e4529d60ae245728cf36de889cbe	2026-09-20	not-calc		release commit: version strings and the changelog	Release 0.7.6
+67735a5e9f7c155127dd6aa487b421eb5fc2ce8d	2026-09-20	calc-fix	R25	Remedy label	A function on a shared line is told to split it, and the docs move host
+3093e742e684446cb0ab3e436ccd8c9e8f50f23e	2026-09-15	not-calc		release commit: version strings and the changelog	Release 0.7.5
+28f704e7432976fb690f32cdd65e426cb8032fd5	2026-09-15	not-calc		refactor: the same outputs: split for crapkit's own ceiling	Keep the shared-span members behind two helpers
+3b6021111737350e9b258f11434bfec0d45d097c	2026-09-15	calc-fix	R24	Shared span and def-line floor	A source line two functions share no longer ends the coverage run
+5a9cb7d96a4c3e9a7ef7fa4535b621200e662c5f	2026-09-15	not-calc		release commit: version strings and the changelog	Release 0.7.4
+aa74b653105113f6b49be94533850ad618822a9f	2026-09-15	calc-fix	R37	Python reader: spans, names, inline_body, unread-def net	fix(analyze): a Python signature that runs past its first ) is read to its body
+612e822841ae41a389b2b98cc80502ab29256977	2026-09-15	calc-fix	R110	Doctor findings (unmeasured directories, nearby test)	fix(doctor): the untested-directory warning names a nearby test in the same language
+0d2caad427f82941e31983cc5785deb5f4214618	2026-09-15	not-calc		process ownership, locks, worktrees or retention: no computed value: a launcher that dies at spawn fails its lane	fix(procs): a launcher that dies at spawn fails its lane, not the whole command
+e4898283748446512f9a49733a440eda41a4494c	2026-09-11	not-calc		docs, help, description or comment text only; no value changes	fix(retention): a raw docstring, so its backslashes are not escape sequences
+7fd1e6ff050a35bac95b2366c0e893241373197e	2026-09-11	not-calc		process ownership, locks, worktrees or retention: no computed value	fix(retention): a directory a sibling is creating or deleting is not a redirect
+7aecc9127dae4c48b4d8787a7062e34894a28c7b	2026-09-11	not-calc		docs, help, description or comment text only; no value changes	docs(mcp): check_gate names the hook it stands in for
+0939d683b186853bb38ea1b79293dcb501059ec3	2026-09-11	not-calc		release commit: version strings and the changelog	Release 0.7.3
+b448b885bd9f0b933289d4e6b41754f006a44b25	2026-09-11	not-calc		docs, help, description or comment text only; no value changes	docs(mcp): check_gate, list_claims and list_runs say what their arguments do
+a0ebe572f016a14176b7293f5f95cee93fd04cb6	2026-09-11	not-calc		a traceback becomes a refusal or a warning: no value was printed before: a missing file argument was a FileNotFoundError traceback	fix(rescore): a file argument that does not exist is refused, not crashed
+93f231d4b6670240d653ef6b4defb4b2b4560031	2026-09-09	calc-fix	R67	Verdict exit code and dirty split	fix(verify): the OK line names the failures the verdict forgives
+82348c6b500e0111997f0c0bb54e7448b2818632	2026-09-09	not-calc		release commit: version strings and the changelog	Release 0.7.2
+432524f1adb60d4c7ab4e6d66a07ce170dd75b84	2026-09-08	calc-fix	R36	Istanbul attribution (vitest v8, nyc, Jest, c8)	fix(analysis): one unreadable file or underflowed branch no longer ends the run
+90ca2c57bdb4885fdc67cfea11fa39a6d6f1483f	2026-09-08	not-calc		process ownership, locks, worktrees or retention: no computed value	Keep measurement locks outside reports and repair isolated CI fixtures
+2b093c90439e7754a2209cab794542b9e834e60a	2026-09-08	not-calc		process ownership, locks, worktrees or retention: no computed value: mutation owners required; unused cleanup paths removed	Require mutation owners and remove obsolete cleanup paths
+74022e72c3b804416bbc1d36d89a3b00a61c75bd	2026-09-08	not-calc		release commit: version strings and the changelog	Release 0.7.1
+98bc80e208175d6e93becbd4a62a02fb2389e795	2026-09-08	not-calc		process ownership, locks, worktrees or retention: no computed value	Fix process ownership and bound resource retention
+c21a9810d0246ebd39f84e5c3053a6be22b8a978	2026-09-07	not-calc		release commit: version strings and the changelog	Release 0.7.0
+0082379e350aa0eed44eeec50514023a573f61df	2026-09-07	calc-fix	R35	JUnit results parsing	Preserve process launch errors and refuse incomplete test measurements
+e99403f9865a0c6b5fece928696a0afa029e91ea	2026-09-07	calc-fix	R28,R29,R34	Artifact streaming framing and digest; Near-duplicate functions; Verdict exit code and dirty split	Complete architecture fixes and shorten the shared test schedule
+ac95ae71abb943b321362e47a7bca1915aa4b31c	2026-09-06	calc-fix	R145	Lane reuse and artifact staleness	Check the whole worktree before reusing nested measurements
+6ab8c125481fb8967c095b9885a4fdb82f3bccff	2026-09-06	calc-fix	R146	Lane reuse and artifact staleness	Separate source line freshness from measurement reuse
+6ea749ebd83faca28d83c7fde1ec26d3ffb4787c	2026-09-06	not-calc		configuration validation: refuses input that was never scored	Reject configuration factors outside finite float range
+39f610c8c31af1b658bf193113a45f919d8cc3da	2026-09-06	not-calc		process ownership, locks, worktrees or retention: no computed value	Own measurement outputs until command trees and parsing finish
+d3a2137e0d298193fd95b0c6729552bc29cb30d7	2026-09-06	calc-fix	R30	Analysis cache and stat index	Bind analysis to source bytes and preserve exact Git paths
+e064046c83f16197370e494f0c91076e05df0b28	2026-09-06	calc-fix	R111	Ratchet file parse and dump	Preserve state across concurrent ratchet writers and reports
+401ebfb3ab6a8e69fd0fb31f3d2738cf1b69582c	2026-09-06	calc-fix	R33	Lane reuse and artifact staleness	Require complete clean inputs for automatic measurement reuse
+f7b9ad01ebf2b2ffa2c62501a8e46876733295ec	2026-09-06	not-calc		process ownership, locks, worktrees or retention: no computed value	Share OS ownership for local file operations
+f771c46f8a7686973cd105125dbe59205ac30ef2	2026-09-06	calc-fix	R147	init scaffolding	Use shared scope ownership when init checks ancestors
+5511b47b47af72f5f32a7fb3a89923c6aa424c33	2026-09-06	not-calc		refactor: the same outputs: configuration admission moves to config_contract	Validate configuration and share test evidence across development and CI
+c24e6a427ff3297780e9ff71f0f08764ff2a60c7	2026-09-06	calc-fix	R21,R22,R23,R27,R30,R31,R32,R185,R186,R187	JS/TS expression arrows and template literals; Handles and NAME resolution; Shared span and def-line floor; Artifact streaming framing and digest; Analysis cache and stat index; File universe and scope ownership; Burn-down, mark age and debt policy; Mutation results	Consolidate analysis, execution and snapshot ownership
+20f00e1371334f84aa70bba6f7b23bfc4bdae0f6	2026-09-05	not-calc		release commit: version strings and the changelog	Release 0.6.0
+729fa189d97394f70159d2b9c218c8ebcf176260	2026-09-05	not-calc		docs, help, description or comment text only; no value changes	refactor(mcp): every tool description says what a call reads and costs, when to skip it, and what repo accepts
+2984a9c130c2e0d9044e7a21c55c0aff9659f3f8	2026-09-05	not-calc		feature: a new capability, no earlier value was wrong: the MCP tools are renamed and gain schemas	feat(mcp): the twelve tools are named verb_noun, carry titles and output schemas, and two read tools join
+afe8fb73753f82c7f708bde94910b41c547f24b2	2026-09-05	not-calc		release commit: version strings and the changelog	Release 0.5.1
+6481b781dec18be36b3ec50047073dfa65d477cd	2026-09-05	not-calc		feature: a new capability, no earlier value was wrong: verify counts the standing debt no mark covers	verify counts the standing debt no mark covers
+ae75ef1c0111c37987daf83e4b4dc5e8d70d198f	2026-09-03	not-calc		refactor: the same outputs: two marks repaid and a dead helper removed	Repay the two marks the 0.5.0 measurement seeded
+09808d30c4032ee06df40457ea28c81197b52dad	2026-09-03	not-calc		release commit: version strings and the changelog	Release 0.5.0
+60531253dd8d86de6b32cfd74bbd1feb55e6cd87	2026-09-03	not-calc		argument resolution: no computed value changed: the MCP child's cwd and --repo path arguments: argument resolution, no computed value changed	The MCP child runs at its root, --repo reads paths against its root, and a nested repository ignores its own store
+5471bced88c2d210e4649d8726f73754d538d321	2026-09-03	not-calc		feature: a new capability, no earlier value was wrong: every command walks up to crapkit.toml	Every command finds crapkit.toml by walking up, the way the advisory hook did (ADR 0002)
+e0c791d2358e9420f1378e2126cf417aa63c3339	2026-09-03	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge 050/windows into main
+55ad320f2894ad5ceae1e8e1ea72621b3cb0a5ec	2026-09-03	calc-fix	R148	Ratchet merge driver	The repository-text reader is one core module, and the merge driver, the override and the advisory hook read through it
+9220ef0d2c0d9b36f8015423796b4344060ea090	2026-09-03	not-calc		message wording: the value and the exit code are unchanged: ceiling instead of target in the head line	The brief head line says vs ceiling
+b89b4fa5a606c1d103b94b38da0274fb0cab3e70	2026-09-03	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge main into 050/windows so the override's BOM read is on the branch before it moves to the one reader
+9b9b8a5dcfad1ca51623f5ff2dc401481a14fda6	2026-09-03	calc-fix	R149	Audited override grant	Two reads the windows slice handed over: the override tolerates a BOM on the marks file, and brief says ceiling
+8756f8d53c0ee1f0afbe470798098742d1602d84	2026-09-03	calc-fix	R150	Claude-hook advisory and file choice	Windows reads UTF-8 in, tolerates a BOM on its own files, and prints ASCII one-liners
+a815caa38248ff6a137024bced416b0f1a62de6f	2026-09-03	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge 050/ceilings into main
+fab4415f4884eb2395900044ac25ff08b5f2297c	2026-09-03	calc-fix	R96	Ceiling per row	The ceiling accessor reaches next-item and the digest, the registry manifest counts ten tools, and the CHANGELOG quotes a measured digest/trend pair
+7a4e0ac86e518fa91e24ed7846969157786b924e	2026-09-03	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge 050/action into main
+f74b316bfeba1b3f046ab777bdfa15af7493d01d	2026-09-03	not-calc		tests or test tooling only: the Action's exit step is run under bash in its contract test	The exit step is run under bash, and exit 7 reads the same number as exit 8
+0f7d520066b9e8fef8a6c9ebda89c498d8d4d5a2	2026-09-03	calc-fix	R96	Ceiling per row	One ceiling rule for every summary, a coverage summary that names the run's shape, one error object under --json, and a gate verdict in the rescore payload and over MCP
+a9e2100a4a5a16da3c7429ccc67501b8fba4c180	2026-09-03	calc-fix	R151	Doctor lane and plugin checks	doctor judges a lane's python by its directory, so a venv is another environment on POSIX
+c075082e6128922c901ffbab7e6a2de5ad093918	2026-09-03	calc-fix	R152	PR comment	The comment quotes verify's error object instead of counting it
+1745fb7eb1a733e194cacf35e5b103cb85ceef08	2026-09-03	not-calc		message wording: the value and the exit code are unchanged: the comment's scored line names the ceiling	The comment's scored line names the ceiling, a failed lane's first line, or the error
+b1495d5d1cbcec078b12b967f0bdfe3b72dd13f0	2026-09-03	not-calc		message wording: the value and the exit code are unchanged: the comment names the function and the rule	The pull-request comment names the function and the rule that failed the check
+30272f1ca3af47a184a088ea669c983019d0a9cf	2026-09-03	calc-fix	R92	PR comment	The Action does not ask verify for a verdict over a failed coverage
+6e90cac57856d8ad173cda02289a74b9063c8b7b	2026-09-03	calc-fix	R91	PR comment	The Action says why the base run was not made, and gate: true fails a pull request that judged nothing
+6113cc251da0127b56bed36e51427915bfdc89ff	2026-09-03	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge 050/rows into main
+5dcd60374ee470409ee50a3af39306fc66943ee7	2026-09-03	calc-fix	R95	Worklist ranking and dormant list	Each twin's worklist row prints its own score; the batch tests commit under a clock; the report's CRAP and Cov cells are pinned end to end
+eab5c776732caea9ae1a5f72c296987d599947ab	2026-09-03	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge 050/lanes into main
+ab773cc1f94b1de2668919e3d3f1c689d37a2955	2026-09-03	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge 050/scaffold into main
+1e5ebc41f4978946eac49b0f635b9d2b8907ec2e	2026-09-03	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge 050/verify into main
+8bc573912588e43b3c81d914dc63a495236b9cfa	2026-09-03	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge 050/nesting into main
+fb5dad195d2af24a98a2ee2ef64f4df341eb5341	2026-09-03	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge 050/mutate into main
+74f548549645181118af098774e5e273028b7404	2026-09-03	calc-fix	R153	Lane reuse and artifact staleness	The fold persists the refusal the failed attempt raised, not a second reading of the lane log
+9863e1d7e588d079c3fb7673d038481840c609ec	2026-09-03	calc-fix	R121	Lane command reading and the full-suite guard	The lane guard accepts a positional only when the positionals cover every testpaths entry
+ac48e54bed18041d14b857934fe35ff8971d09fe	2026-09-03	not-calc		message wording: the value and the exit code are unchanged: doctor notes a manager-headed lane it did not probe	fix(doctor): a manager-headed lane says it was not probed, and a healthy lane costs one interpreter start
+8e9457127e7555f8c840c862cccfb619ebf92302	2026-09-03	not-calc		message wording: the value and the exit code are unchanged: the OK line names the override grant	verify names the override's grant and the restamp on its OK line, and tests the refusal through the process seam
+d38469fb950e4b351dcf1bea860183861f296ec9	2026-09-03	calc-fix	R20	Nesting depth	fix(nesting): the token that leaves a Python function was charged to it
+5a2c9383f5e2df766d29ace5bd7e05ea8796befb	2026-09-03	not-calc		message wording: the value and the exit code are unchanged: the corpus reason names max_file_bytes	mutate: the corpus reason names max_file_bytes, and two more cuts are proven at the CLI
+596172d4866c4ff5849b9c0bc5ac0a6fba659b63	2026-09-03	calc-fix	R88,R94	File universe and scope ownership; Churn counts and recency weight	Worklist rows carry crap, cov and the committed mark; unknown --scope exits 3; one-commit repos rank by ccn
+0194e3c622b4b7e5fe664acad8e55de9fa290cb8	2026-09-03	not-calc		feature: a new capability, no earlier value was wrong: MCP positionals sent as null are refused by the argument table	fix(mcp): a positional sent as null is refused by the table, not answered by a spawned CLI
+fc1dc5cd2bf60d7ef484f2681b4a8b369966331f	2026-09-03	calc-fix	R154	test-scoped routing	fix(init): a scoped-test command that collects a test, and a doctor that repeats the lane probe
+78fa32ffe86d8f9a33f044e3656febe6cc59c533	2026-09-03	calc-fix	R83	Lane reuse and artifact staleness	Refuse a failed lane's artifact on reuse; the lane guard reads pytest's testpaths
+16cde7340c2811f7f0c5e2490c638d1cfc74372b	2026-09-03	not-calc		message wording: the value and the exit code are unchanged: verify names the refused override, the marks file and the shallow clone	verify says what it did: the refused override, the marks file, the shallow clone
+ccad6ecf7d9261d5dda04c11866f39c43f43f495	2026-09-03	calc-fix	R86	Mutation results	Keep mutate out of tests: the diff passes through the scored corpus
+f69da718b4d6bbc44386a023675503a4c7922064	2026-09-03	calc-fix	R93	File universe and scope ownership	fix(exclude): a leading **/ matches zero or more directories
+6bdc236fb0b13d7d83154698c4660f9be71593c1	2026-09-03	not-calc		feature: a new capability, no earlier value was wrong: MCP argument checks and isError answers	fix(mcp): a bad tools/call answers isError and the session survives; scope on worklist and next_item
+1fc6bb7864333c3b2255164b2276d7628a8a2da4	2026-09-03	calc-fix	R19	Nesting depth	fix(nesting): a Python row's nesting is a depth, not lizard's structure count
+b8aa4f683ad8ee84a82c0d0cf9b28f50676a8cde	2026-09-02	not-calc		release commit: version strings and the changelog	Release 0.4.15
+79bfd4b51cc61e7c3af3b2aa8665a5db99621fe4	2026-09-01	not-calc		release commit: version strings and the changelog	Release 0.4.14
+9458f07a96390ece832b5b367ebff6e4a7733e1f	2026-09-01	not-calc		release commit: version strings and the changelog	Release 0.4.13
+b95fbaf9f5fcc28bcce943954ba22434363c7e44	2026-09-01	not-calc		docs, help, description or comment text only; no value changes	Teach the MCP listing to describe itself
+d91973bb11ca1206a1def7b34df1240e8f8b21e6	2026-09-01	not-calc		release commit: version strings and the changelog	Release 0.4.12
+c6c5e440d289c38e929d9e52bb1ec28bc390c109	2026-09-01	calc-fix	R155	Printed commands	Keep the report's embedded commands machine-neutral
+cef1e2b27afd92abd0a350c6108631eb877a928d	2026-09-01	calc-fix	R127	Printed commands	fix(cli): a next step that names a command this shell does not have
+6363a05f87ece4c4d5a91015ee2625128b576754	2026-09-01	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v0412b/env-and-paths'
+c2ef2f756e2130f1783722a24d9ec337e1af4588	2026-09-01	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v0412b/cli-guards'
+79f26988343ad232b0b01f656a6c6e512db7a1c5	2026-09-01	not-calc		a traceback becomes a refusal or a warning: no value was printed before: an unreadable mark was a ValueError traceback	fix(cli): a mark crapkit cannot read is a complaint, not a traceback
+56ff153620a6c601b003a96b3fdb81f649d2b6fe	2026-09-01	calc-fix	R156	Printed commands	Every lane refusal names the cause the reader can act on
+570c37a1c06e13f89c0286c22cdbc57e9160c37f	2026-09-01	calc-fix	R157	Doctor lane and plugin checks	Make the guards match the sentences that describe them
+3db18fc42506249c077846a0ba9b611d3a6dc58b	2026-09-01	calc-fix	R87	File universe and scope ownership	fix(cli): refuse the arguments that used to produce a wrong answer
+2b6dc0838ca8aa15c6417836f30f8a054f959c96	2026-09-01	not-calc		fixes a regression an earlier commit of the same unreleased series introduced: a bare "." scope path, refused by 0a4a55b in the same unreleased series, is accepted again	Leave a scope path of "." exactly as it was written
+72379fcdd00250469aa382e13d5b3c281c09b8ef	2026-09-01	not-calc		docs, help, description or comment text only; no value changes	Give the no-crapkit-on-PATH message a docstring and sort its _OWNER row
+d610f507245f5c2392c01d447f7012524f28e4fe	2026-09-01	calc-fix	R89	coverage.py per-function coverage	Score a coverage.py report that carries less than crapkit asked for
+c8aacf8d3431decb34c4c39473cd4bc7f1eabdb5	2026-09-01	calc-fix	R158	Doctor lane and plugin checks	Ask about the environment the hook and the lane actually run in
+bb8a75468bb07d667074ff0f5a0726c1e7da8ff9	2026-09-01	calc-fix	R83	Lane reuse and artifact staleness	Refuse a lane that leaves the previous run's artifact behind
+0a4a55be43178374cbea00da869cdce8616f1ea8	2026-09-01	calc-fix	R84,R85	File universe and scope ownership; Mutation results	Stop a scope path and a mutation command from measuring nothing in silence
+c86edb9fbb002622d3457b59711ecc4b74b21885	2026-09-01	not-calc		feature: a new capability, no earlier value was wrong: init's pytest lane gains --continue-on-collection-errors; a lane that died was reported as failed	Keep the pytest lane alive past one unimportable test file
+d40580d07698b1138d25a039724c31aaeb5835aa	2026-09-01	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v0412/config-cli'
+6cfe5898e7a44172a7ca97e23e36994301795572	2026-09-01	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v0412/lane-salvage'
+0b725493e243afab68170958c1ba68090a14ab1a	2026-09-01	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v0412/init-js-defaults'
+6e4b749e33c23b4ca026d8e92ade5192d6026785	2026-09-01	calc-fix	R159	Doctor lane and plugin checks	Stop doctor failing the config init just wrote
+e993b9011706137d2b8b8e12d338a280a6f80df2	2026-09-01	calc-fix	R160	Printed commands	Point the shard hint's -o at the file the next run opens
+8cbbb8739a9c2317e6dab0efe6f6744aac2ab4a1	2026-09-01	calc-fix	R120	Lane command reading and the full-suite guard	Read testpaths from the one config file pytest reads
+73f09b45f4f4e7146addf800cb640a063e67693b	2026-09-01	not-calc		docs, help, description or comment text only; no value changes	Say what init skips, what a vendor scope cost, and which runner won
+9f669116de651bc6014c7c3a10bed2f17b38aadc	2026-09-01	calc-fix	R161	init scaffolding	Bind the lane init writes to the venv the repo carries
+1025b4a7c2c7d2cc4e9c286be9d45fc85413f660	2026-09-01	not-calc		tests or test tooling only	Pin the full-suite refusal to the words the guard now prints
+ec6e86d786c0fd27b951b4fca8dfb64a35ee2753	2026-09-01	not-calc		feature: a new capability, no earlier value was wrong: no_progress_seconds	Kill a lane whose log stopped growing, on no_progress_seconds
+b08e2631390c50b6179ece5a983c177b69e68cab	2026-09-01	calc-fix	R162	init scaffolding	Make init write a js lane that runs, and a config doctor accepts
+613da96fd52c5117eb0db4c3adf76e5103adac50	2026-09-01	not-calc		message wording: the value and the exit code are unchanged: the refusal names the multi-lane fix	Name the multi-lane fix for a suite that cannot collect itself
+9692e7c32653c27a2cab62a2d59405fa28fa0e5d	2026-09-01	not-calc		feature: a new capability, no earlier value was wrong: the shard count and the salvage instructions	Count the coverage shards a killed lane left, and say how to use them
+87f16baf613b2dbb99dc05cca2532828a92cbe53	2026-09-01	not-calc		feature: a new capability, no earlier value was wrong: report --out takes an absolute path	Write `report --out` to the absolute path the reader named
+e8728deb9c82889030c340bb062482aefb3badf4	2026-09-01	not-calc		feature: a new capability, no earlier value was wrong: a reused junit that never finished warns instead of refusing	Warn instead of refusing a reused junit that never finished
+71b958ebd1316336f7db7f5054b2a8f4f3b2fe94	2026-09-01	not-calc		message wording: the value and the exit code are unchanged	Answer a repo path with the --repo route, not the choice dump
+243a1e259db3aeb1249c1cb50aca2f9f5c663356	2026-09-01	not-calc		release commit: version strings and the changelog	Release 0.4.11
+9d14d7fd2c2c786b8953b2e1a71dc0d52b013594	2026-09-01	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v0411/lane-failure-output'
+204b52a2425d98dad6db042f0c52d722bd9fa52e	2026-09-01	not-calc		message wording: the value and the exit code are unchanged: the Action's status claim	Narrow the action's status claim to the steps that keep one
+f316f1a083bd6ae768f918c2421384411a5ac5a9	2026-09-01	not-calc		message wording: the value and the exit code are unchanged	Claim only what the failure lines carry
+059bf451f4e1b522defa68b284bc7bc8f4b58ef3	2026-09-01	not-calc		message wording: the value and the exit code are unchanged	Fix three printed lines: a doubled block, a bad plural, a pasted path
+f564381bfe30e25ddc3acb943f00e3d833cc886b	2026-09-01	calc-fix	R163	PR comment	Keep a fork's read-only token from failing the whole action
+bcb35d88e155bc46cbe8be0a480056bbfb08aaeb	2026-09-01	not-calc		release commit: version strings and the changelog	Release 0.4.10
+76746799e2f7596d42619c1d74a4331d69c14f96	2026-09-01	not-calc		feature: a new capability, no earlier value was wrong: the Action's display name	Name the action so the Marketplace will take it
+cfd7c7da911909c27a6c05b80873a947637e5cdf	2026-09-01	not-calc		release commit: version strings and the changelog	Release 0.4.9
+54f9fa3a7bf7971e35f04b892f843b93bbda6ac0	2026-09-01	not-calc		docs, help, description or comment text only; no value changes	Say fork point where the step scores the fork point
+9b2f27905481a430e1340624a7b5dabf00ced68d	2026-09-01	calc-fix	R90	PR comment	Make the action's verdict cover the pull request, not the commit
+7ca60c6c1278e2690f9f210ae6210872bc493fb7	2026-09-01	not-calc		process ownership, locks, worktrees or retention: no computed value: the Action installs crapkit editable; the wrong-tree refusal was right for the copy installed	Install the action's crapkit editable, so a self-measuring lane sees the tree
+8289289300218897cd170414cc81321746bba714	2026-09-01	not-calc		release commit: version strings and the changelog	Release 0.4.8
+afa9516547de28f3a2c382eed9119eb951d26d8d	2026-09-01	not-calc		feature: a new capability, no earlier value was wrong: the GitHub Action	Add a composite GitHub Action that comments the worklist on a pull request
+ca0e28098e339b248eafdbf6de6639caa2550b20	2026-08-31	not-calc		release commit: version strings and the changelog	Release 0.4.7
+002867466439881775fbfd5ad43a14d05d792523	2026-08-31	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v16/issue-44 into main: fix #44
+24ad8a22638f3d4d7ee39ee99aef3c8ec62b1be1	2026-08-31	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v16/issue-43 into main: fix #43
+6536f7514a579a186cbe2bd457aeb4cccb1bd8f5	2026-08-31	calc-fix	R164	Artifact tree admission	Absolute paths under the root are this tree, not another one
+398f7c51e1fe234884a57e569d301ba99ac5130c	2026-08-31	not-calc		docs, help, description or comment text only; no value changes	Say which lanes the pytest-cov warning never probes
+a1208e1d4602efdbbec7ce175c49b69a931931b3	2026-08-31	calc-fix	R165	init scaffolding	Uncommenting init's lane template must not undo the lockfile prefix
+034846745a68bbebabb91ba9ed1129f52286c318	2026-08-31	not-calc		message wording: the value and the exit code are unchanged: a retried lane quotes the attempt that failed it	A retried lane quotes the attempt that failed it
+5ed7c5a56ff67ee14534d76a88fdb68deeda9168	2026-08-31	not-calc		feature: a new capability, no earlier value was wrong: claude-hook judges Bash events	judge a Bash write off the working tree in claude-hook
+4e326108de5985b368fa3121180f1ea3e3c9d1a7	2026-08-31	not-calc		release commit: version strings and the changelog	Release 0.4.6
+d285dcfdba5d6bc15ce2cfe3142b498bb352077e	2026-08-31	not-calc		refactor: the same outputs	Write the zero-overlap finding once, not once per verdict
+e7a7742c5769015382188486533d61897ae9c709	2026-08-31	not-calc		refactor: the same outputs	Read a lane's first word through one helper
+490b58ae5a48d2b00d9b7b0ae09f0a404eba657c	2026-08-31	calc-fix	R166	init scaffolding	Read "which lane runs pytest" in one place
+8e37ea7fa3d948a88b3de15e76432d4580db305f	2026-08-31	not-calc		message wording: the value and the exit code are unchanged	Name the log on the reuse refusal too
+2364ca76a68b1b4c930111ea4fd19411df4b6f60	2026-08-31	not-calc		message wording: the value and the exit code are unchanged: init names the manager the machine lacks	Name the manager init just wrote a lane for when the machine has none
+bf9ef73cbb1e3edf95f21a5bee9795f3f7a7f355	2026-08-31	not-calc		message wording: the value and the exit code are unchanged	Give a JS lane advice a JS lane can act on
+676d5469af64796c62d6e94f44e32c5b1e7ce0a1	2026-08-31	not-calc		message wording: the value and the exit code are unchanged	Quote the paths a scope declared, not the prefixes derived from them
+39e5ef8d46431f0fc6995797aef45b12248ea11f	2026-08-31	calc-fix	R82	Artifact tree admission	Judge the escape on the path the runner wrote, not on the prefixed key
+ed917e6e3d806f4cc5888794824ca07c16474b3d	2026-08-31	not-calc		message wording: the value and the exit code are unchanged	Keep the end of a hoisted cause line, and say it was cut
+cbc7c7d3e3512b44f648327caa768ce78b47baf2	2026-08-31	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge PR #41: name the lane log, refuse an artifact from another tree, pin the lane's python
+6ad2d9f7db23d6e2b4a771fc65d52675d74056b2	2026-08-30	not-calc		release commit: version strings and the changelog	Release 0.4.5
+de91a1d079da845c0ad92707f940d39b9c117e78	2026-08-30	not-calc		docs, help, description or comment text only; no value changes	Say which ratchet exemption rescore --gate applies
+2c5ba6dd7458efa45a398d446ff6ec036c57ad84	2026-08-30	not-calc		message wording: the value and the exit code are unchanged	Name the plugin root doctor found for itself
+1a6b338b7296ecdf4d8fc909e53ac124ca82e407	2026-08-30	not-calc		feature: a new capability, no earlier value was wrong: init's JS lane writes a junit report	Route the junit report of the JS lane init writes
+f079a24b8f66b33e4dfdf0aa3e73eef052eb3585	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge: PR #40 (packet spells the console script)
+906c4f85cf590fd49f99befe9022f9503dbd072c	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge: PR #39 (doctor --plugin-root resolution)
+20394bf67aab4b989467ab909c46d5bd00303166	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge: PR #38 (doctor WARNs on a lane with no results_artifact)
+88e69d5b104646a7f0a03449474296dd5192e69e	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge: PR #36 (verify --baseline ID refusal names the run)
+014a9ae91c5cd961bc32384cc26411ec8be8d51e	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge: PR #35 (verify gate exempts marked debt)
+0f31d89dea14555e26b620449d85c31c02c08573	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge: PR #33 (twin-key note printed by the parent)
+32813713dd39ee1103b5d222430e37147e8ea273	2026-08-30	not-calc		tests or test tooling only	fix(verify): the named-baseline refusal lands on the wave's in-process verify tests
+183dbc31bfe9c55f5769e7fc39b2e5fa61eded3f	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge pr-35: verify's gate reads a ratchet mark as rescore --gate does (#29)
+7086a1ed34ad5f6e27e567b4814aafcefbd94ee5	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge pr-40: packet commands spelled as the console script (#37)
+d83fedf6f309acc9f3b477733b0cb081d22ad881	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge PR #32: verify names a lane that wrote no test counts (#30)
+c62e78d60454638e44589a1234ea7cc8ac101b9a	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge pr-38 into v13/pr-38: doctor names a lane with no results_artifact (#26)
+c7a5f25b14fbcb9f08908e55d67dfe117730737c	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge pr-33: the twin-key note is printed by the parent, never by a pool worker (#31)
+3f2fbf5a6bb19aaee5aaac16a04eb82e6068978a	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge pr-39: doctor --plugin-root finds the install under any directory (#28)
+ccaeee238949145634acd72e28035e37f42bb718	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge pr-36
+5666f66e7e52177a1868efe95cc629d15b176c94	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v12/verify-artifact-walk into main (perf wave)
+ec3f5186c32db05c305c952c2ed542a141b9ae90	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v12/mutate-pool into main (perf wave)
+38b8e56063eb154693fa3934fd10c205fb1d5df5	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v12/trend-totals into main (perf wave)
+df5cf02e21f492b997196486c2dfceee378aa06b	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v12/brief-shingle into main (perf wave)
+5231a721efc7a6f9c15f8753ee87bb505e29338c	2026-08-30	not-calc		docs, help, description or comment text only; no value changes	docs(covstream): cite the numbers this branch measured, not the probe's
+444f50ba4b5d68bfb1c78210126d718fe7b817e8	2026-08-30	not-calc		docs, help, description or comment text only; no value changes	docs(mutate): quote the pool numbers this branch measured itself
+c1c57b9519e16916047c020e6fcebbea0ff92b22	2026-08-30	not-calc		feature: a new capability, no earlier value was wrong: the mutation worktree pool	feat(mutate): keep the worker worktrees, re-prepared per run
+5ac105edea236ea8efe8efc841817d30623666f2	2026-08-30	not-calc		docs, help, description or comment text only; no value changes	docs(uncovered): say why the lane fold lives beside the fold rule
+19ca8c2b68b6660e663981e0ab71737fdca2a9d4	2026-08-30	not-calc		feature: a new capability, no earlier value was wrong: worktree reset and long paths	feat(gitio): a worktree reset, and long paths on the worktree calls
+d1638b7e2bcf026e7ce4a3c51f05a74c0e566889	2026-08-30	not-calc		performance: the same outputs	perf(verify): an empty diff needs no artifact walk
+999e5bb7bcd8f14ccda97cb20217ab4d93f90a7e	2026-08-30	calc-fix	R81	Run totals and trend rollup	fix(store): a prune takes the run's rollup with it
+c21d0b03e727fbdc7a2e352381804a2367f57de3	2026-08-30	not-calc		performance: the same outputs	perf(brief): shingle the repo once per batch, not once per packet
+b934205875fa014642093950694118e541dd5d53	2026-08-30	not-calc		performance: the same outputs	perf(covstream): answer both artifact questions in one walk
+2fa69edc5208100c50be4c0e6c9540912b65c054	2026-08-30	not-calc		performance: the same outputs	perf(store): sum each run once, not on every trend
+7d8387a95ef25d767a3c8655e1bba28af808fc9d	2026-08-30	not-calc		performance: the same outputs	perf(dup): let one shingle index answer many twin queries
+084de015d83159906c8a810f8bc841b8d60052e8	2026-08-30	not-calc		performance: the same outputs	perf(doctor): ask a runner if it starts once, not once per lane
+feb5056da5725101968c2c142c475b8cf3fa5fae	2026-08-30	calc-fix	R101	Change coupling	fix(coupling): a pair whose paths are not strings reads as cold, not as str(5)
+6abc12d3c34105a6bae24fc57d156a51eb3fcd38	2026-08-30	not-calc		refactor: the same outputs	refactor(coupling): drop the branch a slice already handles
+cfbf7cf4d96dfc4c94124b048468a9e562c2b990	2026-08-30	not-calc		docs, help, description or comment text only; no value changes	docs(coupling): the cache docstring now carries numbers I measured
+398b83e89fb7b731176fe3d40ab92edae422519f	2026-08-30	not-calc		performance: the same outputs	perf(coupling): brief, batches and coupling read the ranking off disk
+004f87a3562c87aaa59f22da98fdf2e4e665c637	2026-08-30	not-calc		performance: the same outputs	perf(coupling): cache the ranked pairs, so a warm run stops re-pairing the log
+c152366e59e8f727c88033937d961d30758159d0	2026-08-30	not-calc		docs, help, description or comment text only; no value changes	docs(verify): name the one cause that reaches the no-counts line
+a86600f3fcb12ba41d185c9c0aa299eb074dbf5f	2026-08-30	calc-fix	R167	Doctor lane and plugin checks	fix(doctor): --plugin-root reads only crapkit manifests and steps into Claude Code's layout
+fe2d3b6e61b5e30d8ddbe00a36809b2d31d73c68	2026-08-30	not-calc		refactor: the same outputs: the untrusted-run reasons become a table	fix(verify): the untrusted-run reasons are a table, and every one is tested
+767448d25f86ecda61db19f775808609aa9c0d23	2026-08-30	calc-fix	R123	Printed commands	fix(packet): the commands a packet names are spelled as the console script
+ae33a8bc8a8aec5f7710c59058d7a31a35e7bf66	2026-08-30	not-calc		feature: a new capability, no earlier value was wrong	feat(doctor): --plugin-root finds the installed plugin under any directory, or with no PATH at all
+fd4bc5d659ad091c0df8ea892f884b61e8742a6b	2026-08-30	not-calc		feature: a new capability, no earlier value was wrong	feat(doctor, init): a lane without a results_artifact is named, and init writes one
+a7888ec35b95d3a64cb5f88dbc6c56f763bb7897	2026-08-30	not-calc		message wording: the value and the exit code are unchanged	fix(verify): --baseline naming an untrusted run says which run and what would serve
+13a42ff8d460873e7b6d9debb43912a51cd307ca	2026-08-30	calc-fix	R80	verify gate violations	fix(verify): the gate reads a ratchet mark the way rescore --gate does
+a9327d0957d2ed3ce7420b2a7a2c337d0cad08b7	2026-08-30	not-calc		message wording: the value and the exit code are unchanged: the twin-key note is printed by the parent	fix(analyze): the twin-key note is printed by the parent, never by a pool worker
+5e43b77b85695d9740e791d7e423c2028b0c64f3	2026-08-30	not-calc		a traceback becomes a refusal or a warning: no value was printed before: a lane with no test count raised KeyError	fix(verify): a lane that wrote no test counts says so instead of raising KeyError
+dea55b2b201ace9d338b45096dc2334ed7b150ac	2026-08-30	not-calc		docs, help, description or comment text only; no value changes	docs(shell): state the nesting rule the cognitive extension runs now
+3d251f1488bbfc49e8f7a49c37c922be835fb070	2026-08-30	calc-fix	R78	File universe and scope ownership	fix(brief): the packet's scope answers with the same language arm as its ceiling
+fadee2fd9503097d6fd9e969ebb7aa9a43bba7a1	2026-08-30	not-calc		a traceback becomes a refusal or a warning: no value was printed before	fix(verify): a lane with no test count is not a KeyError
+eb4ebe3230d90cdb5467c6c91aed065d5250a6af	2026-08-30	not-calc		a traceback becomes a refusal or a warning: no value was printed before: a tracked file with no records raised KeyError	fix(scoring): a tracked file with no records is not a KeyError
+8fffa516e91bb45f8d8ab4bd6c68ab3ffbe7f827	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v11/cognitive-shell into main (0.4.5 defect wave)
+78a4db5a8f187d9c5f71bca69015a8ab3cf8641e	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v11/doctor-probe into main (0.4.5 defect wave)
+d1370b3c5870429b87d6010d7535c768ea17fbac	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v11/runs-and-names into main (0.4.5 defect wave)
+5fabac02d821252b1e6de1c24a65975ba3f9d467	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v11/git-paths into main (0.4.5 defect wave)
+993d17a11d75494d4b21324260e8d87dc8089fc9	2026-08-30	calc-fix	R78	File universe and scope ownership	Name one owner for a path, whoever is asking
+6847c3b24590e3443a8f6273f1ca3b1431ea46de	2026-08-30	calc-fix	R70,R79	Ratchet seed and prune; Worklist ranking and dormant list	fix(runs): worklist and seed read the run their peer reads
+2ca1a6de15af5b10704b721b8775b9a2c17f4246	2026-08-30	calc-fix	R18	Cognitive complexity	Make a shell block nest the way every other one does
+b3e4bc85cae2de39f459d76bbd43c515b488b790	2026-08-30	calc-fix	R168	Lane reuse and artifact staleness	Name a dirty non-ASCII file the way ls-files spells it
+16bfb05c1c9cc9e670dfdbd2fa10afb42c36a9c7	2026-08-30	calc-fix	R169	Doctor lane and plugin checks	Probe the python that runs pytest, not the first word
+1c795106724493b52d397fccac9de26337047c23	2026-08-30	not-calc		refactor: the same outputs: the scored-run tuple gains field names; values unchanged	Name the eight positions of a scored run
+830726acca59c259dc3b311f11b7133cfd5f86b9	2026-08-30	calc-fix	R170	Lane command reading and the full-suite guard	Read a lane command the way the shell that runs it does
+b3245115b06d9b4490fc314e4d3ba4052d6ae181	2026-08-30	calc-fix	R102	Handles and NAME resolution	fix(explain): a start line names a function here too
+e8feb31786e85edf6926d55bf30d1cf8b9735af0	2026-08-30	not-calc		process ownership, locks, worktrees or retention: no computed value: the lane timeout kills the process tree	Kill the lane's process tree when its timeout expires
+77e9b30bf721870a4783bc34ea3229620ef7c4e5	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v10/cmd-words-2 into main (0.4.5 wave)
+694cb04ae7043531bdf24047981b10dd15265766	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v10/gitio-docs-2 into main (0.4.5 wave)
+f5d9f48eb07accc4e4b9f4cf4a1071f8b00d838f	2026-08-30	not-calc		feature: a new capability, no earlier value was wrong: doctor starts a lane's first word	Fail doctor on a lane whose runner will not start
+12a0096fcbfaa6271ac7e89c056d782bfc89065d	2026-08-30	calc-fix	R171	Lane command reading and the full-suite guard	End a command at ';' on the sh path
+61e7ba64857ca1bbe17c9b2c28e84a15e026d781	2026-08-30	calc-fix	R172	Lane command reading and the full-suite guard	Leave the shell its redirections instead of reading them as argv
+441125c035a6a096697a5457b72d6048ef21ac09	2026-08-30	not-calc		feature: a new capability, no earlier value was wrong: init probes the lane's first word	Say when the shell cannot run a lane's interpreter
+d9da55b9d037bc30f72a7b33a8289921fe9275aa	2026-08-30	calc-fix	R173	Lane command reading and the full-suite guard	License the five vitest options that still read a path
+507b9b8b58d0503fe0f1ce58a00b921d9a5e0a2c	2026-08-30	not-calc		message wording: the value and the exit code are unchanged: the dirty set's label; the verdict never read it	Stop calling the dirty finding set tracked-only
+8a64fd16b212e12c037e5d76af2ec93c409e1da2	2026-08-30	calc-fix	R174	Lane command reading and the full-suite guard	Break words on space, tab and the line endings only
+46720853930c56edce0f8fc262d026cfb6e9fbc2	2026-08-30	not-calc		latent defect no caller reached: no printed value changed: config_value read the injected flag; no caller asked a diff.* key	Ask git for the repo's config, not for crapkit's own flags
+ad2c8c184f4858cbb5587633fc53ff528532a1ab	2026-08-30	calc-fix	R175	Lane command reading and the full-suite guard	Read a quoted or escaped operator as a word, not a separator
+19a495d8613d34e56786cb344a57204131f7706c	2026-08-30	not-calc		process ownership, locks, worktrees or retention: no computed value: the timeout kills the tree; a timed-out mutant was killed before and after	Kill the process tree when a timeout expires
+8aa793a464b7675e420542b168632c8a834d809f	2026-08-30	calc-fix	R176	Doctor findings (unmeasured directories, nearby test)	Read the commit-graph through gitio's git-dir walk
+30e1191943854ff8ff065c67f72d158eb66590ee	2026-08-30	not-calc		performance: the same outputs: 0.4.4's churn caches are adopted instead of read cold	Adopt 0.4.4's churn caches instead of orphaning them
+f9cd57786ff1147417460d87df3a32b59cc4bb60	2026-08-30	calc-fix	R177	Lane command reading and the full-suite guard	Keep the empty argument a pair of quotes writes
+8c051ab24b859c7922e2da1e833d0639745990a1	2026-08-30	not-calc		docs, help, description or comment text only; no value changes	wave 0.4.5: integrator notes from the six lanes
+2ebd80508abdc01826a86f024933f3c8660cad06	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v10/probe into main (0.4.5 wave)
+63b5d0ff8132d35ec3b7033590bf7f2e0561098d	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v10/cmd-words into main (0.4.5 wave)
+2ddaaee2e38110f4e8a6928dc3e9c5b6a8495b5b	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v10/nested-root into main (0.4.5 wave)
+eda5d43eead7f097a7218d347e2732b9ed95dca7	2026-08-30	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge v10/churn-paths into main (0.4.5 wave)
+b3e14d6b137988295eac38fab0671328e959759b	2026-08-30	calc-fix	R100	Store and cache upgrade	fix(churn): put the cache format in the file name
+252c62a6ee7ce3fde711734e65a041e467b33f4b	2026-08-30	calc-fix	R178	Claude-hook advisory and file choice	give the per-edit advisory a diff its own root can read
+dfb6c36b4352e81c4d83fee8323fbe2c07d8f120	2026-08-30	calc-fix	R75	Pre-commit gate	answer every git path relative to the crapkit root
+2a4c112bfa6c35a69b9d1a477d1028ed88dcdf18	2026-08-30	not-calc		performance: the same outputs	perf(gitio): find .git by walking up, as git does
+c548b0e0ae2915cde37043c053ecfa7e60c4ade0	2026-08-30	calc-fix	R126	Printed commands	fix(docs,init): double-quote crapkit[py] so cmd.exe can run the line
+2b7c1449ed1b81a6f2bbbff0dbe69b7bff1542f3	2026-08-30	calc-fix	R179	init scaffolding	fix(init): fall back to the py launcher before writing a dead python3
+56439457b732c4c9b430a41dd594595a6e885ba3	2026-08-30	calc-fix	R119	Lane command reading and the full-suite guard	fix(config): honour cmd.exe's caret escape outside quoted runs
+650d6c3db9e9fe0666cdca01a12ae4555db89d5b	2026-08-30	calc-fix	R77	Change coupling	fix(coupling): rank only pairs git still tracks
+cc6969c272fc4aeab0f58d2399f6f650b1f15643	2026-08-30	calc-fix	R117	Lane command reading and the full-suite guard	fix(config): read a chained command as one argv per segment
+155ea5ac7046cf9babb54eadefca5043da187fc8	2026-08-30	calc-fix	R180	init scaffolding	fix(init): a 9009 from cmd.exe is not an answer about pytest_cov
+482a6c7c698ab66ac029c5d727486805cc12d1fc	2026-08-30	calc-fix	R118	Lane command reading and the full-suite guard	fix(config): read a quote that opens mid-token as cmd.exe does
+c32dca9aa335a251f8a132520ab959132d948b9c	2026-08-30	not-calc		process ownership, locks, worktrees or retention: no computed value: the timeout bounds the wall clock; the verdicts are unchanged	fix(init,mutate): make the subprocess timeouts bound the wall clock
+86f7171e52ccd743e59dbf3909b2f109a83f3cd3	2026-08-30	calc-fix	R76	Change coupling	fix(coupling): decode a quoted path before normalizing slashes
+78f475deecde9a329146ef65635def429667ce6c	2026-08-30	not-calc		process ownership, locks, worktrees or retention: no computed value: a worktree add is retried	retry a worktree add killed by a peer's half-built entry
+00e381c361a6179e151ddef4c9d0d21eced04da6	2026-08-29	calc-fix	R82	Artifact tree admission	0.4.5: name the lane log, refuse an artifact from another tree, pin the lane's python
+e8b35f783423bab1e4dc3a8297ac81c2eeb291f3	2026-08-29	not-calc		release commit: version strings and the changelog	release 0.4.4: PR #23 plus its Windows half
+695369f7c4bc676f5bb5485900d5e6a930d76fc0	2026-08-29	not-calc		docs, help, description or comment text only; no value changes	docs(init): the probe docstring claimed a cost pytest never charges
+97f1e9be7f1fa588c134e65da55b75aa9772558e	2026-08-29	not-calc		tests or test tooling only	test(init): cover the pytest-cov probe seams in-process
+ac2d339e94b17b909e7a00c0c93ffc466dcb350d	2026-08-29	not-calc		feature: a new capability, no earlier value was wrong: init probes for pytest-cov	feat(init): probe the py lane's python for pytest-cov; add the [py] extra
+2656879f513b9f9b214a321a6912681ea8545b23	2026-08-29	calc-fix	R73,R74	Churn counts and recency weight; Lane command reading and the full-suite guard	fix(config,churn): shlex-read lane commands; root-relative churn paths
+39107bc88eeef66f8e70f9271777ed35cbc9c881	2026-08-29	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v09/wire'
+289cbb02dde20fc3908c0de696debbce0562e8d8	2026-08-29	not-calc		release commit: version strings and the changelog	release prep: 0.4.3 changelog and version surfaces
+196848c4c012630f8cc25ef50637c951289bec48	2026-08-29	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge: the five field fixes, and the two seams between them
+fcbf68985b3838ab7d2e089c13fa792e4a198dcd	2026-08-29	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge v09/dup-docs
+a9bca6097dc9ff64cb157c83e0bbc79cdd4d46ec	2026-08-29	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge v09/lane-guard
+fa2180bca60becae96ed11c62306fda6313a4cb6	2026-08-29	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge v09/lane-trust
+f5afc55cfc40a79378e825069cdfeb0fbd7b3d5c	2026-08-29	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge v09/tighten
+1be2ed4f6a20ca6ea9ac3ebfc807e739c3a99fa8	2026-08-29	calc-fix	R71	Ratchet tighten, damping and delta	fix(verify): a measurement that bounced is not an improvement
+7b81476e8944aa56381dd6a6c4eecdd6f57ffe53	2026-08-29	calc-fix	R72	Ratchet key and twin ordinals	fix(ratchet): same-named functions in one file each get their own key
+10e8a83cdcc95c4282c5ed3950f0114faf770188	2026-08-29	calc-fix	R69,R70	JUnit results parsing; Ratchet seed and prune	fix(trust): a run nobody finished is not a measurement
+a8699a5452e89cc2e69d40aa0e7775fff1b37b4d	2026-08-29	calc-fix	R116	Lane command reading and the full-suite guard	fix(config): a flag's value is not a positional test path
+750c5663704b2a36e409bb43b4be3662b8d48ca1	2026-08-29	calc-fix	R68	Near-duplicate functions	fix(duplication): a closure and the factory around it are not a duplicate
+811a02b0a412bd7b0e4c4574757b9c1afed4920d	2026-08-28	not-calc		release commit: version strings and the changelog	release: v0.4.2 - cc-only day-one path, Rust/Go bare names, docs and CI fixes from the fresh-user pass
+355724c7a4906d7139ade574c9d0b6a0fefd3eab	2026-08-28	not-calc		merge commit: the merged commits carry the changes and have rows of their own	merge: reconcile the four v0.4.2 fix branches
+6cdbfedbb92fab76851321ef8a78df2394dbbc9a	2026-08-28	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v08/names' into v08/wire
+0077e4fcc8ec5f7024db56ff2598f9259b7962ef	2026-08-28	calc-fix	R181	init scaffolding	fix(cc-only): the 60-second start runs on a repo with no coverage parser
+cdaf15bd5f78ec49ed32373e488e726f463e1e45	2026-08-28	calc-fix	R17	Cognitive complexity	fix(names): bare name from the leading token, one NAME rule, Rust match cognitive
+698826adc4e0cf7b806a4b873099e79b9d831ac9	2026-08-28	not-calc		release commit: version strings and the changelog	release: v0.4.1 - documentation, packaging, and contributor files
+2fc00bd8f81c9e36cdc3a8edee3b547e999d57f4	2026-08-28	not-calc		release commit: version strings and the changelog	release: v0.4.0 - eight languages, the Claude Code plugin, and claude-hook
+14f3c726ed56a171903ac1933f938c6718db2cc8	2026-08-28	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v05/wire'
+25d6566e7f4965eed316bbe0ab88e85d74366508	2026-08-28	not-calc		feature: a new capability, no earlier value was wrong: the plugin, hook and gate wiring	wire the distribution layer: the plugin, the hook and the gate agree
+dcc3fc4bf75d74474bb881a0e508191250d55aec	2026-08-28	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge the two wave-2 branches: six new languages on one bumped version
+4a53845dd91523c5e29022a8469566b036532626	2026-08-28	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v05/gate' into v05/wire
+36c972f785d7ebcd9048694fb6a09d93dc18edfb	2026-08-28	calc-fix	R182	Pre-commit gate	feat(gate): exempt marked functions at commit, read rescore per file
+958e2768d4459700756f6ea335219322ab894241	2026-08-28	not-calc		feature: a new capability, no earlier value was wrong: claude-hook	feat(claude-hook): advisory ccn check for one Claude Code edit, silent everywhere else
+706036cd2ae956fcc071074a66c803c52906a154	2026-08-28	calc-fix	R15	Cognitive complexity	admit cpp, objectivec, vue, java and zig, and fix two C-family defects
+19db739d2b696c3766ddeb8457b9284b2b204a7f	2026-08-28	calc-fix	R16	Source decoding and line normalization	admit PowerShell as a cc-only language, on a reader lizard ships none of
+2cc2dc10cbba4b6710374b379f807a8101164aa6	2026-08-28	not-calc		feature: a new capability, no earlier value was wrong: rust and shell admitted	admit rust and shell as cc-only languages, on the two new readers
+d7291925927930c75f464263dc8e2d64acb9c3dc	2026-08-28	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branches 'v04/rust-reader' and 'v04/shell-reader' into v04/wire
+a5b02dc769f2ead0a4a3949c97caf985fd8b3ab0	2026-08-28	not-calc		feature: a new capability, no earlier value was wrong: the shell reader	feat(shell): a lizard reader for sh/bash, cc-only
+6846f28a9b4546fc7b0d571c7f2cf66c4276a877	2026-08-28	calc-fix	R14	Rust reader (match arms)	Count Rust match arms: a corrected reader for lizard #494
+884f9c6cf8f57fb7be579fbe3d1a80e24c35c804	2026-08-28	not-calc		release commit: version strings and the changelog	release: v0.3.0 - Swift/Kotlin cognitive fix, Go cc-only, report, diff-uncovered SARIF
+0c707f786c191a676f74d64977a6c9c05a13f616	2026-08-28	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v03/verify'
+a1274436f6c0450e89d6bcee6ad2872d5a29d04b	2026-08-28	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v03/report'
+d92895cc69ab6d8c53f3007bcf5f3c6b1576ec1e	2026-08-28	not-calc		merge commit: the merged commits carry the changes and have rows of their own	Merge branch 'v03/constants'
+16a56dae6bb6f43aac2ff8008f0ecdc620bdc19d	2026-08-28	not-calc		feature: a new capability, no earlier value was wrong: crapkit report	Add `crapkit report`: one self-contained HTML page off the existing payloads
+0a0ee50d411441d95694a1a113b8d67a6f49a6f6	2026-08-28	calc-fix	R13	Cognitive complexity	Fix cognitive=0 for the two lizard readers that drain the token stream
+c4a6716aaa76ae84c3527c41081f90bd39da9ac1	2026-08-28	calc-fix	R183,R184	Mutation results; Lane command reading and the full-suite guard	admit Go as a cc-only language and widen four polyglot constants
+b1170342d86013a66a4fd021676daa10b3549663	2026-08-28	not-calc		feature: a new capability, no earlier value was wrong: the diff-uncovered SARIF rule; the parser dispatch had no third parser to misroute	verify SARIF carries the uncovered changed lines, and uncovered.py refuses unknown parsers
+c8a5251896de086b3ea24779b675b827423cc8a4	2026-08-24	not-calc		initial public release: every calculation starts here	crapkit v0.2.0
