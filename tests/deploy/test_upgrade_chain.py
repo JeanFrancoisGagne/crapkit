@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from kit import gitmirror, state, state_manifest
 from kit.cells import cell
 from kit.state import output
@@ -112,3 +114,39 @@ def test_lin_up_chain(box, templates, candidate):
     state.walk(box, repo, candidate, source, state.upgrade_line("pip in the active environment"))
 
     state_manifest.check(box, before, state_manifest.take(repo), label="0.4.0 to the candidate")
+
+
+# --- the kit's own check of the era reader ------------------------------------------------
+
+ERA_PAGE = """# crapkit
+
+## Upgrading from 0.4.4
+
+**Run `crapkit ratchet seed` first.** Then:
+
+```
+$ crapkit verify
+# crapkit-analysis=8 lizard=1.24.0
+crapkit: refused
+```
+
+Use `crapkit verify --baseline N` or `crapkit ratchet seed` again.
+
+### A subsection keeps going
+
+`crapkit mutate --drop-pool` removes it.
+
+## Languages
+
+`crapkit worklist` is not an upgrade step.
+"""
+
+
+@pytest.mark.kit
+def test_an_era_section_ends_at_its_level_and_reads_commands_in_order():
+    body = section(ERA_PAGE, "Upgrading from 0.4.4")
+
+    assert "A subsection keeps going" in body and "Languages" not in body
+    assert era_commands(ERA_PAGE, "Upgrading from 0.4.4") == [
+        "crapkit ratchet seed", "crapkit verify", "crapkit mutate --drop-pool"]
+    assert section(ERA_PAGE, "No such heading") == ""

@@ -206,3 +206,94 @@ def test_win_up_sources(box, templates, candidate, named, record_property):
     install_old(box, source, "3.12", f"crapkit=={version}")
 
     state.walk(box, repo, candidate, source, state.upgrade_line(PIP))
+
+
+# --- the kit's own checks of the guide reader and the manifest ----------------------------
+
+PAGE = """# Upgrading
+
+| Installation | Upgrade command |
+|---|---|
+| pip in the active environment | `python -m pip install --upgrade crapkit` |
+| uv tool | `uv tool upgrade crapkit` |
+
+| What changed | Required action |
+|---|---|
+| Analysis or lizard stamp | Follow the [rules](ratchet.md). |
+
+Check `crapkit --version` and Upgrade readers before writing.
+"""
+
+
+@pytest.mark.kit
+def test_the_upgrade_table_reads_command_rows_only():
+    assert state.upgrade_rows(PAGE) == {"pip in the active environment": "python -m pip install --upgrade crapkit",
+                                        "uv tool": "uv tool upgrade crapkit"}
+    assert state.upgrade_line("uv tool", PAGE) == "uv tool upgrade crapkit"
+    assert state.upgrade_command("uv tool upgrade", PAGE) == "uv tool upgrade crapkit"
+    with pytest.raises(state.GuideGap, match="no row for 'pipx'"):
+        state.upgrade_line("pipx", PAGE)
+    with pytest.raises(state.GuideGap, match="no `pipx upgrade ...` command"):
+        state.upgrade_command("pipx upgrade", PAGE)
+
+
+@pytest.mark.kit
+def test_prose_steps_are_code_spans_and_sentences_the_page_carries():
+    assert state.guide_span("crapkit --version", PAGE) == "crapkit --version"
+    with pytest.raises(state.GuideGap, match="never names `crapkit mutate --drop-pool`"):
+        state.guide_span("crapkit mutate --drop-pool", PAGE)
+    with pytest.raises(state.GuideGap):
+        state.guide_says("teammate", PAGE)
+    assert state.guide_says("Upgrade readers before writing", PAGE)
+
+
+@pytest.mark.kit
+def test_deferred_findings_raise_last_as_their_own_kind():
+    gaps, bugs = state.Gaps(), state.Bugs()
+    gaps.check(True, "never raised")
+    gaps.raise_any()
+    gaps.check(False, "a gap")
+    bugs.check(False, "a bug")
+    with pytest.raises(state.GuideGap, match="a gap"):
+        gaps.raise_any()
+    with pytest.raises(state.KnownBug, match="a bug"):
+        bugs.raise_any()
+
+
+@pytest.mark.kit
+def test_a_scope_block_pasted_twice_loses_only_its_copy():
+    block = '[[scope]]\nname = "calc"\npaths = ["calc"]\n\n'
+    other = '[[scope]]\nname = "web"\npaths = ["web"]\n\n'
+    text = "[crapkit]\ntarget = 6\n\n" + block + block + other + "[exclude]\n"
+    assert state._without_repeats(text) == "[crapkit]\ntarget = 6\n\n" + block + other + "[exclude]\n"
+
+
+@pytest.mark.kit
+def test_the_manifest_fails_on_lost_rows_and_nothing_else():
+    before = {"store": {"counts": {"runs": 4, "attempts": 1, "run_rollup": 9}, "runs": [1, 2, 3, 4],
+                        "claims": [["calc/a.py", "f( x )"]], "overrides": [["calc/a.py", "f( x )", "why"]]}}
+    grown = {"store": {"counts": {"runs": 6, "attempts": 1, "run_rollup": 0}, "runs": [1, 2, 3, 4, 5, 6],
+                       "claims": [["calc/a.py", "f( x )"]], "overrides": [["calc/a.py", "f( x )", "why"]]}}
+    lost = {"store": {"counts": {"runs": 3, "attempts": 0}, "runs": [1, 2, 4], "claims": [], "overrides": []}}
+
+    assert state_manifest.losses(before, grown) == []
+    assert state_manifest.losses(before, lost) == [
+        "table runs: 4 row(s) before, 3 after", "table attempts: 1 row(s) before, 0 after", "runs: 3 is gone",
+        "claims: ['calc/a.py', 'f( x )'] is gone", "overrides: ['calc/a.py', 'f( x )', 'why'] is gone"]
+
+
+@pytest.mark.kit
+def test_the_manifest_reads_a_store_from_a_copy(tmp_path):
+    import sqlite3
+    (tmp_path / ".crapkit").mkdir()
+    (tmp_path / "crapkit-ratchet.tsv").write_text("# crapkit-analysis=11 lizard=1.24.0\n# crapkit-keys=1\npath\n")
+    with sqlite3.connect(tmp_path / ".crapkit" / "crap.sqlite") as db:
+        db.execute("create table runs (id integer)")
+        db.execute("insert into runs values (1)")
+    db.close()
+
+    taken = state_manifest.take(tmp_path)
+
+    assert taken["stamp"] == ["# crapkit-analysis=11 lizard=1.24.0", "# crapkit-keys=1"]
+    assert taken["store"]["counts"] == {"runs": 1} and taken["store"]["runs"] == [1]
+    assert taken["store"]["claims"] == [] and sorted(taken["files"]) == [".crapkit/crap.sqlite", "crapkit-ratchet.tsv"]

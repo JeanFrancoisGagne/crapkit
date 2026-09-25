@@ -369,9 +369,9 @@ def guide_span(text: str, body: str | None = None) -> str:
     return text
 
 
-def guide_says(text: str) -> str:
+def guide_says(text: str, body: str | None = None) -> str:
     """A sentence the guide's prose or tables must carry; GuideGap when it does not."""
-    if text not in page():
+    if text not in (body if body is not None else page()):
         raise GuideGap(f"{GUIDE}: the page never says {text!r}")
     return text
 

@@ -19,7 +19,7 @@ import re
 
 import pytest
 
-from kit import pyindex, repos, state, wheels
+from kit import docsnip, pyindex, repos, state, wheels
 from kit.cells import cell
 from kit.mcp_client import McpClient
 from kit.state import output
@@ -218,20 +218,16 @@ def uvx_versions(box, repo) -> dict[str, str]:
             "uvx crapkit, after @latest": crapkit_version(box, ("uvx", "crapkit"))}
 
 
-@NO_UVX_ROW
-@cell("lin-up-uvx-n1", channel="uvx against pyindex", harness="none",
-      scenario="upgrade: what `uvx crapkit --version` returns under PyPI cache headers; @latest; docs line from this run",
-      use_cases="uvx refresh", os="linux", image="core", cadence="nightly")
-def test_lin_up_uvx_n1(box, templates, candidate, record_property):
-    n1 = wheels.n_minus_1()
-    record_property("n_minus_1", n1)
-    gaps = state.Gaps()
-    source = state.build(box, n1, cache=templates)
+def uvx_across_release(box, templates, candidate, old: str, gaps) -> dict[str, str]:
+    """A repo `uvx crapkit` has served at `old`; then the candidate lands on
+    an index with PyPI's cache headers. Returns what each uvx spelling runs;
+    a guide that leaves the stale one unexplained is a gap."""
+    source = state.build(box, old, cache=templates)
     repo = source.checkout(box)
     state.suite_venv(box)
-    with pyindex.serve([state.era_links(box, n1)]) as index:
+    with pyindex.serve([state.era_links(box, old)]) as index:
         uvx_env(box, index)
-        assert crapkit_version(box, ("uvx", "crapkit")) == n1
+        assert crapkit_version(box, ("uvx", "crapkit")) == old
         index.files[candidate.wheel.name] = candidate.wheel
         seen = uvx_versions(box, repo)
         box.transcript.attach("uvx-after-release", seen)
@@ -242,6 +238,18 @@ def test_lin_up_uvx_n1(box, templates, candidate, record_property):
                f"{state.GUIDE}: `uvx crapkit` kept running {seen['uvx crapkit']} after {candidate.version} was "
                f"published (the MCP entry `uvx crapkit mcp` too: {seen['uvx crapkit mcp']}); the guide never "
                "names `uvx crapkit@latest`, which fetched it")
+    return seen
+
+
+@NO_UVX_ROW
+@cell("lin-up-uvx-n1", channel="uvx against pyindex", harness="none",
+      scenario="upgrade: what `uvx crapkit --version` returns under PyPI cache headers; @latest; docs line from this run",
+      use_cases="uvx refresh", os="linux", image="core", cadence="nightly")
+def test_lin_up_uvx_n1(box, templates, candidate, record_property):
+    n1 = wheels.n_minus_1()
+    record_property("n_minus_1", n1)
+    gaps = state.Gaps()
+    uvx_across_release(box, templates, candidate, n1, gaps)
     gaps.raise_any()
 
 
@@ -256,17 +264,7 @@ def win_pipx(box, templates, candidate, gaps) -> None:
 
 
 def win_uvx(box, templates, candidate, gaps) -> None:
-    old = state.source_version("0.7.6")
-    assert crapkit_version(box, ("uvx", "crapkit")) != old
-    era = {"UV_FIND_LINKS": str(state.era_links(box, old))}
-    box.run(["uvx", "--refresh", "crapkit", "--version"], env=era, expect=0, note="uvx the day 0.7.6 was current")
-    seen = {"uvx crapkit": crapkit_version(box, ("uvx", "crapkit")),
-            "uvx crapkit@latest": crapkit_version(box, ("uvx", "crapkit@latest"))}
-    box.transcript.attach("uvx-after-release", seen)
-    assert seen["uvx crapkit@latest"] == candidate.version, seen
-    gaps.check("uvx crapkit@latest" in state.page(),
-               f"{state.GUIDE}: `uvx crapkit` ran {seen['uvx crapkit']} after the release; the guide never names "
-               "`uvx crapkit@latest`")
+    uvx_across_release(box, templates, candidate, state.source_version("0.7.6"), gaps)
 
 
 def win_uv_tool(box, templates, candidate, gaps) -> None:
@@ -300,22 +298,56 @@ def test_win_pipx_uvx_uvtool(box, templates, candidate, channel):
     gaps.raise_any()
 
 
-FRESH = {"pipx": (state.pipx_install, ("crapkit",)),
-         "uvx": (state.nothing, ("uvx", "crapkit")),
-         "uv-tool": (state.uv_tool_install, ("crapkit",))}
+def tool_install(install):
+    """A tool install for a Python repo: the repo's test environment on PATH,
+    then crapkit from the installer, as README Install describes."""
+    def installed(box) -> None:
+        state.suite_venv(box)
+        install(box)
+    return installed
+
+
+def tool_steps(launcher: tuple[str, ...]) -> list[list[str]]:
+    return [[*launcher, step] for step in ("init", "doctor", "coverage", "worklist")]
+
+
+def readme_uvx_steps(_launcher: tuple[str, ...]) -> list[list[str]]:
+    """README 'A repo that is not Python': uvx is the route it gives a repo
+    with no Python of its own, and these are its commands as printed."""
+    return [line.split() for line in docsnip.commands(docsnip.fence("README.md", "A repo that is not Python"))]
+
+
+FRESH = {"pipx": (tool_install(state.pipx_install), ("crapkit",), "py-pytest", tool_steps),
+         "uv-tool": (tool_install(state.uv_tool_install), ("crapkit",), "py-pytest", tool_steps),
+         "uvx": (state.nothing, ("uvx", "crapkit"), "go-rust-shell", readme_uvx_steps)}
 
 
 @cell("win-pipx-uvx-uvtool", channel="pipx, uvx, uv tool", harness="cmd.exe",
-      scenario="fresh: the candidate through each tool installer, init and doctor, one MCP session",
+      scenario="fresh: the candidate through each tool installer, the README's steps for that route, one MCP session",
       use_cases="install", os="windows", image=None, cadence="nightly")
 @pytest.mark.parametrize("channel", sorted(FRESH))
 def test_win_fresh_tool_installs(box, templates, candidate, channel):
-    install, launcher = FRESH[channel]
-    repo = repos.checkout(box, "py-pytest", cache=templates)
-    state.suite_venv(box)
+    install, launcher, template, steps = FRESH[channel]
+    repo = repos.checkout(box, template, cache=templates)
     install(box)
 
     assert crapkit_version(box, launcher) == candidate.version
-    for step in (["init"], ["doctor"]):
-        box.run([*launcher, *step], cwd=repo, expect=0)
+    for argv in steps(launcher):
+        box.run(argv, cwd=repo, expect=0)
     assert state.server_info(box, repo, [*launcher, "mcp"])["version"] == candidate.version
+
+
+# --- the kit's own check of the reviewed mapping -----------------------------------------
+
+EXPORT = [{"path": "web/routes.js", "long_name": "(anonymous) ( n )", "start": "1", "occurrence": "1", "crap": "8.0"},
+          {"path": "web/routes.js", "long_name": "(anonymous)", "start": "9", "occurrence": "2", "crap": "1.0"},
+          {"path": "web/routes.js", "long_name": "(anonymous)", "start": "9", "occurrence": "3", "crap": "8.0"}]
+
+
+@pytest.mark.kit
+def test_a_mark_moves_to_the_function_with_its_name_and_score():
+    assert _mapped("web/routes.js\t(anonymous)\t8.0000", "web/routes.js", EXPORT) == \
+        "web/routes.js\t(anonymous)#2\t8.0000"
+    assert _mapped("web/routes.js\t(anonymous) ( n )\t8.0000", "web/routes.js", EXPORT) == \
+        "web/routes.js\t(anonymous) ( n )\t8.0000"
+    assert _mapped("calc/a.py\tf( x )\t9.0000", "web/routes.js", EXPORT) == "calc/a.py\tf( x )\t9.0000"

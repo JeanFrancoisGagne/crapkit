@@ -173,3 +173,8 @@ def test_lin_skew_baseline(box, templates, candidate):
     refused = box.run(check.split(), cwd=box.root / "ci")
     stamp_refused(box, refused, candidate)
     state.guide_says("Upgrade readers before writing")
+
+
+@pytest.mark.kit
+def test_a_tightened_mark_is_one_lower():
+    assert tightened("calc/a.py\tf( x )\t50.8750") == "calc/a.py\tf( x )\t49.8750"

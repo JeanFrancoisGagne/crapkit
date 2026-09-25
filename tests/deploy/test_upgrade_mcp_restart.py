@@ -75,7 +75,8 @@ def test_lin_up_pyextra_0_5_1(box, templates, candidate):
 HELD_FIRST_CALL = pytest.mark.xfail(
     strict=True, raises=state.KnownBug,
     reason="deploy-bug deploy-upgrade-8: a 0.7.6 MCP session whose first tool call comes after the upgrade "
-           "answers JSON-RPC -32603 'measurement owner stopped before confirming ownership', naming no restart")
+           "answers JSON-RPC -32603 naming no restart: 'measurement owner stopped before confirming ownership' on "
+           "Linux, 'TypeError: _operation() takes 2 positional arguments but 3 were given' on Windows")
 
 
 def first_call_after(client, bugs) -> None:
@@ -128,18 +129,21 @@ def test_lin_up_profiles_restart(box, templates, candidate):
 LOCKED = ("WinError 32", "being used by another process", "os error 32")
 
 
-def rerun_if_locked(attempts: dict):
+def rerun_if_locked(attempts: dict, candidate):
     """docs/upgrading.md "Windows launcher locks": a failed upgrade is rerun
-    once the server stops; the error it failed with must be the lock."""
+    once the server stops, the error it failed with must be the lock, and
+    step 3's `crapkit --version` then names the candidate."""
     def after_close(box, repo):
         held = attempts["held"]
         box.transcript.note(f"the upgrade under a held crapkit.exe exited {held.exit}")
         if held.exit:
             assert [word for word in LOCKED if word in output(held)], output(held)
             pip_extra_upgrade(box, repo)
+        assert candidate.version in box.run(["crapkit", "--version"], expect=0).stdout
     return after_close
 
 
+@HELD_FIRST_CALL
 @cell("win-up-profiles-restart", channel="per-harness config", harness="stdio clients (profiles)",
       scenario="upgrade: a held session keeps crapkit.exe until its restart action", use_cases="launcher lock",
       os="windows", image=None, cadence="nightly", real_cli=False)
@@ -149,5 +153,4 @@ def test_win_up_profiles_restart(box, templates, candidate):
     def upgrade(box, repo):
         attempts["held"] = pip_extra_upgrade(box, repo, expect=None)
 
-    held_session(box, templates, candidate, upgrade, after_close=rerun_if_locked(attempts))
-    assert candidate.version in box.run(["crapkit", "--version"], expect=0).stdout
+    held_session(box, templates, candidate, upgrade, after_close=rerun_if_locked(attempts, candidate))

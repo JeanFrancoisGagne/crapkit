@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -54,10 +55,16 @@ def mcp_version(box, repo, env: dict) -> str:
         return client.initialize()["serverInfo"]["version"]
 
 
+def named(text: str, directory) -> bool:
+    """Whether `text` names `directory` as given, normalized or resolved."""
+    forms = {str(directory), os.path.normpath(str(directory)), str(Path(directory).resolve())}
+    return any(form in text for form in forms)
+
+
 def doctor_names_both(box, repo, env: dict, old_dir, new_dir) -> None:
     doctor = box.run([found_on(env, "crapkit"), "doctor"], cwd=repo, env=env)
     text = output(doctor)
-    state.known_bug(str(old_dir) in text and str(new_dir) in text, "deploy-upgrade-5",
+    state.known_bug(named(text, old_dir) and named(text, new_dir), "deploy-upgrade-5",
                     f"doctor with installs in {old_dir} and {new_dir} printed:\n{text}")
 
 
@@ -113,3 +120,10 @@ def test_win_two_installs(box, templates, candidate):
     assert seen == {"terminal (user PATH first)": candidate.version, "GUI app (system PATH first)": OLD,
                     "MCP server a GUI client starts": OLD}, seen
     doctor_names_both(box, repo, terminal, state.scripts(system), user_bin)
+
+
+@pytest.mark.kit
+def test_a_directory_is_named_in_any_of_its_spellings(tmp_path):
+    spelled = tmp_path / "share" / ".." / "bin"
+    assert named(f"launcher in {tmp_path / 'bin'}", spelled)
+    assert not named(f"launcher in {tmp_path / 'other'}", spelled)
