@@ -635,12 +635,20 @@ def test_the_receipt_holds_each_site_s_calls_and_nanoseconds(tmp_path):
 
 def test_a_pool_worker_writes_its_own_tally_and_repeats_none_of_the_command_s(tmp_path):
     """The analysis pool runs the record check in workers: spawned on Windows
-    and macOS, forked on Linux. Each worker reports what it checked, once."""
+    and macOS, forked on Linux. Each worker reports what it checked, once,
+    including the packet site, whose tally list lives for the whole process."""
     code = ("from concurrent.futures import ProcessPoolExecutor\n"
             "from crapkit import invariants as inv\n"
+            "from crapkit.score import ScoredRow\n"
+            "row = ScoredRow('src', 'a.py', 'f( )', 1, 2, 4, 4, 4, 2, 0, 0, 0.5, 'measured',"
+            " 6.0, 'ok', 0, 1, 0)\n"
             "inv.check_totals(3, 1, 9.0)\n"
+            "inv.check_rejudged(row, 6)\n"
             "with ProcessPoolExecutor(1) as pool:\n"
-            "    pool.submit(inv.check_totals, 2, 0, 4.0).result()\n")
+            "    pool.submit(inv.check_totals, 2, 0, 4.0).result()\n"
+            "    pool.submit(inv.check_rejudged, row, 6).result()\n")
     tallies = _run_with_receipts(code, tmp_path)
     assert len({tally["pid"] for tally in tallies}) == 2
-    assert [tally["sites"]["totals"]["calls"] for tally in tallies] == [1, 1]
+    calls = [{site: tally["sites"][site]["calls"] for site in ("totals", "packet")}
+             for tally in tallies]
+    assert calls == [{"totals": 1, "packet": 1}] * 2

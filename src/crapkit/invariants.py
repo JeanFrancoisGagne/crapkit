@@ -84,7 +84,11 @@ def _stop(check: str, at: str, kept: str) -> NoReturn:
 
 
 def _spent(site: str, began: int) -> None:
-    tally = COST.setdefault(site, [0, 0])
+    """Add one call to the site's tally. The per-row sites call it once a
+    function, so it allocates nothing after a site's first call."""
+    tally = COST.get(site)
+    if tally is None:
+        tally = COST[site] = [0, 0]
     tally[0] += 1
     tally[1] += perf_counter_ns() - began
 
@@ -92,7 +96,8 @@ def _spent(site: str, began: int) -> None:
 def _write_receipt(directory: str) -> None:
     """This process's tally, in a file no other process writes: processes that
     exit together would interleave appends to one shared file."""
-    sites = {site: {"calls": calls, "ns": ns} for site, (calls, ns) in sorted(COST.items())}
+    sites = {site: {"calls": calls, "ns": ns} for site, (calls, ns) in sorted(COST.items())
+             if calls}
     tally = {"pid": os.getpid(), "alive_ns": perf_counter_ns() - _BORN[0], "sites": sites}
     try:
         handle, _ = tempfile.mkstemp(suffix=".json", prefix=f"{os.getpid()}-", dir=directory)
@@ -112,8 +117,9 @@ def _watch_receipt() -> None:
 
 def _forked() -> None:
     """A forked worker starts from a copy of the command's tally, which the
-    command reports itself."""
-    COST.clear()
+    command reports itself. The lists stay, since a site may hold one."""
+    for tally in COST.values():
+        tally[:] = [0, 0]
     _BORN[0] = perf_counter_ns()
     _watch_receipt()
 
@@ -433,14 +439,19 @@ def check_summary(summary: dict, judged: int) -> None:
 # --- the packet ------------------------------------------------------------------------
 
 
+_PACKET = COST.setdefault("packet", [0, 0])
+
+
 def check_rejudged(row, ceiling: int) -> None:
     """packet.rejudged: the remedy the packet prints against today's ceiling.
-    The row's own CRAP and coverage were checked when its run was stored."""
+    The row's own CRAP and coverage were checked when its run was stored.
+    next-item rejudges every admitted row (62,877 on a large repo), so the check
+    tests the one table lookup it needs and adds to its tally in place."""
     began = perf_counter_ns()
-    problem = remedy_problem(row, ceiling)
-    if problem:
-        _stop(problem, where(row), PRINTED)
-    _spent("packet", began)
+    if row.remedy not in _expected_remedies(row.ccn, row.crap, ceiling):
+        _stop(remedy_problem(row, ceiling), where(row), PRINTED)
+    _PACKET[0] += 1
+    _PACKET[1] += perf_counter_ns() - began
 
 
 def _splits_problem(ccn: int, ceiling: int, splits: int) -> str | None:
