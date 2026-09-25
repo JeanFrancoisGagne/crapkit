@@ -44,10 +44,15 @@ def split_message(message: str) -> tuple[str, str]:
     trailing space trimmed), skip the blank lines after it, and the rest is the
     body."""
     lines = message.split("\n")
-    first = next((i for i, line in enumerate(lines) if not _blank(line)), len(lines))
-    end = next((i for i in range(first, len(lines)) if _blank(lines[i])), len(lines))
+    first = _next(lines, 0, blank=False)
+    end = _next(lines, first, blank=True)
     subject = " ".join(line.rstrip(GIT_SPACE) for line in lines[first:end])
     return subject, "\n".join(lines[end:]).strip("\n")
+
+
+def _next(lines: list[str], start: int, *, blank: bool) -> int:
+    """The index of the first line from `start` that is (or is not) blank."""
+    return next((i for i in range(start, len(lines)) if _blank(lines[i]) == blank), len(lines))
 
 
 def _short_date(stamp: int, offset_minutes: int) -> str:
