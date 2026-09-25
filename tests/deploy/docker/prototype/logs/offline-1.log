@@ -1,14 +1,15 @@
 crapkit 0.8.0 from the wheelhouse
-claude-mcp-list|0|967|pass|crapkit: crapkit mcp - ✔ Connected
-codex-mcp-status|0|2908|pass|{"data": [{"name": "crapkit", "runtimeStatus": null, "pluginId": null, "serverInfo": {"name": "crapkit", "title": null, "version": "0.8.0", "description": null,
-gemini-mcp-list|0|2773|pass|✓ crapkit: crapkit mcp (stdio) - Connected
-opencode-mcp-list|0|4179|pass|└  1 server(s)
-copilot-mcp-get|0|5066|pass|}
-cline-mcp-install|0|4671|pass|{"name":"crapkit","status":"installed","transport":{"type":"stdio","command":"crapkit","args":["mcp"]},"warnings":[]}
-cline-config-mcp|0|3563|pass|[{"name":"crapkit","transportType":"stdio","disabled":false,"path":"/work/.probe.VOq7I9/.cline/data/settings/cline_mcp_settings.json"}]
-cursor-list-tools|0|3351|pass|- list_worklist (repo, top, scope)
-claude-plugin-install|0|434|pass|Installing plugin "crapkit@crapkit"...✔ Successfully installed plugin: crapkit@crapkit (scope: user)
-claude-plugin-doctor|0|825|pass|crapkit doctor: checking /work/.probe.VOq7I9/.claude/plugins/cache/crapkit/crapkit/0.8.0
-codex-plugin-add|0|79|pass|}
-codex-hooks-list|0|928|pass|{"data": [{"cwd": "/work/.probe.VOq7I9", "hooks": [{"key": "crapkit@crapkit:hooks/hooks.json:post_tool_use:0:0", "eventName": "postToolUse", "handlerType": "com
-codex-skills-list|0|838|pass|{"data": [{"cwd": "/work/.probe.VOq7I9", "skills": [{"name": "crapkit:crapkit", "description": "Work one crapkit debt item end to end: the packet that replaces 
+claude-mcp-list|0|1605|pass|crapkit: crapkit mcp - ✔ Connected
+codex-mcp-status|0|6182|pass|{"data": [{"name": "crapkit", "runtimeStatus": null, "pluginId": null, "serverInfo": {"name": "crapkit", "title": null, "version": "0.8.0", "description": null,
+gemini-mcp-list|0|4870|pass|✓ crapkit: crapkit mcp (stdio) - Connected
+opencode-mcp-list|0|4833|pass|└  1 server(s)
+copilot-mcp-get|0|5088|pass|}
+cline-mcp-install|0|4299|pass|{"name":"crapkit","status":"installed","transport":{"type":"stdio","command":"crapkit","args":["mcp"]},"warnings":[]}
+cline-config-mcp|0|3404|pass|[{"name":"crapkit","transportType":"stdio","disabled":false,"path":"/work/.probe.84JziB/.cline/data/settings/cline_mcp_settings.json"}]
+cursor-list-tools|0|3617|pass|- list_worklist (repo, top, scope)
+agent-list-tools|0|3188|pass|- list_worklist (repo, top, scope)
+claude-plugin-install|0|1024|pass|Installing plugin "crapkit@crapkit"...✔ Successfully installed plugin: crapkit@crapkit (scope: user)
+claude-plugin-doctor|0|861|pass|crapkit doctor: checking /work/.probe.84JziB/.claude/plugins/cache/crapkit/crapkit/0.8.0
+codex-plugin-add|0|168|pass|}
+codex-hooks-list|0|1786|pass|{"data": [{"cwd": "/work/.probe.84JziB", "hooks": [{"key": "crapkit@crapkit:hooks/hooks.json:post_tool_use:0:0", "eventName": "postToolUse", "handlerType": "com
+codex-skills-list|0|1492|pass|{"data": [{"cwd": "/work/.probe.84JziB", "skills": [{"name": "crapkit:crapkit", "description": "Work one crapkit debt item end to end: the packet that replaces 

@@ -15,4 +15,7 @@ come from these runs; `../Dockerfile` replaced it.
 about 20 s under `--network none`. `probe*.sh` are the harness probes; they ran
 with the network on, fetched the Cursor agent tarball at run time, and read
 the crapkit checkout from a `/src` mount. `OFFLINE.md` records the same probes
-rerun with `--network none` in the pinned images.
+rerun with `--network none` in the pinned images (`probe_offline.sh`), and
+what each image serves a user offline (`probe_serves.sh`: pipx installed with
+pip, crapkit into every CPython the image holds, the README's vitest provider
+line, the Cursor agent under both names).

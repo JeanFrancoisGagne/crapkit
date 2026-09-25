@@ -73,6 +73,8 @@ probe cline-config-mcp '"crapkit"' cline config mcp --json
 mkdir -p .cursor && printf '{"mcpServers":{"crapkit":{"type":"stdio","command":"crapkit","args":["mcp","--repo","%s"]}}}\n' "$PWD" > .cursor/mcp.json
 cursor-agent mcp enable crapkit >/dev/null 2>&1
 probe cursor-list-tools "get_next_item" cursor-agent mcp list-tools crapkit
+# `agent` is the name Cursor's docs and installers use for the same binary.
+probe agent-list-tools "get_next_item" agent mcp list-tools crapkit
 if [ -d /src/plugin ]; then
     mkdir -p "$HOME/mk" && cp -r /src/.claude-plugin /src/plugin "$HOME/mk/"
     (cd "$HOME/mk" && git init -q -b main && git add -A && git -c user.email=t@t -c user.name=t commit -qm i)
