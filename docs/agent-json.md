@@ -1340,7 +1340,7 @@ the sentence that names the fix instead of an empty stream:
 |---|---|---|
 | 1 | `state` | The store or the tree lacks what the command needs: no run, no scored run, no function matching the name, no open claim. |
 | 3 | `config` | `crapkit.toml` is missing, does not parse, or refuses a value; an unknown `--lane` or `--scope` is this too. |
-| 4 | `git` | A git command failed or a commit is missing: a baseline that is not an ancestor, a shallow clone. |
+| 4 | `git` | A git command failed or a commit is missing: a baseline that is not an ancestor (a rewrite, or a run made on another branch with none behind HEAD), a shallow clone. |
 | 5 | `tool` | A lane or an external tool failed: every lane failed, an artifact the last attempt never wrote, lizard missing. |
 
 `message` is the stderr line without its `crapkit: ` prefix; that line and the exit code

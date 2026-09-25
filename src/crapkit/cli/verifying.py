@@ -17,7 +17,8 @@ from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
-                      _ratchet_key_version, _repo_out_path, _repo_relative, _stand, _write_tsv, repo_text)
+                      _ratchet_key_version, _repo_out_path, _repo_relative, _stand, _write_tsv,
+                      behind_head, repo_text)
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -78,37 +79,62 @@ def _named_baseline(store: SnapshotStore, root: Path, requested: int) -> dict:
     return admit_baseline(store.list_runs(), requested, none_trusted=_no_baseline(root))
 
 
-def _verify_baseline(root: Path, store: SnapshotStore, requested: int | None) -> dict:
-    """The trusted run this verify measures against."""
+def _verify_baseline(root: Path, store: SnapshotStore, requested: int | None, git) -> dict:
+    """The trusted run this verify measures against: the newest one behind HEAD
+    that the taint rule admits."""
     from ..store import pick_baseline
 
     if requested is not None:
         return _named_baseline(store, root, requested)
     runs = store.list_runs()
-    pick = pick_baseline(runs)
+    pick = pick_baseline(runs, behind_head(git))
     if pick.run is None:
-        raise CrapkitError(_taint_note(pick) if pick.blocker else _no_baseline(root, runs))
+        raise _unpicked(root, runs, pick, git)
     if pick.blocker:
         print(f"warning: {_taint_note(pick)}", file=sys.stderr)
     return pick.run
 
 
+def _unpicked(root: Path, runs: list[dict], pick, git) -> CrapkitError:
+    """Why no run behind HEAD can serve: a failure stands in front of every one,
+    the store holds no trusted run at all, or every trusted run sits on history
+    HEAD does not contain (exit 4, as the ancestor check always gave)."""
+    from ..errors import GitError
+    from ..store import is_trusted
+
+    if pick.blocker:
+        return CrapkitError(_taint_note(pick))
+    trusted = [r for r in runs if is_trusted(r)]
+    if not trusted:
+        return CrapkitError(_no_baseline(root, runs))
+    commit = trusted[-1]["commit"]
+    newest = f"the newest, run {trusted[-1]['id']} @ {commit[:11]},"
+    return GitError(f"no trusted run in {root} is at or behind HEAD; "
+                    f"{_not_behind(git, commit, newest)}")
+
+
 def _require_ancestor(git, commit: str) -> None:
-    """Exit 4 when the baseline's commit is not behind HEAD, blaming the right
-    thing: a shallow clone never fetched the commit, and the fix is a deeper
-    fetch, not the fresh baseline the rewrite message asks for."""
+    """Exit 4 when a named or portable baseline's commit is not behind HEAD."""
     from ..errors import GitError
 
-    if git.is_ancestor(commit):
-        return
+    if not git.is_ancestor(commit):
+        raise GitError(_not_behind(git, commit, f"baseline commit {commit[:11]}"))
+
+
+def _not_behind(git, commit: str, subject: str) -> str:
+    """`SUBJECT is not an ancestor of HEAD` and the thing to blame, in order of
+    what git can prove: a shallow clone that never fetched it (fetch deeper), a
+    branch that holds it and HEAD does not (a branch switch: measure this
+    branch), or no branch at all (a rebase or an amend rewrote it)."""
+    head = f"{subject} is not an ancestor of HEAD"
     if git.is_shallow():
-        raise GitError(
-            f"baseline commit {commit[:11]} is not an ancestor of HEAD in this shallow clone, "
-            "which does not hold it; set fetch-depth: 0 on the checkout or run "
-            "git fetch --unshallow")
-    raise GitError(
-        f"baseline commit {commit[:11]} is not an ancestor of HEAD "
-        f"(rebase or amend rewrote history) - run `{_self()} coverage` for a fresh baseline")
+        return (f"{head} in this shallow clone, which does not hold it; set fetch-depth: 0 "
+                "on the checkout or run git fetch --unshallow")
+    branches = git.branches_containing(commit)
+    if branches:
+        return (f"{head}: it was made on branch {', '.join(branches[:3])} - run "
+                f"`{_self()} coverage` on this branch for a baseline here")
+    return f"{head} (rebase or amend rewrote history) - run `{_self()} coverage` for a fresh baseline"
 
 
 def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
@@ -150,10 +176,10 @@ def _pick_baseline(root: Path, store: SnapshotStore, args, basis: str | None, gi
         return _tsv_baseline(root, args.baseline_tsv)
     if basis:
         return _baseline_behind(git, store, basis)
-    return _verify_baseline(root, store, args.baseline)
+    return _verify_baseline(root, store, args.baseline, git)
 
 
-def _seed_source(store: SnapshotStore, args, baseline: dict) -> dict | None:
+def _seed_source(store: SnapshotStore, args, baseline: dict, git) -> dict | None:
     """The run a stamp refusal says to seed from; None keeps coverage-then-seed.
 
     `--baseline ID` names it. Otherwise the refusal is about the run a plain
@@ -167,7 +193,7 @@ def _seed_source(store: SnapshotStore, args, baseline: dict) -> dict | None:
 
     if args.baseline is not None:
         return baseline
-    return pick_baseline(store.list_runs()).skipped
+    return pick_baseline(store.list_runs(), behind_head(git)).skipped
 
 
 def _verify_basis(root: Path, store: SnapshotStore, args, git) -> tuple[dict, str]:
@@ -688,7 +714,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     git = GitFacts(root)
     dirty = set(git.status_names())
     baseline, basis = _verify_basis(root, store, args, git)
-    _guard_ratchet_stamp(saved, cfg.ratchet_file, _seed_source(store, args, baseline))
+    _guard_ratchet_stamp(saved, cfg.ratchet_file, _seed_source(store, args, baseline, git))
     _emit_baseline(root, store, baseline, args.emit_baseline)
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.

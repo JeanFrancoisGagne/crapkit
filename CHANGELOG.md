@@ -218,6 +218,25 @@ nothing. Each of these now gets a line naming the object and the next step:
   the one you typed, where it said "silent when they agree" over a run that printed
   `crapkit doctor: checking ROOT`.
 
+### verify, seed and `runs list` read the run behind HEAD, not another branch's
+
+- The baseline is now the newest trusted run whose commit is at or behind HEAD. A store
+  keeps every branch's runs, so after a passing verify on a feature branch and `git
+  checkout main`, verify took the feature branch's run, then exited 4 with `baseline
+  commit ... is not an ancestor of HEAD (rebase or amend rewrote history)`, blaming a
+  rewrite that never happened. It now measures against main's own run. `ratchet seed`
+  and `ratchet prune` read the same run, where seed signed marks off the feature
+  branch's code, and `runs list` marks it, where it marked the run verify refused.
+- When no trusted run sits behind HEAD, verify still exits 4, and the line says why:
+  ``the newest, run 2 @ 7691376dddb, is not an ancestor of HEAD: it was made on branch
+  feature - run `crapkit coverage` on this branch for a baseline here``. A commit no
+  branch holds keeps the rewrite wording, and a shallow clone keeps its fetch-depth fix.
+  `verify --baseline ID` naming a run on another branch gets the same line. seed and
+  prune in that state say the newest run was measured on history HEAD does not contain,
+  where they said the store held no trusted run.
+- The taint rule is unchanged: a failed verify still stands in front of the runs made
+  after it, whichever branch it ran on.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

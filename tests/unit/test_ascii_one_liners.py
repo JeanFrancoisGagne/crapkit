@@ -28,6 +28,9 @@ class _Git:
     def is_shallow(self) -> bool:
         return False
 
+    def branches_containing(self, commit: str) -> list[str]:
+        return []
+
 
 @pytest.mark.parametrize("uv_made, install", [
     (False, "python -m pip install pytest-cov"),

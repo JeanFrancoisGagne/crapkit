@@ -11,9 +11,9 @@ from typing import NamedTuple
 
 from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
-from ..store import SnapshotStore
+from ..store import SnapshotStore, anywhere
 from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
-                      _print_json, _ratchet_or_die, _repo_relative, _stand, repo_text)
+                      _print_json, _ratchet_or_die, _repo_relative, _stand, behind_head, repo_text)
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -46,11 +46,26 @@ def _no_full_run(pick, runs: list[dict]) -> str:
 
     blocker = pick.blocker or outstanding_failure(runs)
     if blocker is None:
-        return _no_trusted_run()
+        return _nothing_behind_head(runs)
     return (f"no run to work from: verify run {blocker['id']} FAILED with "
             f"{blocker['findings']} finding(s), nothing older is left to work from, "
             f"and a fresh `{_self()} coverage` would only be refused the same way — "
             "fix the findings and let a verify pass")
+
+
+def _nothing_behind_head(runs: list[dict]) -> str:
+    """No trusted run at all, or none at or behind HEAD: every one there is was
+    measured on another branch, or on commits a rebase or an amend replaced."""
+    from ..store import is_trusted
+
+    trusted = [r for r in runs if is_trusted(r)]
+    if not trusted:
+        return _no_trusted_run()
+    newest = trusted[-1]
+    return (f"no trusted run at or behind HEAD to work from: the newest, run {newest['id']} @ "
+            f"{newest['commit'][:11]}, was measured on history HEAD does not contain (another "
+            f"branch, or commits a rebase or an amend replaced) - run `{_self()} coverage` "
+            "on this branch first")
 
 
 class _WorkRun(NamedTuple):
@@ -69,7 +84,8 @@ class _WorkRun(NamedTuple):
     blocker: dict | None
 
 
-def _latest_full_run(store: SnapshotStore, requested: int | None = None) -> _WorkRun:
+def _latest_full_run(store: SnapshotStore, requested: int | None = None, *,
+                     behind=anywhere) -> _WorkRun:
     """The run seed and prune work from, and the failed verifies passed over.
 
     `pick_baseline` — verify's own choice, not a weaker rule that agrees with it
@@ -77,6 +93,8 @@ def _latest_full_run(store: SnapshotStore, requested: int | None = None) -> _Wor
     a failed verify IS trusted, and seeding off it signs marks at values verify
     refuses as a comparison point, which is how the failure's findings stop
     being touched. Reading trust alone was that bug; reading neither was #16.
+    `behind` keeps it to runs at or behind HEAD, as verify's pick is: a run on
+    another branch signed marks for code this branch does not hold.
 
     `requested` is `--baseline ID`, admitted by the rule `verify --baseline`
     runs. Without it a failed verify in front of every newer run pinned seed
@@ -87,26 +105,27 @@ def _latest_full_run(store: SnapshotStore, requested: int | None = None) -> _Wor
     runs = store.list_runs()
     if requested is not None:
         run = admit_baseline(runs, requested, none_trusted=_no_trusted_run())
-        return _WorkRun(run, [], _newer_trusted(runs, run["id"]), True, None)
-    pick = _usable_pick(runs)
+        return _WorkRun(run, [], _newer_trusted(runs, run["id"], behind), True, None)
+    pick = _usable_pick(runs, behind)
     run = pick.run
     skipped = _skipped_failed_verifies(runs, run["id"])
-    return _WorkRun(run, skipped, _newer_trusted(runs, run["id"]), False,
+    return _WorkRun(run, skipped, _newer_trusted(runs, run["id"], behind), False,
                     _pinning_verify(pick, skipped))
 
 
-def _newer_trusted(runs: list[dict], run_id: int) -> dict | None:
-    """The newest trusted run above `run_id`, or None when `run_id` is the newest."""
+def _newer_trusted(runs: list[dict], run_id: int, behind) -> dict | None:
+    """The newest trusted run above `run_id` and behind HEAD, or None when there is none."""
     from ..store import is_trusted
 
-    return next((r for r in reversed(runs) if r["id"] > run_id and is_trusted(r)), None)
+    return next((r for r in reversed(runs)
+                 if r["id"] > run_id and is_trusted(r) and behind(r)), None)
 
 
-def _usable_pick(runs: list[dict]):
+def _usable_pick(runs: list[dict], behind):
     """verify's pick, refused when it holds no run to work from."""
     from ..store import pick_baseline
 
-    pick = pick_baseline(runs)
+    pick = pick_baseline(runs, behind)
     if pick.run is None:
         raise CrapkitError(_no_full_run(pick, runs))
     return pick
@@ -343,13 +362,14 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     prune creates holds no mark and takes the running metric, which relabels
     nothing.
     """
+    from ..gitio import GitFacts
     from ..keys import require_unambiguous
     from ..ratchet import metric_version
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
     store = _open_store(root)
-    work = _latest_full_run(store, requested)
+    work = _latest_full_run(store, requested, behind=behind_head(GitFacts(root)))
     latest = work.run
     fresh = store.read_scored(latest["id"])
     require_unambiguous(fresh, run_id=latest["id"], advice=_identity_advice(work, action))

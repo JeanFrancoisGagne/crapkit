@@ -1623,21 +1623,44 @@ def _verify_blocker(run: dict, previous: dict | None) -> dict | None:
     return None if run["verdict_ok"] else run
 
 
-def pick_baseline(runs: list[dict]) -> BaselinePick:
-    """The newest trusted run no unanswered failed verify stands in front of.
+def anywhere(run: dict) -> bool:
+    """The `pick_baseline` predicate for a caller with no git to ask: every run counts."""
+    return True
 
-    One chronological walk remembers the newest clean candidate and the newest
-    refused one. A crashed verify changes neither trust nor the outstanding
-    failure. An explicit `verify --baseline ID` still skips this decision.
-    """
-    picked = BaselinePick(None, None, None)
-    blocker = None
+
+def _trusted_states(runs: list[dict]) -> list[tuple[dict, dict | None]]:
+    """Each trusted run, oldest first, with the failed verify that stood
+    unanswered in front of it when it was made (None when nothing did)."""
+    states, blocker = [], None
     for run in runs:
         blocker = _verify_blocker(run, blocker)
         if is_trusted(run):
-            picked = (BaselinePick(picked.run, run, blocker) if blocker
-                      else BaselinePick(run, None, None))
-    return picked
+            states.append((run, blocker))
+    return states
+
+
+def pick_baseline(runs: list[dict], behind=anywhere) -> BaselinePick:
+    """The newest trusted run behind HEAD that no unanswered failed verify stands in front of.
+
+    A crashed verify changes neither trust nor the outstanding failure. An
+    explicit `verify --baseline ID` still skips this decision.
+
+    `behind(run)` says whether the run's commit is at or behind HEAD. A store
+    keeps every branch's runs, and the newest trusted one can sit on a branch
+    HEAD does not contain: verify measured against it, then refused with exit 4
+    and blamed a rebase that never happened. The walk goes newest first and asks
+    only until the pick is made, because each answer can cost a git spawn.
+    Callers with no git to ask keep the default, which counts every run.
+    """
+    pick = BaselinePick(None, None, None)
+    for run, blocker in reversed(_trusted_states(runs)):
+        if not behind(run):
+            continue
+        if blocker is None:
+            return pick._replace(run=run)
+        if pick.skipped is None:
+            pick = BaselinePick(None, run, blocker)
+    return pick
 
 
 def outstanding_failure(runs: list[dict]) -> dict | None:

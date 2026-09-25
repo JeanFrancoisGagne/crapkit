@@ -601,8 +601,8 @@ crapkit: baseline commit a74260f321f is not an ancestor of HEAD in this shallow 
 ```
 
 That is exit 4 on a `git clone --depth 1` of a repo whose baseline verifies at full depth.
-On a full clone the same exit blames what it used to, a rebase or an amend that rewrote
-history, and asks for a fresh baseline instead.
+On a full clone the same exit names the branch that holds the commit, or, when no branch
+does, a rebase or an amend that rewrote history, and asks for a fresh baseline instead.
 `verify --base` and `hook-precommit --base` look up the fork point with `git merge-base`,
 and in the same clone they refuse with exit 4 and the same fix:
 
@@ -996,9 +996,16 @@ baseline pick here, `ratchet seed`, `prune`, and the tighten damping that compar
 against the same commit's previous run. A mark can no longer be signed off a run `verify`
 refused.
 
-**What advances it.** Any qualifying run. `coverage` writes one wherever HEAD is, so a
-dashboard cron advances the baseline exactly as CI does. A passing `verify` advances it
-and tightens the ratchet on the way.
+**What advances it.** Any qualifying run whose commit is at or behind HEAD. `coverage`
+writes one wherever HEAD is, so a dashboard cron advances the baseline exactly as CI does.
+A passing `verify` advances it and tightens the ratchet on the way.
+
+**A run on another branch never serves.** The store keeps every branch's runs, and after
+`git checkout main` the newest qualifying run can be a feature branch's. `verify`, `ratchet
+seed`, `ratchet prune` and `runs list` all skip it and read the newest qualifying run in
+main's own history. When no qualifying run sits behind HEAD, `verify` exits 4 and says why
+the newest one does not: it was made on a branch HEAD does not contain (run `coverage` on
+this branch), or a rebase or an amend rewrote its commit.
 
 **The taint rule.** A failed `verify` recorded findings against a tree. Until some
 `verify` passes, runs made after that failure do not become the baseline: choosing one
@@ -1050,7 +1057,7 @@ crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve a
 | 1 | **Overloaded.** Three unrelated things, listed below the table. |
 | 2 | Usage error from argparse: unknown flag, missing positional. Raised before crapkit's own error handling. |
 | 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a lane command the shell that runs it reads as a narrowed suite, a ratchet metric-stamp mismatch ([Upgrading from 0.4.4](#upgrading-from-044)), a `test-scoped` file under no scope or under a scope with no template. |
-| 4 | Git error: not a repository, a baseline commit rewritten out of the history. |
+| 4 | Git error: not a repository, a baseline commit rewritten out of the history or made on a branch HEAD does not contain. |
 | 5 | Tool error: lizard not importable, a lane that produced no artifact, one that measured a different tree, one that measured this tree and reported it in absolute paths (the join is root-relative, so those match nothing either; the refusal names the runner's own switch, `relative_files = true` under `[tool.coverage.run]` for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one), a lane that timed out past its retries, an override alert command that failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
 | 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. |
 | 7 | Ratchet regression the diff never touched. A marked function scores worse than its recorded high-water mark; a touched one past its mark reports 6. |

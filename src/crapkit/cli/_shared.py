@@ -63,6 +63,16 @@ def _declared_scopes(cfg) -> list[str]:
     return [s.name for s in cfg.scopes]
 
 
+def behind_head(git):
+    """The `pick_baseline` predicate verify, `ratchet seed`, `ratchet prune` and
+    `runs list` share, so all four name one baseline: a run is set aside only
+    when git says its commit is not at or behind HEAD. A commit git cannot place
+    stays in, as it always did: verify's ancestor check still refuses it with
+    exit 4, and naming the shallow clone is that check's job. `git` is a
+    `GitFacts`, which asks git once per commit."""
+    return lambda run: git.ancestry(run["commit"]) is not False
+
+
 def _unknown_scope_message(unknown: list[str], declared: list[str]) -> str:
     named = ", ".join(repr(name) for name in unknown)
     return f"no scope named {named}; declared: {', '.join(declared)}"

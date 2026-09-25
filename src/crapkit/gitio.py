@@ -274,15 +274,31 @@ def _shallow_fix(root: Path) -> str:
     return f"; {_SHALLOW_FIX}" if shallow else ""
 
 
-def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
-    """True when `commit` is at or behind `other`; git counts a commit as its own
-    ancestor, which is what "at or behind" needs."""
+def ancestry(root: Path, commit: str, other: str = "HEAD") -> bool | None:
+    """True when `commit` is at or behind `other`, False when git says it is
+    not, None when git cannot tell (no repository, or a commit it does not
+    hold). git counts a commit as its own ancestor, which is what "at or
+    behind" needs; `merge-base --is-ancestor` exits 1 for "not", and any other
+    failure is an error."""
     try:
         res = subprocess.run(["git", "merge-base", "--is-ancestor", commit, other],
                              cwd=root, capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
-    return res.returncode == 0
+    return {0: True, 1: False}.get(res.returncode)
+
+
+def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
+    """True only when git proves `commit` is at or behind `other`."""
+    return ancestry(root, commit, other) is True
+
+
+def branches_containing(root: Path, commit: str) -> list[str]:
+    """The local branches whose history holds `commit`, by short name; [] when
+    none does or git does not know the commit. Tells a run made on another
+    branch from one whose commit a rebase or an amend left on no branch."""
+    res = _spawn(root, ("branch", "--contains", commit, "--format=%(refname:short)"))
+    return res.stdout.split() if res.returncode == 0 else []
 
 
 def is_shallow(root: Path) -> bool:
@@ -799,7 +815,7 @@ class GitFacts:
         self._head: str | None = None
         self._status: tuple[str, ...] | None = None
         self._diffs: dict[str, tuple[str, ...]] = {}
-        self._ancestry: dict[tuple[str, str], bool] = {}
+        self._ancestry: dict[tuple[str, str], bool | None] = {}
         self._shallow: bool | None = None
 
     def head_commit(self) -> str:
@@ -821,14 +837,22 @@ class GitFacts:
             return self._diffs[commit]
 
     def is_ancestor(self, commit: str, other: str = "HEAD") -> bool:
-        """Memoized per (commit, other) the way the diffs are: verify asks about
-        the same commit once per lane, once per open claim and once for the
-        baseline, and history does not move under a running command."""
+        """True only when git proves `commit` is at or behind `other`."""
+        return self.ancestry(commit, other) is True
+
+    def ancestry(self, commit: str, other: str = "HEAD") -> bool | None:
+        """`ancestry`, memoized per (commit, other) the way the diffs are: verify
+        asks about the same commit once per lane, once per open claim and once
+        for the baseline, and history does not move under a running command."""
         with self._lock:
             key = (commit, other)
             if key not in self._ancestry:
-                self._ancestry[key] = is_ancestor(self.root, commit, other)
+                self._ancestry[key] = ancestry(self.root, commit, other)
             return self._ancestry[key]
+
+    def branches_containing(self, commit: str) -> list[str]:
+        """Not memoized: only a refusal asks, once."""
+        return branches_containing(self.root, commit)
 
     def is_shallow(self) -> bool:
         """Asked once: a clone does not deepen under a running command."""
