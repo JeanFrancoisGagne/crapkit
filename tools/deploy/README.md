@@ -124,16 +124,22 @@ Rules the kit holds a cell to:
   transcript. A process started any other way sees this machine instead, so
   `test_kit_isolation` fails any module at the top of `tests/deploy` (the
   cells, their helpers and `conftest.py`; the `kit` package is exempt) that
-  imports `subprocess`, `pty` or `multiprocessing`, or calls `os.system`,
+  imports `subprocess`, `pty`, `multiprocessing` or `asyncio.subprocess` (or
+  a submodule of one) or `ProcessPoolExecutor`, or calls `os.system`,
   `os.popen`, `os.startfile`, `os.exec*`, `os.spawn*`, `os.posix_spawn*`,
-  `os.fork*`, `asyncio.create_subprocess_*` or `hang_guard.run`. The failure
-  names each module and what it starts. A module that has to start a process
-  itself, such as Zed, which runs until its window closes while `box.run`
-  waits for the child to exit, needs an entry in `REACHES_THE_MACHINE` there:
-  the names it uses and why. The rule also fails on any collected test that
-  is neither a `@cell` nor marked `kit`: no job selects it. Several tests may
-  share a cell id. A helper test marked `@pytest.mark.kit` runs in every job
-  and under `--packet` for the packet its module's `PACKET` names.
+  `os.fork*`, `asyncio.create_subprocess_*`, an event loop's
+  `subprocess_exec` or `subprocess_shell`, or `hang_guard.run`. It follows
+  import aliases (`import os as o` then `o.system`), but not a module bound
+  by assignment or loaded by `importlib`. The failure names each module and
+  what it starts, and a call through a module counts as that module:
+  `subprocess.Popen` prints as `subprocess`. A module that has to start a
+  process itself, such as Zed, which runs until its window closes while
+  `box.run` waits for the child to exit, needs an entry in
+  `REACHES_THE_MACHINE` there: the names the failure printed and why. The
+  rule also fails on any collected test that is neither a `@cell` nor marked
+  `kit`: no job selects it. Several tests may share a cell id. A helper test
+  marked `@pytest.mark.kit` runs in every job and under `--packet` for the
+  packet its module's `PACKET` names.
 - Each command gets the 120 s hang bound. A whole package install (`npm ci`,
   a large `pip install`) passes `bound=sandbox.SLOW`: `npm ci` of the 420
   fixture packages took 2 to 3 minutes on a loaded Windows machine.

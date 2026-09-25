@@ -660,9 +660,11 @@ def test_odd_home_and_repo_names_survive(tmp_path, transcript, toolchain, templa
 # --- every deploy test goes through the kit -----------------------------------------------
 
 # The names a module starts a process with, past box.run and box.script: a module that exists
-# to start them, or a call by its dotted name.
-SHELL_OUTS = re.compile(r"subprocess|pty|multiprocessing|hang_guard\.run|asyncio\.create_subprocess_\w+"
-                        r"|os\.(system|popen|startfile|fork\w*|exec\w+|spawn\w+|posix_spawnp?)")
+# to start them, or a call by its dotted name. A longer name counts as the first of these it
+# starts with, so multiprocessing.pool.Pool counts as multiprocessing.
+SHELL_OUTS = re.compile(r"subprocess|pty|multiprocessing|asyncio\.subprocess|asyncio\.create_subprocess_\w+"
+                        r"|.+\.subprocess_(exec|shell)|concurrent\.futures\.(process|ProcessPoolExecutor)"
+                        r"|(.+\.)?hang_guard\.run|os\.(system|popen|startfile|fork\w*|exec\w+|spawn\w+|posix_spawnp?)")
 # A module that must reach this machine on purpose: the names it may use, and why.
 REACHES_THE_MACHINE = {
     "test_harness_profiles.py": ({"subprocess"}, "win-profiles-sim asks PowerShell for the CI runner's own $PROFILE, "
@@ -679,18 +681,47 @@ def _imported(node: ast.ImportFrom) -> list[str]:
     return [str(node.module), *(f"{node.module}.{alias.name}" for alias in node.names)]
 
 
-def _reached(node) -> list[str]:
+def _binding(node: ast.Import | ast.ImportFrom, alias: ast.alias) -> tuple[str, str]:
+    """The name an import binds and the dotted name it stands for: `import os as o` binds o to os,
+    `from concurrent import futures` binds futures to concurrent.futures."""
+    if isinstance(node, ast.ImportFrom):
+        return alias.asname or alias.name, f"{node.module}.{alias.name}"
+    return alias.asname or alias.name, alias.name
+
+
+def _aliases(tree: ast.AST) -> dict[str, str]:
+    """Every name the module's imports bind, and the dotted name each stands for."""
+    imports = [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))]
+    return dict(_binding(node, alias) for node in imports for alias in node.names)
+
+
+def _spelled_out(node: ast.Attribute, aliases: dict[str, str]) -> str:
+    """An attribute's dotted name with its first name replaced by what the import bound: o.system -> os.system."""
+    first, dot, rest = ast.unparse(node).partition(".")
+    return aliases.get(first, first) + dot + rest
+
+
+def _reached(node, aliases: dict[str, str]) -> list[str]:
     """What an import or attribute node names: 'subprocess', 'os.system' ..."""
     if isinstance(node, ast.Import):
         return [alias.name for alias in node.names]
     if isinstance(node, ast.ImportFrom):
         return _imported(node)
-    return [ast.unparse(node)] if isinstance(node, ast.Attribute) else []
+    return [_spelled_out(node, aliases)] if isinstance(node, ast.Attribute) else []
+
+
+def _shell_out(name: str) -> str | None:
+    """The shortest start of a dotted name that SHELL_OUTS matches: subprocess for subprocess.DEVNULL."""
+    parts = name.split(".")
+    return next((start for size in range(1, len(parts) + 1)
+                 if SHELL_OUTS.fullmatch(start := ".".join(parts[:size]))), None)
 
 
 def shell_outs(tree: ast.AST) -> list[str]:
-    """Every way a module starts a process without box.run or box.script."""
-    return [name for node in ast.walk(tree) for name in _reached(node) if SHELL_OUTS.fullmatch(name)]
+    """Every way a module starts a process without box.run or box.script, each once, in the order they appear."""
+    aliases = _aliases(tree)
+    found = [_shell_out(name) for node in ast.walk(tree) for name in _reached(node, aliases)]
+    return list(dict.fromkeys(name for name in found if name))
 
 
 def unexplained_shell_outs(name: str, tree: ast.AST) -> list[str]:
@@ -751,14 +782,40 @@ def test_a_shell_out_failure_names_each_module_and_both_ways_to_pass():
     ("import multiprocessing\n", "multiprocessing"),
     ("import hang_guard\nhang_guard.run(['crapkit'])\n", "hang_guard.run"),
     ("from hang_guard import run\n", "hang_guard.run"),
+    ("from kit.hang_guard import run\n", "kit.hang_guard.run"),
+    ("import multiprocessing.pool\n", "multiprocessing"),
+    ("from multiprocessing.pool import Pool\n", "multiprocessing"),
+    ("from multiprocessing.context import Process\n", "multiprocessing"),
+    ("import asyncio.subprocess\nasyncio.subprocess.create_subprocess_exec('crapkit')\n", "asyncio.subprocess"),
+    ("from asyncio.subprocess import create_subprocess_exec\n", "asyncio.subprocess"),
+    ("from asyncio import subprocess as asp\nasp.create_subprocess_exec('crapkit')\n", "asyncio.subprocess"),
+    ("import asyncio\nasyncio.subprocess.create_subprocess_shell('crapkit')\n", "asyncio.subprocess"),
+    ("loop.subprocess_exec(Protocol, 'crapkit')\n", "loop.subprocess_exec"),
+    ("asyncio.get_event_loop().subprocess_shell(Protocol, 'crapkit')\n", "asyncio.get_event_loop().subprocess_shell"),
+    ("from concurrent.futures import ProcessPoolExecutor\n", "concurrent.futures.ProcessPoolExecutor"),
+    ("from concurrent.futures.process import ProcessPoolExecutor\n", "concurrent.futures.process"),
+    ("import concurrent.futures\nconcurrent.futures.ProcessPoolExecutor()\n", "concurrent.futures.ProcessPoolExecutor"),
+    ("from concurrent import futures\nfutures.ProcessPoolExecutor()\n", "concurrent.futures.ProcessPoolExecutor"),
+    ("import os as o\no.system('crapkit')\n", "os.system"),
+    ("import asyncio as aio\naio.create_subprocess_exec('crapkit')\n", "asyncio.create_subprocess_exec"),
 ], ids=lambda value: value.splitlines()[0])
 def test_every_way_a_module_starts_a_process_is_a_shell_out(source, reached):
     assert reached in shell_outs(ast.parse(source))
 
 
+def test_a_call_through_a_process_module_counts_once_as_the_module_an_entry_names():
+    tree = ast.parse("import subprocess as sp\nsp.Popen(['zed'], stdout=sp.DEVNULL)\nsp.run(['zed'])\n")
+
+    assert shell_outs(tree) == ["subprocess"]
+    assert unexplained_shell_outs("test_gui_harnesses.py", tree) == []
+
+
 def test_the_kits_own_calls_and_the_os_helpers_are_not_shell_outs():
     source = ("import os, asyncio, hang_guard\nfrom os import environ\nfrom . import runner\n"
-              "hang_guard.wait_until(ready)\nhang_guard.exited(process)\nbox.run(['crapkit'])\nos.path.join('a')\n")
+              "hang_guard.wait_until(ready)\nhang_guard.exited(process)\nbox.run(['crapkit'])\nos.path.join('a')\n"
+              "import os as o, hang_guard as hg\nfrom concurrent import futures\nfrom concurrent.futures import "
+              "ThreadPoolExecutor\no.path.join('a')\no.environ.get('A')\nhg.wait_until(ready)\n"
+              "futures.ThreadPoolExecutor()\nasyncio.run(main())\nself.subprocess_log.write('a')\n")
 
     assert shell_outs(ast.parse(source)) == []
 
