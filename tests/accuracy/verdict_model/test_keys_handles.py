@@ -85,6 +85,33 @@ def measured(repo_templates, tmp_path_factory):
     return built, driver
 
 
+# Rust, Go and Python twins beside one lane-measured Python file, so a release
+# whose coverage refused a config with no [[lane]] measures the repository too.
+LANE_REGION = {"name": "one", "start": 1, "executed": [2], "missing": [], "branches": 0,
+               "covered_branches": 0, "statements": 1, "covered_lines": 1}
+NAMED = {**{path: FILES[path] for path in ("rs/lib.rs", "go/main.go", "py/twins.py")},
+         "lane/one.py": "def one(x):\n    return x\n",
+         "rec/one.json": json.dumps(vw.report({"lane/one.py": [LANE_REGION]}))}
+
+
+def named_config() -> str:
+    optional = config().split("[[scope]]")[1:]
+    kept = "".join(f"[[scope]]{table}" for table in optional
+                   if any(f'name = "{name}"' in table for name in ("py", "rs", "go")))
+    lane = repos.lane_toml("l", ".crapkit/cov/l.json", "coveragepy", ["lane"], "rec/one.json")
+    return (f'[crapkit]\ntarget = 1\n\n{kept}[[scope]]\nname = "lane"\npaths = ["lane"]\n'
+            f'languages = ["python"]\n\n{lane}')
+
+
+@pytest.fixture(scope="module")
+def named(repo_templates, tmp_path_factory):
+    step = repos.Commit(files={"crapkit.toml": named_config(), **NAMED}, message="seed")
+    built = repo_templates.copy(repos.Spec(steps=(step,)), tmp_path_factory.mktemp("rs") / "repo")
+    driver = drive.Driver(built.root)
+    assert driver.run("coverage").code == 0
+    return driver
+
+
 def _marks(built) -> dict:
     return model.parse_marks((built.root / "crapkit-ratchet.tsv").read_bytes().decode("utf-8")).marks
 
@@ -165,29 +192,27 @@ def test_every_reader_addresses_both_same_line_callbacks(measured, handle, occur
     packet = driver.run("brief", "web/app.ts", handle, "--json").json()
     mcp = driver.mcp([("get_function_brief", {"path": "web/app.ts", "name": handle})])[0]
     scored = packet["scored"]
-    assert (scored["start"], scored["occurrence"], scored["ccn"]) == \
-        (1, occurrence, CALLBACKS[("web/app.ts", 1, occurrence)])
+    assert (scored["start"], scored["ccn"]) == (1, CALLBACKS[("web/app.ts", 1, occurrence)])
+    assert scored.get("occurrence") == occurrence
     assert mcp["structuredContent"]["scored"] == scored
 
 
 @pytest.mark.process
 @pytest.mark.parametrize("path, name, long_name", [("rs/lib.rs", "route", "route cmd : i32"),
                                                    ("go/main.go", "Classify", "Classify x int")])
-def test_bare_names_resolve_for_rust_and_go(measured, path, name, long_name):
+def test_bare_names_resolve_for_rust_and_go(named, path, name, long_name):
     """agent-json.md: the bare name is the leading token of the long name,
     which Rust and Go print with no parenthesis."""
-    _, driver = measured
-    assert driver.run("brief", path, name, "--json").json()["function"] == long_name
+    assert named.run("brief", path, name, "--json").json()["function"] == long_name
 
 
 @pytest.mark.process
 @pytest.mark.parametrize("path, name", [("rs/lib.rs", "route"), ("go/main.go", "Classify"),
                                         ("py/twins.py", "dup")])
-def test_explain_answers_only_the_named_function(measured, path, name):
+def test_explain_answers_only_the_named_function(named, path, name):
     """README explain: an exact bare identifier or long name wins over the
     prefix match, so route explains route and not route_all."""
-    _, driver = measured
-    functions = driver.run("explain", path, name, "--json").json()["functions"]
+    functions = named.run("explain", path, name, "--json").json()["functions"]
     assert len(functions) == 1
     assert model.bare_name(functions[0]["long_name"]) == name
 
