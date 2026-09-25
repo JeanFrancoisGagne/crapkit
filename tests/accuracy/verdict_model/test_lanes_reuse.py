@@ -167,12 +167,26 @@ def test_a_stamp_measured_on_a_dirty_tree_holds_no_proof(make_repo):
     _check(_reasons(sc), {"a": {"no proof"}, "b": {"no proof"}})
 
 
-ORDERED = ("no_artifact", "coverage_bytes", "new_commit", "tracked_edit", "environment")
+def _environment(sc):
+    return {"a": {"environment"}, "b": {"environment"}}
+
+
+# Applied in this order, so the commit comes before the edit and the edit stays uncommitted.
+MIXABLE = {"no_artifact": _no_artifact, "coverage_bytes": _coverage_bytes,
+           "new_commit": _new_commit, "tracked_edit": _edit_tracked, "environment": _environment}
+
+
+def _apply(sc, chosen: set) -> dict:
+    facts: dict = {"a": set(), "b": set()}
+    for name in filter(chosen.__contains__, MIXABLE):
+        for lane, found in MIXABLE[name](sc).items():
+            facts[lane] |= found
+    return facts
 
 
 @pytest.mark.process
 @process
-@given(chosen=st.sets(st.sampled_from(ORDERED)))
+@given(chosen=st.sets(st.sampled_from(sorted(MIXABLE))))
 def test_the_first_failed_condition_names_the_rerun(repo_templates, tmp_path_factory, chosen):
     """Any mix of changes: each lane's reason names the first of its failed
     conditions in the docs' order. Each example measures its own repo inside
@@ -180,15 +194,8 @@ def test_the_first_failed_condition_names_the_rerun(repo_templates, tmp_path_fac
     top = tmp_path_factory.mktemp("mix") / "repo"
     sc = vw.Scenario(repo_templates.copy(vw.spec(WORLD), top), WORLD)
     assert sc.run("coverage").code == 0
-    steps = {"no_artifact": _no_artifact, "coverage_bytes": _coverage_bytes,
-             "new_commit": _new_commit, "tracked_edit": _edit_tracked}
-    facts: dict = {"a": set(), "b": set()}
-    for name in (n for n in ORDERED if n in chosen and n in steps):
-        for lane, found in steps[name](sc).items():
-            facts[lane] |= found
+    facts = _apply(sc, chosen)
     env = {"CRAPKIT_ACCURACY_PROBE": "1"} if "environment" in chosen else {}
-    if env:
-        facts = {lane: found | {"environment"} for lane, found in facts.items()}
     _check(_reasons(sc, _env_driver(sc, **env)), facts)
 
 
@@ -339,11 +346,14 @@ def test_same_bytes_touch_changes_nothing(make_repo, case):
     if case == "touch":
         _touch(sc)
     lines = _app_item(sc.driver)["uncovered_lines"]
-    reasons = _reasons(sc)
+    said = _reuse_words(_reasons(sc), lines)
     clean = repos.git(sc.top, "--no-optional-locks", "status", "--porcelain") == ""
-    said = (f"{'reused' if set(reasons.values()) == {''} else 'rerun'}, "
-            f"lines {'null' if lines is None else 'kept'}")
     rulings.pin_ruling("V7", crapkit=said, oracle="reused, lines kept" if clean else "changed")
+
+
+def _reuse_words(reasons: dict, lines) -> str:
+    reused = "reused" if set(reasons.values()) == {""} else "rerun"
+    return f"{reused}, lines {'null' if lines is None else 'kept'}"
 
 
 # --- the artifact a failed attempt left behind ----------------------------------------------------
@@ -453,6 +463,37 @@ def test_an_inherited_variable_leaves_the_dark_lines(make_repo):
     assert _app_item(_env_driver(sc, CRAPKIT_ACCURACY_PROBE="1"))["uncovered_lines"] is not None
 
 
+def _unstamp_lane_b(sc):
+    """Remove lane b's artifact and stamp; return the call that puts both back."""
+    stamps, artifact = sc.root / ".crapkit" / "artifacts.json", sc.root / ".crapkit" / "cov" / "b.json"
+    saved, saved_artifact = stamps.read_bytes(), artifact.read_bytes()
+    kept = {key: entry for key, entry in json.loads(saved).items() if entry.get("lane") != "b"}
+    stamps.write_text(json.dumps(kept), encoding="utf-8")
+    artifact.unlink()
+
+    def restore():
+        artifact.write_bytes(saved_artifact)
+        stamps.write_bytes(saved)
+    return restore
+
+
+def _stamp_once_reads_start(monkeypatch, restore) -> list:
+    """Wrap crapkit's lanes.staleness_reads so `restore` runs once its reads
+    have started; the returned list records each time it did."""
+    lanes = importlib.import_module("crapkit.lanes")
+    original, fired = lanes.staleness_reads, []
+
+    @contextmanager
+    def stamped_meanwhile(*args, **kwargs):
+        with original(*args, **kwargs) as facts:
+            restore()
+            fired.append(True)
+            yield facts
+
+    monkeypatch.setattr(lanes, "staleness_reads", stamped_meanwhile)
+    return fired
+
+
 @pytest.mark.process
 def test_unstamped_lane_paths_count_for_staleness(make_repo, monkeypatch):
     """A lane unstamped when the staleness reads start and stamped before its
@@ -460,25 +501,9 @@ def test_unstamped_lane_paths_count_for_staleness(make_repo, monkeypatch):
     edit under lib still makes lane b stale. The stamp lands at the seam where
     the reads have started (lanes.staleness_reads), in process."""
     sc = _measured(make_repo)
-    stamps, artifact = sc.root / ".crapkit" / "artifacts.json", sc.root / ".crapkit" / "cov" / "b.json"
-    saved, saved_artifact = stamps.read_bytes(), artifact.read_bytes()
-    entries = json.loads(saved)
-    stamps.write_text(json.dumps({k: v for k, v in entries.items() if v.get("lane") != "b"}),
-                      encoding="utf-8")
-    artifact.unlink()
+    restore = _unstamp_lane_b(sc)
     _append(sc.root / "lib" / "util.py")
-    lanes = importlib.import_module("crapkit.lanes")
-    original, fired = lanes.staleness_reads, []
-
-    @contextmanager
-    def stamped_meanwhile(*args, **kwargs):
-        with original(*args, **kwargs) as facts:
-            artifact.write_bytes(saved_artifact)
-            stamps.write_bytes(saved)
-            fired.append(True)
-            yield facts
-
-    monkeypatch.setattr(lanes, "staleness_reads", stamped_meanwhile)
+    fired = _stamp_once_reads_start(monkeypatch, restore)
     items = drive.Driver(sc.root, date_now=sc.date + vw.DAY).run("next-item", "--top", "50").json()
     lib = next(item for item in items["items"] if item["path"] == "lib/util.py")
     assert fired and lib["uncovered_lines"] is None, lib
@@ -526,8 +551,11 @@ def test_an_artifact_that_reaches_no_scope_gets_the_docs_verdict(make_repo, case
     _write_lane_a(sc, keys)
     result = sc.run("coverage", "--reuse-artifacts")
     assert result.code == (5 if verdict in ("other tree", "absolute") else 0), result.stderr
-    said = {name for name, text in VERDICT_SAYS.items() if text and text in result.stderr}
-    assert said == ({verdict} - {"ok"}), (verdict, result.stderr)
+    assert _said_verdicts(result.stderr) == ({verdict} - {"ok"}), (verdict, result.stderr)
+
+
+def _said_verdicts(stderr: str) -> set:
+    return {name for name, text in VERDICT_SAYS.items() if text and text in stderr}
 
 
 # --- the suite-drop warning ----------------------------------------------------------------------------

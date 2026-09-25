@@ -478,7 +478,12 @@ def lines_stale(scope_paths: tuple, changed: set) -> bool:
     """A lane's dark lines go null once a file under its scopes changed since
     its artifact was written, uncommitted edits included; a change anywhere
     else leaves them (docs/lanes.md:1062-1064, agent-json.md, uncovered_lines)."""
-    return any(_under(path, scope) for path in changed for scope in scope_paths)
+    return reaches(changed, scope_paths)
+
+
+def reaches(paths, scope_paths: tuple) -> bool:
+    """Some path sits at or under some scope path."""
+    return any(_under(path, scope) for path in paths for scope in scope_paths)
 
 
 def reach_verdict(paths: list[str], root: str, scope_paths: tuple) -> str:
@@ -487,16 +492,21 @@ def reach_verdict(paths: list[str], root: str, scope_paths: tuple) -> str:
     otherwise "other tree" when any path is outside the root or climbs out of
     it, "absolute" when every such path is absolute under the root, and "warn"
     for in-tree relative paths."""
-    if any(_under(path, scope) for path in paths for scope in scope_paths):
+    if reaches(paths, scope_paths):
         return "ok"
-    outside = [p for p in paths if p.startswith("../") or (_absolute(p) and not _under(p, root))]
-    if outside:
+    if any(_outside(path, root) for path in paths):
         return "other tree"
     return "absolute" if any(map(_absolute, paths)) else "warn"
 
 
+def _outside(path: str, root: str) -> bool:
+    """Climbing out, or absolute and not under this checkout's root."""
+    return path.startswith("../") or (_absolute(path) and not _under(path, root))
+
+
 def _absolute(path: str) -> bool:
-    return path.startswith("/") or (len(path) > 2 and path[1] == ":" and path[2] == "/")
+    """/x, or a drive letter and a slash (C:/x)."""
+    return path.startswith("/") or path[1:3] == ":/"
 
 
 # --- overrides (docs/ratchet.md:715-775, 812-814) --------------------------------------------
