@@ -1,0 +1,41 @@
+{"$report_type": "CollectReport", "nodeid": "", "outcome": "passed"}
+{"$report_type": "CollectReport", "nodeid": "tests/test_mixed.py::TestGroup", "outcome": "passed"}
+{"$report_type": "CollectReport", "nodeid": "tests/test_mixed.py", "outcome": "passed"}
+{"$report_type": "CollectReport", "nodeid": "tests", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_pass", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_pass", "when": "call", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_pass", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_fail", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_fail", "when": "call", "outcome": "failed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_fail", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_setup_error", "when": "setup", "outcome": "failed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_setup_error", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_teardown_error", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_teardown_error", "when": "call", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_teardown_error", "when": "teardown", "outcome": "failed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_fail_and_teardown_error", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_fail_and_teardown_error", "when": "call", "outcome": "failed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_fail_and_teardown_error", "when": "teardown", "outcome": "failed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_skip", "when": "setup", "outcome": "skipped"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_skip", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_xfail", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_xfail", "when": "call", "outcome": "skipped", "wasxfail": "known"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_xfail", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_xpass", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_xpass", "when": "call", "outcome": "passed", "wasxfail": "passes anyway"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_xpass", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_param[a b]", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_param[a b]", "when": "call", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_param[a b]", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_param[x[1]]", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_param[x[1]]", "when": "call", "outcome": "failed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_param[x[1]]", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_param[caf\\xe9]", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_param[caf\\xe9]", "when": "call", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::test_param[caf\\xe9]", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::TestGroup::test_method", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::TestGroup::test_method", "when": "call", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::TestGroup::test_method", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::TestGroup::test_method_fails", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::TestGroup::test_method_fails", "when": "call", "outcome": "failed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_mixed.py::TestGroup::test_method_fails", "when": "teardown", "outcome": "passed"}

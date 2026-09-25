@@ -1,0 +1,7 @@
+{"$report_type": "CollectReport", "nodeid": "", "outcome": "passed"}
+{"$report_type": "CollectReport", "nodeid": "tests/test_broken.py", "outcome": "failed"}
+{"$report_type": "CollectReport", "nodeid": "tests/test_ok.py", "outcome": "passed"}
+{"$report_type": "CollectReport", "nodeid": "tests", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_ok.py::test_ok", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_ok.py::test_ok", "when": "call", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_ok.py::test_ok", "when": "teardown", "outcome": "passed"}

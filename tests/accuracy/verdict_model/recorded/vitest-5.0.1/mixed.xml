@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="6" failures="2" errors="0" time="0.0095038">
+    <testsuite name="suite.test.js" timestamp="recorded" hostname="recorded" tests="6" failures="2" errors="0" skipped="2" time="0.0095038">
+        <testcase classname="suite.test.js" name="group &gt; passes" time="0.0016671">
+        </testcase>
+        <testcase classname="suite.test.js" name="group &gt; fails" time="0.0055686">
+            <failure message="expected 1 to be 2 // Object.is equality" type="AssertionError">traceback removed by record_junit.py</failure>
+        </testcase>
+        <testcase classname="suite.test.js" name="group &gt; skipped" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="suite.test.js" name="group &gt; todo" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="suite.test.js" name="top level passes" time="0.000158">
+        </testcase>
+        <testcase classname="suite.test.js" name="top level fails" time="0.0006316">
+            <failure message="broke" type="Error">traceback removed by record_junit.py</failure>
+        </testcase>
+    </testsuite>
+</testsuites>

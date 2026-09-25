@@ -1,0 +1,5 @@
+{"$report_type": "TestReport", "nodeid": "tests/test_crash.py::test_dies", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_crash.py::test_lives", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_crash.py::test_lives", "when": "call", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_crash.py::test_lives", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_crash.py::test_dies", "when": "???", "outcome": "failed"}

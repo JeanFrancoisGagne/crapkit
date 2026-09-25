@@ -84,8 +84,18 @@ def write(plan, lane, root="."):
     with open(os.path.join(cov, "%s.json" % lane), "w", encoding="utf-8") as handle:
         json.dump(report(plan["files"]), handle, sort_keys=True)
     if plan["junit"]:
+        text = plan["raw"] if plan.get("raw") is not None else junit(plan["tests"])
         with open(os.path.join(cov, "%s-junit.xml" % lane), "w", encoding="utf-8") as handle:
-            handle.write(junit(plan["tests"]))
+            handle.write(text)
+
+
+def retest(plan, lane, root="."):
+    import os
+    rerun = [dict(test, failed=test["name"] not in plan["retest_pass"])
+             for test in plan["tests"] if test["failed"]]
+    with open(os.path.join(root, ".crapkit", "cov", "%s-junit.xml" % lane), "w",
+              encoding="utf-8") as handle:
+        handle.write(junit(rerun))
 '''
 
 GEN_SOURCE = f'''\
@@ -96,15 +106,15 @@ import sys
 
 {_WRITERS}
 
-def main(plan_path, lane):
+def main(plan_path, lane, mode="run"):
     with open(plan_path, encoding="utf-8") as handle:
         plan = json.load(handle)[lane]
     if plan["fail"]:
         sys.exit("lane %s failed on purpose" % lane)
-    write(plan, lane)
+    (retest if mode == "retest" else write)(plan, lane)
 
 
-main(sys.argv[1], sys.argv[2])
+main(*sys.argv[1:])
 '''
 
 _GEN: dict = {}
@@ -141,23 +151,35 @@ class Fn:
 
 @dataclass(frozen=True)
 class Test:
+    """One test a lane reports. Its JUnit classname is `module`, or by default
+    the dotted module of the lane's own test file, tests/test_<lane>.py."""
     name: str
     failed: bool = False
     lane: str = "a"
+    module: str = ""
+
+    @property
+    def classname(self) -> str:
+        return self.module or f"tests.test_{self.lane}"
 
     @property
     def id(self) -> str:
-        return f"tests.test_{self.lane}::{self.name}"
+        return f"{self.classname}::{self.name}"
 
 
 @dataclass(frozen=True)
 class World:
     """What a test sets: functions per scope, tests, lanes that fail, lanes
-    that write no JUnit, and extra [crapkit] lines."""
+    that write no JUnit, a lane's JUnit text written verbatim (raw_junit, as
+    (lane, text) pairs), the lanes that declare a retest_command and the test
+    ids that pass it, and extra [crapkit] lines."""
     functions: dict = field(default_factory=lambda: {"app": (), "lib": ()})
     tests: tuple = ()
     failing_lanes: frozenset = frozenset()
     no_junit: frozenset = frozenset()
+    raw_junit: tuple = ()
+    retest_lanes: frozenset = frozenset()
+    retest_pass: frozenset = frozenset()
     config_extra: str = ""
 
     def with_fn(self, scope: str, fn: Fn) -> "World":
@@ -228,23 +250,39 @@ def _missing(fn: Fn, start: int, body: list[int]) -> list[int]:
     return bodies[min(fn.decisions, fn.covered):]
 
 
+def _lane_tests(world: World, lane: str) -> list:
+    return [test for test in world.tests if test.lane == lane]
+
+
+def _junit_tests(tests: list) -> list[dict]:
+    return [{"classname": t.classname, "name": t.name, "failed": t.failed} for t in tests]
+
+
 def _lane_plan(world: World, lane: str, scope: str) -> dict:
     regions = [_region(fn, start, end) for fn, start, end in source(world.functions[scope])[1]]
-    tests = [{"classname": f"tests.test_{lane}", "name": t.name, "failed": t.failed}
-             for t in world.tests if t.lane == lane]
-    return {"files": {FILES[scope]: regions} if regions else {}, "tests": tests,
-            "fail": lane in world.failing_lanes, "junit": lane not in world.no_junit}
+    tests = _lane_tests(world, lane)
+    return {"files": {FILES[scope]: regions} if regions else {}, "tests": _junit_tests(tests),
+            "fail": lane in world.failing_lanes, "junit": lane not in world.no_junit,
+            "raw": dict(world.raw_junit).get(lane),
+            "retest_pass": sorted(t.name for t in tests if t.id in world.retest_pass)}
 
 
 def plan(world: World) -> dict:
     return {lane: _lane_plan(world, lane, scope) for lane, scope in LANES.items()}
 
 
-def _lane(name: str, scope: str, junit: bool) -> str:
+def _retest(name: str, world: World) -> str:
+    if name not in world.retest_lanes:
+        return ""
+    return f'retest_command = "python {GEN} {PLAN} {name} retest"\n'
+
+
+def _lane(name: str, scope: str, world: World) -> str:
     command = f"python {GEN} {PLAN} {name}"
-    results = f'results_artifact = ".crapkit/cov/{name}-junit.xml"\n' if junit else ""
+    results = ("" if name in world.no_junit
+               else f'results_artifact = ".crapkit/cov/{name}-junit.xml"\n')
     return (f'[[lane]]\nname = "{name}"\ncommand = "{command}"\n'
-            f'artifact = ".crapkit/cov/{name}.json"\n{results}'
+            f'artifact = ".crapkit/cov/{name}.json"\n{results}{_retest(name, world)}'
             f'parser = "coveragepy"\nscopes = ["{scope}"]\ncontainer_ok = true\n'
             f"env = {repos.LANE_ENV}\n")
 
@@ -252,8 +290,7 @@ def _lane(name: str, scope: str, junit: bool) -> str:
 def config(world: World) -> str:
     scopes = "".join(f'[[scope]]\nname = "{scope}"\npaths = ["{Path(path).parent.as_posix()}"]\n'
                      'languages = ["python"]\n\n' for scope, path in FILES.items())
-    lanes = "\n".join(_lane(name, scope, name not in world.no_junit)
-                      for name, scope in LANES.items())
+    lanes = "\n".join(_lane(name, scope, world) for name, scope in LANES.items())
     return (f"[crapkit]\ntarget = {TARGET}\nalert_command = \"{ALERT}\"\n{world.config_extra}\n"
             f'{scopes}[exclude]\nglobs = ["tests/**"]\n\n{lanes}')
 
@@ -262,6 +299,7 @@ def files(world: World) -> dict:
     """Every tracked file of the world, as a Commit's files."""
     out = {".gitignore": ".crapkit/\n.plan/\n__pycache__/\n", GEN: GEN_SOURCE,
            "crapkit.toml": config(world)}
+    out.update({f"tests/test_{lane}.py": f"# the tests lane {lane} reports\n" for lane in LANES})
     out.update({path: source(world.functions[scope])[0] for scope, path in FILES.items()})
     return out
 

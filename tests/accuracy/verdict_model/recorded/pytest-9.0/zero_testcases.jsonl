@@ -1,0 +1,3 @@
+{"$report_type": "CollectReport", "nodeid": "", "outcome": "passed"}
+{"$report_type": "CollectReport", "nodeid": "tests/test_none.py", "outcome": "passed"}
+{"$report_type": "CollectReport", "nodeid": "tests", "outcome": "passed"}

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="5" failures="2" errors="0" time="0.908">
+  <testsuite name="group" errors="0" failures="2" skipped="1" timestamp="recorded" time="0.475" tests="5">
+    <testcase classname="group passes" name="group passes" time="0.002">
+    </testcase>
+    <testcase classname="group fails" name="group fails" time="0.002">
+      <failure>traceback removed by record_junit.py</failure>
+    </testcase>
+    <testcase classname="group skipped" name="group skipped" time="0">
+      <skipped/>
+    </testcase>
+    <testcase classname=" top level passes" name=" top level passes" time="0">
+    </testcase>
+    <testcase classname=" top level fails" name=" top level fails" time="0.001">
+      <failure>traceback removed by record_junit.py</failure>
+    </testcase>
+  </testsuite>
+</testsuites>
