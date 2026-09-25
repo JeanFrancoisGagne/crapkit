@@ -37,6 +37,8 @@ CHECKS = [
      "pytest": [_VM + "test_baseline_tsv.py"]},
     {"name": "test-scoped routing", "seconds": 4,
      "pytest": [_VM + "test_scoped_routing.py"]},
+    {"name": "doctor lane probes and plugin root (nightly)", "seconds": 1,
+     "pytest": [_VM + "test_doctor_lanes.py"]},
     {"name": "push cadence helper", "seconds": 1,
      "pytest": [_VM + "test_cadence.py"]},
 ]
