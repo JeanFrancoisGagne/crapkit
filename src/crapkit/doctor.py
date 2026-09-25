@@ -583,37 +583,78 @@ def container_lane_findings(lanes, marker: str | None) -> tuple[Finding, ...]:
                  for lane in lanes if _refused_in_container(lane))
 
 
-_SKIPPED_HOOK = (
-    "{default} runs crapkit's gate, but core.hooksPath ({scope} config: {value}) sends git "
-    "to {effective}, so every commit here skips the gate without a word; run "
-    "`git config --local core.hooksPath {default_dir}` in this repo, or call crapkit "
-    "hook-precommit from {effective}"
-)
+_SENT_UNSET = "core.hooksPath is unset and git runs {effective}"
+_SENT_SET = "core.hooksPath ({scope} config: {value}) sends git to {effective}"
+_UNGATED = "so every commit here skips the gate without a word"
+_SKIPPED_HOOK = ("{path} runs crapkit's gate, but {sent}, " + _UNGATED + "; run `{arm}` in this "
+                 "repo, or call crapkit hook-precommit from {edit}")
+_UNINSTALLED = (".pre-commit-config.yaml names crapkit-gate, but {sent}, which pre-commit did not "
+                "write, " + _UNGATED + "; {fix}")
+_INSTALL = "run `pre-commit install` in this repo"
+_INSTALL_REFUSED = ("`pre-commit install` refuses while core.hooksPath is set, so call crapkit "
+                    "hook-precommit from {edit}")
+# What a hook that hands the commit to the pre-commit framework says: the file
+# `pre-commit install` (or prek's) writes, or a hand-written `pre-commit run`.
+_RUNS_FRAMEWORK = re.compile(r"hook-impl|\b(?:pre-commit|prek) run\b")
 
 
 class HookRoute(NamedTuple):
-    """Where git looks for pre-commit, where it would look with no core.hooksPath,
-    and what each file says ("" when it does not exist)."""
-    default: str
-    default_text: str
+    """The pre-commit file git spawns in this checkout, what it runs (husky's
+    stub followed by the file it hands the commit to), the file a gate line
+    belongs in, and the core.hooksPath setting that sent git there ("" and ""
+    when unset)."""
     effective: str
     effective_text: str
+    edit: str
     scope: str
     value: str
 
 
-def skipped_hook(route: HookRoute) -> tuple[Finding, ...]:
-    """A crapkit hook in the repo's own hooks directory that git never runs,
-    because a core.hooksPath (a global one, or husky's) points elsewhere and
-    the file there does not call crapkit. WARN: the commit still succeeds, it
-    is just not gated."""
-    if route.default == route.effective or "crapkit" not in route.default_text:
+class GateHook(NamedTuple):
+    """A pre-commit file the repo holds (its own hooks directory, or one it
+    commits), what it says, and the git config line that makes git run it."""
+    path: str
+    text: str
+    arm: str
+
+
+def _runs_gate(text: str, framework: bool) -> bool:
+    """Does this hook text run crapkit's gate? Directly, or through the
+    pre-commit framework when the repo's config names crapkit-gate."""
+    return "crapkit" in text or (framework and bool(_RUNS_FRAMEWORK.search(text)))
+
+
+def _sent(route: HookRoute) -> str:
+    return (_SENT_SET if route.scope else _SENT_UNSET).format(**route._asdict())
+
+
+def _framework_fix(route: HookRoute) -> str:
+    return _INSTALL_REFUSED.format(edit=route.edit) if route.scope else _INSTALL
+
+
+def skipped_gates(route: HookRoute, hooks: tuple[GateHook, ...],
+                  framework: bool) -> tuple[Finding, ...]:
+    """Every gate the repo sets up that git never runs, one WARN each.
+
+    A hook that runs crapkit and is not the file git spawns: Route 1's hook
+    under a global core.hooksPath, Route 2's committed hook in a clone that
+    skipped its `git config` line, either one after husky took core.hooksPath
+    back. With none of those, a .pre-commit-config.yaml naming crapkit-gate
+    whose framework hook git does not run: Route 3 before `pre-commit
+    install`. WARN: the commit still succeeds, it is just not gated."""
+    if _runs_gate(route.effective_text, framework):
         return ()
-    if "crapkit" in route.effective_text:
-        return ()
-    return (Finding("WARN", _SKIPPED_HOOK.format(
-        default=route.default, default_dir=route.default.rpartition("/")[0], **{
-            key: getattr(route, key) for key in ("scope", "value", "effective")})),)
+    found = _skipped_hooks(route, hooks, framework)
+    if found or not framework:
+        return found
+    return (Finding("WARN", _UNINSTALLED.format(sent=_sent(route), fix=_framework_fix(route))),)
+
+
+def _skipped_hooks(route: HookRoute, hooks: tuple[GateHook, ...],
+                   framework: bool) -> tuple[Finding, ...]:
+    return tuple(Finding("WARN", _SKIPPED_HOOK.format(path=hook.path, sent=_sent(route),
+                                                      arm=hook.arm, edit=route.edit))
+                 for hook in hooks if _runs_gate(hook.text, framework))
 
 
 _RUNS_PRECOMMIT = re.compile(r"\b(?:pre-commit|prek) run\b|pre-commit/action@")

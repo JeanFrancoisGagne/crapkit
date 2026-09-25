@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import posixpath
 import re
 import sys
 from functools import lru_cache
@@ -1138,16 +1139,50 @@ def _absolute(root: Path, *rev_parse: str) -> Path:
     return Path(_git(root, "rev-parse", "--path-format=absolute", *rev_parse).strip()).resolve()
 
 
-def _hook_route(root: Path):
-    """Where git spawns pre-commit for this checkout and where it would with no
-    core.hooksPath, with what each file says. Raises GitError outside a
+def _shown(top: Path, path: Path) -> str:
+    """A path as a reader types it at the git top: relative when it sits under
+    the top, which is also how git reads a relative core.hooksPath."""
+    try:
+        return path.relative_to(top).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _husky_delegate(effective: Path) -> Path:
+    """husky 9 points core.hooksPath at .husky/_, and its stub there runs
+    .husky/pre-commit, the file a user edits. Any other hook is its own."""
+    return effective.parent.parent / effective.name if effective.parent.name == "_" else effective
+
+
+def _hook_route(root: Path, top: Path):
+    """The pre-commit file git spawns here, what it and husky's delegate say,
+    and the core.hooksPath setting behind it. Raises GitError outside a
     repository."""
     from ..doctor import HookRoute
 
-    default = _absolute(root, "--git-common-dir") / "hooks" / "pre-commit"
     effective = _absolute(root, "--git-path", "hooks/pre-commit")
-    return HookRoute(default.as_posix(), _text_at(default), effective.as_posix(),
-                     _text_at(effective), *_hooks_path_setting(root))
+    edit = _husky_delegate(effective)
+    text = _text_at(effective) + (_text_at(edit) if edit != effective else "")
+    return HookRoute(_shown(top, effective), text, _shown(top, edit), *_hooks_path_setting(root))
+
+
+def _tracked_hooks(top: Path) -> list[str]:
+    """Every committed file named pre-commit, as paths from the top."""
+    listed = _git(top, "ls-files", "-z", "--", ":(glob)**/pre-commit")
+    return [path for path in listed.split("\0") if path]
+
+
+def _gate_hooks(root: Path, top: Path) -> tuple:
+    """The repo's own .git/hooks/pre-commit and every committed pre-commit,
+    each with the git config line that points git at its directory."""
+    from ..doctor import GateHook
+
+    default = _absolute(root, "--git-common-dir") / "hooks" / "pre-commit"
+    local = GateHook(_shown(top, default), _text_at(default),
+                     f"git config --local core.hooksPath {_shell_quote(_shown(top, default.parent))}")
+    return (local, *(GateHook(path, _text_at(top / path),
+                              f"git config core.hooksPath {_shell_quote(posixpath.dirname(path) or '.')}")
+                     for path in _tracked_hooks(top)))
 
 
 # The CI files doctor reads for a pre-commit step, relative to the git top.
@@ -1162,16 +1197,18 @@ def _ci_files(top: Path) -> dict[str, str]:
 
 def _doctor_silent_gates(root: Path) -> list[Finding]:
     """A gate that is set up and never judges anything (WARN): a crapkit hook
-    git is sent away from, and pre-commit run in CI on an empty index."""
-    from ..doctor import ci_precommit_passes, skipped_hook
+    git is not sent to, a pre-commit config naming the gate that nothing
+    installed, and pre-commit run in CI on an empty index."""
+    from ..doctor import ci_precommit_passes, skipped_gates
 
     try:
-        route = _hook_route(root)
-        top = Path(_git(root, "rev-parse", "--show-toplevel").strip())
+        top = _absolute(root, "--show-toplevel")
+        route, hooks = _hook_route(root, top), _gate_hooks(root, top)
     except GitError:
         return []
-    return list(skipped_hook(route)) + list(ci_precommit_passes(
-        _text_at(top / ".pre-commit-config.yaml"), _ci_files(top)))
+    precommit = _text_at(top / ".pre-commit-config.yaml")
+    return (list(skipped_gates(route, hooks, framework="crapkit-gate" in precommit))
+            + list(ci_precommit_passes(precommit, _ci_files(top))))
 
 
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
