@@ -16,7 +16,7 @@ from .keys import stated_key
 from .ratchet import RatchetEntry
 from .ratchetfile import RatchetFile
 from .store import SnapshotStore
-from .textcodec import os_text
+from .repotext import child_input, lenient, os_text
 from .verify import GateViolation
 
 
@@ -117,12 +117,12 @@ def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolat
     line = f"crapkit OVERRIDE ({reason}): {summary}"
     # The line reaches the alert command on stdin, never interpolated into the
     # shell string: function names come from analyzed source and are not shell-safe.
-    proc = subprocess.run(alert_command, shell=True, cwd=root, input=line + "\n",
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    proc = subprocess.run(alert_command, shell=True, cwd=root, input=child_input(line + "\n"),
+                          capture_output=True)
     if proc.returncode != 0:
         raise ToolError(
             f"override alert command failed (exit {proc.returncode}): "
-            f"{(proc.stderr or proc.stdout).strip()[-300:]} — no alert, no override")
+            f"{lenient(proc.stderr or proc.stdout).strip()[-300:]} — no alert, no override")
 
 
 def _granted_marks(prior: list[RatchetEntry], violations: list[GateViolation], *,

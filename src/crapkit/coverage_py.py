@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 from . import covstream
 from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
+from .repotext import locale_spelling, utf8_spelling
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -299,7 +300,7 @@ def contexts(lane: Lane, root: Path, artifact: Path, source_path: str) -> dict[i
     if found or codec is None or source_path.isascii():
         return found
     return parse_coveragepy_contexts_file(artifact, path_prefix=lane.path_prefix,
-                                          source_path=source_path.encode().decode(codec, "surrogateescape"))
+                                          source_path=locale_spelling(source_path, codec))
 
 
 def _child_codec() -> str | None:
@@ -327,8 +328,5 @@ def _respelled_key(root: Path, key: str, codec: str) -> str:
     key as written names none; a file really named `cafÃ©.py` keeps its key."""
     if key.isascii() or (root / key).exists():
         return key
-    try:
-        named = key.encode(codec, "surrogateescape").decode("utf-8")
-    except UnicodeError:
-        return key
-    return named if (root / named).exists() else key
+    named = utf8_spelling(key, codec)
+    return named if named and (root / named).exists() else key

@@ -11,7 +11,7 @@ import codecs
 
 import pytest
 
-from crapkit.textcodec import marks_bytes, marks_codec, marks_text, unreadable_byte
+from crapkit.repotext import marks_bytes, marks_codec, marks_text, unreadable_byte
 
 ROWS = "# crapkit-analysis=11 lizard=1.24.0\npath\tlong_name\tcrap\nsrc/app.py\tcafé( n )\t9.0000\n"
 

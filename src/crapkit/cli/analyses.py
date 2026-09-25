@@ -109,7 +109,7 @@ def _file_mutants(root: Path, rel: str, lines) -> list:
     dropping it silently would leave a score built on fewer files than it says.
     """
     from ..mutate import file_mutants, mutation_language, refusal
-    from ..textcodec import source_text
+    from ..repotext import source_text
 
     path = root / rel
     if not path.is_file():

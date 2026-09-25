@@ -38,7 +38,7 @@ from .errors import GitError, ToolError
 from .gitio import head_commit, status_names, worktree_add, worktree_remove, worktree_reset, worktree_root
 from .lane_command import child_environment
 from .mutate import apply_mutant
-from .textcodec import source_bytes, source_text
+from .repotext import source_bytes, source_text
 from .procs import own_processes, run_bounded
 
 def _suite_env() -> dict:

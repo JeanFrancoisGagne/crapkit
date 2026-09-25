@@ -52,11 +52,13 @@ def _send_digest_alert(root: Path, cfg, prev: dict, cur: dict, lines: list[str])
     """Hand the digest body to the configured alert command; a nonzero exit is fatal."""
     import subprocess
 
+    from ..repotext import child_input
+
     if not cfg.alert_command.strip():
         raise ConfigError("digest --alert needs [crapkit] alert_command")
     body = f"crapkit digest (runs {prev['id']} -> {cur['id']}):\n" + "\n".join(lines) + "\n"
-    proc = subprocess.run(cfg.alert_command, shell=True, cwd=root, input=body,
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    proc = subprocess.run(cfg.alert_command, shell=True, cwd=root, input=child_input(body),
+                          capture_output=True)
     if proc.returncode != 0:
         raise ToolError(f"digest alert command failed (exit {proc.returncode})")
 

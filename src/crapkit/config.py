@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .errors import ConfigError
+from .repotext import plain_utf8
 from .config_contract import admit, enum_values
 
 # `cpp` is the whole C family, C included: lizard resolves every one of its
@@ -386,7 +387,7 @@ def _toml_testpaths(text: str) -> tuple[str, ...] | None:
 def _pytest_text(directory: str | os.PathLike, name: str) -> str | None:
     """Read one candidate file without confusing absence with an empty file."""
     try:
-        return (Path(directory) / name).read_text(encoding="utf-8", errors="replace")
+        return plain_utf8((Path(directory) / name).read_bytes())
     except OSError:
         return None
 

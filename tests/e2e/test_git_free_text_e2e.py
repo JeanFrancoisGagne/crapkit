@@ -8,7 +8,7 @@ i18n.logOutputEncoding. Each read here used to decode that text as strict
 UTF-8, so one such commit ended the command with a UnicodeDecodeError, or with
 an AttributeError on Windows where the decode fails in subprocess's reader
 thread. gitio now pins i18n.logOutputEncoding=UTF-8 and reads free text through
-textcodec.lenient: a byte a commit stored that is not UTF-8 reads as U+FFFD,
+repotext.lenient: a byte a commit stored that is not UTF-8 reads as U+FFFD,
 and a name stored as UTF-8 comes back as stored.
 
 One parametrized test per site, each row a variation the hunt ran (the red

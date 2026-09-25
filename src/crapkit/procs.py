@@ -23,7 +23,7 @@ from typing import IO
 
 from ._process_owner import CommandCancelled, close_input, helper_flags, kill_process_tree, own_processes
 from .errors import ToolError
-from .textcodec import lenient
+from .repotext import lenient
 
 __all__ = ["CommandCancelled", "NoProgress", "own_processes", "prepare_template",
            "run_bounded", "run_owned"]
@@ -444,7 +444,7 @@ def _raise_launch_error(errors):
     try:
         arguments = json.loads(payload)
     except (ValueError, UnicodeDecodeError) as error:
-        raise ToolError("command launcher failed: " + payload.decode("utf-8", "replace")) from error
+        raise ToolError("command launcher failed: " + lenient(payload)) from error
     raise OSError(*arguments)
 
 

@@ -1,15 +1,20 @@
-"""No reader in src/ decodes bytes from outside crapkit with a strict codec.
+"""No reader in src/ decodes bytes from outside crapkit with a strict codec,
+and none but repotext picks the policy a lenient decode uses.
 
 git's free text, a runner's report, an MCP frame, a source file and a name the
 OS hands over can each hold a byte that is not UTF-8. A strict decode of one
 ended a command with a UnicodeDecodeError, or on Windows with an
 AttributeError after the decode failed in subprocess's reader thread; the
 utf8-author hunt found such a read in 30 places. Each kind of source now has
-one rule in one module: textcodec (git's free text, a runner's output, OS
-text, source files), repotext (a file the repository owns and crapkit must
-read exactly) and gitpaths (a path git names). This scan fails on any other
-strict read, so a new one has to choose a rule or say here why its bytes are
-crapkit's own, git's own, or ASCII by construction.
+one rule, and every rule lives in repotext: a file the repository owns and
+crapkit must read exactly, JSON, the marks file, git's free text and a
+runner's output, a patch or name kept byte for byte, source files and OS text.
+gitpaths frames a path git names and decodes it through repotext. The first
+scan fails on any other strict read, so a new one has to name a kind or say
+here why its bytes are crapkit's own, git's own, or ASCII by construction. The
+second fails on a read that spells its own policy (`errors="replace"` and the
+like) outside repotext: 23 such reads in 11 modules each chose a rule by hand,
+so two readers of one kind of text could drift apart.
 
 The shapes: a subprocess pipe opened as text (text=True, universal_newlines,
 or an encoding) with no errors policy; `.decode()` with a codec and no errors
@@ -24,7 +29,7 @@ from pathlib import Path
 import pytest
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "crapkit"
-RULE_HOMES = frozenset({"textcodec.py", "repotext.py", "gitpaths.py"})
+RULE_HOMES = frozenset({"repotext.py"})
 SUBPROCESS_CALLS = frozenset({"run", "Popen", "check_output", "call", "check_call"})
 
 # (file under src/crapkit, enclosing function, shape): why the strict read is right.
@@ -33,8 +38,6 @@ ALLOWED = {
         "the owner process crapkit starts writes json.dumps output, which is ASCII",
     ("_process_owner.py", "_group_active", "text pipe"):
         "`ps -o pgid= -o stat=` prints group ids and state letters, ASCII in every locale",
-    ("analyze.py", "_characters", "decode"):
-        "a probe: the UnicodeDecodeError it raises picks the cp1252 reading",
     ("analyze.py", "load_cache", "open"):
         "crapkit's own analysis cache; a torn or foreign byte is a ValueError that reads as a miss",
     ("analyze.py", "_load_stamps", "open"):
@@ -57,6 +60,8 @@ ALLOWED = {
         "a ref file git wrote; a UnicodeDecodeError falls back to asking git",
     ("gitio.py", "_patch_sides", "decode"):
         "hex object ids a regular expression matched",
+    ("gitpaths.py", "split_record", "decode"):
+        "the mode, object id and stage fields of an ls-files record, ASCII by construction",
     ("packet.py", "_windows_encoded", "decode"):
         "base64 output, ASCII by construction",
     ("covstream.py", "__init__", "incremental decoder"):
@@ -74,8 +79,8 @@ ALLOWED = {
 #   decoded with errors="replace", so no line holds a lone surrogate.
 # shape-38, crapkit's own caches: the analyze, churn, coupling, stamp and pool
 #   receipt entries.
-# shape-39, gitpaths.unquote_path: gitpaths is a rule home, so the scan skips
-#   it; tests/unit/test_git_path_bytes.py holds its rule.
+# shape-39, gitpaths.unquote_path: an encode back to the bytes git quoted, not
+#   a read; tests/unit/test_git_path_bytes.py holds its rule.
 # shape-40, the shell steps (action.yml, git-hooks/pre-commit, the plugin's
 #   hooks.json and .mcp.json, the Dockerfile): each passes bytes on without a
 #   codec, and the python:3.12-slim image sets LANG=C.UTF-8.
@@ -114,8 +119,9 @@ def _text_pipe(call: ast.Call) -> str | None:
 
 def _codec_decode(call: ast.Call) -> str | None:
     """`.decode()` or `.decode("utf-8")`; an incremental decoder's
-    `.decode(data)` takes bytes, and its policy was set when it was made."""
-    named = not call.args or isinstance(call.args[0], ast.Constant)
+    `.decode(data)` takes bytes, `b""` included, and its policy was set when
+    it was made."""
+    named = not call.args or isinstance(getattr(call.args[0], "value", None), str)
     return "decode" if isinstance(call.func, ast.Attribute) and _name(call) == "decode" and named else None
 
 
@@ -194,8 +200,8 @@ def test_no_reader_in_src_decodes_outside_bytes_strictly():
     unlisted = sorted(set(strict_reads(SRC)) - set(ALLOWED))
 
     assert not unlisted, (
-        "a strict read of bytes crapkit may not have written; read it through textcodec, repotext or "
-        "gitpaths, or add it to ALLOWED with the reason its bytes are crapkit's, git's or ASCII:\n"
+        "a strict read of bytes crapkit may not have written; read it through a repotext kind, "
+        "or add it to ALLOWED with the reason its bytes are crapkit's, git's or ASCII:\n"
         + "\n".join(f"  {site}" for site in unlisted))
 
 
@@ -253,3 +259,100 @@ def test_the_scan_finds_a_new_strict_reader(line, shape):
 @pytest.mark.parametrize("line", LENIENT)
 def test_the_scan_passes_a_read_with_a_policy_or_in_bytes(line):
     assert reads_in("new.py", f"def reader(path, raw, chunk, decoder):\n    return {line}\n".encode()) == []
+
+
+# --- the policy scan: repotext is the one module that names a decode policy ---
+
+
+def _decoder_policy(call: ast.Call) -> str | None:
+    """`codecs.getincrementaldecoder("utf-8")("replace")`."""
+    maker = call.func
+    made = isinstance(maker, ast.Call) and _name(maker) == "getincrementaldecoder"
+    return "incremental decoder" if made and call.args else None
+
+
+def _stream_policy(call: ast.Call) -> str | None:
+    """`io.TextIOWrapper(stream, errors=...)` over a pipe or a file."""
+    return "text stream" if _name(call) == "TextIOWrapper" and _keyword(call, "errors") is not None else None
+
+
+def _subprocess_pipe(call: ast.Call) -> str | None:
+    return "text pipe" if _name(call) in SUBPROCESS_CALLS else None
+
+
+def _read_policy(call: ast.Call) -> str | None:
+    """A read the strict scan knows, spelled with an errors policy of its own."""
+    if not _has_errors(call):
+        return None
+    return next(filter(None, (shape(call) for shape in (_subprocess_pipe, _codec_decode, _text_file))), None)
+
+
+POLICIES = (_decoder_policy, _stream_policy, _read_policy)
+
+
+def policy_shape(call: ast.Call) -> str | None:
+    """The decode policy this call spells for itself, or None."""
+    return next(filter(None, (policy(call) for policy in POLICIES)), None)
+
+
+def policies_in(rel: str, source: bytes) -> list[tuple[str, str, str]]:
+    """Every read in one module that names its own policy, as (file, enclosing function, shape)."""
+    tree = ast.parse(source)
+    parents = _parents(tree)
+    return [(rel, _enclosing(node, parents), shape) for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and (shape := policy_shape(node))]
+
+
+def policy_sites(root: Path) -> list[tuple[str, str, str]]:
+    found = []
+    for path in sorted(root.rglob("*.py")):
+        rel = path.relative_to(root).as_posix()
+        if rel not in RULE_HOMES:
+            found += policies_in(rel, path.read_bytes())
+    return found
+
+
+def test_no_module_but_repotext_spells_a_decode_policy():
+    spelled = policy_sites(SRC)
+
+    assert not spelled, (
+        "a read that picks its own decode policy; call the repotext kind for its source "
+        "(lenient, escaped, plain_utf8, ...) or add a kind there:\n"
+        + "\n".join(f"  {site}" for site in spelled))
+
+
+POLICY = [
+    ('raw.decode("utf-8", "replace")', "decode"),
+    ('raw.decode(errors="surrogateescape")', "decode"),
+    ('path.read_text(encoding="utf-8", errors="replace")', "read_text"),
+    ('path.read_text("utf-8", "replace")', "read_text"),
+    ('open(path, encoding="utf-8", errors="replace")', "open"),
+    ('subprocess.run(["git"], capture_output=True, text=True, errors="replace")', "text pipe"),
+    ('subprocess.run(["git"], capture_output=True, errors="replace")', "text pipe"),
+    ('io.TextIOWrapper(stream, encoding="utf-8", errors="replace")', "text stream"),
+    ('codecs.getincrementaldecoder("utf-8")("replace")', "incremental decoder"),
+]
+NO_POLICY = [
+    "lenient(raw)",
+    "decoder.decode(chunk, True)",
+    'decoder.decode(b"", True)',
+    'path.open("w", encoding="utf-8", errors="replace")',
+    'sys.stdout.reconfigure(encoding="utf-8", errors="replace")',
+    'text.encode("utf-8", "replace")',
+    'raw.decode("utf-8")',
+    'io.TextIOWrapper(stream, encoding="utf-8")',
+]
+
+
+@pytest.mark.parametrize("line, shape", POLICY, ids=[shape + ": " + line for line, shape in POLICY])
+def test_the_policy_scan_finds_a_read_that_names_its_own_policy(line, shape):
+    source = f"def reader(path, raw, stream):\n    return {line}\n".encode()
+
+    assert policies_in("new.py", source) == [("new.py", "reader", shape)]
+
+
+@pytest.mark.parametrize("line", NO_POLICY)
+def test_the_policy_scan_passes_a_kind_a_write_and_a_strict_read(line):
+    source = f"def reader(path, raw, chunk, decoder, stream, text):\n    return {line}\n".encode()
+
+    assert policies_in("new.py", source) == []

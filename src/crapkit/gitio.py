@@ -1,7 +1,6 @@
 """Git shell layer: the tracked-file universe and the current commit."""
 from __future__ import annotations
 
-import io
 import os
 import re
 import shutil
@@ -17,7 +16,7 @@ from .diffparse import changed_ranges, rendered_ranges, text_line_ranges, utf16_
 from .errors import GitError, ToolError
 from .gitpaths import nul_paths, readable, split_record
 from .records import record_lines
-from .textcodec import lenient, marks_text, utf16_marked
+from .repotext import escaped, lenient, lenient_lines, marks_text, utf16_marked
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _LOG_HEADER = re.compile(rb"^\0(-?\d+)\n", re.MULTILINE)
@@ -49,7 +48,7 @@ _NO_FILE = {"0" * 40, "0" * 64}  # the side of a commit that added or deleted th
 # the churn window as `Jos\xe9`. Pinned to UTF-8, git prints what a commit
 # stored and re-encodes only a commit whose header names another encoding. A
 # commit with no header that holds bytes that are not UTF-8 still comes out as
-# written, and the readers below take those through textcodec.lenient.
+# written, and the readers below take those through repotext.lenient.
 _RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false",
              "-c", "i18n.logOutputEncoding=UTF-8")
 # Parsed patches are a protocol, independent of display settings and converters.
@@ -88,7 +87,7 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subpro
     that are object names, words or filesystem paths (`rev-parse`, `config`):
     stdout keeps each byte that is not UTF-8 as the lone surrogate Python gives
     an OS path, so a directory named in Latin-1 on Linux still opens. stderr is
-    only ever quoted in a message, so it reads through textcodec.lenient."""
+    only ever quoted in a message, so it reads through repotext.lenient."""
     try:
         res = subprocess.run(["git", *argv], cwd=root, env=_environment(), capture_output=True)
     except FileNotFoundError as exc:
@@ -96,7 +95,7 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subpro
     if binary:
         return res
     return subprocess.CompletedProcess(res.args, res.returncode,
-                                       res.stdout.decode("utf-8", "surrogateescape"), lenient(res.stderr))
+                                       escaped(res.stdout), lenient(res.stderr))
 
 
 def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False):
@@ -150,7 +149,7 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     with proc:
-        yield from io.TextIOWrapper(proc.stdout, encoding="utf-8", errors="replace", newline="\n")
+        yield from lenient_lines(proc.stdout)
         stderr = lenient(proc.stderr.read())
     if proc.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed in {root}: {stderr.strip()}")
@@ -353,7 +352,7 @@ def _batch_stream(root: Path, requests: bytes) -> bytes:
         raise GitError("git executable not found") from exc
     if res.returncode != 0:
         raise GitError(f"git cat-file --batch failed in {root}: "
-                       f"{res.stderr.decode('utf-8', 'replace').strip()}")
+                       f"{lenient(res.stderr).strip()}")
     return res.stdout
 
 
@@ -365,7 +364,7 @@ def _framed_blob(stream: bytes, pos: int) -> tuple[bytes, int]:
     zero exit, so the absent case is detected here, not from a return code.
     """
     end = stream.index(b"\n", pos)
-    header = stream[pos:end].decode("utf-8", "replace")
+    header = lenient(stream[pos:end])
     if header.endswith(" missing"):
         raise GitError(f"git cat-file --batch: {header[:-len(' missing')]} is not in the index")
     body_at = end + 1
@@ -495,7 +494,7 @@ class SourcePatch:
         self._read = _Started(root, _source_diff_args(basis, paths), stdin=False)
 
     def result(self) -> str:
-        patch = self._read.result().decode("utf-8", "surrogateescape")
+        patch = escaped(self._read.result())
         if "\nBinary files " not in patch:
             return patch
         paths = _binary_source_paths(self._root, self._basis, self._paths)
@@ -526,8 +525,7 @@ def _new_sides(root: Path, basis: tuple[str, ...], paths: tuple[str, ...]) -> di
 def _text_patch(root: Path, basis: tuple[str, ...], paths: tuple[str, ...]) -> str:
     if not paths:
         return ""
-    raw = _git_bytes(root, *_source_diff_args(basis, paths, force_text=True))
-    return raw.decode("utf-8", "surrogateescape")
+    return escaped(_git_bytes(root, *_source_diff_args(basis, paths, force_text=True)))
 
 
 def _utf16_patch(root: Path, basis: tuple[str, ...], sides: dict[str, bytes]) -> str:
@@ -621,7 +619,7 @@ def file_log_patches(root: Path, rel_path: str) -> list[tuple[int, str]]:
     5.1's bare Out-File saves: git splits its lines at every 0A byte, one byte
     into the next line's first character, and only the first line carries the
     byte-order mark. Such a commit reads from its two whole revisions instead,
-    each through textcodec.marks_text, the rule every reader of the marks file
+    each through repotext.marks_text, the rule every reader of the marks file
     uses, as the lines one revision holds and the other does not.
     """
     # A path may hold U+0001, the old separator. Body NULs have +/- prefixes;

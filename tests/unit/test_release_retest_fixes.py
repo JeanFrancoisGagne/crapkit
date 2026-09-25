@@ -58,7 +58,7 @@ def test_missing_pytest_cov_failure_names_the_package(tmp_path):
 
 
 class _FakeLog:
-    """Stands in for the lane log path: read_text is all _log_tail needs."""
+    """Stands in for the lane log path: read_bytes is all _log_tail needs."""
 
     def __init__(self, text: str):
         self._text = text
@@ -66,8 +66,8 @@ class _FakeLog:
     def is_file(self) -> bool:
         return True
 
-    def read_text(self, encoding: str = "utf-8", errors: str = "replace") -> str:
-        return self._text
+    def read_bytes(self) -> bytes:
+        return self._text.encode("utf-8")
 
 
 def test_stale_artifact_note_names_uncommitted_edits_and_the_remedy():

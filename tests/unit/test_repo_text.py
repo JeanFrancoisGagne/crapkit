@@ -25,7 +25,11 @@ from crapkit.errors import ConfigError
 
 TEXT = "[crapkit]\ntarget = 6\n"
 SRC = Path(crapkit.__file__).resolve().parent
-_DECODE = re.compile(r"[\"']utf-8-sig[\"']")
+# The BOM rule in every spelling a reader has used: the codec name, the
+# byte-order mark as bytes, and the mark as a character, escaped or literal. A
+# lenient reader that dropped the mark with removeprefix passed a guard that
+# looked for the codec name alone.
+_DECODE = re.compile("[\"']utf[-_]8[-_]sig[\"']|BOM_UTF8|\\\\ufeff|\ufeff")
 
 
 def test_the_cli_name_is_the_core_reader_not_a_copy():
@@ -33,9 +37,11 @@ def test_the_cli_name_is_the_core_reader_not_a_copy():
 
 
 def test_the_utf8_sig_decode_is_written_once():
-    """One reader, zero inline copies. A second decode is a second place where
+    """One module, zero inline copies. A second decode is a second place where
     a UTF-16 file is a traceback instead of the sentence: the hook's config
-    read, the override's marks read and the merge driver each had one."""
+    read, the override's marks read and the merge driver each had one, and
+    the lenient reader for git's text and the scorer's source read later
+    dropped the mark by hand."""
     homes = sorted(p.relative_to(SRC).as_posix() for p in SRC.rglob("*.py")
                    if _DECODE.search(p.read_text(encoding="utf-8")))
 

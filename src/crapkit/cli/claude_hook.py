@@ -163,12 +163,12 @@ def _repo_top(cwd: Path) -> Path | None:
     """The git working-tree top above the command's own cwd, or None outside any
     repo. The event's `cwd` is where the command ran, and `status --porcelain`
     names every file relative to this top whatever directory asks."""
+    from ..repotext import lenient
+
     if not cwd.is_dir():
         return None
-    res = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd,
-                         capture_output=True, text=True, encoding="utf-8",
-                         errors="replace")
-    top = res.stdout.strip()
+    res = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd, capture_output=True)
+    top = lenient(res.stdout).strip()
     return Path(top) if res.returncode == 0 and top else None
 
 
@@ -189,10 +189,10 @@ def _porcelain(top: Path) -> str:
     """`git status --porcelain -z` over the whole tree, or "" when git cannot
     answer. -uall, because a heredoc that creates a new DIRECTORY of source
     would otherwise arrive as one collapsed `?? newdir/` row naming no file."""
-    res = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], cwd=top,
-                         capture_output=True, text=True, encoding="utf-8",
-                         errors="replace")
-    return res.stdout if res.returncode == 0 else ""
+    from ..repotext import lenient
+
+    res = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], cwd=top, capture_output=True)
+    return lenient(res.stdout) if res.returncode == 0 else ""
 
 
 def _status_records(text: str) -> Iterator[tuple[str, str]]:
@@ -356,8 +356,7 @@ def _changed(root: Path, rel: str, diff_text: str):
 def _tracked(root: Path, rel: str) -> bool:
     """Whether git has this one path in the index. Asked only when the diff came
     back empty, which is the only case that cannot tell untracked from unchanged."""
-    listed = subprocess.run(["git", "ls-files", "--", rel], cwd=root, capture_output=True,
-                            text=True, encoding="utf-8", errors="replace")
+    listed = subprocess.run(["git", "ls-files", "--", rel], cwd=root, capture_output=True)
     return bool(listed.stdout.strip())
 
 
@@ -427,11 +426,11 @@ def _marks_for(marks_path: Path, rel: str, records=()) -> set[str]:
 
     Parse only this file's lines and the format comments. Whole-repo entry
     construction costs 35 ms for 40,303 marks and answers no extra question.
-    The file reads by `textcodec.marks_text`, the rule every marks reader
+    The file reads by `repotext.marks_text`, the rule every marks reader
     shares, so a UTF-16 save keeps its marks and a cp1252 byte costs only the
     mark whose name held it.
     """
-    from ..textcodec import marks_text
+    from ..repotext import marks_text
 
     if not marks_path.is_file():
         return set()

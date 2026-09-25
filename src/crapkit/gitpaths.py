@@ -11,6 +11,8 @@ lane reuse counts one as a change, and churn skips it. Nothing here prints.
 """
 from __future__ import annotations
 
+from .repotext import backslashed, escaped
+
 PATH_FORMAT = "root-relative-exact"
 _SIMPLE_ESCAPES = {"n": 10, "t": 9, "r": 13, '"': 34, "\\": 92,
                    "a": 7, "b": 8, "f": 12, "v": 11}
@@ -36,14 +38,14 @@ def shown(path: str) -> str:
         raw = path.encode("utf-8", "surrogateescape")
     except UnicodeEncodeError:
         raw = path.encode("utf-8", "surrogatepass")
-    return raw.decode("utf-8", "backslashreplace")
+    return backslashed(raw)
 
 
 def repo_path(raw: bytes) -> str:
     """The path git named in `raw`. Bytes that are not UTF-8 come back in their
     surrogateescape spelling, which matches a scope's prefix and extension,
     opens the same file, and is never keyed."""
-    return raw.decode("utf-8", "surrogateescape")
+    return escaped(raw)
 
 
 def nul_paths(out: bytes) -> list[str]:

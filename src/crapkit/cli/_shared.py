@@ -15,10 +15,9 @@ from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..gitpaths import readable, shown
 from ..invocation import _self
-from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
-from ..textcodec import marks_text, os_text
+from ..repotext import marks_text, os_text, repo_text
 from ..universe import left_out_lines
 
 
@@ -288,7 +287,7 @@ def _ratchet_or_die(text: str, name: str) -> list:
 def _marks_file_text(ratchet_path: Path) -> str:
     """The marks file as every reader reads it: UTF-16 by its byte-order mark,
     else UTF-8 with a BOM dropped and each other byte as U+FFFD
-    (`textcodec.marks_text`). A writer reads through `RatchetFile`, which
+    (`repotext.marks_text`). A writer reads through `RatchetFile`, which
     refuses to save a byte this read replaced."""
     return marks_text(ratchet_path.read_bytes())
 

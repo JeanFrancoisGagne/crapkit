@@ -12,7 +12,7 @@ picks a stamp of its own:
 
 Then `publish` replaces the admitted text, or refuses a change another writer made.
 
-The file reads by `textcodec.marks_text`: UTF-16 when a byte-order mark says
+The file reads by `repotext.marks_text`: UTF-16 when a byte-order mark says
 so, else UTF-8 with a BOM dropped, and each byte neither reads as U+FFFD. A
 write keeps the encoding it read, and refuses when the read replaced a byte,
 since the rewrite would save U+FFFD in place of the name that held it.
@@ -29,7 +29,7 @@ from tempfile import NamedTemporaryFile
 from .errors import ConfigError, ToolError
 from .locks import exclusive_lock
 from .ratchet import dump_ratchet, load_ratchet, read_key_version, read_stamp, stamp_conflict
-from .textcodec import marks_bytes, marks_codec, marks_text, unreadable_byte
+from .repotext import marks_bytes, marks_codec, marks_text, unreadable_byte
 
 
 def _read(path: Path) -> bytes | None:

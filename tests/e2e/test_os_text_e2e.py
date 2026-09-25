@@ -8,8 +8,8 @@ too. sqlite and `str.encode("utf-8")` refuse one, so `explain` and `brief` on
 such a path argument, an override reason in such bytes, and a host or checkout
 directory named in Latin-1 ended in a UnicodeEncodeError, and `verify --base`
 on such a ref ended in a UnicodeDecodeError. crapkit now reads argv and the
-override reason through textcodec.os_text, keys host and directory names on
-textcodec.os_bytes, and reads git's echo of a ref leniently.
+override reason through repotext.os_text, keys host and directory names on
+repotext.os_bytes, and reads git's echo of a ref leniently.
 
 A str holding U+DCE9 stands for b"\\xe9" throughout: subprocess hands it to a
 POSIX child as that byte, and to a Windows child as the lone surrogate itself.

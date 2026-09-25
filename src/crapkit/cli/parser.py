@@ -104,9 +104,11 @@ def _is_crapkit_dist_info(name: str) -> bool:
 def _version_field(path: str) -> str | None:
     """METADATA's Version: header. Headers stop at the first blank line; the
     long description below it is free to contain anything."""
+    from ..repotext import lenient
+
     try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            return _version_header(handle)
+        with open(path, "rb") as handle:
+            return _version_header(lenient(line) for line in handle)
     except OSError:
         return None
 

@@ -8,7 +8,7 @@ import sys
 import threading
 
 from .procs import CommandCancelled, own_processes
-from .textcodec import lenient
+from .repotext import lenient
 
 
 class _OutputClosed(Exception):
@@ -16,7 +16,7 @@ class _OutputClosed(Exception):
 
 
 def _lines(source):
-    """One frame per line. A frame's bytes read through textcodec.lenient, one
+    """One frame per line. A frame's bytes read through repotext.lenient, one
     frame at a time: a byte that is not UTF-8, which a client writing its ANSI
     code page sends, used to end the session unanswered, and a BOM before the
     first frame cost `initialize` its reply."""

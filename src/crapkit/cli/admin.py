@@ -158,9 +158,10 @@ def _present_markers(root: Path) -> frozenset[str]:
 def _marker_texts(root: Path) -> dict[str, str]:
     """The pytest config files this repo carries, by name. Presence of one picks
     the lane; `testpaths` inside it says whether one lane can measure them all."""
+    from ..repotext import plain_utf8
     from ..scaffold import PYTEST_MARKERS
 
-    return {name: (root / name).read_text(encoding="utf-8", errors="replace")
+    return {name: plain_utf8((root / name).read_bytes())
             for name in PYTEST_MARKERS if (root / name).is_file()}
 
 
@@ -502,10 +503,11 @@ def _store_ignored_above(root: Path) -> bool:
 
 
 def _ignores_store(gitignore: Path) -> bool:
+    from ..repotext import plain_utf8
+
     if not gitignore.is_file():
         return False
-    lines = {line.strip() for line in
-             gitignore.read_text(encoding="utf-8", errors="replace").splitlines()}
+    lines = {line.strip() for line in plain_utf8(gitignore.read_bytes()).splitlines()}
     return bool(lines & {".crapkit/", ".crapkit"})
 
 
@@ -519,7 +521,7 @@ def _extend_gitignore(root: Path, lanes: tuple) -> list[str]:
     git reads .gitignore as bytes, and so does this: every byte already there
     stays, a cp1252 comment included, and the entries take the file's own line
     ending. A UTF-16 file, which git cannot read, is left as it was and named."""
-    from ..textcodec import utf16_marked
+    from ..repotext import utf16_marked
 
     if _store_ignored_above(root):
         return []
@@ -541,9 +543,10 @@ def _print_gitignore_added(added: list[str]) -> None:
 
 def _extended_gitignore(raw: bytes, lanes: tuple) -> tuple[bytes, list[str]]:
     """`raw` with crapkit's entries appended in the line ending it already uses."""
+    from ..repotext import escaped
     from ..scaffold import gitignore_update
 
-    current = raw.decode("utf-8", "surrogateescape")
+    current = escaped(raw)
     text, added = gitignore_update(current, lanes)
     newline = "\r\n" if b"\r\n" in raw else "\n"
     return raw + text[len(current):].replace("\n", newline).encode("utf-8"), added
@@ -715,7 +718,7 @@ def _doctor_oversized(oversized: tuple[tuple[str, int], ...]) -> list[Finding]:
 
 
 def _opens_utf16(path: Path) -> bool:
-    from ..textcodec import utf16_marked
+    from ..repotext import utf16_marked
 
     try:
         with path.open("rb") as fh:
@@ -873,6 +876,7 @@ def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str] | None:
     versions are split off the right."""
     from tempfile import TemporaryFile
     from ..procs import run_bounded
+    from ..repotext import lenient
 
     try:
         with TemporaryFile() as output:
@@ -880,7 +884,7 @@ def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str] | None:
                                _PROBE_TIMEOUT_SECONDS, stream=output,
                                **spec.popen_kwargs({"PYTHONIOENCODING": "utf-8"}))
             output.seek(0)
-            report = output.read().decode("utf-8", errors="replace")
+            report = lenient(output.read())
     except OSError:
         return None
     return _runner_versions(report) if code == 0 else None
@@ -1437,8 +1441,10 @@ def _plugin_json(path: Path):
     """
     import json
 
+    from ..repotext import plain_utf8
+
     try:
-        return json.loads(path.read_bytes().decode("utf-8", "replace"))
+        return json.loads(plain_utf8(path.read_bytes()))
     except (OSError, ValueError):
         return None
 
@@ -1572,7 +1578,7 @@ def _probed_cli_version(executable: str) -> str | None:
     thread's traceback into doctor's stderr and never reached an except."""
     import subprocess
 
-    from ..textcodec import lenient
+    from ..repotext import lenient
 
     try:
         done = subprocess.run([executable, "--version"], capture_output=True,
