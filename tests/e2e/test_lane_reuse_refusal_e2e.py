@@ -245,3 +245,26 @@ def test_the_artifact_a_killed_attempt_set_aside_is_reused(repo: Path, flag):
             ".crapkit/aside/") in res.stderr, res.stderr
     assert _run_count(repo) == 1, "the artifact the killed attempt set aside was reused"
     assert not (repo / ".crapkit" / "aside").exists()
+
+
+# (stale-touch boundary-10) what happens to the leftover before an agent asks
+# for the function's dark lines
+BEFORE_BRIEF = {"no-touch": lambda repo: repo, "touch": _touch}
+
+
+@pytest.mark.parametrize("event", sorted(BEFORE_BRIEF))
+def test_the_dark_line_note_names_the_failed_attempt(repo: Path, event):
+    """Nothing under the lane's scope changed, so a note that blamed changed
+    files named a cause that did not happen. The failed attempt is the cause."""
+    _measured_then_dead(repo)
+    BEFORE_BRIEF[event](repo)
+
+    packet = json.loads(run_cli(repo, "brief", "src/app.ts", "dispatch", "--json").stdout)
+
+    assert packet["uncovered_lines"] is None, "the leftover's lines are withheld"
+    note = packet["uncovered_lines_note"]
+    assert note.startswith(
+        "lane 'unit': its last attempt wrote no artifact, and the coverage/coverage-final.json "
+        "on disk predates it, so the line numbers in coverage/coverage-final.json are stale"), note
+    assert note.endswith("coverage` to measure the tree as it is"), note
+    assert "changed" not in note, note
