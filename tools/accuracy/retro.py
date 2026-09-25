@@ -1,6 +1,6 @@
 """Replay every past calculation bug's check on the commit before its fix and on the fix.
 
-    python tools/accuracy/retro.py run ID... [--record] [--python 3.12]
+    python tools/accuracy/retro.py run ID...|all [--record] [--python 3.12]
     python tools/accuracy/retro.py nightly --slice-of 7 [--day N]
     python tools/accuracy/retro.py release
     python tools/accuracy/retro.py digest NODE_ID
@@ -36,7 +36,7 @@ that no longer passes.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import datetime
 import hashlib
 import json
@@ -45,6 +45,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import venv as venv_module
 
 REPO = Path(__file__).resolve().parents[2]
 RETRO = REPO / "tests" / "accuracy" / "suite_strength" / "retro"
@@ -210,38 +211,59 @@ def item_outcomes(lines: list[str]) -> list[dict]:
 
 # --- the digest ------------------------------------------------------------------------------------
 
-def _closure_files(test_file: Path) -> set[Path]:
+def _roots(repo: Path) -> tuple[Path, ...]:
+    return (repo / "tests", repo / "tools" / "accuracy", repo / "tools")
+
+
+def _closure_files(test_file: Path, repo: Path) -> set[Path]:
     sys.path.insert(0, str(REPO / "tests"))
     from accuracy.kit import closure
-    return closure.closure(test_file)
+    return closure.closure(test_file, _roots(repo.resolve()))
 
 
-def _packet_data(test_file: Path) -> set[Path]:
-    accuracy = REPO / "tests" / "accuracy"
-    parts = test_file.resolve().relative_to(accuracy).parts
-    packet = accuracy / parts[0]
-    return {path.resolve() for name in DATA_DIRS for path in packet.rglob("*")
-            if path.is_file() and name in path.relative_to(packet).parts[:-1]}
+def _is_data(path: Path, packet: Path) -> bool:
+    return path.is_file() and bool(set(DATA_DIRS) & set(path.relative_to(packet).parts[:-1]))
 
 
-def check_files(test: str, probe: str = "") -> list[Path]:
+def _packet_data(test_file: Path, repo: Path) -> set[Path]:
+    accuracy = (repo / "tests" / "accuracy").resolve()
+    packet = accuracy / test_file.relative_to(accuracy).parts[0]
+    return {path.resolve() for path in packet.rglob("*") if _is_data(path, packet)}
+
+
+def check_files(test: str, probe: str = "", repo: Path = REPO) -> list[Path]:
     """The check's file, its import closure and its packet's data files."""
-    test_file = (REPO / test.split("::")[0]).resolve()
-    files = _closure_files(test_file) | _packet_data(test_file)
+    test_file = (repo / test.split("::")[0]).resolve()
+    files = _closure_files(test_file, repo) | _packet_data(test_file, repo)
     if probe:
-        files.add((RETRO / "probes" / probe).resolve())
+        files.add((repo / RETRO.relative_to(REPO) / "probes" / probe).resolve())
     return sorted(files)
 
 
-def digest(test: str, probe: str = "") -> str:
+def digest(test: str, probe: str = "", repo: Path = REPO) -> str:
+    """16 hex of a sha256 over every check file's repo path and bytes."""
+    root = repo.resolve()
     hashed = hashlib.sha256()
-    for path in check_files(test, probe):
-        relative = path.relative_to(REPO).as_posix()
-        hashed.update(relative.encode("utf-8") + b"\0" + hashlib.sha256(path.read_bytes()).digest())
+    for path in check_files(test, probe, repo):
+        hashed.update(path.relative_to(root).as_posix().encode("utf-8") + b"\0")
+        hashed.update(hashlib.sha256(path.read_bytes()).digest())
     return hashed.hexdigest()[:16]
 
 
 # --- worktrees and venvs ------------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Site:
+    """Where a replay builds and what it installs: the repo that holds the
+    commits, the directory for worktrees and venvs, how a commit's crapkit goes
+    into its venv (`wheel`, `editable`, or `link`: a .pth pointing at its src/)
+    and the packages beside it. uv honours UV_CACHE_DIR and UV_OFFLINE, which CI
+    points at its cached wheelhouse."""
+    repo: Path = REPO
+    work: Path = WORK
+    install: str = "wheel"
+    packages: tuple = (f"lizard=={LIZARD}",)
+
 
 def _run(argv: list, cwd: Path = REPO, env: dict | None = None) -> subprocess.CompletedProcess:
     return subprocess.run([str(part) for part in argv], cwd=cwd, env=env, capture_output=True,
@@ -255,28 +277,28 @@ def _checked(argv: list, cwd: Path = REPO) -> str:
     return done.stdout
 
 
-def have_commit(sha: str) -> bool:
-    return _run(["git", "cat-file", "-e", f"{sha}^{{commit}}"]).returncode == 0
+def have_commit(sha: str, repo: Path = REPO) -> bool:
+    return _run(["git", "cat-file", "-e", f"{sha}^{{commit}}"], cwd=repo).returncode == 0
 
 
-def fetch_bundle(sha: str) -> None:
+def fetch_bundle(sha: str, repo: Path = REPO) -> None:
     bundle = os.environ.get(BUNDLE_ENV, "")
     if not bundle:
         raise RetroError(f"{sha} is not in this clone; set {BUNDLE_ENV} to the history bundle")
-    _checked(["git", "fetch", "-q", bundle, "+refs/*:refs/retro-bundle/*"])
-    if not have_commit(sha):
+    _checked(["git", "fetch", "-q", bundle, "+refs/*:refs/retro-bundle/*"], cwd=repo)
+    if not have_commit(sha, repo):
         raise RetroError(f"{sha} is in neither this clone nor {bundle}")
 
 
-def worktree(sha: str, work: Path = WORK) -> Path:
+def worktree(sha: str, site: Site = Site()) -> Path:
     """A detached worktree at `sha`, reused when it is already there."""
-    path = work / sha[:12]
+    path = site.work / sha[:12]
     if (path / ".git").exists():
         return path
-    if not have_commit(sha):
-        fetch_bundle(sha)
-    work.mkdir(parents=True, exist_ok=True)
-    _checked(["git", "worktree", "add", "-f", "--detach", path, sha])
+    if not have_commit(sha, site.repo):
+        fetch_bundle(sha, site.repo)
+    site.work.mkdir(parents=True, exist_ok=True)
+    _checked(["git", "worktree", "add", "-f", "--detach", path, sha], cwd=site.repo)
     return path
 
 
@@ -284,26 +306,72 @@ def venv_python(venv: Path) -> Path:
     return venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
-def build_venv(tree: Path, python: str, extras: list[str], editable: bool) -> Path:
-    """The commit's crapkit (no dependencies) plus lizard and any extras a probe asks for."""
-    venv = tree.parent / f"{tree.name}-venv-{python}"
+CURRENT = f"{sys.version_info.major}.{sys.version_info.minor}"
+
+
+def _create_venv(venv: Path, python: str) -> None:
+    """The standard library's venv for this interpreter's version; uv for another."""
+    if python == CURRENT:
+        venv_module.EnvBuilder(with_pip=False, symlinks=os.name != "nt").create(venv)
+    else:
+        _checked(["uv", "venv", "-q", "--python", python, venv])
+
+
+def _purelib(interpreter: Path) -> Path:
+    code = "import sysconfig; print(sysconfig.get_path('purelib'))"
+    return Path(_checked([interpreter, "-c", code]).strip())
+
+
+def _install(interpreter: Path, tree: Path, how: str) -> None:
+    if how == "link":
+        link = _purelib(interpreter) / "retro-src.pth"
+        link.write_text(str(tree / "src") + "\n", encoding="utf-8")
+        return
+    target = ["-e", tree] if how == "editable" else [tree]
+    _checked(["uv", "pip", "install", "-q", "--python", interpreter, "--no-deps", *target])
+
+
+def _packages(interpreter: Path, packages: list[str]) -> None:
+    if packages:
+        _checked(["uv", "pip", "install", "-q", "--python", interpreter, *packages])
+
+
+def build_venv(tree: Path, python: str, site: Site = Site(), extra: tuple = ()) -> Path:
+    """A venv beside the worktree holding its crapkit, the site's packages and `extra`."""
+    venv = tree.parent / f"{tree.name}-venv-{python}-{site.install}"
     interpreter = venv_python(venv)
     if not interpreter.exists():
-        _checked(["uv", "venv", "-q", "--python", python, venv])
-        install = ["-e", tree] if editable else [tree]
-        _checked(["uv", "pip", "install", "-q", "--python", interpreter, "--no-deps", *install])
-        _checked(["uv", "pip", "install", "-q", "--python", interpreter, f"lizard=={LIZARD}",
-                  *extras])
+        _create_venv(venv, python)
+        _install(interpreter, tree, site.install)
+        _packages(interpreter, [*site.packages, *extra])
     return interpreter
 
 
 # --- replaying one check -------------------------------------------------------------------------------
 
+def _holds_crapkit(entry: str) -> bool:
+    return (Path(entry) / "crapkit" / "__init__.py").is_file()
+
+
+def _inherited_paths() -> list[str]:
+    """The caller's PYTHONPATH minus any entry holding a crapkit package: the
+    spawned old crapkit inherits it, and this tree's src/ would shadow the commit's."""
+    entries = os.environ.get("PYTHONPATH", "").split(os.pathsep)
+    return [entry for entry in entries if entry and not _holds_crapkit(entry)]
+
+
 def _pytest_env(interpreter: Path, outcomes: Path) -> dict:
-    paths = [str(REPO / "tests"), str(REPO / "tools" / "accuracy"), os.environ.get("PYTHONPATH", "")]
+    paths = [str(REPO / "tests"), str(REPO / "tools" / "accuracy"), *_inherited_paths()]
     return {**os.environ, PYTHON_ENV: str(interpreter), OUTCOMES_ENV: str(outcomes),
             COLLECT_ALL_ENV: "1", "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONPATH": os.pathsep.join(filter(None, paths))}
+
+
+def _rootdir(test: str) -> Path:
+    """This tree for a check in it; a check file elsewhere is its own root, so pytest
+    never walks the directories above it."""
+    path = (REPO / test.split("::")[0]).resolve()
+    return REPO if path == REPO or REPO in path.parents else path.parent
 
 
 def replay_node(test: str, interpreter: Path) -> list[dict]:
@@ -312,7 +380,7 @@ def replay_node(test: str, interpreter: Path) -> list[dict]:
         outcomes = Path(scratch) / "outcomes.jsonl"
         outcomes.touch()
         argv = [sys.executable, "-m", "pytest", test, "-q", "-p", "no:cacheprovider",
-                "-p", "no:randomly", "-p", "retro", "--rootdir", REPO]
+                "-p", "no:randomly", "-p", "retro", "--rootdir", _rootdir(test)]
         _run(argv, env=_pytest_env(interpreter, outcomes))
         return item_outcomes(outcomes.read_text(encoding="utf-8").splitlines())
 
@@ -327,16 +395,16 @@ def probe_header(path: Path) -> tuple[list[str], bool]:
     return requires, editable
 
 
-def replay_probe(probe: str, interpreter: Path, tree: Path) -> list[dict]:
+def replay_probe(probe: Path, interpreter: Path, tree: Path) -> list[dict]:
     """A probe exits 0 when the expected value holds and raises AssertionError when not."""
     env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
-    done = _run([interpreter, RETRO / "probes" / probe, tree], cwd=tree, env=env)
+    done = _run([interpreter, probe, tree], cwd=tree, env=env)
     if done.returncode == 0:
-        return [{"nodeid": probe, "outcome": "passed", "exc_type": "", "assertion": False,
+        return [{"nodeid": probe.name, "outcome": "passed", "exc_type": "", "assertion": False,
                  "message": ""}]
     tail = done.stderr.strip().splitlines()[-1:] or ["(no output)"]
     kind = tail[0].split(":", 1)[0].rsplit(".", 1)[-1]
-    return [{"nodeid": probe, "outcome": "failed", "exc_type": kind,
+    return [{"nodeid": probe.name, "outcome": "failed", "exc_type": kind,
              "assertion": kind == "AssertionError", "message": _cell(tail[0])[:300]}]
 
 
@@ -355,18 +423,22 @@ def bug_of(row: dict) -> Bug:
                row["probe"])
 
 
-def _records(bug: Bug, sha: str, python: str) -> list[dict]:
-    tree = worktree(sha)
-    requires, editable = probe_header(RETRO / "probes" / bug.probe) if bug.probe else ([], False)
-    interpreter = build_venv(tree, python, requires, editable)
+def _probe_records(probe: Path, tree: Path, python: str, site: Site) -> list[dict]:
+    requires, editable = probe_header(probe)
+    probe_site = replace(site, install="editable") if editable else site
+    return replay_probe(probe, build_venv(tree, python, probe_site, tuple(requires)), tree)
+
+
+def _records(bug: Bug, sha: str, python: str, site: Site) -> list[dict]:
+    tree = worktree(sha, site)
     if bug.probe:
-        return replay_probe(bug.probe, interpreter, tree)
-    return replay_node(bug.test, interpreter)
+        return _probe_records(RETRO / "probes" / bug.probe, tree, python, site)
+    return replay_node(bug.test, build_venv(tree, python, site))
 
 
-def replay(bug: Bug, python: str) -> tuple[Outcome, Outcome]:
-    before = classify_before(_records(bug, bug.before, python))
-    fix = classify_fix(_records(bug, bug.fix, python))
+def replay(bug: Bug, python: str, site: Site = Site()) -> tuple[Outcome, Outcome]:
+    before = classify_before(_records(bug, bug.before, python, site))
+    fix = classify_fix(_records(bug, bug.fix, python, site))
     return before, fix
 
 
@@ -454,10 +526,15 @@ def _ledger_order(row: dict) -> tuple:
     return int(row["id"][1:]), row["test"]
 
 
+def chosen(bugs: list[dict], ids: set[str]) -> list[dict]:
+    """The replayable rows `ids` name; the id `all` names every row."""
+    return [row for row in bugs if ("all" in ids or row["id"] in ids) and replayable_here(row)]
+
+
 def _run_cmd(args) -> int:
     bugs, ledger = _load()
     wanted = set(args.ids)
-    rows = [row for row in bugs if row["id"] in wanted and replayable_here(row)]
+    rows = chosen(bugs, wanted)
     if not rows:
         raise RetroError(f"no replayable bugs.tsv row for {', '.join(sorted(wanted))} here")
     return _replay_rows(rows, ledger, args.python, args.record)
@@ -500,7 +577,7 @@ def _stale_cmd(args) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="retro.py", description=__doc__.splitlines()[0])
-    parser.add_argument("--python", default=f"{sys.version_info.major}.{sys.version_info.minor}")
+    parser.add_argument("--python", default=CURRENT)
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run")
     run.add_argument("ids", nargs="+")
