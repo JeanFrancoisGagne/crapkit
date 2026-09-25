@@ -128,3 +128,41 @@ def test_docs_document_the_image_under_the_mcp_section():
     assert text.index("\n## MCP server\n") < text.index("\n## Docker\n")
     assert "docker build -t crapkit ." in text
     assert 'docker run -i --rm -v "$PWD:/repo" -w /repo crapkit' in text
+
+
+# --- the uid the image runs as -------------------------------------------------
+
+# The account useradd creates, and the uid a reader compares with their own.
+USER_FORM = 'docker run -i --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo crapkit'
+
+
+def _header_commands() -> list[str]:
+    """The indented command lines of the Dockerfile's leading comment block."""
+    header = []
+    for line in DOCKERFILE.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("#"):
+            break
+        header.append(line)
+    return [line.lstrip("#").strip() for line in header if line.startswith("#     ")]
+
+
+def test_the_header_reads_its_commands_from_the_indented_lines():
+    assert _header_commands()[0] == "docker build -t crapkit ."
+
+
+def test_the_header_and_the_docs_give_the_same_three_commands():
+    """A reader copies either one; the deploy cell docs-docker-user runs the docs' fences."""
+    text = DOCS.read_text(encoding="utf-8")
+    docker = text[text.index("\n## Docker\n"):]
+
+    assert _header_commands() == ["docker build -t crapkit .",
+                                  'docker run -i --rm -v "$PWD:/repo" -w /repo crapkit', USER_FORM]
+    assert all(command in docker for command in _header_commands())
+
+
+def test_the_uid_the_docs_name_is_the_one_the_image_creates():
+    runs = " ".join(_arguments("RUN"))
+    text = DOCS.read_text(encoding="utf-8")
+
+    assert "useradd --create-home --uid 1000 crapkit" in runs
+    assert "uid 1000" in text[text.index("\n## Docker\n"):]

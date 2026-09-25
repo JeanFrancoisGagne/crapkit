@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from docs_support import adopt_measured, install_candidate, user_bin, version_of
 from kit import docsnip, pyindex, repos, wheels
 from kit.cells import cell
 
@@ -23,15 +24,6 @@ PACKET = "deploy-docs"
 WINDOWS = os.name == "nt"
 REFUSAL = "externally-managed-environment"
 FALLBACKS = ("pipx", "uv tool", "venv")
-
-
-def scripts_dir(venv: Path) -> Path:
-    return venv / ("Scripts" if WINDOWS else "bin")
-
-
-def user_bin(box) -> Path:
-    """Where pipx and uv tool put a launcher: ~/.local/bin on every OS."""
-    return box.home / ".local" / "bin"
 
 
 def names_dir(text: str, directory: Path) -> bool:
@@ -43,10 +35,6 @@ def names_dir(text: str, directory: Path) -> bool:
 
 # A login shell sets SHELL; uv reads it to decide whether to print `uv tool update-shell`.
 LOGIN_SHELL = {} if WINDOWS else {"SHELL": "/bin/bash"}
-
-
-def version_of(box, cwd=None) -> str:
-    return box.run(["crapkit", "--version"], cwd=cwd, expect=0).stdout.strip()
 
 
 # --- when pip refuses ------------------------------------------------------------
@@ -202,48 +190,6 @@ def test_the_pip_user_row_upgrades_and_pip_names_the_path_to_add(box, candidate)
 # --- downgrade -----------------------------------------------------------------------
 
 DOWNGRADE_TO = "0.7.6"
-CONTAINER_KEY = "container_ok = true"  # docs/lanes.md#containers
-
-
-def in_container() -> bool:
-    return Path("/.dockerenv").exists()
-
-
-def allow_container_lane(config: Path) -> None:
-    """The docs/lanes.md#containers key on the lane init wrote."""
-    text = config.read_text(encoding="utf-8")
-    config.write_text(text.replace("[[lane]]\n", f"[[lane]]\n{CONTAINER_KEY}\n", 1), encoding="utf-8")
-
-
-def venv_with(box, *specs: str) -> Path:
-    """A venv on PATH holding `specs`: crapkit[py] for a pip install, the lane's
-    test dependencies beside a pipx or uv tool install."""
-    venv = box.root / "venv"
-    box.run([box.toolchain.python("3.12"), "-m", "venv", str(venv)], expect=0)
-    box.prepend_path(scripts_dir(venv))
-    box.run(["python", "-m", "pip", "install", "-q", *specs], expect=0)
-    return venv
-
-
-def install_candidate(box, installer: str) -> None:
-    if installer == "pip":
-        venv_with(box, "crapkit[py]")
-        return
-    venv_with(box, "pytest", "pytest-cov")
-    box.run([*installer.split(), "install", "crapkit"], expect=0)
-    box.prepend_path(user_bin(box))
-
-
-def adopt_under_candidate(box, repo: Path) -> None:
-    box.run(["crapkit", "init"], cwd=repo, expect=0)
-    if in_container():
-        allow_container_lane(repo / "crapkit.toml")
-    for step in (["coverage"], ["ratchet", "seed"]):
-        box.run(["crapkit", *step], cwd=repo, expect=0)
-    box.run(["git", "add", "-A"], cwd=repo, expect=0)
-    box.run(["git", "commit", "-q", "-m", "adopt crapkit"], cwd=repo, env=box.commit_env(), expect=0)
-
-
 def downgrade_line(installer: str) -> str:
     """The command docs/upgrading.md's Downgrading list gives this installer."""
     page = (docsnip.root() / "docs" / "upgrading.md").read_text(encoding="utf-8")
@@ -265,7 +211,7 @@ def stamps(refusal: str) -> set[str]:
 def test_a_downgrade_does_what_the_upgrade_guide_says(box, templates, installer):
     repo = repos.checkout(box, "py-pytest", cache=templates)
     install_candidate(box, installer)
-    adopt_under_candidate(box, repo)
+    adopt_measured(box, repo)
     line = downgrade_line(installer)
 
     assert f"crapkit=={DOWNGRADE_TO}" in line and DOWNGRADE_TO in wheels.releases()

@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.8.1 — unreleased
+
+A deploy suite now installs crapkit the way the docs say, through each channel and into
+each agent, fresh and as an upgrade, and this release fixes what it found. The analysis
+version stays 11, so no repo re-seeds.
+
+### Upgrading from 0.8.0
+
+- Nothing to re-measure. Upgrade the CLI with the installer that owns it; the [upgrade
+  table](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) now has
+  rows for pip --user, pipx and uvx.
+- Codex users: Codex refreshes git marketplaces each time it starts, so upgrade the CLI
+  before the next Codex start, and the plugin arrives with a `.codex-plugin/plugin.json`
+  that keeps Claude Code's hook out of Codex.
+
+### Agents
+
+- New page, [Wiring crapkit into your agent](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md):
+  a block to paste for each of 27 agents, from Claude Code and Codex to Cursor, VS Code,
+  Gemini CLI, Goose, Zed and Aider, with where each starts the server, what environment it
+  passes, the versions checked, what it does with the plugin's hook, and how to restart
+  after an upgrade.
+- The plugin ships a Codex manifest whose `hooks` is empty. Codex 0.156.1 read Claude
+  Code's `hooks/hooks.json` and listed its 50 handlers as PostToolUse hooks that each ran
+  a bare `crapkit`, which exits 2 with its usage. Codex also offers `crapkit-onboard` to
+  the model only when you name it.
+- The README names the floors: the plugin's hook needs Claude Code 2.1.139, and the Codex
+  plugin lines need Codex 0.131.0. `crapkit doctor --plugin-root` names a Claude Code
+  below 2.1.139.
+- The onboard and recover skills label each `claude plugin` command as Claude Code's and
+  give the Codex command beside it.
+- An MCP call to a tool name 0.6.0 renamed answers with the new name, as in
+  `unknown tool 'worklist': renamed list_worklist in 0.6.0`.
+
+### Install
+
+- README Install says what to run when pip refuses with `externally-managed-environment`
+  (Debian 12, Ubuntu 23.04 and later, Homebrew, uv's Pythons): `pipx install crapkit`,
+  `uv tool install crapkit`, or a venv.
+- The commit-gate hook README Route 1 and Route 2 and the handbook write calls the
+  `crapkit` launcher first, then `uvx crapkit`, then `python -m crapkit`, so it reaches a
+  pipx, uv tool or uvx install. The old hook ran `python -m crapkit`, which none of those
+  installs can import.
+- [docs/upgrading.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
+  says what a downgrade keeps and what it refuses, and that a merge driver and Route 2's
+  hooks path are set per clone.
+- The Docker image's header and `docs/agent-json.md` give a `--user "$(id -u):$(id -g)"`
+  run line: the image serves as uid 1000, and on a checkout another uid owns the tools
+  answer but cannot save their caches.
+- Python 3.14 is a listed classifier.
+
+### Doctor
+
+- A coverage.py lane inside a container gets a WARN from `crapkit doctor` before the first
+  `crapkit coverage` refuses it with exit 5. `docs/lanes.md` names the environments that
+  count: devcontainers, Codespaces, CI jobs in a container and cloud agents such as Codex
+  cloud.
+- A crapkit hook that `core.hooksPath` sends git away from, and pre-commit run in CI over
+  an empty index, each get a WARN: both passed every commit without judging it.
+
+### GitHub Action
+
+- A `working-directory` input runs every crapkit step from the directory holding
+  `crapkit.toml`, for a monorepo whose crapkit root sits below the repository top. At the
+  top, coverage found no `crapkit.toml` and the gate failed with exit 3.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

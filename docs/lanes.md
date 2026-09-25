@@ -953,7 +953,13 @@ crapkit: lane 'py' FAILED: lane 'py' runs the python suite, which is host-only (
 ```
 
 Two triggers, either one is enough: the file `/.dockerenv` exists, or
-`CRAPKIT_INSIDE_CONTAINER=1` is set in the environment. The guard exists because a python
+`CRAPKIT_INSIDE_CONTAINER=1` is set in the environment. Docker writes `/.dockerenv` into
+every container it starts, so these all count as containers: a devcontainer, a GitHub
+Codespace, a CI job that runs in a `container:` image or on a Docker executor, and an agent
+that works in a cloud container, such as a Codex cloud task. `crapkit doctor` names each
+coverage.py lane the guard will refuse with a WARN, before the first `crapkit coverage`
+does. Podman writes `/run/.containerenv` instead, which the guard does not read; set
+`CRAPKIT_INSIDE_CONTAINER=1` there if the container caps memory. The guard exists because a python
 suite under coverage is memory-hungry and a container memory cap turns that into an OOM kill
 that looks like a flaky lane. It fires on the path that launches the suite and nowhere else,
 so `--reuse-artifacts` reads a host-built report inside a container without hitting it: that

@@ -1439,6 +1439,11 @@ Client wiring:
 }
 ```
 
+That block pastes as it is into Claude Code's `.mcp.json`, Cursor, Cline, Kiro, Junie and
+oh-my-pi. Every other agent names its file and format differently, and
+[Wiring crapkit into your agent](harnesses.md) gives the block for each one, with where it
+starts the server and what environment it passes.
+
 Every tool also accepts a `repo` argument that overrides the server's default, so one server
 can serve several checkouts.
 
@@ -1501,4 +1506,13 @@ before `initialize`. The mount is the checkout being scored. The image serves `/
 repo mounted anywhere else needs `--repo` on the command line, and an unmounted container
 answers each `tools/call` with the missing-config result above. The image carries git,
 because every tool shells to the CLI and the CLI reads git, and it serves as an
-unprivileged account.
+unprivileged account, uid 1000.
+
+A bind mount keeps the host's ownership. On a Linux host where your uid is not 1000, the
+tools still answer, but the churn and coupling caches they write under `.crapkit/` cannot
+be saved, so every call walks the git history again. Run the server as the checkout's
+owner instead:
+
+```
+docker run -i --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo crapkit
+```

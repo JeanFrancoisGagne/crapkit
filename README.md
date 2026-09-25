@@ -281,7 +281,10 @@ ships three skills, the read-side MCP server, and one advisory PostToolUse hook 
 any function an edit pushed over its ceiling. Claude reaches two of the skills by itself,
 `crapkit` and `crapkit-recover`; the third you type, as `/crapkit:crapkit-onboard`, because
 wiring a repo up happens once and its description has no business in every turn's window.
-It adds no files to your repo, and it needs the crapkit CLI on PATH.
+It adds no files to your repo, and it needs the crapkit CLI on PATH. The hook needs
+Claude Code 2.1.139 or later: an older release drops the hook's arguments and runs a bare
+`crapkit` after every matched edit, which prints its usage and exits 2, and
+`crapkit doctor --plugin-root` names the release it found.
 
 A repo with no `crapkit.toml` costs a silent no-op per edit: 68 ms on Windows through the
 `crapkit.exe` launcher Claude Code starts, where a bare `python -c pass` took 32 ms on the
@@ -326,7 +329,8 @@ edit is. Python only, so a TypeScript or Go repo pays the two spawns and hears n
 
 ### Codex
 
-Codex can install the same marketplace's plugin through its own manager:
+Codex 0.131.0 or later can install the same marketplace's plugin through its own manager;
+0.130.0 and earlier have no `codex plugin add`:
 
 ```
 codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
@@ -740,6 +744,7 @@ behind the checkout to measure from.
 | `delta` | `"true"` | scores the pull request's base commit first, so the verdict covers the commits the pull request adds. Costs a second lane run; `"false"` scores the checkout alone, and the verdict then judges no changed function |
 | `top` | `"5"` | worklist rows rendered in the table |
 | `python-version` | `"3.12"` | the interpreter `actions/setup-python` installs crapkit into. Match it to the version your own setup-python step named, or the lanes run on an interpreter your dependencies never reached |
+| `working-directory` | `"."` | the directory holding `crapkit.toml`, relative to the checkout; every crapkit step runs there. Set it when the crapkit root sits below the repository top, as a package in a monorepo does (`packages/api`): at the top, `crapkit coverage` finds no `crapkit.toml` and the gate fails with exit 3 |
 
 `gate: "false"` is the default on purpose. A team adopts the action before it has decided
 which findings should stop a merge, and a check that fails on day one gets turned off on
