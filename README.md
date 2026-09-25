@@ -562,41 +562,84 @@ hook there, and with no `crapkit.toml` at the top the gate runs in each crapkit 
 that owns a staged file and names paths from the top (`packages/api/app/m.py`). A commit
 that stages nothing under any `crapkit.toml`, a docs-only commit or any commit in a repo
 armed before `crapkit init`, passes with one note on stderr. To pin the gate to one root
-instead, the hook line is `exec python -m crapkit hook-precommit --repo packages/api` and
-Route 3 adds `args: [--repo, packages/api]` under `id: crapkit-gate`. Route 4's
-`crapkit verify` takes `--repo packages/api`.
+instead, end each `hook-precommit` line of the hook body below with `--repo packages/api`,
+as in `exec python -m crapkit hook-precommit --repo packages/api`, and Route 3 adds
+`args: [--repo, packages/api]` under `id: crapkit-gate`. Route 4's `crapkit verify` takes
+`--repo packages/api`.
 
-The hook runs the first of three that git's PATH offers: the `crapkit` command (pipx, uv
-tool, or a venv whose `bin` is on PATH), then `uvx crapkit`, then `python -m crapkit`. Git
-runs hooks outside your shell's activated venv, so crapkit installed only in a venv needs
-its launcher spelled out instead: `exec /path/to/venv/bin/crapkit hook-precommit`
-(`Scripts/crapkit.exe` on Windows). With none of the three, every commit stops on the
-shell's `not found` or python's `No module named crapkit`; install crapkit, then commit.
+Route 1 and Route 2 write this hook body. It runs the first of three that the hook's
+PATH offers: the `crapkit` command a pipx, uv tool or venv install puts there, then
+`uvx crapkit`, then `python -m crapkit`:
+
+    command -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit
+    command -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit
+    exec python -m crapkit hook-precommit
+
+The uvx line is what gates a machine that runs crapkit only through `uvx`. It runs the
+release uv fetched first, or the newest one when uv has none, which need not be the
+release the rest of your team runs. It also keeps the gate running after
+`pip uninstall crapkit` on any machine with uv, so take the hook out before the package
+([Removing crapkit](#removing-crapkit)).
+
+Route 1's PowerShell form writes the launcher's own path instead, as that route explains.
+Route 3's framework writes a hook of its own that runs `crapkit hook-precommit` from the
+environment it installs crapkit into, and Route 4 gates in CI with no hook.
+
+Git hands the hook the PATH of whatever ran `git commit`. A terminal with your venv
+activated passes the venv on; an IDE or GUI client you did not start from that terminal
+does not. When that PATH reaches no `crapkit` command, no `uvx` and no `python` that
+imports crapkit, git refuses every commit. With no `python` at all, as on a Debian,
+Ubuntu or macOS that has only `python3`, the hook exits 127 with
+`exec: python: not found`. With a `python` that does not import crapkit, such as a system
+python, it exits 1 with `No module named crapkit`. Spell the path out for that client:
+`exec /path/to/venv/bin/crapkit hook-precommit`, or `Scripts/crapkit.exe` on Windows.
+
+**Run `git config core.hooksPath` before you pick a route.** When it prints a directory,
+set globally or by husky, lefthook or another hook manager, git runs hooks from there
+and never reads `.git/hooks`: Route 1 arms nothing, and husky sets the path back over
+Route 2's on the next `npm install`. Add the gate to the pre-commit file that directory
+already runs. Under husky, that is `crapkit hook-precommit` as a line of its own in
+`.husky/pre-commit`, with no `exec`: husky runs the file under `sh -e`, so the gate's
+exit 6 stops the commit, and the lines after it still run when it passes.
 
 ### Route 1: `.git/hooks/pre-commit` (local, not committed)
 
 ```sh
-cat > .git/hooks/pre-commit <<'EOF'
+hook="$(git rev-parse --git-common-dir)/hooks/pre-commit"
+cat > "$hook" <<'EOF'
 #!/bin/sh
-if command -v crapkit >/dev/null 2>&1; then exec crapkit hook-precommit; fi
-if command -v uvx >/dev/null 2>&1; then exec uvx crapkit hook-precommit; fi
+command -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit
+command -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit
 exec python -m crapkit hook-precommit
 EOF
-chmod +x .git/hooks/pre-commit
+chmod +x "$hook"
 ```
 
-The same file from PowerShell. `Out-File` and `>` write a byte-order mark (UTF-16 on
-5.1) in front of the shebang, and git then refuses every commit with `error: cannot spawn
-.git/hooks/pre-commit: No such file or directory` (measured on git 2.43 for Windows)
-without ever running the gate; `Set-Content -Encoding ascii` writes no mark. Git
-runs the hook with its own `sh`, so the launcher is spelled with forward slashes and
-quoted, and no `chmod` is needed on Windows. The line bakes in the `crapkit.exe` your
-PowerShell finds, so a git client started with another PATH still reaches it:
+`git rev-parse --git-common-dir` finds the repository's `.git` directory from any
+subdirectory and from a linked worktree, where `.git` is a file and `cat >
+.git/hooks/pre-commit` fails with `Directory nonexistent`. Every worktree runs the hook
+kept there. It ignores `core.hooksPath` on purpose: `--git-path hooks` follows a global
+hooks path, and would write this repo's gate into every repo on the machine.
+
+The same hook from PowerShell. Windows PowerShell 5.1 puts a byte-order mark in front of
+the shebang, UTF-16 from `>` and `Out-File` and UTF-8 from `Out-File -Encoding utf8`,
+and git then refuses every commit with `error: cannot spawn .git/hooks/pre-commit: No
+such file or directory` (measured on git 2.43 for Windows) without ever running the
+gate. PowerShell 7 writes no mark, and `Set-Content -Encoding ascii` writes none in
+either. Git runs the hook with its own `sh`, so the launcher's path is spelled with
+forward slashes and quoted, and no `chmod` is needed on Windows:
 
 ```powershell
 $crapkit = (Get-Command crapkit -ErrorAction Stop).Source -replace '\\', '/'
-Set-Content -Path .git/hooks/pre-commit -Encoding ascii -NoNewline -Value "#!/bin/sh`nexec '$crapkit' hook-precommit`n"
+$hook = "$(git rev-parse --git-common-dir)/hooks/pre-commit"
+Set-Content -Path $hook -Encoding ascii -NoNewline -Value "#!/bin/sh`nexec '$crapkit' hook-precommit`n"
 ```
+
+This hook names the `crapkit` your shell finds today, so a GUI client that never saw your
+venv runs the same one. It has no uvx line: while that path is gone, as after you move the
+install or `pip uninstall crapkit`, every commit stops on
+`.git/hooks/pre-commit: line 2: .../crapkit.exe: No such file or directory`. Paste the
+block again after you move or rebuild that install.
 
 `Get-Command` stops the block when no `crapkit` is on PATH (a uvx-only machine): install
 one with `uv tool install crapkit` or `pipx install crapkit`, or write the `sh` form above
@@ -614,8 +657,8 @@ The whole route, from a repo that has no `githooks/` yet:
 mkdir -p githooks
 cat > githooks/pre-commit <<'EOF'
 #!/bin/sh
-if command -v crapkit >/dev/null 2>&1; then exec crapkit hook-precommit; fi
-if command -v uvx >/dev/null 2>&1; then exec uvx crapkit hook-precommit; fi
+command -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit
+command -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit
 exec python -m crapkit hook-precommit
 EOF
 chmod +x githooks/pre-commit
@@ -625,6 +668,22 @@ git update-index --chmod=+x githooks/pre-commit
 git commit -m "add crapkit gate hook"
 git config core.hooksPath githooks
 ```
+
+PowerShell stops that block at its heredoc, before any hook is written, and the next
+commit goes through ungated. From PowerShell, the same route:
+
+```powershell
+New-Item -ItemType Directory -Force githooks | Out-Null
+Set-Content -Path githooks/pre-commit -Encoding ascii -NoNewline -Value "#!/bin/sh`ncommand -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit`ncommand -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit`nexec python -m crapkit hook-precommit`n"
+Add-Content -Path .gitattributes -Encoding ascii -Value 'githooks/pre-commit text eol=lf'
+git add .gitattributes githooks/pre-commit
+git update-index --chmod=+x githooks/pre-commit
+git commit -m "add crapkit gate hook"
+git config core.hooksPath githooks
+```
+
+The committed hook keeps the PATH lookup rather than one machine's launcher path, since
+every clone runs it.
 
 **The `--chmod` goes between the `add` and the `commit`.** It writes the executable bit to
 the index, so a commit that already happened does not carry it: run it after and `git

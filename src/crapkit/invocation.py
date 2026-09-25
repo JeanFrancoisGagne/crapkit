@@ -3,10 +3,10 @@
 Every next-step and every refusal names the command the reader runs next, and
 they all used to spell it `crapkit`. That is the console script, and two
 documented ways of running crapkit put no such name on PATH: `python -m crapkit`
-from a source checkout (README), and `exec <venv>/Scripts/python -m crapkit
-hook-precommit` from a git hook, which is spelled that way precisely because git
-runs hooks outside the activated venv. In both, `init` finished by telling the
-reader to run `crapkit coverage` and the shell answered 127.
+from a source checkout (README), and `exec python -m crapkit hook-precommit`,
+the line README's git hook falls back to when the hook's PATH holds no
+`crapkit`. In both, `init` finished by telling the reader to run `crapkit
+coverage` and the shell answered 127.
 
 The process already knows. `sys.argv[0]` is the console script when that is what
 started it, and the package's own `__main__.py` when `python -m` did, so the

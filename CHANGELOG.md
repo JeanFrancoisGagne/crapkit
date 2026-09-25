@@ -624,6 +624,31 @@ nothing. Each of these now gets a line naming the object and the next step:
   `build-review.py` and `publish-review.py` link into the new folder, and a test
   rebuilds and publishes the review and holds both to the committed copy.
 
+### The gate recipes in README and the handbook arm a gate that runs
+
+- The hook body README's routes and the handbook write runs the `crapkit` on PATH and
+  falls back to `python -m crapkit`. It was `exec python -m crapkit hook-precommit`
+  alone, so a pipx or uv tool install, the installs README names for the gate, and any
+  machine with `python3` and no `python` (Debian, Ubuntu, macOS) refused every commit
+  with `exec: python: not found`.
+- Route 1 and the handbook's Enforcement block write the hook to `$(git rev-parse
+  --git-common-dir)/hooks/pre-commit`. In a linked worktree, where `.git` is a file,
+  `.git/hooks/pre-commit` failed with `Directory nonexistent` and the next commit went
+  through ungated. Route 1's PowerShell form takes the same path and bakes in the
+  `crapkit` launcher your shell resolves, not `python`.
+- Route 2 has a PowerShell block. Pasted into PowerShell, the sh block stopped at its
+  heredoc, wrote no hook, and the next commit went through ungated.
+- The gate section says to run `git config core.hooksPath` first. A hooks path set
+  globally or by husky makes git skip `.git/hooks`; a husky repo adds `crapkit
+  hook-precommit` to `.husky/pre-commit` instead of setting the path.
+- Route 1 says which PowerShell writes a byte-order mark: Windows PowerShell 5.1 from `>`
+  and `Out-File`. PowerShell 7 writes none.
+- The handbook's Enforcement block commits `crapkit.toml` and `.gitignore` with the
+  marks. It committed the marks alone, so workflow 4's CI job, which runs on a fresh
+  clone, stopped at `no crapkit.toml` before any verdict. Workflow 3 shows the `doctor`
+  run `init` leaves, `doctor: no problems found`, where it showed two FAIL lines for
+  scopes `init` already marks `coverage_optional = true`.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

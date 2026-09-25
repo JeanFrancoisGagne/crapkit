@@ -886,15 +886,22 @@ codex plugin list --marketplace crapkit --json</code></pre>
 
 <h3>Enforcement: seed the ratchet, then arm the hook</h3>
 <pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv
-git add crapkit-ratchet.tsv &amp;&amp; git commit -m "seed the crapkit ratchet"
+git add crapkit.toml .gitignore crapkit-ratchet.tsv &amp;&amp; git commit -m "adopt crapkit"
 
-printf '#!/bin/sh\nif command -v crapkit &gt;/dev/null 2&gt;&amp;1; then exec crapkit hook-precommit; fi\nif command -v uvx &gt;/dev/null 2&gt;&amp;1; then exec uvx crapkit hook-precommit; fi\nexec python -m crapkit hook-precommit\n' &gt; "$(git rev-parse --git-path hooks)/pre-commit"
-chmod +x "$(git rev-parse --git-path hooks)/pre-commit"</code></pre>
-<p>From here every commit is judged, new debt only. Seed <em>before</em> arming, or the first commit on a brownfield repo refuses everything. The plugin is optional and the hook is not: the advisory annotates, this blocks. <code>git rev-parse --git-path hooks</code> names the hooks directory from anywhere in the checkout, a linked worktree and a <code>crapkit.toml</code> below the git top included, so the block runs as written from your crapkit root.</p>
-<div class="callout info"><p>Two things bite here. The hook reaches crapkit through the <code>crapkit</code> command on git's PATH, then <code>uvx crapkit</code>, then <code>python -m crapkit</code>. Git runs hooks outside your shell's activated venv, so crapkit installed only in a venv needs its launcher's absolute path in the hook. And a hook in <code>.git/hooks/</code> is not committed, so teammates get nothing. The README's gate section has the committed-hooks-directory route, the pre-commit-framework route, and CI.</p></div>
+printf '#!/bin/sh\ncommand -v crapkit &gt;/dev/null 2&gt;&amp;1 &amp;&amp; exec crapkit hook-precommit\ncommand -v uvx &gt;/dev/null 2&gt;&amp;1 &amp;&amp; exec uvx crapkit hook-precommit\nexec python -m crapkit hook-precommit\n' &gt; "$(git rev-parse --git-common-dir)/hooks/pre-commit"
+chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-commit"</code></pre>
+<p>From PowerShell, which has no <code>printf</code> or <code>chmod</code>, and whose 5.1 edition cannot parse <code>&amp;&amp;</code> and writes a byte-order mark git cannot spawn from <code>&gt;</code>:</p>
+<pre><code>crapkit ratchet seed
+git add crapkit.toml .gitignore crapkit-ratchet.tsv
+git commit -m "adopt crapkit"
+
+$crapkit = (Get-Command crapkit -ErrorAction Stop).Source -replace '\\', '/'
+Set-Content -Path "$(git rev-parse --git-common-dir)/hooks/pre-commit" -Encoding ascii -NoNewline -Value "#!/bin/sh`nexec '$crapkit' hook-precommit`n"</code></pre>
+<p>From here every commit is judged, new debt only. Seed <em>before</em> arming, or the first commit on a brownfield repo refuses everything. Commit the config and the ignore rules with the marks: CI runs on a fresh clone (<a href="#uses">workflow 4</a>), and a clone with no <code>crapkit.toml</code> stops at <code>no crapkit.toml</code> before any verdict. The plugin is optional and the hook is not: the advisory annotates, this blocks.</p>
+<div class="callout info"><p>Two things bite here. The hook runs the <code>crapkit</code> on the PATH git hands it, then <code>uvx crapkit</code> where uv is installed, then <code>python -m crapkit</code>, so a pipx, uv tool or uvx install works on a machine with only <code>python3</code>. A commit from an IDE or GUI client you did not start from your venv's terminal runs the hook without that venv on its PATH. When nothing else there runs crapkit, git refuses the commit, with <code>exec: python: not found</code> where there is no python and <code>No module named crapkit</code> from a python that lacks it. Write the absolute path there (<code>exec /path/to/venv/bin/crapkit hook-precommit</code>). The uvx line also keeps the gate running after <code>pip uninstall crapkit</code> wherever uv is installed, so take the hook out before the package. And a hook in <code>.git/hooks/</code> is not committed, so teammates get nothing. The README's gate section has the committed-hooks-directory route, the PowerShell forms, what to do when <code>core.hooksPath</code> is already set, the pre-commit-framework route, and CI.</p></div>
 
 <h3>Removing crapkit</h3>
-<p>Take the commit hook and the merge driver out before the package: both call crapkit. After <code>pip uninstall crapkit</code> alone, every commit stops on the hook's <code>No module named crapkit</code>, and every merge that touches <code>crapkit-ratchet.tsv</code> conflicts after the driver's <code>crapkit: not found</code>. <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit">Removing crapkit</a> lists each piece, in a repo and on the machine.</p>
+<p>Take the commit hook and the merge driver out before the package: both call crapkit. After <code>pip uninstall crapkit</code> alone, the sh hook above keeps judging every commit through <code>uvx crapkit</code> on a machine with uv, with whichever crapkit release uv has cached or can download, and stops every commit on <code>No module named crapkit</code> on a machine without uv. The PowerShell hook above names the launcher that <code>pip uninstall crapkit</code> deletes, so it stops every commit on <code>No such file or directory</code>, with uv or without it. Every merge that touches <code>crapkit-ratchet.tsv</code> conflicts after the driver's <code>crapkit: not found</code>. <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit">Removing crapkit</a> lists each piece, in a repo and on the machine.</p>
 
 <h3>Then, whenever</h3>
 <pre><code>crapkit worklist            # the risk map: what is worst, and how hot it runs
@@ -937,12 +944,13 @@ wrote crapkit.toml with 4 scope(s): api, infra, ops, ui
 detected 2 lane(s) from this repo's own files: py, js - next: run `crapkit coverage`
 added to .gitignore: .crapkit/, .coverage, __pycache__/
 
-$ crapkit doctor                       # the lines about the two cc-only scopes
+$ crapkit doctor
 …
 ok   scope 'infra': 1 file
 ok   scope 'ops': 1 file
 …
-doctor: no problems found
+WARN scope 'ui' has a lane but no [crapkit.scoped_tests] template — `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add ui = "&lt;test command&gt;" under [crapkit.scoped_tests]
+doctor: no problems found, 1 warning above
 
 $ crapkit inventory                    # complexity alone, no lanes needed
 run 1 @ 8da79a04d51: 4 functions in 4 files (0 cached)
@@ -955,7 +963,8 @@ worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) - 4 of 4 active (wor
   risk      5.0  ccn   5  crap       -  cov    -    1c/1a  ops/deploy.sh:1  release()
 run 1 is an inventory run (no coverage was measured) and cannot serve as a baseline for next-item, ratchet seed or verify
 -&gt; next: crapkit coverage</code></pre>
-<p><code>init</code> took one side of a fork for <code>infra</code> and <code>ops</code>: it wrote <code>coverage_optional = true</code> on both, so they score cc-only and <code>doctor</code> passes. The other side stays open: when a scope gets a test runner, declare a lane for it and drop the line, and its <code>remedy</code> can say <code>add-tests</code> again. What <code>doctor</code> fails is a scope with neither, because <code>no-lane</code> debt is unreachable debt.</p>
+<p>Neither scope FAILs. <code>infra</code> and <code>ops</code> hold Rust and shell, which no coverage parser reads, so <code>init</code> writes <code>coverage_optional = true</code> on both, and they score cc-only: <code>crap = ccn</code>, the ceiling still binds, and the gate still refuses a function over it. A scope you add later with no lane and no such key is the one <code>doctor</code> FAILs (<code>scope 'infra' is in no lane's scopes list</code>). Read that FAIL as a fork, not an error: declare a lane for the scope, or set <code>coverage_optional = true</code> and accept cc-only. Both are correct answers; leaving it undecided is not, because <code>no-lane</code> debt is unreachable debt.</p>
+<p>The one <code>WARN</code> is <code>ui</code>'s. <code>init</code> writes its vitest line under <code>[crapkit.scoped_tests]</code> commented out, as <code># ui = "npx vitest related --run {files}"</code>, so <code>crapkit test-scoped</code> has no command for <code>ui</code> until you uncomment it. <code>doctor</code> still exits 0, and its closing line counts the warning.</p>
 <p>The worklist's last two lines are the handoff. An inventory run ranks by complexity alone, so <code>next-item</code>, <code>ratchet seed</code> and <code>verify</code> will not measure against it, and worklist names <code>coverage</code> as the next step. After a coverage run the same line names <code>ratchet seed</code>, and once <code>crapkit-ratchet.tsv</code> exists, <code>next-item</code>.</p>
 <p class="xanno">Note the Rust row. Stock lizard scores that five-arm <code>match</code> ccn 2, which is under the ceiling and invisible. crapkit's corrected reader scores it 5 (<a href="#languages">§03</a>).</p>
 
@@ -985,7 +994,7 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
 <p>Nothing above assumes <code>crapkit.toml</code> sits at the git root. A package one or more directories down is the ordinary monorepo shape, and it needs no mode and no flag beyond <code>--repo</code>. 0.4.4 fixed the scoring half of it; the commit gate was still reading <code>git diff --cached</code> from the git top, so under a nested root the staged paths matched no scope, and a function at twice the ceiling committed with a warning. 0.4.5 fixed that, and the nine siblings that joined the same two path shapes. The gate now judges what you staged, named the way the rest of the run names it:</p>
 <pre><code>$ git add packages/api/app/route.py
 $ cd packages/api
-$ python -m crapkit hook-precommit          # what the git hook runs
+$ crapkit hook-precommit                    # what the git hook runs
 crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
   ccn  10  app/route.py:1  route( kind , hot , live , admin )
 decompose before committing (coverage cannot save a function above the target).</code></pre>

@@ -296,8 +296,9 @@ def _route_one() -> str:
 def test_route_one_carries_a_powershell_form_that_writes_no_byte_order_mark():
     """`Out-File` under PowerShell 5.1 writes UTF-16, and git answers `cannot spawn
     .git/hooks/pre-commit`. The form the page prints has to be the one that
-    writes plain bytes, with the launcher quoted and forward-slashed so git's
-    sh can exec it."""
+    writes plain bytes, with the launcher's path quoted and forward-slashed so
+    git's sh can exec it. The launcher, not `python`: a pipx or uv tool install
+    has no python that imports crapkit."""
     block = _route_one()
     powershell = block[block.index("```powershell"):]
 
@@ -316,6 +317,26 @@ def test_route_one_powershell_stops_when_no_crapkit_is_on_path():
     powershell = block[block.index("```powershell"):]
 
     assert "(Get-Command crapkit -ErrorAction Stop).Source" in powershell
+
+
+def test_route_one_says_which_powershell_writes_the_mark():
+    """Measured: Windows PowerShell 5.1 writes UTF-16 behind a mark from `>` and
+    `Out-File`, and a UTF-8 mark from `Out-File -Encoding utf8`; PowerShell 7.6
+    writes no mark from any of the three. The page said `Out-File` and `>` write
+    one, which a pwsh 7 reader can check and find false."""
+    block = " ".join(_route_one().split())
+
+    assert "Windows PowerShell 5.1" in block and "PowerShell 7 writes no mark" in block, block
+
+
+def test_the_gate_section_says_a_set_hooks_path_moves_every_hook():
+    """A global `core.hooksPath`, or the one husky writes, makes git skip
+    `.git/hooks`: Route 1 then armed nothing, and husky set the path back over
+    Route 2's on the next `npm install`."""
+    section = " ".join(_section(_doc("README.md"), "## The gate").split())
+
+    assert "git config core.hooksPath" in section
+    assert "`.husky/pre-commit`" in section, "husky repos add the line to husky's own hook"
 
 
 def test_route_one_says_git_refuses_the_commit_a_marked_hook_cannot_spawn():
@@ -1028,6 +1049,41 @@ def test_the_handbook_transcripts_use_the_ascii_separator():
     assert ") — 4 of 4 active" not in handbook, "the worklist header reads `) - 4 of 4 active`"
     assert " - next: run `crapkit coverage`" in handbook
     assert ") - 4 of 4 active (worklist_top 50), 0 dormant" in handbook
+
+
+# Workflow 3's repo: Python, TypeScript, Rust and shell, one top directory each.
+POLYGLOT_SCOPES = {"api": ("python",), "infra": ("rust",), "ops": ("shell",), "ui": ("typescript",)}
+
+
+def _handbook_pre(heading: str) -> str:
+    """The first <pre> under one of the handbook's h3 headings, as a reader sees it."""
+    import html
+
+    after = _doc("docs/handbook.html").split(f"<h3>{heading}</h3>", 1)[1]
+    return html.unescape(re.search(r"<pre><code>(.*?)</code></pre>", after, re.S).group(1))
+
+
+def _printed_under(transcript: str, command: str) -> list[str]:
+    """The lines a transcript prints under `$ command`, down to the next prompt."""
+    body = transcript.split(f"$ {command}\n", 1)[1]
+    return body.split("\n$ ", 1)[0].strip().splitlines()
+
+
+def test_the_polyglot_workflow_prints_the_doctor_verdict_init_leaves():
+    """Workflow 3 showed doctor FAILing `infra` and `ops` as scopes in no lane's
+    list, and told the reader to settle the fork. init writes `coverage_optional
+    = true` on a scope no coverage parser reads, so doctor has nothing to fail
+    and the reader went looking for two lines that never print."""
+    from crapkit.cli.admin import _doctor_uncovered
+    from crapkit.config import load_config_text
+
+    lanes = live_lanes(detect_lanes(frozenset({"pyproject.toml"}), TS_PACKAGE), POLYGLOT_SCOPES)
+    fails = [f"FAIL {finding.text}" for finding in _doctor_uncovered(load_config_text(
+        starter_toml(POLYGLOT_SCOPES, lanes)))]
+    printed = _printed_under(_handbook_pre("3 · Day one on a polyglot repo"), "crapkit doctor")
+
+    assert [line for line in printed if line.startswith("FAIL")] == fails
+    assert printed[-1] == (f"doctor: {len(fails)} problem(s)" if fails else "doctor: no problems found")
 
 
 # --- the README rows an agent picks a command from ---------------------------
