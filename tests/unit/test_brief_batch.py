@@ -60,7 +60,7 @@ class _Store:
         self._seen("function_history")
         return [{"run_id": 7, "ccn": 8}]
 
-    def attempts_for(self, keys):
+    def attempts_for(self, keys, names_in=None):
         self._seen("attempts_for")
         return {key: [] for key in keys}
 

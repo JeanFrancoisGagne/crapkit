@@ -204,6 +204,69 @@ def claim_holds(claim: dict, key: tuple[str, str]) -> bool:
     return (claim["path"], claim["long_name"]) == (key[0], split_ordinal(key[1])[0])
 
 
+# --- claims taken before analysis version 11 ------------------------------------
+
+_CLAIM_NAMES = ("long_name", "key_name", "handle")
+
+
+def respelled_nested(path: str, name: str) -> str:
+    """NAME as analysis version 11 spells a nested Python def that an older
+    reader named: `a.b.c( x )` for `a.a.b.c( x )`. Any other NAME comes back
+    as it is.
+
+    Before version 11 a def three or more deep repeated the names of the defs
+    around it: three deep read `a.a.b.c`, four deep `a.a.b.a.a.b.c.d`. Only that
+    shape is rewritten, so `a.b.c.d`, which no older reader wrote, keeps its
+    name. A parameter list or a twin ordinal after the name stays as it is.
+    """
+    head = bare_name(name)
+    chain = _def_chain(head.split(".")) if path.lower().endswith(".py") else None
+    return name if chain is None else name.replace(head, ".".join(chain), 1)
+
+
+def _def_chain(parts: list[str]) -> list[str] | None:
+    """The defs an older reader's nested name runs through, outermost first,
+    or None when PARTS is not that spelling.
+
+    That reader spelled a def k deep as its parent's spelling minus the last
+    name, then its parent's spelling, then its own name, so the spelling
+    doubles with each level: `a`, `a.b`, `a.a.b.c`, `a.a.b.a.a.b.c.d`.
+    """
+    if len(parts) <= 2:
+        return parts
+    half = len(parts) // 2
+    parent = parts[half - 1:-1]
+    if parts[:half - 1] != parent[:-1]:
+        return None
+    chain = _def_chain(parent)
+    return None if chain is None else [*chain, parts[-1]]
+
+
+def respelled_claim(claim: dict) -> dict:
+    """The claim with every name it saved spelled as analysis version 11
+    spells a nested def: its long_name, its key name and its handle."""
+    path = claim["path"]
+    return {**claim, **{field: respelled_nested(path, claim[field])
+                        for field in _CLAIM_NAMES if claim.get(field)}}
+
+
+def claim_in_run(claim: dict, names_in) -> dict:
+    """The claim, naming the function a run holds under the name it now has.
+
+    A claim keeps the name it was handed out under. One taken before analysis
+    version 11 on a def nested three or more deep names a function the new run
+    does not hold, and matched as saved it held nothing: the queue handed the
+    def to the next session. `names_in(path)` is every long_name the run holds
+    in that file. The saved name wins while the run holds it, so a def nested
+    in a def of its own name (`a.a.b.c` under version 11 too) keeps its claim.
+    """
+    moved = respelled_claim(claim)
+    if moved["long_name"] == claim["long_name"]:
+        return claim
+    held = names_in(claim["path"])
+    return claim if claim["long_name"] in held or moved["long_name"] not in held else moved
+
+
 # --- the naming rules: what a NAME can say and which function it reaches -----
 
 def bare_name(long_name: str) -> str:

@@ -24,7 +24,7 @@ from typing import NamedTuple
 
 from .churn import FileChurn
 from .snapshot import InventoryRow
-from .keys import claim_key, key_names, key_of, lookup, position
+from .keys import claim_in_run, claim_key, key_names, key_of, lookup, position
 
 
 HOT_MIN_CCN = 3  # hot promotion reaches no lower than this, whatever the floor
@@ -234,12 +234,24 @@ def closable_claims(claims: list[dict], scored: list, *, target: int,
     Two ways to be done, and no third: the function now scores at or under its
     scope ceiling, or the commit the claim was taken on is no longer an ancestor
     of HEAD (an amend or rebase took the session's tree with it). A function the
-    run never scored keeps its claim — absence is not evidence of a fix.
+    run never scored keeps its claim — absence is not evidence of a fix. A claim
+    taken before analysis version 11 on a nested def is judged on the def under
+    the name this run gives it (keys.claim_in_run).
     """
     done = _at_ceiling(scored, target, scope_targets)
     legacy = _finished_legacy(scored, done)
+    names_in = _names_by_path(scored)
     return sorted(c["id"] for c in claims
-                  if _claim_finished(c, done, legacy) or c["commit"] in stale_commits)
+                  if _claim_finished(claim_in_run(c, names_in), done, legacy)
+                  or c["commit"] in stale_commits)
+
+
+def _names_by_path(scored):
+    """Every long_name the run holds in a path, as `claim_in_run` asks for them."""
+    names: dict[str, set[str]] = {}
+    for r in scored:
+        names.setdefault(r.path, set()).add(r.long_name)
+    return lambda path: names.get(path, set())
 
 
 def build_worklist(

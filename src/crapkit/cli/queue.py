@@ -105,10 +105,20 @@ class _Handles:
         self._run_id = run_id
         self._by_path: dict[str, dict] = {}
         self._keys: dict[str, dict] = {}
+        self._rows: dict[str, list] = {}
+
+    def _positions(self, path: str) -> list:
+        if path not in self._rows:
+            self._rows[path] = self._store.read_positions(self._run_id, path)
+        return self._rows[path]
+
+    def names(self, path: str) -> set[str]:
+        """Every long_name the run holds in PATH, which a claim is matched against."""
+        return {r.long_name for r in self._positions(path)}
 
     def of(self, row) -> str:
         if row.path not in self._by_path:
-            rows = self._store.read_positions(self._run_id, row.path)
+            rows = self._positions(row.path)
             self._by_path[row.path] = keys.handles(rows, run_id=self._run_id)
             self._keys[row.path] = key_names(rows, run_id=self._run_id)
         return self._by_path[row.path][lookup(row)]
@@ -127,10 +137,13 @@ def _unclaimed(store, ranked: list, handles) -> tuple[list, int]:
     """The rows no session is holding, and how many an open claim hid.
 
     Filtering happens whether or not this session claims anything: a claim is
-    worthless if only the session that took it honours it.
+    worthless if only the session that took it honours it. A claim is read
+    against the run's own names, so one taken before analysis version 11 on a
+    nested def still holds it (keys.claim_in_run).
     """
     held, legacy = {}, set()
-    for claim in store.open_claims():
+    for saved in store.open_claims():
+        claim = keys.claim_in_run(saved, handles.names)
         key = claim_key(claim)
         if key is None:
             legacy.add((claim["path"], claim["long_name"]))
@@ -393,8 +406,24 @@ def _claim_matches(c: dict, name: str) -> bool:
     return keys.named_by(c["long_name"], name)
 
 
+def _as_saved(claim: dict) -> dict:
+    return claim
+
+
+def _answering(claims: list, name: str, spelled=_as_saved) -> list:
+    return [c for c in claims if _claim_matches(spelled(c), name)]
+
+
 def _named_claims(claims: list, path: str, name: str) -> list:
-    held = [c for c in claims if c["path"] == path and _claim_matches(c, name)]
+    """The open claims on PATH that answer to NAME.
+
+    A claim taken before analysis version 11 on a def nested three or more deep
+    saved the name that version renamed, and brief and next-item print the new
+    one. When no claim answers to NAME as saved, a claim answers to it under the
+    new spelling, so a claim saved as that new name is never closed with it.
+    """
+    on_path = [c for c in claims if c["path"] == path]
+    held = _answering(on_path, name) or _answering(on_path, name, keys.respelled_claim)
     if not held:
         raise CrapkitError(f"no open claim on {name!r} in {path} — "
                            f"open: {_claims_summary(claims)}")
@@ -664,13 +693,17 @@ class _BriefLoader:
     def attempts(self, row) -> list:
         key = self.key(row)
         if key not in self._attempts:
-            self._attempts.update(self.store.attempts_for([key]))
+            self._attempts.update(self.store.attempts_for([key], self.names))
         return self._attempts[key]
 
     def prime_attempts(self, rows: list) -> None:
         """One query for a whole batch's claims, before the packets ask one by one."""
         self._attempts.update(
-            self.store.attempts_for([self.key(r) for r in rows]))
+            self.store.attempts_for([self.key(r) for r in rows], self.names))
+
+    def names(self, path: str) -> set[str]:
+        """Every long_name the run holds in PATH, which a claim pairs against."""
+        return {r.long_name for r in self.scored_file(path)}
 
 
 def _brief_versions() -> dict:
