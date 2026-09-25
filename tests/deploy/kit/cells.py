@@ -39,6 +39,9 @@ MARKERS = {
     "docker_host": "needs the host's Docker daemon, not a container",
     "online": "needs the network",
 }
+# tests/deploy/conftest.py keeps every harness binary's stamp here at session
+# start (kit/sandbox.py harness_stamps); test_kit_isolation reads it back.
+HARNESSES = pytest.StashKey[dict]()
 
 
 def _split(value: str | tuple | list) -> list[str]:
@@ -94,9 +97,24 @@ def toolchain_hash() -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest() if path and Path(path).exists() else ""
 
 
+# Written for every cell, false or empty included: a reader of the JUnit
+# tells a simulated cell (real_cli False) from a real one without guessing.
+ALWAYS = ("id", "channel", "harness", "scenario", "use_cases", "os", "image", "cadence", "real_cli")
+
+
+def _text(value) -> str:
+    """A property value: lists joined with commas, None as "none"."""
+    if isinstance(value, (list, tuple)):
+        return ",".join(map(str, value))
+    return "none" if value is None else str(value)
+
+
 def properties(meta: dict) -> list[tuple[str, str]]:
-    """The JUnit <property> pairs for one cell."""
-    pairs = [(f"cell_{key}", str(value)) for key, value in meta.items() if value not in (None, False, "")]
+    """The JUnit <property> pairs for one cell: every ALWAYS field, then any
+    other field that is set (packet, nonblocking, docker_host, online)."""
+    pairs = [(f"cell_{key}", _text(meta.get(key))) for key in ALWAYS]
+    pairs += [(f"cell_{key}", _text(value)) for key, value in meta.items()
+              if key not in ALWAYS and value not in (None, False, "")]
     pairs.append(("image_digest", os.environ.get("CRAPKIT_DEPLOY_IMAGE_DIGEST", "native")))
     pairs.append(("toolchain_hash", toolchain_hash()))
     return pairs

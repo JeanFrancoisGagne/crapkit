@@ -7,10 +7,15 @@ environment the kit reads.
   box          a fresh sandbox (kit/sandbox.py) under this test's tmp_path
   candidate    the candidate build: version, wheel, sdist, stamped tree
   templates    the session's fixture-repo cache for kit/repos.py
+
+The session also holds every harness binary to what it was when the session
+started (kit/sandbox.py harness_stamps): a harness that updates itself
+mid-run would make two cells of one run test different releases.
 """
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,6 +33,29 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     for name, text in cells.MARKERS.items():
         config.addinivalue_line("markers", f"{name}: {text}")
+
+
+def _harness_stamps() -> dict[str, str]:
+    path = os.environ.get("CRAPKIT_DEPLOY_TOOLCHAIN")
+    return sandbox.harness_stamps(sandbox.Toolchain.load(path)) if path else {}
+
+
+def pytest_sessionstart(session):
+    """Every harness binary as the session found it: test_kit_isolation and
+    pytest_sessionfinish hold the session to it."""
+    session.config.stash[cells.HARNESSES] = _harness_stamps()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """A harness that updated itself during the run fails the run. The xdist
+    controller checks once, after every worker is done."""
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        return
+    changed = sandbox.changed_stamps(session.config.stash.get(cells.HARNESSES, {}), _harness_stamps())
+    for line in changed:
+        print(f"deploy: a harness changed during the session: {line}", file=sys.stderr)
+    if changed:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 def pytest_collection_modifyitems(config, items):

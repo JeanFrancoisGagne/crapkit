@@ -119,7 +119,18 @@ Rules the kit holds a cell to:
 
 - Run every command through `box.run` or `box.script`. They use the sandbox
   environment (an allowlist, a fresh HOME, offline pip and uv) and write the
-  transcript. A bare `subprocess` call sees this machine instead.
+  transcript. A bare `subprocess` call sees this machine instead, so
+  `test_kit_isolation` fails any `tests/deploy/test_*.py` that imports
+  `subprocess` or calls `os.system`, and any test there that is neither a kit
+  test nor a `@cell`, or shares its cell id with another.
+- Each command gets the 120 s hang bound. A whole package install (`npm ci`,
+  a large `pip install`) passes `bound=sandbox.SLOW`: `npm ci` of the 420
+  fixture packages took 2 to 3 minutes on a loaded Windows machine.
+- Every harness's update switch is set in the sandbox (environment and home
+  files, `sandbox.QUIET` and `QUIET_FILES`), and a run fails when a harness
+  binary changes between session start and end. Call
+  `box.put_harnesses_on_path()` before running a harness by name, as a user
+  who installed it has it: omp's `#!/usr/bin/env bun` exits 127 without it.
 - Take install lines from `docsnip`, never retyped. A moved fence fails
   naming the page and heading.
 - Take versions from `kit.wheels` (`n_minus_1()`, `releases()`), never literals.

@@ -3,27 +3,38 @@
 A deploy cell that passes because a tool on the runner's PATH, a config in
 the runner's home or the runner's own venv leaked into the sandbox is a false
 green: the user it models has none of those. These tests run in every job
-(marker `kit`) and fail the moment the sandbox stops being empty.
+(marker `kit`) and fail the moment the sandbox stops being empty. The last
+sections hold every deploy test module to the kit (a cell that starts a
+process past box.run sees this machine instead of the sandbox) and read a
+cell's JUnit record back.
 """
 from __future__ import annotations
 
+import ast
+import ctypes
 import hashlib
 import json
 import os
 import re
 import shutil
 import sys
+import threading
+import time
+import tomllib
+import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
+import hang_guard
 import pytest
 
-from kit import repos, sandbox
+from kit import cells, repos, sandbox, wheels
 
 pytestmark = pytest.mark.kit
 
 WINDOWS = os.name == "nt"
 ERROR_LINE = re.compile(r"^\s*(error|ERROR|npm error|npm ERR!|fatal:)")
 IN_IMAGE = bool(os.environ.get("CRAPKIT_DEPLOY_IMAGE"))
+DEPLOY = Path(__file__).resolve().parent
 
 
 def bindir(venv: Path) -> Path:
@@ -38,6 +49,12 @@ def new_venv(box, name: str = "venv") -> Path:
     venv = box.root / name
     box.run([box.toolchain.python("3.12"), "-m", "venv", str(venv)], expect=0)
     return venv
+
+
+def harness(box, command: str) -> str | None:
+    """A pinned harness CLI from the toolchain's harness_bin dirs, or None
+    where this image or machine does not hold it."""
+    return shutil.which(command, path=os.pathsep.join(box.toolchain.get("harness_bin", [])))
 
 
 # --- every installer works offline in a fresh sandbox --------------------------------
@@ -75,7 +92,7 @@ def npm_ci_offline(box, candidate):
     project.mkdir()
     for name in ("package.json", "package-lock.json"):
         shutil.copyfile(Path(box.toolchain["npm_fixtures"]) / name, project / name)
-    return box.run(["npm", "ci", "--offline", "--ignore-scripts"], cwd=project, expect=0)
+    return box.run(["npm", "ci", "--offline", "--ignore-scripts"], cwd=project, expect=0, bound=sandbox.SLOW)
 
 
 @pytest.mark.parametrize("install", [uv_python_find, pip_in_a_new_venv, pipx, uv_tool, uvx, npm_ci_offline],
@@ -88,15 +105,41 @@ def test_each_installer_works_offline_with_no_error_line(box, candidate, install
 
 # --- crapkit is nowhere until an install puts it somewhere -----------------------------
 
-def test_crapkit_resolves_to_nothing_before_install_and_to_that_install_after(box):
-    assert box.which("crapkit") is None
+LAUNCHERS = ("crapkit.exe", "crapkit.cmd", "crapkit.bat", "crapkit") if WINDOWS else ("crapkit",)
 
+
+def every_crapkit(box) -> list[str]:
+    """Every file named like a crapkit launcher in any sandbox PATH dir."""
+    return [str(Path(directory) / name) for directory in box.path_dirs() for name in LAUNCHERS
+            if (Path(directory) / name).is_file()]
+
+
+def uv_tool_bin(box) -> str:
     box.run(["uv", "tool", "install", "crapkit"], expect=0)
-    assert box.which("crapkit") is None, "uv tool's bin dir reached PATH without the user adding it"
-    tool_bin = box.run(["uv", "tool", "dir", "--bin"], expect=0).stdout.strip()
-    box.prepend_path(tool_bin)
+    return box.run(["uv", "tool", "dir", "--bin"], expect=0).stdout.strip()
 
-    assert Path(box.which("crapkit")).parent == Path(tool_bin)
+
+def pipx_bin(box) -> str:
+    box.run(["pipx", "install", "crapkit"], expect=0)
+    return box.run(["pipx", "environment", "--value", "PIPX_BIN_DIR"], expect=0).stdout.strip()
+
+
+def venv_bin(box) -> str:
+    venv = new_venv(box)
+    box.run([str(bindir(venv) / "python"), "-m", "pip", "install", "-q", "crapkit"], expect=0)
+    return str(bindir(venv))
+
+
+@pytest.mark.parametrize("install", [uv_tool_bin, pipx_bin, venv_bin], ids=lambda install: install.__name__)
+def test_crapkit_resolves_to_nothing_before_install_and_only_to_that_install_after(box, install):
+    assert box.which("crapkit") is None and every_crapkit(box) == []
+
+    directory = install(box)
+    assert box.which("crapkit") is None, "the install reached PATH before the user added its bin dir"
+    box.prepend_path(directory)
+
+    assert Path(box.which("crapkit")).parent == Path(directory)
+    assert len(every_crapkit(box)) == 1, every_crapkit(box)
 
 
 def _normalized(path: str) -> str:
@@ -118,9 +161,16 @@ def test_the_runner_venv_never_reaches_the_sandbox_path(box):
 ALLOWED = (set(sandbox.OS_MINIMUM[os.name]) | set(sandbox.REDIRECTED) | set(sandbox.QUIET)
            | {"PATH", "UV_PYTHON_INSTALL_DIR", "UV_PYTHON_DOWNLOADS", "npm_config_cache", "LANG", "LC_ALL", "TZ",
               "PIP_CONFIG_FILE", "UV_OFFLINE", "UV_NO_INDEX", "UV_FIND_LINKS", "HOMEDRIVE", "HOMEPATH"})
+# What a runner or a developer's shell may export that a user's shell does not.
+LEAKS = {"PYTHONHASHSEED": "0", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "leak", "VIRTUAL_ENV": "leak",
+         "PIP_INDEX_URL": "http://leak.invalid/simple", "UV_INDEX_URL": "http://leak.invalid/simple",
+         "GIT_CONFIG_GLOBAL": "leak", "NODE_OPTIONS": "--no-warnings", "CRAPKIT_DEPLOY_LEAK_PROBE": "1"}
 
 
 def test_the_sandbox_env_comes_from_the_allowlist_and_leaves_the_runner_switches_out(box):
+    # run.py and entry.sh set both on the runner process; the sandbox drops them.
+    assert os.environ.get("PYTHONHASHSEED") == "0" and os.environ.get("PYTHONDONTWRITEBYTECODE") == "1"
+
     assert set(box.env) <= ALLOWED
     for name in ("PYTHONHASHSEED", "PYTHONDONTWRITEBYTECODE", "PYTHONPATH", "VIRTUAL_ENV"):
         assert name not in box.env
@@ -131,11 +181,23 @@ def _names(names) -> set[str]:
     return {name.upper() if WINDOWS else name for name in names}
 
 
-def test_a_child_sees_only_the_allowlist(box):
+def _child_env_names(box) -> set[str]:
     step = box.run([box.toolchain.python("3.12"), "-c", "import json, os; print(json.dumps(sorted(os.environ)))"],
                    expect=0)
+    return _names(json.loads(step.stdout))
 
-    assert _names(json.loads(step.stdout)) <= _names(ALLOWED | {"PWD", "SHLVL", "_"})
+
+def test_a_child_sees_only_the_allowlist(box):
+    assert _child_env_names(box) <= _names(ALLOWED | {"PWD", "SHLVL", "_"})
+
+
+def test_nothing_the_runner_exports_reaches_a_new_sandbox(tmp_path, transcript, toolchain, monkeypatch):
+    for name, value in LEAKS.items():
+        monkeypatch.setenv(name, value)
+    fresh = sandbox.make(tmp_path / "fresh", transcript, toolchain=toolchain)
+
+    assert _names(LEAKS).isdisjoint(_names(fresh.env))
+    assert _names(LEAKS).isdisjoint(_child_env_names(fresh))
 
 
 def test_no_value_names_the_runners_home_outside_the_toolchain(box):
@@ -148,118 +210,418 @@ def test_no_value_names_the_runners_home_outside_the_toolchain(box):
 
 
 # --- the machine's own state is untouched -----------------------------------------------
+# A cell may write crapkit's entries into a harness config, a plugin cache or
+# a tool dir, and git, pip or npm config. Each file is hashed for only that
+# part, so a live session on this machine that bumps its own counters in
+# ~/.claude.json does not read as a leak.
 
-WHOLE_FILES = {".gitconfig", ".config/pip/pip.conf", "AppData/Roaming/pip/pip.ini", ".npmrc"}
+CANARY = "crapkit-deploy-canary"
+PIP_USER_CONFIG = "AppData/Roaming/pip/pip.ini" if WINDOWS else ".config/pip/pip.conf"
+WHOLE_FILES = [".gitconfig", ".config/git/config", ".npmrc", ".config/pip/pip.conf", "AppData/Roaming/pip/pip.ini"]
+CONFIG_FILES = [".claude.json", ".claude/settings.json", ".claude/plugins/installed_plugins.json",
+                ".claude/plugins/known_marketplaces.json", ".codex/config.toml", ".gemini/settings.json",
+                ".cursor/mcp.json", ".copilot/mcp-config.json", ".copilot/config.json",
+                ".cline/data/settings/cline_mcp_settings.json", ".config/Code/User/mcp.json",
+                "AppData/Roaming/Code/User/mcp.json", "AppData/Roaming/Claude/claude_desktop_config.json"]
+TREES = [".claude/plugins/cache/crapkit", ".claude/plugins/marketplaces/crapkit", ".codex/plugins/cache/crapkit",
+         ".gemini/extensions/crapkit", ".local/share/uv/tools/crapkit", "AppData/Roaming/uv/tools/crapkit",
+         ".local/share/pipx/venvs/crapkit", ".local/pipx/venvs/crapkit", ".local/bin/crapkit",
+         ".local/bin/crapkit.exe"]
 
 
-def _crapkit_lines(text: str) -> str:
-    return "\n".join(line for line in text.splitlines() if "crapkit" in line)
+def _is_crapkit_key(key) -> bool:
+    return str(key) == "crapkit" or str(key).startswith("crapkit@")
 
 
-def _crapkit_part(home: Path, relative: str) -> str:
-    """The digest of what a cell could write in one user file: the whole file
-    for git, pip and npm config, the lines naming crapkit anywhere else."""
-    path = home / relative
-    if not path.exists():
-        return "absent"
-    if path.is_dir():
-        return "dir:" + ",".join(sorted(entry.name for entry in path.iterdir()))
+def _entry(key, value, path: tuple) -> dict:
+    here = (*path, str(key))
+    if _is_crapkit_key(key):
+        return {".".join(here): value}
+    # skillUsage, pluginUsage: counters a live session bumps, not config.
+    return {} if str(key).endswith("Usage") else crapkit_entries(value, here)
+
+
+def _as_mapping(node) -> dict:
+    """A list as {index: item}, a dict as itself, anything else as nothing."""
+    if isinstance(node, list):
+        return {str(index): item for index, item in enumerate(node)}
+    return node if isinstance(node, dict) else {}
+
+
+def crapkit_entries(node, path: tuple = ()) -> dict:
+    """Every value stored under a key named crapkit or crapkit@..., or a list
+    item named crapkit, at any depth, keyed by its dotted path."""
+    node = _as_mapping(node)
+    if node.get("name") == "crapkit":
+        return {".".join(path): node}
+    found: dict = {}
+    for key, value in node.items():
+        found.update(_entry(key, value, path))
+    return found
+
+
+def parse_config(path: Path):
+    """A harness config as data: TOML, JSON, or JSON behind // comment lines."""
     text = path.read_text(encoding="utf-8", errors="replace")
-    return hashlib.sha256((text if relative in WHOLE_FILES else _crapkit_lines(text)).encode()).hexdigest()
+    if path.suffix == ".toml":
+        return tomllib.loads(text)
+    return json.loads("\n".join(line for line in text.splitlines() if not line.lstrip().startswith("//")))
 
 
-USER_FILES = [".claude.json", ".claude/settings.json", ".codex/config.toml", ".claude/plugins/cache/crapkit",
-              ".codex/plugins/cache/crapkit", ".gemini/settings.json", ".cursor/mcp.json", ".copilot/mcp-config.json",
-              ".cline/data/settings/cline_mcp_settings.json", ".local/bin/crapkit", ".local/bin/crapkit.exe",
-              ".local/share/uv/tools/crapkit", ".local/share/pipx/venvs/crapkit", ".gitconfig",
-              "AppData/Roaming/uv/tools/crapkit", "AppData/Roaming/Code/User/mcp.json", *sorted(WHOLE_FILES)]
+def _digest(data) -> str:
+    return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+def _config_part(path: Path) -> str:
+    """The crapkit entries of one config. A live harness may be rewriting the
+    file this instant, so a failed parse is read again before the digest
+    falls back to the lines that name crapkit."""
+    for _ in range(20):
+        try:
+            return _digest(crapkit_entries(parse_config(path)))
+        except ValueError:
+            time.sleep(.05)
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return _digest([line for line in text.splitlines() if "crapkit" in line])
+
+
+def _whole_part(path: Path) -> str:
+    """A whole file's digest. A canary, this run's or a concurrent run's,
+    counts as no file: it comes and goes with the run that planted it."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return "absent" if CANARY in text else _digest(text)
+
+
+def _tree_part(path: Path) -> str:
+    if path.is_file():
+        return f"file {path.stat().st_size}"
+    return _digest(sorted(child.relative_to(path).as_posix() for child in path.rglob("*")))
 
 
 def user_state(home: Path) -> dict[str, str]:
-    return {relative: _crapkit_part(home, relative) for relative in USER_FILES}
+    """relative path -> the digest of what a cell could write there."""
+    parts = [(WHOLE_FILES, _whole_part), (CONFIG_FILES, _config_part), (TREES, _tree_part)]
+    return {relative: (reader(home / relative) if (home / relative).exists() else "absent")
+            for relatives, reader in parts for relative in relatives}
 
 
-def _sandbox_mentions(home: Path, root: Path) -> list[str]:
-    files = [home / relative for relative in USER_FILES if (home / relative).is_file()]
-    return [str(path) for path in files if str(root) in path.read_text(encoding="utf-8", errors="replace")]
+def path_spellings(root: Path) -> set[str]:
+    """How a config could spell a sandbox path: as the OS prints it, with
+    forward slashes, and JSON-escaped; lower-cased where the OS ignores case."""
+    spellings = {str(root), root.as_posix(), json.dumps(str(root))[1:-1]}
+    return {spelling.lower() for spelling in spellings} if WINDOWS else spellings
 
 
-CANARIES = {".config/pip/pip.conf": "[global]\nindex-url = http://canary.invalid/simple\n",
-            ".gitconfig": "[user]\n\tname = canary\n\temail = canary@invalid\n",
-            ".claude.json": '{"mcpServers": {"canary": {"command": "canary"}}}\n'}
+def _mentions(text: str, spellings: set[str]) -> bool:
+    text = text.lower() if WINDOWS else text
+    return any(spelling in text for spelling in spellings)
 
 
-def _plant(home: Path) -> dict[str, str]:
-    planted = {relative: text for relative, text in CANARIES.items() if not (home / relative).exists()}
-    for relative, text in planted.items():
-        (home / relative).parent.mkdir(parents=True, exist_ok=True)
-        (home / relative).write_text(text, encoding="utf-8")
-    return planted
+def sandbox_mentions(home: Path, root: Path) -> list[str]:
+    """User files on this machine that name a path inside the sandbox."""
+    files = [home / relative for relative in WHOLE_FILES + CONFIG_FILES if (home / relative).is_file()]
+    spellings = path_spellings(root)
+    return [str(path) for path in files if _mentions(path.read_text(encoding="utf-8", errors="replace"), spellings)]
+
+
+# Planted where the file is absent, and harmless to anything else reading it:
+# git and pip skip a section they do not know.
+NATIVE_CANARIES = {".config/git/config": f"[{CANARY}]\n\tplanted = yes\n",
+                   PIP_USER_CONFIG: f"[{CANARY}]\nplanted = yes\n"}
+# In a throwaway container home, canaries that would break a leaked install.
+IMAGE_CANARIES = {".config/pip/pip.conf": f"# {CANARY}\n[global]\nindex-url = http://{CANARY}.invalid/simple\n",
+                  ".gitconfig": f"# {CANARY}\n[user]\n\tname = {CANARY}\n\temail = canary@invalid\n",
+                  ".npmrc": f"{CANARY}=planted\n",
+                  ".claude.json": json.dumps({"mcpServers": {CANARY: {"command": CANARY}}}) + "\n"}
+
+
+def _missing_dirs(path: Path) -> list[Path]:
+    """The parent dirs of `path` that do not exist yet, deepest first."""
+    missing = []
+    for parent in path.parents:
+        if parent.exists():
+            break
+        missing.append(parent)
+    return missing
+
+
+def _plant_one(path: Path, text: str) -> list[Path]:
+    """The canary file and the dirs made for it, or [] where a file was."""
+    made = _missing_dirs(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(path, "x", encoding="utf-8") as handle:
+            handle.write(text)
+    except FileExistsError:
+        return []
+    return [path, *made]
+
+
+def plant(home: Path, canaries: dict[str, str]) -> tuple[dict[str, str], list[Path]]:
+    """The canaries this call created, and every path it made for them (each
+    file, then its new dirs deepest first). A file that exists stays as it is."""
+    made = {relative: _plant_one(home / relative, text) for relative, text in canaries.items()}
+    planted = {relative: canaries[relative] for relative, paths in made.items() if paths}
+    return planted, sum(made.values(), [])
+
+
+def _removed(path: Path) -> bool:
+    """False while another process holds the file open: Windows refuses to
+    delete a config file a concurrent git or pip is reading."""
+    try:
+        path.rmdir() if path.is_dir() else path.unlink(missing_ok=True)
+    except PermissionError:
+        return False
+    except OSError:
+        return True  # a dir something else now lives in stays
+    return True
+
+
+def unplant(made: list[Path]) -> None:
+    for path in made:
+        hang_guard.wait_until(lambda: _removed(path), what=f"{path} removed")
 
 
 @pytest.fixture
 def canaries():
-    """Traps in the runner's home, planted only where that home is a throwaway
-    container's: a leaked HOME would read the canary index and git identity."""
-    planted = _plant(Path.home()) if IN_IMAGE else {}
-    yield planted
-    for relative in planted:
-        (Path.home() / relative).unlink()
+    wanted = {**NATIVE_CANARIES, **(IMAGE_CANARIES if IN_IMAGE else {})}
+    planted, made = plant(Path.home(), wanted)
+    try:
+        yield planted
+    finally:
+        unplant(made)
 
 
-def test_installs_leave_the_machines_own_state_untouched(box, canaries):
-    home = Path.home()
-    before = user_state(home)
+REGISTRATIONS = {"claude": ["mcp", "add", "--scope", "user", "crapkit", "--", "crapkit", "mcp"],
+                 "codex": ["mcp", "add", "crapkit", "--", "crapkit", "mcp"]}
+
+
+def register_everywhere(box) -> list[str]:
+    """What a cell writes: crapkit installed by uv tool and pipx, a global git
+    setting, and crapkit registered in each harness CLI this image holds."""
     box.run(["uv", "tool", "install", "crapkit"], expect=0)
     box.run(["pipx", "install", "crapkit"], expect=0)
     box.run(["git", "config", "--global", "alias.st", "status"], expect=0)
+    ran = [name for name in REGISTRATIONS if harness(box, name)]
+    for name in ran:
+        box.run([harness(box, name), *REGISTRATIONS[name]], expect=0)
+    return ran
+
+
+def sandbox_registrations(box) -> dict:
+    """Each sandbox harness config that holds a crapkit entry."""
+    files = {box.home / ".claude.json", Path(box.env["CLAUDE_CONFIG_DIR"]) / ".claude.json",
+             Path(box.env["CODEX_HOME"]) / "config.toml"}
+    entries = {str(path): crapkit_entries(parse_config(path)) for path in files if path.is_file()}
+    return {path: found for path, found in entries.items() if found}
+
+
+def reads_of_the_canaries(box) -> list[str]:
+    """Every sandbox command output that shows a canary: git, pip and npm config."""
+    shown = [box.run(["git", "config", "--get", f"{CANARY}.planted"], expect=1).stdout,
+             box.run([box.toolchain.python("3.12"), "-m", "pip", "config", "list"], expect=0).stdout,
+             box.run(["npm", "config", "list"], expect=0).stdout]
+    return [text for text in shown if CANARY in text]
+
+
+def test_a_cell_leaves_the_machines_own_state_untouched_and_reads_none_of_it(box, canaries):
+    home = Path.home()
+    before = user_state(home)
+    ran = register_everywhere(box)
     identity = box.run(["git", "config", "user.name"], expect=0).stdout.strip()
 
     assert user_state(home) == before
-    assert _sandbox_mentions(home, box.root) == []
+    assert sandbox_mentions(home, box.root) == []
     assert {relative: (home / relative).read_text(encoding="utf-8") for relative in canaries} == canaries
-    assert identity == sandbox.GIT_IDENTITY[0]
+    assert reads_of_the_canaries(box) == [] and identity == sandbox.GIT_IDENTITY[0]
+    assert len(sandbox_registrations(box)) == len(ran), (ran, sandbox_registrations(box))
+
+
+def test_the_crapkit_entries_of_a_config_are_what_a_cell_writes_and_nothing_else():
+    config = {"mcpServers": {"crapkit": {"command": "crapkit"}, "other": {}},
+              "projects": {"/work/crapkit": {"mcpServers": {"crapkit": {"args": ["mcp"]}}, "lastCost": 3}},
+              "skillUsage": {"crapkit": {"count": 9}}, "enabledPlugins": {"crapkit@crapkit": True},
+              "plugins": [{"name": "crapkit", "version": "1"}, {"name": "other"}]}
+
+    assert crapkit_entries(config) == {"mcpServers.crapkit": {"command": "crapkit"},
+                                       "projects./work/crapkit.mcpServers.crapkit": {"args": ["mcp"]},
+                                       "enabledPlugins.crapkit@crapkit": True,
+                                       "plugins.0": {"name": "crapkit", "version": "1"}}
+
+
+def test_user_state_holds_each_kind_of_file_to_what_a_cell_could_write(tmp_path):
+    (tmp_path / ".local" / "bin").mkdir(parents=True)
+    (tmp_path / ".local" / "bin" / "crapkit").write_text("x", encoding="utf-8")
+    (tmp_path / ".claude" / "plugins" / "cache" / "crapkit" / "crapkit" / "0.8.0").mkdir(parents=True)
+    (tmp_path / ".gitconfig").write_text(f"# {CANARY}\n", encoding="utf-8")
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".codex" / "config.toml").write_text('[mcp_servers.crapkit]\ncommand = "crapkit"\n', encoding="utf-8")
+    state = user_state(tmp_path)
+
+    assert state[".local/bin/crapkit"] == "file 1" and state[".gitconfig"] == "absent" and state[".npmrc"] == "absent"
+    assert state[".claude/plugins/cache/crapkit"] == _digest(["crapkit", "crapkit/0.8.0"])
+    assert state[".codex/config.toml"] == _digest({"mcp_servers.crapkit": {"command": "crapkit"}})
+
+
+def test_a_config_that_never_parses_is_read_by_its_crapkit_lines(tmp_path):
+    broken = tmp_path / ".claude.json"
+    broken.write_text('{"mcpServers": {"crapkit":\n  "half\n', encoding="utf-8")
+
+    assert _config_part(broken) == _digest(['{"mcpServers": {"crapkit":'])
+
+
+def test_a_config_that_names_a_sandbox_path_in_any_spelling_is_caught(tmp_path):
+    root = tmp_path / "box"
+    config = tmp_path / ".claude.json"
+    config.write_text(json.dumps({"projects": {str(root / "repo"): {}}}), encoding="utf-8")
+
+    assert sandbox_mentions(tmp_path, root) == [str(config)]
+    assert sandbox_mentions(tmp_path, tmp_path / "other") == []
+
+
+def test_a_canary_is_planted_only_where_no_file_is_and_leaves_nothing_behind(tmp_path):
+    (tmp_path / ".gitconfig").write_text("[user]\n\tname = someone\n", encoding="utf-8")
+    (tmp_path / ".config").mkdir()
+    planted, made = plant(tmp_path, {".gitconfig": "canary\n", ".config/git/config": "canary\n"})
+
+    assert planted == {".config/git/config": "canary\n"}
+    assert made == [tmp_path / ".config" / "git" / "config", tmp_path / ".config" / "git"]
+    unplant(made)
+    assert sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*")) == [".config", ".gitconfig"]
+    assert (tmp_path / ".gitconfig").read_text(encoding="utf-8") == "[user]\n\tname = someone\n"
+
+
+def test_unplant_waits_out_a_reader_that_holds_the_canary_open(tmp_path):
+    _, made = plant(tmp_path, {"held.cfg": "canary\n"})
+    reader = open(made[0], encoding="utf-8")
+    threading.Timer(.5, reader.close).start()
+    unplant(made)
+
+    assert not made[0].exists()
+    # Windows refuses the delete until the reader closes; POSIX deletes at once.
+    assert reader.closed or not WINDOWS
+
+
+def test_unplant_keeps_a_dir_something_else_moved_into(tmp_path):
+    _, made = plant(tmp_path, {"new/held.cfg": "canary\n"})
+    (tmp_path / "new" / "other.cfg").write_text("mine\n", encoding="utf-8")
+    unplant(made)
+
+    assert [path.name for path in (tmp_path / "new").iterdir()] == ["other.cfg"]
 
 
 # --- no harness binary changes mid-session ------------------------------------------------
 
-def _harness_binaries(toolchain) -> list[Path]:
-    dirs = [Path(directory) for directory in toolchain["harness_bin"] if Path(directory).is_dir()]
-    return sorted({Path(os.path.realpath(entry)) for directory in dirs for entry in directory.iterdir()})
+UPDATE_ENV = {"DISABLE_AUTOUPDATER": "1", "COPILOT_AUTO_UPDATE": "false", "AMP_SKIP_UPDATE_CHECK": "1",
+              "OPENCODE_DISABLE_AUTOUPDATE": "true"}
+# (file under HOME, key path, value): each harness's own update switch.
+UPDATE_FILES = [(".gemini/settings.json", ("general", "enableAutoUpdate"), False),
+                (".config/amp/settings.json", ("amp.updates.mode",), "disabled"),
+                (".config/opencode/opencode.json", ("autoupdate",), False),
+                (".config/cursor/cli-config.json", ("channel",), "static"),
+                (".codex/config.toml", ("check_for_update_on_startup",), False)]
 
 
-def _stamps(paths: list[Path]) -> dict[str, tuple[int, int]]:
-    return {str(path): (path.stat().st_size, path.stat().st_mtime_ns) for path in paths if path.is_file()}
+def pinned_harnesses() -> dict[str, dict]:
+    pins = tomllib.loads((wheels.SRC / "tools" / "deploy" / "pins.toml").read_text(encoding="utf-8"))
+    return {name: spec for name, spec in pins["harness"].items() if "command" in spec}
 
 
-def test_no_harness_binary_changes_with_every_update_switch_set(box):
-    binaries = _harness_binaries(box.toolchain)
-    before = _stamps(binaries)
-    for name in ("claude", "codex", "cursor-agent"):
-        found = shutil.which(name, path=os.pathsep.join(box.toolchain["harness_bin"]))
+def _value(data, keys: tuple):
+    for key in keys:
+        data = data.get(key) if isinstance(data, dict) else None
+    return data
+
+
+def update_switches(box) -> dict[str, object]:
+    """Each update switch as the sandbox holds it, after the harnesses ran."""
+    files = {relative: _value(parse_config(box.home / relative), keys) for relative, keys, _ in UPDATE_FILES}
+    return {**{name: box.env.get(name) for name in UPDATE_ENV}, **files}
+
+
+def run_each_harness(box) -> dict[str, bool]:
+    """harness -> whether `<command> --version` printed its pinned version,
+    run the way a user who installed it has it: its bin dir on PATH."""
+    box.put_harnesses_on_path()
+    printed = {}
+    for name, spec in pinned_harnesses().items():
+        found = box.which(spec["command"]) if harness(box, spec["command"]) else None
         if found:
-            box.run([found, "--version"])
+            step = box.run([found, "--version"])
+            printed[name] = spec.get("prints", spec["version"]) in step.stdout + step.stderr
+    return printed
 
-    assert _stamps(binaries) == before
-    assert all(box.env[name] == value for name, value in sandbox.QUIET.items())
-    assert (box.home / ".codex" / "config.toml").read_text(encoding="utf-8") == sandbox.CODEX_CONFIG
+
+def test_no_harness_binary_changes_during_the_session_with_every_update_switch_set(box, request):
+    printed = run_each_harness(box)
+    session_start = request.config.stash[cells.HARNESSES]
+
+    assert sandbox.changed_stamps(session_start, sandbox.harness_stamps(box.toolchain)) == []
+    assert printed == {name: True for name in printed}
+    assert update_switches(box) == {**UPDATE_ENV, **{relative: value for relative, _, value in UPDATE_FILES}}
+
+
+def test_a_changed_harness_binary_is_named():
+    before = {"/opt/h/bin/claude": "10 1", "/opt/h/node_modules/@openai/codex/package.json": "0.156.1"}
+    after = {"/opt/h/bin/claude": "12 2", "/opt/h/node_modules/@openai/codex/package.json": "0.156.1"}
+
+    assert sandbox.changed_stamps(before, after) == ["/opt/h/bin/claude: 10 1 -> 12 2"]
 
 
 # --- paths ---------------------------------------------------------------------------------
 
+def short_path(path: Path) -> Path:
+    buffer = ctypes.create_unicode_buffer(32768)
+    size = ctypes.windll.kernel32.GetShortPathNameW(str(path), buffer, len(buffer))
+    return Path(buffer.value) if size else path
+
+
 @pytest.mark.skipif(not WINDOWS, reason="8.3 short names exist only on Windows")
-def test_the_windows_sandbox_path_is_its_long_form(box):
+def test_the_windows_sandbox_sits_under_c_dt_in_its_long_form_with_no_tilde(box):
+    assert _normalized(str(box.root)).startswith(_normalized("C:/dt") + os.sep)
     assert box.root == sandbox.long_path(box.root)
-    assert [value for value in box.env.values() if "~" in value] == []
+    assert [value for value in [str(box.root), *box.env.values(), *box.toolchain["path"]] if "~" in value] == []
 
 
-def test_cloning_the_exported_bundle_raises_no_dubious_ownership(box):
+@pytest.mark.skipif(not WINDOWS, reason="8.3 short names exist only on Windows")
+def test_long_path_expands_an_8_3_name():
+    long = Path(os.environ["ProgramFiles"])
+    short = short_path(long)
+    if short == long:
+        pytest.skip(f"{long} has no 8.3 name on this volume")
+
+    assert "~" in str(short) and sandbox.long_path(short) == long
+
+
+DUBIOUS = "detected dubious ownership"
+
+
+def test_the_exported_bundle_clones_with_no_dubious_ownership(box):
+    mirror = Path(os.environ["CRAPKIT_DEPLOY_MIRROR"])
     clone = box.root / "clone"
-    box.run(["git", "clone", "-q", os.environ["CRAPKIT_DEPLOY_MIRROR"], str(clone)], expect=0)
-    status = box.run(["git", "-C", str(clone), "status", "--porcelain"])
+    steps = [box.run(["git", "-C", str(mirror), "rev-parse", "--is-bare-repository"]),
+             box.run(["git", "clone", "-q", str(mirror), str(clone)])]
+    steps.append(box.run(["git", "-C", str(clone), "status", "--porcelain"]))
 
-    assert "dubious ownership" not in status.stderr, status.stderr
-    assert status.exit == 0
+    assert [step.stderr for step in steps if DUBIOUS in step.stderr] == []
+    assert [step.exit for step in steps] == [0, 0, 0], box.transcript.text()
+    if not WINDOWS:
+        assert mirror.stat().st_uid == os.getuid()
+
+
+@pytest.mark.skipif(not IN_IMAGE, reason="plants a .git in /var/tmp, which only a throwaway container may")
+def test_a_repo_another_user_owns_gets_gits_exact_refusal(box):
+    """The control for the test above: in the image git refuses a work tree
+    another uid owns, which is what a mounted source tree would be."""
+    control = Path("/var/tmp")
+    assert control.stat().st_uid != os.getuid()
+    box.run(["git", "init", "-q", str(control)], expect=0)
+    try:
+        status = box.run(["git", "-C", str(control), "status"])
+    finally:
+        shutil.rmtree(control / ".git")
+
+    assert f"fatal: {DUBIOUS} in repository at '{control}'" in status.stderr
 
 
 def test_odd_home_and_repo_names_survive(tmp_path, transcript, toolchain, templates):
@@ -273,3 +635,167 @@ def test_odd_home_and_repo_names_survive(tmp_path, transcript, toolchain, templa
 
     assert repo.name == "my repo é" and home.stdout.strip() == "O'Brien Jérôme test"
     assert odd.run(["git", "log", "-1", "--format=%an"], cwd=repo, expect=0).stdout.strip() == sandbox.GIT_IDENTITY[0]
+
+
+# --- every deploy test goes through the kit -----------------------------------------------
+
+SHELL_OUTS = {"subprocess", "os.system", "os.popen", "os.spawnv", "os.spawnl", "os.execv", "os.startfile"}
+
+
+def _reached(node) -> list[str]:
+    """What an import or attribute node names: 'subprocess', 'os.system' ..."""
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names]
+    if isinstance(node, ast.ImportFrom):
+        return [str(node.module)]
+    return [ast.unparse(node)] if isinstance(node, ast.Attribute) else []
+
+
+def shell_outs(tree: ast.AST) -> list[str]:
+    """Every way a module starts a process without box.run or box.script."""
+    return [name for node in ast.walk(tree) for name in _reached(node) if name in SHELL_OUTS]
+
+
+def _is_cell(decorator: ast.expr) -> bool:
+    function = decorator.func if isinstance(decorator, ast.Call) else None
+    return getattr(function, "id", getattr(function, "attr", None)) == "cell"
+
+
+def _first_argument(call: ast.Call) -> str:
+    """A @cell's id, or "?" when the id is computed."""
+    first = call.args[0] if call.args else None
+    return first.value if isinstance(first, ast.Constant) else "?"
+
+
+def _cell_ids(function: ast.FunctionDef) -> list[str]:
+    return [_first_argument(decorator) for decorator in function.decorator_list if _is_cell(decorator)]
+
+
+def _targets(node: ast.Assign) -> list[str | None]:
+    return [getattr(target, "id", None) for target in node.targets]
+
+
+def _pytestmarks(tree: ast.Module) -> list[ast.expr]:
+    assigns = [node for node in tree.body if isinstance(node, ast.Assign)]
+    return [node.value for node in assigns if "pytestmark" in _targets(node)]
+
+
+def _is_kit_module(tree: ast.Module) -> bool:
+    return "pytest.mark.kit" in [ast.unparse(mark) for mark in _pytestmarks(tree)]
+
+
+def collected_tests(tree: ast.AST) -> list[ast.FunctionDef]:
+    return [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name.startswith("test")]
+
+
+def loose_tests(tree: ast.Module) -> list[str]:
+    """Tests that are neither kit tests nor @cell: no cadence selects them."""
+    if _is_kit_module(tree):
+        return []
+    return [function.name for function in collected_tests(tree) if not _cell_ids(function)]
+
+
+def deploy_modules() -> dict[str, ast.Module]:
+    return {path.name: ast.parse(path.read_text(encoding="utf-8")) for path in sorted(DEPLOY.glob("test_*.py"))}
+
+
+def test_no_deploy_test_module_starts_a_process_past_the_sandbox():
+    assert {name: shell_outs(tree) for name, tree in deploy_modules().items() if shell_outs(tree)} == {}
+
+
+def _module_cell_ids(tree: ast.Module) -> list[str]:
+    return [cell_id for function in collected_tests(tree) for cell_id in _cell_ids(function)]
+
+
+def duplicate_cell_ids(modules: dict[str, ast.Module]) -> list[str]:
+    ids = [cell_id for tree in modules.values() for cell_id in _module_cell_ids(tree)]
+    return sorted({cell_id for cell_id in ids if ids.count(cell_id) > 1})
+
+
+def test_every_deploy_test_is_a_kit_test_or_a_cell_with_a_unique_id():
+    modules = deploy_modules()
+
+    assert {name: loose_tests(tree) for name, tree in modules.items() if loose_tests(tree)} == {}
+    assert duplicate_cell_ids(modules) == []
+
+
+def test_the_kit_rules_catch_a_shell_out_and_a_loose_test():
+    source = ("import subprocess\nimport os\nfrom kit.cells import cell\n\n"
+              "def test_loose():\n    os.system('crapkit')\n\n"
+              "@cell('lin-x', channel='c', harness='h', scenario='s', use_cases='u', os='linux')\n"
+              "def test_a_cell(box):\n    pass\n")
+    tree = ast.parse(source)
+
+    assert shell_outs(tree) == ["subprocess", "os.system"]
+    assert loose_tests(tree) == ["test_loose"]
+    assert [_cell_ids(function) for function in collected_tests(tree)] == [[], ["lin-x"]]
+    assert duplicate_cell_ids({"a.py": tree, "b.py": tree}) == ["lin-x"]
+
+
+# --- a cell's JUnit record ------------------------------------------------------------------
+
+ONE_CELL = '''from kit.cells import cell
+
+PACKET = "deploy-kit-probe"
+
+
+@cell("lin-junit-probe", channel="pip venv", harness="none", scenario="fresh: a probe", use_cases="junit",
+      os=("linux", "windows"), image="cells", cadence="push", real_cli=False)
+def test_probe():
+    pass
+'''
+
+
+def junit_properties(path: Path) -> dict[str, str]:
+    return {prop.get("name"): prop.get("value") for prop in ElementTree.parse(path).iter("property")}
+
+
+def run_probe_suite(box, source: str, toolchain_json: Path):
+    """A one-module pytest session under this conftest, as run.py runs a cell:
+    xunit1 JUnit at <box>/junit.xml. Returns the step; its exit is the run's."""
+    suite = box.root / "suite"
+    suite.mkdir()
+    shutil.copyfile(DEPLOY / "conftest.py", suite / "conftest.py")
+    (suite / "test_probe.py").write_text(source, encoding="utf-8")
+    env = {"PYTHONPATH": os.pathsep.join([str(DEPLOY), str(DEPLOY.parent)]),
+           "CRAPKIT_DEPLOY_TOOLCHAIN": str(toolchain_json), "CRAPKIT_DEPLOY_IMAGE_DIGEST": "sha256:probe",
+           "CRAPKIT_DEPLOY_OUT": str(box.root / "out")}
+    return box.run([box.toolchain["runner_python"], "-m", "pytest", str(suite), "-q", "-p", "no:cacheprovider",
+                    "-o", "junit_family=xunit1", f"--junitxml={box.root / 'junit.xml'}"], cwd=suite, env=env)
+
+
+def test_a_cells_junit_record_names_every_field_the_image_and_the_toolchain(box, toolchain):
+    assert run_probe_suite(box, ONE_CELL, toolchain.source).exit == 0
+
+    assert junit_properties(box.root / "junit.xml") == {
+        "cell_id": "lin-junit-probe", "cell_channel": "pip venv", "cell_harness": "none",
+        "cell_scenario": "fresh: a probe", "cell_use_cases": "junit", "cell_os": "linux,windows",
+        "cell_image": "cells", "cell_cadence": "push", "cell_real_cli": "False", "cell_packet": "deploy-kit-probe",
+        "image_digest": "sha256:probe", "toolchain_hash": hashlib.sha256(toolchain.source.read_bytes()).hexdigest()}
+
+
+# A test that rewrites a harness binary, as a harness updating itself would.
+SELF_UPDATE = '''import json, os
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.kit
+
+
+def test_a_harness_updates_itself():
+    toolchain = json.loads(Path(os.environ["CRAPKIT_DEPLOY_TOOLCHAIN"]).read_text(encoding="utf-8"))
+    (Path(toolchain["harness_bin"][0]) / "fakeharness").write_text("v2, a longer release", encoding="utf-8")
+'''
+
+
+def test_a_harness_that_changes_mid_session_fails_the_run_naming_it(box, toolchain):
+    bin_dir = box.root / "harness" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "fakeharness").write_text("v1", encoding="utf-8")
+    fake = box.root / "toolchain.json"
+    fake.write_text(json.dumps({**toolchain.data, "harness_bin": [str(bin_dir)]}), encoding="utf-8")
+    run = run_probe_suite(box, SELF_UPDATE, fake)
+
+    assert run.exit == 1 and "1 passed" in run.stdout
+    assert f"a harness changed during the session: {bin_dir / 'fakeharness'}: 2 " in run.stderr

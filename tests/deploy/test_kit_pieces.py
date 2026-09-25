@@ -22,7 +22,8 @@ from kit.transcript import Step, Transcript
 pytestmark = pytest.mark.kit
 
 WINDOWS = os.name == "nt"
-NODE_CLIENT = Path(__file__).resolve().parent / "kit" / "mcp_node_client.mjs"
+KIT = Path(__file__).resolve().parent / "kit"
+NODE_CLIENT = KIT / "mcp_node_client.mjs"
 TOOLS = 12
 
 
@@ -71,7 +72,8 @@ def test_a_cells_junit_properties_name_the_image_and_the_toolchain(monkeypatch):
     pairs = dict(cells.properties({"id": "lin-x", "channel": "pip", "real_cli": False}))
 
     assert pairs["cell_id"] == "lin-x" and pairs["image_digest"] == "sha256:abc"
-    assert len(pairs["toolchain_hash"]) == 64 and "cell_real_cli" not in pairs
+    assert len(pairs["toolchain_hash"]) == 64 and pairs["cell_real_cli"] == "False"
+    assert pairs["cell_image"] == "none" and "cell_nonblocking" not in pairs
 
 
 # --- wheels and docs --------------------------------------------------------------------
@@ -97,6 +99,15 @@ def test_docsnip_reads_the_stamped_readme_and_names_a_moved_fence(candidate):
 
 # --- the mirror and the index -------------------------------------------------------------
 
+def test_every_spelling_of_the_github_url_reaches_the_mirror(box):
+    mirror = gitmirror.make(box)
+    heads = {url: box.run(["git", "ls-remote", url, "refs/heads/main"], expect=0).stdout.split()[:1]
+             for url in gitmirror.UPSTREAM}
+
+    assert heads == {url: [mirror.head("main")] for url in gitmirror.UPSTREAM}
+    assert "https://github.com/JeanFrancoisGagne/crapkit" in heads and "git@github.com:JeanFrancoisGagne/crapkit" in heads
+
+
 def test_the_github_url_clones_the_mirror_and_a_release_moves_main(box, candidate):
     mirror = gitmirror.make(box)
     mirror.publish(candidate.staged, candidate.version)
@@ -119,6 +130,7 @@ def test_the_index_serves_pip_with_pypis_cache_headers(box, toolchain, candidate
                  "--index-url", index.simple, f"crapkit=={wheels.n_minus_1()}"],
                 env={"PIP_CONFIG_FILE": os.devnull}, expect=0)
 
+    assert index.simple.startswith("http://127.0.0.1:")
     assert headers["Cache-Control"] == pyindex.PAGE_CACHE
     assert f"crapkit-{candidate.version}-py3-none-any.whl#sha256=" in body
     assert [path.name for path in target.iterdir()] == [f"crapkit-{wheels.n_minus_1()}-py3-none-any.whl"]
@@ -140,6 +152,26 @@ def test_the_shim_records_a_start_and_still_runs_crapkit(box, candidate):
     assert [start["argv"][1:] for start in starts] == [["--version"], ["mcp"]]
     assert '"method": "initialize"' in starts[1]["first_line"] and starts[1]["exit"] == 0
     assert starts[0]["cwd"] == str(box.root) and starts[0]["env"]["HOME"] == box.env["HOME"]
+    # The process that started crapkit, through the .exe launcher on Windows.
+    assert [start["ppid"] for start in starts] == [os.getpid(), os.getpid()]
+
+
+def test_the_shim_is_a_real_executable_the_way_a_pip_install_is(box, candidate):
+    shim_bin = shim.install(box, venv_crapkit(box))
+    launcher = shim_bin / shim.launcher_name()
+
+    assert [path.name for path in shim_bin.iterdir()] == [launcher.name]
+    assert launcher.read_bytes()[:2] == (b"MZ" if WINDOWS else b"#!")
+
+
+def test_the_shim_names_the_harness_behind_a_windows_launcher():
+    from kit.shim_pkg.crapkit_shim import parents
+    # this interpreter <- the venv's python.exe <- crapkit.exe <- the harness
+    table = {40: (30, "python.exe"), 30: (20, "crapkit.exe"), 20: (10, "node.exe"), 10: (1, "cmd.exe")}
+
+    assert parents(table, 40, r"C:\box\shim-bin\crapkit.EXE") == {"ppid": 20, "launcher_pid": 30}
+    assert parents(table, 20, "crapkit") == {"ppid": 20}
+    assert parents({}, 7, "crapkit") == {"ppid": 7}
 
 
 def test_the_python_client_reaches_every_tool(box, candidate):
@@ -167,7 +199,7 @@ def test_the_npm_fixtures_install_once_per_session(tmp_path, toolchain, template
     assert second.transcript.steps == []
 
 
-@pytest.mark.parametrize("sdk", ["sdk-1-12", "sdk-1-29"])
+@pytest.mark.parametrize("sdk", ["sdk-1-12", "sdk-1-23", "sdk-1-25", "sdk-1-29"])
 def test_the_node_client_reaches_every_tool_through_the_sdk_a_harness_ships(box, candidate, templates, sdk):
     launcher = venv_crapkit(box)
     fixtures = repos.npm_fixtures(box, templates)
@@ -176,6 +208,32 @@ def test_the_node_client_reaches_every_tool_through_the_sdk_a_harness_ships(box,
     out = json.loads(step.stdout)
 
     assert out["serverInfo"]["name"] == "crapkit" and len(out["tools"]) == TOOLS
+
+
+# A server that answers late, and first sends a notification and a reply to
+# another id: the client must wait for its own reply, not for a timer.
+SLOW_SERVER = '''import json, sys, time
+for line in sys.stdin:
+    message = json.loads(line)
+    if "id" not in message:
+        continue
+    time.sleep(1)
+    for other in ({"method": "notifications/message", "params": {}}, {"id": 999, "result": {}},
+                  {"id": message["id"], "result": {"echo": message["method"]}}):
+        print(json.dumps({"jsonrpc": "2.0", **other}), flush=True)
+'''
+
+
+def test_the_python_client_waits_for_its_own_reply_and_never_on_a_timer(box):
+    server = box.root / "slow_server.py"
+    server.write_text(SLOW_SERVER, encoding="utf-8")
+    with McpClient.in_box(box, [box.toolchain.python("3.12"), str(server)], cwd=box.root) as client:
+        answers = [client.request("ping"), client.request("tools/list")]
+        code = client.close()
+
+    assert answers == [{"echo": "ping"}, {"echo": "tools/list"}] and code == 0
+    assert "sleep(" not in (KIT / "mcp_client.py").read_text(encoding="utf-8")
+    assert "setTimeout" not in NODE_CLIENT.read_text(encoding="utf-8")
 
 
 # --- the model stubs ---------------------------------------------------------------------
@@ -224,6 +282,55 @@ def test_every_template_builds_and_copies(box, templates, name):
 
     assert (repo / EXPECTED[name]).exists()
     assert (repo / ".git").exists() is (name != "not-git")
+
+
+def test_a_template_builds_once_and_every_later_sandbox_copies_it(tmp_path, toolchain, templates):
+    first = sandbox.make(tmp_path / "a", Transcript("a"), toolchain=toolchain)
+    second = sandbox.make(tmp_path / "b", Transcript("b"), toolchain=toolchain)
+    one = repos.checkout(first, "brownfield", cache=templates)
+    two = repos.checkout(second, "brownfield", cache=templates)
+
+    assert second.transcript.steps == []
+    heads = [box.run(["git", "rev-parse", "HEAD"], cwd=repo, expect=0).stdout for box, repo in
+             ((first, one), (second, two))]
+    assert heads[0] == heads[1] and one != two
+
+
+# Three processes, as three xdist workers would, each holding the lock while
+# it writes "in" then "out": interleaved lines mean two held it at once.
+LOCK_HOLDER = '''import sys, time
+from pathlib import Path
+from kit import repos
+with repos.file_lock(Path(sys.argv[1])):
+    with open(sys.argv[2], "a") as log:
+        print("in", file=log)
+    time.sleep(.3)
+    with open(sys.argv[2], "a") as log:
+        print("out", file=log)
+'''
+THREE_HOLDERS = '''import subprocess, sys
+children = [subprocess.Popen([sys.executable, *sys.argv[1:]]) for _ in range(3)]
+sys.exit(max(child.wait() for child in children))
+'''
+
+
+def test_the_file_lock_serves_one_process_at_a_time(box, toolchain):
+    holder, driver = box.root / "holder.py", box.root / "driver.py"
+    holder.write_text(LOCK_HOLDER, encoding="utf-8")
+    driver.write_text(THREE_HOLDERS, encoding="utf-8")
+    log = box.root / "held.log"
+    kit_path = os.pathsep.join([str(KIT.parent), str(KIT.parent.parent)])
+    box.run([toolchain["runner_python"], str(driver), str(holder), str(box.root / "t.lock"), str(log)],
+            env={"PYTHONPATH": kit_path}, expect=0)
+
+    assert log.read_text(encoding="utf-8").split() == ["in", "out"] * 3
+
+
+def test_a_lock_held_past_the_bound_fails_naming_the_lock(tmp_path):
+    with repos.file_lock(tmp_path / "t.lock"):
+        with pytest.raises(AssertionError, match=r"never got the lock on .*t\.lock within 0 s"):
+            with repos.file_lock(tmp_path / "t.lock", bound=.2):
+                pass
 
 
 def test_the_file_lock_serves_one_holder_at_a_time(tmp_path):

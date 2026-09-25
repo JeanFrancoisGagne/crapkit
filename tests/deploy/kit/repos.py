@@ -18,11 +18,14 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
 import hang_guard
 from e2e import repo_templates
+
+from kit.sandbox import SLOW
 
 GRADE_PY = '''def grade(score, attempts, late, bonus):
     if score > 90 and not late:
@@ -140,9 +143,11 @@ def _python_files() -> dict[str, str]:
 
 
 def _npm_lock(box, repo: Path) -> None:
-    """package-lock.json from the npm cache, offline; node_modules is not kept."""
-    box.run(["npm", "install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=repo, expect=0)
-    shutil.rmtree(repo / "node_modules", ignore_errors=True)
+    """package-lock.json resolved from the npm cache, offline, with no
+    node_modules: the jest template's full install took 3 minutes on a loaded
+    Windows machine, its lock alone 25 s."""
+    box.run(["npm", "install", "--package-lock-only", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"],
+            cwd=repo, expect=0, bound=SLOW)
 
 
 def _fixture_version(name: str, box) -> str:
@@ -300,12 +305,21 @@ def _try_lock(handle) -> bool:
         return False
 
 
+# A waiter outlasts a holder running one whole package install.
+LOCK_BOUND = SLOW + hang_guard.HANG_SECONDS
+
+
 @contextmanager
-def file_lock(path: Path):
-    """An exclusive lock on `path`, waited for under the hang bound."""
+def file_lock(path: Path, bound: float = LOCK_BOUND):
+    """An exclusive lock on `path`, waited for up to `bound` seconds: the
+    holder may be building a template or installing the npm fixtures."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a+b") as handle:
-        hang_guard.wait_until(lambda: _try_lock(handle), what=f"the lock on {path}")
+        deadline = time.monotonic() + bound
+        while not _try_lock(handle):
+            if time.monotonic() > deadline:
+                raise AssertionError(f"never got the lock on {path} within {bound:.0f} s")
+            time.sleep(.05)
         yield
 
 
@@ -319,7 +333,8 @@ def built(box, name: str, cache: Path) -> Path:
 def _install_npm_fixtures(box, project: Path) -> None:
     for name in ("package.json", "package-lock.json"):
         shutil.copyfile(Path(box.toolchain["npm_fixtures"]) / name, project / name)
-    box.run(["npm", "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=project, expect=0)
+    box.run(["npm", "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=project, expect=0,
+            bound=SLOW)
 
 
 def npm_fixtures(box, cache: Path) -> Path:
