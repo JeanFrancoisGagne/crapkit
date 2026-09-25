@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from crapkit.errors import ToolError
-from crapkit.procs import run_bounded, run_owned
+from crapkit.procs import CwdMissing, run_bounded, run_owned
 
 
 @pytest.mark.parametrize("where", ["nope", "a/b", "file.txt"])
@@ -25,6 +25,7 @@ def test_run_bounded_names_the_cwd_that_is_not_a_directory(tmp_path, where):
 
     assert str(failed.value) == f"cwd {cwd} is not a directory, so the command never ran"
     assert isinstance(failed.value, OSError), "the probes read an OSError as no answer"
+    assert isinstance(failed.value, CwdMissing), "the lane layer adds the lane's own fix"
 
 
 def test_run_owned_refuses_the_same_way(tmp_path):

@@ -136,6 +136,11 @@ class _StartFailed(ToolError, OSError):
     could not be put and answer with a finding."""
 
 
+class CwdMissing(_StartFailed):
+    """The start failed because the directory it was asked to start in is not
+    one. A caller that knows where that directory came from adds the fix."""
+
+
 def _run(command, streams, owner, kwargs, watch):
     """Start one owned command, wait for it and its cleanup, and return its code.
 
@@ -165,7 +170,7 @@ def _entered(stack: ExitStack, start, cwd):
 
 def _refuse_missing_cwd(cwd, error: OSError) -> None:
     if cwd is not None and not os.path.isdir(cwd):
-        raise _StartFailed(f"cwd {cwd} is not a directory, so the command never ran") from error
+        raise CwdMissing(f"cwd {cwd} is not a directory, so the command never ran") from error
 
 
 @contextmanager

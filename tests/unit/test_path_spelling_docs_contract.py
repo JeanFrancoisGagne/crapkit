@@ -23,6 +23,7 @@ from crapkit.cli._shared import _repo_relative
 from crapkit.repopath import fragment
 from crapkit.cli.verifying import _test_files
 from crapkit.config import load_config_text
+from crapkit.errors import ToolError
 from crapkit.repopath import file_separators, native
 from crapkit.universe import exclude_matcher
 from crapkit.verify import dirty_failure_ids
@@ -320,34 +321,48 @@ def test_the_file_paths_section_quotes_doctor_s_warn_for_a_name_holding_a_backsl
     assert f"{finding.level} {finding.text}" in section, finding
 
 
-def _unmeasured_line(prefix: str) -> str:
-    text = (SCOPE + "[[lane]]\nname = 'py'\ncommand = 'python -m pytest --cov'\n"
-            "artifact = '.crapkit/cov/py.json'\nparser = 'coveragepy'\nscopes = ['api']\n"
-            f"path_prefix = '{prefix}'\n")
-    (lane,) = load_config_text(text).lanes
-    return lanes._unmeasured_message(lane, {"web/src/calc.py": []}, ["api"])
+LANE = ("[[lane]]\nname = 'py'\ncommand = 'python -m pytest --cov'\n"
+        "artifact = '.crapkit/cov/py.json'\nparser = 'coveragepy'\nscopes = ['api']\n")
 
 
-def test_the_subdirectory_section_quotes_the_warning_that_names_the_path_prefix_read():
+def _unmeasured_line(tmp_path: Path, capsys, prefix: str) -> str:
+    """The warning as the lane layer prints it for a key `src/calc.py`, read
+    under `prefix`, in a tree that holds api/src/calc.py."""
+    (tmp_path / "api" / "src").mkdir(parents=True)
+    (tmp_path / "api" / "src" / "calc.py").write_text("x = 1\n", encoding="utf-8")
+    cfg = load_config_text(SCOPE + LANE + f"path_prefix = '{prefix}'\n", root=tmp_path)
+    capsys.readouterr()
+    lanes._judge_artifact_scope(cfg.lanes[0], {f"{prefix}/src/calc.py": []}, cfg.scope_paths,
+                                tmp_path)
+    return capsys.readouterr().err.strip()
+
+
+def test_the_subdirectory_section_quotes_the_warning_that_names_the_path_prefix_read(tmp_path,
+                                                                                    capsys):
     section = _prose(_section("docs/lanes.md", "### Running from a subdirectory"))
-    line = _unmeasured_line("web")
+    line = _unmeasured_line(tmp_path, capsys, "web")
     tail = line[line.index("or path_prefix"):]
 
+    assert line.startswith("crapkit: lane 'py' measured 1 file(s), none of them under the paths")
     assert "crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare" \
         in section
-    assert line.startswith("lane 'py' measured 1 file(s), none of them under the paths")
+    assert "path_prefix = 'api' would key" in tail, tail
     assert f"`{tail}`" in section, tail
 
 
 def test_the_cwd_row_and_the_upgrade_page_quote_the_failure_of_a_cwd_that_names_nothing(tmp_path):
+    """Through the lane layer's own start, which adds the lane's fix to the
+    start failure procs raises."""
     row = _row(_section("docs/configuration.md", "## `[[lane]]`"), "cwd")
     upgrade = _prose(_section("docs/upgrading.md", "## Config paths that 0.8.1 reads on every OS"))
-    missing = tmp_path / "nope"
+    (lane,) = load_config_text(SCOPE + LANE + "cwd = 'nope'\n").lanes
 
-    with pytest.raises(OSError) as failed:
-        procs.run_bounded("echo never", 30, cwd=missing)
+    with pytest.raises(ToolError) as failed:
+        lanes._stream_command(tmp_path, lane, tmp_path / "lane-py.log", 1)
 
-    quoted = str(failed.value).replace(str(missing), "<path>")
+    quoted = str(failed.value).replace(str(tmp_path / "nope"), "<path>")
+    assert quoted.endswith("fix cwd = 'nope' for this lane in crapkit.toml, or create that "
+                           "directory"), quoted
     assert f"`lane 'py' FAILED: {quoted}`" in row, quoted
     assert f"`{quoted}`" in upgrade, quoted
 

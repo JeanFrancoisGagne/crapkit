@@ -30,7 +30,7 @@ from .coverage_format import lane_format
 from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
-from .procs import NoProgress, own_processes, run_bounded
+from .procs import CwdMissing, NoProgress, own_processes, run_bounded
 from .repopath import Placing
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -185,6 +185,8 @@ def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int, owner=
                                **launch_spec(root, lane).popen_kwargs())
         except NoProgress as stalled:
             _raise_stalled(fh, lane, log_path, attempt, stalled.seconds)
+        except CwdMissing as missing:
+            raise _told_the_cwd_fix(fh, lane, missing) from missing
         except ToolError as failed:  # a failed start: the log says why, as it does for a kill
             fh.write(f"\n[crapkit] {failed}\n")
             raise
@@ -194,6 +196,15 @@ def _stream_command(root: Path, lane: Lane, log_path: Path, attempt: int, owner=
                             f"(attempt {attempt}); log: {log_path}")
         fh.write(f"\n(exit {code})\n")
     return code
+
+
+def _told_the_cwd_fix(fh, lane: Lane, missing: CwdMissing) -> ToolError:
+    """A lane whose cwd names no directory, with the fix: the lane's `cwd` in
+    crapkit.toml, as the loader read it, or the directory itself."""
+    told = ToolError(f"{missing}; fix cwd = {lane.cwd!r} for this lane in crapkit.toml, "
+                     "or create that directory")
+    fh.write(f"\n[crapkit] {told}\n")
+    return told
 
 
 def _attempt_once(root: Path, lane: Lane, log_path: Path, attempt: int, owner=None) -> int | None:
@@ -1003,7 +1014,7 @@ def _escapes_repo(path: str) -> bool:
     return _is_absolute(path) or path.startswith("../")
 
 
-def _unreached_paths(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str, ...]:
+def _unreached_paths(matchers: tuple[ScopeMatch, ...], coverage: dict) -> tuple[str, ...]:
     """The paths this lane's scopes declare when NOTHING the artifact measured
     reaches any of them, else (). Empty too when the lane's scopes declare no
     path at all: nothing to compare against is not evidence.
@@ -1015,7 +1026,6 @@ def _unreached_paths(lane: Lane, coverage: dict, scope_paths: dict) -> tuple[str
     individual file, and the prefix half of that is `src/faro/core.py/`, a path
     that exists neither in the config the reader is about to open nor on disk.
     """
-    matchers = _lane_matchers(lane, scope_paths)
     if not matchers or any(owning_scope(path, matchers) for path in coverage):
         return ()
     return tuple(dict.fromkeys(m.path for m in matchers))
@@ -1082,21 +1092,66 @@ def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -
             f"untested; it reports paths like {_sample(inside)}. {lane_format(lane).ABSOLUTE_FIX}")
 
 
-def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
+def _unmeasured_message(lane: Lane, coverage: dict, declared, meant: str) -> str:
     reports = f"; it measured {_sample(coverage)}" if coverage else ""
     return (f"{_zero_overlap(lane, coverage, declared)}, so every function in those "
             f"scopes will score untested{reports} — either nothing in them is exercised yet, "
-            f"{_unmeasured_reading(lane)}")
+            f"{_unmeasured_reading(lane, meant)}")
 
 
-def _unmeasured_reading(lane: Lane) -> str:
+def _unmeasured_reading(lane: Lane, meant: str) -> str:
     """The other reading. A lane that sets path_prefix was told it needed one,
     while the prefix it set was what keyed every measured file outside its
-    scopes; the value crapkit read is the one to check."""
+    scopes; the value crapkit read is the one to check, and `meant` says which
+    value keys a file the runner named under those scopes."""
     if lane.path_prefix:
         return (f"or path_prefix {lane.path_prefix!r}, which crapkit.toml sets for this lane, "
-                "does not rebase the runner's paths onto those scopes")
+                f"does not rebase the runner's paths onto those scopes; {meant}")
     return lane_format(lane).UNMEASURED_READING
+
+
+# How many of the runner's keys the search for the meant path_prefix tries: it
+# runs only when the warning fires, and one hit is the answer.
+_MEANT_PROBES = 20
+_NOTHING_MEANT = ("no file the runner named is under those scopes with or without it, so set "
+                  "path_prefix to the directory the runner's paths are relative to")
+
+
+def _prefix_meant(lane: Lane, coverage: dict, matchers, root: Path) -> str:
+    """The path_prefix a lane that sets one was meant to hold: none, or a path
+    its scopes declare, under which a key the runner wrote names a file on disk
+    that those scopes claim. Asked of a few keys, and only for such a lane."""
+    if not lane.path_prefix:
+        return ""
+    found = next((pair for pair in _prefix_candidates(lane, coverage, matchers)
+                  if _claimed_file(root, *pair, matchers)), None)
+    return _NOTHING_MEANT if found is None else _meant(*found)
+
+
+def _prefix_candidates(lane: Lane, coverage: dict, matchers) -> list[tuple[str, str]]:
+    """(prefix, key the runner wrote): no prefix first, then each declared path."""
+    as_reported = lane_format(lane).as_reported
+    written = sorted(as_reported(lane, key) for key in coverage)[:_MEANT_PROBES]
+    return [(prefix, key) for prefix in _declared_prefixes(matchers) for key in written]
+
+
+def _declared_prefixes(matchers) -> list[str]:
+    """No prefix, then each path the lane's scopes declare, the root excepted:
+    under a root scope every key is claimed already."""
+    return ["", *dict.fromkeys(m.path for m in matchers if m.path != ".")]
+
+
+def _claimed_file(root: Path, prefix: str, key: str, matchers) -> bool:
+    path = posixpath.join(prefix, key) if prefix else key
+    return owning_scope(path, matchers) is not None and (root / path).is_file()
+
+
+def _meant(prefix: str, key: str) -> str:
+    if not prefix:
+        return (f"without path_prefix the runner's {key} is a file those scopes claim, so drop "
+                "path_prefix from this lane")
+    return (f"path_prefix = {prefix!r} would key the runner's {key} as {prefix}/{key}, a file "
+            "those scopes claim")
 
 
 def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
@@ -1125,7 +1180,8 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
     come from somewhere else, and the absolute in-tree ones are what the same
     wrong run reports about the files it did reach.
     """
-    declared = _unreached_paths(lane, coverage, scope_paths or {})
+    matchers = _lane_matchers(lane, scope_paths or {})
+    declared = _unreached_paths(matchers, coverage)
     if not declared:
         return
     elsewhere, inside = _split_escaped(root, _escaped_paths(lane, coverage))
@@ -1133,7 +1189,8 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
         raise ToolError(_wrong_tree_message(lane, coverage, declared, elsewhere))
     if inside:
         raise ToolError(_absolute_message(lane, coverage, declared, inside))
-    print(f"crapkit: {_unmeasured_message(lane, coverage, declared)}", file=sys.stderr)
+    meant = _prefix_meant(lane, coverage, matchers, root)
+    print(f"crapkit: {_unmeasured_message(lane, coverage, declared, meant)}", file=sys.stderr)
 
 
 def _results_summary(root: Path, lane: Lane) -> tuple[set[str], dict, str]:

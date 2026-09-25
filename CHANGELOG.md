@@ -55,11 +55,14 @@
   found`, and such a file scored untested with nothing saying why. init's default globs
   are left out.
 - The unmeasured-scope warning quotes the `path_prefix` a lane sets when that prefix keys
-  every measured file outside its scopes. It told the user to set `path_prefix`, which
-  was already set.
+  every measured file outside its scopes, and names the value that would key a file the
+  runner named under them: `path_prefix = 'api' would key the runner's src/calc.py as
+  api/src/calc.py`, or no prefix at all. It told the user to set `path_prefix`, which was
+  already set.
 - A lane whose `cwd` names no directory fails as that lane, with `cwd <path> is not a
-  directory, so the command never ran`, and a run with no lane left exits 5. `crapkit
-  coverage` ended in a Python traceback and exit 1.
+  directory, so the command never ran; fix cwd = 'nope' for this lane in crapkit.toml, or
+  create that directory`, and a run with no lane left exits 5. `crapkit coverage` ended in
+  a Python traceback and exit 1.
 - A file argument in any case or shell spelling names the file git names: `SRC\app.ts` on
   a case-insensitive disk, and on Windows `/c/...` from Git Bash, `/mnt/c/...` from WSL,
   and `\\localhost\C$\...`, `\\?\C:\...` and `\\?\UNC\localhost\C$\...` as their drive.

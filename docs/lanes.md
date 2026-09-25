@@ -876,9 +876,15 @@ file, so every function fell to `untested` and scored as if nothing tested it. T
 still exits 0. The one sign is a stderr line that opens
 `crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare`.
 A lane with no prefix is told the runner may report paths it needs `path_prefix` to
-rebase. A lane whose prefix names the wrong directory is told which prefix crapkit read:
+rebase. A lane whose prefix names the wrong directory is told which prefix crapkit read,
+and which prefix would key a file the runner named that is on disk and in the lane's
+scopes:
 `or path_prefix 'web', which crapkit.toml sets for this lane, does not rebase the
-runner's paths onto those scopes`.
+runner's paths onto those scopes; path_prefix = 'api' would key the runner's src/calc.py
+as api/src/calc.py, a file those scopes claim`. When the runner's paths need no prefix,
+the line says to drop `path_prefix` from the lane. When no declared path holds a file the
+runner named, it says to set `path_prefix` to the directory the runner's paths are
+relative to.
 
 Any spelling of the right directory works, because `path_prefix` is read the way a scope
 path is: `api\`, `./api/`, `.\api\` and `/api/` all read `api/`, and on a disk that ignores

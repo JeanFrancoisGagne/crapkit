@@ -176,14 +176,15 @@ def test_an_absolute_coveragepy_key_stays_absolute_for_the_wrong_tree_check(tmp_
     assert list(per_file) == [key.replace("\\", "/")]
 
 
-def _judged(capsys, root: Path, prefix: str) -> str:
-    """What the lane says about an artifact keyed `pkg/mod.py`, read under
-    `prefix`: nothing when the keys reach the scope, else the warning."""
+def _judged(capsys, root: Path, prefix: str, key: str = "pkg/mod.py") -> str:
+    """What the lane says about an artifact keyed `key`, read under `prefix`:
+    nothing when the keys reach the scope, else the warning."""
     from crapkit.lanes import _judge_artifact_scope
 
     cfg = _load(root, _lane(path_prefix=prefix))
     artifact = root / ".crapkit" / "cov.json"
-    artifact.write_text(json.dumps(REPORT), encoding="utf-8")
+    artifact.write_text(json.dumps({**REPORT, "files": {key: REPORT["files"]["pkg/mod.py"]}}),
+                        encoding="utf-8")
     per_file, _, _ = coverage_py.read(cfg.lanes[0], root, artifact)
     capsys.readouterr()
     _judge_artifact_scope(cfg.lanes[0], per_file, cfg.scope_paths, root)
@@ -195,17 +196,41 @@ def test_a_path_prefix_spelling_that_folds_earns_no_warning(tmp_path, capsys, pr
     assert _judged(capsys, _tree(tmp_path), prefix) == ""
 
 
+READ = ("or path_prefix 'web', which crapkit.toml sets for this lane, does not rebase the "
+        "runner's paths onto those scopes; ")
+
+
 @pytest.mark.parametrize("prefix", ["web", "web\\", "./web/", "/web"])
-def test_the_unmeasured_warning_names_the_path_prefix_it_read(tmp_path, capsys, prefix):
+def test_the_unmeasured_warning_names_the_path_prefix_it_read_and_the_one_meant(tmp_path, capsys,
+                                                                               prefix):
     """It quoted `backend\\/pkg/mod.py` and told the reader to set path_prefix,
     which was already set: the value that broke the keys went unnamed. It now
-    names the prefix as crapkit read it, and stops asking for one."""
+    names the prefix as crapkit read it, and the one under which a file the
+    runner named is on disk and in a scope."""
     err = _judged(capsys, _tree(tmp_path), prefix)
 
     assert "it measured web/pkg/mod.py" in err, err
-    assert err.rstrip().endswith("or path_prefix 'web', which crapkit.toml sets for this lane, "
-                                 "does not rebase the runner's paths onto those scopes"), err
+    assert err.rstrip().endswith(READ + "path_prefix = 'backend' would key the runner's "
+                                 "pkg/mod.py as backend/pkg/mod.py, a file those scopes claim"), err
     assert "needs path_prefix" not in err
+
+
+def test_the_unmeasured_warning_says_to_drop_a_path_prefix_the_keys_never_needed(tmp_path,
+                                                                                capsys):
+    err = _judged(capsys, _tree(tmp_path), "web", key="backend/pkg/mod.py")
+
+    assert err.rstrip().endswith(READ + "without path_prefix the runner's backend/pkg/mod.py "
+                                 "is a file those scopes claim, so drop path_prefix from this "
+                                 "lane"), err
+
+
+def test_the_unmeasured_warning_says_what_to_set_when_no_file_the_runner_named_is_found(tmp_path,
+                                                                                       capsys):
+    err = _judged(capsys, _tree(tmp_path), "web", key="elsewhere/q.py")
+
+    assert err.rstrip().endswith(READ + "no file the runner named is under those scopes with "
+                                 "or without it, so set path_prefix to the directory the "
+                                 "runner's paths are relative to"), err
 
 
 def test_a_lane_without_path_prefix_keeps_the_hint_to_set_one(tmp_path, capsys):

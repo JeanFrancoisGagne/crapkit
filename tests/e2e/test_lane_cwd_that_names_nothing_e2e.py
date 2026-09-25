@@ -68,7 +68,8 @@ def test_a_lane_cwd_that_names_no_directory_fails_the_lane_by_name(tmp_path, cwd
     (line,) = [ln for ln in res.stderr.splitlines() if "FAILED" in ln]
     where = str(repo / cwd)
     assert line == (f"crapkit: lane 'py' FAILED: cwd {where} is not a directory, "
-                    "so the command never ran"), line
+                    f"so the command never ran; fix cwd = '{cwd}' for this lane in "
+                    "crapkit.toml, or create that directory"), line
     assert "every lane failed (1 of 1)" in res.stderr
 
 
