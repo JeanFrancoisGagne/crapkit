@@ -706,7 +706,10 @@ ranks the whole repository instead of the diff.
 The action installs crapkit from `$GITHUB_ACTION_PATH`, which is its own checkout of the
 ref you pinned in `uses:`. So a pin left at last month's tag scores your tree with last
 month's crapkit rather than with whatever released since, and pinning a tag is the whole
-version policy; the snippets above name the current release.
+version policy; the snippets above name the current release. Move the pin in the same commit
+that re-seeds the marks under a new analysis version: an Action one release behind the marks
+refuses them with exit 3 on every pull request
+([a team's upgrade](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#a-team-upgrades-every-reader-before-the-re-seed-lands)).
 
 ### What the comment looks like
 

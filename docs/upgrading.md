@@ -48,7 +48,25 @@ crapkit verify
 
 `ratchet seed` rewrites the marks file's stamp to the older analysis version. Commit
 that only when the whole team moves back: a clone on the newer release refuses the
-file in turn, with the same exit 3.
+file in turn, with the same exit 3. From 0.8.1 on, `ratchet seed` and `ratchet prune`
+refuse marks a newer release wrote; going back to such a release, restore the
+`crapkit-ratchet.tsv` it last committed from git history instead of re-seeding.
+
+## A team upgrades every reader before the re-seed lands
+
+The marks file carries the analysis version of the crapkit that seeded it, and an older
+crapkit refuses marks a newer one seeded. So the commit that re-seeds under a new analysis
+version is the last step of a team's upgrade, not the first. Upgrade every clone, the CI
+pin and the pre-commit `rev` before you commit marks seeded under the newer analysis, and
+move the Action's `uses:` pin in the same commit as the re-seed, so no job measures those
+marks with the older release.
+
+A reader you missed exits 3 on the committed marks. From 0.8.1 an older release that meets
+marks a newer one wrote says so, `the marks come from a newer crapkit than this install`,
+asks for an upgrade, and its `ratchet seed` and `ratchet prune` refuse the file. 0.8.0 and
+older releases instead name `crapkit ratchet seed`, and that seed restamps the team's marks
+under the older analysis, after which every upgraded teammate's verify refuses them. Upgrade
+that reader rather than follow the line.
 
 ## Measure before changing marks
 

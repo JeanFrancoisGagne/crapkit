@@ -179,21 +179,24 @@ def _pick_baseline(root: Path, store: SnapshotStore, args, basis: str | None, gi
     return _verify_baseline(root, store, args.baseline, git)
 
 
-def _seed_source(store: SnapshotStore, args, baseline: dict, git) -> dict | None:
-    """The run a stamp refusal says to seed from; None keeps coverage-then-seed.
+def _seed_hint(store: SnapshotStore, args, baseline: dict, git) -> tuple[dict | None, bool]:
+    """What a stamp refusal may say about the seed that clears it: the run
+    `--baseline ID` named (None without one), and whether a failed verify pins
+    a plain `ratchet seed` to an older run (#75).
 
-    `--baseline ID` names it. Otherwise the refusal is about the run a plain
-    `ratchet seed` reads, which is verify's rule's pick whatever this verify
-    measures against. Behind a failed verify that pick is pinned: the seed signs
-    its old stamp again, a fresh coverage run lands behind the failure too, and
-    the stock remedy led back to this refusal (#75). The newer run the rule
-    passed over, which the taint warning names, is the one to seed from.
+    Only a run the caller named goes into the refusal. The newer run the taint
+    rule passed over lives in this store alone: the Action quotes the refusal in
+    a pull request comment, where its id names nothing, and on a runner that
+    keeps its workspace it was the pull request head's own run, whose seed would
+    sign the breach the failed verify found as the new ceiling. The refusal says
+    the seed is pinned; the taint warning and seed's own line name the run on
+    the machine that holds it.
     """
     from ..store import pick_baseline
 
     if args.baseline is not None:
-        return baseline
-    return pick_baseline(store.list_runs(), behind_head(git)).skipped
+        return baseline, False
+    return None, pick_baseline(store.list_runs(), behind_head(git)).skipped is not None
 
 
 def _verify_basis(root: Path, store: SnapshotStore, args, git) -> tuple[dict, str]:
@@ -237,14 +240,14 @@ def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
     return SnapshotStore(db_path)
 
 
-def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
+def _guard_ratchet_stamp(saved, name: str, named: dict | None = None, pinned: bool = False) -> None:
     """Refuse to weigh fresh scores against marks another metric produced.
 
     Runs before the lanes do: a metric bump that silently kept 40k old marks is
     what this exists to stop, and finding out after a 40-minute run is too late.
     It runs after the baseline is read, so `named`, the run `--baseline ID`
-    names or the one a failed verify kept verify's rule from, can be the run
-    the refusal says to seed from.
+    names, can be the run the refusal says to seed from, and `pinned` can say
+    a failed verify holds a plain seed on an older run.
     """
     from ..ratchet import coverage_then_seed, metric_version
 
@@ -256,23 +259,34 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
         return
     conflict = saved.stamp_conflict(metric_version())
     if conflict:
-        raise ConfigError(_stamp_refusal(conflict, named))
+        raise ConfigError(_stamp_refusal(conflict, named, pinned))
 
 
-def _stamp_refusal(conflict: str, named: dict | None) -> str:
-    """The stamp refusal, naming the seed that clears it when there is a run to name.
+# Why the stock remedy alone would loop on a store a failed verify pins.
+_PINNED_SEED = ("; a failed verify in this store pins a plain seed to an older run, and "
+                "seed's line then names the newer run to read instead")
+
+
+def _stamp_refusal(conflict: str, named: dict | None, pinned: bool = False) -> str:
+    """The stamp refusal, with what it takes to clear it on this store.
 
     The stock remedy's `ratchet seed` reads the run verify would pick. A failed
     verify can pin that to a run an older crapkit measured, or one written
     before same-line positions, and seed then keeps the old stamp or refuses
-    outright, so the remedy led back to this refusal (#75). `named` is the run
-    to seed from instead.
+    outright, so the remedy alone led back to this refusal (#75). `named` is
+    the run `--baseline ID` named, the seed to name back; `pinned` adds that a
+    failed verify holds the plain seed. Marks a newer crapkit wrote carry no
+    seed remedy at all: an upgrade clears them, and a seed would restamp them
+    backwards.
     """
     from ..ratchet import coverage_then_seed
 
-    if named is None:
+    stock = coverage_then_seed()
+    if not conflict.endswith(stock):
         return conflict
-    return conflict.removesuffix(coverage_then_seed()) + _named_seed(named)
+    if named is not None:
+        return conflict.removesuffix(stock) + _named_seed(named)
+    return conflict + (_PINNED_SEED if pinned else "")
 
 
 def _named_seed(named: dict) -> str:
@@ -714,7 +728,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     git = GitFacts(root)
     dirty = set(git.status_names())
     baseline, basis = _verify_basis(root, store, args, git)
-    _guard_ratchet_stamp(saved, cfg.ratchet_file, _seed_source(store, args, baseline, git))
+    _guard_ratchet_stamp(saved, cfg.ratchet_file, *_seed_hint(store, args, baseline, git))
     _emit_baseline(root, store, baseline, args.emit_baseline)
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.

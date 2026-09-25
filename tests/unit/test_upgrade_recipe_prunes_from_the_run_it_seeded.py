@@ -56,15 +56,21 @@ def test_seed_and_prune_from_the_named_run_leave_only_the_new_name(repo, capsys)
     assert marked_names(repo) == ["new( x )"]
 
 
-def test_a_plain_prune_after_the_named_seed_reads_the_pinned_run_instead(repo, capsys):
+def test_a_plain_prune_after_the_named_seed_refuses_the_pinned_run(repo, capsys):
+    """The plain prune reads the pinned run analysis 10 measured, and dropped the
+    new-name mark seed had just written under 11 as code that was gone. It now
+    refuses, writes nothing, and names the run seed read."""
     fresh = upgrade_store(repo)
     assert main(["ratchet", "seed", "--baseline", str(fresh), "--repo", str(repo)]) == 0
+    before = (repo / MARKS).read_text(encoding="utf-8")
     capsys.readouterr()
 
-    assert main(["ratchet", "prune", "--repo", str(repo)]) == 0
+    assert main(["ratchet", "prune", "--repo", str(repo)]) == 3
 
-    assert marked_names(repo) == ["old( x )"]
-    assert f"(pass `--baseline {fresh}` to read it)" in capsys.readouterr().out
+    err = capsys.readouterr().err
+    assert (repo / MARKS).read_text(encoding="utf-8") == before
+    assert "ratchet prune refused" in err and "under the older [" in err, err
+    assert f"pass `--baseline {fresh}` to read run {fresh}" in err, err
 
 
 def _pinned_sentence(page: str, anchor: str) -> str:

@@ -60,5 +60,5 @@ def test_the_merge_refusal_names_coverage_then_seed(tmp_path):
 
     assert str(refused.value) == (
         f"ratchet merge refused: ours is [{OLD}] and theirs is [{NEW}] — marks from different "
-        "metric versions cannot merge; run `crapkit coverage`, then re-baseline one side with "
-        "`crapkit ratchet seed`")
+        f"metric versions cannot merge; theirs is newer, so with a crapkit that measures [{NEW}], "
+        "run `crapkit coverage`, then re-baseline the merged marks with `crapkit ratchet seed`")

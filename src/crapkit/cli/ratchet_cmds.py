@@ -171,14 +171,30 @@ def _merge_stamp(texts: list[str]) -> None:
     Reconciling marks across metrics means picking a minimum between numbers
     produced by different rules, which is not a comparison at all.
     """
-    from ..ratchet import coverage_then_seed, read_stamp
+    from ..ratchet import read_stamp
 
     ours, theirs = read_stamp(texts[1]), read_stamp(texts[2])
     if ours != theirs:
         raise ConfigError(
             f"ratchet merge refused: ours is [{ours or 'unstamped'}] and theirs is "
             f"[{theirs or 'unstamped'}] — marks from different metric versions cannot "
-            f"merge; {coverage_then_seed('re-baseline one side')}")
+            f"merge; {_merge_remedy(ours, theirs)}")
+
+
+def _merge_remedy(ours: str, theirs: str) -> str:
+    """Re-seed under the newer side's metric. "re-baseline one side" said neither
+    which side nor under which crapkit, and a seed under the older release
+    stamps its own older metric, so the next merge refused again."""
+    from ..ratchet import coverage_then_seed, newer_tools
+
+    if newer_tools(theirs, ours):
+        side, stamp = "theirs", theirs
+    elif newer_tools(ours, theirs):
+        side, stamp = "ours", ours
+    else:
+        return coverage_then_seed("re-baseline one side")
+    return (f"{side} is newer, so with a crapkit that measures [{stamp}], "
+            f"{coverage_then_seed('re-baseline the merged marks')}")
 
 
 def _ratchet_merge(files: list) -> int:
@@ -374,6 +390,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     fresh = store.read_scored(latest["id"])
     require_unambiguous(fresh, run_id=latest["id"], advice=_identity_advice(work, action))
     saved = RatchetFile.read(root / cfg.ratchet_file)
+    _refuse_newer_marks(saved, work, action)
     marks = saved.entries
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store,
                                           entries=marks, moves_marks=True)
@@ -389,6 +406,42 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(work.skipped, work.newer)}{metric_note}")
     return 0
+
+
+# What seed or prune would do to marks from a run an older metric measured.
+_BACKWARDS = {"seed": "this seed would restamp them under the older metric, and verify under the "
+                      "newer one would refuse them",
+              "prune": "this prune would drop every mark whose function the older reader names "
+                       "differently, as if its code were gone"}
+
+
+def _refuse_newer_marks(saved, work: _WorkRun, action: str) -> None:
+    """Refuse to rewrite marks a newer crapkit or lizard recorded than the one
+    that measured the run. seed restamped the file under the run's older metric,
+    and prune judged which marks were gone by the older reader's names. Two
+    ways to get there: this install is older than the marks (upgrade it), or a
+    failed verify pins seed and prune to a run an older release measured (read
+    a newer run)."""
+    from ..ratchet import metric_version, newer_tools, run_stamp
+
+    recorded = saved.metric_stamp
+    newer = newer_tools(recorded, metric_version())
+    if newer:
+        raise ConfigError(_newer_than_install(saved, action, newer))
+    measured = run_stamp(work.run["tool_versions"])
+    if newer_tools(recorded, measured):
+        raise ConfigError(f"ratchet {action} refused: {saved.path.name} was recorded under "
+                          f"[{recorded}] and run {work.run['id']} under the older [{measured}]; "
+                          f"{_BACKWARDS[action]}; {_way_off(work.newer)}")
+
+
+def _newer_than_install(saved, action: str, newer: list[str]) -> str:
+    from ..ratchet import metric_version, upgrade_remedy
+
+    return (f"ratchet {action} refused: {saved.path.name} was recorded under "
+            f"[{saved.metric_stamp}] and this crapkit measures [{metric_version()}] — "
+            f"{upgrade_remedy(newer)}; {_BACKWARDS[action]}. A team going back to this release "
+            f"on purpose restores the {saved.path.name} it last wrote from git history")
 
 
 def _identity_advice(work: _WorkRun, action: str) -> str:

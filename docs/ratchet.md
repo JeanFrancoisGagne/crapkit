@@ -299,12 +299,13 @@ Scores measured under different rules are not comparable. The file's first line 
 analysis version and the lizard behind the numbers, so crapkit can refuse instead of
 comparing them silently.
 
-Three cases:
+Four cases:
 
 | Recorded stamp | Behavior |
 |---|---|
 | Matches the running metric | Compare normally. |
-| Differs | **Refused**, exit 3. |
+| Older than the running metric | **Refused**, exit 3: run `coverage`, then re-seed. |
+| Newer: a newer crapkit or lizard wrote the marks | **Refused**, exit 3: upgrade this install. `ratchet seed` and `ratchet prune` refuse these marks too. |
 | Absent (a file written before stamping) | Warn, then apply the function-identity checks below. Anonymous JavaScript/TypeScript marks need reader proof. |
 
 ```
@@ -312,6 +313,23 @@ $ crapkit verify
 crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
 EXIT=3
 ```
+
+A team upgrades one member at a time, so the other direction is the common one. A teammate
+on the newer release re-seeded and committed the marks, and your crapkit, the Action pinned
+one tag behind, or a pre-commit `rev` left at the old tag, measures the older analysis:
+
+```
+$ crapkit verify
+crapkit: ratchet marks were recorded under [crapkit-analysis=12 lizard=1.24.0] but this run measures [crapkit-analysis=11 lizard=1.24.0] — the marks come from a newer crapkit than this install; upgrade it to the version that wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than re-seed, which would restamp the team's marks backwards and make every upgraded teammate's verify refuse them
+EXIT=3
+```
+
+The versions compare field by field, as numbers: `crapkit-analysis` is crapkit's, and
+`lizard` names a newer lizard when only that field moved. Seed and prune refuse the same
+file rather than write it: a seed from an older run restamped the whole file backwards, and
+a prune dropped every mark whose function the older reader names differently. A team going
+back to an older release on purpose restores the marks file that release last wrote from git
+history.
 
 ```
 $ crapkit verify
@@ -356,9 +374,15 @@ A failed verify can leave that remedy with nothing to work on. Seed reads the ru
 pick, and after a failed verify that is the run before the failure until a verify passes
 ([seed and prune pick the run verify picks](#seed-and-prune-pick-the-run-verify-picks)). A
 fresh `coverage` run sits behind the failure too, so seed reads the old run again and keeps
-its old stamp. Name the newer run instead. On such a store the refusal names it: a plain
-`crapkit verify` names the run its taint warning names, and `crapkit verify --baseline ID`
-names run ID, since verify reads `--baseline` before it checks the stamp:
+its old stamp. Name the newer run instead. A plain `crapkit verify` on such a store says so
+at the end of its refusal: `a failed verify in this store pins a plain seed to an older run,
+and seed's line then names the newer run to read instead`. The taint warning printed above
+the refusal names that run and the flag that reads it. The refusal leaves the id out on
+purpose: the Action quotes the refusal in a pull request comment, where a run id from the
+runner's store names nothing, and on a runner that keeps its workspace that run was the pull
+request's own head, whose seed would sign the failed verify's findings as the new ceiling.
+`crapkit verify --baseline ID` names run ID, since you named it and verify reads
+`--baseline` before it checks the stamp:
 
 ```
 $ crapkit verify --baseline 12
@@ -370,7 +394,16 @@ EXIT=3
 the named run was measured under another metric too, the refusal asks for a `coverage` run
 first and a seed from the run it writes. A plain seed on the pinned run says the same at the
 end of its line: it names the newer run this crapkit measured to pass to `--baseline`, or asks
-for a `coverage` run and its id, instead of a fresh `coverage` and another seed.
+for a `coverage` run and its id, instead of a fresh `coverage` and another seed. Once the
+marks carry a newer stamp than the pinned run, a plain seed or prune refuses them and writes
+nothing: the seed would restamp them under the older metric, and the prune would drop every
+mark whose function the older reader names differently. The refusal names the same run:
+
+```
+$ crapkit ratchet prune
+crapkit: ratchet prune refused: crapkit-ratchet.tsv was recorded under [crapkit-analysis=11 lizard=1.24.0] and run 1 under the older [crapkit-analysis=10 lizard=1.24.0]; this prune would drop every mark whose function the older reader names differently, as if its code were gone; pass `--baseline 3` to read run 3
+EXIT=3
+```
 
 Reseeding from a fresh run can update compatible marks; changed function membership needs
 the identity review below first.
@@ -545,7 +578,16 @@ needs no ordinal knowledge to get that right. The `#` sits in the name field, so
 never opens with the `#` that introduces the metric stamp.
 
 The driver refuses to merge across metric versions, and git falls back to a normal text
-conflict for you to resolve after re-seeding one side:
+conflict for you to resolve after re-seeding. When one side's stamp is newer, the refusal
+names that side and the metric to re-seed under, because a seed under the older release
+stamps its own older metric and the next merge refuses again:
+
+```
+$ git merge main
+crapkit: ratchet merge refused: ours is [crapkit-analysis=11 lizard=1.24.0] and theirs is [crapkit-analysis=12 lizard=1.24.0] — marks from different metric versions cannot merge; theirs is newer, so with a crapkit that measures [crapkit-analysis=12 lizard=1.24.0], run `crapkit coverage`, then re-baseline the merged marks with `crapkit ratchet seed`
+```
+
+When the stamps do not compare, as with an unstamped side, it asks you to re-seed one side:
 
 ```
 $ git merge legacy

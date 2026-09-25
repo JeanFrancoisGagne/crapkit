@@ -237,6 +237,39 @@ nothing. Each of these now gets a line naming the object and the next step:
 - The taint rule is unchanged: a failed verify still stands in front of the runs made
   after it, whichever branch it ran on.
 
+### Marks a newer crapkit wrote are sent to an upgrade, not a re-seed
+
+- A team upgrades one member at a time. When the upgraded teammate's re-seeded marks
+  met an older crapkit, the Action pinned one tag behind included, verify's refusal told
+  that reader to run coverage and re-seed. The seed restamped the team's marks under the
+  older analysis, and every upgraded teammate's verify then refused them. The refusal now
+  compares the two stamps field by field and, when the marks are the newer side, says
+  ``the marks come from a newer crapkit than this install; upgrade it to the version that
+  wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than
+  re-seed``. A newer lizard alone is named as lizard. Marks an older crapkit wrote keep the
+  coverage-then-seed remedy.
+- `ratchet seed` and `ratchet prune` refuse, exit 3, to rewrite marks a newer crapkit or
+  lizard recorded from a run an older one measured, and write nothing. seed restamped the
+  file backwards, and prune dropped every mark whose function the older reader names
+  differently. When this install is the older one, the refusal asks for the upgrade. When a
+  failed verify pins them to a run an older release measured, as a plain prune after
+  `ratchet seed --baseline N` on the upgrade recipe's pinned store was, it names the newer
+  run to pass to `--baseline`: that prune used to drop the marks the named seed had just
+  written.
+- The merge driver's stamp refusal names the newer side and the metric to re-seed under:
+  `theirs is newer, so with a crapkit that measures [...]`. "re-baseline one side" named
+  neither, and a seed under the older release left the stamps apart.
+- A plain `verify` on a store a failed verify pins no longer ends its stamp refusal with
+  ``re-baseline from run N with `crapkit ratchet seed --baseline N` ``. The Action quotes
+  that line in the pull request comment, where run N, from the runner's store, names
+  nothing, and on a runner that keeps its workspace it was the pull request head's own run,
+  whose seed would have signed the breach as the new ceiling. The refusal now says a failed
+  verify pins the plain seed, and the taint warning above it and seed's own line name the
+  run. `verify --baseline N` still names run N, since you named it.
+- docs/upgrading.md says to upgrade every clone, CI pin and pre-commit `rev` before
+  committing marks seeded under a newer analysis, and to move the Action's `uses:` pin in
+  the same commit as the re-seed.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.
