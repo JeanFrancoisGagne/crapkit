@@ -1794,7 +1794,9 @@ def _spawned_cli() -> tuple[str, str | None] | None:
     over: inside a project `.venv` with no `crapkit` on PATH it printed nothing
     and exited 0 while every edit fired a command that cannot start, and beside
     an older pipx copy it called the two versions equal while the hook spawned
-    the older one.
+    the older one. Under uvx it found the launcher uvx had put on its own PATH
+    and on no other, and passed a plugin whose hooks could not start: PATH is
+    read without this process's own cached environment.
 
     Under uvx, `uv run --with` or `pipx run` the PATH doctor inherits starts with
     the environments that runner built for this one command. The plugin's hooks

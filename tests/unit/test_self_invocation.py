@@ -10,6 +10,10 @@ ran in exits 127 on.
 The process knows how it was started. `sys.argv[0]` is the console script when
 that is what launched it and the `__main__.py` inside the package when
 `python -m` did, so the message can name the form that resolves.
+
+uvx starts the console script too, from an environment in uv's cache that only
+the process uvx starts has on PATH. `uvx crapkit init` told its reader to run
+`crapkit coverage`, and the shell answered 127.
 """
 import sys
 from pathlib import Path
@@ -21,6 +25,17 @@ from crapkit.invocation import _self
 
 MODULE_RUN = str(Path(sys.prefix) / "Lib" / "site-packages" / "crapkit" / "__main__.py")
 CONSOLE_RUN = str(Path(sys.prefix) / "Scripts" / "crapkit.exe")
+# The tag line the cache directory spec fixes, which uv and pipx both write at
+# the root of their caches.
+CACHE_TAG = "Signature: 8a477f597d28d172789f06886806bc55\n"
+
+
+@pytest.fixture(autouse=True)
+def _outside_any_runner(tmp_path, monkeypatch):
+    """An installed venv no runner started, whatever runs this suite: `uv run`
+    leaves UV set, and a cached environment puts the prefix under a tag."""
+    monkeypatch.delenv("UV", raising=False)
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "venv"))
 
 
 @pytest.fixture()
@@ -33,6 +48,28 @@ def as_module(monkeypatch):
 def as_console(monkeypatch):
     """argv as the installed console script leaves it."""
     monkeypatch.setattr(sys, "argv", [CONSOLE_RUN, "coverage"])
+
+
+def _cached_env(cache: Path) -> Path:
+    """An environment the way uv and pipx cache one: a directory under a cache
+    root that CACHEDIR.TAG marks."""
+    env = cache / "archive-v0" / "Ds2JZStGIUIB0F1a"
+    (env / "bin").mkdir(parents=True)
+    (cache / "CACHEDIR.TAG").write_text(CACHE_TAG, encoding="utf-8")
+    return env
+
+
+def _run_from(env: Path, monkeypatch) -> None:
+    monkeypatch.setattr(sys, "prefix", str(env))
+    monkeypatch.setattr(sys, "argv", [str(env / "bin" / "crapkit"), "init"])
+
+
+@pytest.fixture()
+def as_uvx(tmp_path, monkeypatch):
+    """argv, prefix and environment as `uvx crapkit` leaves them: the launcher in
+    an environment under uv's cache, and uv's own path in UV."""
+    _run_from(_cached_env(tmp_path / "uv" / "cache"), monkeypatch)
+    monkeypatch.setenv("UV", "/usr/local/bin/uv")
 
 
 # --- the helper itself -------------------------------------------------------
@@ -72,6 +109,38 @@ def test_an_empty_argv_falls_back_to_the_module_form(monkeypatch):
     assert _self().endswith(" -m crapkit")
 
 
+def test_a_uvx_run_names_uvx(as_uvx):
+    """The red loop: `uvx crapkit init` printed `crapkit coverage`, and a shell
+    with no crapkit on PATH answered 127. uvx is what the reader typed, and it
+    finds the same cached environment again."""
+    assert _self() == "uvx crapkit"
+
+
+def test_a_cached_run_uv_did_not_start_names_its_interpreter(tmp_path, monkeypatch):
+    """`pipx run crapkit` caches its environment the same way and sets no UV.
+    Nothing names the runner, and the interpreter running this process resolves
+    for as long as the cache keeps it."""
+    env = _cached_env(tmp_path / "pipx")
+    _run_from(env, monkeypatch)
+    monkeypatch.setattr(sys, "executable", "/cache/pipx/0ef8/bin/python")
+
+    assert _self() == "/cache/pipx/0ef8/bin/python -m crapkit"
+
+
+def test_an_installed_tool_under_uv_names_the_console_script(tmp_path, monkeypatch):
+    """`uv tool install crapkit` tags the tool's own environment, as uv tags
+    every environment it creates, and puts the console script on PATH. A shell
+    `uv run` started still carries UV. Only a tag above the environment makes
+    it a cache."""
+    env = tmp_path / "share" / "uv" / "tools" / "crapkit"
+    (env / "bin").mkdir(parents=True)
+    (env / "CACHEDIR.TAG").write_text(CACHE_TAG, encoding="utf-8")
+    _run_from(env, monkeypatch)
+    monkeypatch.setenv("UV", "/usr/local/bin/uv")
+
+    assert _self() == "crapkit"
+
+
 # --- the messages ------------------------------------------------------------
 
 def _init_next_step(_tmp):
@@ -108,3 +177,8 @@ def test_the_module_run_prescribes_the_interpreter_that_is_running_it(message, t
 
     assert f"`{_self()} coverage`" in text
     assert "`crapkit coverage`" not in text
+
+
+@MESSAGES
+def test_a_uvx_run_prescribes_uvx(message, tmp_path, as_uvx):
+    assert "`uvx crapkit coverage`" in message(tmp_path)

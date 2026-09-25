@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -471,6 +472,41 @@ def test_an_empty_path_resolves_no_crapkit_at_all(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(empty))
 
     assert RESOLVE.__wrapped__() is None
+
+
+def _uvx_process(tmp_path: Path, monkeypatch) -> Path:
+    """This process as `uvx crapkit` starts it: running from an environment in
+    uv's cache, whose bin uv put first on this process's PATH and nowhere else.
+    Returns that bin, holding the launcher uvx started."""
+    cache = tmp_path / "uv" / "cache"
+    env = cache / "archive-v0" / "Ds2JZStGIUIB0F1a"
+    _crapkit_shim(env / "bin", CLI)
+    (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n",
+                                        encoding="utf-8")
+    monkeypatch.setattr(sys, "prefix", str(env))
+    return env / "bin"
+
+
+def test_the_launcher_uvx_put_on_this_process_path_is_no_crapkit_on_path(tmp_path,
+                                                                         monkeypatch):
+    """`uvx crapkit doctor --plugin-root` found its own cached launcher on the
+    PATH uvx built for it, and passed with exit 0 on a machine whose shell had
+    no crapkit. The hook starts from the PATH Claude Code hands it, which uvx
+    never touched, so every edit fired a command that could not start."""
+    monkeypatch.setenv("PATH", str(_uvx_process(tmp_path, monkeypatch)))
+
+    assert RESOLVE.__wrapped__() is None
+
+
+def test_under_uvx_the_crapkit_installed_beyond_the_cache_answers(tmp_path, monkeypatch):
+    own = _uvx_process(tmp_path, monkeypatch)
+    _crapkit_shim(tmp_path / "tools", "9.9.9")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(own), str(tmp_path / "tools")]))
+
+    executable, version = RESOLVE.__wrapped__()
+
+    assert Path(executable).parent == tmp_path / "tools", executable
+    assert version == "9.9.9", version
 
 
 def test_an_executable_that_cannot_run_has_no_observed_version(tmp_path):
