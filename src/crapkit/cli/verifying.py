@@ -628,16 +628,18 @@ def _warn_baseline_gaps(found, baseline: dict, provenance: dict, new_failures) -
 
 def _why_unread(baseline: dict, name: str) -> str:
     """Why the baseline's own failure list for a lane was passed over."""
-    from ..lane_results import retries_unrecorded
+    from ..lane_results import lists_failures, retries_unrecorded
 
-    if retries_unrecorded(baseline) and "failures" in baseline["lanes"].get(name, {}):
+    if retries_unrecorded(baseline) and lists_failures(baseline["lanes"].get(name, {})):
         return (f"was written by crapkit {baseline['tool_versions']['crapkit']}, which kept a "
                 "failure that passed its flake retry in its failure list")
     return "recorded no test results"
 
 
 def _unjudged_line(name: str, baseline: dict, provenance: dict, new_failures) -> str:
-    count = len(set(new_failures) & set(provenance[name]["failures"]))
+    from ..lane_results import recorded_failures
+
+    count = len(set(new_failures) & recorded_failures(provenance, name))
     where = (f"the baseline file {baseline['file']} holds no record of" if baseline.get("file")
              else "no trusted run at or behind the baseline recorded")
     return (f"warning: lane {name!r}: {where} which of its tests failed, so its {count} new "
@@ -648,8 +650,10 @@ def _unjudged_line(name: str, baseline: dict, provenance: dict, new_failures) ->
 def _warn_baseline_file(baseline: dict, provenance: dict) -> bool:
     """A baseline file written before files carried test results: said once,
     when a lane this run recorded results the file cannot be compared with."""
+    from ..lane_results import lists_failures
+
     stale = bool(baseline.get("file")) and not baseline["lanes"] \
-        and any("failures" in prov for prov in provenance.values())
+        and any(map(lists_failures, provenance.values()))
     if stale:
         print(f"warning: the baseline file {baseline['file']} holds no test results, so every "
               "test failure counts as new and no suite size is compared; write it again with "
@@ -708,7 +712,9 @@ def _stored_lanes(provenance: dict, retried: tuple[str, ...]) -> dict:
 
 
 def _with_retried(prov: dict, retried: tuple[str, ...]) -> dict:
-    passed = [f for f in prov.get("failures", ()) if f in retried]
+    from ..lane_results import read_results
+
+    passed = [f for f in sorted(read_results(prov).failures or ()) if f in retried]
     return {**prov, "retried_passes": passed} if passed else prov
 
 
@@ -961,9 +967,11 @@ def _flake_retry(root: Path, cfg, provenance: dict, new_failures: set) -> set:
     An id leaves the survivors only when every lane that failed it reran it
     and the rerun passed: a lane without retest_command keeps its failures,
     whatever another lane's rerun said about the same id."""
+    from ..lane_results import recorded_failures
+
     passed, kept = set(), set()
     for lane in cfg.lanes:
-        lane_new = set(provenance.get(lane.name, {}).get("failures", ())) & new_failures
+        lane_new = recorded_failures(provenance, lane.name) & new_failures
         cleared = _rerun_passes(root, lane, lane_new)
         passed |= cleared
         kept |= lane_new - cleared
@@ -1021,14 +1029,17 @@ def _suite_size_lines(name: str, source: dict | None, baseline: dict, prov: dict
     the gap. Reading that absent count as zero once turned every such run into
     a KeyError after the lane had run.
     """
+    from ..lane_results import read_results, results_of
+
     if source is None:
         return []
-    base, (noun, note) = source["lanes"][name], _count_source(source, baseline)
-    if prov.get("tests_total") is None:
+    then, now = results_of(source, name), read_results(prov)
+    noun, note = _count_source(source, baseline)
+    if now.tests is None:
         return [f"lane {name!r} wrote no test counts this run (no results_artifact was parsed), "
-                f"so {noun}'s {base['tests_total']} tests cannot be compared{note}"]
-    lines = (_fewer_tests_line(name, base["tests_total"], prov["tests_total"]),
-             _more_skips_line(name, base.get("tests_skipped"), prov.get("tests_skipped")))
+                f"so {noun}'s {then.tests} tests cannot be compared{note}"]
+    lines = (_fewer_tests_line(name, then.tests, now.tests),
+             _more_skips_line(name, then.skipped, now.skipped))
     return [f"{line} than {noun}{note}" for line in lines if line]
 
 

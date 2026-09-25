@@ -357,6 +357,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
     `git` is the caller's GitFacts when it already has one — verify asks for the
     dirty set before this runs, and that answer is the one the lanes must see too.
     """
+    from ..lane_results import failure_ids
     from ..score import SharedSpanFold, score_rows
 
     git = git or GitFacts(root)
@@ -376,7 +377,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
                         cc_only_scopes=cfg.coverage_optional_scopes,
                         shared_spans=shared_spans)
     _note_shared_spans(shared_spans, cfg)
-    test_failures = {f for prov in provenance.values() for f in prov.get("failures", ())}
+    test_failures = set(failure_ids(provenance))
     return _ScoredRun(commit, scored, provenance, lane_errors, test_failures, tool_versions,
                       corpus, cache_hits, dead_lines)
 

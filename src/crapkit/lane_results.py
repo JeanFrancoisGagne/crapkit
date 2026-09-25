@@ -52,6 +52,22 @@ def read_results(prov: dict, *, failures_trusted: bool = True) -> LaneResults:
                        frozenset(prov.get("retried_passes", ())))
 
 
+def recorded_failures(provenance: dict, name: str) -> frozenset[str]:
+    """The failures lane `name` recorded this run: none when it recorded no list,
+    or was left out of the run."""
+    return read_results(provenance.get(name, {})).failures or frozenset()
+
+
+def failure_ids(provenance: dict) -> frozenset[str]:
+    """Every failure any lane recorded this run."""
+    return frozenset().union(*(recorded_failures(provenance, name) for name in provenance))
+
+
+def lists_failures(prov: dict) -> bool:
+    """Whether a lane record holds a failure list at all, trusted or not."""
+    return read_results(prov).failures is not None
+
+
 def results_of(run: dict, name: str) -> LaneResults:
     """Lane `name`'s record in a stored run, the 0.7.x rule applied."""
     return read_results(run["lanes"].get(name, {}), failures_trusted=not retries_unrecorded(run))
@@ -142,14 +158,12 @@ def unjudged_lanes(found: BaselineFailures, provenance: dict, new_failures) -> l
     """The unrecorded lanes that hold a failure the verdict calls new: the ones
     whose new failures may predate the change under test."""
     new = set(new_failures)
-    return [name for name in found.unrecorded
-            if new & (read_results(provenance.get(name, {})).failures or set())]
+    return [name for name in found.unrecorded if new & recorded_failures(provenance, name)]
 
 
 def without_results(provenance: dict) -> list[str]:
     """Lanes whose new-failure check could not run: they recorded no failure list."""
-    return sorted(name for name, prov in provenance.items()
-                  if read_results(prov).failures is None)
+    return sorted(name for name, prov in provenance.items() if not lists_failures(prov))
 
 
 def suite_drops(behind: Callable[[], Iterable[dict]], current: dict, *,

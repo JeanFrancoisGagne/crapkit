@@ -14,7 +14,8 @@ from pathlib import Path
 import pytest
 
 from crapkit.lane_results import (LaneResults, baseline_failures, counted_record,
-                                  portable_results, results_of, suite_drops, without_results)
+                                  failure_ids, portable_results, recorded_failures, results_of,
+                                  suite_drops, without_results)
 from crapkit.snapshot import InventoryRow
 from crapkit.store import SnapshotStore, trusted_runs
 
@@ -175,3 +176,41 @@ def test_without_results_names_the_lanes_that_recorded_no_list():
     provenance = {"a": {"failures": []}, "b": {"exit_code": 1}, "c": {"tests_total": 3}}
 
     assert without_results(provenance) == ["b", "c"]
+
+
+# --- one reader: no module outside lane_results reads a lane's result fields -----
+
+import re  # noqa: E402
+
+_RAW_READ = re.compile(r'(\.get\(|\[)"(failures|tests_total|tests_skipped)"'
+                       r'|"(failures|tests_total|tests_skipped)" in ')
+
+
+def test_no_module_but_lane_results_reads_a_lanes_result_fields():
+    """Each raw read applied the absent-means-None rule by hand, and one that
+    wrote `.get("tests_total", 0)` reported a lane that ran nothing as every test
+    short. `read_results` is the one place that rule lives."""
+    src = Path(__file__).resolve().parents[2] / "src" / "crapkit"
+    raw = [f"{path.relative_to(src).as_posix()}:{number}"
+           for path in sorted(src.rglob("*.py")) if path.name != "lane_results.py"
+           for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+           if _RAW_READ.search(line)]
+
+    assert raw == []
+
+
+@pytest.mark.parametrize("provenance, expected", [
+    ({"py": {"failures": ["t::a"], "tests_total": 2}}, {"t::a"}),
+    ({"py": {"failures": [], "tests_total": 2}}, set()),
+    ({"py": {"exit_code": 0}}, set()),
+    ({}, set()),
+], ids=["listed", "empty-list", "no-list", "lane-left-out"])
+def test_a_lane_that_recorded_no_list_contributes_no_failure(provenance, expected):
+    assert recorded_failures(provenance, "py") == expected
+    assert failure_ids(provenance) == expected
+
+
+def test_failure_ids_holds_every_lanes_list():
+    provenance = {"py": {"failures": ["t::a"]}, "js": {"failures": ["s::b"]}, "go": {}}
+
+    assert failure_ids(provenance) == {"t::a", "s::b"}
