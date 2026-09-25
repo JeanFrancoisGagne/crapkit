@@ -88,4 +88,4 @@ autoupgrade = true
 "hooks.events" = "docs"
 "hooks.matcher" = "inferred"
 "hooks.exit2" = "docs"
-sources = ["calibrate.py: shim record of `gemini mcp list` in crapkit-deploy:full; @modelcontextprotocol/sdk 1.30.1 in its node_modules", "`gemini mcp list` in an untrusted folder prints 'MCP servers are configured but disabled because this folder is untrusted' and suppresses user servers too", "https://geminicli.com/docs/hooks (AfterTool, exit 2)"]
+sources = ["calibrate.py: shim record of `gemini mcp list` in crapkit-deploy:full; @modelcontextprotocol/sdk 1.30.1 in its node_modules", "`gemini mcp list` in an untrusted folder prints 'MCP servers are configured but disabled because this folder is untrusted' and suppresses user servers too", "https://geminicli.com/docs/hooks (AfterTool, exit 2)", "@google/gemini-cli 0.61.0 commands/mcp/list.ts: `gemini mcp list` gives each server 5 s (MCP_LIST_DEFAULT_TIMEOUT_MSEC) to connect unless its timeout (ms) is set; win-real-cli on a Windows host at full load saw crapkit behind the shim miss it once"]

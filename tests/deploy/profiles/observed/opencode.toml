@@ -1,0 +1,17 @@
+[spawn]
+cwd = "workspace"
+env = "inherit"
+
+[initialize]
+protocol = "2025-11-25"
+discover_first = false
+client_name = "opencode"
+
+[limits]
+
+[seen]
+version = "1.18.32"
+starts = 1
+cwd = "/work/tmp/test_calibrate_all_opencode_0/box/repo"
+env = ["AGENT", "APPDATA", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "CLAUDE_CONFIG_DIR", "CLINE_DIR", "CODEX_HOME", "COPILOT_CACHE_HOME", "COPILOT_HOME", "COPILOT_OFFLINE", "CRUSH_DISABLE_METRICS", "CRUSH_DISABLE_PROVIDER_AUTO_UPDATE", "CRUSH_GLOBAL_CONFIG", "CRUSH_GLOBAL_DATA", "DISABLE_AUTOUPDATER", "DISABLE_TELEMETRY", "GEMINI_CLI_HOME", "GEMINI_TELEMETRY_ENABLED", "GOOSE_DISABLE_KEYRING", "GOOSE_PATH_ROOT", "HOME", "JUNIE_HOME", "LANG", "LC_ALL", "LOCALAPPDATA", "NO_UPDATE_NOTIFIER", "OPENCODE", "OPENCODE_CONFIG_DIR", "OPENCODE_PID", "PATH", "PIP_CONFIG_FILE", "PI_CODING_AGENT_DIR", "TEMP", "TMP", "TMPDIR", "TZ", "USERPROFILE", "UV_FIND_LINKS", "UV_NO_INDEX", "UV_OFFLINE", "UV_PYTHON_DOWNLOADS", "UV_PYTHON_INSTALL_DIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "npm_config_audit", "npm_config_cache", "npm_config_fund", "npm_config_logs_dir", "npm_config_prefix", "npm_config_update_notifier"]
+first_line = "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{\"roots\":{}},\"clientInfo\":{\"name\":\"opencode\",\"version\":\"1.18.32\"}},\"jsonrpc\":\"2.0\",\"id\":0}\n"

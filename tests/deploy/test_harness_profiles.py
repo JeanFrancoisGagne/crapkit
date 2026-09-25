@@ -237,3 +237,86 @@ def test_win_profiles_sim(profile_key, box, templates, candidate, record_propert
         record_inferred(record_property, profile)
         return zed_on_windows(profile, box, templates, candidate)
     sim(profile_key, box, templates, candidate, record_property)
+
+
+# --- tools/deploy/calibrate.py, without a harness ------------------------------------------------
+# The kit's own tests of the comparison calibrate-all and calibrate.py share.
+# They need no sandbox and run in every job.
+
+calibrate = profiles.calibrate_module()
+PROFILE = {"spawn": {"cwd": "workspace", "env": "inherit"},
+           "initialize": {"protocol": "2025-06-18", "discover_first": False, "client_name": "one"},
+           "limits": {"tool_prefix": "crapkit__"}, "real_cli": {"command": "one", "image": "full", "version": "1.0"}}
+
+
+def observation(**changes) -> dict:
+    seen = {section: dict(fields) for section, fields in PROFILE.items() if section != "real_cli"}
+    for name, value in changes.items():
+        section, field = name.split("__")
+        seen[section][field] = value
+    return {**seen, "seen": {"version": "1.0", "starts": 1, "env": ["HOME", "PATH"]}}
+
+
+@pytest.mark.kit
+def test_calibrate_drift_names_each_differing_field():
+    assert calibrate.drift(PROFILE, observation()) == []
+    lines = calibrate.drift(PROFILE, observation(spawn__cwd="home", initialize__protocol=None))
+    assert lines == ["spawn.cwd: profile 'workspace', observed 'home'"]
+    skipping = {**PROFILE, "real_cli": {**PROFILE["real_cli"], "calibrate_skip": ["spawn.cwd"]}}
+    assert calibrate.drift(skipping, observation(spawn__cwd="home")) == []
+
+
+@pytest.mark.kit
+def test_calibrate_dump_reads_back_as_toml():
+    seen = observation(limits__tool_prefix=None)
+    assert tomllib.loads(calibrate.dump(seen)) == {**seen, "limits": {}}
+
+
+def write_profile(root: Path, key: str, **real_cli) -> None:
+    data = {**PROFILE, "real_cli": {**PROFILE["real_cli"], **real_cli}}
+    (root / f"{key}.toml").write_text(calibrate.dump(data), encoding="utf-8")
+
+
+def fake_runner(results: dict[str, dict]):
+    """A runner that writes each harness's observation the way the cell does."""
+    def run(keys: list[str], online: bool, out: Path) -> int:
+        (out / "observed").mkdir(parents=True, exist_ok=True)
+        for key in keys:
+            if key in results:
+                (out / "observed" / f"{key}.toml").write_text(calibrate.dump(results[key]), encoding="utf-8")
+        return 0
+    return run
+
+
+@pytest.mark.kit
+def test_calibrate_main_fails_on_a_pinned_drift_only(tmp_path, capsys):
+    root = tmp_path / "profiles"
+    root.mkdir()
+    for key in ("alpha", "kiro"):
+        write_profile(root, key)
+    write_profile(root, "desktop-only", image="")
+    assert calibrate.calibratable(root) == ["alpha", "kiro"]
+    argv = ["--all", "--out", str(tmp_path / "out")]
+    drifted = {"alpha": observation(spawn__env="allowlist"), "kiro": observation()}
+    assert calibrate.main(argv, fake_runner(drifted), root) == 1
+    assert "spawn.env: profile 'inherit', observed 'allowlist'" in capsys.readouterr().out
+    assert (root / "observed" / "alpha.toml").is_file()
+    latest_drift = {"alpha": observation(), "kiro": observation(spawn__cwd="home")}
+    assert calibrate.main(argv, fake_runner(latest_drift), root) == 0
+    assert calibrate.main(["kiro", "--out", str(tmp_path / "out")], fake_runner({}), root) == 0
+    never = {key: {**observation(), "seen": {"version": "2.0", "starts": 0}} for key in ("alpha", "kiro")}
+    assert calibrate.main(["kiro", "--out", str(tmp_path / "out")], fake_runner(never), root) == 0
+    assert calibrate.main(["alpha", "--out", str(tmp_path / "out")], fake_runner(never), root) == 1
+    assert "never started crapkit" in capsys.readouterr().out
+    assert calibrate.main(["alpha", "--out", str(tmp_path / "out")], fake_runner({}), root) == 1
+    assert "alpha: no observation" in capsys.readouterr().out
+
+
+@pytest.mark.kit
+def test_calibrate_refuses_an_unknown_harness(tmp_path):
+    write_profile(tmp_path, "alpha")
+    with pytest.raises(SystemExit):
+        calibrate.main(["nosuch"], fake_runner({}), tmp_path)
+    with pytest.raises(SystemExit):
+        calibrate.main([], fake_runner({}), tmp_path)
+    assert calibrate.selection(["alpha", "kiro"])[-2:] == ["-k", "alpha or kiro"]

@@ -62,8 +62,8 @@ autoupgrade = false
 
 # One tag per field above: observed, source, docs or inferred.
 [evidence]
-"spawn.cwd" = "docs"
-"spawn.env" = "inferred"
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
 "spawn.resolve" = "docs"
 "spawn.windows" = "inferred"
 "initialize.client" = "docs"
@@ -80,4 +80,4 @@ autoupgrade = false
 "hooks.events" = "docs"
 "hooks.matcher" = "docs"
 "hooks.exit2" = "docs"
-sources = ["https://aider.chat/docs/usage/lint-test.html (lint-cmd, every non-zero exit reads as lint errors)", "Aider has no MCP client; crapkit reaches it as the lint command"]
+sources = ["https://aider.chat/docs/usage/lint-test.html (lint-cmd, every non-zero exit reads as lint errors)", "Aider has no MCP client; crapkit reaches it as the lint command", "calibrate.py 2026-09-25 against aider 0.86.2: spawn.cwd, spawn.env observed as the profile says"]

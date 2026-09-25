@@ -29,17 +29,21 @@ installs it, and a repo it has measured.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import shlex
 import subprocess
+import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+import hang_guard
 from e2e import repo_templates
-from kit import repos, shim, stub_anthropic, stub_openai, writers
+from kit import repos, sandbox, shim, stub_anthropic, stub_openai, wheels, writers
+from kit.transcript import Step
 
 PROFILES = Path(__file__).resolve().parents[1] / "profiles"
 SECTIONS = ("doc", "spawn", "initialize", "limits", "hooks", "real_cli", "evidence")
@@ -362,11 +366,16 @@ def initialize_params(start: dict) -> dict:
 PLATFORM_BINS = {"nt": [Path("@cline") / "cli-windows-x64" / "bin"]}
 
 
+def _unlinked(bin_dir: Path) -> list[Path]:
+    """The platform binary directories npm left without a shim next to one .bin directory."""
+    return [bin_dir.parent / relative for relative in PLATFORM_BINS.get(os.name, [])]
+
+
 def harness_dirs(box) -> list[str]:
     """The toolchain's harness bin directories, and the platform binaries npm left unlinked."""
     listed = [Path(directory) for directory in box.toolchain.get("harness_bin", [])]
-    unlinked = [directory.parent / relative for directory in listed for relative in PLATFORM_BINS.get(os.name, [])]
-    return [str(directory) for directory in [*listed, *unlinked] if directory.is_dir()]
+    found = listed + sum((_unlinked(bin_dir) for bin_dir in listed), [])
+    return [str(directory) for directory in found if directory.is_dir()]
 
 
 def add_harnesses(box) -> None:
@@ -541,8 +550,39 @@ def session_continue(box, repo: Path, url: str):
     return ["cn", "-p", "--auto", PROMPT], {}
 
 
+# Copilot CLI's first start extracts its 160 MB package into
+# COPILOT_CACHE_HOME/pkg: 5 to 8 s in a container, 30 to 73 s on Windows, and
+# 186 to 324 s on a loaded Windows machine, where the extraction alone ran past
+# the kit's hang bound. The package is the CLI, not user state: each pytest
+# worker extracts it once, under the install bound, and each sandbox links it.
+COPILOT_WARM = "warm.done"
+
+
+def link_dir(target: Path, link: Path) -> None:
+    """`link` pointing at `target`: a junction on Windows, which needs no privilege."""
+    if link.exists():
+        return
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        import _winapi
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
+def copilot_package(box) -> None:
+    shared = box.root.parents[1] / "copilot-cache"
+    if not (shared / COPILOT_WARM).is_file():
+        step = bounded(box, ["copilot", "--version"], {"COPILOT_CACHE_HOME": str(shared)},
+                       "extract Copilot's package once for this pytest worker")
+        assert step.exit == 0, step.text()
+        (shared / COPILOT_WARM).write_text(step.stdout, encoding="utf-8")
+    link_dir(shared / "pkg", Path(box.env["COPILOT_CACHE_HOME"]) / "pkg")
+
+
 def session_copilot(box, repo: Path, url: str):
     doc_server(box, repo, "copilot-cli")
+    copilot_package(box)
     return (["copilot", "-p", PROMPT, "--allow-all-tools", "--no-auto-update"],
             {"COPILOT_PROVIDER_BASE_URL": url + "/v1", "COPILOT_MODEL": STUB_MODEL, "COPILOT_PROVIDER_API_KEY": STUB_KEY})
 
@@ -573,6 +613,30 @@ SESSIONS = {"claude-code": ("anthropic", session_claude), "opencode": ("openai",
             "crush": ("openai", session_crush), "junie": ("openai", session_junie)}
 
 
+# A Cline task in its default backend (auto) finds no hub, runs locally and
+# starts a hub daemon in the background. The hub outlives the CLI, and on
+# Windows it keeps the sandbox's .cline/data/db files locked, so the next
+# session cannot clear its basetemp. It took 54 s to come up on a loaded
+# Windows machine, and `cline hub stop` finds it only once it has written its
+# discovery file.
+
+def cline_hub_file(box) -> Path:
+    return Path(box.env["CLINE_DIR"]) / "data" / "locks" / "hub" / "production.json"
+
+
+def stop_cline_hub(box) -> None:
+    hang_guard.wait_for(cline_hub_file(box))
+    step = box.run(["cline", "hub", "stop"], cwd=box.root, note="stop the hub the Cline task started")
+    assert '"stopped":true' in step.stdout, step.text()
+
+
+LEFT_RUNNING = {"cline": stop_cline_hub}
+
+
+def stop_left_running(box, key: str) -> None:
+    LEFT_RUNNING.get(key, lambda _box: None)(box)
+
+
 def stub_session(box, repo: Path, key: str, calls: list[tuple[str, dict]], watch=None):
     """One headless run of the harness against a stub that makes `calls`;
     `watch` sees each request body as the model would, before the stub answers.
@@ -583,6 +647,7 @@ def stub_session(box, repo: Path, key: str, calls: list[tuple[str, dict]], watch
     with serve(script) as stub:
         argv, env = configure(box, repo, stub.url)
         step = box.run(argv, cwd=repo, env=env, note=f"{key} against the {kind} stub")
+        stop_left_running(box, key)
     return script, stub.bodies(), step
 
 
@@ -616,3 +681,150 @@ def result_json(text: str):
         return _first_json(text)
     except (ValueError, KeyError, TypeError, IndexError):
         return None
+
+
+# --- what a real harness did: the observation calibrate-all holds to the profile ------------
+# The shim's newest start says where the harness started crapkit, with what
+# environment, and what it offered first; the tools a model was offered give
+# the prefix. tools/deploy/calibrate.py compares these with the profile.
+
+def cwd_rule(box, repo: Path, cwd: str) -> str:
+    """A start directory as a [spawn] cwd value, or the directory itself."""
+    return {str(repo): "workspace", str(box.home): "home", repo.anchor: "root"}.get(cwd, cwd)
+
+
+def _folded_set(names) -> set[str]:
+    return {_folded(name) for name in names}
+
+
+def env_rule(box, names: set[str], configured: set[str]) -> str:
+    """The [spawn] env value a start's environment matches: the SDK default set,
+    most of the harness's own environment (inherit), or an allowlist."""
+    own = _folded_set(names - configured)
+    if own <= _folded_set(SDK_DEFAULT[os.name]):
+        return "sdk-default"
+    return "inherit" if len(own & _folded_set(box.env)) >= 0.9 * len(box.env) else "allowlist"
+
+
+def prefix(tools: list[str]) -> str | None:
+    """The part of a model-facing tool name before crapkit's own name."""
+    named = [(name, crapkit_tool(name)) for name in tools if crapkit_tool(name)]
+    return named[0][0][: -len(named[0][1])] if named else None
+
+
+def _offer(start: dict | None) -> dict:
+    """What the harness sent first: initialize's revision and client, or server/discover."""
+    first = json.loads(start["first_line"]) if start and start.get("first_line") else {}
+    params = initialize_params(start) if first else {}
+    return {"protocol": params.get("protocolVersion"), "discover_first": first.get("method") == "server/discover"
+            if first else None, "client_name": params.get("clientInfo", {}).get("name")}
+
+
+def _spawn(box, repo: Path, start: dict | None, server) -> dict:
+    if not start:
+        return {"cwd": None, "env": None}
+    configured = set(server.env) | set(server.env_vars) if server else set()
+    return {"cwd": cwd_rule(box, repo, start["cwd"]), "env": env_rule(box, set(start["env"]), configured)}
+
+
+def _seen(starts: list[dict], version: str) -> dict:
+    """What a reader of an observed file wants beside the compared fields."""
+    start = starts[-1] if starts else {}
+    return {"version": version, "starts": len(starts), "env": sorted(start.get("env", {})),
+            "first_line": start.get("first_line")}
+
+
+def observe(box, repo: Path, key: str, tools: list[str], version: str) -> dict:
+    """calibrate-all's record of one harness: [spawn], [initialize], [limits] and [seen]."""
+    starts = shim.starts(box)
+    start = starts[-1] if starts else None
+    server = parsed_doc(key, repo) if load(key).mcp else None
+    return {"spawn": _spawn(box, repo, start, server), "initialize": _offer(start),
+            "limits": {"tool_prefix": prefix(tools)}, "seen": _seen(starts, version)}
+
+
+def harness_version(box, key: str) -> str:
+    """The first line `<command> --version` prints, or what it printed on failure."""
+    step = box.run([load(key).real_cli["command"], "--version"])
+    lines = (step.stdout or step.stderr).strip().splitlines()
+    return lines[0] if lines else f"exit {step.exit}"
+
+
+def calibrate_module():
+    """tools/deploy/calibrate.py from the tree under test: the comparison the
+    calibrate-all cell and the host command share."""
+    spec = importlib.util.spec_from_file_location("calibrate", wheels.SRC / "tools" / "deploy" / "calibrate.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def out_dir() -> Path:
+    """Where a run keeps its output (tests/deploy/conftest.py reads the same variable)."""
+    return Path(os.environ.get("CRAPKIT_DEPLOY_OUT") or Path.cwd() / ".crapkit" / "deploy-out")
+
+
+def write_observed(folder: str, key: str, text: str) -> Path:
+    path = out_dir() / folder / f"{key}.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+# --- a harness at its newest release (weekly, network on) -----------------------------
+# The npm harnesses install their package @latest; the others run the install
+# line their own docs give. Both land in the sandbox home, first on PATH.
+
+LATEST_SCRIPTS = {
+    "cursor": "curl -fsSL https://cursor.com/install | bash",
+    "goose": "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash",
+    "aider": "uv tool install --force aider-chat",
+    "kiro": "curl -fsSL https://cli.kiro.dev/install | bash",
+    "windsurf": "curl -fsSL https://cli.devin.ai/install.sh | bash",
+    "qwen-code": "npm i -g @qwen-code/qwen-code@latest",
+}
+# The sandbox is offline by default: uv may reach PyPI for an install of the newest release.
+ONLINE_ENV = {"UV_OFFLINE": "0", "UV_NO_INDEX": "0"}
+
+
+def pins() -> dict:
+    return tomllib.loads((wheels.SRC / "tools" / "deploy" / "pins.toml").read_text(encoding="utf-8"))
+
+
+def latest_script(key: str, pinned: dict) -> str:
+    """The shell line that installs the harness's newest release."""
+    spec = pinned["harness"].get(load(key).real_cli["pins_key"], {})
+    return f"npm i -g {spec['npm']}@latest" if "npm" in spec else LATEST_SCRIPTS[key]
+
+
+# A download of a newest release is bounded by the network, not by a hang: a
+# global npm install of Qwen Code took two minutes, past the kit's 120 s bound.
+INSTALL_SECONDS = 900
+
+
+def bounded(box, argv: list[str], env: dict, note: str) -> Step:
+    """Run argv under INSTALL_SECONDS, not the hang bound, and record it in the transcript."""
+    started = time.monotonic()
+    done = hang_guard.run([box.resolve(argv[0]), *argv[1:]], cwd=box.root, env={**box.env, **env},
+                          timeout=INSTALL_SECONDS)
+    step = Step(argv, str(box.root), done.returncode, sandbox.decode(done.stdout), sandbox.decode(done.stderr),
+                round(time.monotonic() - started, 2), note)
+    return box.transcript.add(step)
+
+
+def _install(box, key: str) -> Step:
+    """Run the install line and record it in the transcript."""
+    script = box.tmp / f"install-{key}.sh"
+    script.write_text(latest_script(key, pins()) + "\n", encoding="utf-8")
+    return bounded(box, [*box.shell("sh"), str(script)], ONLINE_ENV, f"{key} at its newest release")
+
+
+def install_latest(box, key: str) -> None:
+    """The harness's newest release in the sandbox home, ahead of the pinned one on
+    PATH. An installer may exit non-zero after installing (Devin's asks for a
+    login it cannot get); the command being on PATH is what counts."""
+    step = _install(box, key)
+    for directory in (box.home / ".local" / "bin", Path(box.env["npm_config_prefix"]) / "bin"):
+        box.prepend_path(directory)
+    command = load(key).real_cli["command"]
+    assert box.which(command), f"{key}: the install put no {command} on PATH\n{step.text()}"

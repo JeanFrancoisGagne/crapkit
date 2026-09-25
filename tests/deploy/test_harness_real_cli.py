@@ -10,12 +10,16 @@ oh-my-pi's `/mcp test`, or one headless turn against the scripted model stub
 for the harnesses that list tools only to a model. A cell asserts the harness
 calls the server connected and sees all twelve tools where it lists them, and
 reads the shim's record of how the harness started crapkit.
+
+The weekly calibrate-all and latest-harnesses cells at the end run the same
+checks to hold each profile to what its harness does, pinned and newest.
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import shlex
 from pathlib import Path
 
 import pytest
@@ -222,12 +226,28 @@ def server_version(box, repo: Path) -> str:
 
 # --- the :full harnesses -------------------------------------------------------------------
 
+GEMINI_CONNECTED = re.compile(r"crapkit: .* Connected")
+
+
+def gemini_trusted(box, repo: Path) -> str:
+    """`gemini mcp list` in a trusted folder. It gives a server 5 s to answer
+    initialize; on a Windows host at full load crapkit behind the shim took
+    longer, so a first Disconnected is asked once more, as a user would."""
+    env = {"GEMINI_CLI_TRUST_WORKSPACE": "true"}
+    listed = ""
+    for _ in range(2):
+        listed = plain(box.run(["gemini", "mcp", "list"], cwd=repo, env=env, expect=0))
+        if GEMINI_CONNECTED.search(listed):
+            break
+    return listed
+
+
 def gemini_connect(box, repo: Path) -> list[str]:
     profiles.doc_server(box, repo, "gemini-cli")
     untrusted = plain(box.run(["gemini", "mcp", "list"], cwd=repo, expect=0))
     assert "disabled because this folder is untrusted" in untrusted and "Disabled" in untrusted
-    trusted = box.run(["gemini", "mcp", "list"], cwd=repo, env={"GEMINI_CLI_TRUST_WORKSPACE": "true"}, expect=0)
-    assert re.search(r"crapkit: .* Connected", plain(trusted))
+    trusted = gemini_trusted(box, repo)
+    assert GEMINI_CONNECTED.search(trusted), trusted
     return []
 
 
@@ -376,3 +396,97 @@ def test_win_real_cli(key, box, templates):
     tools = WINDOWS_CONNECT[key](box, repo)
     assert key not in LISTS_TOOLS or len(tools) == TOOLS, tools
     assert_exe_start(box, repo)
+
+
+# --- calibrate-all and latest-harnesses ------------------------------------------------------
+# calibrate-all starts each calibratable harness the way its connect check
+# does and writes what the shim saw to <out>/observed/<key>.toml, the file
+# tools/deploy/calibrate.py copies into tests/deploy/profiles/observed/. It
+# fails on any field where the observation and the profile differ. Kiro,
+# Devin (the windsurf profile) and Qwen Code have no pin: their cell installs
+# the newest release on the network and never blocks the job.
+# latest-harnesses runs the same check on each pinned harness's newest release.
+
+calibrate = profiles.calibrate_module()
+
+
+def claude_connect(box, repo: Path) -> list[str]:
+    add_scope(box, repo, "local", profiles.parsed_doc("claude-code", repo).argv)
+    assert re.search(r"^crapkit: .* Connected$", claude_list(box, repo), re.M)
+    return []
+
+
+def codex_connect(box, repo: Path) -> list[str]:
+    box.run(["codex", "mcp", "add", "crapkit", "--", *profiles.parsed_doc("codex", repo).argv], cwd=repo, expect=0)
+    with AppServer.in_box(box, ["codex", "app-server"], cwd=repo) as app:
+        answer = app.call_tool(app.start_thread(repo)["id"], "get_next_item", {})
+    assert not answer["isError"], answer
+    return []
+
+
+def cursor_connect(box, repo: Path) -> list[str]:
+    profiles.doc_server(box, repo, "cursor")
+    return cursor_tools(box, repo)
+
+
+def headless_connect(key: str):
+    """A harness with no pin: its profile's config, then its own listing command."""
+    def connect(box, repo: Path) -> list[str]:
+        profiles.doc_server(box, repo, key)
+        box.run(shlex.split(profiles.load(key).real_cli["headless"]), cwd=repo, note=f"{key} lists its servers")
+        return []
+    return connect
+
+
+ALL_CONNECT = {**CONNECT, "claude-code": claude_connect, "codex": codex_connect, "cursor": cursor_connect,
+               **{key: headless_connect(key) for key in calibrate.LATEST_ONLY}}
+# Harnesses whose check returns the names their model sees, so the prefix is observable.
+MODEL_FACING = {"copilot-cli", "cline", "crush", "goose", "continue", "junie"}
+
+
+def observed_run(box, templates, key: str, folder: str) -> tuple[dict, dict]:
+    """The harness's connect check; its observation, written to <out>/<folder>/<key>.toml, and its profile."""
+    repo = repo_box(box, templates)
+    tools = ALL_CONNECT[key](box, repo)
+    seen = profiles.observe(box, repo, key, tools if key in MODEL_FACING else [], profiles.harness_version(box, key))
+    path = profiles.write_observed(folder, key, calibrate.dump(seen))
+    box.transcript.note(f"observation written to {path}")
+    return seen, profiles.load(key).data
+
+
+def calibrated_params() -> list:
+    """One param per calibratable harness; the unpinned ones need the network and never block."""
+    online = [pytest.mark.online, pytest.mark.nonblocking]
+    return [pytest.param(key, id=key, marks=online if key in calibrate.LATEST_ONLY else [])
+            for key in calibrate.calibratable(profiles.PROFILES)]
+
+
+@pytest.mark.parametrize("key", calibrated_params())
+@cell("calibrate-all", channel="profiles", harness="all calibratable harnesses; Kiro and Devin at latest",
+      scenario="calibrate.py --all; fail on diff", use_cases="profile accuracy", os="linux", image="full",
+      cadence="weekly")
+def test_calibrate_all(key, box, templates, record_property):
+    if key in calibrate.LATEST_ONLY:
+        profiles.install_latest(box, key)
+    seen, profile = observed_run(box, templates, key, "observed")
+    record_property("harness_version", seen["seen"]["version"])
+    if not seen["seen"]["starts"] and profile["real_cli"].get("login"):
+        pytest.skip(f"{seen['seen']['version']} lists no MCP server before a login ([real_cli] login = true)")
+    assert calibrate.verdict(profile, seen) == []
+
+
+def latest_params() -> list[str]:
+    """Every pinned harness with a connect check, the ones with no pin excluded."""
+    return [key for key in calibrate.calibratable(profiles.PROFILES) if key not in calibrate.LATEST_ONLY]
+
+
+@pytest.mark.parametrize("key", latest_params())
+@cell("latest-harnesses", channel="real_cli cells", harness="every harness @latest",
+      scenario="all real_cli cells on latest; job fails with the diff in summary", use_cases="harness drift",
+      os="linux", image="full", cadence="weekly", online=True)
+def test_latest_harnesses(key, box, templates, record_property):
+    profiles.install_latest(box, key)
+    seen, profile = observed_run(box, templates, key, "observed-latest")
+    record_property("pinned_version", profile["real_cli"]["version"])
+    record_property("latest_version", seen["seen"]["version"])
+    assert calibrate.verdict(profile, seen) == []
