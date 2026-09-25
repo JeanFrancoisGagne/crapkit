@@ -776,14 +776,17 @@ _CONTAINER_LANE = (
 
 
 def container_marker(environ, dockerenv: bool) -> str | None:
-    """What makes lanes.py's guard read this machine as a container, in the
-    words a user can check, or None. Same two triggers as the guard."""
+    """What makes this machine a container for the lane runner, in the words a
+    user can check, or None. lanes.py's guard reads this same function, so
+    doctor cannot pass a lane `crapkit coverage` then refuses."""
     if environ.get("CRAPKIT_INSIDE_CONTAINER") == "1":
         return "CRAPKIT_INSIDE_CONTAINER=1"
     return "/.dockerenv exists" if dockerenv else None
 
 
-def _refused_in_container(lane) -> bool:
+def refused_in_container(lane) -> bool:
+    """A lane the runner refuses inside a container: a coverage.py suite that
+    does not say container_ok = true."""
     return lane.parser == "coveragepy" and not lane.container_ok
 
 
@@ -796,7 +799,7 @@ def container_lane_findings(lanes, marker: str | None) -> tuple[Finding, ...]:
     if marker is None:
         return ()
     return tuple(Finding("WARN", _CONTAINER_LANE.format(name=lane.name, marker=marker))
-                 for lane in lanes if _refused_in_container(lane))
+                 for lane in lanes if refused_in_container(lane))
 
 
 _SENT_UNSET = "core.hooksPath is unset and git runs {effective}"

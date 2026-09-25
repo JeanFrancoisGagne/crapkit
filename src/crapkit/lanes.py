@@ -27,6 +27,7 @@ from typing import IO, NamedTuple
 from .config import Lane
 from .coverage_istanbul import FnCoverage
 from .coverage_format import lane_format
+from .doctor import container_marker, refused_in_container
 from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
@@ -35,11 +36,11 @@ from .universe import ScopeMatch, owning_scope, path_matchers
 
 
 def _in_container() -> bool:
-    return os.environ.get("CRAPKIT_INSIDE_CONTAINER") == "1" or Path("/.dockerenv").exists()
+    return container_marker(os.environ, Path("/.dockerenv").exists()) is not None
 
 
 def _refuse_container_python(lane: Lane) -> None:
-    if lane.parser == "coveragepy" and _in_container() and not lane.container_ok:
+    if refused_in_container(lane) and _in_container():
         raise ToolError(
             f"lane {lane.name!r} runs the python suite, which is host-only "
             f"(container runs OOM); set container_ok = true only if this environment truly differs")

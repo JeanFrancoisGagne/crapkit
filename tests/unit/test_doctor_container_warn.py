@@ -37,10 +37,13 @@ def test_the_marker_names_the_trigger_a_user_can_check(environ, dockerenv, marke
 
 @pytest.mark.parametrize("variable", [None, "0", "1"])
 @pytest.mark.parametrize("dockerenv", [False, True])
+@pytest.mark.parametrize("shape", [
+    {}, {"container_ok": True}, {"parser": "istanbul"}, {"parser": "istanbul", "container_ok": True},
+])
 def test_doctor_reads_a_container_exactly_where_the_lane_runner_refuses(monkeypatch, variable,
-                                                                       dockerenv):
-    """Two readings of one fact. If they drift, doctor passes a lane coverage
-    refuses, or WARNs about one it runs."""
+                                                                       dockerenv, shape):
+    """One rule, read by both. If the runner and doctor drift, doctor passes a
+    lane coverage refuses, or WARNs about one it runs."""
     environ = {} if variable is None else {"CRAPKIT_INSIDE_CONTAINER": variable}
     monkeypatch.delenv("CRAPKIT_INSIDE_CONTAINER", raising=False)
     for name, value in environ.items():
@@ -49,12 +52,13 @@ def test_doctor_reads_a_container_exactly_where_the_lane_runner_refuses(monkeypa
 
     refused = True
     try:
-        lanes_module._refuse_container_python(lane("py"))
+        lanes_module._refuse_container_python(lane("py", **shape))
     except ToolError:
         pass
     else:
         refused = False
-    assert refused == (container_marker(environ, dockerenv) is not None)
+    marker = container_marker(environ, dockerenv)
+    assert refused == bool(container_lane_findings([lane("py", **shape)], marker))
 
 
 def test_a_coveragepy_lane_warns_naming_the_lane_the_trigger_and_the_key():
