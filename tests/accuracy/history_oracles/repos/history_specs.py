@@ -413,3 +413,14 @@ def explain_odd(body: str) -> Spec:
                message="seed"),
         Commit(files={"src/e.py": explained("odd")}, date=EPOCH + DAY, message=body),
     ))
+
+
+# --- a commit rebased later: its committer date is not its author date (H4) ---------------
+SKEW_RANGE = CLOCK_RANGE
+SKEW = Spec(steps=(
+    Commit(files={"crapkit.toml": config(), "src/x.py": functions("x"), "src/y.py": functions("y")},
+           date=EPOCH, message="seed"),
+))
+SKEW_AUTHOR = EPOCH + SKEW_RANGE // 4  # t = 1/4 by the author's clock
+SKEW_COMMITTER = EPOCH + SKEW_RANGE * 9 // 10  # t = 9/10 by the committer's
+SKEW_LAST = EPOCH + SKEW_RANGE

@@ -10,14 +10,16 @@ from __future__ import annotations
 import csv
 from decimal import Decimal
 import json
+import os
 from pathlib import Path
 
 import pytest
 
+import hang_guard
 from accuracy.kit import exact, repos, rulings
 from accuracy.history_oracles import churn_reads
 from accuracy.history_oracles.churn_reads import Said
-from accuracy.history_oracles.oracles import git_walk
+from accuracy.history_oracles.oracles import bugspots_runner, git_walk, pydriller_adapter
 from accuracy.history_oracles.repos import history_specs as specs
 
 HERE = Path(__file__).resolve().parent
@@ -172,3 +174,94 @@ def test_authors_match_window_after_carry(make_repo):
     assert sorted(_stored_authors(built.root)) == sorted(git_walk.window_authors(commits))
     assert carried == _expected(built.root, 12, specs.EXPIRY_AFTER)
     assert churn_reads.churn(cold.root, specs.EXPIRY_AFTER)[0] == carried
+
+
+# --- nightly: PyDriller and bugspots read the same histories ------------------------------
+
+
+def _said_map(commits: list) -> dict[str, Said]:
+    return {path: Said(c.commits, c.authors, c.weight)
+            for path, c in git_walk.churn(commits).items()}
+
+
+@pytest.mark.nightly
+def test_pydriller_walk_matches(make_repo, oracle):
+    oracle("pydriller")
+    built = make_repo(specs.MIXED)
+
+    stored, _ = churn_reads.churn(built.root, specs.MIXED_NOW)
+
+    assert stored == _said_map(pydriller_adapter.walk(built.root, specs.MIXED_NOW, 12))
+
+
+def _counts(values: dict, paths: tuple) -> str:
+    return ", ".join(f"{path} {values[path]}" for path in paths if path in values)
+
+
+@rulings.applies("H2")
+@pytest.mark.nightly
+def test_pydriller_folds_a_renamed_file_s_history(make_repo, oracle):
+    oracle("pydriller")
+    built = make_repo(specs.MIXED)
+    names = ("src/new_name.py", "src/old_name.py")
+
+    stored, _ = churn_reads.churn(built.root, specs.MIXED_NOW)
+
+    folded = pydriller_adapter.commits_count(built.root, specs.MIXED_NOW, 12)
+    rulings.pin_ruling("H2", crapkit=_counts({p: s.commits for p, s in stored.items()}, names),
+                       oracle=_counts(folded, names))
+
+
+@rulings.applies("H3")
+@pytest.mark.nightly
+def test_pydriller_tells_contributors_apart_by_address(make_repo, oracle):
+    oracle("pydriller")
+    built = make_repo(specs.MIXED)
+    names = ("src/core.py", "src/util.py")
+
+    stored, _ = churn_reads.churn(built.root, specs.MIXED_NOW)
+
+    by_address = pydriller_adapter.contributors_count(built.root, specs.MIXED_NOW, 12)
+    rulings.pin_ruling("H3", crapkit=_counts({p: s.authors for p, s in stored.items()}, names),
+                       oracle=_counts(by_address, names))
+
+
+@pytest.mark.nightly
+@pytest.mark.platform("linux")
+def test_bugspots_scores_match_the_weights(make_repo, oracle):
+    """Every commit a fix (regex /./), the clock frozen at the newest commit:
+    bugspots' hotspot score is crapkit's weight."""
+    oracle("bugspots")
+    built = make_repo(specs.CLOCK)
+
+    stored, _ = churn_reads.churn(built.root, specs.CLOCK_NOW)
+
+    assert {path: said.weight for path, said in stored.items()} == bugspots_runner.scores(built.top)
+
+
+def _commit_skewed(built: repos.Built) -> None:
+    """src/x.py changed by a commit whose author and committer dates differ, then
+    src/y.py changed at the end of the range."""
+    (built.root / "src" / "x.py").write_bytes(specs.functions("x", branches=2).encode("utf-8"))
+    repos.git(built.top, "add", "--", "src/x.py")
+    env = {**os.environ, "GIT_AUTHOR_DATE": f"@{specs.SKEW_AUTHOR} +0000",
+           "GIT_COMMITTER_DATE": f"@{specs.SKEW_COMMITTER} +0000"}
+    done = hang_guard.run(["git", "commit", "-q", "-m", "rebased"], cwd=built.top, env=env)
+    assert done.returncode == 0, done.stderr
+    (built.root / "src" / "y.py").write_bytes(specs.functions("y", branches=2).encode("utf-8"))
+    repos.git(built.top, "add", "--", "src/y.py")
+    repos.git(built.top, "commit", "-q", "-m", "last", date=specs.SKEW_LAST)
+
+
+@rulings.applies("H4")
+@pytest.mark.nightly
+@pytest.mark.platform("linux")
+def test_bugspots_dates_a_commit_by_its_committer(make_repo, oracle):
+    oracle("bugspots")
+    built = make_repo(specs.SKEW)
+    _commit_skewed(built)
+
+    stored, _ = churn_reads.churn(built.root, specs.SKEW_LAST + specs.DAY)
+
+    rulings.pin_ruling("H4", crapkit=stored["src/x.py"].weight,
+                       oracle=bugspots_runner.scores(built.top)["src/x.py"])

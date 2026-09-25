@@ -15,7 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from accuracy.history_oracles import coupling_reads
+from accuracy.kit import exact, rulings
+from accuracy.history_oracles import churn_reads, coupling_reads
+from accuracy.history_oracles.oracles import code_maat, git_walk, mlxtend_adapter, pair_count
 from accuracy.history_oracles.repos import history_specs as specs
 
 HERE = Path(__file__).resolve().parent
@@ -91,3 +93,81 @@ def test_non_string_paths_pair(make_repo):
     said = coupling_reads.said(built.root, NOW)
 
     assert said == coupling_reads.expected(built.root, NOW, **DEFAULTS)
+
+
+def _walked(built) -> list:
+    return git_walk.walk(built.root, 12, now=NOW)
+
+
+def _small(commits: list) -> list:
+    return [commit for commit in commits if len(commit.paths) <= pair_count.BULK]
+
+
+def _predicted_degree(support: int, revs: dict, pair: tuple[str, str]) -> int:
+    """code-maat's int(100 * shared / mean(revs)), in exact arithmetic."""
+    return int(Fraction(200 * support, revs[pair[0]] + revs[pair[1]]))
+
+
+@pytest.mark.nightly
+@pytest.mark.platform("linux")
+def test_code_maat_counts_what_crapkit_counts(make_repo, oracle, tmp_path):
+    """revisions and authors per file against the churn map; the coupling
+    degree code-maat prints, predicted from crapkit's support (H6, H7)."""
+    oracle("code-maat")
+    built = make_repo(specs.COUPLED)
+    commits = _walked(built)
+    log = code_maat.write_log(commits, tmp_path / "all.log")
+    small = code_maat.revisions(code_maat.write_log(_small(commits), tmp_path / "small.log"))
+
+    stored, _ = churn_reads.churn(built.root, NOW)
+    said = coupling_reads.said(built.root, NOW, *coupling_reads.ALL)
+
+    revs, authors = code_maat.revisions(log), code_maat.authors(log)
+    assert {path: (s.commits, s.authors) for path, s in stored.items()} == {
+        path: (revs[path], authors[path]) for path in revs}
+    tracked = coupling_reads.tracked(built.root)
+    degrees = {pair: d for pair, d in code_maat.coupling(log).items() if set(pair) <= tracked}
+    assert {files: _predicted_degree(support, small, files) for files, support, _ in said} == degrees
+
+
+@pytest.mark.nightly
+def test_mlxtend_counts_the_same_pairs(make_repo, oracle):
+    oracle("mlxtend")
+    built = make_repo(specs.COUPLED)
+    sets = pair_count.change_sets(_walked(built))
+
+    said = coupling_reads.said(built.root, NOW, *coupling_reads.ALL)
+
+    pairs = pair_count.ranked_from(mlxtend_adapter.counts(sets), coupling_reads.tracked(built.root))
+    assert said == [(pair.files, pair.support, pair.confidence) for pair in pairs]
+
+
+def _ab(said: list[tuple]) -> tuple:
+    return next(row for row in said if row[0] == ("src/a.py", "src/b.py"))
+
+
+@rulings.applies("H6")
+@pytest.mark.nightly
+@pytest.mark.platform("linux")
+def test_code_maat_degree_is_a_mean_based_ratio(make_repo, oracle, tmp_path):
+    oracle("code-maat")
+    built = make_repo(specs.COUPLED)
+    log = code_maat.write_log(_walked(built), tmp_path / "all.log")
+
+    _, support, confidence = _ab(coupling_reads.said(built.root, NOW, *coupling_reads.ALL))
+
+    rulings.pin_ruling("H6", crapkit=f"{support} {confidence}",
+                       oracle=code_maat.coupling(log)[("src/a.py", "src/b.py")])
+
+
+@rulings.applies("H7")
+@pytest.mark.nightly
+def test_bulk_commits_count_toward_each_file(make_repo, oracle):
+    oracle("mlxtend")
+    built = make_repo(specs.COUPLED)
+    small = pair_count.change_sets(_small(_walked(built)))
+
+    _, _, confidence = _ab(coupling_reads.said(built.root, NOW, *coupling_reads.ALL))
+
+    rule = mlxtend_adapter.rule_confidence(small, ("src/a.py", "src/b.py"))
+    rulings.pin_ruling("H7", crapkit=confidence, oracle=exact.half_even(rule, 4))

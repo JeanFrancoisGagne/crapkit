@@ -52,21 +52,28 @@ def confidence(files: Counter, pair: tuple[str, str], support: int) -> Fraction:
     return max(Fraction(support, files[pair[0]]), Fraction(support, files[pair[1]]))
 
 
-def _tracked_pairs(file_sets: list[frozenset], tracked: set[str]) -> list[Pair]:
-    files, pairs = counts(file_sets)
+def _tracked_pairs(tallies: tuple[Counter, Counter], tracked: set[str]) -> list[Pair]:
+    files, pairs = tallies
     return [Pair(pair, support, confidence(files, pair, support))
             for pair, support in pairs.items() if set(pair) <= tracked]
 
 
-def ranked(file_sets: list[frozenset], tracked: set[str], min_support: int = 1,
-           min_confidence: Fraction = Fraction(0)) -> list[Pair]:
-    """Every pair of tracked files at or over both thresholds, in rank order,
-    its confidence rounded half-even to 4 places."""
-    kept = [pair for pair in _tracked_pairs(file_sets, tracked)
+def ranked_from(tallies: tuple[Counter, Counter], tracked: set[str], min_support: int = 1,
+                min_confidence: Fraction = Fraction(0)) -> list[Pair]:
+    """Every pair of tracked files at or over both thresholds, from (commits per
+    file, shared commits per pair), in rank order, its confidence rounded
+    half-even to 4 places."""
+    kept = [pair for pair in _tracked_pairs(tallies, tracked)
             if pair.support >= min_support and pair.confidence >= min_confidence]
     rounded = [Pair(pair.files, pair.support, exact.half_even(pair.confidence, 4))
                for pair in kept]
     return sorted(rounded, key=lambda pair: pair.rank)
+
+
+def ranked(file_sets: list[frozenset], tracked: set[str], min_support: int = 1,
+           min_confidence: Fraction = Fraction(0)) -> list[Pair]:
+    """ranked_from over the counts this module takes from the change sets."""
+    return ranked_from(counts(file_sets), tracked, min_support, min_confidence)
 
 
 def change_sets(commits) -> list[frozenset]:
