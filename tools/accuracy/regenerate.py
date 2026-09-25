@@ -77,9 +77,14 @@ def coveragepy_canonical(data: dict) -> dict:
 
 
 def _cut_text(value: str, roots: tuple[str, ...]) -> str:
+    """A path under the root becomes repo-relative with forward slashes; any
+    other string only loses the root where it quotes one."""
+    under = next((root for root in roots if value.startswith(root)), None)
+    if under is not None:
+        return value[len(under):].replace("\\", "/")
     for root in roots:
         value = value.replace(root, "")
-    return value.replace("\\", "/") if value.startswith("src/") else value
+    return value
 
 
 _CUTTERS = {
@@ -157,9 +162,9 @@ def record_js(copy: Path, node_modules: Path, out: Path) -> None:
     os.rmdir(copy / "node_modules") if os.name == "nt" else (copy / "node_modules").unlink()
 
 
-def record(python: str, node_modules: Path) -> list[str]:
-    out = SMALL / "recorded"
-    out.mkdir(exist_ok=True)
+def record(python: str, node_modules: Path, out: Path = SMALL / "recorded") -> list[str]:
+    """Record both lanes' artifacts into `out` (the small corpus's recorded/ by default)."""
+    out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="crapkit-record-",
                                      ignore_cleanup_errors=True) as scratch:
         copy = _copy_corpus(Path(scratch))
