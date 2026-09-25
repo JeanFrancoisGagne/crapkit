@@ -51,36 +51,66 @@ HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
 SPAN = re.compile(r"`([^`\n]+)`")
 
 
-def _prose(text: str) -> list[str]:
-    """A page's lines outside its ``` fences."""
+def _page(page: str) -> str:
+    return (docsnip.root() / page).read_text(encoding="utf-8")
+
+
+def _prose(text: str) -> list[tuple[int, str]]:
+    """(line number, line) for each line of a page outside its ``` fences."""
     kept, fenced = [], False
-    for line in text.splitlines():
+    for number, line in enumerate(text.splitlines(), 1):
         mark = line.lstrip().startswith("```")
         fenced = fenced != mark
         if not (fenced or mark):
-            kept.append(line)
+            kept.append((number, line))
     return kept
 
 
-def _section_lines(page: str, heading: str) -> list[str]:
-    """The prose lines under `heading`, up to the next heading."""
-    lines, inside = [], False
-    for line in _prose((docsnip.root() / page).read_text(encoding="utf-8")):
-        match = HEADING.match(line)
-        if match:
-            inside = match[2] == heading
-        elif inside:
-            lines.append(line)
-    return lines
+def _headings(text: str) -> list[tuple[int, int, str]]:
+    """(line number, level, title) for each markdown heading outside a fence."""
+    return [(number, len(match[1]), match[2]) for number, line in _prose(text) if (match := HEADING.match(line))]
+
+
+def _end(heads: list[tuple[int, int, str]], at: int, total: int) -> int:
+    """The line of the next heading at or above heads[at]'s level, else past the end."""
+    after = [head[0] for head in heads[at + 1:] if head[1] <= heads[at][1]]
+    return after[0] if after else total
+
+
+def _bounds(page: str, heading: str, index: int) -> tuple[int, int]:
+    """The line span of the index-th section titled `heading`, subsections included.
+    Both quickstarts title their steps alike, so `index` picks the occurrence."""
+    text = _page(page)
+    heads = _headings(text)
+    found = [at for at, head in enumerate(heads) if head[2] == heading]
+    if index >= len(found):
+        raise docsnip.DocSnipError(f"{page} > {heading}: no section #{index} ({len(found)} found)")
+    return heads[found[index]][0], _end(heads, found[index], len(text.splitlines()) + 1)
+
+
+def section_prose(page: str, heading: str, index: int = 0) -> list[str]:
+    """The prose lines of a section and its subsections, fences and headings left out."""
+    first, last = _bounds(page, heading, index)
+    return [line for number, line in _prose(_page(page)) if first < number < last and not HEADING.match(line)]
+
+
+def section_fences(page: str, heading: str, index: int = 0) -> list:
+    """The fences of a section and its subsections, in page order."""
+    first, last = _bounds(page, heading, index)
+    return [block for block in docsnip.fences(page) if first < block.line < last]
+
+
+def spans(page: str, heading: str, index: int = 0) -> list[str]:
+    """Every `code span` in a section's prose, in page order."""
+    return SPAN.findall(" ".join(section_prose(page, heading, index)))
 
 
 def inline(page: str, heading: str, prefix: str) -> str:
     """The first `code span` under `heading` that starts with `prefix`."""
-    text = " ".join(_section_lines(page, heading))
-    spans = [span for span in SPAN.findall(text) if span.startswith(prefix)]
-    if not spans:
+    found = [span for span in spans(page, heading) if span.startswith(prefix)]
+    if not found:
         raise docsnip.DocSnipError(f"{page} > {heading}: no `{prefix}...` span in its prose")
-    return spans[0]
+    return found[0]
 
 
 def container_rule() -> str:
@@ -303,6 +333,17 @@ def markerless_python(box, minor: str) -> str:
     return str(python)
 
 
+def online_env(box) -> dict[str, str]:
+    """The sandbox's offline switches turned off, for the network cells: pip reads
+    a config with no find-links, uv resolves against PyPI."""
+    conf = box.root / "pip-online.conf"
+    conf.write_text("[global]\ndisable-pip-version-check = true\n", encoding="utf-8")
+    empty = box.root / "no-find-links"
+    empty.mkdir(exist_ok=True)
+    return {"PIP_CONFIG_FILE": str(conf), "UV_OFFLINE": "false", "UV_NO_INDEX": "false",
+            "UV_FIND_LINKS": str(empty)}
+
+
 # --- running what a user runs -------------------------------------------------------
 
 def commit(box, repo: Path, message: str, *paths: str) -> None:
@@ -326,7 +367,7 @@ def lines_starting(step, prefix: str) -> list[str]:
 
 
 SHAPE = [(re.compile(r"\b[0-9a-f]{11,40}\b"), "<sha>"), (re.compile(r"\d+(\.\d+)?"), "<n>"),
-         (re.compile(r"\s+"), " ")]
+         (re.compile(r"\bgrade [A-F][+-]?"), "grade <g>"), (re.compile(r"\s+"), " ")]
 
 
 def shape(line: str) -> str:
