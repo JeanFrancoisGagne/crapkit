@@ -242,9 +242,10 @@ def _shebang_python(launcher: Path) -> str:
     return first[2:].strip()
 
 
-def uv_tool(box) -> Install:
-    """`uv tool install crapkit` from the same README paragraph."""
-    step = box.script(inline(README, NOT_PYTHON, "uv tool install"), expect=0)
+def uv_tool(box, env: dict | None = None) -> Install:
+    """`uv tool install crapkit` from the same README paragraph; `env` narrows
+    what uv can resolve, such as a find-links that holds only the releases."""
+    step = box.script(inline(README, NOT_PYTHON, "uv tool install"), expect=0, env=env)
     bindir = Path(box.run(["uv", "tool", "dir", "--bin"], expect=0).stdout.strip())
     box.prepend_path(bindir)
     launcher = bindir / exe("crapkit")
