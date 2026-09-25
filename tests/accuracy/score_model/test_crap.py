@@ -182,6 +182,43 @@ def _basic_ops(ccn: int, cov: float) -> float:
     return ccn * ccn * (uncovered * uncovered * uncovered) + ccn
 
 
+def _after_d13(key: tuple) -> str:
+    places, ccn, covered, total = key
+    return f"{_basic_ops(ccn, covered / total):.{places}f}"
+
+
+def test_the_tie_list_is_re_derived_for_the_d13_fix():
+    """D5 after D13: once crapkit computes with basic operations, the after_d13
+    column is what each listed tie prints. Two ties then round half-even and
+    leave the list (2 dp at CRAP(25, 19/50), 4 dp at CRAP(36, 53/120)); 90 stay."""
+    rows = cases.tie_table()
+
+    assert [key for key, row in rows.items() if _after_d13(key) != row["after_d13"]] == []
+    assert sorted(key for key, row in rows.items() if row["after_d13"] == row["exact"]) == [
+        (2, 25, 19, 50), (4, 36, 53, 120)]
+
+
+def _after_d13_problem(key: tuple, exact_value: Fraction, ties: dict) -> str | None:
+    printed = _after_d13(key)
+    if printed == exact.fixed(exact_value, key[0]):
+        return None
+    listed = ties.get(key)
+    return None if listed and listed["after_d13"] == printed else f"{key}: {printed}"
+
+
+@pytest.mark.nightly
+def test_after_d13_every_other_string_rounds_half_even():
+    """Over every distinct case of the full grid, basic operations print the
+    exact value rounded half-even at 1, 2 and 4 dp everywhere but the ties
+    listed with an after_d13 value of their own."""
+    ties, problems = cases.tie_table(), []
+    for ccn, covered, total in cases.reduced_grid():
+        want, cov = exact.crap(ccn, Fraction(covered, total)), Fraction(covered, total)
+        keys = [(places, ccn, cov.numerator, cov.denominator) for places in PLACES]
+        problems += [line for key in keys if (line := _after_d13_problem(key, want, ties))]
+    assert problems[:20] == []
+
+
 # --- PHPUnit's CrapIndex --------------------------------------------------------------------
 
 PHPUNIT_PUBLISHED = [((2, 0.0), "6"), ((3, 100.0), "3"), ((5, 95.0), "5"), ((4, 50.0), "6.00")]
