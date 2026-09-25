@@ -21,4 +21,8 @@ CHECKS = [
      "pytest": [_HISTORY + "test_changed_ranges.py"]},
     {"name": "changed ranges at the reader", "seconds": 3,
      "pytest": [_HISTORY + "test_diff_ranges_api.py"]},
+    {"name": "marks across renames", "seconds": 4,
+     "pytest": [_HISTORY + "test_renames.py"]},
+    {"name": "burn-down against the history walk", "seconds": 4,
+     "pytest": [_HISTORY + "test_burn_down.py"]},
 ]

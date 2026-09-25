@@ -1,0 +1,11 @@
+history	field	value	derivation	source
+BURN	open	3	a, b and d are on disk; c was repaid	docs/agent-json.md ratchet report: open counts marks on disk, working tree included
+BURN	dropped_total	2	b repaid on day 50, c on day 75	docs/agent-json.md ratchet report: repayments from committed history only
+BURN	anchor_ts	1756480000	the newest commit touching the file, day 75: 1750000000 + 75 x 86400	docs/agent-json.md ratchet report: anchor_ts is the newest commit that touched the ratchet file
+BURN	uncommitted	2	a is 9 on disk and 10 committed; d is on disk only	docs/agent-json.md ratchet report: marks the working tree and the newest committed version disagree on
+BURN	dropped_last_30d	2	day 75 minus day 50 is 25 days; day 75 minus day 75 is 0	docs/ratchet.md#reporting-the-burn-down: repayment velocity anchors on the newest commit
+BURN	dropped_last_90d	2	both repayments lie within 90 days of day 75	docs/ratchet.md#reporting-the-burn-down: repayment velocity anchors on the newest commit
+BURN	oldest	src/a.py fa( x ) 75; src/b.py fb( x ) 0; src/d.py fd( x ) 0	a entered on day 0 and its tightening keeps that date; b re-entered on day 75; d has no commit behind it, so it entered at the anchor	docs/ratchet.md#reporting-the-burn-down: a mark with no commit behind it reports 0d
+BURN_TIGHTEN	anchor_ts	1753456000	the newest commit only tightens a, day 40: 1750000000 + 40 x 86400	docs/agent-json.md ratchet report: anchor_ts is the newest commit that touched the ratchet file
+BURN_TIGHTEN	oldest	src/a.py fa( x ) 40; src/b.py fb( x ) 40; src/c.py fc( x ) 30	a and b entered on day 0, c on day 10, all aged to day 40	docs/agent-json.md ratchet report: every age is measured back from anchor_ts
+BURN_TIGHTEN	uncommitted	0	the working tree is the newest commit	docs/agent-json.md ratchet report

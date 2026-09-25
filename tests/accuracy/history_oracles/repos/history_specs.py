@@ -286,3 +286,90 @@ DIFF_CASES = Spec(steps=(
     Commit(files=DIFF_EDIT, renames={"src/old.py": "src/new.py"}, date=EPOCH + DAY,
            message="edits"),
 ))
+
+
+# --- renames, moves and copies after a seed (docs/ratchet.md#pruning-and-renames) --------
+# Five files of gated functions are seeded; then one commit moves, copies and renames
+# them. RENAME_MOVES says what each file becomes and RENAMED_MARKS where the docs'
+# three conditions put its marks after `ratchet prune`, worked by hand.
+
+
+def _heavy(name: str) -> str:
+    """Only the def line survives: well under git's 50% similarity."""
+    body = "".join(f"    total = {i} * x + {i * i}\n    total -= {i}\n" for i in range(12))
+    return f"def {name}(x):\n{body}    return total\n\n\n"
+
+
+RENAME_BASE = {"crapkit.toml": config(), "src/a.py": gated("fa") + gated("ga"),
+               "src/b.py": gated("fb"), "src/c.py": gated("fc"), "src/d.py": gated("fd") + gated("gd"),
+               "src/e.py": gated("fe")}
+RENAMES = Spec(steps=(Commit(files=RENAME_BASE, date=EPOCH, message="five files"),))
+RENAME_MOVES = {
+    # old path: (new path, new text, None when the old path is removed)
+    "exact move": ("src/a.py", "src/moved/a.py", None),
+    "copy": ("src/b.py", "src/b_copy.py", "keep"),
+    "heavy edit": ("src/c.py", "src/c2.py", _heavy("fc")),
+    "light edit": ("src/d.py", "src/d2.py", gated("fd") + gated("gd", tag="edited")),
+    "function renamed": ("src/e.py", "src/e2.py", gated("fe_new")),
+}
+RENAMED_MARKS = {
+    ("src/moved/a.py", "fa"), ("src/moved/a.py", "ga"),  # followed
+    ("src/b.py", "fb"),  # a copy moves nothing
+    ("src/d2.py", "fd"), ("src/d2.py", "gd"),  # followed: most of the file survived
+    # src/c.py's fc: git calls no rename, the function left c.py, the mark drops
+    # src/e.py's fe: renamed, but no fe at the destination, the mark drops
+}
+RENAMES_NOW = EPOCH + 2 * DAY
+RENAMES_NESTED = Spec(root="pkg", steps=(
+    Commit(files={"pkg/crapkit.toml": config(root_paths="calc"),
+                  "pkg/calc/grade.py": gated("audit") + gated("classify"),
+                  "lib/other.py": gated("other")}, date=EPOCH, message="nested"),
+))
+
+
+# --- the ratchet file's own history (docs/ratchet.md#reporting-the-burn-down) -------------
+
+
+def marks_file(*rows: tuple[str, str, str], note: str = "") -> str:
+    """A ratchet file: the two stamp comments, the header, one row per mark."""
+    head = "# crapkit-analysis=11 lizard=1.24.0\n# crapkit-keys=1\n" + note
+    return head + "path\tlong_name\tcrap\n" + "".join("\t".join(row) + "\n" for row in rows)
+
+
+_A = ("src/a.py", "fa( x )")
+_B = ("src/b.py", "fb( x )")
+_C = ("src/c.py", "fc( x )")
+_D = ("src/d.py", "fd( x )")
+_BURN_SOURCES = {path: gated(name.split("(")[0]) for path, name in (_A, _B, _C, _D)}
+BURN = Spec(steps=(
+    Commit(files={"crapkit.toml": config(), **_BURN_SOURCES,
+                  "crapkit-ratchet.tsv": marks_file((*_A, "12.0000"), (*_B, "8.0000"))},
+           date=EPOCH, message="seed a and b"),
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A, "12.0000"), (*_B, "8.0000"),
+                                                     (*_C, "9.0000"))},
+           date=EPOCH + 10 * DAY, message="add c"),
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A, "10.0000"), (*_B, "8.0000"),
+                                                     (*_C, "9.0000"))},
+           date=EPOCH + 40 * DAY, message="tighten a"),
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A, "10.0000"), (*_C, "9.0000"))},
+           date=EPOCH + 50 * DAY, message="repay b"),
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A, "10.0000"), (*_C, "9.0000"),
+                                                     note="# a comment and nothing else\n")},
+           date=EPOCH + 70 * DAY, message="comment only"),
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A, "10.0000"), (*_B, "8.0000"))},
+           date=EPOCH + 75 * DAY, message="b back, c repaid"),
+))
+# On disk after the last commit: a tightened again, d added, neither committed.
+BURN_WORKING = marks_file((*_A, "9.0000"), (*_B, "8.0000"), (*_D, "7.0000"))
+# The newest commit only tightens a mark (R32): it still moves the anchor.
+BURN_TIGHTEN = Spec(steps=BURN.steps[:1] + (
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A, "12.0000"), (*_B, "8.0000"),
+                                                     (*_C, "9.0000"))},
+           date=EPOCH + 10 * DAY, message="add c"),
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A, "10.0000"), (*_B, "8.0000"),
+                                                     (*_C, "9.0000"))},
+           date=EPOCH + 40 * DAY, message="tighten a"),
+))
+# Seeded by crapkit itself, so the marks carry the stamp this crapkit writes.
+BURN_SEEDABLE = Spec(steps=(Commit(files={"crapkit.toml": config(), **_BURN_SOURCES},
+                                   date=EPOCH, message="sources"),))
