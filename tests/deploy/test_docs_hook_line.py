@@ -50,8 +50,10 @@ SH_ROUTES = {"route1": (ROUTE_1, "cat >"), "route2": (ROUTE_2, "core.hooksPath")
 
 
 def handbook_lines() -> str:
-    """The handbook block's hook lines, without the seed that needs a scored run."""
-    block = docsnip.fence("docs/handbook.html", HANDBOOK, contains=".git/hooks/pre-commit")
+    """The handbook block's hook lines, without the seed that needs a scored run.
+    The block writes `.git/hooks/pre-commit` through `git rev-parse
+    --git-common-dir`, so it is found by the path's tail."""
+    block = docsnip.fence("docs/handbook.html", HANDBOOK, contains="/hooks/pre-commit")
     return "\n".join(line for line in docsnip.commands(block) if "pre-commit" in line)
 
 
