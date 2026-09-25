@@ -8,10 +8,12 @@ import pytest
 
 from crapkit.config import load_config_text
 from crapkit.diffparse import changed_ranges
+from crapkit.errors import ConfigError
 from crapkit.gitio import diff_since, file_log_patches, staged_reads
 from crapkit.hook import gate_staged
 from crapkit.ratchet_report import mark_events
 from crapkit.records import encode_record
+from crapkit.universe import assign_files
 
 
 CONFIG_TEXT = '''[crapkit]
@@ -146,17 +148,20 @@ def test_codec_produced_nul_name_is_not_a_git_history_record(source_repo):
         (("src/app.py", name), "added", 20)]
 
 
-@pytest.mark.parametrize("path", ["bad\udcff.py", '"bad\\377.py"'])
-def test_opaque_patch_bodies_do_not_relax_path_identity(path, capsys, monkeypatch):
-    """A header naming a file in bytes that are not UTF-8 never becomes a
-    path: the file is left out of the ranges and named on stderr, where it
-    used to end the gate with a traceback."""
+@pytest.mark.parametrize("header", ["+++ b/src/bad\udcff.py", '+++ "b/src/bad\\377.py"'],
+                         ids=["raw-byte", "octal-escape"])
+def test_opaque_patch_bodies_do_not_relax_path_identity(header, capsys, monkeypatch):
+    """A header naming a file in bytes that are not UTF-8 never becomes a keyed
+    path. Its ranges keep the bytes as surrogates, and the scope assignment the
+    gate runs next refuses the file by name with the rename, where it used to
+    end the gate with a traceback."""
     monkeypatch.setattr("crapkit.gitpaths._left_out", set(), raising=False)
-    ranges = changed_ranges(f"+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n" if not path.startswith('"')
-                            else f"+++ {path}\n@@ -1 +1 @@\n-old\n+new\n")
+    ranges = changed_ranges(f"{header}\n@@ -1 +1 @@\n-old\n+new\n")
 
-    assert ranges == {}
-    assert "crapkit: left out bad" in capsys.readouterr().err
+    assert ranges == {"src/bad\udcff.py": [(1, 1)]}
+    with pytest.raises(ConfigError, match=r"^src/bad\\xff\.py is in scope 'src', .*\(git mv\)"):
+        assign_files(sorted(ranges), CONFIG)
+    assert "crapkit: left out src/bad\\xff.py" in capsys.readouterr().err
 
 
 def test_opaque_source_body_cannot_introduce_a_header(source_repo):

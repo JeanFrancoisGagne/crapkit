@@ -57,14 +57,26 @@ their CLI calls run at the server's selected root.
 Tracked Git paths preserve whitespace and Unicode separators. crapkit reads every
 path as UTF-8, because rows, marks and caches are keyed on it. A file whose name
 Git reports in other bytes (a Latin-1 name made on Linux, which Git for Windows
-keeps in the index as it was) is left out of every command, and stderr names it
-once, with the fix:
+keeps in the index as it was) has no key, so crapkit runs the scope assignment
+itself (each scope's paths, its languages' extensions, its excludes) on the name,
+and the answer decides what happens:
 
+| The name | What crapkit does |
+|---|---|
+| A scope takes it: tracked, committed since the base, or staged | `inventory`, `coverage`, `verify`, `doctor`, `watch` and `hook-precommit` exit 3 with one line naming the path and `git mv`, before any lane runs. Left out, it would be a source file no reader read, and the gate would pass it. |
+| No scope takes it, or it is untracked | Left out of every command. stderr names it once, and the command keeps its own exit code. |
+
+    crapkit: src/caf\xe9.py is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name
     crapkit: left out docs/r\xe9sum\xe9.txt: git names it in bytes that are not UTF-8, and crapkit reads every path as UTF-8; rename it (git mv) to have it read
 
-The pre-commit gate leaves such a staged file out the same way, so rename it
-before relying on the gate for it. Scope-prefix normalization below applies to
-configuration strings, not to the filenames Git reports.
+On Linux, `git mv $'src/caf\xe9.py' src/café.py` renames such a file. Git for Windows
+checks it out as `src/café.py` already, so there `git add -A` stages the rename.
+
+`init` has no scopes to assign with yet, so it prints the warning and writes the
+config; the first command that loads that config refuses a name a scope takes.
+
+Scope-prefix normalization below applies to configuration strings, not to the
+filenames Git reports.
 Output flags such as `--export`, `--sarif` and `--emit-baseline` are project-relative;
 an absolute output path explicitly selects a destination outside it.
 

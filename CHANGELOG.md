@@ -173,12 +173,14 @@ a command in a traceback.
   `git worktree add` and a kept tree's `checkout --force` print that subject, and the
   strict read stopped the run before any mutant; on Linux a leftover file named in
   Latin-1 did the same through `clean`.
-- A file git names in bytes that are not UTF-8, such as a Latin-1 name made on Linux and
-  kept in a Windows clone's index, is left out and named once on stderr: `crapkit: left out
-  NAME: git names it in bytes that are not UTF-8, and crapkit reads every path as UTF-8;
-  rename it (git mv) to have it read`. One such name anywhere in the tree ended `init`,
-  `inventory`, `doctor`, `coverage`, `verify` and the pre-commit gate with a
-  UnicodeDecodeError.
+- A file git names in bytes that are not UTF-8 (a Latin-1 name made on Linux, kept as it
+  was in a Windows clone's index) no longer ends every command with a UnicodeDecodeError.
+  When a scope takes it, `inventory`, `coverage`, `verify`, `doctor`, `watch` and
+  `hook-precommit` exit 3 before any lane runs, with one line naming the file and
+  `git mv`, so no gate passes a source file no reader read. Any other such name, an
+  untracked one included, is left out and named once on stderr: `crapkit: left out NAME:
+  git names it in bytes that are not UTF-8, and crapkit reads every path as UTF-8; rename
+  it (git mv) to have it read`.
 - A path argument, an override reason (`CRAPKIT_OVERRIDE_REASON` or `verify --override`),
   a host name or a checkout directory in bytes that are not UTF-8 no longer ends a command
   with a UnicodeEncodeError. `explain` and `brief` answer with their sentence for a
