@@ -120,6 +120,17 @@ def test_the_readme_names_the_toolchain_root_on_each_os(platform_name, monkeypat
     assert f"`{spelled}`" in section("Native runs")
 
 
+@pytest.mark.parametrize("text", [section("Native runs"), toolchain.__doc__], ids=["readme", "docstring"])
+def test_the_rerun_rule_names_the_pin_file_each_step_writes(text, tmp_path):
+    """Both texts said a rerun skips a step whose output exists. A step is kept
+    only while the pin it wrote beside its output still matches."""
+    target = tmp_path / "tool"
+    toolchain._once(target, target.mkdir, "sha-1")
+    stamp, = set(tmp_path.iterdir()) - {target}
+
+    assert "<output>" + stamp.name.removeprefix(target.name) in text
+
+
 @pytest.mark.parametrize("argv", run_lines(), ids=" ".join)
 def test_every_run_py_line_in_the_readme_is_one_run_py_takes(argv):
     run.parse(argv)

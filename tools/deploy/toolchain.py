@@ -24,8 +24,12 @@ The root is %LOCALAPPDATA%\\crapkit-deploy on Windows,
 ~/Library/Caches/crapkit-deploy on macOS and ~/.cache/crapkit-deploy on
 Linux, or $CRAPKIT_DEPLOY_TOOLCHAIN_ROOT, which `run.py --native` reads as
 well, so two checkouts on one machine each keep their own pins. Every path is
-resolved before a sandbox rewrites LOCALAPPDATA, and each step is skipped when
-its output already exists, so a warm rerun costs seconds.
+resolved before a sandbox rewrites LOCALAPPDATA.
+
+A rerun makes a step again only when its pin moved or the step stopped
+halfway: each step writes the pin it was made from (a sha256, a lock's digest)
+to <output>.pin beside its output, and a download is kept when its bytes
+already hash to its pinned sha256.
 
 `run.py --native` gives pytest --basetemp C:\\dt on Windows (no 8.3 short
 name in it), $TMPDIR/crapkit-deploy-tmp elsewhere, or $CRAPKIT_DEPLOY_BASETEMP.

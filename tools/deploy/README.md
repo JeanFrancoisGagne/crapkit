@@ -71,8 +71,10 @@ ubuntu runner. It needs the toolchain first: `python tools/deploy/toolchain.py
 prek (Windows and Linux), pwsh (Windows and macOS), PortableGit (Windows), the
 harness binaries for this OS, the wheelhouse rows and the npm caches. On Linux
 it keeps the machine's own git and `/usr/bin/python3`, as a user's machine
-does. A rerun skips each step whose output is already there. The toolchain
-root:
+does. A rerun makes a step again only when its pin moved or the step stopped
+halfway: each step writes the pin it was made from (a sha256 or a lock's
+digest) to `<output>.pin` beside its output, and a download is kept when its
+bytes already hash to its pinned sha256. The toolchain root:
 
 | OS | Toolchain root |
 |---|---|
