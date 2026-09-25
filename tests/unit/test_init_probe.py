@@ -924,7 +924,7 @@ def test_the_venv_word_is_the_same_whichever_os_writes_it(tmp_path, monkeypatch,
     as its own launcher. The Windows author's `.venv\Scripts\python.exe`
     failed every lane of a Linux checkout that carried its own .venv, and the
     Linux author's `.venv/bin/python` failed on Windows."""
-    from crapkit.config import expand_launchers
+    from crapkit.lane_command import expand_launchers
 
     monkeypatch.setattr(admin, "_VENV_LAUNCHER", layout)
     venv = tmp_path / ".venv"

@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit import config, doctor, lanes, procs
+from crapkit import config, doctor, lane_command, lanes, procs
 from crapkit.cli import _shared
 from crapkit.cli._shared import _repo_relative
 from crapkit.repopath import fragment
@@ -305,8 +305,8 @@ def test_the_launcher_token_table_has_the_bare_and_the_venv_form():
 
 def test_each_launcher_token_row_is_what_the_loader_expands_on_each_os():
     for token, windows, posix in _token_rows():
-        assert config.expand_launchers(token, windows=True) == windows, token
-        assert config.expand_launchers(token, windows=False) == posix, token
+        assert lane_command.expand_launchers(token, windows=True) == windows, token
+        assert lane_command.expand_launchers(token, windows=False) == posix, token
 
 
 @pytest.mark.parametrize("page", ["docs/lanes.md", "plugin/skills/crapkit-onboard/SKILL.md"])

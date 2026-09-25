@@ -646,7 +646,6 @@ _PATH_KEYS = {
     "lane.results_artifact": "file",
     "crapkit.ratchet_file": "file",
     "exclude.globs": "glob",
-    "{python:VENV}": "file",
 }
 
 
@@ -692,43 +691,15 @@ def _parse_scopes(rows, root: str | os.PathLike | None = None
     return tuple(scopes.values()), notes
 
 
-# The python a committed crapkit.toml names, spelled so every OS can read it.
-# init wrote the launcher of the OS it ran on, `.venv\Scripts\python.exe` or
-# `.venv/bin/python`, and the file is committed: the other OS's checkout, with a
-# venv of its own, failed every lane. `{python}` reads as `python` on Windows and
-# `python3` elsewhere (an Ubuntu without python-is-python3 has no `python`), and
-# `{python:DIR}` as the launcher inside the venv at DIR. No backslash and no
-# quote, so it survives the TOML basic string init writes it into, and no name
-# `prepare_template` fills in, so `{files}` beside it is untouched.
-_WINDOWS = os.name == "nt"
-_LAUNCHER_TOKEN = re.compile(r"\{python(?::([^{}\s]+))?\}")
+def _expanded(command: str) -> str:
+    """The command with its launcher tokens expanded for the OS reading the
+    file, once, as the Lane is built (lane_command.expand_launchers), so every
+    reader of the command sees the one the shell will run. Imported here and
+    not at the top: lane_command reads this module's shell tokenizer as it
+    loads."""
+    from .lane_command import expand_launchers
 
-
-def python_token(venv: str = "") -> str:
-    """The launcher token init writes: `{python}`, or `{python:DIR}` for the
-    venv at DIR, root-relative with `/` between directories."""
-    return f"{{python:{venv}}}" if venv else "{python}"
-
-
-def expand_launchers(command: str, windows: bool = _WINDOWS) -> str:
-    """The command with each launcher token replaced by the launcher of the OS
-    reading the file. Anything else, a bare `python` included, stays as
-    written. The loader calls this before the full-suite guard reads the
-    command, so every reader after it sees the command the shell will run."""
-    return _LAUNCHER_TOKEN.sub(lambda token: _launcher(token.group(1), windows), command)
-
-
-# Keyed by `windows`: the name `{python}` reads as, and the separator and
-# layout of the launcher inside a venv.
-_BARE_PYTHON = {True: "python", False: "python3"}
-_VENV_LAYOUT = {True: ("\\", "Scripts", "python.exe"), False: ("/", "bin", "python")}
-
-
-def _launcher(venv: str | None, windows: bool) -> str:
-    if venv is None:
-        return _BARE_PYTHON[windows]
-    separator, *layout = _VENV_LAYOUT[windows]
-    return separator.join([*filter(None, _path("{python:VENV}", venv).split("/")), *layout])
+    return expand_launchers(command)
 
 
 def _validate_lane_command(parser: str, full_suite: bool, name: str, command: str,
@@ -755,7 +726,7 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
         raise ConfigError(f"lane {row.get('name')!r} references undeclared scope(s) {sorted(unknown_scopes)}")
     full_suite = row.get("full_suite", True)
     cwd = _path("lane.cwd", row.get("cwd", ""))
-    command = expand_launchers(row["command"])
+    command = _expanded(row["command"])
     _validate_lane_command(parser, full_suite, row.get("name", "?"), command,
                            _lane_dir(root, cwd))
     return Lane(name=row["name"], command=command,
@@ -768,7 +739,7 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
                 timeout_seconds=row.get("timeout_seconds", 0),
                 no_progress_seconds=row.get("no_progress_seconds", 0),
                 retries=row.get("retries", 0),
-                retest_command=expand_launchers(row.get("retest_command", "")),
+                retest_command=_expanded(row.get("retest_command", "")),
                 inputs=_lane_inputs(row, root))
 
 
@@ -802,7 +773,7 @@ def _unique_lanes(rows, scope_names: set, root) -> list[Lane]:
 def _scoped_tests(main: dict) -> tuple[tuple[str, str], ...]:
     """Each scope's test-scoped template, by scope name, with its launcher
     token expanded; `{files}` stays for test-scoped to fill in."""
-    return tuple(sorted((name, expand_launchers(template))
+    return tuple(sorted((name, _expanded(template))
                         for name, template in main.get("scoped_tests", {}).items()))
 
 
@@ -826,7 +797,7 @@ def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
         ratchet_file=_path("crapkit.ratchet_file", main.get("ratchet_file", "crapkit-ratchet.tsv")),
         alert_command=main.get("alert_command", ""),
         scoped_tests=_scoped_tests(main),
-        mutation_command=expand_launchers(main.get("mutation_command", "")),
+        mutation_command=_expanded(main.get("mutation_command", "")),
         mutation_timeout_seconds=main.get("mutation_timeout_seconds", 300),
         mutation_workers=main.get("mutation_workers", 1),
         diff_uncovered_max=main.get("diff_uncovered_max"),

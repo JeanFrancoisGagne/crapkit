@@ -22,7 +22,8 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner, git_commit_all, git_init_repo
-from crapkit.config import expand_launchers, load_config_text
+from crapkit.config import load_config_text
+from crapkit.lane_command import expand_launchers
 
 # The lane's python is a child of its own; the in-process runner is enough for
 # crapkit itself.

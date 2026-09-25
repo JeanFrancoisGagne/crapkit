@@ -19,7 +19,8 @@ from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
 from ..repopath import typed_path
-from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
+from ..lane_command import (LaunchSpec, expand_launchers, first_word, launch_spec,
+                            pytest_head, pytest_python, python_token)
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
@@ -104,7 +105,7 @@ def _committed_launcher(venv: Path, root: Path) -> str:
     Linux wrote `.venv/bin/python`, which cmd.exe cannot start. The loader
     expands `{python:.venv}` into the launcher of the OS reading the file.
     """
-    return config.python_token(venv.relative_to(root).as_posix())
+    return python_token(venv.relative_to(root).as_posix())
 
 
 def _repo_venv_python(root: Path, scopes: tuple[str, ...] = ()) -> str | None:
@@ -159,8 +160,8 @@ def _bare_python() -> str:
     runs on the machine that wrote it."""
     import shutil
 
-    token = config.python_token()
-    return token if shutil.which(config.expand_launchers(token)) else _python_name()
+    token = python_token()
+    return token if shutil.which(expand_launchers(token)) else _python_name()
 
 
 def _present_markers(root: Path) -> frozenset[str]:

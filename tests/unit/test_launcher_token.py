@@ -21,9 +21,10 @@ import tomllib
 import pytest
 
 from crapkit import config
-from crapkit.config import expand_launchers, load_config_text, python_token
+from crapkit.config import load_config_text
 from crapkit.errors import ConfigError
-from crapkit.lane_command import first_word, is_python, pytest_python
+from crapkit.lane_command import (expand_launchers, first_word, is_python, pytest_python,
+                                  python_token)
 from crapkit.procs import prepare_template
 
 WINDOWS = os.name == "nt"
@@ -119,6 +120,24 @@ def test_the_loaded_config_holds_the_expansion_in_every_command():
     assert lane.retest_command == f"{launcher} -m pytest {{tests}}"
     assert dict(cfg.scoped_tests)["pkg"] == f"{launcher} -m pytest {{files}} -q"
     assert cfg.mutation_command == f"{launcher} -m pytest -q -x"
+
+
+def test_the_loader_expands_each_command_through_lane_command(monkeypatch):
+    """lane_command owns how a lane's command reads, the launcher token
+    included; config asks it once per command as it builds the Config."""
+    from crapkit import lane_command
+
+    seen: list[str] = []
+    monkeypatch.setattr(lane_command, "expand_launchers",
+                        lambda command: seen.append(command) or command)
+    text = (_config(mutation_command="{python} -m pytest -q")
+            + "[crapkit.scoped_tests]\npkg = \"{python} -m pytest {files}\"\n"
+            + SCOPE + _lane("{python} -m pytest --cov", retest_command="{python} -m pytest"))
+
+    load_config_text(text)
+
+    assert sorted(seen) == ["{python} -m pytest", "{python} -m pytest --cov",
+                            "{python} -m pytest -q", "{python} -m pytest {files}"]
 
 
 def test_the_files_template_still_substitutes_after_the_expansion():
