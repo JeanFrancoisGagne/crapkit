@@ -103,3 +103,13 @@ def test_below_the_floor_a_shell_form_plugin_runs_as_written_and_says_nothing(tm
     monkeypatch.setattr(admin, "_claude_code_version", lambda: OLD_CLAUDE)
 
     assert check(plugin_with(tmp_path / "p", shell_form("1")), capsys) == (0, [])
+
+
+def test_below_the_floor_a_plugin_codex_installed_gets_no_claude_code_line(tmp_path, capsys,
+                                                                          monkeypatch):
+    """Codex runs none of the plugin's hooks, so the Claude Code on PATH is not
+    the harness this install answers to."""
+    monkeypatch.setattr(admin, "_claude_code_version", lambda: OLD_CLAUDE)
+    root = tmp_path / ".codex" / "plugins" / "cache" / "crapkit" / "crapkit" / CLI
+
+    assert check(plugin_with(root, exec_form("1")), capsys) == (0, [])

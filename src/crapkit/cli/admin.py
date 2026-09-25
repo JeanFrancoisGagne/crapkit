@@ -1796,12 +1796,21 @@ def _claude_code_version() -> tuple[str, str] | None:
     return executable, done.stdout.strip()
 
 
+def _claude_code_drops_args(root: Path) -> bool:
+    """Would a Claude Code below the floor drop this install's hook args? Only
+    for an install Claude Code runs (Codex runs none of its hooks) whose hooks
+    pass any: a shell-form hook runs as written."""
+    from ..doctor import plugin_harness
+
+    return plugin_harness(str(root), os.environ.get("CODEX_HOME")) == "claude" and _exec_form(root)
+
+
 def _claude_code_floor(root: Path) -> list[str]:
     """The line for a Claude Code on PATH too old to pass the plugin's hook
-    args, when its hooks pass any: a shell-form hook runs as written."""
+    args, when this install's hooks depend on them."""
     from ..doctor import claude_code_floor_gap
 
-    found = _claude_code_version() if _exec_form(root) else None
+    found = _claude_code_version() if _claude_code_drops_args(root) else None
     line = claude_code_floor_gap(*found) if found else None
     return [line] if line else []
 
