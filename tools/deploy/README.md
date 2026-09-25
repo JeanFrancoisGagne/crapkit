@@ -131,9 +131,9 @@ Rules the kit holds a cell to:
   itself, such as Zed, which runs until its window closes while `box.run`
   waits for the child to exit, needs an entry in `REACHES_THE_MACHINE` there:
   the names it uses and why. The rule also fails on any collected test that
-  is neither a `@cell` nor marked `kit`: no job selects it. Several tests may share a cell
-  id. A helper test marked `@pytest.mark.kit` runs in every job and under
-  `--packet` for the packet its module's `PACKET` names.
+  is neither a `@cell` nor marked `kit`: no job selects it. Several tests may
+  share a cell id. A helper test marked `@pytest.mark.kit` runs in every job
+  and under `--packet` for the packet its module's `PACKET` names.
 - Each command gets the 120 s hang bound. A whole package install (`npm ci`,
   a large `pip install`) passes `bound=sandbox.SLOW`: `npm ci` of the 420
   fixture packages took 2 to 3 minutes on a loaded Windows machine.
