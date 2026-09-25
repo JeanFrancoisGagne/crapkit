@@ -514,3 +514,51 @@ def test_a_ts_move_eslint_disagrees_with_is_refused_by_name(oracle):
     assert not judged.agrees
     assert cc._refusal(judged).startswith(
         f"crapkit now says 3, eslint says 2 at {TS_PATH}:kind (ccn): this looks like a regression")
+
+
+# --- what a refusal prints ------------------------------------------------------------------------
+
+@pytest.mark.process
+def test_a_refusal_lists_the_first_ten_disagreements_and_counts_the_rest(make_repo, oracle):
+    """f1 to f11 read CRAP 1.25 at ccn 1 and cov 1.0, where the formula gives 1.0."""
+    oracle("radon")
+    rows = seeds.scored_rows(f_crap={k: "1.25" for k in range(1, 12)})
+    top = seeds.seeded(make_repo, BASE)
+    seeds.write(top, BASE, seeds.bump({**BASE, seeds.SCORED: seeds.scored(rows)}, "12"))
+
+    with pytest.raises(cc.ChangeControlError) as refused:
+        cc.declare(top, cc.Request("C3", "fix", ("CRAP score",), "f"), regenerate_goldens=False,
+                   lizard="1.24.0")
+
+    text = str(refused.value)
+    assert text.count("crapkit now says 1.25, kit.exact says 1.0 at src/a.py:") == 10
+    assert "  ... and 1 more moved cells an oracle disagrees with" in text
+    assert cc.RESTORE not in text
+
+
+@pytest.mark.process
+def test_a_refusal_after_regenerating_says_how_to_put_the_goldens_back(make_repo, oracle):
+    oracle("radon")
+    base = {**BASE, cc.REGENERATE: "import sys\nassert sys.argv[1:] == ['goldens']\n"}
+    top = seeds.seeded(make_repo, base)
+    rows = seeds.scored_rows(parse_ccn=9, parse_crap="19.125")
+    seeds.write(top, base, seeds.bump({**base, seeds.SCORED: seeds.scored(rows),
+                                       seeds.INVENTORY: seeds.inventory(rows)}, "12"))
+
+    with pytest.raises(cc.ChangeControlError) as refused:
+        cc.declare(top, cc.Request("C3", "fix", (seeds.CCN,), "parse"), lizard="1.24.0")
+
+    assert "crapkit now says 9, radon says 7 at src/a.py:parse" in str(refused.value)
+    assert str(refused.value).endswith(cc.RESTORE)
+
+
+def test_a_path_the_code_page_cannot_spell_prints_escaped(monkeypatch):
+    out, err = io.BytesIO(), io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(out, encoding="cp1252", newline="\n"))
+    monkeypatch.setattr(sys, "stderr", io.TextIOWrapper(err, encoding="cp1252", newline="\n"))
+
+    cc._console()
+    print("src/\u4e2d.py caf\u00e9")
+    sys.stdout.flush()
+
+    assert out.getvalue() == b"src/" + b"\\" + b"u4e2d.py caf\xe9\n"

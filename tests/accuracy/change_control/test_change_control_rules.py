@@ -15,6 +15,7 @@ verdict it gets as one).
 """
 from __future__ import annotations
 
+from fractions import Fraction
 import hashlib
 from pathlib import Path
 import re
@@ -454,7 +455,67 @@ def test_an_oracle_that_finds_no_function_at_the_start_line_answers_nothing(orac
     assert cc.judge(tree, moved).value == "0"
 
 
+class _CountsTable:
+    """A stand-in for the coverage packet's counts table: f1 (start 14) with one
+    row, f2 (start 18) measured by two lanes; every ratio 1/2."""
+
+    def __init__(self):
+        self.read = []
+
+    def table(self, directory: Path) -> dict:
+        self.read.append(sorted(path.relative_to(directory).as_posix()
+                                for path in directory.rglob("*") if path.is_file()))
+        return {("src/a.py", 14): ["f1"], ("src/a.py", 18): ["f2 py", "f2 js"]}
+
+    @staticmethod
+    def ratio(counts) -> Fraction:
+        return Fraction(1, 2)
+
+
+def test_a_cov_cell_is_judged_by_the_counts_table_on_the_written_out_corpus(monkeypatch):
+    stand_in = _CountsTable()
+    monkeypatch.setattr(cc, "counts_module", lambda: stand_in)
+    tree = _tree(BASE)
+    f1 = cc.judge(tree, cc.Cell(seeds.SCORED, "src/a.py", "f1", "cov", "1.0", "0.75"))
+    f2 = cc.judge(tree, cc.Cell(seeds.SCORED, "src/a.py", "f2", "cov", "1.0", "0.5"))
+
+    assert (f1.oracle, f1.value, f1.agrees) == ("counts table", "0.5", False)
+    assert cc._refusal(f1).startswith("crapkit now says 0.75, counts table says 0.5 at "
+                                      "src/a.py:f1 (cov)")
+    assert (f2.oracle, f2.value) == ("", "")
+    assert stand_in.read == [["src/a.py"]]
+
+
+@pytest.mark.parametrize("row, crap", [
+    ({"ccn": "3", "cov": "0.0", "flag": "cc-only"}, "3.0"),
+    ({"ccn": "3", "cov": "0.0", "flag": "untested"}, "12.0"),
+    ({"ccn": "7", "cov": "0.5", "flag": "measured"}, "13.125"),
+    ({"ccn": "7", "cov": "nan?"}, None),
+])
+def test_the_crap_oracle_follows_the_readme_formula_and_the_cc_only_flag(row, crap):
+    """README: CRAP = ccn^2 (1 - cov)^3 + ccn (9 * 1 + 3 = 12, 49 * 0.125 + 7 =
+    13.125), and a cc-only row scores crap = ccn."""
+    assert cc.exact_crap(row, None) == crap
+
+
+def test_an_untested_or_no_lane_row_reads_cov_0_without_the_counts_table(monkeypatch):
+    monkeypatch.setattr(cc, "counts_module", lambda: pytest.fail("the table was read"))
+
+    for flag in ("untested", "no-lane"):
+        assert cc.counts_cov(_tree(BASE), cc.Cell(seeds.SCORED, "src/a.py", "f1", "cov", "", ""),
+                             {"start": "14", "flag": flag}) == "0.0"
+
+
+def test_without_the_counts_table_a_cov_cell_has_no_oracle():
+
+    judged = cc.judge(_tree(BASE), cc.Cell(seeds.SCORED, "src/a.py", "f1", "cov", "1.0", "0.5"))
+
+    assert cc.counts_module() is None or callable(cc.counts_module().table)
+    assert cc.counts_module() is not None or (judged.oracle, judged.value) == ("", "")
+
+
 @pytest.mark.parametrize("text, oracle, hit", [
+
     ("radon", "radon", True), ("radon 6.0.1 cc_visit", "radon", True),
     ("kit.exact half-even", "kit.exact", True), ("Radon 6.0.1", "radon", True),
     ("radon_mccabe", "radon", False), ("hand: NIST SP 500-235", "radon", False),

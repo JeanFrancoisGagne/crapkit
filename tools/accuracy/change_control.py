@@ -783,20 +783,90 @@ def eslint_answer(row: dict, source: str | None, column: str) -> str | None:
 
 
 def exact_crap(row: dict, source: str | None) -> str | None:
-    """The README's CRAP from the row's own ccn and cov, exactly."""
+    """The README's CRAP from the row's own ccn and cov, exactly: ccn^2 (1 - cov)^3 +
+    ccn, and ccn itself on a cc-only row (README, "Flags: why a coverage number is
+    missing": cc-only scores crap = ccn)."""
     try:
-        value = exact.crap(int(row["ccn"]), Fraction(float(row["cov"])))
+        ccn, cov = int(row["ccn"]), Fraction(float(row["cov"]))
     except (KeyError, ValueError):
         return None
-    return repr(float(value))
+    return repr(float(ccn if row.get("flag") == "cc-only" else exact.crap(ccn, cov)))
 
 
-ORACLES = {("ccn_std", ".py"): ("radon", radon_ccn), ("ccn_mod", ".py"): ("radon", radon_ccn),
-           ("ccn", ".py"): ("radon", radon_ccn),
-           ("cognitive", ".py"): ("complexipy", complexipy_cognitive),
-           ("crap", ""): ("kit.exact", exact_crap),
+COUNTS_TABLE = "accuracy.coverage_oracles.counts_table"
+
+
+def counts_module():
+    """The coverage packet's counts table (json.load over the recorded artifacts, no
+    crapkit), or None in a tree that does not have it."""
+    try:
+        return importlib.import_module(COUNTS_TABLE)
+    except ModuleNotFoundError as missing:
+        if COUNTS_TABLE.startswith(missing.name or "-"):
+            return None
+        raise
+
+
+def _materialized(tree) -> Path:
+    """The small corpus of a git or in-memory tree, written out once per tree."""
+    held = tree.__dict__.get("_corpus")
+    if held is None:
+        held = tree.__dict__["_corpus"] = tempfile.TemporaryDirectory(prefix="crapkit-corpus-")
+        prefix = SMALL_CORPUS + "/"
+        for path in (name for name in tree.paths() if name.startswith(prefix)):
+            target = Path(held.name) / path[len(prefix):]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(tree.read(path))
+    return Path(held.name)
+
+
+def corpus_dir(tree, name: str) -> Path | None:
+    """The corpus directory on disk: the working tree's own small corpus, a git or
+    in-memory tree's written out, or a member under CRAPKIT_ACCURACY_CORPUS."""
+    if name != "small":
+        root = os.environ.get(CORPUS_ENV)
+        return Path(root) / name if root else None
+    return tree.root / SMALL_CORPUS if isinstance(tree, DirTree) else _materialized(tree)
+
+
+def _counts_of(tree, name: str) -> dict:
+    """{(path, start): count rows} for one corpus of the tree, read once per tree."""
+    tables = tree.__dict__.setdefault("_counts", {})
+    if name not in tables:
+        directory, module = corpus_dir(tree, name), counts_module()
+        usable = module is not None and directory is not None and directory.is_dir()
+        tables[name] = module.table(directory) if usable else {}
+    return tables[name]
+
+
+# README, "Flags: why a coverage number is missing": untested and no-lane score cov = 0.
+ZERO_COV_FLAGS = ("untested", "no-lane")
+
+
+def counts_cov(tree, cell: Cell, row: dict) -> str | None:
+    """The README's coverage ratio (branches, else statements, else called) from the
+    counts table's row at the function's start, or 0 on a row the README scores at
+    0; nothing when no row, or several (a function two lanes measure), stand there."""
+    if row.get("flag") in ZERO_COV_FLAGS:
+        return "0.0"
+    found = _counts_of(tree, corpus_name(tree, cell.golden)).get((cell.path, int(row["start"])))
+    return repr(float(counts_module().ratio(found[0]))) if found and len(found) == 1 else None
+
+
+
+def _by_source(function):
+    """An oracle that reads the source text of the cell's file."""
+    return lambda tree, cell, row: function(row, corpus_source(tree, cell))
+
+
+ORACLES = {("ccn_std", ".py"): ("radon", _by_source(radon_ccn)),
+           ("ccn_mod", ".py"): ("radon", _by_source(radon_ccn)),
+           ("ccn", ".py"): ("radon", _by_source(radon_ccn)),
+           ("cognitive", ".py"): ("complexipy", _by_source(complexipy_cognitive)),
+           ("crap", ""): ("kit.exact", _by_source(exact_crap)),
+           ("cov", ""): ("counts table", counts_cov),
            **{(column, suffix): ("sonarjs" if column == "cognitive" else "eslint",
-                                 partial(eslint_answer, column=column))
+                                 _by_source(partial(eslint_answer, column=column)))
               for column in ESLINT_RULES for suffix in JS_SUFFIXES}}
 
 
@@ -845,14 +915,20 @@ def _row_at(tree, cell: Cell) -> dict:
     return _table_rows(tree.read(cell.golden)).get((cell.path, cell.handle), {})
 
 
+def _answer(tree, cell: Cell, oracle) -> str | None:
+    row = _row_at(tree, cell)
+    return oracle(tree, cell, row) if row else None
+
+
 def judge(tree, cell: Cell) -> Judgement:
     """The outside oracle's value for a moved cell, read at `tree`."""
     found = oracle_for(cell)
     if found is None or cell.new in ("", "absent"):
         return Judgement(cell, "", "")
-    name, oracle = found
-    value = oracle(_row_at(tree, cell), corpus_source(tree, cell))
-    return Judgement(cell, name if value is not None else "", value or "")
+    value = _answer(tree, cell, found[1])
+    return Judgement(cell, found[0] if value is not None else "", value or "")
+
+
 
 
 # --- the report ----------------------------------------------------------------------------
@@ -1684,12 +1760,18 @@ def _judge_one(head, cell: Cell, rulings: dict, request: Request) -> tuple:
     return judgement, ruling, None if ruling else _refusal(judgement)
 
 
+def _first_ten(refusals: list[str]) -> list[str]:
+    more = len(refusals) - 10
+    return refusals[:10] + ([f"... and {more} more moved cells an oracle disagrees with"]
+                            if more > 0 else [])
+
+
 def _judged(head, cells: list[Cell], request: Request) -> tuple[list, list[str]]:
-    """([(judgement, ruling)], refusals) for every moved cell."""
+    """([(judgement, ruling)], the first 10 refusals) for every moved cell."""
     rulings = rulings_of(head)
     triples = [_judge_one(head, cell, rulings, request) for cell in cells]
     return ([(judgement, ruling) for judgement, ruling, _ in triples],
-            [refusal for *_, refusal in triples if refusal])
+            _first_ten([refusal for *_, refusal in triples if refusal]))
 
 
 def _none_moves(cells: list[Cell], moved_surfaces_: list[str]) -> list[str]:
@@ -1944,13 +2026,24 @@ def worktree_changes(root: Path, base: str) -> frozenset[str]:
     return frozenset(name for name in (tracked + new).decode("utf-8").split("\0") if name)
 
 
+RESTORE = ("the regenerated goldens stay in the working tree to read; `git checkout -- "
+           "tests/accuracy/corpus_goldens/goldens` puts the committed ones back")
+
+
+def _planned(root: Path, request: Request, base: str, now: Running, regenerated: bool) -> Plan:
+    try:
+        return plan_declare(GitTree(root, base), DirTree(root), request, now,
+                            worktree_changes(root, base))
+    except ChangeControlError as refused:
+        raise ChangeControlError(f"{refused}\n{RESTORE}" if regenerated else str(refused)) from None
+
+
 def declare(root: Path, request: Request, base: str = "HEAD", regenerate_goldens: bool = True,
             lizard: str | None = None) -> str:
     """Regenerate, judge and record one change; the summary, or ChangeControlError."""
     note = regenerate(root) if regenerate_goldens else ""
-    head = DirTree(root)
-    now = running(head, lizard)
-    plan = plan_declare(GitTree(root, base), head, request, now, worktree_changes(root, base))
+    now = running(DirTree(root), lizard)
+    plan = _planned(root, request, base, now, regenerate_goldens and not note)
     write_plan(root, plan, now)
     return "\n".join(filter(None, (note, summary(plan, now))))
 
@@ -2136,9 +2229,19 @@ COMMANDS = {"declare": _declare_main, "lock": _lock_main, "counts": _counts_main
             "pre-push": _pre_push_main}
 
 
+def _console() -> None:
+    """A path a Windows code page cannot spell prints escaped instead of stopping
+    the report with UnicodeEncodeError."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _console()
     args = list(sys.argv[1:] if argv is None else argv)
     command = COMMANDS.get(args[0]) if args else None
+
     try:
         return command(args[1:]) if command else _check_main(args)
     except ChangeControlError as refused:
