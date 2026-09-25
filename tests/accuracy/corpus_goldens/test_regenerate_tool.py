@@ -78,8 +78,36 @@ def test_moved_files_are_the_new_the_gone_and_the_changed():
     assert regenerate.moved_files(before, after) == ["b", "c", "d"]
 
 
-def _tip(bundle: Path) -> str:
-    return repos.git(bundle.parent, "bundle", "list-heads", str(bundle), "refs/heads/main").split()[0]
+TINY = {"crapkit.toml": ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "tiny"\npaths = ["src"]\n'
+                         'languages = ["python"]\ncoverage_optional = true\n'),
+        "src/a.py": "def f(x):\n    if x:\n        return 1\n    return 0\n\n\ndef g(y):\n    return y\n"}
+
+
+@pytest.mark.process
+def test_the_full_golden_names_each_member_export_and_moves_only_on_change(tmp_path):
+    """Two functions in the member give two rows in each export; a second
+    rewrite from the same corpus moves nothing, and an edit moves both exports."""
+    member = tmp_path / "corpus" / "tiny"
+    for name, text in TINY.items():
+        (member / name).parent.mkdir(parents=True, exist_ok=True)
+        (member / name).write_bytes(text.encode("utf-8"))
+    golden = tmp_path / "full.tsv"
+    first = regenerate.rewrite_full(tmp_path / "corpus", golden, ["tiny"])
+    rows = [line.split("\t")[:3] for line in golden.read_text(encoding="utf-8").splitlines()]
+    again = regenerate.rewrite_full(tmp_path / "corpus", golden, ["tiny"])
+    (member / "src" / "a.py").write_bytes(b"def f(x):\n    return x\n")
+    edited = regenerate.rewrite_full(tmp_path / "corpus", golden, ["tiny"])
+
+    assert first == edited == ["full/tiny/inventory.tsv", "full/tiny/scored.tsv"]
+    assert rows == [["member", "export", "rows"], ["tiny", "inventory.tsv", "2"],
+                    ["tiny", "scored.tsv", "2"]]
+    assert again == []
+
+
+def _tip(bundle: Path, where: Path) -> str:
+    """The bundle's main, read from a directory outside any repository: a
+    checkout mounted into a container can hold a .git file git cannot follow."""
+    return repos.git(where, "bundle", "list-heads", str(bundle), "refs/heads/main").split()[0]
 
 
 @pytest.mark.process
@@ -88,7 +116,7 @@ def test_the_committed_bundle_is_what_the_history_command_builds(tmp_path):
 
     tip = regenerate.build_history(built)
 
-    assert tip == _tip(built) == _tip(regenerate.BUNDLE)
+    assert tip == _tip(built, tmp_path) == _tip(regenerate.BUNDLE, tmp_path)
 
 
 # --- re-recording (nightly) -----------------------------------------------------------------

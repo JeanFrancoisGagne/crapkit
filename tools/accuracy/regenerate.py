@@ -2,7 +2,7 @@
 
     python tools/accuracy/regenerate.py record --python314 PATH [--node-modules DIR]
     python tools/accuracy/regenerate.py history
-    python tools/accuracy/regenerate.py goldens
+    python tools/accuracy/regenerate.py goldens [--corpus DIR]
 
 `record` runs the small corpus's own recording suite (small/tests/) under the
 pinned producers and rewrites small/recorded/: coverage.py 7.16.1 on CPython
@@ -20,6 +20,8 @@ a copy, a merge, a non-ASCII path, commits on both sides of a month end and one
 commit touching more than 30 files.
 
 `goldens` measures the small corpus and the history, and rewrites goldens/.
+With `--corpus DIR` (a built full corpus) it also measures every member and
+rewrites goldens/full.tsv, the row count and sha256 of each member's exports.
 A golden that moves is a change the change-control packet must see declared:
 the command prints what moved and the declare command to run next.
 """
@@ -228,8 +230,34 @@ def rewrite_printed() -> list[str]:
     return [] if old == text else [f"printed/{golden.name}"]
 
 
-def _report_goldens() -> list[str]:
-    moved = rewrite_goldens() + rewrite_printed()
+def measure_full(corpus: Path, names: list[str]) -> dict:
+    """{(member, export): (rows, sha256)} for each named member of a built full corpus."""
+    from accuracy.corpus_goldens import full_runs
+    found = {}
+    with tempfile.TemporaryDirectory(prefix="crapkit-full-",
+                                     ignore_cleanup_errors=True) as scratch:
+        for name in names:
+            texts = full_runs.measure_member(corpus, name, Path(scratch) / name)
+            found.update({(name, export): full_runs.digest(text) for export, text in texts.items()})
+    return found
+
+
+def rewrite_full(corpus: Path, golden: Path, names: list[str]) -> list[str]:
+    """The full-corpus golden rewritten from the named members; returns what moved."""
+    from accuracy.corpus_goldens import full_runs
+    found = measure_full(corpus, names)
+    before = full_runs.read_golden(golden)
+    full_runs.write_golden(found, golden)
+    return [f"full/{member}/{export}" for member, export in moved_files(before, found)]
+
+
+def _rewrite_corpus(corpus: Path) -> list[str]:
+    from accuracy.corpus_goldens import full_runs
+    return rewrite_full(corpus, GOLDENS / "full.tsv", full_runs.member_names())
+
+
+def _report_goldens(corpus: Path | None = None) -> list[str]:
+    moved = rewrite_goldens() + rewrite_printed() + (_rewrite_corpus(corpus) if corpus else [])
     if not moved:
         return ["no golden moved"]
     return [f"moved {name}" for name in moved] + [f"declare what moved with `{DECLARE}`"]
@@ -242,7 +270,8 @@ def _parser() -> argparse.ArgumentParser:
     rec.add_argument("--python314", required=True)
     rec.add_argument("--node-modules", type=Path, default=NODE_MODULES)
     sub.add_parser("history")
-    sub.add_parser("goldens")
+    gold = sub.add_parser("goldens")
+    gold.add_argument("--corpus", type=Path, help="a built full corpus: also rewrite goldens/full.tsv")
     return parser
 
 
@@ -252,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         "record": lambda: [f"recorded {name}" for name in record(args.python314,
                                                                  args.node_modules)],
         "history": lambda: [f"history/small.bundle main = {build_history()}"],
-        "goldens": _report_goldens,
+        "goldens": lambda: _report_goldens(args.corpus),
     }
     print("\n".join(commands[args.command]()))
     return 0

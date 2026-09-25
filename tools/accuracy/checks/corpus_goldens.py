@@ -37,6 +37,8 @@ CHECKS = [
      "pytest": [_PACKET + "test_regenerate_tool.py"]},
     {"name": "two runs normalize to one golden", "seconds": 15, "tiers": ["nightly"],
      "pytest": [_PACKET + "test_normalized_twice.py"]},
+    {"name": "the full corpus's exports against their digests", "seconds": 180,
+     "tiers": ["nightly", "release"], "pytest": [_PACKET + "test_full_corpus.py"]},
     {"name": "the last five releases' stores read by this crapkit", "seconds": 420,
      "tiers": ["nightly", "release"], "pytest": [_PACKET + "test_store_upgrade.py"]},
 ]

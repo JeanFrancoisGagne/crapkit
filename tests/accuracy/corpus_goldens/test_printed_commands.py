@@ -96,18 +96,31 @@ def _line(shell: str, item) -> str:
     return item.text
 
 
+def _split_steps(items: list) -> tuple[list, list]:
+    """(the other lines, a refusal's next steps)."""
+    steps = [item for item in items if item.source.startswith("next-step")]
+    return [item for item in items if item not in steps], steps
+
+
 @pytest.fixture(scope="module")
 def pasted(run, stub_env, spaced_step, tmp_path_factory):
     """pasted(shell): (Printed, Pasted) for every line tested in that shell, from
     one paste per shell."""
     cache = {}
+    bare_env = printed_runs.without_crapkit_command(stub_env)
+
+    def paste_group(shell: str, items: list, env: dict) -> list:
+        results = shells.paste(shell, [_line(shell, item) for item in items], run.root, env,
+                               tmp_path_factory.mktemp(f"paste-{shell}"))
+        return list(zip(items, results))
 
     def paste(shell: str) -> list:
+        """A refusal's next step is pasted where no `crapkit` command is on PATH:
+        it is printed for a reader who started crapkit with `python -m crapkit`."""
         if shell not in cache:
-            items = [item for item in (*run.printed, spaced_step) if _tested_in(shell, item)]
-            results = shells.paste(shell, [_line(shell, item) for item in items], run.root,
-                                   stub_env, tmp_path_factory.mktemp(f"paste-{shell}"))
-            cache[shell] = list(zip(items, results))
+            rest, steps = _split_steps([item for item in (*run.printed, *spaced_step)
+                                        if _tested_in(shell, item)])
+            cache[shell] = paste_group(shell, rest, stub_env) + paste_group(shell, steps, bare_env)
         return cache[shell]
     return paste
 
@@ -124,16 +137,54 @@ def _of(pairs: list, *sources: str) -> list:
     return [(item, result) for item, result in pairs if item.source in sources]
 
 
+def _only(pairs: list, source: str) -> tuple:
+    """The one (Printed, Pasted) pair of a source crapkit prints once."""
+    found = _of(pairs, source)
+    assert found, f"crapkit printed no {source} line"
+    [pair] = found
+    return pair
+
+
+def _wrong(pairs: list) -> list:
+    """The pasted lines whose argv crapkit read differs from what they must hand it."""
+    return [(item.source, item.text, list(item.argv), _argv(result)) for item, result in pairs
+            if printed_runs.meaning(_argv(result)) != printed_runs.meaning(item.argv)]
+
+
+def _holding(pasted, shell: str, found) -> list:
+    """The argv-carrying pairs whose argv has a word `found` accepts."""
+    return [(item, result) for item, result in _of(pasted(shell), *ARGV_SOURCES)
+            if any(found(word) for word in item.argv)]
+
+
 @pytest.mark.parametrize("shell", HERE)
 def test_every_printed_command_hands_crapkit_its_arguments(pasted, shell):
-    """R124, R125: a report row's explain command and brief's commands, pasted
-    unchanged, reach crapkit intact."""
+    """A report row's explain command and brief's commands, pasted unchanged,
+    reach crapkit intact."""
     pairs = _of(pasted(shell), *ARGV_SOURCES)
-    wrong = [(item.source, item.text, list(item.argv), _argv(result)) for item, result in pairs
-             if printed_runs.meaning(_argv(result)) != printed_runs.meaning(item.argv)]
 
     assert {item.source for item, _ in pairs} == set(ARGV_SOURCES)
-    assert wrong == []
+    assert _wrong(pairs) == []
+
+
+@pytest.mark.parametrize("shell", HERE)
+def test_a_leading_hyphen_path_reaches_crapkit_as_a_path(pasted, shell):
+    """R124: `-top.py` in a printed command is a path, not an option: the
+    explain, gate and scoped lines each hand it to crapkit after `--`."""
+    pairs = _holding(pasted, shell, lambda word: word.startswith("-") and not word.startswith("--"))
+
+    assert {item.source for item, _ in pairs} == set(ARGV_SOURCES)
+    assert _wrong(pairs) == []
+
+
+def test_a_quoted_handle_reaches_crapkit_intact(pasted):
+    """R125: the explain line for `run( self , mode = "fast" )` hands crapkit
+    the handle with its double quotes, in each shell it is pasted into: on
+    Windows crapkit prints it as an encoded PowerShell command, pasted into cmd."""
+    pairs = [pair for shell in HERE for pair in _holding(pasted, shell, lambda word: '"' in word)]
+
+    assert {item.source for item, _ in pairs} == {"report"}
+    assert _wrong(pairs) == []
 
 
 def _first_line(result) -> str:
@@ -179,11 +230,13 @@ def spells_the_console_script(text: str) -> bool:
     return text.startswith("crapkit ")
 
 
-def test_brief_commands_spell_the_console_script(run):
-    """R123 (#37): docs/agent-json.md shows brief's commands verbatim as `crapkit ...`."""
-    brief = [item.text for item in run.printed if item.source in ("gate", "scoped")]
+@pytest.mark.parametrize("source", ("gate", "scoped"))
+def test_brief_commands_spell_the_console_script(run, source):
+    """R123 (#37): docs/agent-json.md shows brief's commands verbatim as
+    `crapkit ...`; each worklist row's brief prints one of each."""
+    brief = [item.text for item in run.printed if item.source == source]
 
-    assert len(brief) >= 20
+    assert len(brief) == len(run.rows)
     assert [text for text in brief if not spells_the_console_script(text)] == []
 
 
@@ -200,9 +253,9 @@ def _step_params():
 @pytest.mark.parametrize("shell, source", _step_params())
 def test_the_next_step_a_refusal_prints_runs_in_every_shell(pasted, shell, source):
     """R127: `<python> -m crapkit coverage`, printed when `python -m crapkit` started
-    crapkit, runs where it is read: from a plain interpreter path and from one
-    whose directory name holds a space."""
-    [(_, result)] = _of(pasted(shell), source)
+    crapkit, runs where it is read and no `crapkit` command is installed: from a
+    plain interpreter path and from one whose directory name holds a space."""
+    _, result = _only(pasted(shell), source)
     ruling = DEFECTS.get((shell, source))
     if ruling:
         rulings.pin_ruling(ruling, crapkit=f"exit {result.code}", oracle="exit 0")
@@ -226,7 +279,7 @@ def test_the_pip_line_hands_pip_one_requirement(pasted, shell):
     """R126: `pip install "crapkit[py]"` reaches pip as install crapkit[py]. The
     stand-in crapkit takes pip's place: the program named first does not change
     how any of these shells splits what follows it."""
-    [(item, result)] = _of(pasted(shell), "pip")
+    item, result = _only(pasted(shell), "pip")
 
     assert _argv(result) == list(item.argv)
 

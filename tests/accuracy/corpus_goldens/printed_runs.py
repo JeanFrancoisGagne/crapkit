@@ -37,7 +37,7 @@ import sys
 
 from filelock import FileLock
 
-from accuracy.kit import drive, repos, surfaces
+from accuracy.kit import drive, repos
 
 BODY = ("    if v == 1:\n        return 1\n    if v == 2:\n        return 2\n"
         "    if v == 3:\n        return 3\n    if v == 4:\n        return 4\n"
@@ -88,9 +88,14 @@ class Printed:
     shells: tuple[str, ...] = ()
 
 
+# The drill-down is each worklist row's last cell: `<td class="cmd">` since the
+# encoded PowerShell form got a line of its own, a bare `<td>` before that.
+_DRILL = re.compile(r'<td(?: class="cmd")?><code>(.*?)</code>(?:<div class="loc">.*?</div>)?'
+                    r'</td></tr>', re.S)
+
+
 def _cells(page: str) -> list[str]:
-    return [html.unescape(code) for code in re.findall(r'<td class="cmd"><code>(.*?)</code>',
-                                                       page, re.S)]
+    return [html.unescape(code) for code in _DRILL.findall(page)]
 
 
 def _report(driver: drive.Driver, rows: list[dict]) -> list[Printed]:
@@ -102,9 +107,9 @@ def _report(driver: drive.Driver, rows: list[dict]) -> list[Printed]:
 
 
 def handle(row: dict) -> str:
-    """The row's `handle`; a crapkit older than the field names a function by
-    its bare identifier, the first form docs/agent-json.md gives a handle."""
-    return row.get("handle") or surfaces.bare_name(row["function"])
+    """The row's `handle`; for a crapkit older than the field, the start line,
+    which README.md says `brief NAME` also takes, and which twins do not share."""
+    return row.get("handle") or str(row["start"])
 
 
 def meaning(argv) -> tuple:
@@ -137,8 +142,11 @@ def _brief(driver: drive.Driver, row: dict) -> list[Printed]:
                                                                  (row["path"],)))]
 
 
-def next_step(stderr: str) -> str:
-    return re.search(r"run `([^`]+)` first", stderr).group(1)
+def next_step(stderr: str) -> str | None:
+    """The command a refusal names as the next step; None when it names none,
+    as a crapkit older than the line does."""
+    found = re.search(r"run `([^`]+)` first", stderr)
+    return found.group(1) if found else None
 
 
 def python() -> Path:
@@ -146,12 +154,25 @@ def python() -> Path:
     return Path(os.environ.get(drive.PYTHON_ENV) or sys.executable)
 
 
-def refusal_next_step(source: str, interpreter: Path, root: Path) -> Printed:
-    """The next step `<interpreter> -m crapkit worklist` names in a repo with no run."""
+def refusal_next_step(source: str, interpreter: Path, root: Path) -> list[Printed]:
+    """The next step `<interpreter> -m crapkit worklist` names in a repo with no run,
+    or nothing when it names none."""
     done = subprocess.run([str(interpreter), "-m", "crapkit", "worklist"], cwd=root,
                           env=drive.child_env(), capture_output=True, text=True,
                           encoding="utf-8")
-    return Printed(source, next_step(done.stderr), ("coverage",))
+    text = next_step(done.stderr)
+    return [Printed(source, text, ("coverage",))] if text else []
+
+
+COMMAND_NAMES = ("crapkit", "crapkit.exe", "crapkit.cmd", "crapkit.bat")
+
+
+def without_crapkit_command(env: dict) -> dict:
+    """`env` with every PATH directory that holds a `crapkit` command left out:
+    what a reader has who ran `python -m crapkit` and installed no console script."""
+    kept = [entry for entry in env.get("PATH", "").split(os.pathsep)
+            if not any((Path(entry) / name).is_file() for name in COMMAND_NAMES)]
+    return {**env, "PATH": os.pathsep.join(kept)}
 
 
 def unmeasured_repo(scratch: Path) -> Path:
@@ -194,11 +215,13 @@ _SPELLING = re.compile(r"`([^`]+)` in ([^,)]+)")
 
 def clearing(receipt: str) -> list[Printed]:
     """Each spelling the receipt prints, with the shells it names for it; a
-    receipt that names no shell (POSIX) prints one spelling for bash."""
+    receipt that names no shell (POSIX) prints one spelling for bash. A receipt
+    from before the spellings prints none."""
     pairs = _SPELLING.findall(receipt)
     if pairs:
         return [Printed("clear", text, (), SHELL_NAMES[name.strip()]) for text, name in pairs]
-    return [Printed("clear", re.search(r"`(unset [^`]+)`", receipt).group(1), (), ("bash",))]
+    posix = re.search(r"`(unset [^`]+)`", receipt)
+    return [Printed("clear", posix.group(1), (), ("bash",))] if posix else []
 
 
 def _override(driver: drive.Driver) -> list[Printed]:
@@ -210,9 +233,11 @@ def _override(driver: drive.Driver) -> list[Printed]:
     return clearing(receipt.stdout + receipt.stderr)
 
 
-def pip_line(stdout: str) -> str:
-    """The install line the note puts in parentheses, however it quotes it."""
-    return re.search(r"\((pip install \S+) when that is", stdout).group(1)
+def pip_line(stdout: str) -> str | None:
+    """The install line the note puts in parentheses, however it quotes it;
+    None when init prints no such note."""
+    found = re.search(r"\((pip install \S+) when that is", stdout)
+    return found.group(1) if found else None
 
 
 def _pip(scratch: Path) -> list[Printed]:
@@ -229,7 +254,8 @@ def _pip(scratch: Path) -> list[Printed]:
     env["PATH"] = os.pathsep.join((str(scripts), env["PATH"]))
     done = subprocess.run([str(python()), "-m", "crapkit", "init"], cwd=root, env=env,
                           capture_output=True, text=True, encoding="utf-8")
-    return [Printed("pip", pip_line(done.stdout + done.stderr), ("install", "crapkit[py]"))]
+    line = pip_line(done.stdout + done.stderr)
+    return [Printed("pip", line, ("install", "crapkit[py]"))] if line else []
 
 
 @dataclass(frozen=True)
@@ -241,7 +267,7 @@ class PrintedRun:
 
 def _measure(work: Path) -> dict:
     root = repos.build(repos.Spec(steps=(repos.Commit(files=FILES),)), work / "repo").root
-    printed = [refusal_next_step("next-step", python(), root)]
+    printed = refusal_next_step("next-step", python(), root)
     driver = drive.Driver(root, date_now=repos.EPOCH + 86_400)
     driver.run("coverage")
     rows = driver.json("worklist")["active"]
