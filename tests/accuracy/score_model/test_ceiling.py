@@ -6,6 +6,9 @@ model_score.ceiling.
 """
 from __future__ import annotations
 
+import contextlib
+import sqlite3
+
 from hypothesis import given, strategies as st
 import pytest
 
@@ -80,6 +83,29 @@ def test_a_new_scope_moves_only_its_own_ceiling(repo_target, scopes, new_target)
     assert {name: after.ceiling_of(name) for name in scopes} == {
         name: before.ceiling_of(name) for name in scopes}
     assert after.ceiling_of("fresh") == new_target
+
+
+def _sql_ceilings(repo_target: int, scopes: dict, probes: list[str]) -> dict[str, int]:
+    """The store's SQL ceiling expression evaluated by sqlite for each scope name."""
+    own = {name: target for name, target in scopes.items() if target is not None}
+    ceiling = production.load("store:_ceiling_expr")(repo_target, own)
+    with contextlib.closing(sqlite3.connect(":memory:")) as db:
+        db.execute("CREATE TABLE i (scope TEXT)")
+        db.executemany("INSERT INTO i VALUES (?)", [(name,) for name in probes])
+        rows = db.execute(f"SELECT i.scope, {ceiling.expr} FROM i", ceiling.params).fetchall()
+    return dict(rows)
+
+
+@given(st.integers(1, 60), scope_tables())
+@pure
+def test_the_store_s_sql_ceiling_is_the_docs_ceiling(repo_target, scopes):
+    """The rollup decides over_target in SQL (store._ceiling_expr); sqlite must
+    reach the ceiling configuration.md:147 names for every scope, and for a
+    scope no table declares, the repo's."""
+    probes = [*scopes, "undeclared"]
+
+    assert _sql_ceilings(repo_target, scopes, probes) == {
+        name: model_score.ceiling(name, repo_target, scopes) for name in probes}
 
 
 # --- the same ceiling on every surface (CLI) ---------------------------------------------------

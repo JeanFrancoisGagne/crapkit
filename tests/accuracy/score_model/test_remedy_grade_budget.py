@@ -285,8 +285,8 @@ def _by_start(items: list[dict]) -> dict:
 @pytest.mark.cross_surface
 def test_remedy_and_budget_read_alike_on_next_item_brief_worklist_and_mcp(make_repo):
     """Every function next-item hands out carries the README remedy and the
-    agent-json.md:134-135 budget, and next-item, brief, get_next_item and the
-    worklist's remedy all print the same four values."""
+    agent-json.md:134-135 budget, and next-item, brief and get_next_item print
+    the same four values; the worklist and rescore print every row's remedy."""
     cli = cli_repo.driver(make_repo, cli_repo.SURFACES)
     assert cli.run("coverage").code == 0
     want = {(row.path, row.start): _model_fields(row) for row in cli_repo.expected(cli_repo.SURFACES)}
@@ -296,7 +296,14 @@ def test_remedy_and_budget_read_alike_on_next_item_brief_worklist_and_mcp(make_r
 
     assert handed == _not_ok(want)
     assert _by_start(mcp["structuredContent"]["items"]) == handed == briefs
-    assert _worklist_remedies(cli) == {key: value[0] for key, value in want.items()}
+    assert _worklist_remedies(cli) == _rescore_remedies(cli) == {
+        key: value[0] for key, value in want.items()}
+
+
+def _rescore_remedies(cli) -> dict:
+    """rescore over the unchanged tree: fresh complexity on the run's own coverage."""
+    paths = sorted({row.path for row in cli_repo.expected(cli_repo.SURFACES)})
+    return {(f["path"], f["start"]): f["remedy"] for f in cli.json("rescore", *paths)["functions"]}
 
 
 def _not_ok(fields: dict) -> dict:
