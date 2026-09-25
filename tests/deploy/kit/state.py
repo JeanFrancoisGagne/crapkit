@@ -48,12 +48,12 @@ import json
 import os
 import re
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 from e2e import repo_templates
-from kit import docsnip, repos, wheels
+from kit import docsnip, repos, state_manifest, wheels
 from kit.mcp_client import McpClient
 from kit.transcript import Step
 
@@ -230,8 +230,9 @@ def adopt(box, cli: Cli, repo: Path, version: str) -> dict:
     commit(box, repo, "adopt crapkit")
     cli.run(box, repo, "verify")
     _override(box, cli, repo)
-    cli.run(box, repo, "next-item", "--claim")
-    return {**facts(box, cli, repo), "user_edits": edits, "version": version}
+    claimed = json.loads(cli.run(box, repo, "next-item", "--claim").stdout)["item"]
+    return {**facts(box, cli, repo), "user_edits": edits, "version": version,
+            "claimed": {key: claimed[key] for key in ("path", "function", "start")}}
 
 
 @dataclass(frozen=True)
@@ -324,6 +325,38 @@ def upgrade_line(installation: str, text: str | None = None) -> str:
     return rows[installation]
 
 
+def upgrade_command(prefix: str, text: str | None = None) -> str:
+    """The table's command that starts with `prefix` ("pipx upgrade", "uvx"),
+    whatever its row is labelled."""
+    found = [command for command in upgrade_rows(text).values() if command.startswith(prefix)]
+    if not found:
+        raise GuideGap(f"{GUIDE}: the upgrade table gives no `{prefix} ...` command")
+    return found[0]
+
+
+@dataclass
+class Gaps:
+    """Guide steps a cell needed and did not find. The cell runs the tool's
+    own command in their place, finishes every other check, and raises the
+    gaps last, so a strict xfail(raises=GuideGap) holds only the doc gap."""
+    found: list[str] = field(default_factory=list)
+
+    def command(self, prefix: str, fallback: str) -> str:
+        try:
+            return upgrade_command(prefix)
+        except GuideGap as gap:
+            self.found.append(str(gap))
+            return fallback
+
+    def check(self, holds: bool, gap: str) -> None:
+        if not holds:
+            self.found.append(gap)
+
+    def raise_any(self) -> None:
+        if self.found:
+            raise GuideGap("\n".join(self.found))
+
+
 def guide_commands(heading: str, *, contains: str | None = None) -> list[str]:
     return docsnip.commands(docsnip.fence(GUIDE, heading, contains=contains))
 
@@ -346,29 +379,47 @@ def output(step: Step) -> str:
 
 # --- doctor's failures, fixed the way doctor says ---------------------------------
 
+SCOPE_BLOCK = re.compile(r"^\[\[scope\]\]\n(?:[^\[\n].*\n|\n)*", re.M)
+
+
 def drop_files_placeholder(repo: Path) -> str:
     """doctor: "drop {files} so the template runs the whole suite"."""
     rewrite(repo / "crapkit.toml", lambda text: text.replace(" {files}", ""))
     return "dropped {files} from the scoped-test template, as doctor's FAIL line says"
 
 
-DOCTOR_FIXES = {"drop {files} so the template runs the whole suite": drop_files_placeholder}
+def _without_repeats(text: str) -> str:
+    seen, kept, last = set(), [], 0
+    for block in SCOPE_BLOCK.finditer(text):
+        kept.append(text[last:block.start()] + ("" if block[0] in seen else block[0]))
+        seen.add(block[0])
+        last = block.end()
+    return "".join(kept) + text[last:]
 
 
-def _fix_for(line: str):
-    found = [fix for phrase, fix in DOCTOR_FIXES.items() if phrase in line]
-    if not found:
-        raise AssertionError(f"doctor FAILs with no fix this cell knows how to apply: {line}")
-    return found[0]
+def drop_duplicate_scope(repo: Path) -> str:
+    """"duplicate scope name 'x'; each scope needs its own name", for a block pasted twice."""
+    rewrite(repo / "crapkit.toml", _without_repeats)
+    return "deleted the [[scope]] block pasted twice, which 0.7.0 and later refuse by name"
+
+
+DOCTOR_FIXES = {"drop {files} so the template runs the whole suite": drop_files_placeholder,
+                "each scope needs its own name": drop_duplicate_scope}
+
+
+def _fixes_for(text: str) -> list:
+    return [fix for phrase, fix in DOCTOR_FIXES.items() if phrase in text]
 
 
 def resolve_doctor(box, repo: Path, doctor: Step) -> list[str]:
-    """Apply the fix each FAIL line names, as a user does; returns the edits."""
-    edits = []
-    for line in output(doctor).splitlines():
-        if line.startswith("FAIL"):
-            edits.append(_fix_for(line)(repo))
-            box.transcript.note(f"user edit: {edits[-1]}")
+    """Apply the fix each failure names, as a user does; returns the edits.
+    A failure no fix here knows fails the cell with doctor's own words."""
+    fixes = _fixes_for(output(doctor))
+    if not fixes:
+        raise AssertionError(f"doctor refuses with no fix this cell knows how to apply:\n{output(doctor)}")
+    edits = [fix(repo) for fix in fixes]
+    for edit in edits:
+        box.transcript.note(f"user edit: {edit}")
     return edits
 
 
@@ -396,10 +447,10 @@ def marks_diff(box, repo: Path) -> str:
     return box.run(["git", "diff", "--no-color", "--", "crapkit-ratchet.tsv"], cwd=repo, expect=0).stdout
 
 
-def diff_rows(diff: str, sign: str) -> list[str]:
-    """The mark rows a diff removes ("-") or adds ("+"), stamp lines left out."""
-    return [line[1:].rstrip("\r") for line in diff.splitlines()
-            if line.startswith(sign) and not line.startswith(sign * 3) and not line[1:].startswith("#")]
+def mark_rows(repo: Path) -> list[str]:
+    """The marks file's data rows: no stamp lines, no header."""
+    lines = (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8").splitlines()
+    return [line for line in lines if line and not line.startswith("#") and line != "path\tlong_name\tcrap"]
 
 
 @dataclass
@@ -409,16 +460,32 @@ class Reseed:
     diff: str
 
     def step(self, words: str) -> Step:
-        return next(step for step in self.steps if words in step.note)
+        """The last step whose note names `words`: after a refusal, the rerun."""
+        return [step for step in self.steps if words in step.note][-1]
 
 
-def reseed(box, repo: Path) -> Reseed:
-    """"After upgrading, in each repo": the fence's commands one at a time,
-    with the marks diff taken right after prune for the review."""
+def _reseed_line(box, repo: Path, line: str, reconcile) -> tuple[list[Step], list[str]]:
+    """One fence command; a refusal goes to `reconcile(box, repo, step)`,
+    then the command runs again and must pass. Returns its steps and the
+    mark rows as they stood right before the run that passed."""
+    before = mark_rows(repo)
+    first = run_line(box, repo, line, expect=None if reconcile else 0)
+    if not first.exit:
+        return [first], before
+    reconcile(box, repo, first)
+    before = mark_rows(repo)
+    return [first, run_line(box, repo, line, note=f"guide step, after the reviewed mapping: {line}")], before
+
+
+def reseed(box, repo: Path, reconcile=None) -> Reseed:
+    """"After upgrading, in each repo": the fence's commands one at a time.
+    The rows prune removed are read from the marks file around prune's own
+    passing run, for the review."""
     steps, pruned = [], []
     for line in guide_commands("Analysis version 11", contains="ratchet prune"):
-        steps.append(run_line(box, repo, line))
-        pruned = diff_rows(marks_diff(box, repo), "-") if "ratchet prune" in line else pruned
+        ran, before = _reseed_line(box, repo, line, reconcile)
+        steps += ran
+        pruned = [row for row in before if row not in mark_rows(repo)] if "ratchet prune" in line else pruned
     return Reseed(steps, pruned, marks_diff(box, repo))
 
 
@@ -460,19 +527,197 @@ def delete_retention_keys(box, repo: Path) -> None:
     box.transcript.note("user edit: deleted test_retention_days and test_retention_count, as the guide says")
 
 
+RETENTION = ("test_retention_days", "test_retention_count")
+
+
+def stamp_of(repo: Path) -> str:
+    return (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8").splitlines()[0]
+
+
+def analysis_of(stamp: str) -> int:
+    return int(re.search(r"crapkit-analysis=(\d+)", stamp)[1])
+
+
+def stamp_refusal(old: int, new: int) -> str:
+    return f"[crapkit-analysis={old} lizard=1.24.0] but this run measures [crapkit-analysis={new} lizard=1.24.0]"
+
+
+def upgrade_to(box, repo: Path, candidate, line: str) -> None:
+    """The upgrade command, then the guide's `crapkit --version` check. An
+    empty `line` is an upgrade the cell already ran (the Windows lock loop)."""
+    if line:
+        run_line(box, repo, line)
+    printed = run_line(box, repo, guide_span("crapkit --version"))
+    assert candidate.version in printed.stdout, box.transcript.text()
+
+
+def refused_until_reseed(box, repo: Path, candidate) -> None:
+    """Not a guide step: a verify before the reseed names both stamps."""
+    old, new = analysis_of(stamp_of(repo)), analysis_version(candidate)
+    if old == new:
+        return
+    refusal = box.run(["crapkit", "verify"], cwd=repo, expect=3, note="not a guide step: verify before the reseed")
+    assert stamp_refusal(old, new) in output(refusal), box.transcript.text()
+
+
+def reseed_and_verify(box, repo: Path, candidate, reconcile=None) -> Reseed:
+    """The guide's reseed fence, the review, a commit, then verify."""
+    done = reseed(box, repo, reconcile)
+    review(box, repo, done, export_path(repo))
+    assert stamp_of(repo) == f"# crapkit-analysis={analysis_version(candidate)} lizard=1.24.0", done.diff
+    commit(box, repo, "reseed the marks under the candidate")
+    verify(box, repo)
+    return done
+
+
+def retention_warnings(step: Step) -> list[str]:
+    return [key for key in RETENTION if f"WARN crapkit.{key} is deprecated" in output(step)]
+
+
+def saved_state(box, repo: Path, source: Source) -> None:
+    """"Saved state and command behavior": runs list, then the retention keys."""
+    listed = run_line(box, repo, guide_span("crapkit runs list"))
+    assert all(f"run {run_id:>3} @" in listed.stdout for run_id in source.run_ids), listed.stdout
+    if any("test_retention" in edit for edit in source.user_edits):
+        delete_retention_keys(box, repo)
+        assert not retention_warnings(box.run(["crapkit", "doctor"], cwd=repo, expect=0))
+        commit(box, repo, "drop the retention keys crapkit ignores")
+
+
+def after_upgrade(box, repo: Path, source: Source, candidate) -> None:
+    """What the user checks once the guide is done: nothing the old CLI kept
+    is gone, and a fresh MCP session runs the candidate."""
+    kept(box, repo, source)
+    assert server_info(box, repo)["version"] == candidate.version, box.transcript.text()
+
+
+def nothing(*_args) -> None:
+    return None
+
+
+def walk(box, repo: Path, candidate, source: Source, line: str, *, upgraded=nothing, measured=nothing,
+         reconcile=None) -> Reseed:
+    """The guide in page order, from the upgrade command `line` on.
+    `upgraded(box, repo)` runs after the version check,
+    `measured(box, repo, doctor)` after doctor and the export, and
+    `reconcile(box, repo, refusal)` when prune or seed asks for a reviewed mapping."""
+    before = state_manifest.take(repo)
+    upgrade_to(box, repo, candidate, line)
+    upgraded(box, repo)
+    doctor, _export = measure(box, repo)
+    measured(box, repo, doctor)
+    refused_until_reseed(box, repo, candidate)
+    done = reseed_and_verify(box, repo, candidate, reconcile)
+    saved_state(box, repo, source)
+    after_upgrade(box, repo, source, candidate)
+    state_manifest.check(box, before, state_manifest.take(repo))
+    return done
+
+
+# --- channels a source was installed through ----------------------------------------
+
+ERA_PROJECTS = ("lizard", "pygments", "pathspec", "pip", "setuptools", "wheel")
+
+
+def era_links(box, version: str) -> Path:
+    """A find-links directory as the index stood when `version` was the newest
+    release: that crapkit and its dependencies, nothing newer. uv and pipx
+    record a pinned spec (`crapkit==0.6.0`) and then refuse to upgrade past it,
+    so a user who installed a release when it was current is modelled with an
+    unpinned install from this directory."""
+    target = box.root / f"era-{version}"
+    target.mkdir(exist_ok=True)
+    wheelhouse = Path(box.toolchain["wheelhouse"])
+    wanted = [wheels.release_wheel(wheelhouse, version)]
+    wanted += [path for project in ERA_PROJECTS for path in wheelhouse.glob(f"{project}-*.whl")]
+    for path in wanted:
+        shutil.copy2(path, target / path.name)
+    box.transcript.note(f"channel: the index as it stood at {version}: {sorted(path.name for path in wanted)}")
+    return target
+
+
+def tool_bin(box, argv: list[str]) -> Path:
+    """The directory a tool installer puts launchers in, as the tool reports it."""
+    return Path(box.run(argv, expect=0).stdout.strip())
+
+
+def _era(box, version: str | None) -> dict[str, str]:
+    """find-links for both installers pipx can drive: pipx 1.17 picks uv as
+    its backend whenever uv is on PATH, and pip otherwise."""
+    links = str(era_links(box, version)) if version else None
+    return {"UV_FIND_LINKS": links, "PIP_FIND_LINKS": links} if links else {}
+
+
+def uv_tool_install(box, version: str | None = None) -> Path:
+    """`uv tool install crapkit` the day `version` was current (today when
+    None); its bin dir goes on PATH."""
+    box.run(["uv", "tool", "install", "-q", "--python", box.toolchain.python("3.12"), "crapkit"],
+            env=_era(box, version), expect=0)
+    directory = tool_bin(box, ["uv", "tool", "dir", "--bin"])
+    box.prepend_path(directory)
+    return directory
+
+
+def pipx_install(box, version: str | None = None) -> Path:
+    """`pipx install crapkit` the day `version` was current (today when
+    None); its bin dir goes on PATH."""
+    box.run(["pipx", "install", "--python", box.toolchain.python("3.12"), "crapkit"],
+            env=_era(box, version), expect=0)
+    directory = tool_bin(box, ["pipx", "environment", "--value", "PIPX_BIN_DIR"])
+    box.prepend_path(directory)
+    return directory
+
+
+def suite_venv(box, python: str = "3.12") -> Path:
+    """The repo's own test environment, which a tool install of crapkit does
+    not provide: pytest and pytest-cov, first on PATH as `python`."""
+    venv = pip_venv(box, python, name="suite-venv")
+    pip_install(box, "pytest", "pytest-cov")
+    return venv
+
+
 # --- what the user checks afterwards ---------------------------------------------
 
-def crapkit_json(box, repo: Path, *args: str) -> dict:
-    return json.loads(box.run(["crapkit", *args, "--json"], cwd=repo, expect=0).stdout)
+def crapkit_json(box, repo: Path, *args: str, launcher: tuple[str, ...] = ("crapkit",)) -> dict:
+    return json.loads(box.run([*launcher, *args, "--json"], cwd=repo, expect=0).stdout)
 
 
-def kept(box, repo: Path, source: Source) -> None:
+class KnownBug(AssertionError):
+    """A failure a reported deploy bug explains. A cell that can meet one is
+    marked xfail(strict=True, raises=state.KnownBug, reason="deploy-bug ..."),
+    so any other failed assertion in it still fails the cell."""
+
+
+def known_bug(holds: bool, bug: str, message: str) -> None:
+    if not holds:
+        raise KnownBug(f"{bug}: {message}")
+
+
+def handed_out(box, repo: Path) -> dict:
+    """The item `crapkit next-item` hands the next session, or {} when none."""
+    return json.loads(box.run(["crapkit", "next-item"], cwd=repo, expect=0).stdout).get("item") or {}
+
+
+def same_function(item: dict, claimed: dict) -> bool:
+    return (item.get("path"), item.get("start")) == (claimed["path"], claimed["start"])
+
+
+def claim_holds(box, repo: Path, source: Source) -> None:
+    """The function the old CLI claimed is not handed to the next session,
+    under its old name or the one the new reader gives it."""
+    item = handed_out(box, repo)
+    known_bug(not same_function(item, source.facts["claimed"]), "deploy-upgrade-1",
+              f"claimed under {source.version} as {source.facts['claimed']['function']!r}, "
+              f"handed out again as {item.get('function')!r}")
+
+
+def kept(box, repo: Path, source: Source, launcher: tuple[str, ...] = ("crapkit",)) -> None:
     """Runs, open claims and overrides the old CLI listed, listed again by the
-    CLI on PATH now."""
-    ids = [run["id"] for run in crapkit_json(box, repo, "runs")["runs"]]
-    claims = {(claim["path"], claim["long_name"]) for claim in crapkit_json(box, repo, "claims")["claims"]}
-    overrides = {(row["path"], row["function"], row["reason"])
-                 for row in crapkit_json(box, repo, "overrides")["overrides"]}
+    CLI the user runs now (`launcher`, the one on PATH by default)."""
+    listed = {name: crapkit_json(box, repo, name, launcher=launcher) for name in ("runs", "claims", "overrides")}
+    ids = [run["id"] for run in listed["runs"]["runs"]]
+    claims = {(claim["path"], claim["long_name"]) for claim in listed["claims"]["claims"]}
+    overrides = {(row["path"], row["function"], row["reason"]) for row in listed["overrides"]["overrides"]}
     assert not set(source.run_ids) - set(ids), f"runs {source.run_ids} before, {ids} after"
     assert not set(source.claims) - claims, f"claims {source.claims} before, {sorted(claims)} after"
     assert not set(source.overrides) - overrides, f"overrides {source.overrides} before, {sorted(overrides)} after"
