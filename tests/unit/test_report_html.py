@@ -214,6 +214,20 @@ def test_a_run_behind_head_is_its_own_stale_banner():
     assert "HEAD has moved on" in page
 
 
+@pytest.mark.parametrize("count,loud", [(None, False), (0, False), (2, True)],
+                         ids=["unrecorded", "unchanged", "changed"])
+def test_files_the_run_scored_that_changed_since_are_their_own_stale_banner(count, loud):
+    """An uncommitted edit leaves `stale` false and, in a coverage_optional
+    scope, every lane note empty, while the page shows the pre-edit numbers."""
+    data = payload()
+    data["worklist"]["scored_changes"] = count
+
+    page = render_report(data)
+
+    assert ('2 file(s) the run scored changed since' in page) is loud
+    assert ('class="banner stale"' in page) is loud
+
+
 # --- the row ceiling ---------------------------------------------------------
 
 def test_report_top_takes_the_configured_worklist_top():

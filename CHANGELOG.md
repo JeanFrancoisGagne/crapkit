@@ -162,6 +162,9 @@
   When git cannot read the tree it says that instead, `cannot tell which files changed
   since run 4 scored them, because git failed:` and git's error, and `scored_changes` is
   `null`: a failed read is neither "changed" nor "unchanged".
+- The `report` page's banner counts them too: `2 file(s) the run scored changed since`.
+  An uncommitted edit in a `coverage_optional` scope left `stale` false and no lane note
+  to speak for it, so the page showed the numbers from before the edit with no banner.
 - `explain --tests` withholds a file's test ids whenever its dark lines are withheld, and
   `tests_note` repeats `uncovered_lines_note`. The ids sit on the same line numbers, so
   after two functions swapped places it credited one with the tests that ran the other. A
