@@ -350,7 +350,10 @@ windows-linux-containers = "the windows-2025 runner's Docker runs Windows contai
 # `free_disk` deletes the runner's preinstalled SDKs first: an entry that
 # builds on the full image needs it. `timeout` is in minutes. No deploy.yml
 # run has been measured yet; once one is, `measured` holds its minutes and the
-# timeout is 1.5 times that, rounded up.
+# timeout is 1.5 times that, rounded up. An entry that builds core or ci
+# passes --cache gha: a fresh runner holds no layers, and with --cache local
+# it builds the image cold (tools/deploy/README.md, "The GitHub Actions
+# cache").
 
 [jobs.nightly-linux-core]
 runner = "linux"
@@ -402,14 +405,14 @@ measured = 0
 [jobs.weekly-online]
 runner = "linux"
 when = ["weekly", "release"]
-runs = ["--online --cadence {cadence} --os linux --image core -n 4"]
+runs = ["--online --cadence {cadence} --os linux --image core --cache gha -n 4"]
 timeout = 30
 measured = 0
 
 [jobs.published-online]
 runner = "linux"
 when = ["published"]
-runs = ["--online --cadence published --os linux --image core -n 4"]
+runs = ["--online --cadence published --os linux --image core --cache gha -n 4"]
 timeout = 30
 measured = 0
 
@@ -418,7 +421,7 @@ measured = 0
 [jobs.lin-clock]
 runner = "linux"
 when = ["nightly", "release"]
-runs = ["--cadence push --os linux --image core --faketime +400d -n 4"]
+runs = ["--cadence push --os linux --image core --cache gha --faketime +400d -n 4"]
 blocked = "faketime"
 timeout = 30
 measured = 0
@@ -438,7 +441,7 @@ measured = 0
 [jobs.weekly-py315]
 runner = "linux"
 when = ["weekly", "release"]
-runs = ["--cadence {cadence} --os linux --image core --cell lin-py315-start"]
+runs = ["--cadence {cadence} --os linux --image core --cache gha --cell lin-py315-start"]
 nonblocking = true
 timeout = 20
 measured = 0

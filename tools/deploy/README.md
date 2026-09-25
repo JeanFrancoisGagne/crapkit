@@ -216,12 +216,20 @@ re-runs of that pull request can read them.
 | `nightly-linux-full` | `full` | `local` | cold every night, see below |
 | `nightly-gui` | `gui` | `local` | cold every night, see below |
 | `lin-repeat` | `core` | `--no-cache` | a cold build is the point |
-| `weekly-online` | `core` | `local` | builds `core` cold |
-| `published-online` | `core` | `local` | builds `core` cold |
-| `lin-clock` | `core` | `local` | blocked (faketime) |
-| `weekly-py315` | `core` | `local` | blocked (prerelease-python) |
+| `weekly-online` | `core` | `gha` | the scope `deploy-linux` keeps warm; 30-minute timeout |
+| `published-online` | `core` | `gha` | the scope `deploy-linux` keeps warm; 30-minute timeout |
+| `lin-clock` | `core` | `gha` | blocked (faketime) |
+| `weekly-py315` | `core` | `gha` | blocked (prerelease-python) |
 | `latest-harnesses` | `full` | `local` | blocked (latest-mode) |
 | `weekly-arm64` | `cells` | `local` | blocked (arm64) |
+
+Every job that builds `core` or `ci` reads the cache. A fresh runner holds no
+layers, so with `--cache local` the job builds the image cold, and a cold `core`
+build takes up to 40 minutes on a 4-core runner (`[budget.deploy-linux]` in
+`tests/deploy/MAP.toml`), past the 30-minute timeouts of `weekly-online` and
+`published-online`. `tests/unit/test_deploy_workflows.py` fails on a job that
+builds a cached image with `--cache local`, and on a row here that no longer
+says what the workflows run.
 
 Compressed sizes of the images built at 9707cc6d, read layer by layer from
 `docker save` on 2026-09-25: `core` 1.45 GB, `ci` 0.56 GB, `full` 3.76 GB,

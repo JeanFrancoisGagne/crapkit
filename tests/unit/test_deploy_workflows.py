@@ -819,3 +819,23 @@ def test_a_job_that_changes_how_it_caches_its_image_is_caught():
                                                   "runs": ["--cadence {cadence} --os linux --image full --cache gha"]}}
 
     assert ("nightly-linux-full", "full", "gha") in cache_rows(jobs) - guide_cache_rows(GUIDE.read_text(encoding="utf-8"))
+
+
+def cold_builds(rows):
+    """(job, image) for each job that builds with --cache local an image some
+    job keeps in the Actions cache. A fresh runner holds no layers, so that job
+    builds the image cold, which [budget.deploy-linux] puts at up to 40 minutes
+    for core on a 4-core runner."""
+    cold = {(image, "local") for _, image, cache in rows if cache == "gha"}
+    return sorted((name, image) for name, image, cache in rows if (image, cache) in cold)
+
+
+def test_every_job_that_builds_an_image_the_actions_cache_holds_reads_it():
+    assert cold_builds(cache_rows()) == []
+
+
+def test_a_job_that_builds_a_cached_image_with_the_local_cache_is_caught():
+    jobs = {**MAP["jobs"], "weekly-online": {**MAP["jobs"]["weekly-online"],
+                                             "runs": ["--online --cadence {cadence} --os linux --image core -n 4"]}}
+
+    assert ("weekly-online", "core") in cold_builds(cache_rows(jobs))
