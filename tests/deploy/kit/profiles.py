@@ -34,6 +34,7 @@ import json
 import os
 import re
 import shlex
+import socket
 import subprocess
 import time
 import tomllib
@@ -534,7 +535,19 @@ def session_goose(box, repo: Path, url: str):
              "OPENAI_BASE_PATH": "v1/chat/completions"})
 
 
+def free_port() -> int:
+    """A local port nothing listens on now."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 def session_cline(box, repo: Path, url: str):
+    # Cline's hub listens on 25463 unless CLINE_HUB_PORT names another port.
+    # Sandboxes share the host's network, so without a port of its own one
+    # sandbox's hub never came up beside another's, and a native run could
+    # reach the hub of a Cline the machine's user runs.
+    box.env.setdefault("CLINE_HUB_PORT", str(free_port()))
     doc_server(box, repo, "cline")
     box.run(["cline", "auth", "-p", "openai", "-k", STUB_KEY, "-m", STUB_MODEL, "-b", url + "/v1"], cwd=repo,
             expect=0)
