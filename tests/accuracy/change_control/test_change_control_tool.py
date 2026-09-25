@@ -34,6 +34,7 @@ def _files(top: Path) -> dict[str, str]:
 
 # --- the check on the command line --------------------------------------------------------------
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_check_prints_its_report_and_exits_1_on_a_broken_rule(make_repo, capsys):
     top = seeds.seeded(make_repo, BASE, seeds.module_changed(BASE))
@@ -107,6 +108,7 @@ def test_a_failed_outside_process_names_itself_and_the_last_3000_characters():
     assert (head, len(tail), tail[-8:]) == ("probe exited 1:", 3000, "\ufffdthe end")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_an_outside_process_stops_at_its_time_limit():
     with pytest.raises(subprocess.TimeoutExpired):
@@ -120,6 +122,7 @@ def test_a_test_that_spawns_a_process_without_the_marker_is_stopped():
 
 # --- declare on the command line -----------------------------------------------------------------
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_declare_on_the_command_line_reads_a_calc_name_that_holds_commas(make_repo, capsys):
     base = seeds.base(seeds.ccn8())
@@ -329,6 +332,7 @@ DIRTY_ANALYZE = ("import lizard  # an edit nobody committed\n\n"
                  "ANALYSIS_VERSION = 11  # the reader's version\n")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_pre_push_refuses_an_undeclared_module_change_and_runs_its_calc_checks(make_repo,
                                                                                capfd):
@@ -538,6 +542,7 @@ def _disagrees(judgement) -> bool:
     return not judgement.agrees
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_declare_stops_when_the_regenerator_fails(make_repo):
     top = seeds.seeded(make_repo, {**BASE, cc.REGENERATE: "import sys\nsys.exit('no corpus')\n"})
@@ -561,6 +566,7 @@ def test_declare_without_a_regenerator_says_it_judged_the_goldens_as_they_are(ma
 
 # --- declare in a diff with more than one change -------------------------------------------------
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_working_tree_changes_are_edits_deletions_and_new_files(make_repo):
     top = seeds.seeded(make_repo, {**BASE, ".gitignore": "*.log\n"})
@@ -577,6 +583,7 @@ def _write_back(top: Path, tree: dict, *paths: str) -> None:
         (top / path).write_bytes(tree[path].encode("utf-8"))
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_none_change_declared_after_a_fix_answers_only_for_what_is_left(make_repo):
     """parse's ccn goes from 8 to 7 and score.py gains a comment: the fix declares
@@ -675,7 +682,8 @@ def _ts_tree(suffix: str = ".ts") -> cc.DictTree:
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("suffix", [".ts", pytest.param(".js", marks=pytest.mark.nightly)])
+@pytest.mark.nightly
+@pytest.mark.parametrize("suffix", [".ts", ".js"])
 def test_eslint_and_sonarjs_answer_each_js_and_ts_column(oracle, suffix):
     list(map(oracle, ("eslint", "eslint-plugin-sonarjs", "@typescript-eslint/parser")))
 
@@ -709,6 +717,7 @@ def test_a_ts_file_eslint_cannot_parse_answers_nothing(oracle):
     assert (judged.oracle, judged.value, judged.agrees) == ("", "", True)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_ts_move_eslint_disagrees_with_is_refused_by_name(oracle):
     oracle("eslint")
@@ -739,6 +748,7 @@ def test_a_refusal_lists_the_first_ten_disagreements_and_counts_the_rest(make_re
     assert cc.RESTORE not in text
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_refusal_after_regenerating_says_how_to_put_the_goldens_back(make_repo, oracle):
     oracle("radon")

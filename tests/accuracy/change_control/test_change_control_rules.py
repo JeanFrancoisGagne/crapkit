@@ -1053,6 +1053,7 @@ def test_declare_refuses_a_crap_the_formula_does_not_give(make_repo):
     assert "crapkit now says 1.5, kit.exact says 1.0 at src/a.py:f2 (crap)" in str(refused.value)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_declare_asks_for_the_analysis_bump_a_moved_digest_needs(make_repo):
     head = {**BASE_CCN8, **{path: seeds.base()[path] for path in (seeds.SCORED, seeds.INVENTORY)}}
@@ -1065,6 +1066,7 @@ def test_declare_asks_for_the_analysis_bump_a_moved_digest_needs(make_repo):
             "declare") in str(refused.value)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_declare_refuses_undeclared_and_over_declared_calcs_and_a_none_that_moves(make_repo):
     head = seeds.bump({**BASE_CCN8, **{path: BASE[path] for path in (seeds.SCORED,
@@ -1108,6 +1110,7 @@ def test_a_declared_and_committed_move_passes_the_check(make_repo, oracle):
     assert code == 0, verdict
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_second_declare_in_the_same_diff_answers_only_for_what_is_left(make_repo, oracle):
     """C3 declares parse's ccn fix; a comment in score.py then goes under a kind none
@@ -1124,6 +1127,7 @@ def test_a_second_declare_in_the_same_diff_answers_only_for_what_is_left(make_re
                            "cells moved, 0 judged by an oracle")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_an_edited_metric_row_is_restored_from_the_base_commit(make_repo):
     top = seeds.seeded(make_repo, BASE, _edited_metric_row(BASE))
@@ -1148,6 +1152,7 @@ def test_declare_refuses_a_row_that_goes_while_its_def_stays(make_repo):
     assert f"  {seeds.SCORED}\tsrc/a.py\tf11\trow\tpresent\tabsent\tast present" in text
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_row_that_goes_with_its_def_is_declared_and_passes_the_check(make_repo):
     """f11 leaves the corpus and both goldens: ast finds no def at line 54, so the
@@ -1169,6 +1174,7 @@ def test_a_row_that_goes_with_its_def_is_declared_and_passes_the_check(make_repo
     assert code == 0, verdict
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_declare_reads_a_staged_edit_of_a_calc_module(make_repo):
     """hook.py holds the pre-commit gate, a calc no golden shows: its fix moves no
@@ -1183,6 +1189,7 @@ def test_declare_reads_a_staged_edit_of_a_calc_module(make_repo):
                            "golden cells moved, 0 judged by an oracle")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_declare_none_records_a_change_that_moves_nothing(make_repo):
     top = _working(make_repo, BASE, seeds.module_changed(BASE))
@@ -1213,6 +1220,7 @@ def test_declare_judges_python_cognitive_by_complexipy(make_repo, oracle):
         str(refused.value)
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_definition_records_its_named_ruling_on_every_cell_of_that_calc(make_repo):
     top = _working(make_repo, BASE_CCN8, seeds.bump(
@@ -1225,6 +1233,7 @@ def test_a_definition_records_its_named_ruling_on_every_cell_of_that_calc(make_r
         ("ccn", "R-CCN"), ("ccn_mod", "R-CCN"), ("ccn_std", "R-CCN"), ("crap", "")}
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_declare_refuses_a_lizard_older_than_the_last_metric_row(make_repo):
     head = {**BASE_CCN8, **{path: BASE[path] for path in (seeds.SCORED, seeds.INVENTORY)}}
@@ -1237,6 +1246,7 @@ def test_declare_refuses_a_lizard_older_than_the_last_metric_row(make_repo):
             in str(refused.value))
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_declare_refuses_a_fix_when_nothing_moved_and_a_reused_id(make_repo):
     top = _working(make_repo, BASE, BASE)
