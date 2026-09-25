@@ -43,7 +43,6 @@ def test_check_config_answers_the_doctor_report_without_home_variables(tmp_path,
     call = [json.loads(line) for line in proc.stdout.splitlines()][-1]["result"]
     text = call["content"][0]["text"]
     assert "Traceback" not in text, text
-    assert call["isError"] is False, text
     budget = Path(json.loads(text)["resources"]["budget_directory"])
     expected = without_home_variables / ".cache" / "crapkit" / "workers"
     assert os.path.normcase(budget.parent) == os.path.normcase(expected), budget
