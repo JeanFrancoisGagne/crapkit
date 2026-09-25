@@ -221,7 +221,10 @@ def _judged(letters: str):
 
 
 @pytest.mark.parametrize("variation", list(_SUMMARIES))
-def test_the_text_summary_rates_only_the_mutants_a_test_judged(capsys, variation):
+def test_the_text_summary_rates_timeouts_and_no_verdicts_as_killed_and_names_each(capsys,
+                                                                                   variation):
+    """The rate counts every mutant that did not survive, as `killed` does in JSON
+    schema 1; a timed-out or no-verdict mutant gets a line of its own under it."""
     from crapkit.cli.analyses import _print_mutation
 
     letters, lines, _ = _SUMMARIES[variation]

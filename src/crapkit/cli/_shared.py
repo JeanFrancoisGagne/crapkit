@@ -264,8 +264,6 @@ def _gate_line(v) -> str:
             f"{v.path}:{v.start}  {v.long_name}  -> {v.remedy}{_dirty_tag(v.dirty)}")
 
 
-
-
 def _unread_line(path: str, reason: str, dirty: bool = False) -> str:
     """One changed file a gate refused because no reader could read it; every
     gate prints it the same way."""
