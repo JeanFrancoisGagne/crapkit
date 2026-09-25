@@ -12,12 +12,16 @@
    agree with vitest's istanbul provider, except where a rulings row says why.
 4. Raw v8-to-istanbul output (c8, and jest's v8 provider) is not the istanbul
    model, so crapkit's scores over it part from the ground truth (D7, CO4).
+5. crap4py 0.1.1 over the same coverage.py run's lcov: its rule, written from
+   its own docs, reproduces its recorded report; on a function with branches
+   and no nested function it gives crapkit's number; a function with no branch
+   reads 1.0 there and statement coverage in crapkit (ruling CO8).
 """
 import json
 
 import pytest
 
-from accuracy.coverage_oracles import counts_table, ground_table, probe_repo
+from accuracy.coverage_oracles import counts_table, ground_table, probe_repo, under_test
 from accuracy.kit import rulings
 
 RECORDED = probe_repo.RECORDED
@@ -26,9 +30,12 @@ ISTANBUL = sorted(path for path in RECORDED.glob("*/*.json")
                   if "files" not in json.loads(path.read_bytes()))
 
 
+ISTANBUL_READER = under_test.crapkit("coverage_istanbul")
+COVERAGE_PY = under_test.crapkit("coverage_py")
+
+
 def _crapkit_counts(path) -> dict:
-    from crapkit.coverage_istanbul import parse_istanbul_both_file
-    per_file = parse_istanbul_both_file(path, repo_root="")[0]
+    per_file = ISTANBUL_READER.parse_istanbul_both_file(path, repo_root="")[0]
     return {(key, fn.start, fn.end): (fn.branches_total, fn.branches_covered,
                                       fn.statements_total, fn.statements_covered, fn.invoked)
             for key, fns in per_file.items() for fn in fns}
@@ -57,10 +64,9 @@ def _negatives(artifact: dict) -> dict[str, int]:
 def test_negative_derived_counters_clamp_to_not_taken(capsys):
     """R36: 74 negatives in 25 files, each at index 1 of an if; crapkit clamps
     them, names the count, and each reads not taken."""
-    from crapkit.coverage_istanbul import parse_istanbul_both_file
     negatives = _negatives(json.loads(NEGATIVE.read_bytes()))
 
-    parse_istanbul_both_file(NEGATIVE, repo_root="")
+    ISTANBUL_READER.parse_istanbul_both_file(NEGATIVE, repo_root="")
     note = capsys.readouterr().err
 
     assert (sum(negatives.values()), len(negatives)) == (74, 25)
@@ -142,3 +148,94 @@ def test_raw_c8_output_parts_from_the_ground_truth(probe_run):
 @rulings.applies("CO4")
 def test_jest_v8_output_parts_from_the_ground_truth(probe_run):
     rulings.pin_ruling("CO4", crapkit=_off_truth(probe_run, "jest-v8-30.5.2"), oracle=0)
+
+
+# --- crap4py 0.1.1 over the same run's lcov ------------------------------------------------------
+
+REPORTS = RECORDED / "coveragepy-reports-7.16.1"
+# `crap4py py --lcov <scenario>.lcov` over probes/py, crap4py 0.1.1 from PyPI
+# (wheel sha256 2cdaf28dccfc88313c95f1bacdf99fe19a39efbe9855d981352bb02a7a17a90c),
+# module paths written with forward slashes.
+CRAP4PY = RECORDED / "crap4py-0.1.1"
+
+
+def brda(lcov: str) -> list[tuple[int, bool]]:
+    """(line, taken) per BRDA record; `-` is not taken, line 0 is skipped."""
+    records = []
+    for line in lcov.splitlines():
+        if line.startswith("BRDA:"):
+            number, _, _, taken = line[5:].split(",", 3)
+            records += [(int(number), taken not in ("-", "0"))] if int(number) else []
+    return records
+
+
+def crap4py_coverage(records: list[tuple[int, bool]], start: int, end: int) -> float:
+    """https://github.com/gabadi/crap4py/blob/v0.1.1/src/crap4py/coverage.py#L1-L8: the
+    in-range BRDA records taken over those in range; none in range reads 1.0."""
+    taken = [hit for line, hit in records if start <= line <= end]
+    return sum(taken) / len(taken) if taken else 1.0
+
+
+def crap4py_report(scenario: str) -> dict[str, float]:
+    """{function: Cov% / 100} off crap4py's recorded report."""
+    rows = (CRAP4PY / f"{scenario}.txt").read_text(encoding="utf-8").splitlines()[4:]
+    return {cells[0]: float(cells[3].rstrip("%")) / 100 for cells in map(str.split, rows) if cells}
+
+
+def _spans(scenario: str) -> dict[str, tuple[int, int]]:
+    """{crap4py's name (the def's own name, a method as Class.method): (start, end)}."""
+    rows = ground_table.rows_for("coveragepy-7.16.1", scenario, probe_repo.PYTHON)
+    return {row.function.split(".")[-1] if row.function.startswith("outer.") else row.function:
+            (row.start, row.end) for row in rows}
+
+
+def _lcov(scenario: str) -> list[tuple[int, bool]]:
+    return brda((REPORTS / f"{scenario}.lcov").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+def test_the_crap4py_rule_reproduces_its_report(scenario):
+    records = _lcov(scenario)
+    model = {name: round(crap4py_coverage(records, *span), 3) for name, span in _spans(scenario).items()}
+
+    assert {name: round(value, 3) for name, value in crap4py_report(scenario).items()} == model
+
+
+def _crapkit_python(scenario: str) -> dict[str, object]:
+    per_file = COVERAGE_PY.parse_coveragepy_both_file(REPORTS / f"{scenario}.json", path_prefix="")[0]
+    return {fn.name: fn for fn in per_file["py/shapes.py"]}
+
+
+def _branchy_leaves(scenario: str) -> list[str]:
+    """Functions with a BRDA record in range and no nested function inside."""
+    records, spans = _lcov(scenario), _spans(scenario)
+    return [name for name, span in spans.items()
+            if _has_brda(records, span) and not _holds_another(span, spans.values())]
+
+
+def _holds_another(span: tuple[int, int], spans) -> bool:
+    return any(span[0] < inner[0] <= inner[1] <= span[1] for inner in spans)
+
+
+def _has_brda(records: list[tuple[int, bool]], span: tuple[int, int]) -> bool:
+    return any(span[0] <= line <= span[1] for line, _ in records)
+
+
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+def test_crapkit_gives_crap4py_s_number_on_functions_with_branches(scenario):
+    ours = {name.split(".")[-1]: fn for name, fn in _crapkit_python(scenario).items()}
+    records, spans = _lcov(scenario), _spans(scenario)
+    names = _branchy_leaves(scenario)
+
+    assert names and {name: ours[name.split(".")[-1]].coverage for name in names} == {
+        name: crap4py_coverage(records, *spans[name]) for name in names}
+
+
+@rulings.applies("CO8")
+def test_co8_a_function_with_no_branch_reads_full_in_crap4py():
+    """branchless() in the idle scenario: no BRDA record in its span, and no
+    statement of it ran."""
+    fn = _crapkit_python("idle")["branchless"]
+
+    rulings.pin_ruling("CO8", crapkit=fn.coverage,
+                       oracle=crap4py_coverage(_lcov("idle"), *_spans("idle")["branchless"]))
