@@ -868,13 +868,30 @@ def test_prune_across_a_rename_follows_current_keys(make_repo):
     assert _marks_of(built) == want and set(want) <= placed and len(want) == 3
 
 
+# Twelve unchanged lines keep git calling the edited file a rename.
+PADDING = "".join(f"// kept line {line}\n" for line in range(12))
+SPLIT = ("export const h = (a: number) => [a].map(x => x > 1 ? 1 : 2)\n"
+         "  .filter(y => y > 2 || y < 0);\n")
+
+
 @pytest.mark.nightly
 @pytest.mark.process
 def test_prune_across_a_rename_writes_a_placeable_key(make_repo):
-    """The same rename under legacy-format marks: the callbacks' group shares
-    line 1, so it needs review before any mark moves (docs/ratchet.md,
-    Same-line collisions). prune refuses, names the old path and writes nothing."""
-    built, driver = vw.legacy_group(make_repo, "mv", "web/b.ts", "web/c.ts")
+    """Legacy-format marks name web/b.ts's two line-1 callbacks. git renamed
+    the file to web/c.ts and split the line, so run 2 holds the callbacks on
+    lines 1 and 2. Run 1 still holds the old group on one line, and available
+    historical runs take part in the check (docs/ratchet.md, Same-line
+    collisions): the group needs review before any mark moves, so prune
+    refuses, names the old path and writes nothing."""
+    files = {**vw.LEGACY_FILES, "web/b.ts": vw.LEGACY_FILES["web/b.ts"] + PADDING}
+    built = make_repo(repos.Spec(steps=(repos.Commit(files=files, message="seed"),)))
+    driver = vw.drive.Driver(built.root)
+    assert driver.run("coverage").code == 0 and driver.run("ratchet", "seed").code == 0
+    vw.legacy_keys(built.root)
+    repos.git(built.top, "mv", "web/b.ts", "web/c.ts")
+    (built.root / "web" / "c.ts").write_bytes((SPLIT + PADDING).encode("utf-8"))
+    repos.git(built.top, "commit", "-q", "-am", "rename and split", date=vw.LEGACY_DATE)
+    assert driver.run("coverage").code == 0
     before = (built.root / "crapkit-ratchet.tsv").read_bytes()
     result = driver.run("ratchet", "prune")
     assert result.code != 0 and "web/b.ts" in result.stderr, result.stdout + result.stderr
