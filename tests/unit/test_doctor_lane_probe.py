@@ -17,6 +17,7 @@ from crapkit.cli import admin
 from crapkit.config import Config, Lane, Scope
 from crapkit.lane_command import LaunchSpec
 from crapkit.doctor import files_template_gaps
+from crapkit.scaffold import npm_package
 
 
 def _lane(name: str = "py", command: str = "python -m pytest --cov", parser: str = "coveragepy") -> Lane:
@@ -263,9 +264,9 @@ def test_a_lane_with_a_problem_of_its_own_is_not_probed_twice(monkeypatch, tmp_p
 # --- init's summary names the workspaces it could not route ----------------------
 
 def test_init_says_when_two_workspaces_name_a_runner_and_no_js_lane_was_written(capsys):
-    packages = {"": '{"private": true}',
-                "api": '{"devDependencies": {"jest": "1"}}',
-                "web": '{"devDependencies": {"vitest": "1"}}'}
+    packages = {"": npm_package({"private": True}),
+                "api": npm_package({"devDependencies": {"jest": "1"}}),
+                "web": npm_package({"devDependencies": {"vitest": "1"}})}
 
     admin._print_init_summary({"api": ("typescript",), "web": ("typescript",)}, (), packages)
 
@@ -280,8 +281,8 @@ def test_the_summary_is_silent_about_workspaces_once_a_js_lane_was_written(capsy
 
     js = LaneSpec("js", "npm run test -- --coverage", "coverage/coverage-final.json",
                   "istanbul", ("typescript",))
-    packages = {"api": '{"devDependencies": {"jest": "1"}}',
-                "web": '{"devDependencies": {"vitest": "1"}}'}
+    packages = {"api": npm_package({"devDependencies": {"jest": "1"}}),
+                "web": npm_package({"devDependencies": {"vitest": "1"}})}
 
     admin._print_init_summary({"api": ("typescript",)}, (js,), packages)
 
