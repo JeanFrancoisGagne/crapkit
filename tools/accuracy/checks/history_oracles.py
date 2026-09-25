@@ -25,4 +25,6 @@ CHECKS = [
      "pytest": [_HISTORY + "test_renames.py"]},
     {"name": "burn-down against the history walk", "seconds": 4,
      "pytest": [_HISTORY + "test_burn_down.py"]},
+    {"name": "explain's commit list against the objects", "seconds": 3,
+     "pytest": [_HISTORY + "test_explain_commits.py"]},
 ]

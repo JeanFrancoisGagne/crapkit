@@ -373,3 +373,43 @@ BURN_TIGHTEN = Spec(steps=BURN.steps[:1] + (
 # Seeded by crapkit itself, so the marks carry the stamp this crapkit writes.
 BURN_SEEDABLE = Spec(steps=(Commit(files={"crapkit.toml": config(), **_BURN_SOURCES},
                                    date=EPOCH, message="sources"),))
+
+
+# --- commit messages explain --history lists (README.md explain row) --------------------
+# f is changed by every commit below; g by one commit that must not appear in f's list.
+
+
+def explained(tag: str = "0", other: str = "0") -> str:
+    return gated("f", tag=tag) + gated("g", tag=other)
+
+
+EXPLAIN_PLAIN = Spec(steps=(
+    Commit(files={"crapkit.toml": config(), "src/e.py": explained()}, date=EPOCH,
+           message="seed f and g"),
+    Commit(files={"src/e.py": explained("1")}, date=EPOCH + DAY,
+           message="Tighten f\n\nThe first paragraph explains\nwhy, over two lines.\n\n"
+                   "  - an indented item\n  - another, caf\u00e9\n"),
+    Commit(files={"src/e.py": explained("1", other="1")}, date=EPOCH + 2 * DAY,
+           message="Touch g only"),
+    Commit(files={"src/e.py": explained("2", other="1")}, date=EPOCH + 3 * DAY,
+           message="A subject\nthat wraps\n\nbody after a wrapped subject\n+++ not a header\n"
+                   "@@ -1 +1 @@ not a hunk\n"),
+    Commit(files={"src/e.py": explained("3", other="1")}, date=EPOCH + 4 * DAY,
+           message="Subject only"),
+))
+# Commits whose bodies hold the characters explain's log format frames records with
+# (\x01 opens one, \x02 closes it), or characters Python splits lines at.
+EXPLAIN_ODD_BODIES = {
+    "stx_line": "stx body\n\nline one\n\x02\nafter the stx line\n",
+    "soh_line": "soh body\n\nfirst\n\x01zz 2025-01-01 fake subject\nlast\n",
+    "soh_word": "soh short\n\n\x01only\nlast\n",
+    "separators": "separators\n\nhalf\rway, before\x0cafter\nsep\x1crecord, split\x85here\n",
+}
+
+
+def explain_odd(body: str) -> Spec:
+    return Spec(steps=(
+        Commit(files={"crapkit.toml": config(), "src/e.py": explained()}, date=EPOCH,
+               message="seed"),
+        Commit(files={"src/e.py": explained("odd")}, date=EPOCH + DAY, message=body),
+    ))
