@@ -449,3 +449,21 @@ def test_mcp_answers_the_stop_as_a_tool_error_of_kind_internal(repo: Path, tmp_p
     assert (error["exit"], error["kind"]) == (5, "internal"), error
     assert error["message"].startswith("stopped: an internal check failed.")
     assert replies[3]["isError"] is False, "the server keeps answering, and a clean tool answers"
+
+
+# --- R27, the second check ------------------------------------------------------------
+
+
+def test_nonfinite_crap_stops(repo: Path, monkeypatch):
+    """R27 (c24e6a4): a NaN covered-branch count reached the score and the
+    store. The readers refuse such a count now; past them, a coverage that is
+    not a number from 0 to 1 still stops the run before its rows are stored."""
+    from crapkit import coverage_istanbul
+
+    before = runs(repo), marks(repo)
+    monkeypatch.setattr(coverage_istanbul.FnCoverage, "coverage",
+                        property(lambda fn: float("nan")))
+    done = run_cli(repo, "coverage", "--json")
+    stopped(done, "coverage must be a number from 0 to 1")
+    error_object(done)
+    unchanged(repo, *before)
