@@ -1246,6 +1246,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_container(cfg)
             + _doctor_silent_gates(root)
             + _doctor_merge_driver(root, cfg)
+            + _doctor_launchers()
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, files)
             + _doctor_unmeasured(root, cfg, files))
@@ -1573,6 +1574,40 @@ def _probed_cli_version(executable: str) -> str | None:
     return answer[1] if len(answer) == 2 and answer[0] == "crapkit" else None
 
 
+def _ephemeral_prefix() -> str | None:
+    """This interpreter's environment when uvx or `pipx run` built it for this
+    one command, else None. Such a runner puts the environment first on the PATH
+    it hands doctor, and nothing else on the machine inherits it."""
+    from ..launchers import ephemeral_runner
+
+    return sys.prefix if ephemeral_runner(sys.prefix) else None
+
+
+def _path_launchers() -> list[str]:
+    """Every crapkit launcher on this PATH, in order, less the environment a
+    one-command runner built for doctor itself."""
+    from ..launchers import path_launchers
+
+    return path_launchers(os.environ.get("PATH", ""), _ephemeral_prefix())
+
+
+@lru_cache(maxsize=None)
+def _launcher_report(path: str) -> tuple[tuple[str, str | None], ...]:
+    """(launcher, version) for every launcher when PATH holds more than one,
+    else (). Memoized on PATH: one machine fact, and a version costs a spawn."""
+    found = _path_launchers()
+    return tuple((launcher, _probed_cli_version(launcher)) for launcher in found) \
+        if len(found) > 1 else ()
+
+
+def _doctor_launchers() -> list[Finding]:
+    """Two or more crapkit launchers on PATH: a WARN naming each with its
+    version, or a note while they agree."""
+    from ..doctor import launcher_skew
+
+    return list(launcher_skew(_launcher_report(os.environ.get("PATH", ""))))
+
+
 @lru_cache(maxsize=None)
 def _spawned_cli() -> tuple[str, str | None] | None:
     """The console script the plugin actually starts and the version it answers,
@@ -1587,19 +1622,34 @@ def _spawned_cli() -> tuple[str, str | None] | None:
     an older pipx copy it called the two versions equal while the hook spawned
     the older one.
 
+    Under uvx or `pipx run` the PATH doctor inherits starts with the environment
+    that runner built for this one command. The plugin's hooks never see it, so
+    it is left out: `uvx crapkit doctor --plugin-root` found crapkit there and
+    passed while `claude mcp list` failed with ENOENT.
+
     Memoized because the answer is one machine fact and `doctor --plugin-root`
     would otherwise spawn it once per call.
     """
-    import shutil
-
-    executable = shutil.which("crapkit")
-    return (executable, _probed_cli_version(executable)) if executable else None
+    found = _path_launchers()
+    return (found[0], _probed_cli_version(found[0])) if found else None
 
 
 def _no_crapkit_on_path() -> str:
     """The FAIL for a machine where nothing the plugin declares can start. It
     names both files that spawn the bare name, because the reader is about to
-    look for a plugin problem and the problem is an install location."""
+    look for a plugin problem and the problem is an install location. Under a
+    one-command runner it names that runner's environment, the one crapkit this
+    process did find, and the install that stays."""
+    from ..launchers import ephemeral_runner, install_line
+
+    runner = ephemeral_runner(sys.prefix)
+    if runner:
+        return (f"crapkit doctor: FAIL no `crapkit` on PATH outside the environment {runner} "
+                f"built for this one command ({sys.prefix}), and the plugin's hooks never "
+                "inherit that one: its hooks/hooks.json and .mcp.json both spawn the bare name, "
+                "so every PostToolUse edit fires a command that cannot start and the MCP server "
+                "never comes up. Install crapkit where the hook's PATH can see it "
+                f"(`{install_line(runner)}`), then run this check again.")
     return ("crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and "
             ".mcp.json both spawn that bare name, so every PostToolUse edit fires a command "
             "that cannot start and the MCP server never comes up. Install it where the "

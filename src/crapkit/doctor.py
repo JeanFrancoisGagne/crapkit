@@ -676,6 +676,51 @@ def ci_precommit_passes(precommit_config: str, ci_files: dict[str, str]) -> tupl
                  for path, text in sorted(ci_files.items()) if _RUNS_PRECOMMIT.search(text))
 
 
+# --- two installs on one PATH ------------------------------------------------------
+#
+# The shell, a git hook, the plugin's hooks and an MCP client each start the bare
+# name `crapkit` from the PATH they inherit. A user who upgraded into a new
+# environment and kept the old one has two launchers, and which one a program
+# runs depends on the order its PATH lists them.
+
+_LAUNCHER_SKEW = (
+    "PATH holds {count} crapkit launchers: {listed}. The shell, a git hook, the plugin's "
+    "hooks and an MCP client each run the first one their own PATH lists, so they can run "
+    "different versions; uninstall the copies you do not use, or upgrade them to one version"
+)
+_LAUNCHERS_AGREE = (
+    "PATH holds {count} crapkit launchers, all {version}: {listed}; an upgrade has to reach "
+    "each of them, or they drift apart"
+)
+
+
+def _one_version(launchers: tuple[tuple[str, str | None], ...]) -> str | None:
+    """The version every launcher answered, or None when they differ or one
+    answered nothing."""
+    versions = {version for _, version in launchers}
+    return versions.pop() if len(versions) == 1 else None
+
+
+def _skew_line(launchers: tuple[tuple[str, str | None], ...]) -> Finding:
+    listed = ", ".join(f"{path} ({version or 'no version answered'})" for path, version in launchers)
+    return Finding("note", _LAUNCHER_SKEW.format(count=len(launchers), listed=listed))
+
+
+def launcher_skew(launchers: tuple[tuple[str, str | None], ...]) -> tuple[Finding, ...]:
+    """One note when PATH holds more than one launcher, naming each with its
+    version once they disagree. A note, not a WARN: it describes the machine,
+    not this repo's setup, and a wrapper reading --json warnings to judge a
+    repo must not flip on which crapkits the machine it ran on carries.
+    `launchers` is (path, version) in PATH order, None for no answer."""
+    if len(launchers) < 2:
+        return ()
+    version = _one_version(launchers)
+    if version is None:
+        return (_skew_line(launchers),)
+    return (Finding("note", _LAUNCHERS_AGREE.format(
+        count=len(launchers), version=version, listed=", ".join(path for path, _ in launchers))),)
+
+
 # --- the marks file's merge driver ------------------------------------------------
 #
 # docs/ratchet.md installs the driver in two steps: a committed attribute and a
