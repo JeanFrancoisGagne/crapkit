@@ -157,8 +157,10 @@ def write_runner(root: Path) -> None:
     script.chmod(0o755)
 
 
-# cmd.exe looks in the current directory before PATH unless this is set; sh never does.
-NO_CWD = "NoDefaultCurrentDirectoryInExePath"
+# cmd.exe looks in the current directory before PATH unless this is set; sh never
+# does. Upper case: os.environ on Windows holds every name that way, so a mixed-case
+# key would neither remove nor replace it.
+NO_CWD = "NoDefaultCurrentDirectoryInExePath".upper()
 
 
 @pytest.mark.nightly
@@ -189,11 +191,13 @@ def test_doctor_resolves_a_relative_launcher_from_the_lane_cwd(make_repo, tmp_pa
 
 @pytest.mark.nightly
 @pytest.mark.process
-def test_doctor_finds_a_lane_word_from_any_directory(make_repo, tmp_path):
-    """Root, subdirectory and --repo from outside print the same lane lines,
-    and the verdict is the lane shell's."""
+@pytest.mark.parametrize("plugin_installed", [True, False])
+def test_doctor_finds_a_lane_word_from_any_directory(make_repo, tmp_path, plugin_installed):
+    """The launcher's venv with and without pytest-cov: root, subdirectory and
+    --repo from outside print the same lane lines, and the verdict is the lane
+    shell's."""
     root = lane_repo(make_repo, f"{launcher()} -m pytest {COV}")
-    make_venv(root / ".venv")
+    make_venv(root / ".venv", packages=plugin_installed)
     expected = imports_pytest_cov(launcher(), root, lane_env())
     seen = everywhere(root, tmp_path / "out")
     assert seen["subdirectory"] == seen["root"] == seen["outside"], seen
@@ -347,13 +351,24 @@ def test_doctor_compares_the_plugin_with_the_crapkit_the_hook_starts(tmp_path):
 @pytest.mark.process
 def test_doctor_takes_a_version_only_from_a_crapkit_that_exits_0(tmp_path):
     """A crapkit on PATH that prints a version-shaped word and exits 2 answered
-    nothing: doctor FAILs it and never reports that word as its version."""
+    nothing: doctor never reports that word as the version the hook starts."""
     root = plugin(tmp_path / "plugin", "crapkit", own_version(tmp_path))
     env = {"PATH": path_without_crapkit(fake_crapkit(tmp_path / "broken", "crapkit 9.9.9", code=2))}
     code, said = spawned_answer(env, tmp_path)
     result = plugin_doctor(tmp_path, root, env)
-    assert (code, said) == (2, "crapkit 9.9.9")
-    assert (result.code, "9.9.9" in result.stdout) == (1, False), result.stdout
+    assert (code, said, "9.9.9" in result.stdout) == (2, "crapkit 9.9.9", False), result.stdout
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_doctor_fails_a_crapkit_that_answers_no_version(tmp_path):
+    """README.md:791: silence only when the two agree. A launcher that exits 2
+    agrees with nothing, so doctor prints a line and exits non-zero."""
+    root = plugin(tmp_path / "plugin", "crapkit", own_version(tmp_path))
+    env = {"PATH": path_without_crapkit(fake_crapkit(tmp_path / "broken", "crapkit 9.9.9", code=2))}
+    result = plugin_doctor(tmp_path, root, env)
+    assert (spawned_answer(env, tmp_path)[0] != 0, result.code != 0, bool(result.stdout.strip())) == \
+        (True, True, True), result.stdout
 
 
 def claude_home(base: Path, version: str) -> Path:
@@ -380,16 +395,37 @@ def checked_roots(result: drive.Result) -> tuple[int, list[str]]:
                          for line in result.stdout.splitlines() if line.startswith(CHECKING)]
 
 
+def plugin_root_answers(tmp_path: Path) -> tuple[list[str], dict]:
+    """The crapkit install json.load finds, and doctor's (exit, names another
+    vendor's version, roots it says it checked) from ~/.claude, ~/.claude/plugins
+    and the cache, with PATH's crapkit answering the install's version."""
+    version = own_version(tmp_path)
+    home = claude_home(tmp_path, version)
+    env = {"PATH": path_without_crapkit(fake_crapkit(tmp_path / "bin", f"crapkit {version}"))}
+    answers = {}
+    for start in (home, home / "plugins", home / "plugins" / "cache"):
+        result = plugin_doctor(tmp_path, start, env)
+        answers[start.name] = (result.code, "2.0.6" in result.stdout, checked_roots(result)[1])
+    return crapkit_installs(home / "plugins" / "cache"), answers
+
+
 @pytest.mark.nightly
 @pytest.mark.process
 def test_plugin_root_reads_only_crapkit_manifests(tmp_path):
     """From ~/.claude, ~/.claude/plugins and the cache itself, doctor checks the
-    crapkit install and never another vendor's plugin with a higher version."""
-    version = own_version(tmp_path)
-    home = claude_home(tmp_path, version)
-    expected = crapkit_installs(home / "plugins" / "cache")
-    env = {"PATH": path_without_crapkit(fake_crapkit(tmp_path / "bin", f"crapkit {version}"))}
-    starts_at = (home, home / "plugins", home / "plugins" / "cache")
-    checked = {start.name: checked_roots(plugin_doctor(tmp_path, start, env)) for start in starts_at}
-    assert (len(expected), checked) == \
-        (1, {name: (0, expected) for name in (".claude", "plugins", "cache")}), checked
+    crapkit install, which agrees with PATH's crapkit, and never another
+    vendor's plugin with a higher version."""
+    expected, answers = plugin_root_answers(tmp_path)
+    assert len(expected) == 1
+    assert {name: (code, other, set(roots) <= set(expected)) for name, (code, other, roots) in answers.items()} \
+        == {name: (0, False, True) for name in (".claude", "plugins", "cache")}, answers
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_plugin_root_names_the_root_it_found(tmp_path):
+    """README.md:791: a root doctor found rather than one typed is named first,
+    as `crapkit doctor: checking PATH`."""
+    expected, answers = plugin_root_answers(tmp_path)
+    assert {name: roots for name, (_, _, roots) in answers.items()} == \
+        {name: expected for name in (".claude", "plugins", "cache")}, answers
