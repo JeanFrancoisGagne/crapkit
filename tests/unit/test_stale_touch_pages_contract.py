@@ -487,6 +487,12 @@ def test_agents_brief_table_reads_scored_changes_before_stale():
 
 # -- S26, c26: counts that name their files ----------------------------------------
 
+def _readme_row(command: str) -> str:
+    """The README subcommand table's row for COMMAND."""
+    return next(line for line in _page("README.md").splitlines()
+                if line.startswith(f"| `{command} "))
+
+
 _VERDICT = re.compile(r"^ *verify (OK|FAILED) @ .*\((\d+) changed files\)")
 
 
@@ -524,6 +530,8 @@ def test_the_changelog_quotes_the_line_that_names_the_changed_files(capsys):
 
     assert f"`{printed}`" in _prose(_release())
     assert "`changed_paths` beside the `changed_files` count" in _prose(_release())
+    assert ("A line under the verdict names the first three changed files, `--json` lists them "
+            "all as `changed_paths`") in _prose(_readme_row("verify"))
 
 
 @landed(hasattr(verifying, "_warn_untracked_in_scope"), "verify's untracked-in-scope warning")
@@ -688,6 +696,7 @@ def test_a_leftover_stays_refused_through_a_touch_and_a_lost_stamp_file_until_ne
     after_new_bytes = stamps.read(tmp_path).refusal(lane.artifact).kind
 
     assert (after_touch, after_delete, after_new_bytes) == ("leftover", "leftover", "")
+    assert "a `touch` does not lift the refusal, new bytes do" in _prose(_readme_row("coverage"))
     assert ("a touch keeps the leftover refused, deleting `.crapkit/artifacts.json` does not "
             "lift it, and new bytes lift it") in _prose(_page("docs/upgrading.md"))
     assert "so deleting `.crapkit/artifacts.json` does not lift it. New bytes lift it" in _prose(_release())
@@ -839,6 +848,7 @@ def test_the_changelog_quotes_the_reuse_line_and_what_each_lane_kind_leaves_out(
 
     assert f"`{line}`" in section
     assert f"For a lane with `inputs` it names {_FRESHNESS._UNPROVED[True]}" in section
+    assert "says what that proof leaves out" in _prose(_readme_row("coverage"))
     assert "each reuse names what its proof leaves out" in _prose(_page("docs/handbook.html"))
     assert "the line that reuses a lane names what its proof leaves out" in _prose(_page("docs/upgrading.md"))
 
@@ -968,3 +978,18 @@ def test_the_handbook_lookup_row_says_watch_rescores_on_new_bytes(tmp_path):
     assert moved == []
     assert "when its bytes change, not when its mtime moves" in row
     assert "Rescores tracked files as they change" not in row
+
+
+@landed(_module("lane_stamps") is not None, "the refusal query over an unreadable stamp file")
+def test_an_unreadable_stamp_file_refuses_the_artifact_and_says_why(tmp_path):
+    stamps = _module("lane_stamps")
+    artifact = tmp_path / ".crapkit" / "cov" / "py.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("{}", encoding="utf-8")
+    (tmp_path / stamps.STAMPS_FILE).write_text("{not json", encoding="utf-8")
+
+    refusal = stamps.read(tmp_path).refusal(".crapkit/cov/py.json")
+
+    assert (refusal.kind, refusal.why) == ("unknown", "it does not parse as JSON")
+    assert ("reuse refuses the artifact while the record that would hold its refusal cannot be "
+            "read, and says why") in _prose(_release())
