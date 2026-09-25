@@ -104,7 +104,7 @@ def test_a_failed_outside_process_names_itself_and_the_last_3000_characters():
         cc._process("probe", _python(code), 60)
 
     head, _, tail = str(failed.value).partition("\n")
-    assert (head, len(tail), tail[-8:]) == ("probe exited 1:", 3000, "�the end")
+    assert (head, len(tail), tail[-8:]) == ("probe exited 1:", 3000, "\ufffdthe end")
 
 
 @pytest.mark.process
@@ -721,3 +721,145 @@ def test_a_path_the_code_page_cannot_spell_prints_escaped(monkeypatch):
     sys.stdout.flush()
 
     assert out.getvalue() == b"src/" + b"\\" + b"u4e2d.py caf\xe9\n"
+
+
+# --- the tool's small helpers, each against values worked out by hand -------------------------
+
+@pytest.mark.parametrize("path, packet", [
+    ("tests/accuracy/score_model/hand_score.tsv", "score_model"),
+    ("tests/accuracy/kit/fixtures/seed-goldens.lock", "kit"),
+    ("tests/accuracy/calcs.tsv", ""),
+    ("tests/unit/score/test_x.py", ""),
+    ("src/crapkit/score.py", ""),
+])
+def test_a_path_s_packet_is_the_directory_under_tests_accuracy(path, packet):
+    assert cc.packet_of(path) == packet
+
+
+@pytest.mark.parametrize("path, name", [
+    ("tests/accuracy/corpus_goldens/goldens/small/scored.tsv", "small"),
+    ("tests/accuracy/corpus_goldens/goldens/requests/surfaces/worklist.json", "requests"),
+    ("tests/accuracy/corpus_goldens/goldens/report.html", ""),
+    ("src/a.py", ""),
+])
+def test_a_golden_s_set_is_the_directory_right_under_goldens(path, name):
+    assert cc.golden_set(path) == name
+
+
+READER = "Python reader: spans, names, inline_body, unread-def net"
+
+
+@pytest.mark.parametrize("path, column, calcs", [
+    ("src/a.py", "crap", {"CRAP score"}),
+    ("src/a.py", "ccn", {seeds.CCN, READER}),
+    ("src/a.py", "row", {"Function discovery and spans", READER}),
+    ("cmd/root.go", "ccn", {seeds.CCN}),
+    ("src/a.py", "a_new_column", {"Inventory rows and TSV exports"}),
+])
+def test_a_moved_column_is_declared_by_its_calc_and_its_language_s_reader(path, column, calcs):
+    """The plan's matrix: a reader calc exists for Python, JS/TS, Rust, shell and
+    PowerShell, and owns spans and ccn, never CRAP."""
+    cell = cc.Cell(seeds.SCORED, path, "f", column, "1", "2")
+
+    assert set(cc.acceptable(cell)) == calcs
+    assert cc.primary(cell) == sorted(calcs - {READER})[0]
+
+
+ULP = 2.0 ** -52  # math.ulp(1.0)
+
+
+@pytest.mark.parametrize("value, oracle, close", [
+    ("1.0", "1.0", True),
+    (repr(1.0 + 4 * ULP), "1.0", True),
+    (repr(1.0 + 5 * ULP), "1.0", False),
+    ("inf", "1.0", False),
+    ("present", "present", True),
+    ("absent", "present", False),
+])
+def test_a_value_agrees_within_4_ulp_or_as_equal_text(value, oracle, close):
+    assert cc._close(value, oracle) is close
+
+
+def test_a_tree_is_locked_once_it_has_a_change_or_a_lock_row():
+    changes_only = {cc.CHANGES: BASE[cc.CHANGES], cc.LOCK: "path\tsha256\tchange\n"}
+    lock_only = {cc.CHANGES: BASE[cc.CHANGES].splitlines()[0] + "\n", cc.LOCK: BASE[cc.LOCK]}
+    neither = {cc.CHANGES: lock_only[cc.CHANGES], cc.LOCK: changes_only[cc.LOCK]}
+
+    assert [cc._initialized(seeds.tool().DictTree({path: text.encode() for path, text in
+                                                    tree.items()}))
+            for tree in (changes_only, lock_only, neither)] == [True, True, False]
+
+
+def test_versions_compare_part_by_part_as_numbers():
+    assert cc._version("1.24.0-rc1") == (1, 24, 0, "rc1")
+    assert cc._version("1.10.0") > cc._version("1.9.2")
+
+
+def test_a_metric_line_holds_the_documented_fields_and_crap_at_4_dp():
+    row = {"ccn_std": "3", "ccn_mod": "2", "ccn": "2", "start": "5", "end": "9",
+           "crap": "2.000049", "cov": "0.75"}
+
+    assert cc._metric_line(("src/a.py", "f"), row) == \
+        "src/a.py\tf\t3\t2\t2\t\t\t\t\t5\t9\t2.0000\t0.75"
+    assert cc._metric_line(("src/a.py", "g"), {}) == "src/a.py\tg" + "\t" * 11
+
+
+def test_a_table_row_appends_under_one_header_on_its_own_line(tmp_path):
+    table = tmp_path / "new" / "dir" / "t.tsv"
+
+    cc._append(table, ("a", "b"), ["1", "2"])
+    cc._append(table, ("a", "b"), ["3", "4"])
+    ragged = tmp_path / "ragged.tsv"
+    ragged.write_bytes(b"a\tb\n1\t2")
+    cc._append(ragged, ("a", "b"), ["3", "4"])
+
+    assert table.read_bytes() == b"a\tb\n1\t2\n3\t4\n"
+    assert ragged.read_bytes() == b"a\tb\n1\t2\n3\t4\n"
+
+
+def test_the_small_corpus_is_read_in_place_or_written_out_once(tmp_path, monkeypatch):
+    nested = f"{cc.SMALL_CORPUS}/src/pkg/b.py"
+    tree = seeds.tool().DictTree({nested: b"def b():\n    return 1\n"})
+    monkeypatch.delenv(cc.CORPUS_ENV, raising=False)
+
+    written = cc.corpus_dir(tree, "small")
+
+    assert (written / "src" / "pkg" / "b.py").read_bytes() == b"def b():\n    return 1\n"
+    assert cc.corpus_dir(tree, "small") == written
+    assert cc.corpus_dir(cc.DirTree(tmp_path), "small") == tmp_path / cc.SMALL_CORPUS
+    assert cc.corpus_dir(tree, "requests") is None
+
+
+def test_a_full_corpus_member_is_read_under_the_corpus_directory(tmp_path, monkeypatch):
+    (tmp_path / "requests" / "src").mkdir(parents=True)
+    (tmp_path / "requests" / "src" / "api.py").write_bytes(b"x = 1\n")
+    monkeypatch.setenv(cc.CORPUS_ENV, str(tmp_path))
+
+    assert cc.corpus_dir(cc.DictTree({}), "requests") == tmp_path / "requests"
+    assert cc._outside("requests", "src/api.py") == b"x = 1\n"
+    assert cc._outside("requests", "src/gone.py") is None
+    monkeypatch.delenv(cc.CORPUS_ENV)
+    assert cc._outside("requests", "src/api.py") is None
+
+
+def test_the_moved_block_lists_the_first_ten_files_no_row_explains():
+    files = [f"tests/accuracy/corpus_goldens/goldens/small/claims-{k:02d}.json"
+             for k in range(11)]
+
+    block = cc.moved_block(seeds.tool().DictTree({}), [], files)
+
+    assert block[:2] == ["moved calcs: Inventory rows and TSV exports (11 files)",
+                         "moved golden files no moved row explains (first 10 of 11):"]
+    assert block[2:] == [f"  {path}\tInventory rows and TSV exports" for path in files[:10]]
+
+
+def test_the_command_line_is_read_from_sys_argv(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["change_control.py", "counts", "--help"])
+
+    with pytest.raises(SystemExit) as shown:
+        cc.main()
+    with pytest.raises(SystemExit) as empty:
+        cc.main([])
+
+    assert (shown.value.code, empty.value.code) == (0, 2)
+    assert capsys.readouterr().out.startswith("usage: change_control.py counts")
