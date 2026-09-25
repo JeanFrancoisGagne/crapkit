@@ -6,7 +6,9 @@ Windows Python turned every `\\n` into `\\r\\n` on the way in: a `cat >>
 alerts.log` or `curl --data-binary @-` downstream stored CR LF from a Windows
 committer and LF from everyone else. Every file crapkit writes for a person or
 a diff is pinned to LF; the alert is text handed to another program, and it now
-follows the same rule.
+follows the same rule. What the command prints back comes the other way under
+the same rule: a failed alert's refusal quotes it as plain text with LF line
+ends, whatever colour or OS it was printed under.
 """
 from __future__ import annotations
 
@@ -72,6 +74,8 @@ def test_a_failed_override_alert_quotes_what_the_command_printed(tmp_path):
 # colours its traceback under FORCE_COLOR from 3.13 on, a runner colours its
 # error line, and on Windows every line a child prints ends in CR LF.
 
+# What the refusal says after the quote: the outcome, and the field to fix.
+NEXT = " - no alert, no override; rerun once [crapkit] alert_command in crapkit.toml exits 0"
 PRINTED = {
     "plain": (b"relay down\n", "relay down"),
     "coloured": (b"\x1b[1;31mrelay\x1b[0m down\n", "relay down"),
@@ -98,7 +102,7 @@ def test_a_failed_override_alert_is_quoted_as_plain_lf_text(tmp_path, printed, s
     with pytest.raises(ToolError) as refused:
         _alert_or_refuse(_printing(tmp_path, data, stream), tmp_path, [VIOLATION], "hotfix")
 
-    assert str(refused.value) == f"override alert command failed (exit 3): {quoted} - no alert, no override"
+    assert str(refused.value) == f"override alert command failed (exit 3): {quoted}{NEXT}"
 
 
 TRACEBACK = "import sys; sys.stdin.read(); 1/0"
@@ -128,7 +132,7 @@ def test_an_alert_scripts_traceback_is_quoted_as_plain_lf_text(tmp_path, monkeyp
     message = str(refused.value)
     assert "\x1b" not in message and "\r" not in message, repr(message)
     assert message.startswith("override alert command failed (exit 1): Traceback (most recent call last):\n")
-    assert message.endswith("ZeroDivisionError: division by zero - no alert, no override"), repr(message)
+    assert message.endswith(f"ZeroDivisionError: division by zero{NEXT}"), repr(message)
 
 
 def test_a_failed_digest_alert_names_the_exit_code(tmp_path):
@@ -216,7 +220,7 @@ def test_the_hook_override_hands_the_alert_lf_utf8_bytes(tmp_path, env):
 COLOURS = {"FORCE_COLOR=1": {"FORCE_COLOR": "1"}, "PYTHON_COLORS=1": {"PYTHON_COLORS": "1"},
            "TERM=dumb FORCE_COLOR=1": {"TERM": "dumb", "FORCE_COLOR": "1"}, "no-colour": {}}
 REFUSING = b"\x1b[31mrelay down\x1b[0m\r\nretry at 09:00\r\n"
-REFUSAL = "override alert command failed (exit 3): relay down\nretry at 09:00 - no alert, no override"
+REFUSAL = f"override alert command failed (exit 3): relay down\nretry at 09:00{NEXT}"
 
 
 def _refusing_repo(root: Path) -> Path:

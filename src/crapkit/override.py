@@ -116,7 +116,8 @@ def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolat
     if code != 0:
         raise ToolError(
             f"override alert command failed (exit {code}): "
-            f"{printed.strip()[-300:]} - no alert, no override")
+            f"{printed.strip()[-300:]} - no alert, no override; "
+            "rerun once [crapkit] alert_command in crapkit.toml exits 0")
 
 
 def send_alert(alert_command: str, root: Path, text: str) -> tuple[int, str]:

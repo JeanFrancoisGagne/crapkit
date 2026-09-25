@@ -30,6 +30,12 @@
   lines, and the refusal on stderr, `--json` lane_failures, the junit collection
   refusal, the comment and the base run's reason quoted the escape codes. The lane log
   file keeps its colour.
+- A failed override alert is quoted as plain text. `verify --override` and
+  hook-precommit's override refuse when `alert_command` exits non-zero, and the refusal
+  on stderr and in `--json`'s error object quoted what the command printed with its
+  escape codes: a Python alert script coloured its traceback under FORCE_COLOR from 3.13
+  on. The refusal now also says what to fix: `rerun once [crapkit] alert_command in
+  crapkit.toml exits 0`.
 
 ### MCP and hook arguments
 
@@ -88,6 +94,16 @@
   help and usage in a pipe on 3.14.
 - Every Python file under src/crapkit, tests and tools compiles with warnings as errors
   on each CI interpreter, so no SyntaxWarning reaches a first run's stderr.
+- The 17 outputs a program reads (the JSON of coverage, worklist, next-item, brief,
+  explain, duplication, coupling, trend, runs, rescore, verify and ratchet report, the
+  `--github` annotations, the scored TSV, both SARIF files and crapkit-ratchet.tsv) are
+  checked against one set of copies under tests/goldens/machine_outputs/ on every
+  Ubuntu and Windows leg, and the words of every help screen against
+  tests/goldens/help_words.txt on every Python. `CRAPKIT_WRITE_GOLDENS=1` rewrites them
+  after a change every OS makes.
+- tools/action/comment.py strips escape codes through crapkit.plaintext, the one strip
+  every other reader of a child's text uses, so rendering saved payloads by hand needs
+  crapkit installed. The Action installs it before that step, as it did before.
 
 ## 0.8.0 — 2026-09-23
 
