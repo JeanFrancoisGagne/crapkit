@@ -19,6 +19,8 @@ CHECKS = [
      "pytest": [_SS + "test_mutation_tool.py", _SS + "test_mutation_floors.py"]},
     {"name": "crapkit mutate verdicts", "seconds": 5,
      "pytest": [_SS + "test_mutate_results.py"]},
+    {"name": "mutant generation from source text", "seconds": 1,
+     "pytest": [_SS + "test_mutant_generation.py", _SS + "test_mutate_command.py"]},
     {"name": "crapkit mutate against mutmut and Stryker", "seconds": 0,
      "pytest": [_SS + "test_mutate_differential.py"]},
     {"name": "self-measurement floor", "seconds": 0,
