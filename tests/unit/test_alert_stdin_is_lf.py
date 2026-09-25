@@ -65,6 +65,72 @@ def test_a_failed_override_alert_quotes_what_the_command_printed(tmp_path):
     assert "override alert command failed (exit 3): refusé par le relais" in str(refused.value)
 
 
+# --- what the alert command printed, as the refusal quotes it -----------------
+#
+# The refusal quotes the command's own output on stderr and in --json's error
+# object, where a person or an agent reads it as text. A Python alert script
+# colours its traceback under FORCE_COLOR from 3.13 on, a runner colours its
+# error line, and on Windows every line a child prints ends in CR LF.
+
+PRINTED = {
+    "plain": (b"relay down\n", "relay down"),
+    "coloured": (b"\x1b[1;31mrelay\x1b[0m down\n", "relay down"),
+    "window-title": (b"\x1b]0;alert\x07relay down\n", "relay down"),
+    "crlf-lines": (b"relay down\r\nretry at 09:00\r\n", "relay down\nretry at 09:00"),
+    "progress-cr": (b"50%\rrelay down\n", "50%\nrelay down"),
+    "coloured-crlf": (b"\x1b[31mrelay down\x1b[0m\r\n", "relay down"),
+}
+
+
+def _printing(root: Path, data: bytes, stream: str = "stderr") -> str:
+    """An alert command that reads its stdin, prints `data` raw and exits 3."""
+    (root / "alert.py").write_text(
+        f"import sys\nsys.stdin.buffer.read()\nsys.{stream}.buffer.write({data!r})\nsys.exit(3)\n",
+        encoding="utf-8")
+    return f'"{sys.executable}" alert.py'
+
+
+@pytest.mark.parametrize("stream", ["stderr", "stdout"])
+@pytest.mark.parametrize("printed", list(PRINTED))
+def test_a_failed_override_alert_is_quoted_as_plain_lf_text(tmp_path, printed, stream):
+    data, quoted = PRINTED[printed]
+
+    with pytest.raises(ToolError) as refused:
+        _alert_or_refuse(_printing(tmp_path, data, stream), tmp_path, [VIOLATION], "hotfix")
+
+    assert str(refused.value) == f"override alert command failed (exit 3): {quoted} - no alert, no override"
+
+
+TRACEBACK = "import sys; sys.stdin.read(); 1/0"
+
+
+@pytest.mark.skipif(sys.version_info < (3, 13), reason="Python colours a traceback from 3.13 on")
+def test_an_alert_script_really_colours_its_traceback_under_force_color(tmp_path, monkeypatch):
+    """The row below is only worth something if the child colours here."""
+    monkeypatch.setenv("FORCE_COLOR", "1")
+
+    done = subprocess.run(_command(TRACEBACK), shell=True, cwd=tmp_path, input=b"",
+                          capture_output=True)
+
+    assert b"\x1b[" in done.stderr, done.stderr
+
+
+@pytest.mark.parametrize("colour", [{"FORCE_COLOR": "1"}, {"PYTHON_COLORS": "1"},
+                                    {"TERM": "dumb", "FORCE_COLOR": "1"}, {}],
+                         ids=["FORCE_COLOR=1", "PYTHON_COLORS=1", "TERM=dumb FORCE_COLOR=1", "no-colour"])
+def test_an_alert_scripts_traceback_is_quoted_as_plain_lf_text(tmp_path, monkeypatch, colour):
+    for name, value in colour.items():
+        monkeypatch.setenv(name, value)
+
+    with pytest.raises(ToolError) as refused:
+        _alert_or_refuse(_command(TRACEBACK), tmp_path, [VIOLATION], "hotfix")
+
+    message = str(refused.value)
+    assert "\x1b" not in message and "\r" not in message, repr(message)
+    assert message.startswith("override alert command failed (exit 1): Traceback (most recent call last):\n")
+    assert message.endswith("ZeroDivisionError: division by zero - no alert, no override"), repr(message)
+
+
 def test_a_failed_digest_alert_names_the_exit_code(tmp_path):
     with pytest.raises(ToolError, match=r"digest alert command failed \(exit 3\)"):
         _send_digest_alert(tmp_path, SimpleNamespace(alert_command=_command(FAILS)),
@@ -145,6 +211,58 @@ def test_the_hook_override_hands_the_alert_lf_utf8_bytes(tmp_path, env):
     text = _only_lf_utf8((repo / "alert.bin").read_bytes())
     assert text.startswith("crapkit OVERRIDE (hotfix déjà vu): src/tangled.ts:1 tangled ( a , b ) crap="), text
     assert text.endswith("\n") and text.count("\n") == 1, text
+
+
+COLOURS = {"FORCE_COLOR=1": {"FORCE_COLOR": "1"}, "PYTHON_COLORS=1": {"PYTHON_COLORS": "1"},
+           "TERM=dumb FORCE_COLOR=1": {"TERM": "dumb", "FORCE_COLOR": "1"}, "no-colour": {}}
+REFUSING = b"\x1b[31mrelay down\x1b[0m\r\nretry at 09:00\r\n"
+REFUSAL = "override alert command failed (exit 3): relay down\nretry at 09:00 - no alert, no override"
+
+
+def _refusing_repo(root: Path) -> Path:
+    """The repo above with an alert command that fails, printing REFUSING."""
+    repo = _repo(root)
+    (repo / "crapkit.toml").write_text(TOML.format(alert=json.dumps(_printing(repo, REFUSING))),
+                                       encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "refusing alert")
+    return repo
+
+
+def _read(raw: bytes) -> str:
+    """A crapkit stream as a reader sees it: the line ends crapkit's own text
+    mode writes (CR LF on Windows) read as LF, and any other CR kept."""
+    return raw.decode("utf-8").replace("\r\n", "\n")
+
+
+@pytest.mark.parametrize("colour", list(COLOURS))
+def test_the_hook_refuses_a_failed_alert_in_plain_lf_text(tmp_path, colour):
+    repo = _refusing_repo(tmp_path / "repo")
+    (repo / "src" / "tangled.ts").write_text(TANGLED, encoding="utf-8")
+    _git(repo, "add", "-A")
+    env = _environment({**COLOURS[colour], "CRAPKIT_OVERRIDE_REASON": "hotfix"})
+
+    done = hang_guard.run([sys.executable, "-m", "crapkit", "hook-precommit"], cwd=repo, env=env)
+
+    stderr = _read(done.stderr)
+    assert done.returncode != 0, stderr
+    assert REFUSAL in stderr, repr(stderr)
+    assert "\x1b" not in stderr and "\r" not in stderr, repr(stderr)
+
+
+@pytest.mark.parametrize("colour", list(COLOURS))
+def test_verify_json_refuses_a_failed_alert_in_plain_lf_text(tmp_path, colour):
+    repo = _refusing_repo(tmp_path / "repo")
+    assert _crapkit(repo, {}, "coverage").returncode == 0
+    (repo / "src" / "tangled.ts").write_text(TANGLED, encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "tangled")
+
+    done = hang_guard.run([sys.executable, "-m", "crapkit", "verify", "--override", "hotfix", "--json"],
+                          cwd=repo, env=_environment(COLOURS[colour]))
+
+    assert done.returncode != 0, _read(done.stderr)
+    assert json.loads(done.stdout)["error"]["message"] == REFUSAL, _read(done.stdout)
 
 
 @pytest.mark.parametrize("env", ENVS, ids=ENV_IDS)

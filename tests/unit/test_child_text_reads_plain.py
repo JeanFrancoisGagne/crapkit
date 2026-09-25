@@ -84,6 +84,22 @@ def test_the_junit_form_drops_the_escapes_pytest_spells_as_text():
         "link")
 
 
+@pytest.mark.parametrize("raw, text", [
+    (b"relay down\n", "relay down\n"),
+    (b"\x1b[31mrelay down\x1b[0m\r\nretry\r\n", "relay down\nretry\n"),
+    (b"50%\r75%\rdone\n", "50%\n75%\ndone\n"),
+    (b"caf\xc3\xa9 \xe9t\xe9\n", "café �t�\n"),
+    (b"\xef\xbb\xbfbom kept\n", "﻿bom kept\n"),
+    (b"", ""),
+], ids=["plain", "coloured-crlf", "lone-cr", "not-utf8", "bom", "empty"])
+def test_printed_text_reads_a_childs_bytes_as_a_text_mode_pipe_would_without_colour(raw, text):
+    """The bytes an alert command wrote, read the way a text-mode pipe on any
+    OS reads them, with the colour gone."""
+    from crapkit.plaintext import printed_text
+
+    assert printed_text(raw) == text
+
+
 # --- the lane refusal --------------------------------------------------------
 
 def _broken_log(modules: int = 15) -> list[str]:
