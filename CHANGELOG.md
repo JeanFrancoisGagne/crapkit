@@ -533,6 +533,44 @@ nothing. Each of these now gets a line naming the object and the next step:
   gate to one root, `--repo packages/api` on the hook line or `args: [--repo,
   packages/api]` for the pre-commit framework.
 
+### Install, upgrade and removal
+
+- README Install says what to run when pip stops with `error: externally-managed-environment`,
+  which Debian 12, Ubuntu 23.04 and later, Homebrew and uv's own Pythons print: `pipx install
+  crapkit`, `uv tool install crapkit`, or a venv. It also tells a Python 3.10 user that pip
+  ends with `No matching distribution found for crapkit` and that `uvx crapkit` runs crapkit
+  on a Python uv finds or downloads.
+- README Install and the [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) say where
+  `pip install --user` puts the `crapkit` command (`~/.local/bin`,
+  `~/Library/Python/3.12/bin`, `%APPDATA%\Python\Python312\Scripts`) and quote pip's
+  `which is not on PATH` warning. Until PATH names that directory, the Claude Code plugin
+  lists its server as `Failed to connect`.
+- The upgrade table has rows for pip --user, pipx (`pipx upgrade crapkit`), uvx
+  (`uvx crapkit@latest --version`) and an install from the git URL (`python -m pip install
+  --force-reinstall --no-deps git+https://github.com/JeanFrancoisGagne/crapkit.git`). A
+  cached `uvx crapkit` keeps running the release it fetched first, and so does a client
+  whose entry runs `uvx crapkit mcp` until it restarts. The git line run again keeps the
+  old code, because commits between two releases share one version string.
+- The Windows launcher-lock section says what each installer does while a `crapkit.exe mcp`
+  runs, measured on Windows 11 with pip 26.2.1, pipx 1.17.6 and uv 0.12.18. pip exits 0
+  and the running server keeps serving the old code until its client restarts.
+  `uv tool upgrade` fails with `os error 32`. `uv tool install crapkit@latest`, and pipx
+  when it installs through uv, fail with `Access is denied. (os error 5)`, and after that
+  `uv tool install` the `crapkit` command raises `ModuleNotFoundError` until the install
+  runs again. The page named only error 32, which pip never prints.
+- New section: [Removing
+  crapkit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit).
+  After `pip uninstall crapkit` alone, every commit stopped on the hook's `No module named
+  crapkit` and every merge of `crapkit-ratchet.tsv` conflicted after the driver's
+  `crapkit: not found`. The section takes out the hook and the merge driver first, then the
+  files crapkit wrote, then the package and the plugins, with each gate route's pieces and
+  each installer's removal line.
+- The Dockerfile header and the Docker section of agent-json.md give
+  `--user "$(id -u):$(id -g)"`. On a Linux host whose uid is not 1000 the image still
+  answers, but it cannot save its churn and coupling caches under `.crapkit/`, so every
+  call walks the git history again.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

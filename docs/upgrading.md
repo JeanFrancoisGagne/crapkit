@@ -12,20 +12,29 @@ does not turn those runs into measurements of the new reader.
 | pipx | `pipx upgrade crapkit` |
 | uv tool | `uv tool upgrade crapkit` |
 | uvx | `uvx crapkit@latest --version` |
+| pip from the git URL | `python -m pip install --force-reinstall --no-deps git+https://github.com/JeanFrancoisGagne/crapkit.git` |
 
 Check `crapkit --version` in the environment your shell, hook and MCP client use.
 For a source checkout, follow [Development](../README.md#development). Stop a live
 MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-locks).
 
 `pip --user` puts the launcher in the user scripts directory: `~/.local/bin` on Linux,
-`%APPDATA%\Python\Python3XX\Scripts` on Windows. When that directory is not on PATH, pip
-says so on install, `WARNING: The script crapkit is installed in '...' which is not on
-PATH`, and the `crapkit` your shell finds is some other install, or none. Add the
-directory it names to PATH before checking the version.
+`~/Library/Python/3.12/bin` for a python.org Python 3.12 on macOS, and
+`%APPDATA%\Python\Python312\Scripts` for Python 3.12 on Windows. When that directory is
+not on PATH, pip says so on install, `WARNING: The script crapkit is installed in '...'
+which is not on PATH`, and the `crapkit` your shell finds is some other install, or none.
+Add the directory it names to PATH before checking the version.
 
 Once uvx has fetched crapkit, plain `uvx crapkit` keeps running that release after a
 newer one ships, and so does an agent config that starts `uvx crapkit mcp`. The uvx row
 asks for the newest release by name; from then on plain `uvx crapkit` runs that one.
+Restart each client whose MCP entry runs `uvx crapkit mcp`, since its running server
+keeps the release it started with.
+
+The git row is for an install from the tip of `main`. Commits there carry the last
+release's version string until the next release, and pip keeps an installed crapkit
+whose version matches, so the install line alone leaves the old code in place;
+`--force-reinstall` replaces it and `--no-deps` leaves lizard as it is.
 
 ## Downgrading
 
@@ -315,8 +324,20 @@ Replace the old name where the client lists it. The 0.6.0 entry of the
 
 ## Windows launcher locks
 
-A running `crapkit.exe mcp` can hold the console launcher open. An upgrade then
-fails with Windows error 32 even if some package files were already updated.
+A running `crapkit.exe mcp` holds its console launcher open, and each installer meets
+that lock its own way. Measured on Windows 11 with pip 26.2.1, pipx 1.17.6 and uv
+0.12.18, upgrading 0.7.6 to 0.8.0 while a server from the same install ran:
+
+| Command | Exit | What it printed and left behind |
+|---|---|---|
+| `python -m pip install --upgrade crapkit` | 0 | `Successfully installed crapkit-0.8.0`, then `WARNING: Failed to remove contents in a temporary directory`. pip moved the busy `crapkit.exe` into that directory: `crapkit --version` says 0.8.0, and the running server still answers as 0.7.6 |
+| `pipx upgrade crapkit`, pipx using pip | 0 | `upgraded package crapkit from 0.7.6 to 0.8.0`, and the rest as for pip |
+| `pipx upgrade crapkit`, pipx using uv (uv on PATH) | 1 | `error: failed to remove file ...\Scripts/crapkit.exe: Access is denied. (os error 5)`. 0.7.6 stays installed and runs |
+| `uv tool upgrade crapkit` | 1 | `failed to copy file ... The process cannot access the file because it is being used by another process. (os error 32)`. The package is already 0.8.0; the rerun says `Nothing to upgrade` |
+| `uv tool install crapkit@latest` | 2 | `error: failed to remove directory ...\Scripts: Access is denied. (os error 5)`. The old package is gone, and `crapkit` fails with `ModuleNotFoundError: No module named 'crapkit'` until the rerun |
+
+After an exit 0, restart the client or agent session that owns the server; nothing else
+is left to do. After Windows error 32 or error 5:
 
 1. Stop the Crapkit MCP server or the agent session that owns it.
 2. Rerun the same upgrade command and require a successful installer result.
@@ -324,6 +345,64 @@ fails with Windows error 32 even if some package files were already updated.
 
 Use the installer to repair the launcher instead of copying executables between
 environments. The CLI version alone does not prove an interrupted install finished.
+
+## Removing crapkit
+
+Take out what calls crapkit before the package. The commit hook and the merge driver
+both run it: after `pip uninstall crapkit` alone, every commit stops on the hook's
+`No module named crapkit`, and every merge that touches `crapkit-ratchet.tsv` conflicts
+after the driver's `crapkit: not found`.
+
+### From a repo
+
+Git keeps the hook and the driver in each clone's `.git`, not in a commit, so every
+clone runs the per-clone lines. For a repo armed with Route 1 and the merge driver:
+
+```sh
+rm .git/hooks/pre-commit
+git config --unset merge.crapkit-ratchet.driver
+git config --unset merge.crapkit-ratchet.name
+```
+
+Then delete the line `crapkit-ratchet.tsv merge=crapkit-ratchet` from `.gitattributes`,
+and the `# crapkit` block `crapkit init` added to `.gitignore`, and commit that with the
+files crapkit wrote:
+
+```sh
+git rm crapkit.toml crapkit-ratchet.tsv
+git commit -am "remove crapkit"
+rm -rf .crapkit
+```
+
+`.crapkit/` holds the run store and caches, untracked; `rmdir /s /q .crapkit` removes it
+from cmd.exe. A branch cut before the removal that changed `crapkit-ratchet.tsv` meets
+`CONFLICT (modify/delete)` when it merges; keep the deletion with
+`git rm crapkit-ratchet.tsv`.
+
+The other routes leave their own pieces:
+
+| Piece | Where it lives | How it goes |
+|---|---|---|
+| Route 1 hook that runs other checks too | `.git/hooks/pre-commit`, per clone | delete its `crapkit hook-precommit` line instead of the file |
+| Route 2 hook | `githooks/pre-commit` and its `githooks/pre-commit text eol=lf` line in `.gitattributes`, committed; `core.hooksPath`, per clone | `git rm githooks/pre-commit`, delete the line, and `git config --unset core.hooksPath` in each clone |
+| Route 3 hook | the `crapkit-gate` entry in `.pre-commit-config.yaml`, committed | delete the entry; `pre-commit uninstall` when no hook is left |
+| Route 4 and the GitHub Action | your CI workflow, and a committed baseline such as `crapkit-baseline.tsv` | delete the step that installs crapkit and runs `crapkit verify`, or the one that `uses: JeanFrancoisGagne/crapkit`, and `git rm` the baseline |
+
+### From the machine
+
+| Installed with | Remove it with |
+|---|---|
+| pip, pip --user or pip from the git URL | `python -m pip uninstall crapkit`, which leaves lizard installed |
+| pipx | `pipx uninstall crapkit`, which deletes crapkit's venv and its command |
+| uv tool | `uv tool uninstall crapkit`, which deletes the tool's environment and its command |
+| uvx | `uv cache clean crapkit`, which drops the releases uvx cached |
+| the Claude Code plugin | `claude plugin uninstall crapkit@crapkit`, then `claude plugin marketplace remove crapkit` |
+| the Codex plugin | `codex plugin remove crapkit@crapkit`, then `codex plugin marketplace remove crapkit` |
+| another MCP client | delete the `crapkit` server entry from its config ([stdio setup](agent-json.md#mcp-server)) |
+
+Remove the plugins with the package. Both plugins start the bare `crapkit` command, so
+with the package gone and the Claude Code plugin still installed, `claude mcp list`
+shows `plugin:crapkit:crapkit: crapkit mcp - ✘ Failed to connect`.
 
 ## Release evidence
 

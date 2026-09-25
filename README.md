@@ -161,10 +161,21 @@ pip install git+https://github.com/JeanFrancoisGagne/crapkit.git
 pip install .
 ```
 
+Commits on `main` between two releases carry the same version string, and pip keeps an
+installed crapkit whose version matches, so running the git line again after a new
+commit leaves the old code in place. This line replaces it with the tip:
+
+```
+pip install --force-reinstall --no-deps git+https://github.com/JeanFrancoisGagne/crapkit.git
+```
+
+`pip install .` in a clone rebuilds on every run and needs no flag.
+
 ### When pip refuses
 
 Debian 12, Ubuntu 23.04 and later, Homebrew and uv mark the Python they install as
-theirs (PEP 668), and pip writes nothing into it:
+theirs (PEP 668), and pip refuses to write into it with
+`error: externally-managed-environment`:
 
 ```
 $ pip install crapkit
@@ -235,13 +246,22 @@ starts uv's cached interpreter, which holds neither the suite's packages nor pyt
 `init` then says that interpreter cannot import pytest_cov, and installing pytest-cov into
 uv's cache fixes nothing the suite needs.
 
-Requires Python 3.11 or newer and Git on PATH. On an older Python pip finds no release it
-can install, and `uvx crapkit` runs crapkit on a Python 3.11 or newer that uv finds or
-downloads. The CLI has one runtime dependency,
+Requires Python 3.11 or newer and Git on PATH. On an older Python pip stops with
+`No matching distribution found for crapkit`, and `uvx crapkit` runs crapkit on a Python
+3.11 or newer that uv finds or downloads. The CLI has one runtime dependency,
 `lizard>=1.24.0`; a package mirror needs both distributions. Install into the environment
 you intend to use, then check `crapkit --version`. The `pip install -e ".[dev]"` under
 [Development](#development) is a different thing: it adds the test extra, for people
 changing crapkit.
+
+`pip install --user crapkit` puts the `crapkit` command in your user scripts directory:
+`~/.local/bin` on Linux, `~/Library/Python/3.12/bin` for a python.org Python 3.12 on
+macOS, `%APPDATA%\Python\Python312\Scripts` for Python 3.12 on Windows. When that
+directory is not on PATH, pip ends its install with `WARNING: The script crapkit is
+installed in '...' which is not on PATH`. Add the directory it names to PATH and open a
+new shell. Until then the shell answers `crapkit` with `command not found` (`is not
+recognized` on Windows), and the Claude Code plugin lists its server as
+`Failed to connect`.
 
 Python projects can install `pip install "crapkit[py]"` in their test environment to
 include pytest-cov and subprocess-capable coverage.py. A separate tool installation
@@ -273,7 +293,8 @@ list and each def nested three or more deep, and it lists a def whose body sits 
 its colon line; `crapkit ratchet prune` drops the marks left under the old names.
 Older JavaScript and TypeScript callback marks can require a reviewed mapping.
 Follow the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
-for saved state, portable records and Windows launcher locks.
+for the upgrade line each installer takes (pip, pip --user, pipx, uv tool, uvx and a git
+install), saved state, portable records and Windows launcher locks.
 
 ### Upgrading from 0.4.4
 
@@ -292,10 +313,26 @@ when moving from any older release to today's reader.
 
 ### The exe lock on Windows
 
-An active MCP server can hold `crapkit.exe` open and make an upgrade fail with
-Windows error 32. Stop that server or its agent session, rerun the upgrade with
-the same installer, then restart the client. See the
-[Windows upgrade procedure](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#windows-launcher-locks).
+A running `crapkit.exe mcp` holds its launcher open, and each installer meets that lock
+its own way. pip succeeds: it moves the busy `crapkit.exe` aside and installs the new
+release, and the running server keeps serving the old code until you restart its
+client. pipx does the same when it installs through pip. `uv tool upgrade crapkit`
+fails with `os error 32`. `uv tool install crapkit@latest`, and `pipx upgrade crapkit`
+when pipx installs through uv, fail with `Access is denied. (os error 5)`; after that
+`uv tool install` the `crapkit` command fails with `ModuleNotFoundError: No module
+named 'crapkit'` until the install runs again. After any of those three failures, stop
+the server or its agent session, rerun the same command, then restart the client. The
+[Windows upgrade procedure](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#windows-launcher-locks)
+lists what each installer printed.
+
+### Removing crapkit
+
+Take the commit hook and the merge driver out before the package: both call crapkit.
+After `pip uninstall crapkit` alone, every commit stops on the hook's
+`No module named crapkit`, and every merge that touches `crapkit-ratchet.tsv` conflicts
+after the driver's `crapkit: not found`. The upgrade guide's
+[Removing crapkit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit)
+lists each piece, in a repo and on the machine.
 
 ## The Claude Code plugin
 
