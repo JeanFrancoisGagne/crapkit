@@ -227,17 +227,20 @@ Compressed sizes of the images built at 9707cc6d, read layer by layer from
 `docker save` on 2026-09-25: `core` 1.45 GB, `ci` 0.56 GB, `full` 3.76 GB,
 `gui` 4.36 GB. `gui` is `full` plus 0.70 GB, `full` is `core`'s first 18
 layers (1.35 GB) plus 2.41 GB, and `ci` is `cells` plus 0.11 GB. What the
-cache would hold:
+cache would hold, as the distinct blobs of the images each built with
+`--no-cache` (first column) and of the images one builder built on each
+other's layers (second column, with `full`'s first 18 layers taken as
+`core`'s):
 
 | Cached | Each job builds every stage itself | Each image builds on the cached layers below it |
 |---|---|---|
-| `core` and `ci`, as today | 2.01 GB | 1.57 GB |
-| `core`, `ci`, `full` and `gui` | 10.13 GB | 4.64 GB |
+| `core` and `ci`, as today | 1.98 GB | 1.57 GB |
+| `core`, `ci`, `full` and `gui` | 10.04 GB | 4.64 GB |
 
 ### Why `full` and `gui` build cold
 
 Cached the way `core` and `ci` are, with each job building every stage itself,
-the four images come to 10.13 GB, and an evicted `core` makes the next push
+the four images come to 10.04 GB, and an evicted `core` makes the next push
 build cold. So `nightly-linux-full` and `nightly-gui` build with
 `--cache local` on a runner whose disk they free first: 1178 s and 1402 s on
 the 24-core machine above, not yet measured on the 4-vCPU `ubuntu-24.04`
