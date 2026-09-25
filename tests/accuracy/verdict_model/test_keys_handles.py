@@ -152,6 +152,24 @@ def test_ifdef_twins_get_distinct_keys(measured):
 
 
 @pytest.mark.process
+def test_seed_gives_each_python_twin_its_own_mark(repo_templates, tmp_path):
+    """docs/ratchet.md: the first twin in file order keeps the bare key and the
+    second takes #2, each marked at its own CRAP. Both twins sit in a
+    coverage-optional scope, so CRAP is ccn (README flag table), and the hand
+    McCabe counts are 2 and 4. The repository measures one lane, so a release
+    that refused a lane-less configuration still seeds it. Before 7b81476 one
+    key held the worse twin only."""
+    step = repos.Commit(files={"crapkit.toml": named_config(), **NAMED}, message="seed")
+    built = repo_templates.copy(repos.Spec(steps=(step,)), tmp_path / "repo")
+    driver = drive.Driver(built.root)
+    assert driver.run("coverage").code == 0 and driver.run("ratchet", "seed").code == 0
+
+    twins = {key: value for key, value in _marks(built).items() if key[0] == "py/twins.py"}
+    assert twins == {("py/twins.py", "dup( x )"): model.Decimal(MCCABE[("py/twins.py", 1)]),
+                     ("py/twins.py", "dup( x )#2"): model.Decimal(MCCABE[("py/twins.py", 7)])}
+
+
+@pytest.mark.process
 def test_a_file_with_twins_is_announced_on_stderr(repo_templates, tmp_path):
     """docs/ratchet.md prints the line analysis writes for a file that gives
     one name to two functions: `crapkit: <path> defines <name> more than

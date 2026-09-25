@@ -177,6 +177,24 @@ def test_pardon_relation_at_the_mark(seeded, tmp_path, case):
 
 
 @pytest.mark.process
+def test_verify_passes_an_edit_inside_a_marked_function_at_its_mark(seeded, tmp_path):
+    """docs/ratchet.md, three gates: verify's gate skips a touched function
+    whose CRAP sits at or under its mark, as rescore --gate does. An edit that
+    leaves `marked` at its recorded CRAP is no finding, so verify exits 0.
+    Reads only the exit code and each violation's long_name, fields every
+    release printed; before 13a42ff verify's gate read no marks and exited 6."""
+    world = CASES["touch-marked"]
+    scenario = seeded.copy(tmp_path / "repo")
+    scenario.set(world)
+
+    result = scenario.run("verify", "--json")
+    gate = {v["long_name"] for v in result.json()["gate_violations"]}
+
+    assert expected(world).verify_gate == frozenset()
+    assert (result.code, gate) == (0, set())
+
+
+@pytest.mark.process
 def test_the_hook_exempts_a_marked_function(seeded, tmp_path):
     """ratchet.md: the hook skips a staged marked function whatever the edit
     did, and says how many it skipped on one stderr line."""
