@@ -106,6 +106,15 @@ version stays 11, so no repo re-seeds.
   and from a copied skills directory alike. Type `$crapkit:crapkit-onboard` to run it
   from the plugin, or `$crapkit-onboard` from a copied directory. `crapkit` and
   `crapkit-recover` stay in the model's list.
+- `crapkit-onboard` and `crapkit-recover` label each `claude plugin` line as Claude
+  Code's and give the Codex line beside it. Codex installs the same two skills, and an
+  agent there that followed either one was told to run `claude plugin install`, a
+  command a machine with only Codex does not have. The onboarding skill's pointer for
+  every other agent goes to the MCP server setup.
+- The recover skill's row for a plugin that drifted from the CLI names each agent's
+  refresh lines, the ones the README runs after an upgrade. Its old line, `claude plugin
+  install crapkit@crapkit`, only answers that the plugin is already installed, and the
+  old version stays in place.
 
 ## 0.8.0 — 2026-09-23
 

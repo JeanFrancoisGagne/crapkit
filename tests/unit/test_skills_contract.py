@@ -196,6 +196,29 @@ def test_each_frontmatter_block_parses_as_yaml(page: str):
     assert set(parsed) <= {"name", "description", "disable-model-invocation"}
 
 
+# --- the plugin lines an agent runs ------------------------------------------
+
+_PLUGIN_LINE = re.compile(r"`((?:claude|codex) plugin [^`]+)`")
+
+
+def _drift_row() -> str:
+    (row,) = [ln for ln in _doc(RECOVER_SKILL).splitlines() if "its hooks spawn (CLI_PATH)" in ln]
+    return row
+
+
+def test_the_drift_row_updates_the_installed_plugin_the_way_the_readme_does():
+    """A plugin behind the CLI is already installed. `claude plugin install` on
+    it answers that it is already installed and leaves the old version in the
+    cache (Claude Code 2.1.281), so the row names each agent's refresh lines,
+    the ones the README runs after a CLI upgrade."""
+    named = _PLUGIN_LINE.findall(_drift_row())
+    readme = _doc("README.md")
+
+    assert {cmd.split()[0] for cmd in named} == {"claude", "codex"}, named
+    assert [cmd for cmd in named if cmd not in readme] == [], "the README runs other lines"
+    assert "claude plugin update crapkit@crapkit --scope user" in named
+
+
 # --- the catalogue stays language-shaped -------------------------------------
 
 def test_the_cuts_catalogue_names_no_file_that_exists_in_this_repo():
