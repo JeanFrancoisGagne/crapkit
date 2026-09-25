@@ -1792,8 +1792,11 @@ def _folder_path(uri) -> Path | None:
 
 
 def _uris(result) -> list:
+    """The `uri` of each root a roots/list result names, whatever its shape."""
     roots = result.get("roots") if isinstance(result, dict) else None
-    return [root.get("uri") for root in roots if isinstance(root, dict)] if isinstance(roots, list) else []
+    if not isinstance(roots, list):
+        return []
+    return [root.get("uri") for root in roots if isinstance(root, dict)]
 
 
 def _folder_root(folder: Path) -> Path | None:
@@ -1810,10 +1813,9 @@ class _Session:
     and what the negotiated protocol revision can carry.
 
     A crapkit.toml at or above the directory the server started in settles the
-    root
-    (ADR 0002). Clients do not all start the server in the workspace: VS Code
-    starts a user-level server in the home directory and a plugin's server in
-    the plugin directory, and every call there answered `no crapkit.toml`
+    root (ADR 0002). Clients do not all start the server in the workspace: VS
+    Code starts a user-level server in the home directory and a plugin's server
+    in the plugin directory, and every call there answered `no crapkit.toml`
     inside a measured repo. A client that declares the `roots` capability names
     its workspace folders on request, so a server whose start directory serves
     nothing asks once the client says it is initialized, and again whenever
@@ -1876,7 +1878,7 @@ class _Session:
         return None
 
     def served(self):
-        """The root a call runs at: a path, this workspace while the client's
+        """The root a call runs at: a path, this session while the client's
         answer is still out, or None when nothing is measured."""
         if self.claims_start():
             return str(self.start)
