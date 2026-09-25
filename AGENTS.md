@@ -194,6 +194,17 @@ Exit 0 is not a verify. `rescore` overlays fresh complexity on the last run's st
 coverage and writes no run, so a new function at exactly the ceiling with no tests
 passes here and still fails verify on CRAP.
 
+`--coverage PATH` closes that gap before verify. Run the tests that reach your change
+with the lane's own coverage flags, then hand their artifact over:
+
+    crapkit rescore calc/grade.py --coverage scoped.json --gate
+
+The artifact is read by the parser of the lane that measures the file's scope, and the
+gate then judges CRAP against the ceiling, as verify does, with the same selection and
+the same ratchet exemption. A run of part of the suite covers no more than the whole,
+so a function this passes cannot fail verify on coverage. A function covered only by a
+test outside your selection reads as over; widen the selection, not the ceiling.
+
 ## 4. Run the owning scope's tests
 
     crapkit test-scoped calc/grade.py   # commands.scoped_tests, verbatim

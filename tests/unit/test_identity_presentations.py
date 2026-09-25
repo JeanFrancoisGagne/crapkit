@@ -2,7 +2,7 @@
 import json
 
 from crapkit.analyze import analyze_source
-from crapkit.cli.scoring import _rescore_json
+from crapkit.cli.scoring import _latest_source, _rescore_json
 from crapkit.dup import find_twins
 from crapkit.packet import file_functions
 from crapkit.score import score_rows
@@ -22,7 +22,7 @@ def test_file_function_projection_keeps_same_line_identity():
 
 
 def test_rescore_json_keeps_same_line_identity(capsys):
-    _rescore_json(callbacks(), {"id": 1, "commit": "abc"})
+    _rescore_json(callbacks(), _latest_source({"id": 1, "commit": "abc"}))
     functions = json.loads(capsys.readouterr().out)["functions"]
     assert [function["occurrence"] for function in functions] == [1, 2]
     assert functions[0] != functions[1]

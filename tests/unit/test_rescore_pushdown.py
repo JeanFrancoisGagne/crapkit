@@ -20,7 +20,8 @@ from contextlib import redirect_stdout
 
 import pytest
 
-from crapkit.cli.scoring import _baseline_rows, _print_rescore_table, _rescore_json, _rescore_overlay
+from crapkit.cli.scoring import (_baseline_rows, _latest_source, _print_rescore_table, _rescore_json,
+                                 _rescore_overlay)
 from crapkit.config import Config, Scope
 from crapkit.score import ScoredRow
 from crapkit.snapshot import InventoryRow
@@ -134,7 +135,8 @@ def test_the_overlay_takes_the_same_narrow_route(store: SnapshotStore):
 def rendered(overlay, as_json: bool) -> str:
     buf = io.StringIO()
     with redirect_stdout(buf):
-        _rescore_json(overlay, LATEST) if as_json else _print_rescore_table(overlay, LATEST)
+        source = _latest_source(LATEST)
+        _rescore_json(overlay, source) if as_json else _print_rescore_table(overlay, source)
     return buf.getvalue()
 
 

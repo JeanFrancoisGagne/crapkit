@@ -1146,6 +1146,15 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
     print(f"crapkit: {_unmeasured_message(lane, coverage, declared)}", file=sys.stderr)
 
 
+def read_artifact(root: Path, lane: Lane, scope_paths: dict | None) -> dict[str, list[FnCoverage]]:
+    """An artifact read the way a lane run reads its own: the lane's parser, then
+    the check that it measured this tree. `rescore --coverage` hands in the lane
+    with `artifact` set to the file the caller named, so a refusal names it."""
+    coverage, _ = _read_and_parse(lane, root, root / lane.artifact)
+    _judge_artifact_scope(lane, coverage, scope_paths, root)
+    return coverage
+
+
 def _results_summary(root: Path, lane: Lane) -> tuple[set[str], dict, str]:
     """The lane junit's failing ids and counts, or a ToolError saying why the
     report cannot be read. The message names the report and not the lane: one

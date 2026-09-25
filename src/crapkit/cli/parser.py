@@ -278,14 +278,20 @@ def build_parser() -> argparse.ArgumentParser:
     brf.add_argument("--json", action="store_true", help="machine output (default: a short summary)")
     brf.set_defaults(func=_Handler("queue", "cmd_brief"))
 
-    rsc = sub.add_parser("rescore", help="fresh complexity for named files overlaid on the latest run's coverage")
+    rsc = sub.add_parser("rescore", help="fresh complexity for named files overlaid on the latest "
+                                         "run's coverage, or on a coverage artifact you name")
     rsc.add_argument("files", nargs="+", help="source files to re-analyze" + _WHERE)
     rsc.add_argument("--repo", **_REPO_FLAG)
     rsc.add_argument("--json", action="store_true", help="machine output (default: table)")
+    rsc.add_argument("--coverage", metavar="PATH", default=None,
+                     help="join the files' functions onto this coverage artifact" + _WHERE
+                          + " instead of the latest run's coverage, read by the parser of the "
+                          "lane that measures their scope; needs no run in the store")
     rsc.add_argument("--gate", action="store_true",
                      help="exit 6 when a function this tree changed since HEAD is over its "
                           "scope ceiling: the pre-commit hook's ccn-only policy on the hook's "
-                          "own selection, minus functions at or under their ratchet mark")
+                          "own selection (CRAP, as verify judges it, under --coverage), minus "
+                          "functions at or under their ratchet mark")
     rsc.set_defaults(func=_Handler("scoring", "cmd_rescore"))
 
     dig = sub.add_parser("digest", help="delta between the last two scored runs; silent when unchanged")
