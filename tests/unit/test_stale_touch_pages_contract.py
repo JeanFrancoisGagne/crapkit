@@ -1028,8 +1028,13 @@ def _hash_object_options(root: Path, monkeypatch) -> set[str]:
     (root / "a.py").write_text("x = 2\n", encoding="utf-8")
     monkeypatch.setattr(subprocess, "Popen", spy)
     gitio.worktree_blobs(root, ["a.py"])
-    return {arg for argv in started if "hash-object" in argv
-            for arg in argv[argv.index("hash-object") + 1:] if arg.startswith("--") and arg != "--"}
+    return set().union(*(_options(argv[argv.index("hash-object") + 1:])
+                         for argv in started if "hash-object" in argv))
+
+
+def _options(args: list[str]) -> set[str]:
+    """The `--name` options, the `--` that ends them left out."""
+    return {arg for arg in args if arg.startswith("--") and arg != "--"}
 
 
 def test_each_hash_object_command_a_page_names_is_the_one_crapkit_runs(tmp_path, monkeypatch):
