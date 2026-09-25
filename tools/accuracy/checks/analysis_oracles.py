@@ -9,4 +9,8 @@ _PACKET = "tests/accuracy/analysis_oracles/"
 CHECKS = [
     {"name": "hand probes", "seconds": 8,
      "pytest": [_PACKET + "test_hand_probes.py"]},
+    {"name": "Python reader against ast", "seconds": 8,
+     "pytest": [_PACKET + "test_python_ast.py"]},
+    {"name": "metamorphic source edits", "seconds": 6,
+     "pytest": [_PACKET + "test_metamorphic_source.py"]},
 ]

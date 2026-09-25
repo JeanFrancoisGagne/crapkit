@@ -127,20 +127,34 @@ def build(files: dict, top: Path) -> Path:
     return top
 
 
-def run_inventory(root: Path, out: Path, spawn: bool = False) -> Measured:
-    done = drive.Driver(root, spawn=spawn).run("inventory", "--export", str(out))
+# lizard's stock Python reader in place of crapkit's corrected one: the launch
+# code stubs the reader's registration before crapkit's analysis module binds
+# it, and keeps the analysis serial, since a pool worker would register again.
+STOCK_PYTHON = ("-c", "; ".join((
+    "import contextlib, sys",
+    "import crapkit.lizardpython as reader",
+    "reader.register = lambda: None",
+    "import crapkit.analyze as analyze",
+    "analyze._pool_for = lambda *args, **kwargs: contextlib.nullcontext(None)",
+    "from crapkit.cli import main",
+    "sys.exit(main(sys.argv[2:]))")))
+PLAIN = ("-m",)
+
+
+def run_inventory(root: Path, out: Path, spawn: bool = False, launch: tuple = PLAIN) -> Measured:
+    done = drive.Driver(root, spawn=spawn, launch=launch).run("inventory", "--export", str(out))
     rows = read_export(out.read_bytes().decode("utf-8")) if out.is_file() else []
     return Measured(tuple(rows), done.code, done.stderr, str(root))
 
 
-def measure(files: dict, work: Path, spawn: bool = False) -> Measured:
+def measure(files: dict, work: Path, spawn: bool = False, launch: tuple = PLAIN) -> Measured:
     """crapkit's inventory of `files` plus a crapkit.toml, unless `files` brings one."""
     tree = {"crapkit.toml": config(), **files}
-    return run_inventory(build(tree, work / "repo"), work / "inventory.tsv", spawn)
+    return run_inventory(build(tree, work / "repo"), work / "inventory.tsv", spawn, launch)
 
 
-def _key(files: dict) -> str:
-    hashed = hashlib.sha256()
+def _key(files: dict, launch: tuple = PLAIN) -> str:
+    hashed = hashlib.sha256("|".join(launch).encode("utf-8"))
     for path in sorted(files):
         content = files[path]
         data = content.encode("utf-8") if isinstance(content, str) else content
@@ -163,15 +177,15 @@ def _save(work: Path, measured: Measured) -> Measured:
     return measured
 
 
-def shared(files: dict, base: Path) -> Measured:
+def shared(files: dict, base: Path, launch: tuple = PLAIN) -> Measured:
     """measure() once per file set under `base`, whichever worker asks first.
     Spawned, since a set past 16 files reaches crapkit's analysis pool."""
-    work = base / f"analysis-{_key(files)}"
+    work = base / f"analysis-{_key(files, launch)}"
     base.mkdir(parents=True, exist_ok=True)
     with FileLock(str(work) + ".lock"):
         found = _saved(work)
         if found is None:
             shutil.rmtree(work, ignore_errors=True)
             work.mkdir()
-            found = _save(work, measure(files, work, spawn=True))
+            found = _save(work, measure(files, work, spawn=True, launch=launch))
     return found

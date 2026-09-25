@@ -8,13 +8,17 @@ equivalence and oracle tests all read one run:
 - `src_inventory` and `src_unparsed_inventory`: crapkit's own source tree,
   as written and after ast.unparse;
 - `stdlib_inventory` and `stdlib_unparsed_inventory`: the running Python's
-  standard library (nightly tests only).
+  standard library (nightly tests only);
+- `py_shape_inventory`: the named Python shapes of analysis_shapes;
+- `measure_set(files, launch=PLAIN)`: any other file set, measured once per
+  session under that launch.
 """
 import os
 
 import pytest
 
-from accuracy.analysis_oracles import analysis_corpora, analysis_inventory, analysis_tables
+from accuracy.analysis_oracles import (analysis_corpora, analysis_inventory, analysis_shapes,
+                                       analysis_tables)
 
 
 def _shared_base(tmp_path_factory):
@@ -22,10 +26,21 @@ def _shared_base(tmp_path_factory):
     return base.parent if os.environ.get("PYTEST_XDIST_WORKER") else base
 
 
-def _measured(files: dict, tmp_path_factory, name: str):
-    measured = analysis_inventory.shared(files, _shared_base(tmp_path_factory) / name)
+def _measured(files: dict, tmp_path_factory, name: str, launch=analysis_inventory.PLAIN):
+    measured = analysis_inventory.shared(files, _shared_base(tmp_path_factory) / name, launch)
     assert measured.code == 0, measured.stderr
     return measured
+
+
+@pytest.fixture(scope="session")
+def measure_set(tmp_path_factory):
+    return lambda files, launch=analysis_inventory.PLAIN: _measured(
+        files, tmp_path_factory, "analysis-sets", launch)
+
+
+@pytest.fixture(scope="session")
+def py_shape_inventory(tmp_path_factory):
+    return _measured(analysis_shapes.py_shape_files(), tmp_path_factory, "analysis-shapes")
 
 
 @pytest.fixture(scope="session")
