@@ -152,6 +152,23 @@ def test_ifdef_twins_get_distinct_keys(measured):
 
 
 @pytest.mark.process
+def test_a_file_with_twins_is_announced_on_stderr(repo_templates, tmp_path):
+    """docs/ratchet.md prints the line analysis writes for a file that gives
+    one name to two functions: `crapkit: <path> defines <name> more than
+    once; ...`. A Python-only repository, so a release that measured no C
+    still reads it. Before 706036c analysis wrote nothing and the second twin
+    went unmarked without a word."""
+    toml = '[crapkit]\ntarget = 1\n\n[[scope]]\nname = "py"\npaths = ["py"]\nlanguages = ["python"]\n'
+    step = repos.Commit(files={"crapkit.toml": toml, "py/twins.py": TWINS}, message="seed")
+    built = repo_templates.copy(repos.Spec(steps=(step,)), tmp_path / "repo")
+    result = drive.Driver(built.root).run("inventory")
+
+    lines = [line for line in result.stderr.splitlines() if "more than once" in line]
+    assert result.code == 0 and len(lines) == 1, result.stderr
+    assert lines[0].startswith("crapkit: py/twins.py defines dup( x )"), lines[0]
+
+
+@pytest.mark.process
 @pytest.mark.parametrize("variant", ["worse-first", "unrelated-above"])
 def test_twin_mark_independent_of_row_order(repo_templates, tmp_path, variant):
     """The ordinal is file order. Putting the worse twin first moves the bare

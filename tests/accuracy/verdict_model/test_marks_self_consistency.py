@@ -7,14 +7,19 @@ whose expected values come from git merge-file, docs/ratchet.md and
 docs/portable-records.md, import no crapkit module (the kit's closure rule for
 a calc's independent test).
 
-One API-level check sits here too: the override grant's stamp rule, whose
-past defect (R107) no CLI command could reach, because both CLI callers
-passed the running metric.
+API-level checks sit here too, for past defects no CLI command of their
+before commit can reach: the override grant's stamp rule (R107, both CLI
+callers passed the running metric), and verify's mark compare at four
+decimals (R04) and across twin row order (R06), whose before commits had no
+`ratchet seed` command to write a mark with.
 """
 from __future__ import annotations
 
+from fractions import Fraction
+
 from hypothesis import given, strategies as st
 
+from accuracy.kit import exact
 from accuracy.kit.settings import pure
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model.test_ratchet_file import MARKS, STAMP, decoded, lines_of
@@ -99,3 +104,49 @@ def test_a_measured_grant_that_names_no_metric_writes_nothing(tmp_path):
         refused = error
 
     assert (refused is not None, marks.read_bytes(), log.rows) == (True, STALE.encode("utf-8"), [])
+
+
+def _scored(name: str, start: int, ccn: int, cov: float, crap: float, occurrence: int):
+    """A scored row built from ScoredRow's own field list, so a release that
+    adds or drops a field still builds it (the retro replays reach back to
+    the 15-field row)."""
+    from crapkit.score import ScoredRow
+    values = {"scope": "app", "path": "a.py", "long_name": name, "start": start,
+              "end": start + 5, "ccn_std": ccn, "ccn_mod": ccn, "ccn": ccn, "nloc": 6,
+              "params": 1, "nesting": 0, "cov": cov, "flag": "measured", "crap": crap,
+              "remedy": "add-tests", "cognitive": 0, "occurrence": occurrence, "inline_body": 0}
+    return ScoredRow(**{field: values[field] for field in ScoredRow._fields})
+
+
+def _regressions(fresh: list, marks: list) -> list:
+    from crapkit.ratchet import RatchetEntry
+    from crapkit.verify import evaluate
+    verdict = evaluate(fresh=fresh, changed_ranges={}, target=100,
+                       ratchet=[RatchetEntry("a.py", name, value) for name, value in marks],
+                       baseline_failures=set(), fresh_failures=set())
+    return [(r.long_name, r.recorded, r.fresh_crap) for r in verdict.ratchet_regressions]
+
+
+def test_a_run_s_own_mark_is_no_regression_on_that_run():
+    """docs/ratchet.md, What a mark is: a mark is the function's CRAP to four
+    decimals, so the run a mark was seeded from cannot regress against it.
+    ccn 3 at 2 of 3 branches: CRAP = 9 x (1/3)^3 + 3 = 10/3 (Savoia and
+    Evans), stored as 3.3333. Before ed53ada verify compared the unrounded
+    3.33333... with 3.3333 and reported a regression of the run's own mark."""
+    crap = exact.crap(3, Fraction(2, 3))
+    row = _scored("f( x )", 1, 3, 2 / 3, float(crap), 1)
+
+    assert crap == Fraction(10, 3)
+    assert _regressions([row], [("f( x )", float(exact.half_even(crap, 4)))]) == []
+
+
+def test_a_twin_s_mark_does_not_depend_on_row_order():
+    """A verdict reads rows, not the order the store returned them in. Twins
+    A (CRAP 2) and B (CRAP 5) share one name and the mark on that name is 2:
+    both row orders must give one answer. Before 8f241a6 the last row read
+    owned the key, so [A, B] reported a regression and [B, A] did not."""
+    twin_a = _scored("dup( x )", 1, 2, 1.0, 2.0, 1)
+    twin_b = _scored("dup( x )", 7, 5, 1.0, 5.0, 2)
+    marks = [("dup( x )", 2.0)]
+
+    assert _regressions([twin_a, twin_b], marks) == _regressions([twin_b, twin_a], marks)
