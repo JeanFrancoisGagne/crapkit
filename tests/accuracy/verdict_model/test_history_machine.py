@@ -17,8 +17,9 @@ every step:
 Each verify also checks the baseline it named, the gate, regression and
 new-failure sets, the exit code and, on a pass, the tighten (with damping). The
 `tsv` command verifies a copy of the repo against the TSV the store's baseline
-emits, which must give the model's verdict with nothing forgiven (the TSV
-carries no failures). After a runs prune every read command answers as before.
+emits, which must give the model's gate and ratchet findings, and its whole
+verdict when the baseline had no failing test (ruling V8). After a runs prune
+every read command answers as before.
 
 test_every_step_in_one_scripted_history walks one fixed history through every
 command, so each is exercised on every push whatever the machine draws.
@@ -419,7 +420,9 @@ class History(RuleBasedStateMachine):
 
     def tsv(self):
         """On a copy: the store's baseline emitted as a TSV gives the model's
-        verdict with nothing forgiven, on a clone with no store."""
+        verdict on a clone with no store. The record carries no test failures,
+        so a failure the baseline had counts as new there (ruling V8, an open
+        defect test_baseline_tsv pins); with none, the whole verdict agrees."""
         if not self._verdict_possible():
             return self.verify()
         copy = self.sc.copy(self.sc.top.parent / f"{self.sc.top.name}-tsv{next(self.side)}")
@@ -428,9 +431,11 @@ class History(RuleBasedStateMachine):
         assert emitted.json()["baseline_run"] == base.id
         shutil.rmtree(copy.root / ".crapkit")
         result = copy.run("verify", "--baseline-tsv", "b.tsv", "--json")
-        expected = expected_verdict(self.sc.world, base, self._tree(base), self._marks(),
-                                    forgive=False)
-        assert (result.code, json_verdict(result.json())) == (expected.exit, expected)
+        expected = expected_verdict(self.sc.world, base, self._tree(base), self._marks())
+        got = json_verdict(result.json())
+        assert (got.gate, got.ratchet) == (expected.gate, expected.ratchet)
+        if not base.failures:
+            assert (result.code, got) == (expected.exit, expected)
 
     # --- after every step -------------------------------------------------------------------
 
