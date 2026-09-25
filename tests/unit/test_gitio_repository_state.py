@@ -143,6 +143,20 @@ def test_a_repository_git_will_not_open_quotes_gits_own_fix(committed, monkeypat
     assert "usage:" not in message
 
 
+def test_a_refusal_in_a_locale_that_is_not_utf8_still_reads(tmp_path, monkeypatch):
+    """git words its refusal in the user's locale, and a Latin-1 one is not
+    UTF-8. The probe runs on a path that is already failing, so a strict decode
+    there would trade the refusal for a UnicodeDecodeError."""
+    (tmp_path / ".git").mkdir()
+    stderr = "fatal: d\xe9p\xf4t refus\xe9\n".encode("latin-1")
+    refused = subprocess.CompletedProcess(["git"], 128, b"", stderr)
+    monkeypatch.setattr(gitio, "_spawn", lambda root, argv, binary=False: refused)
+
+    message = gitio._repository_gap(tmp_path)
+
+    assert message == f"git cannot open the repository at {tmp_path}: fatal: d�p�t refus�"
+
+
 def test_a_healthy_repository_keeps_the_commands_own_reason(committed):
     message = refusal(lambda: gitio.merge_base(committed, "missing-ref"))
 

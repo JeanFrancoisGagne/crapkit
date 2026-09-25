@@ -114,16 +114,18 @@ def _repository_gap(root: Path) -> str | None:
     repository with a commit, 1 a repository with no commit yet, and 128 a
     directory git opens no repository in. There a `.git` on the walk up means
     git found one and refused it, the `safe.directory` ownership check among
-    others, and git's own message names the fix.
+    others, and git's own message names the fix. Read as bytes: that message
+    is in git's locale, and a failure path must not fail on its decoding.
     """
-    probe = _spawn(root, ("rev-parse", "--verify", "--quiet", "HEAD"))
+    probe = _spawn(root, ("rev-parse", "--verify", "--quiet", "HEAD"), binary=True)
     if probe.returncode == 0:
         return None
     if probe.returncode == 1:
         return _NO_COMMIT.format(root=root)
     if _git_dir(root) is None:
         return _NOT_A_REPOSITORY.format(root=root)
-    return f"git cannot open the repository at {root}: {probe.stderr.strip()}"
+    reason = probe.stderr.decode("utf-8", "replace").strip()
+    return f"git cannot open the repository at {root}: {reason}"
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
@@ -346,7 +348,7 @@ def ancestry(root: Path, commit: str, other: str = "HEAD") -> bool | None:
     git exits 1 for no and 128 when it cannot read a commit. A repository with
     no commit at all is not a no: it raises what the repository lacks, where
     verify used to blame a rebase for it."""
-    res = _spawn(root, ("merge-base", "--is-ancestor", commit, other))
+    res = _spawn(root, ("merge-base", "--is-ancestor", commit, other), binary=True)
     gap = _gap_behind(root, res.returncode)
     if gap:
         raise GitError(gap)
