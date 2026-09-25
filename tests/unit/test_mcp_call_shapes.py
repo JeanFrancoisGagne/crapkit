@@ -72,3 +72,44 @@ def test_absent_or_null_arguments_still_run_the_call(tmp_path):
                                   run_cli=lambda *a, **k: mcp_server._result("{}", is_error=False))
 
         assert reply["result"]["isError"] is False, reply
+
+
+# --- every shape a client can send ------------------------------------------------
+
+_KEYS = ["name", "arguments", "repo", "path", "top", "capabilities", "protocolVersion", "roots"]
+_STRINGS = ["", "x", "list_runs", "a.py", "worklist", "${x}", "~", "2025-06-18"]
+
+
+def _json_value(rng, depth: int = 0):
+    """One JSON value of any type, nested up to three levels."""
+    kind = rng.choice("nbisla" if depth < 3 else "nbis")
+    scalars = {"n": None, "b": rng.random() < .5, "i": rng.randint(-3, 3), "s": rng.choice(_STRINGS)}
+    if kind in scalars:
+        return scalars[kind]
+    if kind == "l":
+        return [_json_value(rng, depth + 1) for _ in range(rng.randint(0, 2))]
+    return {rng.choice(_KEYS): _json_value(rng, depth + 1) for _ in range(rng.randint(0, 3))}
+
+
+def _message(rng, msg_id: int) -> dict:
+    tool = rng.choice(["list_runs", "get_function_brief", "check_gate", "worklist", None])
+    params = (_json_value(rng) if tool is None
+              else {"name": tool, "arguments": _json_value(rng)})
+    method = rng.choice(["tools/call", "tools/call", "initialize", "tools/list", "ping", "x"])
+    return {"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params}
+
+
+def test_no_request_a_client_can_shape_answers_an_internal_error(tmp_path):
+    """-32603 is for a fault inside the server, never for what a client sent:
+    arguments, params and tool names of every JSON type, drawn from one seed."""
+    import random
+    rng, root = random.Random(7), _measured(tmp_path)
+
+    def ran(*_, **__):
+        return mcp_server._result("{}", is_error=False)
+
+    faults = [message for message in (_message(rng, n) for n in range(3000))
+              if mcp_server._reply(mcp_server._Session(root), message, run_cli=ran)
+              .get("error", {}).get("code") == -32603]
+
+    assert faults == []
