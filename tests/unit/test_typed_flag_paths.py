@@ -47,8 +47,10 @@ DESTINATIONS = {
 
 
 def _destination(tmp_path: Path, name: str) -> Path:
+    """`out dir/<name>`, beside an `x` directory: POSIX resolves `x/..` on the
+    disk, so the dot-dot spelling names the file only where `x` exists."""
     dest = tmp_path.resolve() / "out dir" / name
-    dest.parent.mkdir(exist_ok=True)
+    (dest.parent / "x").mkdir(parents=True, exist_ok=True)
     return dest
 
 
