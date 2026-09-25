@@ -12,6 +12,7 @@ import re
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 
 from .. import __version__, config
 from ..config import load_config_text
@@ -1531,11 +1532,19 @@ def _plugins_dir() -> Path:
     return (Path(base) if base else Path.home() / ".claude") / "plugins"
 
 
+def _crapkit_install_lists(recorded) -> list:
+    entries = recorded.get("plugins", {}) if isinstance(recorded, dict) else {}
+    return [installs for key, installs in entries.items() if key.startswith("crapkit@")]
+
+
+def _crapkit_records(recorded) -> list[dict]:
+    """Every install installed_plugins.json records for crapkit."""
+    return [e for installs in _crapkit_install_lists(recorded) for e in installs if isinstance(e, dict)]
+
+
 def _recorded_roots(recorded) -> list[Path]:
     """Install directories installed_plugins.json records for crapkit."""
-    entries = recorded.get("plugins", {}) if isinstance(recorded, dict) else {}
-    return [Path(e["installPath"]) for key, installs in entries.items()
-            if key.startswith("crapkit@") for e in installs if e.get("installPath")]
+    return [Path(e["installPath"]) for e in _crapkit_records(recorded) if e.get("installPath")]
 
 
 def _installed_crapkit_roots(plugins: Path) -> list[Path]:
@@ -1554,19 +1563,79 @@ def _codex_home() -> Path:
     return Path(base) if base else Path.home() / ".codex"
 
 
-def _resolve_plugin_root(arg: str) -> tuple[Path | None, str]:
+class _PluginRoot(NamedTuple):
+    """The plugin root to check (None when none was found), where it was
+    looked for, and why a root the search found is the one checked."""
+    root: Path | None
+    looked_in: str
+    why: str = ""
+
+
+_IN_PLACE = " (Claude Code loads a plugin from a local directory marketplace in place)"
+
+
+def _resolve_plugin_root(arg: str) -> _PluginRoot:
     """The plugin root to check, and where it was looked for.
 
     An explicit PATH with no manifest at or under it resolves to itself, so
     the handshake names the missing file at the path the operator typed. With
-    none, Claude Code's install, else the one in Codex's plugin cache.
+    none, Claude Code's install, else the one in Codex's plugin cache. Claude
+    Code runs a plugin from a marketplace added as a local directory in place,
+    so for that one the directory is checked instead of its cache copy.
     """
-    if arg:
-        under = Path(arg)
-        return _newest_root(_manifest_roots(under)) or under, str(under)
+    if not arg:
+        return _default_plugin_root()
+    under = Path(arg)
+    return _PluginRoot(_newest_root(_manifest_roots(under)) or under, str(under))
+
+
+def _default_plugin_root() -> _PluginRoot:
     plugins, codex = _plugins_dir(), _codex_home()
     found = _newest_root(_installed_crapkit_roots(plugins)) or _newest_root(_manifest_roots(codex))
-    return found, f"{plugins} or {codex}"
+    listed = _marketplace_copy(found) if found else None
+    looked_in = f"{plugins} or {codex}"
+    if listed and listed[0] == "directory":
+        return _PluginRoot(listed[1], looked_in, _IN_PLACE)
+    return _PluginRoot(found, looked_in)
+
+
+def _claude_plugins_of(root: Path) -> Path | None:
+    """The plugins directory an install at <plugins>/cache/<marketplace>/
+    <plugin>/<version> sits in, else None."""
+    parents = root.parents
+    if len(parents) < 4 or parents[2].name != "cache" or parents[3].name != "plugins":
+        return None
+    return parents[3]
+
+
+def _listed_plugins(clone: Path) -> list[dict]:
+    listing = _plugin_json(clone / ".claude-plugin" / "marketplace.json")
+    listed = listing.get("plugins", []) if isinstance(listing, dict) else []
+    return [entry for entry in listed if isinstance(entry, dict)] if isinstance(listed, list) else []
+
+
+def _listed_source(clone: Path, name: str) -> str | None:
+    """The relative source the marketplace at `clone` lists for plugin `name`."""
+    source = next((p.get("source") for p in _listed_plugins(clone) if p.get("name") == name), None)
+    return source if isinstance(source, str) else None
+
+
+def _marketplace_entry(root: Path) -> dict:
+    """known_marketplaces.json's record of the marketplace an install came from."""
+    plugins = _claude_plugins_of(root)
+    known = _plugin_json(plugins / "known_marketplaces.json") if plugins else None
+    entry = known.get(root.parents[1].name) if isinstance(known, dict) else None
+    return entry if isinstance(entry, dict) else {}
+
+
+def _marketplace_copy(root: Path) -> tuple[str, Path] | None:
+    """(the marketplace's source kind, its own copy of this plugin) for an
+    install in Claude Code's cache, else None."""
+    entry = _marketplace_entry(root)
+    clone = entry.get("installLocation")
+    source = _listed_source(Path(clone), root.parent.name) if isinstance(clone, str) and clone else None
+    kind = entry.get("source", {}).get("source", "") if isinstance(entry.get("source"), dict) else ""
+    return (kind, Path(clone) / source) if source else None
 
 
 def _probed_cli_version(executable: str) -> str | None:
@@ -1673,13 +1742,13 @@ _INSTALL_PLUGIN = (
 )
 
 
-def _name_found_root(root: Path, looked_in: str) -> None:
+def _name_found_root(found: _PluginRoot) -> None:
     """A root the search found, not one the operator typed: the glob reaches
     three levels under the named directory, so a source checkout can win over an
     install. Naming it is how the reader knows which tree the verdict is about.
     """
-    if str(root) != looked_in:
-        print(f"crapkit doctor: checking {root}")
+    if str(found.root) != found.looked_in:
+        print(f"crapkit doctor: checking {found.root}{found.why}")
 
 
 @lru_cache(maxsize=None)
@@ -1722,12 +1791,12 @@ def _doctor_plugin(plugin_root: str) -> int:
     from the `crapkit` on PATH, because that bare name is what the plugin's
     hooks and its MCP server spawn — see `_spawned_cli`.
     """
-    root, looked_in = _resolve_plugin_root(plugin_root)
-    if root is None:
-        print(f"crapkit doctor: no installed crapkit plugin under {looked_in}. {_INSTALL_PLUGIN}")
+    found = _resolve_plugin_root(plugin_root)
+    if found.root is None:
+        print(f"crapkit doctor: no installed crapkit plugin under {found.looked_in}. {_INSTALL_PLUGIN}")
         return 1
-    _name_found_root(root, looked_in)
-    lines = _spawn_failure() or _plugin_lines(root)
+    _name_found_root(found)
+    lines = _spawn_failure() or _plugin_lines(found.root)
     for line in lines:
         print(line)
     return 1 if lines else 0
@@ -1749,17 +1818,57 @@ def _spawn_failure() -> list[str]:
 def _plugin_lines(root: Path) -> list[str]:
     """Every disagreement between the plugin at `root` and the crapkit its
     hooks spawn, each repair spelled for the harness that installed the plugin
-    and the installer that owns the launcher, then the Claude Code floor."""
+    and the installer that owns the launcher; then an install whose files the
+    marketplace has moved past at one version, and the Claude Code floor."""
     from ..doctor import plugin_handshake, plugin_harness
     from ..launchers import upgrade_command
     from .claude_hook import PROTOCOL
 
     executable, cli_version = _spawned_cli()
-    return plugin_handshake(where=str(root), version=_manifest_version(root),
-                            cli_version=cli_version, cli_where=executable,
-                            protocols=_hook_protocols(root), supported=PROTOCOL,
-                            harness=plugin_harness(str(root), os.environ.get("CODEX_HOME")),
-                            cli_upgrade=upgrade_command(executable, _shell_quote))         + _claude_code_floor()
+    handshake = plugin_handshake(where=str(root), version=_manifest_version(root),
+                                 cli_version=cli_version, cli_where=executable,
+                                 protocols=_hook_protocols(root), supported=PROTOCOL,
+                                 harness=plugin_harness(str(root), os.environ.get("CODEX_HOME")),
+                                 cli_upgrade=upgrade_command(executable, _shell_quote))
+    return handshake + _stale_copy(root) + _claude_code_floor()
+
+
+def _same_bytes(a: Path, b: Path) -> bool:
+    try:
+        return a.read_bytes() == b.read_bytes()
+    except OSError:
+        return False
+
+
+def _differing_files(source: Path, install: Path) -> tuple[str, ...]:
+    """The marketplace copy's files the install lacks or holds other bytes
+    for, sorted. Files only the install holds are Claude Code's own (.in_use)."""
+    files = (path.relative_to(source) for path in source.rglob("*") if path.is_file())
+    return tuple(sorted(rel.as_posix() for rel in files if not _same_bytes(source / rel, install / rel)))
+
+
+def _install_scope(root: Path) -> str:
+    """The scope installed_plugins.json records for this install, else user."""
+    recorded = _plugin_json(_claude_plugins_of(root) / "installed_plugins.json")
+    same = (e.get("scope") for e in _crapkit_records(recorded)
+            if os.path.normcase(str(e.get("installPath", ""))) == os.path.normcase(str(root)))
+    return next((scope for scope in same if isinstance(scope, str)), "user")
+
+
+def _stale_copy(root: Path) -> list[str]:
+    """The line for a Claude Code install whose files differ from its
+    marketplace's copy at one version. A local directory marketplace loads in
+    place, so its cache copy is never the one that runs."""
+    from ..doctor import stale_copy
+
+    listed = _marketplace_copy(root)
+    if listed is None or listed[0] == "directory":
+        return []
+    source = listed[1]
+    line = stale_copy(where=str(root), version=_manifest_version(root), source=str(source),
+                      source_version=_manifest_version(source), scope=_install_scope(root),
+                      differing=_differing_files(source, root))
+    return [line] if line else []
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:

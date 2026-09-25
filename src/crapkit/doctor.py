@@ -575,6 +575,38 @@ def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str)
             f"this crapkit answers {supported}, so `claude-hook` exits 0 silent on every edit.")
 
 
+_STALE_COPY = (
+    "crapkit doctor: the plugin at {where} is version {version}, and so is the marketplace's copy "
+    "at {source}, but {count} between them ({named}); `claude plugin update` keeps an install "
+    "whose version did not move, so reinstall it with `claude plugin uninstall crapkit@crapkit "
+    "--scope {scope}`, then `claude plugin install crapkit@crapkit --scope {scope}`, and restart "
+    "Claude Code's sessions."
+)
+_NAMED_FILES = 2
+
+
+def _files_differ(count: int) -> str:
+    return "1 file differs" if count == 1 else f"{count} files differ"
+
+
+def _first_files(differing: tuple[str, ...]) -> str:
+    shown, rest = ", ".join(differing[:_NAMED_FILES]), len(differing) - _NAMED_FILES
+    return f"{shown} and {rest} more" if rest > 0 else shown
+
+
+def stale_copy(*, where: str, version: str | None, source: str, source_version: str | None,
+               differing: tuple[str, ...], scope: str) -> str | None:
+    """One line when an install and the marketplace's copy carry one version
+    and different files. Main between releases keeps the release's version
+    string, so `claude plugin update` answers "already at the latest version"
+    and the install keeps the release's files. A different version is the
+    update's business, and says nothing here."""
+    if not differing or version != source_version:
+        return None
+    return _STALE_COPY.format(where=where, version=version, source=source, scope=scope,
+                              count=_files_differ(len(differing)), named=_first_files(differing))
+
+
 def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,
                      protocols: tuple[str, ...] | None, supported: str, harness: str = "claude",
                      cli_upgrade: str = "python -m pip install --upgrade crapkit") -> list[str]:
