@@ -327,6 +327,12 @@ nothing. Each of these now gets a line naming the object and the next step:
   list_worklist`. A client that pinned the old names, in a Codex `enabled_tools` list or a
   Claude Code `mcp__crapkit__worklist` allowlist, got `unknown tool 'worklist'` and nothing
   its model could try next. A name that was never a tool keeps the bare refusal.
+- A call that carries `wait_for_previous` runs. Gemini CLI 0.61.0 adds that boolean to
+  every MCP tool's schema for its own scheduler and forwards it, and crapkit refused it as
+  an undeclared key, so every Gemini call that carried it answered `get_next_item does
+  not take 'wait_for_previous'`. The server now drops it before checking the call; every
+  other undeclared key is still refused
+  ([ADR 0001](docs/adr/0001-mcp-invalid-arguments-are-tool-results.md)).
 
 ## 0.8.0 — 2026-09-23
 

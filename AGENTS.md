@@ -604,7 +604,9 @@ Arguments are checked against the served schema before the CLI spawns. `tools/li
 carries `required` from each tool's positionals, and a missing positional, an undeclared
 key or a wrong type answers a tool result with `isError` true, naming the MCP tool rather
 than the CLI command behind it (`get_function_brief needs name (see inputSchema.required)`),
-not a `-32602` protocol error; ADR 0001 under `docs/adr/` says why. `ping` answers `{}`.
+not a `-32602` protocol error; ADR 0001 under `docs/adr/` says why. `wait_for_previous`,
+which Gemini CLI adds to every call for its own scheduler, is dropped rather than refused.
+`ping` answers `{}`.
 An exception escaping the server answers `-32603` and the loop continues.
 `structuredContent` rides beside the text whenever the CLI exited 0; a `doctor` that finds
 a FAIL exits 1 and answers its JSON text with `isError: true` and no `structuredContent`.

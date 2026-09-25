@@ -1675,12 +1675,25 @@ def _served_root(root: Path, arguments: dict) -> tuple[str, Path | None]:
     return str(root), root if (root / CONFIG_NAME).is_file() else None
 
 
+# Keys a client adds to every tool's input schema for its own use and then
+# forwards with the call. Gemini CLI 0.61.0 adds `wait_for_previous`, a boolean
+# its scheduler reads to order the calls of one turn. They are the named
+# exceptions to ADR 0001's refusal of an undeclared key: the value is the
+# client's, so the call runs as it would without it.
+CLIENT_KEYS = frozenset({"wait_for_previous"})
+
+
+def _own_arguments(arguments: dict) -> dict:
+    return {key: value for key, value in arguments.items() if key not in CLIENT_KEYS}
+
+
 def _call_tool(root: Path, name: str, arguments: dict, run_cli=None) -> dict:
     """Name lookup, then the arguments against the table, then the repo the
     call names, then the run. Every refusal is decided before a CLI spawns."""
     tool = _tool_named(name)
     if tool is None:
         return _result(_unknown_tool(name), is_error=True)
+    arguments = _own_arguments(arguments)
     refusal = _argument_error(tool, arguments)
     if refusal:
         return _result(refusal, is_error=True)
