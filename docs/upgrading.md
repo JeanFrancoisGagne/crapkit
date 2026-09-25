@@ -8,11 +8,47 @@ does not turn those runs into measurements of the new reader.
 |---|---|
 | pip in the active environment | `python -m pip install --upgrade crapkit` |
 | pip with the Python coverage extra | `python -m pip install --upgrade "crapkit[py]"` |
+| pip --user | `python -m pip install --user --upgrade crapkit` |
+| pipx | `pipx upgrade crapkit` |
 | uv tool | `uv tool upgrade crapkit` |
+| uvx | `uvx crapkit@latest --version` |
 
 Check `crapkit --version` in the environment your shell, hook and MCP client use.
 For a source checkout, follow [Development](../README.md#development). Stop a live
 MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-locks).
+
+`pip --user` puts the launcher in the user scripts directory: `~/.local/bin` on Linux,
+`%APPDATA%\Python\Python3XX\Scripts` on Windows. When that directory is not on PATH, pip
+says so on install, `WARNING: The script crapkit is installed in '...' which is not on
+PATH`, and the `crapkit` your shell finds is some other install, or none. Add the
+directory it names to PATH before checking the version.
+
+Once uvx has fetched crapkit, plain `uvx crapkit` keeps running that release after a
+newer one ships, and so does an agent config that starts `uvx crapkit mcp`. The uvx row
+asks for the newest release by name; from then on plain `uvx crapkit` runs that one.
+
+## Downgrading
+
+Install the older release by its number, with the installer that owns crapkit:
+
+- pip: `python -m pip install "crapkit==0.7.6"`
+- pipx: `pipx install --force "crapkit==0.7.6"`
+- uv tool: `uv tool install "crapkit==0.7.6"`
+
+The older release reads the store a newer one wrote: `doctor`, `coverage` and
+`next-item` work as before. A downgrade across an analysis version stops `verify` at
+exit 3, because the committed marks carry the newer stamp; the refusal names both
+stamps. Measure with the older release, then re-seed:
+
+```sh
+crapkit coverage
+crapkit ratchet seed
+crapkit verify
+```
+
+`ratchet seed` rewrites the marks file's stamp to the older analysis version. Commit
+that only when the whole team moves back: a clone on the newer release refuses the
+file in turn, with the same exit 3.
 
 ## Measure before changing marks
 
@@ -158,6 +194,16 @@ paths still have to name the measured tree. Use the documented
 [portable record reader](portable-records.md) when automating around exports.
 JSON stays at `schema: 1`; consumers must accept added fields.
 
+## Teammates' clones
+
+Two settings live in each clone and never in a commit: the merge driver's
+`git config merge.crapkit-ratchet.driver` line ([merge driver](ratchet.md#the-git-merge-driver))
+and Route 2's `git config core.hooksPath` line. A clone without the driver merges
+`crapkit-ratchet.tsv` with git's text merge, and a conflict there gets resolved by
+hand, which is how a mark rises. Put both lines in your CONTRIBUTING setup steps. After
+an upgrade that re-seeds the marks under a new analysis version, a teammate still on
+the older release gets `verify`'s exit 3 on them until they upgrade too.
+
 ## Plugin and MCP clients
 
 After upgrading the intended CLI, refresh Claude Code's marketplace before updating
@@ -187,9 +233,16 @@ Use the installed Codex plugin directory for `PATH`, not the marketplace's sourc
 checkout. In the default cache this is
 `~/.codex/plugins/cache/crapkit/crapkit/VERSION`, using the installed version from
 the listing. With no explicit path, doctor checks Claude Code's cache instead.
-Use the three skills and MCP server in Codex. The advisory hook instructions in
-the README configure Claude Code's PostToolUse event. Start a new Codex task to
-load updated plugin skills and tools.
+Codex loads the three skills and the MCP server; the plugin's Codex manifest keeps
+Claude Code's advisory hook out of it. Start a new Codex task to load updated plugin
+skills and tools.
+
+Codex does the first two steps on its own. Each start upgrades the configured git
+marketplaces and refreshes the installed plugin from them: with Codex 0.156.1, one
+`codex app-server` start after a release replaced
+`~/.codex/plugins/cache/crapkit/crapkit/0.8.0` with the new version's directory. So
+upgrade the CLI before the next Codex start, or the plugin runs ahead of it, and run
+`crapkit doctor --plugin-root PATH` after that start to confirm the two agree.
 
 Start fresh MCP sessions after upgrading so their server uses the installed code. Other
 MCP clients use the [stdio setup](agent-json.md#mcp-server); skill copies and custom

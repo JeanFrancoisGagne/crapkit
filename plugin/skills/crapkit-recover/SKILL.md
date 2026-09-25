@@ -17,7 +17,7 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 |---|---|---|
 | "crapkit advisory: N function(s) over ceiling C in PATH (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` | The PostToolUse hook judged a function the edit changed. PostToolUse runs after the write and cannot block | Decompose that function now. The commit gate refuses it later, with more work stacked behind it |
 | "crapkit gate: N staged function(s) carry a ratchet mark and were not gated — `crapkit verify` fails a mark that rises" | The commit gate exempted debt the ratchet already signed for. The commit went through | Nothing. Only `crapkit verify` judges whether a mark rose |
-| "crapkit doctor: the plugin at PATH is version X, and the crapkit its hooks spawn (CLI_PATH) is Y", exit 1 | The plugin and the crapkit on PATH ship as separate artifacts and drifted apart; the line names which executable answered | Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or reinstall the CLI |
+| "crapkit doctor: the plugin at PATH is version X, and the crapkit its hooks spawn (CLI_PATH) is Y", exit 1 | The plugin and the crapkit on PATH ship as separate artifacts and drifted apart; the line names which executable answered | Reinstall whichever is behind: the plugin (in Claude Code `claude plugin install crapkit@crapkit`, in Codex `codex plugin add crapkit@crapkit`) or the CLI |
 | "crapkit doctor: checking PATH", then nothing | You named a directory above the plugin root and doctor found the install under it. The line says which tree the verdict is about | Nothing. Exit 0 means the plugin and the CLI agree |
 | "WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it", from `crapkit doctor` | The lane measures coverage exactly as before. What it cannot feed are the two checks that read a test-results file | Add the junit flag and `results_artifact` the WARN prints. Until then exit 8 can never fire for that lane's scopes: [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start) |
 | "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping)", from `crapkit verify` | The marks file predates stamping, so nothing can be compared against it | Run `crapkit coverage`, then `crapkit ratchet seed`: seed stamps the metric of the run it reads: [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp) |
@@ -29,8 +29,9 @@ Four more lines come out of `crapkit doctor --plugin-root`, same exit 1.
 the CLI, so the advisory hook exits 0 in silence on every edit.
 "crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json" means the path is not
 a plugin root and holds no crapkit install below it. "crapkit doctor: no installed crapkit
-plugin under DIR" means the bare flag found nothing in Claude Code's plugin directory: install
-with `claude plugin install crapkit@crapkit`, or pass a PATH.
+plugin under DIR" means the bare flag found nothing in Claude Code's plugin directory: in
+Claude Code, install with `claude plugin install crapkit@crapkit`; in Codex, pass the
+installed copy, `crapkit doctor --plugin-root ~/.codex/plugins/cache/crapkit/crapkit/VERSION`.
 "crapkit doctor: FAIL no `crapkit` on PATH" means the plugin is installed but the bare name
 its hooks and `.mcp.json` spawn resolves nowhere, so every PostToolUse edit fires a command
 that cannot start and the MCP server never comes up. A `pip install` into a project `.venv`

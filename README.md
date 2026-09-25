@@ -333,9 +333,18 @@ codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
 codex plugin add crapkit@crapkit
 ```
 
-Use the three skills and MCP server in Codex. The advisory hook instructions above
-configure Claude Code's PostToolUse event.
-To refresh an existing Codex installation:
+Codex gets the three skills and the MCP server, and no hook. The plugin's
+`hooks/hooks.json` is Claude Code's advisory hook, and Codex keeps only each entry's
+`command` from it, so every entry would run a bare `crapkit`, which prints its usage and
+exits 2 after each edit. The plugin's `.codex-plugin/plugin.json` sets `hooks` to empty,
+and Codex loads none of them. Codex offers `crapkit-onboard` to the model only when you
+ask for it by name. A plugin from 0.8.0 or earlier ships no Codex manifest: Codex
+0.156.1 lists its hooks as untrusted PostToolUse hooks that run a bare `crapkit`, and
+they should stay untrusted. The advisory hook instructions above are for Claude Code.
+
+Codex upgrades each configured git marketplace when it starts, and refreshes the
+installed plugin from it, so the plugin can reach a release before your CLI does.
+Upgrade the CLI first. To refresh an existing Codex installation by hand:
 
 ```
 codex plugin marketplace upgrade crapkit
@@ -347,7 +356,8 @@ Check the installed Codex plugin with an explicit `crapkit doctor --plugin-root 
 See [plugin upgrades](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#plugin-and-mcp-clients)
 for choosing that path and starting a fresh MCP session. A runtime with a skills
 directory but no compatible marketplace can copy `plugin/skills/*` instead; other
-MCP clients use the [stdio setup](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server).
+MCP clients use the [stdio setup](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server)
+or their section of [Wiring crapkit into your agent](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md).
 
 ## Languages
 

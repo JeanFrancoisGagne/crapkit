@@ -1045,6 +1045,50 @@ def test_the_changelog_records_the_packet_release():
         assert token in unreleased, f"the packet entry never mentions {token!r}"
 
 
+# --- skills a Codex user loads -------------------------------------------------
+
+# Codex installs the same plugin and loads these two skills, and an agent runs a
+# skill's commands as written. A bare `claude plugin install` in one of them sent
+# a Codex agent to a CLI its user may not have. Every `claude` command now sits
+# in a paragraph, block or table row that says it is Claude Code's, beside the
+# Codex command that does the same.
+PLUGIN_SKILLS = ("plugin/skills/crapkit-onboard/SKILL.md", "plugin/skills/crapkit-recover/SKILL.md")
+CLAUDE_COMMAND = re.compile(r"(?:^|`)claude (?:plugin|mcp) ", re.M)
+
+
+def _units(text: str) -> list[str]:
+    """Paragraphs and fences, with each table row a unit of its own."""
+    units: list[str] = []
+    for block in re.split(r"\n\s*\n", text):
+        rows = block.splitlines()
+        units += rows if rows and all(row.startswith("|") for row in rows) else [block]
+    return units
+
+
+def unlabelled_claude_calls(text: str) -> list[str]:
+    """Units that show a `claude plugin` or `claude mcp` call with no 'Claude
+    Code' in them or in the unit just before them."""
+    units = _units(text)
+    return [unit for before, unit in zip(["", *units], units)
+            if CLAUDE_COMMAND.search(unit) and "Claude Code" not in before + unit]
+
+
+def test_the_label_check_flags_a_bare_claude_call_and_passes_a_labelled_one():
+    assert unlabelled_claude_calls("Install it:\n\n```\nclaude plugin install crapkit@crapkit\n```")
+    assert unlabelled_claude_calls("Wire it:\n\n```\nclaude mcp add crapkit -- crapkit mcp\n```")
+    assert not unlabelled_claude_calls("In Claude Code:\n\n```\nclaude plugin install crapkit@crapkit\n```")
+    assert not unlabelled_claude_calls("| x | in Claude Code `claude plugin install crapkit@crapkit` |")
+    assert not unlabelled_claude_calls("exit 2 from `crapkit claude-hook`")
+
+
+@pytest.mark.parametrize("page", PLUGIN_SKILLS)
+def test_no_skill_shows_a_codex_user_a_claude_command_as_theirs(page):
+    text = _doc(page)
+
+    assert unlabelled_claude_calls(text) == []
+    assert "codex plugin add crapkit@crapkit" in text, "the Codex equivalent sits beside it"
+
+
 # --- one read per page -------------------------------------------------------
 
 def test_each_doc_page_is_read_from_disk_once(monkeypatch):
