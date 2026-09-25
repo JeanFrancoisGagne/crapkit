@@ -129,24 +129,18 @@ def _edited_path(payload: dict, edited: str) -> Path:
     edit inside a worktree would resolve to the mainline checkout's store with
     the edited file untracked from that root.
     """
-    path = _native_path(edited)
-    if path.is_absolute():
-        return path
-    return _event_cwd(payload) / path
+    return _native_path(edited, payload.get("cwd"))
 
 
-def _event_cwd(payload: dict) -> Path:
-    """Where the event's tool ran, the only base the payload offers."""
-    return _native_path(payload.get("cwd") or ".")
+def _native_path(raw: str | None, stand: str | None = None) -> Path:
+    """A payload path as this OS opens it, through repopath's typed entry,
+    imported here so an event that judges nothing never loads it. Claude Code on
+    Windows reports a session cwd as `/c/Users/...`, and a model can write a
+    file_path the same way; either one read as a Windows path named no
+    directory. A payload with no `cwd` reads as the directory the hook runs in."""
+    from ..repopath import typed_path
 
-
-def _native_path(raw: str) -> Path:
-    """A payload path as this OS opens it. Claude Code on Windows reports a
-    session cwd as `/c/Users/...`, and a model can write a file_path the same
-    way; either one read as a Windows path named no directory."""
-    from ..repopath import native
-
-    return Path(native(raw))
+    return typed_path(raw or ".", stand or "")
 
 
 def _command_event(payload: dict) -> bool:
@@ -174,7 +168,7 @@ def _advise_command(payload: dict) -> int:
     """
     if not _command_event(payload):
         return 0
-    top = _repo_top(_event_cwd(payload))
+    top = _repo_top(_native_path(payload.get("cwd")))
     if top is None:
         return 0
     verdicts = [_judge_path(path) for path in _fresh_python(top)]

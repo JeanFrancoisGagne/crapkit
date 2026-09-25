@@ -68,12 +68,13 @@
   refused a file its scope declares; `brief` and `explain` found nothing; `ratchet move`
   filed a mark under a key no row carries; `mutate --files` called an in-scope file
   outside the corpus; `--repo` and an MCP call's `repo` in Git Bash or WSL spelling found
-  no crapkit.toml; and `next-item --exclude` and MCP `get_next_item` handed out the
+  no crapkit.toml, and `init --repo` in that spelling ended in a Python traceback and exit
+  1; and `next-item --exclude` and MCP `get_next_item` handed out the
   directory they were told to skip as `pkg\legacy`, `./pkg/legacy` or `PKG/Legacy`.
   `--help` for each file argument and for `--exclude` names the spellings it reads.
 - On Windows a root on a network share exits 3 before crapkit starts any child: `--repo
   \\server\share\repo`, a session standing in a share, and a `\\wsl.localhost\...`
-  checkout. The line says to map the share to a drive letter (`net use Z: \\server\share`)
+  checkout, `init` included. The line says to map the share to a drive letter (`net use Z: \\server\share`)
   and run crapkit from `Z:\repo`. cmd.exe cannot start a command in a UNC directory and
   ran every lane in `C:\Windows` instead: a real pytest lane collected `C:\Windows` for
   42 s of CPU before it was killed. A root on a mapped drive keeps its letter, for

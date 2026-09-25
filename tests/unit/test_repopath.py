@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from crapkit.repopath import (Reported, disk_spelling, entries, file_separators, inside,
-                              is_unc, native)
+                              native, on_a_share, typed, typed_path)
 
 from path_spellings import (admin_share, link_directory, lower_drive, need_case_insensitive,
                             need_case_sensitive, only_posix, only_windows)
@@ -214,7 +214,7 @@ def test_windows_places_the_checkout_reached_through_its_admin_share(tmp_path):
     alias = admin_share(root)
 
     assert inside(alias + "\\src\\pkg\\mod.py", root) == "src/pkg/mod.py"
-    assert is_unc(alias) and not is_unc(root)
+    assert on_a_share(alias) and not on_a_share(root)
 
 
 def test_folds_case_says_what_the_disk_under_the_root_does(tmp_path):
@@ -224,3 +224,103 @@ def test_folds_case_says_what_the_disk_under_the_root_does(tmp_path):
     root = _tree(tmp_path / "Repo")
 
     assert folds_case(root) is case_insensitive(root)
+
+
+# --- the typed entry ----------------------------------------------------------
+# A path a person or agent typed: a CLI or MCP file argument, `--repo`, the
+# working directory, a hook payload's `file_path` or `cwd`. The commands feed
+# these spellings through their own flags (test_cli_path_spellings,
+# test_claude_hook_path_spellings, test_root_spellings); these rows pin the
+# entry they all call.
+
+from path_spellings import SPELLINGS, spelled  # noqa: E402
+
+
+def _app_tree(root: Path) -> Path:
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "app.ts").write_text("export const a = 1;\n", encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize("which", SPELLINGS)
+def test_the_typed_entry_reads_a_file_argument_as_git_spells_the_file(tmp_path, which):
+    root = _app_tree(tmp_path / "repo")
+
+    assert typed(spelled(which, root), root) == "src/app.ts"
+
+
+@pytest.mark.parametrize("raw, stand, expected", [
+    ("app.ts", "src", "src/app.ts"),
+    ("./app.ts", "src", "src/app.ts"),
+    ("../src/app.ts", "src", "src/app.ts"),
+    ("src/app.ts", ".", "src/app.ts"),
+    ("src/app.ts", "..", "src/app.ts"),
+    ("../../elsewhere.ts", "src", None),
+], ids=["below", "below-dot", "below-climbs-back", "at-root", "above-root", "climbs-out"])
+def test_the_typed_entry_reads_a_relative_argument_from_where_the_user_stands(tmp_path, raw,
+                                                                             stand, expected):
+    """ADR 0002: below the root a relative argument is read from where the user
+    stands; at the root or above it, it is root-relative."""
+    root = _app_tree(tmp_path / "repo").resolve()
+
+    assert typed(raw, root, root / stand) == expected
+
+
+def test_the_typed_entry_names_nothing_for_a_file_outside_the_root(tmp_path):
+    root = _app_tree(tmp_path / "repo")
+    (tmp_path / "other.ts").write_text("", encoding="utf-8")
+
+    assert typed(str(tmp_path / "other.ts"), root) is None
+    assert typed("/other.ts", root) is None
+
+
+@only_posix
+def test_the_typed_entry_keeps_a_posix_backslash_as_a_filename_character(tmp_path):
+    r"""A shell on POSIX hands over the name it was given: `src\app.ts` is one
+    file there, not src/app.ts."""
+    assert typed("src\\app.ts", _app_tree(tmp_path / "repo")) == "src\\app.ts"
+
+
+def _msys(root: Path, prefix: str) -> str:
+    return prefix + root.drive[0].lower() + root.as_posix()[2:]
+
+
+# id -> (what the host needs, a typed spelling of the directory `root`)
+PLACES = {
+    "native": ("", lambda root: str(root)),
+    "forward": ("", lambda root: root.as_posix()),
+    "msys": ("windows", lambda root: _msys(root, "/")),
+    "wsl": ("windows", lambda root: _msys(root, "/mnt/")),
+    "extended-length": ("windows", lambda root: "\\\\?\\" + str(root)),
+    "admin-share": ("windows", admin_share),
+    "lower-drive": ("windows", lower_drive),
+}
+
+
+@pytest.mark.parametrize("which", PLACES)
+def test_the_typed_entry_opens_a_typed_place_where_this_os_opens_it(tmp_path, which):
+    """`--repo`, the working directory and a hook payload's `cwd`: each is a
+    place a lane starts in, so a share alias of a local drive comes back to the
+    drive, and a relative `file_path` is read against the typed `cwd`."""
+    need, spell = PLACES[which]
+    if need == "windows" and os.name != "nt":
+        pytest.skip("needs Windows path rules")
+    root = _app_tree(tmp_path / "repo").resolve()
+
+    place = typed_path(spell(root))
+
+    assert place.resolve() == root and not on_a_share(place)
+    assert typed_path("src/app.ts", spell(root)).resolve() == root / "src" / "app.ts"
+    assert typed_path(str(root / "src" / "app.ts"), "elsewhere") == root / "src" / "app.ts"
+
+
+@pytest.mark.parametrize("path, windows, shared", [
+    ("\\\\server\\share\\repo", True, True),
+    ("//server/share/repo", True, True),
+    ("C:\\repo", True, False),
+    ("\\\\server\\share\\repo", False, False),
+], ids=["unc", "unc-forward", "drive", "posix"])
+def test_a_network_path_is_a_share_on_windows_alone(path, windows, shared):
+    """cmd.exe cannot start a command in a UNC directory; sh starts one anywhere."""
+    assert on_a_share(path, windows=windows) is shared
+

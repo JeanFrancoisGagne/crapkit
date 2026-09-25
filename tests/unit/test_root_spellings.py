@@ -52,6 +52,7 @@ COMMANDS = {
     "coverage": ["coverage"],
     "verify": ["verify"],
     "doctor": ["doctor"],
+    "init": ["init"],
 }
 
 

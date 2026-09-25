@@ -39,7 +39,9 @@ an unknown parser, a lane naming an undeclared scope, a negative `timeout_second
 
 Without `--repo`, CLI commands find the nearest `crapkit.toml` at or above the
 current directory. A `.git` entry stops the search. With `--repo PATH`, that path
-names the exact project root; the flag belongs after the subcommand.
+names the exact project root; the flag belongs after the subcommand. `init` does
+not search: it writes `crapkit.toml` into `--repo PATH` or the current directory,
+each read by the rules below.
 
 Git names every tracked file one way: relative to the root, with `/` between
 directories, in the letter case its index holds. crapkit reads each spelling below
@@ -53,9 +55,9 @@ as that one before it compares the path with a scope, a mark or a stored row.
 | Absolute source path | Accepted when it resolves inside the project root, reached through a symlink, a junction or a lower-case drive letter too. |
 | Windows backslash | A directory separator on Windows; a literal filename character on POSIX. |
 | Letter case | On a disk that ignores case (Windows NTFS, macOS APFS by default), `SRC/App.py` names the file git lists as `src/app.py`, and crapkit uses git's spelling. On a case-sensitive disk (Linux ext4) the case has to match. |
-| Git Bash and WSL paths (Windows) | `/c/repo/src/a.py` from Git Bash or MSYS and `/mnt/c/repo/src/a.py` from WSL read as `C:\repo\src\a.py`, unless the current drive holds a literal `\c\repo`. This covers `--repo` too. |
+| Git Bash and WSL paths (Windows) | `/c/repo/src/a.py` from Git Bash or MSYS and `/mnt/c/repo/src/a.py` from WSL read as `C:\repo\src\a.py`, unless the current drive holds a literal `\c\repo`. This covers `--repo` too, for `init` as for every other command. |
 | Extended-length and admin-share paths (Windows) | `\\?\C:\repo`, `\\?\UNC\localhost\C$\repo` and this machine's own `\\localhost\C$\repo` read as `C:\repo`. |
-| Network share root (Windows) | A root on a network share, such as `\\server\share\repo` given to `--repo` or standing as the working directory, exits 3 before any lane starts. cmd.exe cannot start a command in a UNC directory and would run every lane in `C:\Windows`. The refusal ends with the command that fixes it, `Map the share to a drive letter (net use Z: \\server\share) and run crapkit from Z:\repo`. A root typed on a mapped drive keeps that letter, for the CLI and for an MCP call's `repo` alike. |
+| Network share root (Windows) | A root on a network share, such as `\\server\share\repo` given to `--repo` or standing as the working directory, exits 3 before any lane starts and before `init` reads the tree. cmd.exe cannot start a command in a UNC directory and would run every lane in `C:\Windows`. The refusal ends with the command that fixes it, `Map the share to a drive letter (net use Z: \\server\share) and run crapkit from Z:\repo`. A root typed on a mapped drive keeps that letter, for the CLI and for an MCP call's `repo` alike. |
 
 These rules apply to source arguments such as `brief`, `explain`, `rescore`,
 `test-scoped`, `ratchet move`, `mutate --files` and `claims release`, and to

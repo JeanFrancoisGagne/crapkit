@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from cli_inproc_repo import (add_knotty, commit_all, repo,  # noqa: F401
+from cli_inproc_repo import (add_knotty, commit_all, git, repo,  # noqa: F401
                              seed_artifacts, template_repo)
 from crapkit.cli import main
 from crapkit.cli._shared import _command_root
@@ -154,6 +154,60 @@ def test_a_checkout_entered_through_its_admin_share_is_rooted_on_its_drive(repo,
     monkeypatch.chdir(admin_share(repo))
 
     assert _command_root(None) == repo.resolve()
+
+
+# --- init reads its root the way every other command does -------------------------
+
+def _uninitialized(tmp_path: Path) -> Path:
+    """A tracked Go file and no crapkit.toml: init probes no interpreter for it."""
+    root = tmp_path / "initrepo"
+    (root / "cmd").mkdir(parents=True)
+    (root / "cmd" / "route.go").write_text("package main\n\nfunc route() int { return 1 }\n",
+                                           encoding="utf-8")
+    git(root, "init", "-q")
+    commit_all(root, "init")
+    return root.resolve()
+
+
+def _msys(root: Path, prefix: str) -> str:
+    return prefix + root.drive[0].lower() + root.as_posix()[2:]
+
+
+# id -> (what the host needs, a spelling of the checkout init is pointed at)
+INIT_ROOTS = {
+    "native": ("", str),
+    "forward": ("", lambda root: root.as_posix()),
+    "msys": ("windows", lambda root: _msys(root, "/")),
+    "wsl": ("windows", lambda root: _msys(root, "/mnt/")),
+    "lower-drive": ("windows", lower_drive),
+    "extended-length": ("windows", lambda root: "\\\\?\\" + str(root)),
+    "admin-share": ("windows", admin_share),
+}
+
+
+@pytest.mark.parametrize("which", INIT_ROOTS)
+def test_init_writes_into_the_checkout_its_repo_flag_names_in_any_spelling(tmp_path, capsys,
+                                                                           which):
+    r"""`init --repo /c/...` read the path as C:\c\... and ended in a traceback
+    (NotADirectoryError, exit 1), where `worklist --repo` in the same spelling
+    served the checkout."""
+    spec, spell = INIT_ROOTS[which]
+    root = _uninitialized(tmp_path)
+    need(spec, root)
+
+    code = main(["init", "--repo", spell(root)])
+
+    assert code == 0, capsys.readouterr().err
+    assert (root / "crapkit.toml").is_file()
+
+
+@pytest.mark.skipif(not WINDOWS, reason="needs Windows path rules")
+def test_init_standing_in_the_admin_share_writes_on_the_drive(tmp_path, monkeypatch, capsys):
+    root = _uninitialized(tmp_path)
+    monkeypatch.chdir(admin_share(root))
+
+    assert main(["init"]) == 0, capsys.readouterr().err
+    assert (root / "crapkit.toml").is_file()
 
 
 # --- a report written from another spelling of the checkout ----------------------

@@ -86,6 +86,67 @@ def _this_host() -> set[str]:
     return {"localhost", "127.0.0.1", "::1", socket.gethostname().lower()}
 
 
+# --- the typed entry: a path a person or agent typed ---------------------------
+
+def typed_path(raw: str, stand: str | os.PathLike = "") -> Path:
+    r"""A place a person or agent typed (`--repo`, the working directory, a
+    hook payload's `cwd` or `file_path`) as this OS opens it, through `native`.
+    Git Bash and Claude Code on Windows spell a directory `/c/Users/...`, WSL
+    `/mnt/c/...`, and a session can stand in `\\localhost\C$\...`; read as
+    written, each named no directory or one cmd.exe cannot start a lane in. A
+    relative path is read against `stand`, itself typed, when one is given."""
+    path = Path(native(raw))
+    if path.is_absolute() or not stand:
+        return path
+    return Path(native(os.fspath(stand))) / path
+
+
+def typed(raw: str, root: str | os.PathLike,
+          stand: str | os.PathLike | None = None) -> str | None:
+    r"""A file a person or agent named (a CLI or MCP file argument), as git
+    spells it, or None when it names nothing under `root`.
+
+    `src/a.py`, `./src/a.py` and the absolute path tab completion returns name
+    one file, and so do, on Windows, `src\a.py`, Git Bash's `/c/repo/src/a.py`,
+    WSL's `/mnt/c/...` and the admin share `\\localhost\C$\...`. On POSIX a
+    backslash is a literal filename character. An absolute path is placed by
+    the one placing rule. `stand` is where the user stands: below the root, a
+    relative argument is read from there (ADR 0002), so `grade.py` typed in
+    web/src names web/src/grade.py; at the root, above it or with no `stand`,
+    it is root-relative. On a case-insensitive disk the result takes the case
+    its directories list: `SRC\a.py` is `src/a.py`, where the typed case matched
+    no scope, no ratchet key and no stored row, and `rescore --gate` judged
+    nothing and passed."""
+    path = file_separators(native(raw)) if _WINDOWS else raw
+    if _rooted(path):
+        return inside(path, root)
+    if stand is not None and _below(stand, root):
+        return inside(os.path.join(stand, path), root)
+    return disk_spelling(root, posixpath.normpath(path))
+
+
+def _rooted(path: str) -> bool:
+    """A rooted path with no drive (`/tmp/a.py` on Windows) counts too: it names
+    the current drive's root, not a place under the repo."""
+    named = Path(path)
+    return named.is_absolute() or bool(named.root)
+
+
+def _below(stand: str | os.PathLike, root: str | os.PathLike) -> bool:
+    return Path(root).resolve() in Path(stand).resolve().parents
+
+
+def on_a_share(path: str | os.PathLike, windows: bool = _WINDOWS) -> bool:
+    r"""Is `path` a network path (`\\host\share\...`) on the one OS whose shell
+    cannot start a command in one? cmd.exe refuses to stand in one and starts
+    the command in C:\Windows instead; sh starts a command anywhere."""
+    return windows and _unc(path)
+
+
+def _unc(path: str | os.PathLike) -> bool:
+    return str(path).replace("/", "\\").startswith("\\\\")
+
+
 def file_separators(raw: str) -> str:
     r"""A path read out of a file, with `/` between directories.
 

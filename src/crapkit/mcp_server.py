@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .cli._shared import _on_its_drive
 from .invocation import _self
-from .repopath import native
+from .repopath import typed_path
 from .rootfind import CONFIG_NAME, find_root
 
 # Newest first. Everything this server does — tools, annotations, structured
@@ -1641,7 +1641,7 @@ def _config_root(repo: str) -> Path | None:
     nothing: a typo must not be adopted by an ancestor's configuration and
     read back as data. A repo on a mapped drive keeps its letter, as `--repo`
     does: the CLI refuses a root on a network share."""
-    start = _on_its_drive(Path(native(repo)))
+    start = _on_its_drive(typed_path(repo))
     return find_root(start) if start.is_dir() else None
 
 

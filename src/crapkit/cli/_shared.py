@@ -14,7 +14,7 @@ from pathlib import Path
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
-from ..repopath import disk_spelling, inside, is_unc, native
+from ..repopath import on_a_share, typed, typed_path
 from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
@@ -83,9 +83,9 @@ def _command_root(repo: str | None) -> Path:
     refused, and a stat there can fail with the share's own error.
     """
     if repo is not None:
-        return _on_its_drive(Path(native(repo)))
-    cwd = _on_its_drive(_working_directory())
-    found = None if _on_a_share(cwd) else find_root(cwd)
+        return _on_its_drive(typed_path(repo))
+    cwd = _on_its_drive(typed_path(os.getcwd()))
+    found = None if on_a_share(cwd) else find_root(cwd)
     if found is None:
         return cwd
     if found != cwd:
@@ -93,19 +93,23 @@ def _command_root(repo: str | None) -> Path:
     return found
 
 
+def _init_root(repo: str | None) -> Path:
+    r"""Where `init` writes: `--repo`, or where the user stands, read the way
+    every other command reads a root, with no walk, since init adopts no
+    crapkit.toml above it. It read `--repo /c/...` as C:\c\... and ended in a
+    traceback, and started its probes on a network share."""
+    root = _on_its_drive(typed_path(os.getcwd() if repo is None else repo))
+    _refuse_a_share(root)
+    return root
+
+
 def _stand(repo: str | None) -> Path | None:
-    """Where a relative path argument is read from: the working directory when
+    r"""Where a relative path argument is read from: the working directory when
     the root came from the walk, nothing when `--repo` named the root. The
     rebase belongs to discovery (ADR 0002), not to the flag: `--repo ..` from
-    web/ reads `web/src/grade.py` against the root it named, as on 0.4.15."""
-    return None if repo is not None else _working_directory()
-
-
-def _working_directory() -> Path:
-    r"""Where the user stands, spelled so a lane can start there: a checkout
-    entered through this machine's admin share (`\\localhost\C$\repo`) is its
-    drive, because cmd.exe cannot start a command in a UNC directory."""
-    return Path(native(os.getcwd()))
+    web/ reads `web/src/grade.py` against the root it named, as on 0.4.15. A
+    session in `\\localhost\C$\repo` stands on its drive (repopath.typed_path)."""
+    return None if repo is not None else typed_path(os.getcwd())
 
 
 def _on_its_drive(path: Path) -> Path:
@@ -116,22 +120,17 @@ def _on_its_drive(path: Path) -> Path:
     and runs it in C:\Windows instead. Such a root keeps the letter it was
     typed with. A root typed as a share is only made absolute, never looked up
     on the network: `_load_repo_config` refuses it."""
-    if _on_a_share(path):
+    if on_a_share(path):
         return Path(os.path.abspath(path))
     resolved = path.resolve()
-    return Path(os.path.abspath(path)) if _on_a_share(resolved) else resolved
-
-
-def _on_a_share(path: Path) -> bool:
-    """A UNC path, on the one OS whose shell cannot start a command in one."""
-    return os.name == "nt" and is_unc(path)
+    return Path(os.path.abspath(path)) if on_a_share(resolved) else resolved
 
 
 def _refuse_a_share(root: Path) -> None:
     r"""A root on a network share, typed so, stood in or reached any other way,
     stops here, before crapkit reads a file there or starts a child: cmd.exe
     would run every lane in C:\Windows."""
-    if _on_a_share(root):
+    if on_a_share(root):
         on_the_drive = Path("Z:\\") / root.relative_to(root.anchor)
         raise ConfigError(
             f"the root {root} is on a network share, where cmd.exe cannot start a lane "
@@ -140,50 +139,15 @@ def _refuse_a_share(root: Path) -> None:
 
 
 def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) -> str:
-    r"""One spelling for a file argument, whatever the shell handed in.
-
-    `src/a.py`, `./src/a.py` and the absolute path tab completion returns name
-    one file. Windows also accepts `src\a.py`; on POSIX that backslash is a
-    literal filename character. Every argument has to reach
-    `universe.owning_scope` as the repo-relative posix path the scopes are
-    declared in. Three commands spelled this as `raw.replace("\\", "/")` and
-    nothing else, so the `./` form — the one shells, `find` and coding agents
-    produce most often — matched no scope prefix in any of them: `test-scoped`
-    called it a file belonging to no declared scope, and `rescore --gate` scored
-    nothing and passed a gate the same file failed spelled relative.
-
-    `cwd` is where the user stands, handed in only when the root came from
-    the walk (`_stand`). Below the root, a relative argument is rebased from
-    there (ADR 0002): `grade.py` typed in web/src names web/src/grade.py, and
-    one climbing out of the root is refused like an absolute path outside it.
-    At the root, from a directory outside it, or under `--repo`, the argument
-    is root-relative as it always was.
-
-    What comes back is spelled the way git spells it (repopath). On Windows
-    `/c/repo/src/a.py` from Git Bash, `/mnt/c/...` from WSL and the admin share
-    `\\localhost\C$\...` name the drive, and on a case-insensitive disk
-    `SRC\a.py` is `src/a.py`: the file opened in any case, and the typed case
-    matched no scope, no ratchet key and no stored row, so `rescore --gate`
-    judged nothing and passed.
-    """
-    path = _typed(raw)
-    if _is_rooted(path):
-        return _under_root(path, root)
-    if _below(cwd, root):
-        return _under_root(str(cwd / path), root)
-    return disk_spelling(root, posixpath.normpath(path))
-
-
-def _typed(raw: str) -> str:
-    """A path argument with `/` between directories, read by this OS's rules:
-    on POSIX a backslash is a literal filename character."""
-    return native(raw).replace("\\", "/") if os.name == "nt" else raw
-
-
-def _below(cwd: Path | None, root: Path) -> bool:
-    """Whether the working directory sits strictly under the root, the one
-    place a relative argument means something other than root-relative."""
-    return cwd is not None and root.resolve() in cwd.resolve().parents
+    """One spelling for a file argument, whatever the shell handed in: git's,
+    through repopath's typed entry. `cwd` is where the user stands (`_stand`),
+    handed in only when the root came from the walk. A file outside the root is
+    refused rather than matched against nothing: scoring no functions is not an
+    answer to a path crapkit cannot place."""
+    rel = typed(raw, root, cwd)
+    if rel is None:
+        raise ConfigError(f"{raw} is outside the repo at {root}")
+    return rel
 
 
 def _is_rooted(path: str) -> bool:
@@ -191,18 +155,6 @@ def _is_rooted(path: str) -> bool:
     the current drive's root, not a place under the repo."""
     named = Path(path)
     return named.is_absolute() or bool(named.root)
-
-
-def _under_root(path: str, root: Path) -> str:
-    """An absolute argument, said the way the scopes are declared. One that
-    lands outside the repo is refused rather than matched against nothing:
-    scoring no functions is not an answer to a path crapkit cannot place.
-    A junction, a lower-case drive or the admin share naming this checkout
-    lands inside it (repopath.inside)."""
-    rel = inside(path, root)
-    if rel is None:
-        raise ConfigError(f"{path} is outside the repo at {root}")
-    return rel
 
 
 def _repo_out_path(root: Path, out: str) -> Path:

@@ -22,7 +22,8 @@ from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pyt
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
-from ._shared import _command_root, _file_sizer, _load_repo_config, _print_json, repo_text
+from ._shared import (_command_root, _file_sizer, _init_root, _load_repo_config, _print_json,
+                      repo_text)
 
 
 def _present_lockfiles(root: Path) -> frozenset[str]:
@@ -532,7 +533,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     from ..scaffold import (detect_lanes, live_lanes, pytest_testpaths, sniff_scopes,
                             starter_toml)
 
-    root = Path(args.repo or ".").resolve()  # init writes where the user stands; it adopts nothing
+    root = _init_root(args.repo)  # init writes where the user stands; it adopts nothing
     toml_path = root / "crapkit.toml"
     if toml_path.is_file():
         raise ConfigError(f"crapkit.toml already exists in {root} — edit it instead")
