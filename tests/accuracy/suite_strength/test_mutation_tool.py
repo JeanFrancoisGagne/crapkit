@@ -942,3 +942,380 @@ def test_a_line_after_a_function_does_not_touch_it():
 def test_a_kit_module_s_glob_leaves_tests_off_the_name():
     assert mutation.mutmut_glob("tests/accuracy/kit/exact.py", "crap") == (
         "accuracy.kit.exact.x_crap__mutmut_*")
+
+
+# --- the command line, parsed the way each command reads it ----------------------------------------
+
+CPUS = mutation.os.cpu_count() or 2
+
+
+@pytest.mark.parametrize("argv, expected", [
+    (["weekly", "--shard", "2", "--of", "8", "--max-children", "3"],
+     {"command": "weekly", "shard": 2, "of": 8, "max_children": 3}),
+    (["weekly", "--shard", "1", "--of", "8"],
+     {"command": "weekly", "shard": 1, "of": 8, "max_children": CPUS}),
+    (["diff", "--since-weekly", "--base", "abc", "--cap-minutes", "7.5"],
+     {"command": "diff", "since_weekly": True, "base": "abc", "cap_minutes": 7.5}),
+    (["diff"], {"command": "diff", "since_weekly": False, "base": None, "cap_minutes": 30}),
+    (["gate", "a.json", "b.json", "--update", "--no-canary"],
+     {"command": "gate", "results": [Path("a.json"), Path("b.json")], "update": True,
+      "no_canary": True}),
+    (["gate", "a.json"],
+     {"command": "gate", "results": [Path("a.json")], "update": False, "no_canary": False}),
+    (["floors", "a.json"], {"command": "floors", "results": [Path("a.json")]}),
+    (["covered"], {"command": "covered", "receipts": REPO / mutation.RECEIPTS}),
+    (["covered", "--receipts", "d"], {"command": "covered", "receipts": Path("d")}),
+    (["tools"], {"command": "tools", "max_children": CPUS}),
+    (["tools", "--max-children", "4"], {"command": "tools", "max_children": 4}),
+    (["key"], {"command": "key"}),
+    (["killer", "tests/unit"], {"command": "killer", "pytest": ["tests/unit"]}),
+])
+def test_every_command_parses_to_what_its_code_reads(argv, expected):
+    parsed = vars(mutation._parser().parse_args(argv))
+
+    assert parsed == expected
+    assert [type(value) for value in parsed.values()] == [type(value) for value in expected.values()]
+
+
+@pytest.mark.parametrize("argv", [[], ["weekly", "--of", "8"], ["weekly", "--shard", "1"],
+                                  ["gate"], ["floors"], ["nope"]])
+def test_a_command_missing_what_it_needs_is_a_usage_error(argv, capsys):
+    with pytest.raises(SystemExit) as stopped:
+        mutation._parser().parse_args(argv)
+
+    assert stopped.value.code == 2
+    assert capsys.readouterr().err.startswith("usage: mutation.py ")
+
+
+def test_the_parser_names_the_tool_and_says_what_it_does():
+    parser = mutation._parser()
+
+    assert (parser.prog, parser.description) == (
+        "mutation.py", "Mutation testing of the calculation modules, gated on a keyed survivor set.")
+
+
+def test_a_machine_that_cannot_count_its_cpus_runs_two_children(monkeypatch):
+    monkeypatch.setattr(mutation.os, "cpu_count", lambda: None)
+
+    assert mutation._parser().parse_args(["tools"]).max_children == 2
+    assert mutation._parser().parse_args(["weekly", "--shard", "1", "--of", "1"]).max_children == 2
+
+
+# --- the environments and argv the tool hands its children ----------------------------------------
+
+def test_the_tools_suite_runs_every_tier_at_push_settings():
+    assert mutation.tools_env({"KEEP": "1", "CRAPKIT_ACCURACY_TIER": "nightly"}) == {
+        "KEEP": "1", "CRAPKIT_ACCURACY_TIER": "push", "CRAPKIT_ACCURACY_COLLECT_ALL": "1",
+        "PYTHONDONTWRITEBYTECODE": "1"}
+
+
+def test_the_killer_argv_is_the_whole_suite_command():
+    assert mutation.killer_argv(["--deselect", "x"]) == [
+        sys.executable, "-m", "pytest", "tests/unit", "tests/accuracy", "-m",
+        mutation.INDEPENDENT_ONLY, "-n", "4", "--dist", "worksteal", "-x", "-q", "-p",
+        "no:randomly", "-p", "no:cacheprovider", "--deselect", "x"]
+
+
+def test_the_killer_runs_its_argv_in_the_working_directory_with_its_env(tmp_path, monkeypatch):
+    seen = {}
+
+    def run(argv, cwd, env):
+        seen.update(argv=argv, cwd=cwd, env=env)
+        return mutation.subprocess.CompletedProcess(argv, 5)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mutation.subprocess, "run", run)
+    monkeypatch.setenv("CRAPKIT_KILLER_PROBE", "kept")
+
+    assert mutation.main(["killer", "-k", "x"]) == 5
+    assert seen["argv"] == mutation.killer_argv(["-k", "x"])
+    assert seen["cwd"].resolve() == tmp_path.resolve()
+    assert seen["env"]["CRAPKIT_KILLER_PROBE"] == "kept"
+    assert seen["env"]["PYTHONPATH"].split(mutation.os.pathsep)[:2] == [
+        str(seen["cwd"] / "src"), str(seen["cwd"] / "tests")]
+
+
+def test_captured_output_reads_a_byte_that_is_not_utf8_as_a_replacement(tmp_path):
+    argv = [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'a\\xffb')"]
+
+    assert mutation.captured(argv, tmp_path).stdout == "a\ufffdb"
+    assert mutation.captured([sys.executable, "-c", "print(input())"], tmp_path, "fed").stdout == "fed\n"
+
+
+@pytest.mark.process
+def test_a_failing_git_says_the_command_and_what_git_said(tmp_path):
+    with pytest.raises(mutation.MutationError) as refused:
+        mutation._git(tmp_path, "rev-parse", "--verify", "no-such-ref")
+
+    assert str(refused.value).startswith("git rev-parse --verify no-such-ref: fatal: ")
+
+
+def test_a_launcher_that_leaves_mutants_undiffed_is_quoted(tmp_path):
+    (tmp_path / "quiet.py").write_text("import sys\nsys.stdin.read()\nprint('x' * 600, file=sys.stderr)\n",
+                                       encoding="utf-8")
+    names = [f"m.x_f__mutmut_{n}" for n in range(1, 6)]
+
+    with pytest.raises(mutation.MutationError) as refused:
+        mutation._diffs(tmp_path, names, ("quiet.py",))
+
+    assert str(refused.value) == (
+        "no diff for 5 mutant(s) (m.x_f__mutmut_1, m.x_f__mutmut_2, m.x_f__mutmut_3): "
+        + "x" * 500)
+
+
+# --- the calc modules, the receipts and the tables a run writes -------------------------------------
+
+def test_the_calc_modules_are_every_module_a_calcs_table_names(tmp_path):
+    for packet, modules in (("p1", "src/a.py,src/b.py"), ("p2", "src/b.py, src/c.py")):
+        calc = f"calc of {packet}"
+        table = tmp_path / "tests" / "accuracy" / packet / "calcs.tsv"
+        table.parent.mkdir(parents=True)
+        table.write_text("calc\tindependent_test\tmodules\tfunctions\n"
+                         f"{calc}\ttests/accuracy/{packet}/test_x.py::t\t{modules}\tsrc/a.py:f\n",
+                         encoding="utf-8")
+
+    assert mutation.calc_modules(tmp_path) == ["src/a.py", "src/b.py", "src/c.py"]
+
+
+def _repo_with_a_commit(tmp_path: Path) -> tuple[Path, str]:
+    (tmp_path / "repo").mkdir()
+    repo = _dated_repo(tmp_path / "repo", [("2026-09-18T12:00:00Z", "a = 1\n")])
+    return repo, mutation._git(repo, "rev-parse", "HEAD").strip()
+
+
+@pytest.mark.process
+def test_a_receipt_names_its_kind_head_and_time_and_is_written_under_receipts(tmp_path, monkeypatch):
+    repo, head = _repo_with_a_commit(tmp_path)
+    monkeypatch.setattr(mutation, "REPO", repo)
+
+    receipt = mutation._receipt("tools", modules=["m.py"])
+    path = mutation._write_receipt(receipt, "tools.json")
+
+    assert {key: receipt[key] for key in ("schema", "kind", "head", "modules")} == {
+        "schema": 1, "kind": "tools", "head": head, "modules": ["m.py"]}
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", receipt["created"])
+    assert path == repo / mutation.RECEIPTS / "tools.json"
+    assert path.read_text(encoding="utf-8") == json.dumps(receipt, indent=1, sort_keys=True) + "\n"
+
+
+def test_update_writes_both_tables_less_what_the_verdict_drops(tmp_path, monkeypatch):
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
+    kept = {**_row("src/crapkit/score.py", "crap", KEYS[1]), "reason": "r", "added": "d"}
+    gone = {**_row("src/crapkit/score.py", "crap", KEYS[0]), "reason": "r", "added": "d"}
+    proven = {**_row("src/crapkit/score.py", "crap", KEYS[2]), "evidence": "e", "strategy": "s",
+              "checked": "d"}
+    dead = {**_row("src/crapkit/score.py", "crap", KEYS[3]), "evidence": "e", "strategy": "s",
+            "checked": "d"}
+    verdict = mutation.Verdict(gone=(("src/crapkit/score.py", "crap", KEYS[0]),),
+                               killed_equivalents=(("src/crapkit/score.py", "crap", KEYS[3]),))
+
+    mutation._update([gone, kept], [proven, dead], verdict)
+
+    assert mutation.read_table(tmp_path / "survivors.tsv", mutation.SURVIVOR_COLUMNS) == [kept]
+    assert mutation.read_table(tmp_path / "equivalent.tsv", mutation.EQUIVALENT_COLUMNS) == [proven]
+
+
+def test_gate_update_rewrites_the_tables_and_a_clean_run_exits_zero(tmp_path, monkeypatch, capsys):
+    gone = {**_row("src/crapkit/score.py", "crap", KEYS[0]), "reason": "r", "added": "d"}
+    _tables(tmp_path, [gone])
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
+    receipt = tmp_path / "r.json"
+    receipt.write_text(json.dumps({"results": [_crap(KEYS[0], "killed").__dict__]}), encoding="utf-8")
+
+    assert mutation.main(["gate", str(receipt), "--update"]) == 0
+    assert mutation.read_table(tmp_path / "survivors.tsv", mutation.SURVIVOR_COLUMNS) == []
+    assert "now dies" in capsys.readouterr().out
+
+
+def test_gate_without_no_canary_voids_a_run_that_did_not_mutate_the_canary(tmp_path, monkeypatch,
+                                                                             capsys):
+    _tables(tmp_path)
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
+    receipt = tmp_path / "r.json"
+    row = mutation.Result("m.x_f__mutmut_1", "m.py", "f", "killed").__dict__
+    receipt.write_text(json.dumps({"results": [row]}), encoding="utf-8")
+
+    assert mutation.main(["gate", str(receipt)]) == 1
+    assert "void: the canary score.crap was not mutated" in capsys.readouterr().out
+    assert mutation.main(["gate", str(receipt), "--no-canary"]) == 0
+
+
+# --- the runs, with mutmut and the stage stood in for --------------------------------------------
+
+class _Recorder:
+    """Stands in for staged_run and records what each command handed it."""
+
+    def __init__(self, rows, complete=True):
+        self.rows, self.complete, self.calls = rows, complete, []
+
+    def __call__(self, where, targets, globs, env, children, budget=None):
+        self.calls.append({"where": where, "targets": targets, "globs": globs, "env": env,
+                           "children": children, "budget": budget})
+        return self.rows, self.complete
+
+
+def _commands_on(tmp_path, monkeypatch, rows, complete=True) -> _Recorder:
+    repo, _ = _repo_with_a_commit(tmp_path)
+    monkeypatch.setattr(mutation, "REPO", repo)
+    _tables(tmp_path)
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
+    recorder = _Recorder(rows, complete)
+    monkeypatch.setattr(mutation, "staged_run", recorder)
+    return recorder
+
+
+def _saved(name: str) -> dict:
+    return json.loads((mutation.REPO / mutation.RECEIPTS / name).read_text(encoding="utf-8"))
+
+
+@pytest.mark.process
+def test_weekly_mutates_its_shard_and_the_canary_and_writes_its_receipt(tmp_path, monkeypatch):
+    modules = ["src/crapkit/digest.py", "src/crapkit/score.py", "src/crapkit/worklist.py"]
+    monkeypatch.setattr(mutation, "calc_modules", lambda: modules)
+    canary = _crap(KEYS[0], "killed")
+    recorder = _commands_on(tmp_path, monkeypatch, [canary])
+
+    assert mutation.main(["weekly", "--shard", "2", "--of", "2", "--max-children", "3"]) == 0
+
+    (call,) = recorder.calls
+    assert call["where"] == mutation.CALC_STAGE
+    assert call["targets"] == mutation.calc_targets(["src/crapkit/score.py"])
+    assert call["globs"] == ["crapkit.score.*", "crapkit.score.x_crap__mutmut_*"]
+    assert (call["env"]["CRAPKIT_ACCURACY_TIER"], call["children"], call["budget"]) == ("push", 3, None)
+    saved = _saved("weekly-2.json")
+    assert (saved["kind"], saved["shard"], saved["of"], saved["modules"]) == (
+        "weekly", 2, 2, ["src/crapkit/score.py"])
+    assert saved["results"] == [canary.__dict__]
+
+
+@pytest.mark.process
+def test_tools_mutates_every_target_here_and_writes_its_receipt(tmp_path, monkeypatch):
+    targets = {"tools/accuracy/retro.py": ("t",), "tests/accuracy/kit/exact.py": ("u",)}
+    monkeypatch.setattr(mutation, "present", lambda wanted: targets)
+    recorder = _commands_on(tmp_path, monkeypatch, [_crap(KEYS[0], "survived")])
+
+    assert mutation.main(["tools", "--max-children", "5"]) == 1
+
+    (call,) = recorder.calls
+    assert (call["where"], call["targets"], call["children"]) == (mutation.TOOLS_STAGE, targets, 5)
+    assert call["globs"] == ["tools.accuracy.retro.*", "accuracy.kit.exact.*"]
+    assert call["env"]["CRAPKIT_ACCURACY_COLLECT_ALL"] == "1"
+    saved = _saved("tools.json")
+    assert (saved["kind"], saved["modules"]) == ("tools", sorted(targets))
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("complete, code", [(True, 0), (False, 1)])
+def test_a_diff_run_mutates_the_changed_functions_and_says_when_its_cap_stopped_it(
+        tmp_path, monkeypatch, capsys, complete, code):
+    changed = [("src/crapkit/score.py", "crap")]
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
+    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: changed)
+    recorder = _commands_on(tmp_path, monkeypatch, [_crap(KEYS[0], "killed")], complete)
+
+    assert mutation.main(["diff", "--base", "b" * 40, "--cap-minutes", "2"]) == code
+
+    (call,) = recorder.calls
+    assert (call["where"], call["targets"], call["budget"]) == (
+        mutation.CALC_STAGE, mutation.calc_targets(["src/crapkit/score.py"]), 120.0)
+    assert call["globs"] == ["crapkit.score.x_crap__mutmut_*"]
+    saved = _saved(f"diff-{_saved_head()[:12]}.json")
+    assert (saved["base"], saved["functions"], saved["complete"]) == (
+        "b" * 40, [["src/crapkit/score.py", "crap"]], complete)
+    said = capsys.readouterr().out
+    assert ("incomplete: the 2-minute cap stopped the run" in said) == (not complete)
+
+
+def _saved_head() -> str:
+    return mutation._git(mutation.REPO, "rev-parse", "HEAD").strip()
+
+
+def test_a_diff_with_no_changed_function_starts_no_mutmut(monkeypatch):
+    monkeypatch.setattr(mutation, "staged_run", lambda *args, **kwargs: pytest.fail("ran mutmut"))
+
+    assert mutation._run_changed([], 60) == ([], True)
+
+
+# --- staged_run over a stage whose launcher plays mutmut ------------------------------------------
+
+STAGE_LAUNCHER = FAKE_LAUNCHER.replace(
+    'if sys.argv[1:2] == ["diffs"]:',
+    'if sys.argv[1:2] == ["run"] and "--sleep" in open("mode.txt").read():\n'
+    '    import time; time.sleep(30)\n'
+    'if sys.argv[1:2] == ["diffs"]:', 1)
+
+
+def _fake_stage(tmp_path: Path, monkeypatch, mode: str = "") -> tuple[Path, list]:
+    stage = _mutmut_tree(tmp_path / "stage")
+    (stage / mutation.LAUNCHER_FILE).write_text(STAGE_LAUNCHER, encoding="utf-8")
+    (stage / "mode.txt").write_text(mode, encoding="utf-8")
+    prepared = []
+    monkeypatch.setattr(mutation, "_prepare_stage",
+                        lambda targets, where: prepared.append((targets, where)) or stage)
+    return stage, prepared
+
+
+def test_staged_run_runs_mutmut_in_the_stage_and_reruns_its_timeouts(tmp_path, monkeypatch):
+    stage, prepared = _fake_stage(tmp_path, monkeypatch)
+
+    rows, complete = mutation.staged_run(Path("w"), {"t": ()}, ["crapkit.score.*"],
+                                         dict(mutation.os.environ), 3)
+
+    assert complete and prepared == [({"t": ()}, Path("w"))]
+    assert _calls(stage)[0] == ["run", "--max-children", "3", "crapkit.score.*"]
+    assert ["run", "--max-children", "1", "crapkit.score.x_crap__mutmut_4"] in _calls(stage)
+    assert {row.name: row.status for row in rows}["crapkit.score.x_crap__mutmut_4"] == "killed"
+
+
+def test_a_run_its_budget_stopped_is_incomplete_and_reruns_nothing(tmp_path, monkeypatch):
+    stage, _ = _fake_stage(tmp_path, monkeypatch, "--sleep")
+
+    rows, complete = mutation.staged_run(Path("w"), {}, ["crapkit.score.*"],
+                                         dict(mutation.os.environ), 2, budget=1)
+
+    assert not complete
+    assert [call[0] for call in _calls(stage)] == ["run", "diffs"]
+    assert {row.name: row.status for row in rows}["crapkit.score.x_crap__mutmut_4"] == "timeout"
+
+
+# --- the stage itself -----------------------------------------------------------------------------
+
+@pytest.mark.process
+def test_a_stage_is_a_worktree_of_head_kept_and_moved_to_each_new_head(tmp_path):
+    repo, first = _repo_with_a_commit(tmp_path)
+    stage = tmp_path / "deep" / "stage"
+
+    assert mutation._stage(repo, stage) == stage
+    assert mutation._git(stage, "rev-parse", "HEAD").strip() == first
+    (repo / "m.py").write_text("a = 2\n", encoding="utf-8")
+    mutation._git(repo, "commit", "-qam", "second")
+    (stage / "mutants").mkdir()
+
+    mutation._stage(repo, stage)
+
+    assert mutation._git(stage, "rev-parse", "HEAD").strip() == _head_of(repo)
+    assert (stage / "mutants").is_dir()
+
+
+def _head_of(repo: Path) -> str:
+    return mutation._git(repo, "rev-parse", "HEAD").strip()
+
+
+@pytest.mark.process
+def test_a_prepared_stage_holds_its_table_and_the_launcher(tmp_path, monkeypatch):
+    (tmp_path / "repo").mkdir()
+    repo = _dated_repo(tmp_path / "repo", [("2026-09-18T12:00:00Z", "a = 1\n")])
+    (repo / "pyproject.toml").write_text('[project]\nname = "x"\n\n[tool.mutmut]\nold = 1\n',
+                                         encoding="utf-8")
+    mutation._git(repo, "add", "pyproject.toml")
+    mutation._git(repo, "commit", "-qm", "pyproject")
+    monkeypatch.setattr(mutation, "REPO", repo)
+
+    stage = mutation._prepare_stage({"m.py": ("tests/t.py",)}, Path("stage-here"))
+
+    assert stage == repo / "stage-here"
+    table = mutation.tomllib.loads((stage / "pyproject.toml").read_text(encoding="utf-8"))
+    assert table["project"] == {"name": "x"}
+    assert table["tool"]["mutmut"]["source_paths"] == ["m.py"]
+    assert table["tool"]["mutmut"]["also_copy"] == ["m.py", "pyproject.toml"]
+    assert (stage / mutation.LAUNCHER_FILE).read_text(encoding="utf-8") == mutation.LAUNCHER

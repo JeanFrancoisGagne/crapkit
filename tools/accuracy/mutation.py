@@ -68,6 +68,8 @@ import time
 import tomllib
 
 REPO = Path(__file__).resolve().parents[2]
+# calc_modules reads the calcs.tsv tables through the kit (accuracy.kit.calcs).
+sys.path.insert(0, str(REPO / "tests"))
 TABLES = REPO / "tests" / "accuracy" / "suite_strength" / "mutation"
 RECEIPTS = Path(".crapkit") / "accuracy" / "mutation"
 SURVIVOR_COLUMNS = ("module", "function", "diff_sha256", "reason", "added")
@@ -407,9 +409,14 @@ def last_weekly(now: datetime.datetime) -> datetime.datetime:
     return start if start <= now else start - datetime.timedelta(days=7)
 
 
+def captured(argv: list, cwd: Path, stdin: str | None = None) -> subprocess.CompletedProcess:
+    """argv's output as text; a byte that is not UTF-8 reads as U+FFFD, never an error."""
+    return subprocess.run(argv, cwd=cwd, input=stdin, capture_output=True, encoding="utf-8",
+                          errors="replace")
+
+
 def _git(repo: Path, *args: str) -> str:
-    done = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace")
+    done = captured(["git", *args], repo)
     if done.returncode != 0:
         raise MutationError(f"git {' '.join(args)}: {done.stderr.strip()}")
     return done.stdout
@@ -548,7 +555,6 @@ def _outcome(function, args):
 
 def calc_modules(repo: Path = REPO) -> list[str]:
     """Every module a calcs.tsv row names, the paths mutmut mutates."""
-    sys.path.insert(0, str(repo / "tests"))
     from accuracy.kit import calcs
     return calcs.modules(calcs.load(repo / "tests" / "accuracy"))
 
@@ -588,8 +594,7 @@ def _diffs(repo: Path, names: list[str], mutmut: tuple) -> dict[str, str]:
     Python once each, about a second apiece, and a run can leave thousands alive."""
     if not names:
         return {}
-    done = subprocess.run([sys.executable, *mutmut, "diffs"], cwd=repo, input="\n".join(names),
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    done = captured([sys.executable, *mutmut, "diffs"], repo, "\n".join(names))
     found = parse_diffs(done.stdout)
     missing = [name for name in names if not found.get(name)]
     if missing:
