@@ -87,7 +87,7 @@ install_one() {
         PSComplexity) ps_module PSComplexity ;;
         clang-tidy) clang_tidy ;;
         oclint) oclint ;;
-        swiftlint) unzip -o -q "$(fetch swiftlint)" -d /opt/swiftlint && ln -sf /opt/swiftlint/swiftlint "$BIN/swiftlint" ;;
+        swiftlint) swiftlint ;;
         shellmetrics) install -m 755 "$(fetch shellmetrics)" "$(pin shellmetrics path)" ;;
         *) echo "install-tools: no installer for $1" >&2; exit 1 ;;
     esac
@@ -136,6 +136,14 @@ ps_module() {  # a PowerShell Gallery .nupkg is a zip of the module plus package
     rm -rf "$dest/_rels" "$dest/package" "$dest/[Content_Types].xml" "$dest/$1.nuspec"
 }
 
+swiftlint() {
+    unzip -o -q "$(fetch swiftlint)" -d /opt/swiftlint
+    # The Linux release carries no SourceKit, and SwiftLint stops at its first
+    # SourceKit call unless told to skip the rules that need one. Its syntax
+    # rules, cyclomatic_complexity among them, need none.
+    wrap swiftlint env SWIFTLINT_DISABLE_SOURCEKIT=1 /opt/swiftlint/swiftlint
+}
+
 clang_tidy() {  # only clang-tidy, its runner, its builtin headers and the shared libraries it loads
     mkdir -p /opt/llvm
     archive=$(fetch clang-tidy)
@@ -151,8 +159,14 @@ clang_tidy() {  # only clang-tidy, its runner, its builtin headers and the share
 
 oclint() {  # OCLint publishes no Linux binary for 26.02: build it against LLVM 21, as its CI does
     unpack "$(fetch oclint)" /opt/oclint-src
+    # Each rule is a shared library that dlopen hands the clang, LLVM and
+    # RuleSet symbols the oclint binary links statically, so the binary must
+    # export them. OCLint's cmake_minimum_required(VERSION 3.20) turns on policy
+    # CMP0065, under which CMake no longer links an executable with -rdynamic;
+    # without it no rule loads (undefined llvm::DisableABIBreakingChecks).
+    # cmake reads LDFLAGS into the executable's link flags when it configures.
     (cd /opt/oclint-src/oclint-scripts \
-        && ./build -release -no-ninja -j "$(nproc)" -llvm-root=/usr/lib/llvm-21 \
+        && LDFLAGS=-rdynamic ./build -release -no-ninja -j "$(nproc)" -llvm-root=/usr/lib/llvm-21 \
         && ./bundle -release -llvm-root=/usr/lib/llvm-21)
     mv /opt/oclint-src/build/oclint-release /opt/oclint
     mkdir -p /opt/oclint/runtime
