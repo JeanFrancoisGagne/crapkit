@@ -1,6 +1,6 @@
 """Every rule for how bytes crapkit did not write become text, and OS text
-becomes bytes. No other module spells a decode policy: each reader names its
-kind here.
+becomes bytes. A reader names its kind here instead of spelling a decode
+policy; the last paragraph lists the only exceptions.
 
 Stdlib and `errors` only, on purpose. The advisory hook, whose module scope
 must never import the snapshot store, `override`, a core module that imports no
@@ -40,9 +40,10 @@ UTF-16 file was a traceback instead of a sentence.
   POSIX. `os_bytes` turns it back into the bytes the OS meant, for a hash or a
   lock key. `os_text` makes it text a store or a file can hold.
 
-A path git names is another kind, and `gitpaths` owns it. Any other module
-that spells an errors policy is named, with the seam that moves it, in
-test_repo_text's guard, and a new one fails it.
+A path git names is another kind, and `gitpaths` owns it. The older sites that
+still spell a decode policy (the advisory hook's reads of git's answer,
+crapkit's own METADATA read, the console streams) are each named in
+test_repo_text's guard with the seam that moves them, and a new one fails it.
 """
 from __future__ import annotations
 
