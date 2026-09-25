@@ -210,8 +210,21 @@ def rewrite_goldens() -> list[str]:
     return moved
 
 
+def rewrite_printed() -> list[str]:
+    """This OS's printed-commands golden; the other OS's file stays as it is."""
+    from accuracy.corpus_goldens import printed_runs
+    with tempfile.TemporaryDirectory(prefix="crapkit-printed-",
+                                     ignore_cleanup_errors=True) as scratch:
+        text = printed_runs.printed_text(printed_runs.measure(Path(scratch)))
+    golden = printed_runs.golden_path()
+    old = golden.read_bytes().decode("utf-8") if golden.is_file() else None
+    golden.parent.mkdir(parents=True, exist_ok=True)
+    golden.write_bytes(text.encode("utf-8"))
+    return [] if old == text else [f"printed/{golden.name}"]
+
+
 def _report_goldens() -> list[str]:
-    moved = rewrite_goldens()
+    moved = rewrite_goldens() + rewrite_printed()
     if not moved:
         return ["no golden moved"]
     return [f"moved {name}" for name in moved] + [f"declare what moved with `{DECLARE}`"]
