@@ -1468,3 +1468,36 @@ def test_the_analysis_version_is_read_past_a_tuple_assignment():
     tree = seeds.tool().DictTree({cc.ANALYZE: b"a, b = 1, 2\nANALYSIS_VERSION = 12\n"})
 
     assert cc.analysis_version(tree) == "12"
+
+
+# The plan's change-control section lists what goldens.lock holds: the goldens,
+# every rulings, hand, probe, ground-truth, equivalence and definitions table, the
+# retro probes, and every oracle and adapter. Near misses stay out.
+LOCK_CASES = {
+    "tests/accuracy/corpus_goldens/goldens/small/scored.tsv": True,
+    "tests/accuracy/corpus_goldens/goldens/requests/surfaces/worklist.json": True,
+    "tests/accuracy/score_model/rulings.tsv": True,
+    "tests/accuracy/score_model/hand_score.tsv": True,
+    "tests/accuracy/analysis_oracles/probes/py/probes.tsv": True,
+    "tests/accuracy/coverage_oracles/probes/ts/ground_truth.tsv": True,
+    "tests/accuracy/analysis_oracles/equivalence.tsv": True,
+    "tests/accuracy/definitions/definitions.tsv": True,
+    "tests/accuracy/suite_strength/retro/probes/R97.py": True,
+    "tests/accuracy/analysis_oracles/oracles/ts_functions.cjs": True,
+    "tests/accuracy/history_oracles/oracles/git_walk.py": True,
+    "tests/accuracy/score_model/calcs.tsv": False,
+    "tests/accuracy/score_model/retro.tsv": False,
+    "tests/accuracy/score_model/test_crap.py": False,
+    "tests/accuracy/change_control/CHANGES.tsv": False,
+    "tests/accuracy/analysis_oracles/probes/py/sample.py": False,
+    "tests/accuracy/analysis_oracles/oracles/__pycache__/git_walk.cpython-312.pyc": False,
+    "tests/accuracy/suite_strength/retro/probes/helper.py": False,
+    "src/crapkit/score.py": False,
+}
+
+
+def test_the_lock_holds_exactly_the_plan_s_expected_value_files():
+    tree = seeds.tool().DictTree({path: b"x\n" for path in LOCK_CASES})
+
+    assert sorted(cc.lockable(tree)) == sorted(path for path, locked in LOCK_CASES.items()
+                                               if locked)
