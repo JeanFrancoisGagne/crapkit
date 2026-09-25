@@ -76,6 +76,13 @@
   1; and `next-item --exclude` and MCP `get_next_item` handed out the
   directory they were told to skip as `pkg\legacy`, `./pkg/legacy` or `PKG/Legacy`.
   `--help` for each file argument and for `--exclude` names the spellings it reads.
+- The flags that write or open a file read their path the way a file argument does:
+  `--export`, `--sarif`, `--emit-baseline`, `report --out`, `verify --baseline-tsv`,
+  `inventory --db` and `doctor --plugin-root`, and the `CLAUDE_CONFIG_DIR` and
+  `CRAPKIT_RESOURCE_DIR` variables. On Windows `inventory --export /c/Users/me/x.tsv`
+  exited 0 and wrote `C:\c\Users\me\x.tsv`, and a baseline, database or plugin
+  directory typed `/c/...` or `/mnt/c/...` was looked for under `C:\c` or `C:\mnt`.
+  `--help` for each flag names the spellings.
 - On Windows a root on a network share exits 3 before crapkit starts any child: `--repo
   \\server\share\repo`, a session standing in a share, and a `\\wsl.localhost\...`
   checkout, `init` included. The line says to map the share to a drive letter

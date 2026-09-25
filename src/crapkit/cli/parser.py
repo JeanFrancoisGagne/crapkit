@@ -181,6 +181,9 @@ _WHERE = (" (repo-relative or absolute; ./src/a.py, SRC/a.py where the disk igno
 _EXCLUDE_HELP = ("skip items whose path or function name contains this (repeatable); a path"
                  " fragment reads as git spells it: ./pkg/legacy, PKG/Legacy where the disk"
                  " ignores case, and pkg\\legacy on Windows all skip pkg/legacy")
+# A file a writer flag writes or a flag opens is typed like any path
+# (repopath.typed_path): Git Bash and WSL spellings name their drive.
+_TYPED = "; on Windows /c/... and /mnt/c/... name the drive"
 _REPO_FLAG = {"default": None,
               "help": "crapkit root (default: the nearest crapkit.toml at or above cwd)"}
 
@@ -195,8 +198,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     inv = sub.add_parser("inventory", help="build the per-function complexity inventory snapshot")
     inv.add_argument("--repo", **_REPO_FLAG)
-    inv.add_argument("--db", default=None, help="snapshot database path (default: <repo>/.crapkit/crap.sqlite)")
-    inv.add_argument("--export", default=None, help="also write a canonical TSV export, relative to the repo")
+    inv.add_argument("--db", default=None,
+                     help="snapshot database path (default: <repo>/.crapkit/crap.sqlite)" + _TYPED)
+    inv.add_argument("--export", default=None,
+                     help="also write a canonical TSV export, relative to the repo or absolute" + _TYPED)
     inv.add_argument("--json", action="store_true", help="print the run summary as JSON")
     inv.set_defaults(func=_Handler("scoring", "cmd_inventory"))
 
@@ -209,9 +214,11 @@ def build_parser() -> argparse.ArgumentParser:
     cov.add_argument("--reuse-unchanged", action="store_true",
                      help="reuse a lane whose stamp proves nothing it reads changed (the same "
                           "clean HEAD, or no change under its declared inputs); rerun the rest")
-    cov.add_argument("--export", default=None, help="write scored TSV export, relative to the repo")
+    cov.add_argument("--export", default=None,
+                     help="write scored TSV export, relative to the repo or absolute" + _TYPED)
     cov.add_argument("--sarif", default=None, metavar="PATH",
-                     help="write over-target findings as SARIF 2.1.0, relative to the repo")
+                     help="write over-target findings as SARIF 2.1.0, relative to the repo or "
+                          "absolute" + _TYPED)
     cov.add_argument("--github", action="store_true",
                      help="print findings as GitHub workflow-command annotations")
     cov.add_argument("--json", action="store_true", help="print the run summary as JSON")
@@ -312,7 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
     rep.add_argument("--out", default=".crapkit/report.html", metavar="PATH",
                      help="where to write the page: repo-relative, or an absolute path "
                           "you name (default: .crapkit/report.html); the path is "
-                          "printed on stdout")
+                          "printed on stdout" + _TYPED)
     rep.set_defaults(func=_Handler("reports", "cmd_report"))
 
     tsc = sub.add_parser("test-scoped", help="run the configured isolated test command for the files' scope")
@@ -330,9 +337,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="measure the diff from merge-base(REF, HEAD); the baseline run must "
                              "then sit at or behind that fork point")
     picked.add_argument("--baseline-tsv", default=None, metavar="PATH",
-                        help="read the baseline from a TSV written by --emit-baseline, not the store")
+                        help="read the baseline from a TSV written by --emit-baseline, not the "
+                             "store; relative to the repo or absolute" + _TYPED)
     ver.add_argument("--emit-baseline", default=None, metavar="PATH",
-                     help="also write the baseline run as a portable TSV, relative to the repo")
+                     help="also write the baseline run as a portable TSV, relative to the repo "
+                          "or absolute" + _TYPED)
     ver.add_argument("--reuse-artifacts", action="store_true", help="skip lane commands, parse existing artifacts")
     ver.add_argument("--reuse-unchanged", action="store_true",
                      help="reuse a lane whose stamp proves nothing it reads changed (the same "
@@ -342,7 +351,8 @@ def build_parser() -> argparse.ArgumentParser:
     ver.add_argument("--no-tighten", action="store_true",
                      help="pass the verdict without rewriting the ratchet; marks stay where they are")
     ver.add_argument("--sarif", default=None, metavar="PATH",
-                     help="write gate/ratchet findings as SARIF 2.1.0, relative to the repo")
+                     help="write gate/ratchet findings as SARIF 2.1.0, relative to the repo or "
+                          "absolute" + _TYPED)
     ver.add_argument("--github", action="store_true",
                      help="print findings as GitHub workflow-command annotations")
     ver.add_argument("--json", action="store_true", help="print the verdict as JSON")
@@ -395,7 +405,7 @@ def build_parser() -> argparse.ArgumentParser:
                           "disagreement, silent when they agree. PATH is the plugin root or "
                           "any directory above it, ~/.claude included (the newest crapkit "
                           "install under it wins); with no PATH, the newest crapkit install "
-                          "in Claude Code's plugin cache")
+                          "in Claude Code's plugin cache" + _TYPED)
     doc.set_defaults(func=_Handler("admin", "cmd_doctor"))
 
     rat = sub.add_parser("ratchet", help="manage the committed marks file: seed new debt, prune gone code")

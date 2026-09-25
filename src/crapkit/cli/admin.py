@@ -18,6 +18,7 @@ from ..doctor import Finding
 from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
+from ..repopath import typed_path
 from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
@@ -1425,7 +1426,7 @@ def _newest_root(roots: list[Path]) -> Path | None:
 def _plugins_dir() -> Path:
     """Where Claude Code keeps plugins: under CLAUDE_CONFIG_DIR, else ~/.claude."""
     base = os.environ.get("CLAUDE_CONFIG_DIR")
-    return (Path(base) if base else Path.home() / ".claude") / "plugins"
+    return (typed_path(base) if base else Path.home() / ".claude") / "plugins"
 
 
 def _recorded_roots(recorded) -> list[Path]:
@@ -1452,7 +1453,7 @@ def _resolve_plugin_root(arg: str) -> tuple[Path | None, str]:
     the handshake names the missing file at the path the operator typed.
     """
     if arg:
-        under = Path(arg)
+        under = typed_path(arg)
         return _newest_root(_manifest_roots(under)) or under, str(under)
     plugins = _plugins_dir()
     return _newest_root(_installed_crapkit_roots(plugins)), str(plugins)

@@ -94,8 +94,12 @@ in this checkout.
 Tracked Git paths preserve whitespace and Unicode separators. Their bytes must
 decode as UTF-8; invalid filename bytes are refused. Scope-prefix normalization
 below applies to configuration strings, not to the filenames Git reports.
-Output flags such as `--export`, `--sarif` and `--emit-baseline` are project-relative;
-an absolute output path explicitly selects a destination outside it.
+Output flags (`--export`, `--sarif`, `--emit-baseline` and `report --out`) are
+project-relative; an absolute output path selects a destination outside the project.
+Those flags, `verify --baseline-tsv`, `inventory --db`, `doctor --plugin-root` and the
+`CLAUDE_CONFIG_DIR` and `CRAPKIT_RESOURCE_DIR` variables read a Git Bash, WSL,
+extended-length or admin-share path as the drive it names, by the rows above. A
+relative `inventory --db` path is read from the working directory.
 
 Parsed source diffs use Crapkit's own Git settings. Display preferences, external
 diff commands and textconv do not change attribution. A supported source file

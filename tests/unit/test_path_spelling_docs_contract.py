@@ -28,7 +28,7 @@ from crapkit.repopath import file_separators, native
 from crapkit.universe import exclude_matcher
 from crapkit.verify import dirty_failure_ids
 
-from path_spellings import need_case_insensitive, only_posix, only_windows
+from path_spellings import WINDOWS, need_case_insensitive, only_posix, only_windows
 
 ROOT = Path(__file__).resolve().parents[2]
 SCOPE = "[[scope]]\nname = 'api'\npaths = ['api']\nlanguages = ['python']\n"
@@ -151,6 +151,26 @@ def test_the_file_paths_table_names_each_windows_alias_and_its_drive_spelling(ra
     assert f"`{drive}`" in section, drive
 
     assert ntpath.normpath(native(raw, windows=True)) == drive
+
+
+TYPED_FLAGS = ["`--export`", "`--sarif`", "`--emit-baseline`", "`report --out`",
+               "`verify --baseline-tsv`", "`inventory --db`", "`doctor --plugin-root`",
+               "`CLAUDE_CONFIG_DIR`", "`CRAPKIT_RESOURCE_DIR`"]
+
+
+@pytest.mark.parametrize("flag", TYPED_FLAGS)
+def test_the_file_paths_section_says_each_path_flag_reads_the_windows_aliases(tmp_path, flag):
+    r"""`--export /c/...` wrote into a new C:\c tree. The page names each flag
+    and variable that reads a typed path; the writer reads the alias it names."""
+    section = _prose(_section("docs/configuration.md", "## File paths and root discovery"))
+
+    assert flag in section
+    assert ("read a Git Bash, WSL, extended-length or admin-share path as the drive it "
+            "names") in section
+    if WINDOWS:
+        dest = tmp_path.resolve() / "x.tsv"
+        assert _shared._repo_out_path(tmp_path, "/mnt/" + dest.drive[0].lower()
+                                      + dest.as_posix()[2:]) == dest
 
 
 def test_the_file_paths_table_names_the_network_share_refusal_and_the_mapped_drive():

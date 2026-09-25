@@ -125,16 +125,18 @@ def typed(raw: str, root: str | os.PathLike,
     no scope, no ratchet key and no stored row, and `rescore --gate` judged
     nothing and passed."""
     path = file_separators(native(raw)) if _WINDOWS else raw
-    if _rooted(path):
+    if rooted(path):
         return inside(path, root)
     if stand is not None and _below(stand, root):
         return inside(os.path.join(stand, path), root)
     return disk_spelling(root, posixpath.normpath(path))
 
 
-def _rooted(path: str) -> bool:
-    """A rooted path with no drive (`/tmp/a.py` on Windows) counts too: it names
-    the current drive's root, not a place under the repo."""
+def rooted(path: str | os.PathLike) -> bool:
+    """Does a typed path name its place from a root, not from the directory it
+    is read against? A rooted path with no drive (`/tmp/a.py` on Windows)
+    counts too: it names the current drive's root, not a place under the repo.
+    `typed` asks it of a file argument, and the writer flags of an output path."""
     named = Path(path)
     return named.is_absolute() or bool(named.root)
 

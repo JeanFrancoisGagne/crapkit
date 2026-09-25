@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
+from ..repopath import typed_path
 from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
@@ -134,7 +135,7 @@ def _tsv_baseline(root: Path, rel: str) -> dict:
     shrinking suite nor forgive a failure the baseline run already had."""
     from ..verify import parse_baseline_tsv
 
-    path = root / rel
+    path = typed_path(rel, root)
     if not path.is_file():
         raise CrapkitError(f"no baseline file at {path} — write one with `verify --emit-baseline`")
     try:

@@ -15,6 +15,7 @@ from ..cache import merged_cache
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..gitio import GitFacts, ls_files
 from ..invocation import _self
+from ..repopath import typed_path
 from ..snapshot import build_inventory_rows, tsv_lines
 from ..store import SnapshotStore
 from ..universe import assign_files, scan_files
@@ -114,7 +115,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     commit, rows, corpus, cache_hits, tool_versions = _build_inventory(root, cfg)
     state_dir = root / ".crapkit"
 
-    db_path = Path(args.db) if args.db else state_dir / "crap.sqlite"
+    db_path = typed_path(args.db) if args.db else state_dir / "crap.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = SnapshotStore(db_path)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=rows, kind="inventory")

@@ -80,3 +80,44 @@ def test_the_exclude_fragments_the_help_names_read_as_git_s_path(typed):
 @pytest.mark.skipif(os.name != "nt", reason="a backslash is a separator on Windows only")
 def test_the_backslash_fragment_the_help_names_reads_as_git_s_path_on_windows():
     assert path_fragment("pkg\\legacy", False).path == "pkg/legacy"
+
+
+TYPED = "on Windows /c/... and /mnt/c/... name the drive"
+
+# command -> the flags whose PATH it writes or opens (repopath.typed_path)
+PATH_FLAGS = {
+    "inventory": ["--db", "--export"],
+    "coverage": ["--export", "--sarif"],
+    "report": ["--out"],
+    "verify": ["--baseline-tsv", "--emit-baseline", "--sarif"],
+    "doctor": ["--plugin-root"],
+}
+
+
+def _flag_help(command: str, flag: str) -> str:
+    import argparse
+
+    from crapkit.cli.parser import build_parser
+
+    subs = next(a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+    return next(a.help for a in subs.choices[command]._actions if flag in a.option_strings)
+
+
+@pytest.mark.parametrize("command, flag", [(c, f) for c, flags in PATH_FLAGS.items()
+                                           for f in flags])
+def test_each_path_flag_help_names_the_drive_spellings_it_reads(capsys, command, flag):
+    r"""`--export /c/...` wrote into a new C:\c tree while every file argument
+    read that spelling as its drive; the flags now read it the same way."""
+    assert TYPED in _flag_help(command, flag)
+    assert TYPED in _help(capsys, command), "and --help prints it"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Git Bash and WSL spellings name a drive on Windows")
+def test_the_drive_spellings_the_flag_help_names_are_what_a_writer_opens(tmp_path):
+    from crapkit.cli._shared import _repo_out_path
+
+    dest = tmp_path.resolve() / "x.tsv"
+    msys = "/" + dest.drive[0].lower() + dest.as_posix()[2:]
+
+    assert _repo_out_path(tmp_path, msys) == dest
+    assert _repo_out_path(tmp_path, "/mnt" + msys) == dest

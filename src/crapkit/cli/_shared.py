@@ -14,7 +14,7 @@ from pathlib import Path
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
-from ..repopath import on_a_share, typed, typed_path
+from ..repopath import on_a_share, rooted, typed, typed_path
 from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
@@ -150,15 +150,8 @@ def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) ->
     return rel
 
 
-def _is_rooted(path: str) -> bool:
-    """A rooted path with no drive (`/tmp/a.py` on Windows) counts too: it names
-    the current drive's root, not a place under the repo."""
-    named = Path(path)
-    return named.is_absolute() or bool(named.root)
-
-
 def _repo_out_path(root: Path, out: str) -> Path:
-    """Where a writer flag puts its file, with the directory to hold it.
+    r"""Where a writer flag puts its file, with the directory to hold it.
 
     `report --out` created a missing parent; `--export`, `--sarif` and
     `--emit-baseline` opened the path straight and died on FileNotFoundError
@@ -168,12 +161,19 @@ def _repo_out_path(root: Path, out: str) -> Path:
     is repo-relative and may not climb out of the tree; an absolute one is the
     caller naming a destination on purpose. `report --out` is the rule's origin
     and now reads it from here, so the four writers cannot drift.
+
+    The path is typed, so repopath's typed entry reads it: on Windows Git
+    Bash's `/c/...` and WSL's `/mnt/c/...` name their drive. `Path(out)` read
+    `/c/Users/...` as `C:\c\Users\...` and wrote the file into a new tree there.
     """
-    rooted = _is_rooted(out)
-    path = Path(out) if rooted else (root / out).resolve()
-    if not rooted and root.resolve() not in path.parents:
-        raise ConfigError(f"{out!r} is repo-relative and climbs out of {root}; "
-                          "pass an absolute path to write outside it")
+    named = typed_path(out)
+    if rooted(named):
+        path = named
+    else:
+        path = (root / named).resolve()
+        if root.resolve() not in path.parents:
+            raise ConfigError(f"{out!r} is repo-relative and climbs out of {root}; "
+                              "pass an absolute path to write outside it")
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
