@@ -142,6 +142,67 @@
   counts against the function that holds its `line`, where it attached to none. One with
   neither `loc.start.line` nor `line` exits 5 naming the file and the branch id, where
   its branches counted against no function.
+- A coverage artifact that lacks a count exits 5 naming the file and the function, where
+  the reader took the absent count for a zero and the score moved with nothing said. In
+  istanbul that is a `fnMap`, `statementMap` or `branchMap` id with no counter in `f`, `s`
+  or `b`, a whole `s` or `f` record left out included: a dropped branch counter flipped a
+  function from `add-tests` to `ok`. In coverage.py it is one count of a pair without its
+  partner (`num_statements without covered_lines`), a summary with neither statement nor
+  branch counts, or, in a report that measures branches, a function with no branch
+  counts, which scored from its statements. A report with no `meta` is judged by the
+  counts its functions carry, where it said its term was statement-based while scoring
+  on branches. Each refusal says to regenerate the report.
+
+### Text that is not UTF-8
+
+A commit, a file name, a report or an MCP frame in bytes that are not UTF-8 no longer ends
+a command in a traceback.
+
+- An author name, subject, body or patch line a commit stored in bytes that are not UTF-8
+  reads as U+FFFD, in every command that reads churn (`worklist`, `next-item`, `brief`,
+  `coupling` and the MCP tools) and in `explain --history`. One such commit inside the
+  12-month window stopped every churn reader with a UnicodeDecodeError, and on Windows
+  `explain --history` died with an AttributeError. Every git crapkit starts passes
+  `-c i18n.logOutputEncoding=UTF-8`, so in a repo that sets `i18n.commitEncoding` or
+  `i18n.logOutputEncoding` a name stored as UTF-8 comes back as stored. A CR inside an
+  author name no longer cuts the commit off its dates. A past revision of the marks file
+  saved in cp1252 or UTF-16 no longer stops `ratchet report`, a `core.hooksPath` holding a
+  Latin-1 byte no longer ends `doctor`, and `verify --base` on such a ref gets its exit-4
+  sentence.
+- `mutate` builds and resets its worktree pool at a HEAD whose subject is not UTF-8.
+  `git worktree add` and a kept tree's `checkout --force` print that subject, and the
+  strict read stopped the run before any mutant; on Linux a leftover file named in
+  Latin-1 did the same through `clean`.
+- A file git names in bytes that are not UTF-8, such as a Latin-1 name made on Linux and
+  kept in a Windows clone's index, is left out and named once on stderr: `crapkit: left out
+  NAME: git names it in bytes that are not UTF-8, and crapkit reads every path as UTF-8;
+  rename it (git mv) to have it read`. One such name anywhere in the tree ended `init`,
+  `inventory`, `doctor`, `coverage`, `verify` and the pre-commit gate with a
+  UnicodeDecodeError.
+- A path argument, an override reason (`CRAPKIT_OVERRIDE_REASON` or `verify --override`),
+  a host name or a checkout directory in bytes that are not UTF-8 no longer ends a command
+  with a UnicodeEncodeError. `explain` and `brief` answer with their sentence for a
+  missing file; an override sends its alert and stores all three audit records, where the
+  store write failed after the alert had gone out; a lane run on such a host or under such
+  a directory takes its output lock.
+- A junit report declared ISO-8859-1 or written as UTF-16 is read as it declares, in
+  `coverage`, `verify`, `verify --reuse-artifacts`, the flake retest and `doctor --tune`.
+  Each ended with a UnicodeDecodeError. A report with no declaration is read as UTF-8, so a
+  raw Latin-1 byte there is an unparseable report: a refusal for a run and a warning for a
+  reuse.
+- The MCP server reads on past a stdin frame holding a byte that is not UTF-8, which ended
+  the session with exit 0 and nothing on stderr, and answers an `initialize` sent behind a
+  UTF-8 byte-order mark.
+- The Linux measurement owner reads every `/proc/<pid>/stat` as bytes, so a process
+  anywhere on the host named in Latin-1, or a UTF-8 name the kernel cut mid-character, no
+  longer stops `coverage`, `verify`, `test-scoped`, `mutate` and the MCP tools with
+  `measurement owner stopped before confirming ownership`.
+- A source file that opens with a UTF-16 byte-order mark, as PowerShell 5.1's `Out-File`
+  and the ISE save it, scores its functions. `inventory` read it as empty, the pre-commit
+  gate passed a ccn-8 function in it, and the advisory hook said nothing. `mutate` writes a
+  mutant back in the file's own encoding: in a cp1252 or Latin-1 file every accented byte
+  outside the mutated line became EF BF BD, and 2 of 2 mutants read killed where the UTF-8
+  twin kills 0. `brief --json`'s `source` reads the file the way the scorer does.
 
 ## 0.8.0 — 2026-09-23
 
