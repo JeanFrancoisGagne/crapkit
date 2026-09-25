@@ -560,11 +560,19 @@ def _template(bugs: list[dict], packet: str, bug_id: str) -> dict:
     return (_rows_of(rows, bug_id, packet) or rows)[0]
 
 
+PLATFORM_SYNONYMS = {"all": "any"}  # several packets' retro.tsv spell every platform `all`
+
+
+def _platform(listed: dict) -> str:
+    named = listed.get("platform") or ""
+    return PLATFORM_SYNONYMS.get(named, named)
+
+
 def _bug_for(bugs: list[dict], packet: str, listed: dict) -> dict:
     base = _template(bugs, packet, listed["id"])
     same = base["packet"] == packet and base["test"] == listed["test"]
     return {**base, "packet": packet, "test": listed["test"], "probe": base["probe"] if same else "",
-            "platform": listed.get("platform") or base["platform"]}
+            "platform": _platform(listed) or base["platform"]}
 
 
 def synced_bugs(bugs: list[dict], tables: dict[str, list[dict]]) -> list[dict]:

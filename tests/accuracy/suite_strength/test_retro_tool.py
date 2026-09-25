@@ -467,6 +467,16 @@ def test_sync_copies_another_packet_s_row_when_the_bug_is_new_to_this_one(tmp_pa
         ("p1", "calc R3", "any")]
 
 
+def test_a_packet_s_platform_all_syncs_as_any_and_replays_everywhere(tmp_path):
+    table = "id\ttest\tplatform\nR3\ttests/accuracy/p1/test_a.py::test_everywhere\tall\n"
+
+    synced = retro.synced_bugs(BUGS_BEFORE, retro.landed(_landed(tmp_path, table)))
+
+    row = next(row for row in synced if row["test"].endswith("test_everywhere"))
+    assert row["platform"] == "any"
+    assert retro.PLATFORMS[row["platform"]] == ""
+
+
 def test_sync_refuses_a_bug_bugs_tsv_does_not_know(tmp_path):
     table = "id\ttest\nR9\ttests/accuracy/p1/test_a.py::test_new\n"
 
