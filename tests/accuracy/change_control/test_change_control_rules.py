@@ -510,6 +510,60 @@ def test_without_the_counts_table_a_cov_cell_has_no_oracle():
     assert cc.counts_module() is not None or (judged.oracle, judged.value) == ("", "")
 
 
+# --- the row oracle: Python's ast on a function that appears or goes ---------------------------
+
+F11 = "\n\ndef f11(x):\n    return x\n"
+
+
+def _without_f11(tree: dict, source: bool) -> dict:
+    """f11's row gone from both goldens; with `source`, its def gone from src/a.py too."""
+    rows = [row for row in seeds.scored_rows() if row["long_name"] != "f11( x )"]
+    head = {**tree, seeds.SCORED: seeds.scored(rows), seeds.INVENTORY: seeds.inventory(rows)}
+    return seeds.replace(head, seeds.SOURCE, F11, "") if source else head
+
+
+def test_a_row_that_goes_moves_one_row_cell_per_golden_table():
+    cells = cc.moved_cells(_tree(BASE), _tree(_without_f11(BASE, source=False)))
+
+    assert [cell.key() for cell in cells] == [
+        (golden, "src/a.py", "f11", "row", "present", "absent")
+        for golden in (seeds.INVENTORY, seeds.SCORED)]
+
+
+@pytest.mark.parametrize("source, value", [(False, "present"), (True, "absent")])
+def test_ast_judges_a_row_that_goes_at_its_base_start_line(source, value):
+    """f11's def stands at line 54 of src/a.py (F_START): ast finds it there while
+    the source keeps it, and finds nothing once the source drops it too."""
+    head = _tree(_without_f11(BASE, source))
+    cell = cc.Cell(seeds.SCORED, "src/a.py", "f11", "row", "present", "absent")
+
+    judged = cc.judge(head, cell, _tree(BASE))
+
+    assert (judged.oracle, judged.value, judged.agrees) == ("ast", value, value == "absent")
+
+
+def test_ast_refuses_a_new_row_where_the_source_has_no_def_of_that_name():
+    """A row g at line 2, which is parse's `if not text:`: no def g starts there."""
+    rows = seeds.scored_rows()
+    rows.append({**rows[1], "long_name": "g( x )", "start": 2, "end": 3})
+    head = _tree({**BASE, seeds.SCORED: seeds.scored(rows), seeds.INVENTORY: seeds.inventory(rows)})
+
+    judged = cc.judge(head, cc.Cell(seeds.SCORED, "src/a.py", "g", "row", "absent", "present"))
+    kept = cc.judge(head, cc.Cell(seeds.SCORED, "src/a.py", "f11", "row", "absent", "present"))
+
+    assert (judged.oracle, judged.value, judged.agrees) == ("ast", "absent", False)
+    assert (kept.oracle, kept.value, kept.agrees) == ("ast", "present", True)
+
+
+def test_ast_answers_nothing_on_a_source_it_cannot_parse():
+    head = seeds.replace(_without_f11(BASE, source=False), seeds.SOURCE, "strict):", "strict)")
+    cell = cc.Cell(seeds.SCORED, "src/a.py", "f11", "row", "present", "absent")
+
+    judged = cc.judge(_tree(head), cell, _tree(BASE))
+
+    assert (judged.oracle, judged.value, judged.agrees) == ("", "", True)
+
+
 @pytest.mark.parametrize("text, oracle, hit", [
 
     ("radon", "radon", True), ("radon 6.0.1 cc_visit", "radon", True),
@@ -717,6 +771,39 @@ def test_a_declared_and_committed_move_passes_the_check(make_repo, oracle):
     code, verdict = cc.check(top, "HEAD~1", "HEAD", lizard=LIZARD)
     assert "7 golden cells moved, 7 judged by an oracle" in text
     assert "- parse's ccn moved. (accuracy change C3)" in text
+    assert code == 0, verdict
+
+
+@pytest.mark.process
+def test_declare_refuses_a_row_that_goes_while_its_def_stays(make_repo):
+    top = _working(make_repo, BASE, seeds.bump(_without_f11(BASE, source=False), "12"))
+
+    with pytest.raises(cc.ChangeControlError) as refused:
+        _declare(top, _request(calcs=(cc.SPAN,)))
+
+    text = str(refused.value)
+    assert "crapkit now says absent, ast says present at src/a.py:f11 (row)" in text
+    assert f"  {seeds.SCORED}\tsrc/a.py\tf11\trow\tpresent\tabsent\tast present" in text
+
+
+@pytest.mark.process
+def test_a_row_that_goes_with_its_def_is_declared_and_passes_the_check(make_repo):
+    """f11 leaves the corpus and both goldens: ast finds no def at line 54, so the
+    two row cells agree, and the check re-judges them against the base's rows."""
+    top = _working(make_repo, BASE, seeds.bump(_without_f11(BASE, source=True), "12"))
+
+    text = _declare(top, _request(kind="feature", calcs=(cc.SPAN,)))
+    tree = seeds.changelog({path: (top / path).read_text(encoding="utf-8")
+                            for path in cc.DirTree(top).paths()}, "C3")
+    (top / "CHANGELOG.md").write_bytes(tree["CHANGELOG.md"].encode("utf-8"))
+    repos.git(top, "add", "-A")
+    repos.git(top, "commit", "-q", "-m", "drop f11", date=repos.EPOCH + 120)
+
+    code, verdict = cc.check(top, "HEAD~1", "HEAD", lizard=LIZARD)
+    moved = cc.rows((top / cc.MOVED / "C3.moved.tsv").read_bytes())
+    assert "2 golden cells moved, 2 judged by an oracle" in text
+    assert {(row["column"], row["oracle"], row["oracle_value"]) for row in moved} == {
+        ("row", "ast", "absent")}
     assert code == 0, verdict
 
 

@@ -83,20 +83,22 @@ and session sets all measure the small corpus, and a set named after a
 [member.*] of corpus.toml measures that member.
 
 `declare` first rewrites the goldens with `python tools/accuracy/regenerate.py
-goldens` (the corpus packet's regenerator), then judges each moved cell against
-an outside oracle before it records anything: radon for Python ccn, complexipy
-for Python cognitive, ESLint's complexity rule (classic for ccn_std, modified
-for ccn_mod, the lower for ccn) and sonarjs's cognitive complexity for JS, TS
-and Vue (oracles/eslint_values.cjs), and kit.exact for CRAP from the row's own
-ccn and cov. A cell the oracle disagrees with stops the declare ("crapkit now
-says 9, radon says 7 at src/a.py:parse"), unless --against-oracle names a
-rulings row of that calc whose oracle cell names that oracle. A cell no oracle
-here answers (another language, or a start line the oracle finds no function
-at) is recorded with no oracle, and its packet's oracle checks judge it. When
-the metric digest moves, the running ANALYSIS_VERSION must be new to
+goldens` (the corpus packet's regenerator), then judges each moved cell against an
+outside oracle before it records anything: radon for Python ccn, complexipy for
+Python cognitive, ESLint's complexity rule (classic for ccn_std, modified for
+ccn_mod, the lower for ccn) and sonarjs's cognitive complexity for JS, TS and Vue
+(oracles/eslint_values.cjs), kit.exact for CRAP from the row's own ccn and cov,
+the coverage packet's counts table for cov, and Python's ast for a Python function
+row that appears or goes (a def of that name at the row's start line, read at the
+base for a row that goes). A cell the oracle disagrees with stops the declare
+("crapkit now says 9, radon says 7 at src/a.py:parse"), unless --against-oracle
+names a rulings row of that calc whose oracle cell names that oracle. A cell no
+oracle here answers (another language, or a start line the oracle finds no
+function at) is recorded with no oracle, and its packet's oracle checks judge it.
+When the metric digest moves, the running ANALYSIS_VERSION must be new to
 metric-digests.tsv (default A1: a move bumps it). A golden a fresh change already
-relocked belongs to that change, so a second declare in the same diff (a kind
-none for a refactor next to a fix) answers only for what is left.
+relocked belongs to that change, so a second declare in the same diff (a kind none
+for a refactor next to a fix) answers only for what is left.
 
 
 Exit codes: 0 when every rule holds, or with one skip line when --measured
@@ -720,6 +722,27 @@ def complexipy_cognitive(row: dict, source: str | None) -> str | None:
 
 
 
+def _python_defs(source: str) -> set[tuple[int, str]] | None:
+    """(line, name) of every def in a Python source; None when this interpreter's
+    ast cannot read it (a newer syntax)."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return None
+    return {(node.lineno, node.name) for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
+def ast_row(row: dict, source: str | None) -> str | None:
+    """'present' when ast finds a def of the row's name at the row's start line,
+    else 'absent': whether a Python function row should exist at all."""
+    found = _python_defs(source) if source is not None else None
+    if found is None:
+        return None
+    name = row["long_name"].split("(")[0].strip().rpartition(".")[2]
+    return "present" if (int(row["start"]), name) in found else "absent"
+
+
 ESLINT = f"{HOME}/oracles/eslint_values.cjs"
 JS_SUFFIXES = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue")
 # The ESLint rule answering each column; ccn is the lower of the two variants.
@@ -859,7 +882,8 @@ def _by_source(function):
     return lambda tree, cell, row: function(row, corpus_source(tree, cell))
 
 
-ORACLES = {("ccn_std", ".py"): ("radon", _by_source(radon_ccn)),
+ORACLES = {("row", ".py"): ("ast", _by_source(ast_row)),
+           ("ccn_std", ".py"): ("radon", _by_source(radon_ccn)),
            ("ccn_mod", ".py"): ("radon", _by_source(radon_ccn)),
            ("ccn", ".py"): ("radon", _by_source(radon_ccn)),
            ("cognitive", ".py"): ("complexipy", _by_source(complexipy_cognitive)),
@@ -915,17 +939,18 @@ def _row_at(tree, cell: Cell) -> dict:
     return _table_rows(tree.read(cell.golden)).get((cell.path, cell.handle), {})
 
 
-def _answer(tree, cell: Cell, oracle) -> str | None:
-    row = _row_at(tree, cell)
+def _answer(tree, cell: Cell, oracle, before=None) -> str | None:
+    row = _row_at(tree, cell) or (_row_at(before, cell) if before is not None else {})
     return oracle(tree, cell, row) if row else None
 
 
-def judge(tree, cell: Cell) -> Judgement:
-    """The outside oracle's value for a moved cell, read at `tree`."""
+def judge(tree, cell: Cell, before=None) -> Judgement:
+    """The outside oracle's value for a moved cell, read at `tree`; a row gone from
+    `tree` is read with its start line and name in `before`, the base."""
     found = oracle_for(cell)
-    if found is None or cell.new in ("", "absent"):
+    if found is None or cell.new == "":
         return Judgement(cell, "", "")
-    value = _answer(tree, cell, found[1])
+    value = _answer(tree, cell, found[1], before)
     return Judgement(cell, found[0] if value is not None else "", value or "")
 
 
@@ -951,8 +976,8 @@ def _moved_line(judgement: Judgement) -> str:
     return "\t".join((cell.golden, cell.path, cell.handle, cell.column, cell.old, cell.new, oracle))
 
 
-def _row_lines(tree, cells: list[Cell]) -> list[str]:
-    shown = [_moved_line(judge(tree, cell)) for cell in cells[:10]]
+def _row_lines(tree, cells: list[Cell], before) -> list[str]:
+    shown = [_moved_line(judge(tree, cell, before)) for cell in cells[:10]]
     return ([f"moved rows (first {len(shown)} of {len(cells)}):",
              "  golden\tpath\thandle\tcolumn\told\tnew\toracle"]
             + [f"  {line}" for line in shown]) if shown else []
@@ -964,13 +989,16 @@ def _file_lines(files: list[str]) -> list[str]:
             + shown) if shown else []
 
 
-def moved_block(tree, cells: list[Cell], moved_surfaces_: list[str] = ()) -> list[str]:
-    """The moved calcs, the first 10 moved rows with each one's oracle value, and
-    the first 10 moved golden files no moved row explains."""
+def moved_block(tree, cells: list[Cell], moved_surfaces_: list[str] = (),
+                before=None) -> list[str]:
+    """The moved calcs, the first 10 moved rows with each one's oracle value (a row
+    gone from `tree` read in `before`), and the first 10 moved golden files no moved
+    row explains."""
     files = unexplained(tree, cells, list(moved_surfaces_))
     if not cells and not files:
         return ["moved calcs: none (no golden cell or file moved)"]
-    return [f"moved calcs: {_count(cells, files)}", *_row_lines(tree, cells), *_file_lines(files)]
+    return [f"moved calcs: {_count(cells, files)}", *_row_lines(tree, cells, before),
+            *_file_lines(files)]
 
 
 def next_id(changes: dict) -> str:
@@ -1612,7 +1640,7 @@ def _misrecorded(key: str, row: dict, judged: Judgement) -> Problem:
 
 def _oracle_problem(diff: Diff, key: str, row: dict) -> Problem | None:
     cell = Cell(*_moved_row_key(row))
-    judged = judge(diff.head, cell)
+    judged = judge(diff.head, cell, diff.base)
     if (judged.oracle, judged.value) != _recorded(row):
         return _misrecorded(key, row, judged)
     return None if judged.agrees else _ruling_problem(diff, key, row, cell)
@@ -1675,8 +1703,7 @@ def check(repo: Path, base: str, head: str = "HEAD", moved: Path | None = None,
     base_tree.label = f"{base} at {base_tree.commit[:12]}"
     problems, diff = verdict(base_tree, head_tree, running(head_tree, lizard),
                              extra=read_moved(moved))
-    text = report(problems, moved_block(head_tree, diff.cells, diff.surfaces),
-
+    text = report(problems, moved_block(head_tree, diff.cells, diff.surfaces, base_tree),
                   f"{base_tree.label} to {head_tree.label}")
     return (1 if problems else 0), text
 
@@ -1751,9 +1778,9 @@ def _refusal(judgement: Judgement) -> str:
             "--against-oracle <ruling-id>")
 
 
-def _judge_one(head, cell: Cell, rulings: dict, request: Request) -> tuple:
+def _judge_one(base, head, cell: Cell, rulings: dict, request: Request) -> tuple:
     """(judgement, the ruling recorded for it, the refusal or None)."""
-    judgement = judge(head, cell)
+    judgement = judge(head, cell, base)
     if judgement.agrees:
         return judgement, _definition_ruling(rulings, cell, request), None
     ruling = _covering(rulings, judgement, request.against)
@@ -1766,10 +1793,10 @@ def _first_ten(refusals: list[str]) -> list[str]:
                             if more > 0 else [])
 
 
-def _judged(head, cells: list[Cell], request: Request) -> tuple[list, list[str]]:
+def _judged(base, head, cells: list[Cell], request: Request) -> tuple[list, list[str]]:
     """([(judgement, ruling)], the first 10 refusals) for every moved cell."""
     rulings = rulings_of(head)
-    triples = [_judge_one(head, cell, rulings, request) for cell in cells]
+    triples = [_judge_one(base, head, cell, rulings, request) for cell in cells]
     return ([(judgement, ruling) for judgement, ruling, _ in triples],
             _first_ten([refusal for *_, refusal in triples if refusal]))
 
@@ -1920,14 +1947,15 @@ def plan_declare(base, head, request: Request, now: Running,
     refusals = (_request_problems(request, changes_of(head), known_calcs(head))
                 + _uninitialized_refusal(head))
     moves = moves_of(base, head, changed)
-    judged, bad = _judged(head, moves.cells, request)
+    judged, bad = _judged(base, head, moves.cells, request)
     lock, relocked = _relock(head, request.id)
     digest, stale = _digest_row(head, now, request.id)
     refusals += (bad + _declaration_problems(request, head, moves)
                  + _nothing_moved(request, moves, relocked) + stale)
     if refusals:
         raise ChangeControlError("declare refused:\n" + "\n".join(f"  {text}" for text in refusals)
-                                 + "\n" + "\n".join(moved_block(head, moves.cells, moves.surfaces)))
+                                 + "\n" + "\n".join(moved_block(head, moves.cells, moves.surfaces,
+                                                                 base)))
     return Plan(request, judged, lock, relocked, digest, analysis_version(base))
 
 
