@@ -29,4 +29,8 @@ CHECKS = [
      "pytest": [_PACKET + "test_determinism.py"]},
     {"name": "byte encodings and line endings read as the same functions", "seconds": 2,
      "pytest": [_PACKET + "test_decode_matrix.py"]},
+    {"name": "scope ownership against the configuration rules", "seconds": 6,
+     "pytest": [_PACKET + "test_universe_layouts.py"]},
+    {"name": "unanalyzable files and twin-name notes", "seconds": 3,
+     "pytest": [_PACKET + "test_notes.py"]},
 ]
