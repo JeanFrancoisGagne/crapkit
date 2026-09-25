@@ -585,6 +585,17 @@ nothing. Each of these now gets a line naming the object and the next step:
   answers, but it cannot save its churn and coupling caches under `.crapkit/`, so every
   call walks the git history again.
 
+### Plugin installs
+
+- On Windows, `claude plugin marketplace add JeanFrancoisGagne/crapkit` failed with
+  `Filename too long` for any `CLAUDE_CONFIG_DIR` of 66 characters or more, which the
+  default `~\.claude` reaches under a user profile path of about 58, and against
+  github.com Claude Code then reported only an SSH error. A 139-character evidence path
+  under `docs/architecture` was the cause, because Git for Windows leaves
+  `core.longpaths` off. That folder is now
+  `docs/architecture/2026-09-06-post-implementation/evidence/`, the longest tracked path
+  is 101 characters, and a test fails on any path over 110.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

@@ -5,7 +5,7 @@ import gzip
 from pathlib import Path
 
 here = Path(__file__).resolve().parent
-evidence = here/'crapkit-architecture-rerun-2026-09-06-evidence'
+evidence = here/'evidence'
 if not evidence.exists():
     evidence = here
 inventory_path = evidence/'project-inventory.json'

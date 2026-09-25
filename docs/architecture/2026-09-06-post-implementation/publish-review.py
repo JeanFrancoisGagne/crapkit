@@ -14,7 +14,7 @@ repo = Path(sys.argv[1]).resolve()
 outputs = Path(sys.argv[2]).resolve()
 target = repo/'docs/architecture/2026-09-06-post-implementation'
 target.mkdir(parents=True,exist_ok=True)
-evidence = target/(NAME+'-evidence')
+evidence = target/'evidence'
 evidence.mkdir(exist_ok=True)
 root_files = {'build-review.py','prepare-review.py','publish-review.py','review-data.json','decisions.tsv',
               'root-candidates.json','analysis-candidates.json','state-candidates.json','execution-candidates.json',
@@ -36,7 +36,7 @@ Open `crapkit-architecture-rerun-2026-09-06.html` for the ranked visual review. 
 
 `build-review.py` renders the four candidate inputs and `review-data.json`; run it from this directory to regenerate HTML and combined JSON. `prepare-review.py` reconstructs inventory/coverage metadata and appends decision checkpoints, so use it only when intentionally refreshing those inputs.
 
-Raw review notes, disposable reproduction scripts and measured output live in `crapkit-architecture-rerun-2026-09-06-evidence/`. Script commands in candidate records name the original Windows workspace. Bind `PYTHONPATH` to the reviewed checkout's `src`, use the matching Python interpreter, and run the named script from the evidence folder. Several probes assert the original checkout path; adjust that assertion only when replaying the same reviewed source elsewhere. Do not point them at an unverified editable installation.
+Raw review notes, disposable reproduction scripts and measured output live in `evidence/`. Script commands in candidate records name the original Windows workspace. Bind `PYTHONPATH` to the reviewed checkout's `src`, use the matching Python interpreter, and run the named script from the evidence folder. Several probes assert the original checkout path; adjust that assertion only when replaying the same reviewed source elsewhere. Do not point them at an unverified editable installation.
 
 The scripts use disposable repositories, local subprocesses or in-memory execution adapters. Release-plan probes execute no remote publication. Synthetic measurements and controlled interleavings prove the recorded case, not its prevalence.
 
