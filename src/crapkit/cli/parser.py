@@ -349,9 +349,10 @@ def build_parser() -> argparse.ArgumentParser:
     # No --repo: the root comes from the edited file's own path, walked upward to
     # the first crapkit.toml and never past a .git entry. A session root passed in
     # would resolve a worktree edit to the mainline checkout's store.
-    chk = sub.add_parser("claude-hook", help="advisory ccn check for one Claude Code "
-                                             "PostToolUse edit read from stdin; silent "
-                                             "unless a changed function is over its ceiling")
+    chk = sub.add_parser("claude-hook", help="advisory ccn check for one PostToolUse edit "
+                                             "read from stdin (Claude Code, Copilot CLI, "
+                                             "Cursor, VS Code); silent unless a changed "
+                                             "function is over its ceiling")
     chk.add_argument("--protocol", default="1", metavar="N",
                      help="hook payload protocol (default 1); anything else exits 0 silent")
     chk.set_defaults(func=_Handler("claude_hook", "cmd_claude_hook"))

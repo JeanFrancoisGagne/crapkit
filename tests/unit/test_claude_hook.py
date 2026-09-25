@@ -7,6 +7,7 @@ these a broken rung and a working one look identical from outside.
 """
 import argparse
 import io
+import itertools
 import json
 import os
 import time
@@ -142,18 +143,20 @@ def test_a_file_of_a_type_crapkit_does_not_measure_is_never_judged(tmp_path):
     assert _measured({}, edited) == [tmp_path / "grade.py"]
 
 
+def _touched(path: Path) -> str:
+    path.write_text("", encoding="utf-8")
+    return str(path)
+
+
 def test_every_type_the_language_map_names_is_judged(tmp_path):
     """The screen and the map are one table, so a language added to the map is
     advised on its first edit."""
     from crapkit.universe import LANGUAGE_EXTENSIONS
 
-    extensions = [e for exts in LANGUAGE_EXTENSIONS.values() for e in exts]
-    for extension in extensions:
-        (tmp_path / f"x{extension}").write_text("", encoding="utf-8")
+    extensions = list(itertools.chain.from_iterable(LANGUAGE_EXTENSIONS.values()))
+    edited = [_touched(tmp_path / f"x{extension}") for extension in extensions]
 
-    judged = _measured({}, [str(tmp_path / f"x{e}") for e in extensions])
-
-    assert [path.suffix for path in judged] == extensions
+    assert [path.suffix for path in _measured({}, edited)] == extensions
 
 
 def test_an_edited_file_gone_from_disk_is_not_judged(tmp_path):

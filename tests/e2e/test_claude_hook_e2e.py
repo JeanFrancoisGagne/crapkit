@@ -200,11 +200,15 @@ def _resolved(value, repo: str):
     backslashes never have to survive an escape round trip."""
     if isinstance(value, str):
         return value.replace("{REPO}", repo)
+    return _resolved_items(value, repo) if isinstance(value, (dict, list)) else value
+
+
+def _resolved_items(value, repo: str):
+    """A payload object or list with `{REPO}` resolved in every value under it:
+    Cursor's `workspace_roots` is a list of paths."""
     if isinstance(value, dict):
         return {key: _resolved(item, repo) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_resolved(item, repo) for item in value]
-    return value
+    return [_resolved(item, repo) for item in value]
 
 
 def _stdin_text(golden: dict, repo: str) -> str:
