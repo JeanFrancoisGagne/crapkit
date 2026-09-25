@@ -11,6 +11,12 @@ tests/conftest.py now drops the colour variables and pins COLUMNS=80, the width
 argparse uses in a pipe, before any test runs. A test that needs colour or a
 width sets it itself. Each case below runs the help tests in a child pytest with
 one variable exported, the way a contributor's shell hands it over.
+
+The Python version moves the layout too: 3.13 changed where argparse wraps a
+usage line, so `crapkit verify --help` puts `[--baseline BASELINE | --base REF |
+--baseline-tsv PATH]` on one line on 3.11 and 3.12 and across two from 3.13 on.
+The words stay the same, and the last test holds them to one copy on every
+Python the CI matrix runs.
 """
 import os
 import subprocess
@@ -20,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from crapkit.cli.parser import _help_topics, build_parser
 from hang_guard import HANG_SECONDS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -123,3 +130,32 @@ def test_the_help_tests_pass_in_a_terminal_of_any_width_with_capture_off_or_on(c
     code, shown = run_in_a_terminal([*PYTEST, capture], columns, _shell({}))
 
     assert code == 0, shown[-4000:]
+
+
+# --- the same words on every Python ------------------------------------------
+
+HELP_WORDS = ROOT / "tests" / "goldens" / "help_words.txt"
+
+
+def _help_screens() -> dict[str, str]:
+    """`crapkit --help` and each subcommand's, as argparse formats them here."""
+    root = build_parser()
+    screens = {f"crapkit {name}": sub.format_help() for name, sub in _help_topics(root).items()}
+    return {"crapkit": root.format_help(), **screens}
+
+
+def _words(screens: dict[str, str]) -> str:
+    """One line per screen: its name, a tab, its words with every run of
+    whitespace read as one space, which is all a wrap can move."""
+    return "".join(f"{name}\t{' '.join(text.split())}\n" for name, text in sorted(screens.items()))
+
+
+def test_every_help_screen_says_the_same_words_on_every_python():
+    """Every CI leg, 3.11 to 3.14, reads the one copy. A help change rewrites
+    it with CRAPKIT_WRITE_GOLDENS=1, and the diff shows the new words."""
+    words = _words(_help_screens())
+    if os.environ.get("CRAPKIT_WRITE_GOLDENS") == "1":
+        HELP_WORDS.write_bytes(words.encode("utf-8"))
+
+    assert words == HELP_WORDS.read_bytes().decode("utf-8"), \
+        "the help's words moved; if the change is meant, rewrite the copy with CRAPKIT_WRITE_GOLDENS=1"

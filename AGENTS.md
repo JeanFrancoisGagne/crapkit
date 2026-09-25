@@ -865,6 +865,12 @@ snapshot record, all three or nothing). Leave it alone.
 - No wall clock in scoring paths. Churn weights and burn-down ages anchor on the newest
   commit in the log, so a fixed tree reports byte-identically.
 - JSON is sorted-keys and carries no timestamps in rows.
+- The same bytes on every OS and Python. `tests/goldens/machine_outputs/` holds the 17
+  outputs a program reads (`tests/e2e/test_machine_outputs_match_on_every_os.py`), and
+  `tests/goldens/help_words.txt` the words of every help screen
+  (`tests/unit/test_suite_pins_colour_and_width.py`); every CI leg reads the same copies.
+  Rewrite them with `CRAPKIT_WRITE_GOLDENS=1` for a change every OS makes, and commit the
+  diff with it. A row that fails on one OS only is the bug the copies exist to catch.
 
 ## The docs are pinned to the code
 
