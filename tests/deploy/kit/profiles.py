@@ -756,11 +756,16 @@ def observe(box, repo: Path, key: str, tools: list[str], version: str) -> dict:
             "limits": {"tool_prefix": prefix(tools)}, "seen": _seen(starts, version)}
 
 
+# Amp prints its release's age after the version, which changes every hour
+# and would change a committed observed file on every run.
+RELEASE_AGE = re.compile(r" \(released [^)]*\)$")
+
+
 def harness_version(box, key: str) -> str:
     """The first line `<command> --version` prints, or what it printed on failure."""
     step = box.run([load(key).real_cli["command"], "--version"])
     lines = (step.stdout or step.stderr).strip().splitlines()
-    return lines[0] if lines else f"exit {step.exit}"
+    return RELEASE_AGE.sub("", lines[0]) if lines else f"exit {step.exit}"
 
 
 def calibrate_module():

@@ -320,3 +320,10 @@ def test_calibrate_refuses_an_unknown_harness(tmp_path):
     with pytest.raises(SystemExit):
         calibrate.main([], fake_runner({}), tmp_path)
     assert calibrate.selection(["alpha", "kiro"])[-2:] == ["-k", "alpha or kiro"]
+
+
+@pytest.mark.kit
+def test_a_recorded_version_drops_the_release_age():
+    printed = "0.0.1790265644-gf7438f (released 2026-09-24T16:00:44.000Z, 1d ago)"
+    assert profiles.RELEASE_AGE.sub("", printed) == "0.0.1790265644-gf7438f"
+    assert profiles.RELEASE_AGE.sub("", "2.1.281 (Claude Code)") == "2.1.281 (Claude Code)"

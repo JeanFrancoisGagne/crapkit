@@ -153,7 +153,7 @@ def report(copied: list[Path], profiles: Path = PROFILES) -> list[str]:
     differs = []
     for path in copied:
         lines = verdict(load(profiles / path.name), load(path))
-        print(f"{path.stem}: " + ("matches its profile" if not lines else "differs from its profile"))
+        print(f"{path.stem}: " + ("matches its profile" if not lines else "fails calibration"))
         for line in lines:
             print(f"  {line}")
         differs += [path.stem] if lines else []

@@ -12,6 +12,5 @@ client_name = "codex-mcp-client"
 [seen]
 version = "codex-cli 0.156.1"
 starts = 1
-cwd = "/work/tmp/test_calibrate_all_codex_0/box/repo"
 env = ["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TZ"]
 first_line = "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"experimental\":{\"codex/auth-change\":{}},\"elicitation\":{\"form\":{},\"url\":{}}},\"clientInfo\":{\"name\":\"codex-mcp-client\",\"title\":\"Codex\",\"version\":\"0.156.1\"}}}\n"
