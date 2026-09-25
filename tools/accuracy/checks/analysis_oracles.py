@@ -35,4 +35,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_notes.py"]},
     {"name": "a warm analysis cache reads what a cold run reads", "seconds": 8,
      "pytest": [_PACKET + "test_cache_identity.py"]},
+    {"name": "stock lizard tripwire over the patch list", "seconds": 3,
+     "pytest": [_PACKET + "test_lizard_tripwire.py"]},
 ]
