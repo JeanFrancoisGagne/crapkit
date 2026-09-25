@@ -100,6 +100,14 @@ def test_the_gha_cache_is_one_scope_per_image_that_never_fails_the_build():
     assert run.cache_flags("local", "core") == []
 
 
+def test_the_cache_help_names_the_scope_the_limit_and_the_guide(capsys):
+    with pytest.raises(SystemExit):
+        run.parse(["--help"])
+    said = " ".join(capsys.readouterr().out.split())
+
+    assert "scope crapkit-deploy-<image> (10 GB a repository; tools/deploy/README.md says which jobs use it)" in said
+
+
 def test_a_push_run_on_core_selects_the_kit_and_the_push_cells_core_can_hold():
     assert run.marker_expression("push", "linux", "core", online=False) == (
         "kit or (push and linux and (image_cells or image_core) and not online)")

@@ -570,7 +570,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="run the selection N times from fresh containers; exit 1 when a verdict differs")
     parser.add_argument("--no-cache", action="store_true", help="build cold")
     parser.add_argument("--cache", default="local", choices=["local", "gha"],
-                        help="BuildKit's layer cache: local (default) or gha, the GitHub Actions cache")
+                        help="gha reads and writes the image's layers in the GitHub Actions cache, scope "
+                             "crapkit-deploy-<image> (10 GB a repository; tools/deploy/README.md says which "
+                             "jobs use it); local keeps them in the builder (default: local)")
     parser.add_argument("--builder", default=None,
                         help="buildx builder, created with the pinned BuildKit image when absent (default: the "
                              "daemon's builder when it runs the pinned BuildKit, else " + CONTAINER_BUILDER + ")")

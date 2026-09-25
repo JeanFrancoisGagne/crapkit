@@ -765,3 +765,57 @@ def test_agents_md_documents_run_py_beside_the_test_schedule():
 
     assert "<!-- /generated:test-schedule -->" in tests
     assert all(name in tests for name in ("python tools/deploy/run.py", "tests/deploy/MAP.toml", *PUSH_JOBS))
+
+
+# --- the GitHub Actions cache -------------------------------------------------------
+# Which image each job caches there is a cost choice: a repository gets 10 GB
+# of Actions cache, and past it GitHub evicts the least recently used entry.
+# tools/deploy/README.md gives the measured sizes behind the choice, so its
+# table must say what the workflows run.
+
+GUIDE = ROOT / "tools" / "deploy" / "README.md"
+
+
+def _cache_word(args):
+    return "--no-cache" if args.no_cache else args.cache
+
+
+def _push_calls():
+    return [(name, shlex.split(step["run"])[2:]) for name in PUSH_JOBS for step in CI["jobs"][name]["steps"]
+            if "tools/deploy/run.py" in step.get("run", "")]
+
+
+def _linux_entry_calls(jobs):
+    linux = {name: job for name, job in jobs.items() if job["runner"] == "linux"}
+    return [(name, argv) for name, job in linux.items() for _, argv in _job_invocations(job)]
+
+
+def cache_rows(jobs=MAP["jobs"]):
+    """(job, image, cache) for each run.py call that builds a Linux image, as
+    ci.yml's push jobs and deploy.yml's linux entries run it; a native run
+    builds no image."""
+    parsed = [(name, run.parse(argv)) for name, argv in _push_calls() + _linux_entry_calls(jobs)]
+    return {(name, args.image, _cache_word(args)) for name, args in parsed if not args.native}
+
+
+def _table_rows(section):
+    return [re.findall(r"`([^`]+)`", line) for line in section.splitlines() if line.startswith("| `")]
+
+
+def guide_cache_rows(text):
+    """(job, image, cache): the first three backticked words of each row of the
+    guide's table under "## The GitHub Actions cache" that names a job."""
+    section = text.split("\n## The GitHub Actions cache\n", 1)[-1].split("\n## ", 1)[0]
+    jobs = MAP["jobs"].keys() | PUSH_JOBS.keys()
+    return {tuple(words[:3]) for words in _table_rows(section) if words[0] in jobs}
+
+
+def test_the_deploy_guide_says_how_each_job_caches_the_image_it_builds():
+    assert guide_cache_rows(GUIDE.read_text(encoding="utf-8")) == cache_rows()
+
+
+def test_a_job_that_changes_how_it_caches_its_image_is_caught():
+    jobs = {**MAP["jobs"], "nightly-linux-full": {**MAP["jobs"]["nightly-linux-full"],
+                                                  "runs": ["--cadence {cadence} --os linux --image full --cache gha"]}}
+
+    assert ("nightly-linux-full", "full", "gha") in cache_rows(jobs) - guide_cache_rows(GUIDE.read_text(encoding="utf-8"))

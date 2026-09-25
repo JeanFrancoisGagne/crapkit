@@ -359,9 +359,12 @@ runs = ["--cadence {cadence} --os linux --image core --cache gha -n 4"]
 timeout = 45
 measured = 0
 
-# full and gui build cold each night: with core and ci, the four compressed
-# images pass the GitHub Actions cache's 10 GB, and an evicted core makes the
-# push job's build cold.
+# full and gui build cold each night. Each job builds every stage on its own
+# runner, so its layers are new blobs, and cached beside core and ci the four
+# images take 10.13 GB (measured 2026-09-25) of the GitHub Actions cache's
+# 10 GB; past it GitHub evicts the least recently used entry, and an evicted
+# core makes the push job's build cold. tools/deploy/README.md ("The GitHub
+# Actions cache") has the sizes and the other ways to cache them.
 [jobs.nightly-linux-full]
 runner = "linux"
 when = ["nightly", "release"]

@@ -193,6 +193,64 @@ Windows-only path test) in 16 to 63 s per run. Natively on Windows, 49 pass
 in 75 to 100 s. The offline upgrade test (crapkit 0.7.6 adopted, then pip
 upgraded to the candidate under `--network none`) takes 8 to 27 s.
 
+## The GitHub Actions cache
+
+`--cache gha` makes BuildKit read and write an image's layers in the GitHub
+Actions cache, under `scope=crapkit-deploy-<image>` with `mode=min` (the
+image's own layers, not those of the stages that feed it). A failed write never
+fails the build. BuildKit 0.33 stores each layer blob once, keyed by its digest,
+and uses the scope only to name the list of an image's blobs. Two images share
+a stored layer only when their builds made the same blob, so a job that builds
+a stage on its own runner stores it again even when another job cached it.
+
+GitHub gives a repository 10 GB of Actions cache. Past it, GitHub keeps the
+new entry and evicts the least recently used ones; it also drops any entry
+unused for 7 days. A pull request's entries count toward the 10 GB, and only
+re-runs of that pull request can read them.
+
+| Job | Image | Cache | Why |
+|---|---|---|---|
+| `deploy-linux` | `core` | `gha` | ci.yml, every push and pull request; keeps the `core` scope warm |
+| `nightly-linux-core` | `core` | `gha` | the scope `deploy-linux` keeps warm |
+| `nightly-act` | `ci` | `gha` | 0.56 GB |
+| `nightly-linux-full` | `full` | `local` | cold every night, see below |
+| `nightly-gui` | `gui` | `local` | cold every night, see below |
+| `lin-repeat` | `core` | `--no-cache` | a cold build is the point |
+| `weekly-online` | `core` | `local` | builds `core` cold |
+| `published-online` | `core` | `local` | builds `core` cold |
+| `lin-clock` | `core` | `local` | blocked (faketime) |
+| `weekly-py315` | `core` | `local` | blocked (prerelease-python) |
+| `latest-harnesses` | `full` | `local` | blocked (latest-mode) |
+| `weekly-arm64` | `cells` | `local` | blocked (arm64) |
+
+Compressed sizes of the images built at 9707cc6d, read layer by layer from
+`docker save` on 2026-09-25: `core` 1.45 GB, `ci` 0.56 GB, `full` 3.76 GB,
+`gui` 4.36 GB. `gui` is `full` plus 0.70 GB, `full` is `core`'s first 18
+layers (1.35 GB) plus 2.41 GB, and `ci` is `cells` plus 0.11 GB. What the
+cache would hold:
+
+| Cached | Each job builds every stage itself | Each image builds on the cached layers below it |
+|---|---|---|
+| `core` and `ci`, as today | 2.01 GB | 1.57 GB |
+| `core`, `ci`, `full` and `gui` | 10.13 GB | 4.64 GB |
+
+### Why `full` and `gui` build cold
+
+Cached the way `core` and `ci` are, with each job building every stage itself,
+the four images come to 10.13 GB, and an evicted `core` makes the next push
+build cold. So `nightly-linux-full` and `nightly-gui` build with
+`--cache local` on a runner whose disk they free first: 1178 s and 1402 s on
+the 24-core machine above, not yet measured on the 4-vCPU `ubuntu-24.04`
+runner, under timeouts of 90 and 100 minutes. The first nightly run's minutes
+go in each job's `measured` key in `tests/deploy/MAP.toml`, and they decide
+whether the cold builds stay. The other ways to cache the two images:
+
+| Way | What it costs |
+|---|---|
+| Push `full` and `gui` to a private GHCR package | GitHub's Packages billing page lists Container registry storage and transfer as free for now. A login and push step on main, `packages: read` on pull request jobs, and a pull request from a fork cannot pull a private package |
+| Raise the repository's Actions cache limit past 10 GB | Pay-as-you-go storage since 2025-11-20, on a Pro, Team or Enterprise account |
+| Build each image on the cached layers below it: `full` reads `core`'s scope, `gui` reads `full`'s | 4.64 GB for all four. `run.py` passes one scope per image today. `nightly-linux-full` and `nightly-gui` start together, so a first `gui` run finds no `full` scope and stores its own copy of `full`'s layers |
+
 ## Changing a pin
 
 1. Edit `pins.toml` (and `tests/deploy/docker/harness-*/package.json` for an npm harness).
