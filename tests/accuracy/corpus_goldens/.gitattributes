@@ -1,2 +1,4 @@
 # The history bundle is git's own binary format.
 history/*.bundle binary
+# The SARIF schema is the published bytes; git must not convert them.
+schemas/** -text
