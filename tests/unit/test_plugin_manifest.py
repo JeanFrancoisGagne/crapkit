@@ -199,7 +199,8 @@ def _drift(plugin_version: str, cli_version: str) -> list[str]:
     from crapkit.doctor import plugin_handshake
 
     return plugin_handshake(where="plugin", version=plugin_version, cli_version=cli_version,
-                            cli_where="crapkit", protocols=("1",), supported="1")
+                            cli_where="crapkit", protocols=("1",), supported="1",
+                            harness="claude", cli_upgrade="pip install --upgrade crapkit")
 
 
 def test_both_manifests_ask_for_the_cli_release_doctor_accepts():

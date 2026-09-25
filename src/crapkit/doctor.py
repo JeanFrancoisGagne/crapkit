@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import os
 import re
+from pathlib import PurePath
 from typing import NamedTuple
 
 from .universe import LANGUAGE_EXTENSIONS, scopes_with_tests
@@ -485,13 +486,60 @@ def unmeasured_directories(counts, tracked: list[str]) -> tuple[UnmeasuredDir, .
 # hook the CLI would answer and nobody asked. Neither side notices on its own,
 # so `doctor --plugin-root` asks. Pure: the caller reads the two files.
 
-def _version_gap(where: str, version: str, cli_version: str, cli_where: str) -> str | None:
-    """One line naming both numbers, the executable the second one came from,
-    and both repairs.
+# The commands that move an installed plugin to the marketplace's current copy,
+# and what makes a running client load it, per harness. `claude plugin install`
+# over an older install prints "already installed" and moves nothing.
+_PLUGIN_UPDATE = {
+    "claude": ("claude plugin marketplace update crapkit",
+               "claude plugin update crapkit@crapkit --scope user",
+               "restart Claude Code's sessions"),
+    "codex": ("codex plugin marketplace upgrade crapkit", "codex plugin add crapkit@crapkit",
+              "start a new Codex task"),
+}
+_PLAIN_RELEASE = re.compile(r"\d+(?:\.\d+)*")
 
-    Which side is behind is not decided here. Version ordering across a
-    pre-release, a local build and a published wheel is a guess, and a guess
-    that names the wrong repair costs more than naming two.
+
+def plugin_harness(where: str, codex_home: str | None) -> str:
+    """"codex" for a plugin Codex installed (under CODEX_HOME, or a .codex
+    directory), else "claude"."""
+    parts = PurePath(where).parts
+    under_home = bool(codex_home) and PurePath(where).is_relative_to(codex_home)
+    return "codex" if under_home or ".codex" in parts else "claude"
+
+
+def _plain(version: str) -> tuple[int, ...] | None:
+    return tuple(int(n) for n in version.split(".")) if _PLAIN_RELEASE.fullmatch(version) else None
+
+
+def _behind(version: str, cli_version: str) -> str | None:
+    """"plugin" or "cli" when both are plain releases, else None: a
+    pre-release or a local build does not order against a release plainly
+    enough to send someone to one repair."""
+    plugin, cli = _plain(version), _plain(cli_version)
+    if plugin is None or cli is None:
+        return None
+    return "plugin" if plugin < cli else "cli"
+
+
+def _repair(behind: str | None, harness: str, cli_upgrade: str) -> str:
+    fetch, update, reload = _PLUGIN_UPDATE[harness]
+    if behind == "plugin":
+        return f"The plugin is behind; update it with `{fetch}`, then `{update}`, and {reload}."
+    if behind == "cli":
+        return f"The CLI is behind; upgrade it with `{cli_upgrade}`."
+    return (f"Update whichever is behind: the plugin with `{fetch}`, then `{update}`; the CLI "
+            f"with `{cli_upgrade}`.")
+
+
+def _version_gap(where: str, version: str, cli_version: str, cli_where: str, harness: str,
+                 cli_upgrade: str) -> str | None:
+    """One line naming both numbers, the executable the second one came from,
+    which side is behind, and the commands that move it.
+
+    The plugin's repair is its harness's: Claude Code's update lines, or
+    Codex's refresh for a plugin Codex installed. The CLI's is the upgrade of
+    the installer that owns the launcher (`cli_upgrade`). Both are named when
+    the versions do not order plainly.
 
     `cli_where` is the console script the plugin will spawn, which on a machine
     with a venv crapkit and a pipx crapkit is not the module answering this
@@ -506,10 +554,8 @@ def _version_gap(where: str, version: str, cli_version: str, cli_where: str) -> 
     if version == cli_version:
         return None
     return (f"crapkit doctor: the plugin at {where} is version {version}, and the crapkit "
-            f"its hooks spawn ({cli_where}) is {cli_version}. Update whichever is behind: "
-            f"the plugin with `claude plugin marketplace update crapkit` then "
-            f"`claude plugin update crapkit@crapkit --scope user`, or the CLI with "
-            f"`pip install -U crapkit`.")
+            f"its hooks spawn ({cli_where}) is {cli_version}. "
+            + _repair(_behind(version, cli_version), harness, cli_upgrade))
 
 
 def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str) -> str | None:
@@ -530,7 +576,8 @@ def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str)
 
 
 def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,
-                     protocols: tuple[str, ...] | None, supported: str) -> list[str]:
+                     protocols: tuple[str, ...] | None, supported: str, harness: str = "claude",
+                     cli_upgrade: str = "python -m pip install --upgrade crapkit") -> list[str]:
     """Every disagreement between an installed plugin and this CLI, one per line.
 
     Empty is the answer that matters: the two agree, and a check that prints on
@@ -541,7 +588,8 @@ def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_w
     """
     if version is None:
         return [f"crapkit doctor: the plugin at {where} has no .claude-plugin/plugin.json"]
-    return [line for line in (_version_gap(where, version, cli_version, cli_where),
+    return [line for line in (_version_gap(where, version, cli_version, cli_where, harness,
+                                           cli_upgrade),
                               _protocol_gap(where, protocols, supported)) if line]
 
 

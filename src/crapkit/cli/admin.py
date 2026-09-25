@@ -1548,17 +1548,25 @@ def _installed_crapkit_roots(plugins: Path) -> list[Path]:
             if (r / ".claude-plugin" / "plugin.json").is_file()]
 
 
+def _codex_home() -> Path:
+    """Where Codex keeps its state: CODEX_HOME, else ~/.codex."""
+    base = os.environ.get("CODEX_HOME")
+    return Path(base) if base else Path.home() / ".codex"
+
+
 def _resolve_plugin_root(arg: str) -> tuple[Path | None, str]:
     """The plugin root to check, and where it was looked for.
 
     An explicit PATH with no manifest at or under it resolves to itself, so
-    the handshake names the missing file at the path the operator typed.
+    the handshake names the missing file at the path the operator typed. With
+    none, Claude Code's install, else the one in Codex's plugin cache.
     """
     if arg:
         under = Path(arg)
         return _newest_root(_manifest_roots(under)) or under, str(under)
-    plugins = _plugins_dir()
-    return _newest_root(_installed_crapkit_roots(plugins)), str(plugins)
+    plugins, codex = _plugins_dir(), _codex_home()
+    found = _newest_root(_installed_crapkit_roots(plugins)) or _newest_root(_manifest_roots(codex))
+    return found, f"{plugins} or {codex}"
 
 
 def _probed_cli_version(executable: str) -> str | None:
@@ -1657,6 +1665,14 @@ def _no_crapkit_on_path() -> str:
             "plugin at the environment holding it.")
 
 
+_INSTALL_PLUGIN = (
+    "Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit`, "
+    "then `claude plugin install crapkit@crapkit`; Codex with `codex plugin marketplace add "
+    "https://github.com/JeanFrancoisGagne/crapkit.git`, then `codex plugin add crapkit@crapkit`. "
+    "For a plugin kept anywhere else, pass --plugin-root PATH."
+)
+
+
 def _name_found_root(root: Path, looked_in: str) -> None:
     """A root the search found, not one the operator typed: the glob reaches
     three levels under the named directory, so a source checkout can win over an
@@ -1706,31 +1722,44 @@ def _doctor_plugin(plugin_root: str) -> int:
     from the `crapkit` on PATH, because that bare name is what the plugin's
     hooks and its MCP server spawn — see `_spawned_cli`.
     """
-    from ..doctor import plugin_handshake
-    from .claude_hook import PROTOCOL
-
     root, looked_in = _resolve_plugin_root(plugin_root)
     if root is None:
-        print(f"crapkit doctor: no installed crapkit plugin under {looked_in} (install with "
-              "`claude plugin install crapkit@crapkit`, or pass --plugin-root PATH)")
+        print(f"crapkit doctor: no installed crapkit plugin under {looked_in}. {_INSTALL_PLUGIN}")
         return 1
     _name_found_root(root, looked_in)
-    spawned = _spawned_cli()
-    if spawned is None:
-        print(_no_crapkit_on_path())
-        return 1
-    executable, cli_version = spawned
-    if cli_version is None:
-        print(f"crapkit doctor: FAIL {executable} did not answer `crapkit --version`. "
-              "Repair this launcher or install crapkit on the PATH the plugin inherits.")
-        return 1
-    lines = plugin_handshake(where=str(root), version=_manifest_version(root),
-                             cli_version=cli_version, cli_where=executable,
-                             protocols=_hook_protocols(root), supported=PROTOCOL)
-    lines += _claude_code_floor()
+    lines = _spawn_failure() or _plugin_lines(root)
     for line in lines:
         print(line)
     return 1 if lines else 0
+
+
+def _spawn_failure() -> list[str]:
+    """The FAIL for a `crapkit` the plugin cannot start or that answers no
+    version, else nothing: there is no CLI to compare the plugin with."""
+    spawned = _spawned_cli()
+    if spawned is None:
+        return [_no_crapkit_on_path()]
+    executable, cli_version = spawned
+    if cli_version is None:
+        return [f"crapkit doctor: FAIL {executable} did not answer `crapkit --version`. "
+                "Repair this launcher or install crapkit on the PATH the plugin inherits."]
+    return []
+
+
+def _plugin_lines(root: Path) -> list[str]:
+    """Every disagreement between the plugin at `root` and the crapkit its
+    hooks spawn, each repair spelled for the harness that installed the plugin
+    and the installer that owns the launcher, then the Claude Code floor."""
+    from ..doctor import plugin_handshake, plugin_harness
+    from ..launchers import upgrade_command
+    from .claude_hook import PROTOCOL
+
+    executable, cli_version = _spawned_cli()
+    return plugin_handshake(where=str(root), version=_manifest_version(root),
+                            cli_version=cli_version, cli_where=executable,
+                            protocols=_hook_protocols(root), supported=PROTOCOL,
+                            harness=plugin_harness(str(root), os.environ.get("CODEX_HOME")),
+                            cli_upgrade=upgrade_command(executable, _shell_quote))         + _claude_code_floor()
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:

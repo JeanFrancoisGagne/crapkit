@@ -107,7 +107,8 @@ def test_the_plugin_this_repo_ships_matches_the_cli_it_ships_with(capsys):
 
 def test_a_version_gap_is_one_line_naming_both_numbers(tmp_path, capsys):
     """A reader holding one line has to be able to act on it, so the line says
-    which two versions disagree and how to close the gap from either side.
+    which two versions disagree, which side is behind, and the commands that
+    move that side.
 
     A plugin behind the CLI is already installed, and `claude plugin install`
     on it only answers so (Claude Code 2.1.281): the same doctor line came back
@@ -329,13 +330,32 @@ def test_no_path_honours_the_installer_s_record(tmp_path, capsys, monkeypatch):
 def test_no_path_and_no_install_is_one_line_naming_where_it_looked(tmp_path, capsys,
                                                                    monkeypatch):
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
     code = main(["doctor", "--plugin-root"])
     lines = capsys.readouterr().out.splitlines()
 
     assert code == 1 and len(lines) == 1, lines
-    assert str(tmp_path / "plugins") in lines[0], lines[0]
-    assert "claude plugin install crapkit@crapkit" in lines[0], lines[0]
+    assert lines[0] == (
+        f"crapkit doctor: no installed crapkit plugin under {tmp_path / 'plugins'} or "
+        f"{tmp_path / 'codex'}. Claude Code installs it with `claude plugin marketplace add "
+        "JeanFrancoisGagne/crapkit`, then `claude plugin install crapkit@crapkit`; Codex with "
+        "`codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git`, then "
+        "`codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, pass --plugin-root PATH.")
+
+
+def test_no_path_and_no_claude_code_install_checks_codex_s_cache(tmp_path, capsys, monkeypatch):
+    """A Codex-only machine ran `doctor --plugin-root` and was told to install
+    the plugin with Claude Code."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    root = plugin(tmp_path / "codex" / "plugins" / "cache" / "crapkit" / "crapkit" / CLI)
+
+    code = main(["doctor", "--plugin-root"])
+    out = capsys.readouterr()
+
+    assert (code, out.err) == (0, "")
+    assert out.out.splitlines() == [f"crapkit doctor: checking {root}"], out.out
 
 
 def test_a_cache_shared_with_other_plugins_yields_crapkit_not_the_highest_version(tmp_path,
@@ -482,3 +502,80 @@ def test_a_zero_exit_is_still_read_for_its_version(tmp_path):
     name = "crapkit.bat" if os.name == "nt" else "crapkit"
 
     assert admin._probed_cli_version(str(tmp_path / "ok" / name)) == "9.9.9"
+
+
+# --- the repair the gap line names ------------------------------------------------
+#
+# One fixed line named `claude plugin install crapkit@crapkit` and `pip install -U
+# crapkit` for every gap. Over an older install the first prints "already
+# installed" and moves nothing; the second reaches no uv tool or pipx install; and
+# a plugin Codex installed got two commands a Codex-only machine does not have.
+
+def _gap(tmp_path: Path, capsys, *, version: str, under: str = "p") -> str:
+    code, lines, err = check(plugin(tmp_path / under, version=version), capsys)
+    assert (code, err, len(lines)) == (1, "", 1), lines
+    return lines[0]
+
+
+def _head(where: Path, version: str) -> str:
+    return (f"crapkit doctor: the plugin at {where} is version {version}, and the crapkit its "
+            f"hooks spawn ({ON_PATH}) is {CLI}.")
+
+
+def test_a_claude_code_plugin_behind_the_cli_names_the_update_lines(tmp_path, capsys):
+    line = _gap(tmp_path, capsys, version="0.0.1")
+
+    assert line == (_head(tmp_path / "p", "0.0.1") + " The plugin is behind; update it with "
+                    "`claude plugin marketplace update crapkit`, then `claude plugin update "
+                    "crapkit@crapkit --scope user`, and restart Claude Code's sessions.")
+
+
+def test_a_cli_behind_the_plugin_names_the_upgrade_for_the_installer_that_owns_it(tmp_path, capsys,
+                                                                                   monkeypatch):
+    launcher = tmp_path / "share" / "uv" / "tools" / "crapkit" / "bin" / "crapkit"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(admin, "_spawned_cli", lambda: (str(launcher), CLI))
+
+    code, lines, _ = check(plugin(tmp_path / "p", version="99.0.0"), capsys)
+
+    assert code == 1
+    assert lines == [f"crapkit doctor: the plugin at {tmp_path / 'p'} is version 99.0.0, and the "
+                     f"crapkit its hooks spawn ({launcher}) is {CLI}. The CLI is behind; upgrade "
+                     "it with `uv tool upgrade crapkit`."], lines
+
+
+CODEX_CACHE = Path(".codex") / "plugins" / "cache" / "crapkit" / "crapkit"
+
+
+def test_a_codex_plugin_behind_the_cli_names_codex_s_refresh_and_no_claude_command(tmp_path, capsys):
+    line = _gap(tmp_path, capsys, version="0.0.1", under=str(CODEX_CACHE / "0.0.1"))
+
+    assert line == (_head(tmp_path / CODEX_CACHE / "0.0.1", "0.0.1") + " The plugin is behind; "
+                    "update it with `codex plugin marketplace upgrade crapkit`, then `codex plugin "
+                    "add crapkit@crapkit`, and start a new Codex task.")
+
+
+def test_a_codex_plugin_ahead_of_the_cli_names_no_claude_command(tmp_path, capsys):
+    line = _gap(tmp_path, capsys, version="99.0.0", under=str(CODEX_CACHE / "99.0.0"))
+
+    assert "claude" not in line
+    assert line.endswith("The CLI is behind; upgrade it with `python -m pip install --upgrade crapkit`.")
+
+
+def test_a_plugin_under_codex_home_is_codex_s_wherever_that_is(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "agents"))
+
+    line = _gap(tmp_path, capsys, version="0.0.1", under="agents/plugins/cache/crapkit/crapkit/0.0.1")
+
+    assert "`codex plugin marketplace upgrade crapkit`" in line and "claude" not in line
+
+
+@pytest.mark.parametrize("version", ["0.9.0.dev3", "0.8.1+local", "1.0.0rc1"])
+def test_versions_that_do_not_order_plainly_name_both_repairs(tmp_path, capsys, version):
+    line = _gap(tmp_path, capsys, version=version)
+
+    assert line == (_head(tmp_path / "p", version) + " Update whichever is behind: the plugin "
+                    "with `claude plugin marketplace update crapkit`, then `claude plugin update "
+                    "crapkit@crapkit --scope user`; the CLI with `python -m pip install --upgrade "
+                    "crapkit`.")

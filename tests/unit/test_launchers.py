@@ -9,7 +9,6 @@ which does not reach a uv tool or pipx install.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 import pytest
@@ -147,6 +146,17 @@ def test_a_venv_launcher_upgrades_through_the_python_beside_it(tmp_path):
     assert upgrade_command(str(launcher), quote) == f"<{python}> -m pip install --upgrade crapkit"
 
 
+def test_a_venv_uv_made_upgrades_through_uv_pip_because_it_holds_no_pip(tmp_path):
+    scripts = tmp_path / "venv" / ("Scripts" if WINDOWS else "bin")
+    launcher = shim(scripts)
+    python = scripts / ("python.exe" if WINDOWS else "python3")
+    python.write_bytes(b"")
+    (tmp_path / "venv" / "pyvenv.cfg").write_text("home = /usr/bin\nuv = 0.9.2\nversion_info = 3.12.7\n",
+                                                  encoding="utf-8")
+
+    assert upgrade_command(str(launcher), quote) == f"uv pip install --python <{python}> --upgrade crapkit"
+
+
 def test_a_windows_install_s_scripts_launcher_upgrades_through_the_python_above_it(tmp_path):
     launcher = shim(tmp_path / "Python312" / "Scripts")
     python = tmp_path / "Python312" / ("python.exe" if WINDOWS else "python3")
@@ -156,11 +166,15 @@ def test_a_windows_install_s_scripts_launcher_upgrades_through_the_python_above_
 
 
 def test_a_script_s_shebang_names_its_interpreter(tmp_path):
-    launcher = tmp_path / "bin" / "crapkit"
-    launcher.parent.mkdir()
-    launcher.write_text(f"#!{sys.executable}\nfrom crapkit.cli import main\n", encoding="utf-8")
+    """pip --user on Linux: ~/.local/bin/crapkit starts /usr/bin/python3."""
+    python = tmp_path / "usr" / "bin" / "python3.12"
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"")
+    launcher = tmp_path / "home" / ".local" / "bin" / "crapkit"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text(f"#!{python}\nfrom crapkit.cli import main\n", encoding="utf-8")
 
-    assert upgrade_command(str(launcher), quote) == f"<{sys.executable}> -m pip install --upgrade crapkit"
+    assert upgrade_command(str(launcher), quote) == f"<{python}> -m pip install --upgrade crapkit"
 
 
 def test_a_shebang_naming_a_shell_is_not_the_interpreter(tmp_path):

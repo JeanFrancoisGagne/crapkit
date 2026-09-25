@@ -108,15 +108,31 @@ def _interpreter(resolved: str, head: bytes) -> str | None:
     return next((path for path in candidates if path and os.path.isfile(path)), None)
 
 
+def _uv_made(python: str) -> bool:
+    """Was this interpreter's venv made by uv? uv writes a `uv = VERSION` line
+    into pyvenv.cfg and installs no pip, so `python -m pip` fails there."""
+    cfg = os.path.join(os.path.dirname(os.path.dirname(python)), "pyvenv.cfg")
+    try:
+        with open(cfg, encoding="utf-8", errors="replace") as text:
+            return any(line.split("=")[0].strip() == "uv" for line in text)
+    except OSError:
+        return False
+
+
+def _pip_line(python: str | None, quote) -> str:
+    if python is None:
+        return "python -m pip install --upgrade crapkit"
+    if _uv_made(python):
+        return f"uv pip install --python {quote(python)} --upgrade crapkit"
+    return f"{quote(python)} -m pip install --upgrade crapkit"
+
+
 def upgrade_command(launcher: str, quote) -> str:
     """The command that upgrades the install owning this launcher: uv tool's,
-    pipx's, or pip run by the interpreter the launcher starts. `quote` spells
-    one word for the reader's shell."""
+    pipx's, or pip (uv's, in a venv uv made) for the interpreter the launcher
+    starts. `quote` spells one word for the reader's shell."""
     resolved = os.path.realpath(launcher)
     head = _head(resolved)
     text = (resolved + "\n" + head.decode("latin-1")).replace("\\", "/").lower()
     owner = next((command for marker, command in _OWNERS if marker in text), None)
-    if owner:
-        return owner
-    python = _interpreter(resolved, head)
-    return f"{quote(python) if python else 'python'} -m pip install --upgrade crapkit"
+    return owner or _pip_line(_interpreter(resolved, head), quote)
