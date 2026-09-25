@@ -18,11 +18,11 @@
   blob ids instead of asking git about the stamp's commit. git's index gives the id of a
   file its worktree diff calls unchanged, and `git hash-object --path` hashes the rest, so
   a CRLF checkout under `core.autocrlf=true` keeps its blob's id, and a submodule is
-  recorded by the commit checked out in it. A message-only amend, a rebase, a detached HEAD, a mode bit
-  and a shallow CI clone with `.crapkit/` restored used to withhold every dark line;
-  they no longer do. An artifact measured on an uncommitted edit is fresh at once, and
-  reverting that edit now withholds the lines, where git called the tree clean and the
-  old lines were served against the reverted file.
+  recorded by the commit checked out in it. A message-only amend, a rebase, a detached
+  HEAD, a mode bit and a shallow CI clone with `.crapkit/` restored used to withhold every
+  dark line; they no longer do. An artifact measured on an uncommitted edit is fresh at
+  once, and reverting that edit now withholds the lines, where git called the tree clean
+  and the old lines were served against the reverted file.
 - The dead lines crapkit folds out of a lane's artifact for diff coverage are cached by the
   artifact's sha256. The key was its path, modification time and size, so an artifact
   rewritten with the same size under its old time served the lines of bytes it no longer
@@ -34,9 +34,9 @@
   that moved. The warning counted the files and named none, and the note named neither.
 - A stamp written by 0.8.0 or older holds no blob ids and is judged by its commit until
   the next `crapkit coverage` replaces it. When git cannot answer, for an old stamp or a
-  new one, the warning and the note say so and quote git's error. The note said "files in its scopes
-  changed" for that case, for an artifact no stamp vouches for and for a stamp commit
-  HEAD does not descend from, and the warning printed nothing at all.
+  new one, the warning and the note say so and quote git's error. The note said "files in
+  its scopes changed" for that case, for an artifact no stamp vouches for and for a stamp
+  commit HEAD does not descend from, and the warning printed nothing at all.
 - The `--reuse-artifacts` warning, the dark-line note, the report banner and
   `--reuse-unchanged` read one verdict per lane, taken from one read of
   `.crapkit/artifacts.json` per command. On a 0.8.0 stamp the warning skipped the ancestry
@@ -47,8 +47,9 @@
 - Library API: `lanes.lane_sources_unchanged` keeps its 0.8.0 arguments and its bool
   answer through 0.8.x, and warns with a `DeprecationWarning` when called; 0.9.0 removes
   it. `lanes.staleness_reads`, which 0.8.0 exported, is gone: `lane_freshness.Freshness`
-  answers each lane from one read of the stamp file. `MissingLines` takes an optional third field, `drift`, and `uncovered.lane_views`
-  returns each lane's note with `blackout`, whether it withholds every file's lines.
+  answers each lane from one read of the stamp file. `MissingLines` takes an optional
+  third field, `drift`, and `uncovered.lane_views` returns each lane's note with
+  `blackout`, whether it withholds every file's lines.
 
 ### `--reuse-unchanged` reuses a lane whose inputs did not move, and reruns one whose inputs did, whatever git's diff skips
 
@@ -62,15 +63,15 @@
   them under `byproducts`. With the `.gitignore` that `crapkit init` writes, which holds
   only `.crapkit/`, the first run's own output left its stamp without a proof, and the
   lane never reused.
-- A same-size edit whose old modification time was put back (`cp -p`, `tar -x`,
-  `rsync -t`, `touch -r`), or a second same-size write inside one clock tick, is still not
-  seen by any reader that asks git: lane reuse and the dark-line note, verify's changed
-  files and its split of committed and dirty findings, `rescore --gate`, the commit
-  hook's note that a staged file differs from the working tree, and the files `mutate`
-  copies into its workers. git answers "unchanged" from its index's stat data, as
-  `git status` and `git add` do, and crapkit trusts that answer rather than read every
-  file on every run. The analysis cache and `watch` compare the modification time and size the same way, and
-  the analysis cache also misses a symlink re-pointed to a same-size target with the same
+- A same-size edit whose old modification time was put back (`cp -p`, `tar -x`, `rsync
+  -t`, `touch -r`), or a second same-size write inside one clock tick, is still not seen
+  by any reader that asks git: lane reuse and the dark-line note, verify's changed files
+  and its split of committed and dirty findings, `rescore --gate`, the commit hook's note
+  that a staged file differs from the working tree, and the files `mutate` copies into its
+  workers. git answers "unchanged" from its index's stat data, as `git status` and `git
+  add` do, and crapkit trusts that answer rather than read every file on every run. The
+  analysis cache and `watch` compare the modification time and size the same way, and the
+  analysis cache also misses a symlink re-pointed to a same-size target with the same
   time. `touch` the files after restoring them, and every reader compares their content.
   The cost of hashing every source is measured for 0.9.0 before that changes.
 - An edit git's own diff skips is a change: a file flagged `--skip-worktree` or
@@ -130,12 +131,12 @@
 - `next-item`, `brief`, `brief --batch`, `worklist --json`, the report payload and the MCP
   tools that print them add `scored_changes`: how many files the ranked run scored hold
   other content now than the run recorded, deleted files included, or `null` when the run
-  recorded none, as every run 0.8.0 wrote, or git cannot read the tree to compare. `stale` keeps its meaning, the run's commit is
-  not HEAD, and it judges the commit and not the files: an uncommitted rewrite of a scored
-  function left it `false` while `next-item` handed out the pre-edit ccn and span, a run
-  measured on an edit that was later reverted read fresh, and an amend, an empty commit or
-  a README-only commit set it `true` over an identical tree. 0.9.0's schema 2 redefines
-  `stale` as a content difference.
+  recorded none, as every run 0.8.0 wrote, or git cannot read the tree to compare. `stale`
+  keeps its meaning, the run's commit is not HEAD, and it judges the commit and not the
+  files: an uncommitted rewrite of a scored function left it `false` while `next-item`
+  handed out the pre-edit ccn and span, a run measured on an edit that was later reverted
+  read fresh, and an amend, an empty commit or a README-only commit set it `true` over an
+  identical tree. 0.9.0's schema 2 redefines `stale` as a content difference.
 - Every payload that carries `stale` carries `commands.refresh`, the one call that answers
   both fields.
 - The stop rule in AGENTS.md, `docs/agent-json.md` and the crapkit skill gains a fourth
