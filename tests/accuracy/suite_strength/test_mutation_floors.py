@@ -1,0 +1,209 @@
+"""The mutation floors: which modules each floor covers, its rate, and the canary.
+
+The floors come from the accuracy plan's mutation section, written out below
+before any run: 95 percent after equivalents for score, digest, worklist,
+ratchet, verify, keys and coverage_istanbul; 85 percent for the lizard
+readers; 100 percent for tests/accuracy/kit/exact.py; 90 percent for the
+tools under tools/accuracy. A rate is kills over mutants once proven
+equivalents are set aside, and a timeout is not a kill.
+
+The canary is score.crap. A weekly shard whose score.crap mutants do not all
+die is void, so the killer suite has to kill a hand-made one: each mutant below
+is one operator mutmut 3 applies to `ccn * ccn * (1.0 - cov) ** 3 + ccn`,
+applied to a copy of src/, and the unit tests of score.py must fail on it.
+"""
+from __future__ import annotations
+
+import fnmatch
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+import pytest
+
+import hang_guard
+from accuracy.kit import rulings
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[2]
+TABLES = HERE / "mutation"
+RECORDED = TABLES / "recorded"
+
+# The plan's floors, as its mutation section states them.
+PLAN_FLOORS = {
+    "core": (95.0, {"src/crapkit/score.py", "src/crapkit/digest.py", "src/crapkit/worklist.py",
+                    "src/crapkit/ratchet.py", "src/crapkit/verify.py", "src/crapkit/keys.py",
+                    "src/crapkit/coverage_istanbul.py"}),
+    "readers": (85.0, {"src/crapkit/lizard*.py"}),
+    "kit-exact": (100.0, {"tests/accuracy/kit/exact.py"}),
+    "accuracy-tools": (90.0, {"tools/accuracy/change_control.py", "tools/accuracy/wheel_diff.py",
+                              "tools/accuracy/retro.py", "tools/accuracy/mutation.py",
+                              "tools/accuracy/run.py"}),
+}
+# Floor paths another packet's tools fill. Each entry goes once its file is here.
+LANDING = {"tools/accuracy/change_control.py": "the change-control packet",
+           "tools/accuracy/wheel_diff.py": "the corpus-goldens packet"}
+KILLED = {"killed", "caught by type check"}
+
+
+def _load():
+    spec = importlib.util.spec_from_file_location("accuracy_mutation_floors_tool",
+                                                  REPO / "tools" / "accuracy" / "mutation.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+mutation = _load()
+
+
+def _floors() -> list[dict]:
+    return mutation.read_table(TABLES / "floors.tsv", mutation.FLOOR_COLUMNS)
+
+
+def _patterns(row: dict) -> set[str]:
+    return {part.strip() for part in row["paths"].split(",")}
+
+
+def test_the_floors_are_the_plan_s():
+    table = {row["group"]: (float(row["floor"]), _patterns(row)) for row in _floors()}
+
+    assert table == PLAN_FLOORS
+    assert all(row["source"].startswith("accuracy plan, mutation section") for row in _floors())
+
+
+def _files(pattern: str) -> list[Path]:
+    return [path for path in REPO.glob(pattern) if path.is_file()]
+
+
+def _pattern_problem(pattern: str) -> str | None:
+    found = _files(pattern)
+    if found and pattern in LANDING:
+        return f"{pattern} has landed: drop its LANDING entry"
+    if not found and pattern not in LANDING:
+        return f"{pattern} names no file"
+    return None
+
+
+def test_every_floor_pattern_names_a_file_or_one_a_packet_brings():
+    problems = [_pattern_problem(pattern) for row in _floors() for pattern in _patterns(row)]
+
+    assert [problem for problem in problems if problem] == []
+
+
+def _floor_of_each_file() -> list[tuple[Path, str]]:
+    return [(path, row["group"]) for row in _floors() for pattern in _patterns(row)
+            for path in _files(pattern)]
+
+
+def test_no_module_sits_under_two_floors():
+    pairs = _floor_of_each_file()
+    paths = [path for path, _ in pairs]
+
+    assert sorted({path for path in paths if paths.count(path) > 1}) == []
+
+
+# --- recorded runs meet their floors ---------------------------------------------------------------
+
+def _recorded() -> list[Path]:
+    return sorted(RECORDED.glob("*.json")) if RECORDED.is_dir() else []
+
+
+def _member(module: str, row: dict) -> bool:
+    return any(fnmatch.fnmatchcase(module, pattern) for pattern in _patterns(row))
+
+
+def _counted_rate(results: list[dict], row: dict) -> tuple[int, int]:
+    """Kills over mutants in the group, counted from the receipt with json.load."""
+    mine = [result for result in results if _member(result["module"], row)]
+    return sum(result["status"] in KILLED for result in mine), len(mine)
+
+
+def _group_rows(receipt: Path, equivalents: list[dict]) -> list[tuple]:
+    """(receipt, group, the tool's kills and mutants, this file's, whether the floor
+    holds) for each group the receipt mutated."""
+    results = json.loads(receipt.read_text(encoding="utf-8"))["results"]
+    tool = {floor.group: (floor.killed, floor.counted) for floor in mutation.floors(
+        mutation.load_results([receipt]), equivalents, _floors())}
+    counted = {row["group"]: (_counted_rate(results, row), float(row["floor"])) for row in _floors()}
+    return [(receipt.stem, group, tool[group], mine, 100 * mine[0] >= floor * mine[1])
+            for group, (mine, floor) in counted.items() if mine[1]]
+
+
+# --- the canary ----------------------------------------------------------------------------------
+
+ORIGINAL = "return ccn * ccn * (1.0 - cov) ** 3 + ccn"
+CANARIES = {
+    "multiply-to-divide": "return ccn / ccn * (1.0 - cov) ** 3 + ccn",
+    "minus-to-plus": "return ccn * ccn * (1.0 + cov) ** 3 + ccn",
+    "one-to-two": "return ccn * ccn * (2.0 - cov) ** 3 + ccn",
+    "plus-to-minus": "return ccn * ccn * (1.0 - cov) ** 3 - ccn",
+}
+# (1 - cov) ** 4 agrees with ** 3 at cov 0 and 1, the only coverages
+# test_score.py checks: rulings row SS2 until the score-model grid lands.
+EXPONENT = "return ccn * ccn * (1.0 - cov) ** 4 + ccn"
+# The score tests of the killer suite: the unit file, and the score-model
+# packet's accuracy tests once they are in the tree.
+SCORE_TESTS = [target for target in ("tests/unit/test_score.py", "tests/accuracy/score_model")
+               if (REPO / target).exists()]
+
+
+def _tree(tmp_path: Path, line: str) -> Path:
+    tree = tmp_path / "tree"
+    shutil.copytree(REPO / "src", tree / "src")
+    score = tree / "src" / "crapkit" / "score.py"
+    text = score.read_text(encoding="utf-8")
+    assert text.count(ORIGINAL) == 1, "score.crap no longer reads as the canary expects"
+    score.write_text(text.replace(ORIGINAL, line), encoding="utf-8")
+    return tree
+
+
+def _suite(tree: Path) -> subprocess.CompletedProcess:
+    """The score tests with the tree's src/ first, as the killer suite runs them."""
+    env = {**mutation.killer_env(tree, dict(os.environ)), "PYTHONPATH": os.pathsep.join(
+        [str(tree / "src"), str(REPO / "tests")])}
+    probe = "import crapkit, sys; sys.stdout.write(crapkit.__file__)"
+    where = hang_guard.run([sys.executable, "-c", probe], env=env, cwd=REPO, text=True)
+    assert Path(where.stdout).resolve().is_relative_to(tree.resolve()), where.stdout
+    argv = [sys.executable, "-m", "pytest", *SCORE_TESTS, "-m", mutation.INDEPENDENT_ONLY, "-q", "-x",
+            "-p", "no:cacheprovider",
+            "-p", "no:randomly", "-n", "0"]
+    return hang_guard.run(argv, env=env, cwd=REPO, text=True, encoding="utf-8", errors="replace")
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_the_unmutated_copy_passes_the_score_tests(tmp_path):
+    done = _suite(_tree(tmp_path, ORIGINAL))
+
+    assert done.returncode == 0, done.stdout[-2000:]
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.parametrize("name", sorted(CANARIES))
+def test_every_canary_mutant_of_score_crap_dies(tmp_path, name):
+    done = _suite(_tree(tmp_path, CANARIES[name]))
+
+    assert done.returncode == 1, f"{name} survived or broke the run:\n{done.stdout[-2000:]}"
+
+
+def _verdict(done: subprocess.CompletedProcess) -> str:
+    """pytest exit 1 is a failed test (a kill), 0 a pass (a survivor); anything
+    else is a run that broke, which proves neither."""
+    verdicts = {0: "survived", 1: "killed"}
+    assert done.returncode in verdicts, f"the suite broke:\n{done.stdout[-2000:]}"
+    return verdicts[done.returncode]
+
+
+@rulings.applies("SS2")
+@pytest.mark.nightly
+@pytest.mark.process
+def test_ss2_the_exponent_canary_dies(tmp_path):
+    rulings.pin_ruling("SS2", crapkit=_verdict(_suite(_tree(tmp_path, EXPONENT))),
+                       oracle="killed")

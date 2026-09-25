@@ -4,7 +4,8 @@
     python tools/accuracy/mutation.py diff --since-weekly [--base SHA] [--cap-minutes 30]
     python tools/accuracy/mutation.py gate RESULTS.json... [--update]
     python tools/accuracy/mutation.py floors RESULTS.json...
-    python tools/accuracy/mutation.py covered --weekly RECEIPT --diff RECEIPT...
+    python tools/accuracy/mutation.py covered [--receipts DIR]
+    python tools/accuracy/mutation.py tools [--max-children K]
     python tools/accuracy/mutation.py key < MUTANT.diff
     python tools/accuracy/mutation.py killer [PYTEST ARGS...]
 
@@ -31,6 +32,13 @@ group its kill-rate floor after equivalents, computed on the independent-only
 suite (golden, change_control and cross_surface tests deselected); timeouts get
 one serial rerun and never count as kills.
 
+`tools` is the second config: tests/accuracy/kit/exact.py (floor 100 percent)
+and the tools under tools/accuracy (floor 90 percent), each run against the
+tests that exercise it, in a detached worktree of HEAD under
+.crapkit/accuracy/mutation/tools-stage whose [tool.mutmut] table names them.
+mutmut runs there through a launcher that names each module the way its tests
+import it (see LAUNCHER).
+
 `killer` is the suite crapkit.toml's mutation_command runs per mutant. It runs
 pytest with the working directory's src/ and tests/ first on PYTHONPATH, so a
 mutation worktree's code is the code under test even where an editable install
@@ -51,6 +59,7 @@ import re
 import subprocess
 import sys
 import time
+import tomllib
 
 REPO = Path(__file__).resolve().parents[2]
 TABLES = REPO / "tests" / "accuracy" / "suite_strength" / "mutation"
@@ -66,13 +75,25 @@ STATUS_BY_EXIT = {1: "killed", 3: "killed", 0: SURVIVED, 5: "no tests", 33: "no 
                   34: "skipped", 36: TIMEOUT, 37: "caught by type check", -24: TIMEOUT,
                   24: TIMEOUT, 152: TIMEOUT, 255: TIMEOUT, -11: "segfault", -9: "segfault",
                   None: "not checked"}
-INDEPENDENT_ONLY = "not process and not golden and not change_control and not cross_surface"
+# The floors' suite: every test but those comparing crapkit with a copy of itself.
+FLOOR_SUITE = "not golden and not change_control and not cross_surface"
+# The killer suite also leaves out every test that spawns git, node, pwsh or the CLI.
+INDEPENDENT_ONLY = f"not process and {FLOOR_SUITE}"
 SEPARATOR = "ǁ"  # mutmut's class separator in a mangled method name
 WEEKLY_DAY, WEEKLY_HOUR = 5, 6  # Saturday 06:00 UTC, accuracy.yml's weekly schedule
 
 
 class MutationError(ValueError):
     """A table, receipt or argument this tool cannot use."""
+
+
+class MissingReceipts(MutationError):
+    """The receipts a release row reads are not on this machine: an infra miss, exit 3."""
+
+
+# accuracy.yml uploads each weekly shard's and each nightly diff run's receipt
+# under this artifact name pattern; the release row reads them from RECEIPTS.
+RECEIPT_ARTIFACTS = "mutation-receipt-*"
 
 
 # --- keys ----------------------------------------------------------------------------------
@@ -118,15 +139,22 @@ def _unmangled(mangled: str, name: str) -> str:
 def module_path(dotted: str, repo: Path = REPO) -> str:
     """The repo path of a dotted module: src/ first, then the tree itself."""
     relative = dotted.replace(".", "/") + ".py"
-    for candidate in (f"src/{relative}", relative):
+    for candidate in (f"src/{relative}", relative, f"tests/{relative}"):
         if (repo / candidate).is_file():
             return candidate
     raise MutationError(f"no file for module {dotted} under {repo}")
 
 
+def _dotted(path: str) -> str:
+    """The name mutmut gives a module: its path, with src/ (and here tests/) left off."""
+    for prefix in ("src/", "tests/"):
+        path = path.removeprefix(prefix)
+    return path.removesuffix(".py").replace("/", ".")
+
+
 def mutmut_glob(path: str, qualname: str) -> str:
     """The mutmut mutant-name glob for one function: the nightly diff run's filter."""
-    dotted = path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+    dotted = _dotted(path)
     owner, _, name = qualname.rpartition(".")
     mangled = f"x{SEPARATOR}{owner}{SEPARATOR}{name}" if owner else f"x_{name}"
     return f"{dotted}.{mangled}__mutmut_*"
@@ -420,6 +448,36 @@ def _covered_pairs(diffs: list[dict]) -> set[tuple]:
     return {tuple(pair) for receipt in complete for pair in receipt.get("functions", [])}
 
 
+def _of_kind(receipts: list[dict], kind: str) -> list[dict]:
+    return [receipt for receipt in receipts if receipt.get("kind") == kind]
+
+
+def receipts_in(directory: Path) -> tuple[list[dict], list[dict]]:
+    """(weekly shard receipts, nightly diff receipts) saved under `directory`."""
+    loaded = [json.loads(path.read_text(encoding="utf-8"))
+              for path in sorted(Path(directory).glob("*.json"))]
+    return _of_kind(loaded, "weekly"), _of_kind(loaded, "diff")
+
+
+def _missing_shards(weeklies: list[dict]) -> list[int]:
+    of = max(receipt.get("of", 0) for receipt in weeklies)
+    return sorted(set(range(1, of + 1)) - {receipt.get("shard") for receipt in weeklies})
+
+
+def weekly_head(weeklies: list[dict]) -> str:
+    """The commit the last weekly run mutated: one head across every shard 1..of."""
+    if not weeklies:
+        raise MissingReceipts(f"no weekly mutation receipt here; download them with `gh run "
+                              f"download RUN_ID --pattern '{RECEIPT_ARTIFACTS}' -D {RECEIPTS}`")
+    heads = sorted({str(receipt.get("head")) for receipt in weeklies})
+    if len(heads) != 1:
+        raise MutationError(f"the weekly receipts measured {len(heads)} heads: {', '.join(heads)}")
+    missing = _missing_shards(weeklies)
+    if missing:
+        raise MutationError(f"weekly shards {missing} have no receipt")
+    return heads[0]
+
+
 def uncovered(changed: list[tuple[str, str]], diffs: list[dict]) -> list[str]:
     """The calc functions changed since the weekly run that no complete nightly
     diff receipt mutated. The weekly run mutated the tree at its head, before
@@ -464,10 +522,14 @@ def calc_modules(repo: Path = REPO) -> list[str]:
     return calcs.modules(calcs.load(repo / "tests" / "accuracy"))
 
 
-def _mutmut(repo: Path, args: list[str], budget: float | None) -> int:
-    argv = [sys.executable, "-m", "mutmut", *args]
+MUTMUT = ("-m", "mutmut")
+
+
+def _mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple = MUTMUT,
+            env: dict | None = None) -> int:
+    argv = [sys.executable, *mutmut, *args]
     try:
-        return subprocess.run(argv, cwd=repo, timeout=budget).returncode
+        return subprocess.run(argv, cwd=repo, timeout=budget, env=env).returncode
     except subprocess.TimeoutExpired:
         return -1
 
@@ -481,8 +543,8 @@ def _meta_statuses(repo: Path) -> dict[str, str]:
     return statuses
 
 
-def _diff(repo: Path, name: str) -> str:
-    done = subprocess.run([sys.executable, "-m", "mutmut", "show", name], cwd=repo,
+def _diff(repo: Path, name: str, mutmut: tuple = MUTMUT) -> str:
+    done = subprocess.run([sys.executable, *mutmut, "show", name], cwd=repo,
                           capture_output=True, text=True, encoding="utf-8", errors="replace")
     return done.stdout
 
@@ -491,25 +553,26 @@ def _wanted(name: str, globs: list[str] | None) -> bool:
     return globs is None or any(fnmatch.fnmatchcase(name, glob) for glob in globs)
 
 
-def _keyed(repo: Path, name: str, status: str) -> Result:
+def _keyed(repo: Path, name: str, status: str, mutmut: tuple) -> Result:
     """Survivors and timeouts carry their key; a kill needs none."""
     keyed = status in (SURVIVED, TIMEOUT)
-    return result(name, status, _diff(repo, name) if keyed else "", repo)
+    return result(name, status, _diff(repo, name, mutmut) if keyed else "", repo)
 
 
-def collect(repo: Path, wanted: list[str] | None = None) -> list[Result]:
+def collect(repo: Path, wanted: list[str] | None = None, mutmut: tuple = MUTMUT) -> list[Result]:
     """Results from mutmut's meta files, for the mutant names `wanted` globs match."""
-    return [_keyed(repo, name, status) for name, status in sorted(_meta_statuses(repo).items())
-            if _wanted(name, wanted)]
+    return [_keyed(repo, name, status, mutmut)
+            for name, status in sorted(_meta_statuses(repo).items()) if _wanted(name, wanted)]
 
 
-def _rerun_timeouts(repo: Path, rows: list[Result]) -> list[Result]:
+def _rerun_timeouts(repo: Path, rows: list[Result], mutmut: tuple = MUTMUT,
+                    env: dict | None = None) -> list[Result]:
     """One serial rerun per timeout; what still times out stays a timeout."""
     names = [row.name for row in rows if row.status == TIMEOUT]
     if not names:
         return rows
-    _mutmut(repo, ["run", "--max-children", "1", *names], None)
-    return collect(repo, [row.name for row in rows])
+    _mutmut(repo, ["run", "--max-children", "1", *names], None, mutmut, env)
+    return collect(repo, [row.name for row in rows], mutmut)
 
 
 def _receipt(kind: str, **fields) -> dict:
@@ -525,12 +588,141 @@ def _write_receipt(receipt: dict, name: str) -> Path:
 
 
 def _globs_for(modules: list[str]) -> list[str]:
-    dotted = [module.removeprefix("src/").removesuffix(".py").replace("/", ".") for module in modules]
-    return [f"{name}.*" for name in dotted]
+    return [f"{_dotted(module)}.*" for module in modules]
 
 
 def _canary_globs() -> list[str]:
     return [mutmut_glob(*CANARY)]
+
+
+# --- the second config: the accuracy tools and kit.exact -----------------------------------------
+
+TOOLS_STAGE = RECEIPTS / "tools-stage"
+# Each module the second config mutates, with the tests that exercise it. A
+# target another packet brings is staged once its source is in the tree.
+TOOL_TARGETS = {
+    "tests/accuracy/kit/exact.py": ("tests/accuracy/kit/test_exact.py",),
+    "tools/accuracy/retro.py": ("tests/accuracy/suite_strength/test_retro_tool.py",),
+    "tools/accuracy/mutation.py": ("tests/accuracy/suite_strength/test_mutation_tool.py",
+                                   "tests/accuracy/suite_strength/test_mutation_floors.py"),
+    "tools/accuracy/run.py": ("tests/accuracy/kit/test_run_tool.py",
+                              "tests/accuracy/kit/test_run_tool_commands.py",
+                              "tests/accuracy/suite_strength/test_runner_targets.py"),
+    "tools/accuracy/change_control.py": ("tests/accuracy/change_control",),
+    "tools/accuracy/wheel_diff.py": ("tests/accuracy/corpus_goldens/test_wheel_diff_tool.py",),
+}
+LAUNCHER_FILE = "mutmut_launch.py"
+LAUNCHER = '''"""mutmut 3.8.0 for the accuracy tools, started in the stage by tools/accuracy/mutation.py.
+
+mutmut names a module by its path with `src.` left off, and a trampoline runs a
+mutant only inside the module of that name. The kit imports as `accuracy.*`
+from tests/, and tests load a tool by path under a name of their own, so here
+`tests.` is left off too, and a mutated file loaded by path takes the name
+mutmut gave it.
+"""
+import importlib.util
+from pathlib import Path
+import tomllib
+
+
+def canonical(relative: str) -> str:
+    dotted = relative.removesuffix(".py").replace("/", ".")
+    for prefix in ("src.", "tests."):
+        dotted = dotted.removeprefix(prefix)
+    return dotted
+
+
+# --- mutmut ---
+import mutmut.utils.format_utils as names
+
+CONFIG = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["mutmut"]
+SOURCES = set(CONFIG["source_paths"])
+MUTANTS = Path("mutants").resolve()
+_strip, _spec = names.strip_prefix, importlib.util.spec_from_file_location
+
+
+def strip_prefix(text, *, prefix, strict=False):
+    text = _strip(text, prefix=prefix, strict=strict)
+    return _strip(text, prefix="tests.") if prefix == "src." else text
+
+
+def _mutated(location):
+    try:
+        relative = Path(location).resolve().relative_to(MUTANTS).as_posix()
+    except (TypeError, ValueError):
+        return None
+    return relative if relative in SOURCES else None
+
+
+def spec_from_file_location(name, location=None, *args, **kwargs):
+    relative = _mutated(location)
+    return _spec(canonical(relative) if relative else name, location, *args, **kwargs)
+
+
+names.strip_prefix = strip_prefix
+importlib.util.spec_from_file_location = spec_from_file_location
+from mutmut.__main__ import cli
+cli()
+'''
+
+
+def present(targets: dict, repo: Path = REPO) -> dict:
+    """The targets whose source this tree holds."""
+    return {path: tests for path, tests in targets.items() if (repo / path).is_file()}
+
+
+def _mutmut_table(targets: dict) -> str:
+    tests = sorted({test for listed in targets.values() for test in listed})
+    return "\n".join((
+        "[tool.mutmut]",
+        f"source_paths = {json.dumps(sorted(targets))}",
+        f"pytest_add_cli_args_test_selection = {json.dumps(tests)}",
+        f"pytest_add_cli_args = {json.dumps(['-p', 'no:cacheprovider', '-m', FLOOR_SUITE])}",
+        'also_copy = ["tests/", "tools/"]')) + "\n"
+
+
+def stage_config(text: str, targets: dict) -> str:
+    """The repo's pyproject.toml with a [tool.mutmut] table for `targets` in place of its own."""
+    head, _, rest = text.partition("[tool.mutmut]")
+    tail = rest[rest.index("\n["):] if "\n[" in rest else ""
+    return f"{head.rstrip()}\n\n{tail.strip()}\n\n{_mutmut_table(targets)}"
+
+
+def _stage(repo: Path, stage: Path) -> Path:
+    """A detached worktree of `repo`'s HEAD; mutants/ stays, so mutmut keeps its cache."""
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    if not (stage / ".git").exists():
+        stage.parent.mkdir(parents=True, exist_ok=True)
+        _git(repo, "worktree", "add", "-f", "--detach", str(stage), head)
+    _git(stage, "checkout", "-q", "-f", "--detach", head)
+    return stage
+
+
+def tools_env(environ: dict) -> dict:
+    """Every tier's tests with push-sized Hypothesis settings: the floors count what
+    a nightly test kills too, at the cost of a push run."""
+    return {**environ, "CRAPKIT_ACCURACY_TIER": "push", "CRAPKIT_ACCURACY_COLLECT_ALL": "1",
+            "PYTHONDONTWRITEBYTECODE": "1"}
+
+
+def _prepare_stage(targets: dict) -> Path:
+    stage = _stage(REPO, REPO / TOOLS_STAGE)
+    pyproject = stage / "pyproject.toml"
+    pyproject.write_text(stage_config(pyproject.read_text(encoding="utf-8"), targets),
+                         encoding="utf-8")
+    (stage / LAUNCHER_FILE).write_text(LAUNCHER, encoding="utf-8")
+    return stage
+
+
+def _tools(args) -> int:
+    targets = present(TOOL_TARGETS)
+    stage, globs, env = _prepare_stage(targets), _globs_for(list(targets)), tools_env(dict(os.environ))
+    launcher = (LAUNCHER_FILE,)
+    _mutmut(stage, ["run", "--max-children", str(args.max_children), *globs], None, launcher, env)
+    rows = _rerun_timeouts(stage, collect(stage, globs, launcher), launcher, env)
+    receipt = _receipt("tools", modules=sorted(targets), results=[asdict(row) for row in rows])
+    _write_receipt(receipt, "tools.json")
+    return _judge(rows, update=False, canary=False)
 
 
 # --- commands ----------------------------------------------------------------------------------------
@@ -589,7 +781,8 @@ def _diff_run(args) -> int:
     base = args.base or weekly_base(REPO, datetime.datetime.now(datetime.timezone.utc))
     changed = changed_functions(REPO, base, calc_modules())
     rows, complete = _run_globs([mutmut_glob(*pair) for pair in changed], args.cap_minutes * 60)
-    _write_receipt(_diff_receipt(base, changed, rows, complete), "diff.json")
+    receipt = _diff_receipt(base, changed, rows, complete)
+    _write_receipt(receipt, f"diff-{receipt['head'][:12]}.json")
     if not complete:
         print(f"mutation: incomplete: the {args.cap_minutes:g}-minute cap stopped the run")
         return 1
@@ -610,12 +803,11 @@ def _floors_cmd(args) -> int:
 
 
 def _covered(args) -> int:
-    weekly = json.loads(Path(args.weekly).read_text(encoding="utf-8"))
-    diffs = [json.loads(Path(path).read_text(encoding="utf-8")) for path in args.diff]
-    changed = changed_functions(REPO, weekly["head"], calc_modules())
-    missing = uncovered(changed, diffs)
+    weeklies, diffs = receipts_in(args.receipts)
+    head = weekly_head(weeklies)
+    missing = uncovered(changed_functions(REPO, head, calc_modules()), diffs)
     for line in missing:
-        print(f"mutation: {line} changed since the weekly run at {weekly['head'][:12]} and no "
+        print(f"mutation: {line} changed since the weekly run at {head[:12]} and no "
               "complete diff run mutated it")
     return 1 if missing else 0
 
@@ -663,8 +855,9 @@ def _parser() -> argparse.ArgumentParser:
     floors_p = sub.add_parser("floors")
     floors_p.add_argument("results", nargs="+", type=Path)
     covered = sub.add_parser("covered")
-    covered.add_argument("--weekly", required=True)
-    covered.add_argument("--diff", nargs="*", default=[])
+    covered.add_argument("--receipts", type=Path, default=REPO / RECEIPTS)
+    tools = sub.add_parser("tools")
+    tools.add_argument("--max-children", type=int, default=os.cpu_count() or 2)
     sub.add_parser("key")
     killer = sub.add_parser("killer")
     killer.add_argument("pytest", nargs=argparse.REMAINDER)
@@ -672,7 +865,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 COMMANDS = {"weekly": _weekly, "diff": _diff_run, "gate": _gate, "floors": _floors_cmd,
-            "covered": _covered, "key": _key, "killer": _killer}
+            "covered": _covered, "tools": _tools, "key": _key, "killer": _killer}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -681,7 +874,7 @@ def main(argv: list[str] | None = None) -> int:
         return COMMANDS[args.command](args)
     except MutationError as refused:
         print(f"mutation.py: {refused}", file=sys.stderr)
-        return 1
+        return 3 if isinstance(refused, MissingReceipts) else 1
 
 
 if __name__ == "__main__":

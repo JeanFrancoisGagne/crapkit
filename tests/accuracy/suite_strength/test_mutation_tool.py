@@ -13,6 +13,7 @@ import datetime
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import sys
 
@@ -309,6 +310,41 @@ def test_release_coverage_names_changed_functions_no_complete_diff_mutated():
     assert mutation.uncovered(changed, diffs) == ["src/crapkit/digest.py:totals"]
 
 
+def _receipts(directory: Path, *receipts: dict) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    for index, receipt in enumerate(receipts):
+        (directory / f"r{index}.json").write_text(json.dumps(receipt), encoding="utf-8")
+    return directory
+
+
+HEAD_A, HEAD_B = "a" * 40, "b" * 40
+
+
+def test_the_release_row_reads_every_weekly_shard_and_diff_receipt_in_one_directory(tmp_path):
+    weekly = [{"kind": "weekly", "head": HEAD_A, "shard": shard, "of": 2} for shard in (1, 2)]
+    diff = {"kind": "diff", "complete": True, "functions": []}
+    weeklies, diffs = mutation.receipts_in(_receipts(tmp_path / "r", *weekly, diff))
+
+    assert (mutation.weekly_head(weeklies), diffs) == (HEAD_A, [diff])
+
+
+@pytest.mark.parametrize("weekly, says", [
+    ([{"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 3}], "weekly shards [2, 3] have no"),
+    ([{"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 2},
+      {"kind": "weekly", "head": HEAD_B, "shard": 2, "of": 2}], "measured 2 heads"),
+])
+def test_a_weekly_run_the_receipts_do_not_hold_whole_is_refused(weekly, says):
+    with pytest.raises(mutation.MutationError, match=re.escape(says)):
+        mutation.weekly_head(weekly)
+
+
+def test_no_weekly_receipt_is_an_infra_miss_that_names_the_download(tmp_path, capsys):
+    code = mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "empty"))])
+
+    assert code == 3
+    assert "gh run download" in capsys.readouterr().err
+
+
 # --- equivalence evidence --------------------------------------------------------------------------
 
 def _max(a, b):
@@ -396,3 +432,62 @@ def test_gate_command_exits_one_on_a_new_survivor(tmp_path, monkeypatch, capsys)
 
     assert mutation.main(["gate", str(receipt), "--no-canary"]) == 1
     assert f"new survivor src/crapkit/score.py crap {KEYS[0]}" in capsys.readouterr().out
+
+
+# --- the second config: the accuracy tools and kit.exact ---------------------------------------------
+
+PYPROJECT = """\
+[project]
+name = "crapkit"
+
+[tool.mutmut]
+paths_to_mutate = ["src/crapkit/score.py"]
+also_copy = ["tests/"]
+
+[tool.coverage.run]
+patch = ["subprocess"]
+"""
+
+
+def test_the_stage_config_replaces_only_the_mutmut_table():
+    targets = {"tools/accuracy/retro.py": ("tests/accuracy/suite_strength/test_retro_tool.py",)}
+    text = mutation.stage_config(PYPROJECT, targets)
+    parsed = mutation.tomllib.loads(text)
+
+    assert parsed["project"] == {"name": "crapkit"}
+    assert parsed["tool"]["coverage"] == {"run": {"patch": ["subprocess"]}}
+    assert parsed["tool"]["mutmut"]["source_paths"] == ["tools/accuracy/retro.py"]
+    assert parsed["tool"]["mutmut"]["pytest_add_cli_args_test_selection"] == [
+        "tests/accuracy/suite_strength/test_retro_tool.py"]
+    assert parsed["tool"]["mutmut"]["pytest_add_cli_args"][-2:] == ["-m", mutation.FLOOR_SUITE]
+
+
+def test_the_floor_suite_leaves_out_only_the_dependent_methods():
+    assert mutation.FLOOR_SUITE == "not golden and not change_control and not cross_surface"
+
+
+@pytest.mark.parametrize("dotted, path", [
+    ("accuracy.kit.exact", "tests/accuracy/kit/exact.py"),
+    ("tools.accuracy.retro", "tools/accuracy/retro.py"),
+])
+def test_a_stage_module_name_resolves_to_its_repo_path(dotted, path):
+    assert mutation.module_path(dotted) == path
+
+
+def test_only_the_targets_whose_source_is_here_are_staged(tmp_path):
+    (tmp_path / "tools" / "accuracy").mkdir(parents=True)
+    (tmp_path / "tools" / "accuracy" / "retro.py").write_text("", encoding="utf-8")
+    targets = {"tools/accuracy/retro.py": ("t1",), "tools/accuracy/gone.py": ("t2",)}
+
+    assert mutation.present(targets, tmp_path) == {"tools/accuracy/retro.py": ("t1",)}
+
+
+def test_the_launcher_names_a_module_the_way_its_tests_import_it(tmp_path):
+    """mutmut strips `src.` from a path's dotted name; the launcher also strips
+    `tests.`, and a mutated file a test loads by path takes that same name."""
+    namespace: dict = {}
+    source = mutation.LAUNCHER.replace("from mutmut.__main__ import cli\ncli()\n", "")
+    exec(compile(source.split("# --- mutmut ---")[0], "launcher", "exec"), namespace)
+
+    assert namespace["canonical"]("tests/accuracy/kit/exact.py") == "accuracy.kit.exact"
+    assert namespace["canonical"]("tools/accuracy/run.py") == "tools.accuracy.run"
