@@ -38,13 +38,20 @@ def _overlaps(span: tuple[int, int], hunks: list[tuple[int, int]]) -> bool:
     return any(first <= span[1] and span[0] <= last for first, last in hunks)
 
 
-def expected(root: Path, *diff_args: str) -> set[str]:
-    """The functions whose span meets a hunk unidiff reads in `git diff -U0`."""
-    diff = git_text(root, "-c", "core.quotePath=false", "diff", "-U0", "--no-renames",
-                    *diff_args)
-    hunks = unidiff_ranges.ranges(diff + "\n").get("src/m.py", [])
+def _meeting(root: Path, hunks: list[tuple[int, int]]) -> set[str]:
+    """The functions of src/m.py whose span meets one of `hunks`."""
     text = (root / "src" / "m.py").read_bytes().decode("utf-8")
     return {name for name, span in spans(text).items() if _overlaps(span, hunks)}
+
+
+def _diff(root: Path, *diff_args: str) -> str:
+    return git_text(root, "-c", "core.quotePath=false", "diff", "-U0", "--no-renames",
+                    *diff_args) + "\n"
+
+
+def expected(root: Path, *diff_args: str) -> set[str]:
+    """The functions whose span meets a hunk unidiff reads in `git diff -U0`."""
+    return _meeting(root, unidiff_ranges.ranges(_diff(root, *diff_args)).get("src/m.py", []))
 
 
 def _edited(make_repo, edit: str):
@@ -93,12 +100,8 @@ def test_content_lines_starting_with_plus_plus(make_repo):
 
 def _literal_judged(root: Path) -> set[str]:
     """The functions a hunk's added lines meet, with no touch point for a deletion."""
-    diff = git_text(root, "diff", "-U0", "--cached")
-    added = [unidiff_ranges.added(hunk) for patched in unidiff_ranges.files(diff + "\n")
-             for hunk in patched]
-    text = (root / "src" / "m.py").read_bytes().decode("utf-8")
-    return {name for name, span in spans(text).items()
-            if _overlaps(span, [pair for pair in added if pair])}
+    hunks = [hunk for patched in unidiff_ranges.files(_diff(root, "--cached")) for hunk in patched]
+    return _meeting(root, [pair for pair in map(unidiff_ranges.added, hunks) if pair])
 
 
 @rulings.applies("H9")
