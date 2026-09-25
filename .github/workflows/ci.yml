@@ -217,3 +217,232 @@ jobs:
             .crapkit/lane-*.log
           include-hidden-files: true
           if-no-files-found: warn
+
+  # The deploy suite's push set (tests/deploy): crapkit installed the way a
+  # user installs it, through each channel and harness the push cadence names,
+  # fresh and upgraded. tools/deploy/run.py is the one entry point, here and on
+  # a laptop. deploy.yml runs the nightly, weekly, release and published sets;
+  # tests/deploy/MAP.toml says which cell covers what.
+  #
+  # deploy-linux builds crapkit-deploy:core, or reuses it from the GitHub
+  # Actions cache, and runs every Linux push cell in it with no network. The
+  # timeout covers a cold build on this 4-core runner: a job that times out
+  # mid-build writes no cache, and every later run would start cold again.
+  deploy-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: pull Docker Hub images through mirror.gcr.io
+        run: |
+          conf=/etc/docker/daemon.json
+          { sudo cat "$conf" 2>/dev/null || echo '{}'; } | jq '. + {"registry-mirrors": ["https://mirror.gcr.io"]}' > /tmp/daemon.json
+          sudo mv /tmp/daemon.json "$conf"
+          sudo systemctl restart docker
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+        with:
+          version: v0.37.1
+          name: crapkit-deploy
+          driver: docker-container
+          driver-opts: image=moby/buildkit:v0.33.0@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487  # v4.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: run the Linux push cells in crapkit-deploy:core
+        run: python tools/deploy/run.py --cadence push --os linux --image core --cache gha -n 4
+      - name: per-cell durations
+        if: always()
+        shell: python
+        run: |
+          import glob
+          import os
+          import xml.etree.ElementTree as ElementTree
+
+          OUT = ".crapkit/deploy-out"
+          rows = []
+          for path in sorted(glob.glob(f"{OUT}/**/junit-*.xml", recursive=True)):
+              for case in ElementTree.parse(path).iter("testcase"):
+                  props = {prop.get("name"): prop.get("value") for prop in case.iter("property")}
+                  kinds = {child.tag for child in case} & {"failure", "error", "skipped"}
+                  verdict = "failed" if kinds & {"failure", "error"} else ("skipped" if kinds else "passed")
+                  rows.append((float(case.get("time") or 0), props.get("cell_id", "kit"),
+                               case.get("name", "").replace("|", "/"), verdict, os.path.relpath(path, OUT)))
+          rows.sort(key=lambda row: -row[0])
+          lines = [f"### Deploy cells: {len(rows)} tests, {sum(row[0] for row in rows):.0f} s", "",
+                   "| seconds | cell | test | verdict | run |", "|---:|---|---|---|---|"]
+          lines += [f"| {seconds:.1f} | {cell} | `{name}` | {verdict} | {run} |"
+                    for seconds, cell, name, verdict, run in rows]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines if rows else ["### Deploy cells: no JUnit was written"]) + "\n")
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: deploy-linux
+          path: |
+            .crapkit/deploy-out
+            !.crapkit/deploy-out/**/in
+            !.crapkit/deploy-out/**/native-*
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  # lin-native-start on the bare runner: the same start and Route 1 commit a
+  # container cell runs, with no container guard in the way.
+  deploy-linux-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/crapkit-deploy
+          key: deploy-toolchain-${{ runner.os }}-none-${{ hashFiles('tools/deploy/pins.toml', 'tools/deploy/wheelhouse.lock', 'tools/deploy/toolchain.py', 'tests/deploy/docker/*/package-lock.json', 'tests/deploy/docker/runner-requirements.txt') }}
+      - name: install the pinned toolchain
+        run: python tools/deploy/toolchain.py --harness none
+      - name: run lin-native-start
+        run: python tools/deploy/run.py --native --os linux --cadence push --cell lin-native-start
+      - name: per-cell durations
+        if: always()
+        shell: python
+        run: |
+          import glob
+          import os
+          import xml.etree.ElementTree as ElementTree
+
+          OUT = ".crapkit/deploy-out"
+          rows = []
+          for path in sorted(glob.glob(f"{OUT}/**/junit-*.xml", recursive=True)):
+              for case in ElementTree.parse(path).iter("testcase"):
+                  props = {prop.get("name"): prop.get("value") for prop in case.iter("property")}
+                  kinds = {child.tag for child in case} & {"failure", "error", "skipped"}
+                  verdict = "failed" if kinds & {"failure", "error"} else ("skipped" if kinds else "passed")
+                  rows.append((float(case.get("time") or 0), props.get("cell_id", "kit"),
+                               case.get("name", "").replace("|", "/"), verdict, os.path.relpath(path, OUT)))
+          rows.sort(key=lambda row: -row[0])
+          lines = [f"### Deploy cells: {len(rows)} tests, {sum(row[0] for row in rows):.0f} s", "",
+                   "| seconds | cell | test | verdict | run |", "|---:|---|---|---|---|"]
+          lines += [f"| {seconds:.1f} | {cell} | `{name}` | {verdict} | {run} |"
+                    for seconds, cell, name, verdict, run in rows]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines if rows else ["### Deploy cells: no JUnit was written"]) + "\n")
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: deploy-linux-native
+          path: |
+            .crapkit/deploy-out
+            !.crapkit/deploy-out/**/in
+            !.crapkit/deploy-out/**/native-*
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  # The Windows push cells, natively: cmd.exe, PowerShell 5.1 and pwsh,
+  # PortableGit, the cp1252 console. The timeout holds until a first run is
+  # measured; then it is 1.5 times that run (tests/deploy/MAP.toml [budget]).
+  deploy-windows:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/AppData/Local/crapkit-deploy
+          key: deploy-toolchain-${{ runner.os }}-core-${{ hashFiles('tools/deploy/pins.toml', 'tools/deploy/wheelhouse.lock', 'tools/deploy/toolchain.py', 'tests/deploy/docker/*/package-lock.json', 'tests/deploy/docker/runner-requirements.txt') }}
+      - name: install the pinned toolchain
+        run: python tools/deploy/toolchain.py --harness core
+      - name: run the Windows push cells
+        run: python tools/deploy/run.py --native --os windows --cadence push -n 4
+      - name: per-cell durations
+        if: always()
+        shell: python
+        run: |
+          import glob
+          import os
+          import xml.etree.ElementTree as ElementTree
+
+          OUT = ".crapkit/deploy-out"
+          rows = []
+          for path in sorted(glob.glob(f"{OUT}/**/junit-*.xml", recursive=True)):
+              for case in ElementTree.parse(path).iter("testcase"):
+                  props = {prop.get("name"): prop.get("value") for prop in case.iter("property")}
+                  kinds = {child.tag for child in case} & {"failure", "error", "skipped"}
+                  verdict = "failed" if kinds & {"failure", "error"} else ("skipped" if kinds else "passed")
+                  rows.append((float(case.get("time") or 0), props.get("cell_id", "kit"),
+                               case.get("name", "").replace("|", "/"), verdict, os.path.relpath(path, OUT)))
+          rows.sort(key=lambda row: -row[0])
+          lines = [f"### Deploy cells: {len(rows)} tests, {sum(row[0] for row in rows):.0f} s", "",
+                   "| seconds | cell | test | verdict | run |", "|---:|---|---|---|---|"]
+          lines += [f"| {seconds:.1f} | {cell} | `{name}` | {verdict} | {run} |"
+                    for seconds, cell, name, verdict, run in rows]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines if rows else ["### Deploy cells: no JUnit was written"]) + "\n")
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: deploy-windows
+          path: |
+            .crapkit/deploy-out
+            !.crapkit/deploy-out/**/in
+            !.crapkit/deploy-out/**/native-*
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  # The Action as a consumer runs it: crapkit checked out beside a consumer
+  # repo with a planted breach, `uses: ./crapkit` with gate "true" and delta
+  # "false", and a token that can read pull requests but not comment on them.
+  # On push the cell is gha-action-consumer ("no pull request on this event");
+  # on a pull request it is gha-action-readonly-token (the comment post fails
+  # with 403 and the gate still decides the job).
+  deploy-action:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: crapkit
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: build the consumer at the workspace root
+        run: python crapkit/tools/deploy/consumer.py
+      - id: action
+        name: the action scores the consumer
+        continue-on-error: true
+        uses: ./crapkit
+        with:
+          gate: "true"
+          delta: "false"
+      - name: assert what the consumer sees
+        if: always()
+        run: >-
+          python crapkit/tools/deploy/assert_action.py
+          --cell ${{ github.event_name == 'pull_request' && 'gha-action-readonly-token' || 'gha-action-consumer' }}
+          --outcome "${{ steps.action.outcome }}"

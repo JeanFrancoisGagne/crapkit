@@ -1,0 +1,645 @@
+# The deploy suite's slower cadences. ci.yml runs the push set on every push
+# and pull request; this workflow runs the rest:
+#
+#   nightly    the other harnesses, older upgrade sources, rarer channels,
+#              repo shapes, version skew, act, the repeat runs and lock drift
+#   weekly     macOS, the cells that need the network, harness calibration
+#   release    push, nightly, weekly and the network cells together, on the
+#              release commit; `release.py check` wants this run green
+#   published  after a version is on PyPI: the real surfaces at that version
+#
+# The scope job turns the event into one cadence and schedules the entries of
+# tests/deploy/MAP.toml [jobs] whose `when` holds it. A pull request gets the
+# nightly set when it changes an install surface ([scope] paths), and the
+# release set when it carries the deploy-full label; any other pull request
+# runs the scope job alone. Every other job reads the scope job's output.
+name: deploy
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    - cron: "17 6 * * *"
+    - cron: "17 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      cadence:
+        description: which set to run
+        type: choice
+        options: [nightly, weekly, release, published]
+        default: nightly
+      ref:
+        description: the commit or tag to test (default, the ref this run was dispatched on)
+        type: string
+        default: ""
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# A newer push to a pull request cancels the run it replaces. Adding a label
+# other than deploy-full starts a run of its own group, so it never cancels a
+# run in progress.
+concurrency:
+  group: deploy-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.label.name || github.event.schedule || inputs.cadence || 'run' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      cadence: ${{ steps.plan.outputs.cadence }}
+      jobs: ${{ steps.plan.outputs.jobs }}
+      linux: ${{ steps.plan.outputs.linux }}
+      windows: ${{ steps.plan.outputs.windows }}
+      macos: ${{ steps.plan.outputs.macos }}
+      host: ${{ steps.plan.outputs.host }}
+      tool: ${{ steps.plan.outputs.tool }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - id: plan
+        name: choose the cadence and the jobs it runs
+        shell: python
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SCHEDULE: ${{ github.event.schedule }}
+          CADENCE_INPUT: ${{ inputs.cadence }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          import json
+          import os
+          import subprocess
+          import tomllib
+          from pathlib import Path
+
+          MAP = tomllib.loads(Path("tests/deploy/MAP.toml").read_text(encoding="utf-8"))
+          SCOPE, JOBS = MAP["scope"], MAP["jobs"]
+          RUNNERS = ("linux", "windows", "macos", "host", "tool", "action")
+
+
+          def surface_changes():
+              diff = ["git", "-c", "core.quotepath=off", "diff", "--name-only", "-z", os.environ["BASE_SHA"] + "...HEAD"]
+              names = subprocess.run(diff, capture_output=True, text=True, check=True).stdout.split("\0")
+              return [name for name in names if name and name.startswith(tuple(SCOPE["paths"]))]
+
+
+          def labels():
+              return json.loads(os.environ.get("LABELS") or "null") or []
+
+
+          def labeled(label):
+              """A labeled event counts only when the label added is this one."""
+              return ("release", "labeled " + label) if os.environ.get("LABEL") == label else ("none", "another label")
+
+
+          def pull_request():
+              label = SCOPE["label"]
+              if os.environ.get("ACTION") == "labeled":
+                  return labeled(label)
+              if label in labels():
+                  return "release", "labeled " + label
+              changed = surface_changes()
+              return ("nightly", "changes " + ", ".join(changed[:5])) if changed else ("none", "no install surface changed")
+
+
+          def cadence():
+              event = os.environ["EVENT_NAME"]
+              if event == "pull_request":
+                  return pull_request()
+              if event == "schedule":
+                  return SCOPE["schedules"][os.environ["SCHEDULE"]], "schedule " + os.environ["SCHEDULE"]
+              if event == "workflow_dispatch":
+                  return os.environ["CADENCE_INPUT"], "dispatched"
+              return "published", "tag " + os.environ.get("REF_NAME", "")
+
+
+          def entry(name, job, chosen):
+              return {"name": name, "timeout": job["timeout"], "nonblocking": job.get("nonblocking", False),
+                      "free_disk": job.get("free_disk", False), "harness": job.get("harness", "none"),
+                      "then": job.get("then", ""), "command": job.get("command", ""),
+                      "runs": [args.replace("{cadence}", chosen) for args in job.get("runs", [])]}
+
+
+          def plan(chosen):
+              matrices = {runner: [] for runner in RUNNERS}
+              for name, job in JOBS.items():
+                  if chosen in job["when"] and not job.get("blocked"):
+                      matrices[job["runner"]].append(entry(name, job, chosen))
+              return matrices
+
+
+          chosen, why = cadence()
+          matrices = plan(chosen)
+          names = [item["name"] for items in matrices.values() for item in items]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"cadence={chosen}\njobs={json.dumps(names)}\n")
+              out.writelines(f"{runner}={json.dumps(items)}\n" for runner, items in matrices.items())
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(f"deploy scope: {chosen} ({why}); jobs: {', '.join(names) or 'none'}\n")
+
+  # Container cells: each entry builds or reuses its image and runs run.py.
+  linux:
+    name: ${{ matrix.name }}
+    needs: scope
+    if: needs.scope.outputs.linux != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    continue-on-error: ${{ matrix.nonblocking }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.scope.outputs.linux) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - name: free the runner's disk for the large images
+        if: matrix.free_disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: pull Docker Hub images through mirror.gcr.io
+        run: |
+          conf=/etc/docker/daemon.json
+          { sudo cat "$conf" 2>/dev/null || echo '{}'; } | jq '. + {"registry-mirrors": ["https://mirror.gcr.io"]}' > /tmp/daemon.json
+          sudo mv /tmp/daemon.json "$conf"
+          sudo systemctl restart docker
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+        with:
+          version: v0.37.1
+          name: crapkit-deploy
+          driver: docker-container
+          driver-opts: image=moby/buildkit:v0.33.0@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487  # v4.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: run the cells
+        shell: python
+        env:
+          RUNS: ${{ toJSON(matrix.runs) }}
+        run: |
+          import json
+          import os
+          import shlex
+          import subprocess
+          import sys
+
+          codes = [subprocess.run([sys.executable, "tools/deploy/run.py", *shlex.split(args),
+                                   "--out", f".crapkit/deploy-out/{index}"]).returncode
+                   for index, args in enumerate(json.loads(os.environ["RUNS"]))]
+          print(f"run.py exit codes: {codes}")
+          sys.exit(max(codes, default=0))
+      - name: then
+        if: matrix.then != ''
+        env:
+          THEN: ${{ matrix.then }}
+        run: bash -c "$THEN"
+      - name: per-cell durations
+        if: always()
+        shell: python
+        run: |
+          import glob
+          import os
+          import xml.etree.ElementTree as ElementTree
+
+          OUT = ".crapkit/deploy-out"
+          rows = []
+          for path in sorted(glob.glob(f"{OUT}/**/junit-*.xml", recursive=True)):
+              for case in ElementTree.parse(path).iter("testcase"):
+                  props = {prop.get("name"): prop.get("value") for prop in case.iter("property")}
+                  kinds = {child.tag for child in case} & {"failure", "error", "skipped"}
+                  verdict = "failed" if kinds & {"failure", "error"} else ("skipped" if kinds else "passed")
+                  rows.append((float(case.get("time") or 0), props.get("cell_id", "kit"),
+                               case.get("name", "").replace("|", "/"), verdict, os.path.relpath(path, OUT)))
+          rows.sort(key=lambda row: -row[0])
+          lines = [f"### Deploy cells: {len(rows)} tests, {sum(row[0] for row in rows):.0f} s", "",
+                   "| seconds | cell | test | verdict | run |", "|---:|---|---|---|---|"]
+          lines += [f"| {seconds:.1f} | {cell} | `{name}` | {verdict} | {run} |"
+                    for seconds, cell, name, verdict, run in rows]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines if rows else ["### Deploy cells: no JUnit was written"]) + "\n")
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: deploy-${{ matrix.name }}
+          path: |
+            .crapkit/deploy-out
+            !.crapkit/deploy-out/**/in
+            !.crapkit/deploy-out/**/native-*
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  # Native cells on Windows, after tools/deploy/toolchain.py installs the pins.
+  windows:
+    name: ${{ matrix.name }}
+    needs: scope
+    if: needs.scope.outputs.windows != '[]'
+    runs-on: windows-2025
+    timeout-minutes: ${{ matrix.timeout }}
+    continue-on-error: ${{ matrix.nonblocking }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.scope.outputs.windows) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/AppData/Local/crapkit-deploy
+          key: deploy-toolchain-${{ runner.os }}-${{ matrix.harness }}-${{ hashFiles('tools/deploy/pins.toml', 'tools/deploy/wheelhouse.lock', 'tools/deploy/toolchain.py', 'tests/deploy/docker/*/package-lock.json', 'tests/deploy/docker/runner-requirements.txt') }}
+      - name: install the pinned toolchain
+        run: python tools/deploy/toolchain.py --harness ${{ matrix.harness }}
+      - name: run the cells
+        shell: python
+        env:
+          RUNS: ${{ toJSON(matrix.runs) }}
+        run: |
+          import json
+          import os
+          import shlex
+          import subprocess
+          import sys
+
+          codes = [subprocess.run([sys.executable, "tools/deploy/run.py", *shlex.split(args),
+                                   "--out", f".crapkit/deploy-out/{index}"]).returncode
+                   for index, args in enumerate(json.loads(os.environ["RUNS"]))]
+          print(f"run.py exit codes: {codes}")
+          sys.exit(max(codes, default=0))
+      - name: per-cell durations
+        if: always()
+        shell: python
+        run: |
+          import glob
+          import os
+          import xml.etree.ElementTree as ElementTree
+
+          OUT = ".crapkit/deploy-out"
+          rows = []
+          for path in sorted(glob.glob(f"{OUT}/**/junit-*.xml", recursive=True)):
+              for case in ElementTree.parse(path).iter("testcase"):
+                  props = {prop.get("name"): prop.get("value") for prop in case.iter("property")}
+                  kinds = {child.tag for child in case} & {"failure", "error", "skipped"}
+                  verdict = "failed" if kinds & {"failure", "error"} else ("skipped" if kinds else "passed")
+                  rows.append((float(case.get("time") or 0), props.get("cell_id", "kit"),
+                               case.get("name", "").replace("|", "/"), verdict, os.path.relpath(path, OUT)))
+          rows.sort(key=lambda row: -row[0])
+          lines = [f"### Deploy cells: {len(rows)} tests, {sum(row[0] for row in rows):.0f} s", "",
+                   "| seconds | cell | test | verdict | run |", "|---:|---|---|---|---|"]
+          lines += [f"| {seconds:.1f} | {cell} | `{name}` | {verdict} | {run} |"
+                    for seconds, cell, name, verdict, run in rows]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines if rows else ["### Deploy cells: no JUnit was written"]) + "\n")
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: deploy-${{ matrix.name }}
+          path: |
+            .crapkit/deploy-out
+            !.crapkit/deploy-out/**/in
+            !.crapkit/deploy-out/**/native-*
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  # Native cells on macOS.
+  macos:
+    name: ${{ matrix.name }}
+    needs: scope
+    if: needs.scope.outputs.macos != '[]'
+    runs-on: macos-15
+    timeout-minutes: ${{ matrix.timeout }}
+    continue-on-error: ${{ matrix.nonblocking }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.scope.outputs.macos) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/Library/Caches/crapkit-deploy
+          key: deploy-toolchain-${{ runner.os }}-${{ matrix.harness }}-${{ hashFiles('tools/deploy/pins.toml', 'tools/deploy/wheelhouse.lock', 'tools/deploy/toolchain.py', 'tests/deploy/docker/*/package-lock.json', 'tests/deploy/docker/runner-requirements.txt') }}
+      - name: install the pinned toolchain
+        run: python tools/deploy/toolchain.py --harness ${{ matrix.harness }}
+      - name: run the cells
+        shell: python
+        env:
+          RUNS: ${{ toJSON(matrix.runs) }}
+        run: |
+          import json
+          import os
+          import shlex
+          import subprocess
+          import sys
+
+          codes = [subprocess.run([sys.executable, "tools/deploy/run.py", *shlex.split(args),
+                                   "--out", f".crapkit/deploy-out/{index}"]).returncode
+                   for index, args in enumerate(json.loads(os.environ["RUNS"]))]
+          print(f"run.py exit codes: {codes}")
+          sys.exit(max(codes, default=0))
+      - name: per-cell durations
+        if: always()
+        shell: python
+        run: |
+          import glob
+          import os
+          import xml.etree.ElementTree as ElementTree
+
+          OUT = ".crapkit/deploy-out"
+          rows = []
+          for path in sorted(glob.glob(f"{OUT}/**/junit-*.xml", recursive=True)):
+              for case in ElementTree.parse(path).iter("testcase"):
+                  props = {prop.get("name"): prop.get("value") for prop in case.iter("property")}
+                  kinds = {child.tag for child in case} & {"failure", "error", "skipped"}
+                  verdict = "failed" if kinds & {"failure", "error"} else ("skipped" if kinds else "passed")
+                  rows.append((float(case.get("time") or 0), props.get("cell_id", "kit"),
+                               case.get("name", "").replace("|", "/"), verdict, os.path.relpath(path, OUT)))
+          rows.sort(key=lambda row: -row[0])
+          lines = [f"### Deploy cells: {len(rows)} tests, {sum(row[0] for row in rows):.0f} s", "",
+                   "| seconds | cell | test | verdict | run |", "|---:|---|---|---|---|"]
+          lines += [f"| {seconds:.1f} | {cell} | `{name}` | {verdict} | {run} |"
+                    for seconds, cell, name, verdict, run in rows]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines if rows else ["### Deploy cells: no JUnit was written"]) + "\n")
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: deploy-${{ matrix.name }}
+          path: |
+            .crapkit/deploy-out
+            !.crapkit/deploy-out/**/in
+            !.crapkit/deploy-out/**/native-*
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  # Native Linux cells beside the host's Docker daemon (the product image, a
+  # devcontainer, podman). Every entry is blocked on the Linux toolchain gap
+  # in MAP.toml [gaps] until toolchain.py can install on this runner.
+  host:
+    name: ${{ matrix.name }}
+    needs: scope
+    if: needs.scope.outputs.host != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    continue-on-error: ${{ matrix.nonblocking }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.scope.outputs.host) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/crapkit-deploy
+          key: deploy-toolchain-${{ runner.os }}-${{ matrix.harness }}-${{ hashFiles('tools/deploy/pins.toml', 'tools/deploy/wheelhouse.lock', 'tools/deploy/toolchain.py', 'tests/deploy/docker/*/package-lock.json', 'tests/deploy/docker/runner-requirements.txt') }}
+      - name: install the pinned toolchain
+        run: python tools/deploy/toolchain.py --harness ${{ matrix.harness }}
+      - name: run the cells
+        shell: python
+        env:
+          RUNS: ${{ toJSON(matrix.runs) }}
+        run: |
+          import json
+          import os
+          import shlex
+          import subprocess
+          import sys
+
+          codes = [subprocess.run([sys.executable, "tools/deploy/run.py", *shlex.split(args),
+                                   "--out", f".crapkit/deploy-out/{index}"]).returncode
+                   for index, args in enumerate(json.loads(os.environ["RUNS"]))]
+          print(f"run.py exit codes: {codes}")
+          sys.exit(max(codes, default=0))
+      - name: per-cell durations
+        if: always()
+        shell: python
+        run: |
+          import glob
+          import os
+          import xml.etree.ElementTree as ElementTree
+
+          OUT = ".crapkit/deploy-out"
+          rows = []
+          for path in sorted(glob.glob(f"{OUT}/**/junit-*.xml", recursive=True)):
+              for case in ElementTree.parse(path).iter("testcase"):
+                  props = {prop.get("name"): prop.get("value") for prop in case.iter("property")}
+                  kinds = {child.tag for child in case} & {"failure", "error", "skipped"}
+                  verdict = "failed" if kinds & {"failure", "error"} else ("skipped" if kinds else "passed")
+                  rows.append((float(case.get("time") or 0), props.get("cell_id", "kit"),
+                               case.get("name", "").replace("|", "/"), verdict, os.path.relpath(path, OUT)))
+          rows.sort(key=lambda row: -row[0])
+          lines = [f"### Deploy cells: {len(rows)} tests, {sum(row[0] for row in rows):.0f} s", "",
+                   "| seconds | cell | test | verdict | run |", "|---:|---|---|---|---|"]
+          lines += [f"| {seconds:.1f} | {cell} | `{name}` | {verdict} | {run} |"
+                    for seconds, cell, name, verdict, run in rows]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines if rows else ["### Deploy cells: no JUnit was written"]) + "\n")
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: deploy-${{ matrix.name }}
+          path: |
+            .crapkit/deploy-out
+            !.crapkit/deploy-out/**/in
+            !.crapkit/deploy-out/**/native-*
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  # One command each: lock drift (a newer crapkit or lizard on PyPI than
+  # wheelhouse.lock names fails; a newer harness is reported) and calibration.
+  tool:
+    name: ${{ matrix.name }}
+    needs: scope
+    if: needs.scope.outputs.tool != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    continue-on-error: ${{ matrix.nonblocking }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.scope.outputs.tool) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: run the command
+        env:
+          COMMAND: ${{ matrix.command }}
+        run: bash -c "$COMMAND"
+
+  # The README's CI job in a `container: python:3.12`, where crapkit's container
+  # guard refuses the coverage lane until the documented key is set.
+  gha-action-container-job:
+    needs: scope
+    if: contains(fromJSON(needs.scope.outputs.jobs), 'gha-action-container-job')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container: python:3.12
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: crapkit
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - name: build the consumer at the workspace root
+        run: python crapkit/tools/deploy/consumer.py
+      - id: action
+        name: the action scores the consumer
+        continue-on-error: true
+        uses: ./crapkit
+        with:
+          gate: "true"
+          delta: "false"
+      - name: assert what the consumer sees
+        if: always()
+        run: python crapkit/tools/deploy/assert_action.py --cell gha-action-container-job --outcome "${{ steps.action.outcome }}"
+
+  # A consumer pinned to the action at v0.7.6 moves its pin to the candidate;
+  # the .crapkit the old action wrote stays in the workspace between the two.
+  gha-action-tag-upgrade:
+    needs: scope
+    if: contains(fromJSON(needs.scope.outputs.jobs), 'gha-action-tag-upgrade')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: crapkit
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: check out the action as tagged v0.7.6
+        run: git -C crapkit worktree add --detach ../crapkit-v0.7.6 v0.7.6
+      - name: build the consumer at the workspace root
+        run: python crapkit/tools/deploy/consumer.py
+      - id: old
+        name: the action at v0.7.6 scores the consumer
+        continue-on-error: true
+        uses: ./crapkit-v0.7.6
+        with:
+          gate: "false"
+          delta: "false"
+      - id: action
+        name: the candidate action scores it again over what v0.7.6 left
+        continue-on-error: true
+        uses: ./crapkit
+        with:
+          gate: "true"
+          delta: "false"
+      - name: assert what the consumer sees
+        if: always()
+        run: python crapkit/tools/deploy/assert_action.py --cell gha-action-tag-upgrade --outcome "${{ steps.action.outcome }}"
+
+  gha-action-windows:
+    needs: scope
+    if: contains(fromJSON(needs.scope.outputs.jobs), 'gha-action-windows')
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: crapkit
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: build the consumer at the workspace root
+        run: python crapkit/tools/deploy/consumer.py
+      - id: action
+        name: the action scores the consumer
+        continue-on-error: true
+        uses: ./crapkit
+        with:
+          gate: "true"
+          delta: "false"
+      - name: assert what the consumer sees
+        if: always()
+        run: python crapkit/tools/deploy/assert_action.py --cell gha-action-windows --outcome "${{ steps.action.outcome }}"
+
+  # The action as GitHub serves the tag just published. `uses:` takes no
+  # expression, so the job checks the tag out and runs that tree.
+  published-action-tag:
+    needs: scope
+    if: contains(fromJSON(needs.scope.outputs.jobs), 'published-action-tag')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: crapkit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ inputs.ref || github.ref_name }}
+          path: published
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: build the consumer at the workspace root
+        run: python crapkit/tools/deploy/consumer.py
+      - id: action
+        name: the published action scores the consumer
+        continue-on-error: true
+        uses: ./published
+        with:
+          gate: "true"
+          delta: "false"
+      - name: assert what the consumer sees
+        if: always()
+        run: python crapkit/tools/deploy/assert_action.py --cell published-action-tag --outcome "${{ steps.action.outcome }}"

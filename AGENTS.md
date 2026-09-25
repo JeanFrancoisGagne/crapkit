@@ -669,6 +669,25 @@ Use `--coverage` to combine both suites' branch coverage, test contexts and JUni
 results. Either suite failing makes the runner fail. Use `--suite unit` or
 `--suite e2e` to run one session, the way each Windows CI job does.
 
+The deploy suite under `tests/deploy` installs crapkit the way a user does, through each
+channel and harness, fresh and upgraded. A bare `pytest` leaves it uncollected. It runs
+through one entry point, which builds the pinned images (or reuses them), exports this
+tree into them and runs the cells with no network:
+
+```sh
+python tools/deploy/run.py --packet deploy-kit          # the kit's own tests, in crapkit-deploy:core
+python tools/deploy/run.py --cell lin-pip-start-py311   # one cell
+python tools/deploy/run.py --cadence push               # what ci.yml's deploy-linux job runs
+python tools/deploy/run.py --native --os windows        # Windows or macOS, after tools/deploy/toolchain.py
+```
+
+ci.yml runs the push set in `deploy-linux`, `deploy-linux-native`, `deploy-windows` and
+`deploy-action`. deploy.yml runs the nightly, weekly, release and published sets, and runs
+on a pull request only when it changes an install surface or carries the `deploy-full`
+label. `tests/deploy/MAP.toml` maps every documented install command, channel, harness and
+upgrade source to its cells, and `tests/unit/test_deploy_map.py` fails on a doc fence the
+map does not cover. `tools/deploy/README.md` is the full guide.
+
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
 `cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives
 the CLI against real git repos in tmp dirs and asserts through the CLI only. Every call
