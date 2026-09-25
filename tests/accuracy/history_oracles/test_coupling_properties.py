@@ -15,7 +15,7 @@ import random
 from hypothesis import given, strategies as st
 import pytest
 
-from accuracy.kit import repos, strategies
+from accuracy.kit import repos, rulings, strategies
 from accuracy.kit.settings import pure
 from accuracy.history_oracles.oracles import pair_count
 from accuracy.history_oracles.repos import history_specs as specs
@@ -94,6 +94,25 @@ def test_commit_order_moves_no_pair(change_sets, rng: random.Random):
     assert (coupling.change_coupling(_log(shuffled), min_support=1, min_confidence=0, top=None)
             == coupling.change_coupling(_log(change_sets), min_support=1, min_confidence=0,
                                         top=None))
+
+
+def _order(pairs: list[tuple]) -> str:
+    return ", ".join(" ".join(files) for files, _, _ in pairs
+                     if "src/a.py" in files or "src/y.py" in files)
+
+
+@rulings.applies("H14")
+def test_equal_products_rank_by_their_paths():
+    """src/a.py and src/b.py share 1 of their 3 commits, src/y.py and src/z.py 3
+    of their 27: support x confidence is 0.3333 for both, so the paths order
+    them and a.py's pair ranks first (repos/history_specs.py TIED_SETS)."""
+    tracked = {path for commit in specs.TIED_SETS for path in commit}
+
+    got = coupling.change_coupling(_log(list(specs.TIED_SETS)), min_support=1, min_confidence=0,
+                                   top=None, tracked=tracked)
+
+    rulings.pin_ruling("H14", crapkit=_order(_said(got)),
+                       oracle=_order(_model(list(specs.TIED_SETS), tracked)))
 
 
 def test_git_spelling_quotes_as_git_does():

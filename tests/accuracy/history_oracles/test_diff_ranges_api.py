@@ -11,7 +11,7 @@ that looks like diff structure: '++ ' and '-- ' content reads '+++ ' and
 Real diffs: a commit that edits a CRLF file, drops a final newline, edits a
 file with a non-ASCII name, adds a '++ ' line and removes a '-- ' line, and
 moves a file, read the way crapkit reads them (gitio.diff_since), against the
-hand table DIFF_HAND, unidiff over `git diff`, and nightly pygit2's own diff.
+hand table hand_ranges.tsv, unidiff over `git diff`, and nightly pygit2's own diff.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ import pytest
 
 from accuracy.kit import repos
 from accuracy.kit.settings import pure
+from accuracy.history_oracles import history_hand
 from accuracy.history_oracles.oracles import pygit2_hunks, unidiff_ranges
 from accuracy.history_oracles.oracles.history_git import text as git_text
 from accuracy.history_oracles.repos import history_specs as specs
@@ -64,7 +65,7 @@ def edited(make_repo):
 def test_real_diffs_match_the_hand_table(edited):
     built, base = edited
 
-    assert changed_ranges(diff_since(built.root, base)) == specs.DIFF_HAND
+    assert changed_ranges(diff_since(built.root, base)) == history_hand.ranges()
 
 
 @pytest.mark.process

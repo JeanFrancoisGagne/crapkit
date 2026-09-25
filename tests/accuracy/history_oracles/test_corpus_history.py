@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from fractions import Fraction
 import os
 from pathlib import Path
 
@@ -164,6 +165,39 @@ def test_code_maat_counts_match(history, oracle, tmp_path):
         path: (revisions[path], authors[path]) for path in revisions}
 
 
+def _degree(support: int, revs: dict, pair: tuple[str, str]) -> int:
+    """code-maat's int(100 * shared / mean(revs)), in exact arithmetic (H6)."""
+    return int(Fraction(200 * support, revs[pair[0]] + revs[pair[1]]))
+
+
+def _small_revisions(commits: list, log: Path) -> dict[str, int]:
+    """code-maat's revisions per file over the commits of 30 files or fewer (H7)."""
+    small = [commit for commit in commits if len(commit.paths) <= pair_count.BULK]
+    return code_maat.revisions(code_maat.write_log(small, log))
+
+
+def _within(degrees: dict, paths: set[str]) -> dict:
+    """The code-maat degrees of pairs whose two files are both tracked."""
+    return {pair: degree for pair, degree in degrees.items() if set(pair) <= paths}
+
+
+@pytest.mark.platform("linux")
+@pytest.mark.parametrize("history", NIGHTLY, indirect=True)
+def test_code_maat_degree_follows_from_crapkit_s_support(history, oracle, tmp_path):
+    """code-maat's coupling degree for every tracked pair, predicted from the
+    support crapkit prints and the file counts of commits of 30 files or fewer
+    (H6, H7)."""
+    oracle("code-maat")
+    commits, paths = _walked(history), tracked(history)
+    revs = _small_revisions(commits, tmp_path / "small.log")
+
+    said = crapkit_pairs(history, paths)
+
+    degrees = code_maat.coupling(code_maat.write_log(commits, tmp_path / "all.log"))
+    assert {files: _degree(support, revs, files) for files, support, _ in said} == _within(
+        degrees, paths)
+
+
 def _bases(found: History) -> list[str]:
     count = int(text(found.root, "rev-list", "--count", "--first-parent", "HEAD"))
     return [f"HEAD~{back}" for back in (1, 5, 20, 60) if back < count]
@@ -193,24 +227,17 @@ def test_pygit2_renames_match(history, oracle):
             pygit2_renames.renames(history.root, base), contested), (base, sorted(contested))
 
 
-def _merge_touched(found: History) -> set[str]:
-    """Files a merge's first-parent diff names: bugspots counts them at the merge."""
-    merges = text(found.root, "rev-list", "--merges", "HEAD").split()
-    return {path for merge in merges
-            for path in text(found.root, "diff", "--name-only", f"{merge}^1", merge).split("\n")}
-
-
 def _renamed(commits: list) -> set[str]:
     return {path for commit in commits for pair in commit.renames for path in pair if path}
 
 
 @pytest.mark.platform("linux")
 @pytest.mark.parametrize("history", NIGHTLY, indirect=True)
-def test_bugspots_scores_match_away_from_merges_and_renames(history, oracle, tmp_path):
-    """On a copy whose committer dates are its author dates (H4), every commit a
-    fix, the walk cut to the window and the clock at the newest commit,
-    bugspots scores the files no merge and no rename touched at crapkit's
-    weight (H13)."""
+def test_bugspots_scores_match_away_from_renames(history, oracle, tmp_path):
+    """On a copy whose committer dates are its author dates (H4), bugspots
+    walking the window's commits without merges (H16, H13), every commit a fix
+    and the clock at the newest commit scores every file no rename names (H15)
+    at crapkit's weight."""
     oracle("bugspots")
     copy = History(bugspots_runner.retimed(history.root, tmp_path / "retimed"), history.now)
     commits = _walked(copy)
@@ -218,6 +245,6 @@ def test_bugspots_scores_match_away_from_merges_and_renames(history, oracle, tmp
     said = churn_cache.load_churn(copy.root, 12)
 
     branch = text(copy.root, "branch", "--show-current")
-    scores = bugspots_runner.scores(copy.root, branch, depth=len(commits))
-    kept = set(said) - _merge_touched(copy) - _renamed(commits)
+    scores = bugspots_runner.scores(copy.root, branch, commits=bugspots_runner.window(commits))
+    kept = set(said) - _renamed(commits)
     assert kept and {p: Decimal(repr(said[p].weight)) for p in kept} == {p: scores[p] for p in kept}

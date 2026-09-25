@@ -206,20 +206,8 @@ COUPLED_NOW = EPOCH + 60 * DAY
 # src/y.py and src/z.py share 3 of their 27 each: support 3, confidence 3/27 = 0.1111.
 # Both products are 0.3333, so the paths decide: a.py's pair first. In binary floating
 # point 3 * 0.1111 is 0.33330000000000004 and 1 * 0.3333 is 0.3333.
-
-
-def _tied_steps() -> tuple:
-    groups = ([("src/a.py", "src/b.py")] + [("src/a.py",), ("src/b.py",)] * 2
-              + [("src/y.py", "src/z.py")] * 3 + [("src/y.py",), ("src/z.py",)] * 24)
-    steps = [Commit(files={"crapkit.toml": config(), "README.md": "tied\n"}, date=EPOCH,
-                    message="seed")]
-    steps += [Commit(files=_touch(group, step), date=EPOCH + step * 3_600, message=f"t {step}")
-              for step, group in enumerate(groups, start=1)]
-    return tuple(steps)
-
-
-TIED = Spec(steps=_tied_steps())
-TIED_NOW = EPOCH + 10 * DAY
+TIED_SETS = tuple([("src/a.py", "src/b.py")] + [("src/a.py",), ("src/b.py",)] * 2
+                  + [("src/y.py", "src/z.py")] * 3 + [("src/y.py",), ("src/z.py",)] * 24)
 
 # --- a month end: 6 months before Aug 31 is Mar 3, before Sep 1 it is Mar 1 (R59) ---------
 AUG_31 = 1_756_641_600  # 2025-08-31T12:00:00Z
@@ -268,13 +256,12 @@ GATED = Spec(steps=(Commit(files={"crapkit.toml": config(), "src/m.py": GATED_TE
                            date=EPOCH, message="five gated functions"),))
 GATED_NOW = EPOCH + DAY
 GATED_EDITS = {
-    # name: (new text of src/m.py, the functions the edit changes, worked by hand)
+    # name: the new text of src/m.py; hand_gated.tsv names the functions each edit changes
     "plus_plus": (gated("f0") + gated("f1", doc="++ marker\n") + gated("f2", doc="-- note\n")
-                  + gated("f3", tag="b") + gated("f4"), {"f1", "f3"}),
+                  + gated("f3", tag="b") + gated("f4")),
     "mixed": (gated("f0") + gated("f1", doc="++ marker\n") + gated("f2") + gated("f3", tag="b")
-              + gated("f4", tag="b").rstrip("\n"), {"f1", "f2", "f3", "f4"}),
-    "deletion_only": (gated("f0") + gated("f1") + gated("f2") + gated("f3") + gated("f4"),
-                      {"f2"}),
+              + gated("f4", tag="b").rstrip("\n")),
+    "deletion_only": gated("f0") + gated("f1") + gated("f2") + gated("f3") + gated("f4"),
 }
 
 
@@ -293,15 +280,7 @@ DIFF_EDIT = {
     "src/\u00fc.py": "1\nTWO\n3\n4\nFIVE\n6\n".encode(),
     "src/plus.py": b"p1\np2\np3\n++ added\np5\np6\np7\np8\n",
 }
-# Worked by hand from the two versions: the new-side lines each edit changed, and for
-# the removed "-- removed" line the line before it (ruling H9).
-DIFF_HAND = {
-    "src/crlf.py": [(3, 3)],
-    "src/noeol.py": [(3, 3)],
-    "src/\u00fc.py": [(2, 2), (5, 5)],
-    "src/plus.py": [(4, 4), (7, 7)],
-    "src/new.py": [(1, 3)],
-}
+# hand_ranges.tsv holds the new-side lines each edit changed, worked by hand.
 DIFF_CASES = Spec(steps=(
     Commit(files=DIFF_BASE, date=EPOCH, message="base"),
     Commit(files=DIFF_EDIT, renames={"src/old.py": "src/new.py"}, date=EPOCH + DAY,
@@ -311,7 +290,7 @@ DIFF_CASES = Spec(steps=(
 
 # --- renames, moves and copies after a seed (docs/ratchet.md#pruning-and-renames) --------
 # Five files of gated functions are seeded; then one commit moves, copies and renames
-# them. RENAME_MOVES says what each file becomes and RENAMED_MARKS where the docs'
+# them. RENAME_MOVES says what each file becomes and hand_renames.tsv where the docs'
 # three conditions put its marks after `ratchet prune`, worked by hand.
 
 
@@ -332,13 +311,6 @@ RENAME_MOVES = {
     "heavy edit": ("src/c.py", "src/c2.py", _heavy("fc")),
     "light edit": ("src/d.py", "src/d2.py", gated("fd") + gated("gd", tag="edited")),
     "function renamed": ("src/e.py", "src/e2.py", gated("fe_new")),
-}
-RENAMED_MARKS = {
-    ("src/moved/a.py", "fa"), ("src/moved/a.py", "ga"),  # followed
-    ("src/b.py", "fb"),  # a copy moves nothing
-    ("src/d2.py", "fd"), ("src/d2.py", "gd"),  # followed: most of the file survived
-    # src/c.py's fc: git calls no rename, the function left c.py, the mark drops
-    # src/e.py's fe: renamed, but no fe at the destination, the mark drops
 }
 RENAMES_NOW = EPOCH + 2 * DAY
 RENAMES_NESTED = Spec(root="pkg", steps=(

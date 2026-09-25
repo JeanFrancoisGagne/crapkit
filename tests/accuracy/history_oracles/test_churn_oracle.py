@@ -282,15 +282,74 @@ def test_a_retimed_copy_makes_bugspots_read_author_time(make_repo, oracle, tmp_p
     assert bugspots_runner.scores(copy)["src/x.py"] == stored["src/x.py"].weight
 
 
+def _renamed(commits: list) -> set[str]:
+    return {path for commit in commits for pair in commit.renames for path in pair if path}
+
+
+@pytest.mark.nightly
+@pytest.mark.platform("linux")
+@pytest.mark.parametrize("name", ["MIXED", "EXPIRY"])
+def test_the_window_transform_makes_bugspots_read_crapkit_s_commits(make_repo, oracle, name):
+    """H16's transform: bugspots walks the window's commits, merges left out
+    (H13), and every file no rename names (H15) scores at crapkit's weight."""
+    oracle("bugspots")
+    spec, now = getattr(specs, name), {"MIXED": specs.MIXED_NOW, "EXPIRY": specs.EXPIRY_AFTER}[name]
+    built = make_repo(spec)
+    commits = git_walk.walk(built.root, 12, now=now)
+
+    stored, _ = churn_reads.churn(built.root, now)
+
+    scored = bugspots_runner.scores(built.top, commits=bugspots_runner.window(commits))
+    kept = set(stored) - _renamed(commits)
+    assert kept and {path: stored[path].weight for path in kept} == {p: scored[p] for p in kept}
+
+
+@rulings.applies("H16")
+@pytest.mark.nightly
+@pytest.mark.platform("linux")
+def test_bugspots_walks_the_whole_branch(make_repo, oracle):
+    """src/a.py's first commit aged out of the 12-month window; bugspots, with no
+    window, weighs it and dates its range from it."""
+    oracle("bugspots")
+    built = make_repo(specs.EXPIRY)
+
+    stored, _ = churn_reads.churn(built.root, specs.EXPIRY_AFTER)
+
+    rulings.pin_ruling("H16", crapkit=stored["src/a.py"].weight,
+                       oracle=bugspots_runner.scores(built.top)["src/a.py"])
+
+
+def _mixed_scores(built: repos.Built, merges: bool) -> dict[str, Decimal]:
+    commits = git_walk.walk(built.root, 12, now=specs.MIXED_NOW)
+    listed = sorted((c for c in commits if merges or c.paths), key=lambda c: -c.at)
+    return bugspots_runner.scores(built.top, commits=[commit.sha for commit in listed])
+
+
 @rulings.applies("H13")
 @pytest.mark.nightly
 @pytest.mark.platform("linux")
 def test_bugspots_counts_a_merged_change_again_at_the_merge(make_repo, oracle):
+    """src/core.py changed on a branch merged back: bugspots, walking the window
+    with the merge in it, weighs that change again at the merge."""
     oracle("bugspots")
     built = make_repo(specs.MIXED)
 
     stored, _ = churn_reads.churn(built.root, specs.MIXED_NOW)
 
-    depth = len(git_walk.walk(built.root, 12, now=specs.MIXED_NOW))  # the window's commits
     rulings.pin_ruling("H13", crapkit=stored["src/core.py"].weight,
-                       oracle=bugspots_runner.scores(built.top, depth=depth)["src/core.py"])
+                       oracle=_mixed_scores(built, merges=True)["src/core.py"])
+
+
+@rulings.applies("H15")
+@pytest.mark.nightly
+@pytest.mark.platform("linux")
+def test_bugspots_counts_a_rename_under_the_old_path_too(make_repo, oracle):
+    """src/old_name.py was renamed to src/new_name.py: bugspots weighs the rename
+    commit under both paths, crapkit's log under the new one only."""
+    oracle("bugspots")
+    built = make_repo(specs.MIXED)
+
+    stored, _ = churn_reads.churn(built.root, specs.MIXED_NOW)
+
+    rulings.pin_ruling("H15", crapkit=stored["src/old_name.py"].weight,
+                       oracle=_mixed_scores(built, merges=False)["src/old_name.py"])

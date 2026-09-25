@@ -5,7 +5,7 @@
 function here, because all five functions in the file are over the ceiling.
 The expected set comes from unidiff reading the same `git diff -U0` text
 (oracles/unidiff_ranges.py) over the function spans the file's text puts
-down, and from the hand column of GATED_EDITS. This file imports no crapkit.
+down, and from hand_gated.tsv. This file imports no crapkit.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import re
 import pytest
 
 from accuracy.kit import drive, repos, rulings
+from accuracy.history_oracles import history_hand
 from accuracy.history_oracles.oracles import unidiff_ranges
 from accuracy.history_oracles.oracles.history_git import text as git_text
 from accuracy.history_oracles.repos import history_specs as specs
@@ -57,9 +58,8 @@ def expected(root: Path, *diff_args: str) -> set[str]:
 def _edited(make_repo, edit: str):
     built = make_repo(specs.GATED)
     driver = drive.Driver(built.root, date_now=specs.GATED_NOW)
-    new_text, by_hand = specs.GATED_EDITS[edit]
-    (built.root / "src" / "m.py").write_bytes(new_text.encode("utf-8"))
-    return built, driver, by_hand
+    (built.root / "src" / "m.py").write_bytes(specs.GATED_EDITS[edit].encode("utf-8"))
+    return built, driver, history_hand.gated(edit)
 
 
 def hook_judged(built: repos.Built, driver: drive.Driver) -> set[str]:
