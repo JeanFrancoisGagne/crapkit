@@ -179,8 +179,9 @@ def pairs(measure_set):
 
 
 def _layout(measured, path: str) -> dict:
-    (row,) = measured.in_file(path)
-    return {name: row[name] for name in LAYOUT}
+    rows = measured.in_file(path)
+    assert len(rows) == 1, f"{path} declares one def and reads {len(rows)} rows"
+    return {name: rows[0][name] for name in LAYOUT}
 
 
 @pytest.mark.parametrize("name", sorted(ONE_LINE))
