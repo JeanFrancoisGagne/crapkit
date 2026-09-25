@@ -26,7 +26,9 @@ inputs:
     required: false
     default: "true"
   top:
-    description: worklist rows to render for the changed files.
+    description: >-
+      worklist rows to render for the changed files. An empty value renders 5;
+      a value that is not a whole number renders 5 and warns.
     required: false
     default: "5"
   python-version:
@@ -78,6 +80,10 @@ runs:
     # which holds no diff and so judges no changed function. The reason is
     # written to crapkit-base.reason: the comment quotes it in place of
     # "verify passed", and with gate "true" the exit step fails the check on it.
+    # A lane failure's reason is crapkit's first `FAILED:` line, not its first
+    # line: a lane that passed can warn before another lane fails, and the
+    # reason then named the lane that passed. A crapkit that died printing
+    # nothing gets its exit code quoted instead of an empty reason.
     - name: isolate this invocation's state
       id: state
       shell: bash
@@ -109,11 +115,12 @@ runs:
         if [ "$code" = 0 ]; then
           crapkit coverage --repo "$base" --json > "$CRAPKIT_STATE/crapkit-base.json" 2> "$log" || code=$?
           cat "$log"
-          first="$(head -n 1 "$log")"
+          why="$(grep -m 1 -F ' FAILED: ' "$log" || head -n 1 "$log")"
+          [ -n "$why" ] || why="crapkit coverage exited $code and printed nothing"
           if [ "$code" = 3 ]; then
-            refuse "no usable crapkit.toml at the fork point $fork: $first"
+            refuse "no usable crapkit.toml at the fork point $fork: $why"
           elif [ "$code" != 0 ]; then
-            refuse "lane failed at the fork point $fork: $first"
+            refuse "lane failed at the fork point $fork: $why"
           fi
         fi
         if [ "$code" = 0 ]; then
@@ -229,10 +236,29 @@ runs:
           --json-out "$CRAPKIT_STATE/crapkit-comment.json"
         cat "$CRAPKIT_STATE/crapkit-comment.md"
 
-    # One comment, edited in place. The marker line the builder writes is what
-    # finds it, so a fifteen-push branch carries one comment and not fifteen.
-    # A push event has no pull request to carry one: the text is in the log
-    # above and nothing is posted.
+    # One comment, edited in place. The marker line the builder writes first is
+    # what finds it, so a fifteen-push branch carries one comment and not
+    # fifteen. A push event has no pull request to carry one: the text is in
+    # the log above and nothing is posted.
+    #
+    # The API does not require a comment's body, and a string test on null is
+    # an error in gh's jq, so one comment without a body failed the whole
+    # lookup and a second crapkit comment was posted. Only a string body is
+    # tested, and only its start: a reviewer quoting the comment carries the
+    # marker too, and the token cannot edit their comment.
+    #
+    # --paginate runs the filter once per page, so each page prints at most one
+    # id and the first all-digit line wins. On an error page gh prints GitHub's
+    # JSON on stdout and exits 1, so a line that is not an id is never taken
+    # for one. The whole answer is read before the first id is taken: `head -n
+    # 1` closed the pipe on a thread with two marked comments, and gh's SIGPIPE
+    # read as a failed lookup.
+    #
+    # A listing that fails before it finds the comment runs once more: posting
+    # fresh at once turned one transient 502 into a second crapkit comment. A
+    # second failure posts fresh and says so, because a pull request that keeps
+    # the previous push's verdict misleads more than a duplicate comment does.
+    # A listing that failed after it found the comment edits that one.
     #
     # A pull request from a fork carries a read-only token, so both writes come
     # back 403. That is the consumer's permissions, not a finding, and the
@@ -248,16 +274,27 @@ runs:
         HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
       run: |
         code=0
-        lookup=0
         if [ -z "$PR" ]; then
           echo "no pull request on this event: the comment above was not posted"
           exit 0
         fi
-        id="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-                --jq 'map(select(.body | contains("<!-- crapkit-action -->"))) | .[0].id // empty' \
-              | head -n 1)" || lookup=$?
-        if [ "$lookup" != 0 ]; then
-          echo "looking the existing comment up exited $lookup: posting a fresh one"
+        for listing in first second; do
+          lookup=0
+          found="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+                     --jq 'map(select(.body | type == "string" and startswith("<!-- crapkit-action -->"))) | .[0].id // empty')" || lookup=$?
+          id=""
+          while IFS= read -r line; do
+            case "$line" in ''|*[!0-9]*) ;; *) id="$line"; break ;; esac
+          done <<< "$found"
+          if [ "$lookup" = 0 ] || [ -n "$id" ] || [ "$listing" = second ]; then
+            break
+          fi
+          echo "listing the comments exited $lookup before it found a crapkit comment: listing them once more"
+        done
+        if [ "$lookup" != 0 ] && [ -n "$id" ]; then
+          echo "looking the existing comment up exited $lookup after it found comment $id: editing that one"
+        elif [ "$lookup" != 0 ]; then
+          echo "listing the comments failed twice before it found a crapkit comment (gh exited $lookup): posting a fresh one"
         fi
         if [ -n "$id" ]; then
           gh api --silent --method PATCH "repos/$REPO/issues/comments/$id" \

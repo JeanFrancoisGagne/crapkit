@@ -1,7 +1,11 @@
 """Istanbul parser seam: coverage-final.json content in, per-file function coverage out. Pure."""
+import copy
 import json
 
+import pytest
+
 from crapkit.coverage_istanbul import FnCoverage
+from crapkit.errors import ToolError
 from coverage_readers import parse_istanbul
 
 ARTIFACT = {
@@ -86,6 +90,89 @@ def test_branches_attach_to_the_innermost_containing_function():
         "the handler keeps only its own branches, not the callback's"
 
 
+# --- fnMap and branchMap entries with no loc ----------------------------------
+#
+# `fn.get("loc", {})` read a function with no loc as a span of one line, its
+# declaration's, so the branches in its body attached to nothing and an invoked
+# function scored as covered. A loc that was null refused the artifact with an
+# AttributeError. Every istanbul producer writes loc.end.line, so both now
+# refuse the artifact naming the file and the entry. A branch with no loc
+# attached to no function; it now sits on the `line` producers write beside
+# loc. A branch with neither was left out, and the function it sat in lost its
+# arms with nothing said; it now refuses the artifact naming the branch id.
+
+def _with(mutate) -> str:
+    art = copy.deepcopy(ARTIFACT)
+    mutate(art["C:\\repo\\src\\app.ts"])
+    return json.dumps(art)
+
+
+def _set(entry: dict, key: str, value) -> None:
+    if value == "absent":
+        entry.pop(key, None)
+    else:
+        entry[key] = value
+
+
+@pytest.mark.parametrize("loc", ["absent", None, {}, {"start": {"line": 1}},
+                                 {"end": {"line": None}}, {"end": {"line": "13"}}],
+                         ids=["loc-absent", "loc-null", "loc-empty", "end-absent",
+                              "end-line-null", "end-line-a-string"])
+def test_a_function_with_no_end_line_refuses_the_artifact_naming_the_entry(loc):
+    text = _with(lambda cov: _set(cov["fnMap"]["0"], "loc", loc))
+
+    with pytest.raises(ToolError, match=r"istanbul artifact .*fnMap\['0'\] has no loc\.end\.line"):
+        parse_istanbul(text, repo_root="C:\\repo")
+
+
+@pytest.mark.parametrize("loc", ["absent", None, {"end": {"line": 2}}],
+                         ids=["loc-absent", "loc-null", "start-absent"])
+def test_a_branch_with_no_loc_attaches_by_the_line_beside_it(loc):
+    def mutate(cov):
+        cov["branchMap"]["0"]["line"] = 2
+        _set(cov["branchMap"]["0"], "loc", loc)
+
+    per_file = parse_istanbul(_with(mutate), repo_root="C:\\repo")
+
+    assert per_file == parse_istanbul(json.dumps(ARTIFACT), repo_root="C:\\repo")
+
+
+@pytest.mark.parametrize("loc", ["absent", None, {}, {"start": None}, {"start": {"line": None}},
+                                 {"start": {"line": "2"}}],
+                         ids=["loc-absent", "loc-null", "loc-empty", "start-null", "start-line-null",
+                              "start-line-a-string"])
+@pytest.mark.parametrize("line", ["absent", None, "2"],
+                         ids=["line-absent", "line-null", "line-a-string"])
+def test_a_branch_with_neither_loc_nor_line_refuses_the_artifact_naming_it(loc, line):
+    def mutate(cov):
+        _set(cov["branchMap"]["1"], "loc", loc)
+        _set(cov["branchMap"]["1"], "line", line)
+
+    with pytest.raises(ToolError) as raised:
+        parse_istanbul(_with(mutate), repo_root="C:\\repo")
+
+    assert str(raised.value).endswith(
+        ": src/app.ts: branchMap['1'] has no loc.start.line and no line (every istanbul "
+        "reporter writes one; regenerate the artifact with the runner's reporter)"), raised.value
+
+
+def test_the_lanes_page_quotes_the_branch_refusal():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    with pytest.raises(ToolError) as raised:
+        parse_istanbul(_with(lambda cov: cov["branchMap"]["1"].pop("loc")), repo_root="C:\\repo")
+    reason = str(raised.value).split(".json: ", 1)[1]
+
+    page = (root / "docs" / "lanes.md").read_text(encoding="utf-8")
+    assert f"/repo/.crapkit/cov/js/coverage-final.json: {reason}" in page
+
+
+# Every other shape a file's fields arrive in, and the bytes the artifact
+# arrives in, is a row of the conformance suite every coverage adapter runs
+# through read(): tests/unit/test_coverage_reader_contract.py.
+
+
 # --- a mapped id with no hit record ---------------------------------------------
 #
 # istanbul pairs every fnMap, statementMap and branchMap entry with a counter in
@@ -93,12 +180,6 @@ def test_branches_attach_to_the_innermost_containing_function():
 # read the absent counter as a zero: a statement never ran, a branch pair did not
 # exist, a function was never called. The score moved with nothing on stderr,
 # and a dropped branch record flipped add-tests to ok.
-
-import copy  # noqa: E402
-
-import pytest  # noqa: E402
-
-from crapkit.errors import ToolError  # noqa: E402
 
 STATEMENTS = {
     "C:\\repo\\src\\hot.ts": {

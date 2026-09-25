@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from . import covstream
 from .errors import ToolError
+from .repotext import json_kind
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -61,8 +62,37 @@ def coverage_count(value: object, field: str) -> int:
     if type(value) is float and value.is_integer():
         value = int(value)
     if type(value) is not int or value < 0:
-        raise ValueError(f"{field} must be a nonnegative integer count, got {value!r}")
+        raise ValueError(f"{field} must be a nonnegative integer count, got {value!r}; "
+                         f"{covstream.REGENERATE}")
     return value
+
+
+def _field(node: object, key: str) -> object:
+    """`node[key]` when node is an object, else None: a reader that walks a
+    path of fields gets None at the first step that is not there."""
+    return node.get(key) if isinstance(node, dict) else None
+
+
+def _at(node: object, *keys: str) -> object:
+    for key in keys:
+        node = _field(node, key)
+    return node
+
+
+def _object(where: str, value: object) -> dict:
+    """A field istanbul always writes as an object, or the refusal naming it.
+    `where` is the name as the refusal prints it: a field in backticks."""
+    if not isinstance(value, dict):
+        raise ValueError(f"{where} holds {json_kind(value)}, not an object; "
+                         f"{covstream.REGENERATE}")
+    return value
+
+
+def _branch_counts(key: str, hits: object) -> list:
+    if not isinstance(hits, list):
+        raise ValueError(f"`b[{key!r}]` holds {json_kind(hits)}, not an array of branch "
+                         f"counts; {covstream.REGENERATE}")
+    return hits
 
 
 class ClampedBranchCounts(list):
@@ -101,14 +131,40 @@ def _admit_hits(cov: dict) -> int:
     for group in ("f", "s"):
         for key, value in cov.get(group, {}).items():
             coverage_count(value, f"{group}[{key!r}]")
+    return sum(_admit_branch_hits(key, hits) for key, hits in cov.get("b", {}).items())
+
+
+def _admit_branch_hits(key: str, hits: object) -> int:
+    """Admit one branch's counters in place; answer how many were clamped."""
     clamped = 0
-    for key, hits in cov.get("b", {}).items():
-        for index, value in enumerate(hits):
-            admitted = _admit_branch(value, f"b[{key!r}][{index}]")
-            if admitted != value:
-                hits[index] = admitted
-                clamped += 1
+    for index, value in enumerate(_branch_counts(key, hits)):
+        admitted = _admit_branch(value, f"b[{key!r}][{index}]")
+        if admitted != value:
+            hits[index] = admitted
+            clamped += 1
     return clamped
+
+
+def _fn_end(fid: str, fn: dict) -> int:
+    """The line a function's span ends on: loc.end.line, which every istanbul
+    producer writes. Read as the declaration line when it was missing, the span
+    shrank to one line, the body's branches attached to nothing, and an invoked
+    function scored as covered."""
+    line = _at(fn, "loc", "end", "line")
+    if type(line) is not int:
+        raise ValueError(f"fnMap[{fid!r}] has no loc.end.line (every istanbul reporter "
+                         "writes one; regenerate the artifact with the runner's reporter)")
+    return line
+
+
+def _decl_line(fid: str, fn: object) -> int:
+    """The line a function is declared on, decl.start.line. istanbul 0.x wrote
+    no decl, and a function without one has no start to own its lines from."""
+    line = _at(fn, "decl", "start", "line")
+    if type(line) is not int:
+        raise ValueError(f"fnMap[{fid!r}] has no decl.start.line (every istanbul reporter "
+                         "writes one; regenerate the artifact with the runner's reporter)")
+    return line
 
 
 # Each map istanbul writes, the counter group that pairs with it, and what one
@@ -117,7 +173,7 @@ _COUNTED = (("fnMap", "f", "function"), ("statementMap", "s", "statement"),
             ("branchMap", "b", "branch"))
 
 
-def _require_counters(cov: dict, rel: str) -> dict:
+def _require_counters(cov: object) -> dict:
     """`cov` once every mapped id has its hit counter.
 
     istanbul's writers pair every fnMap, statementMap and branchMap entry with a
@@ -125,11 +181,13 @@ def _require_counters(cov: dict, rel: str) -> dict:
     and attribution read the absent counter as a zero: a statement that never
     ran, a branch pair that did not exist, a function never called. The score
     moved with nothing said, so the artifact is refused instead, like a negative
-    counter in f or s.
+    counter in f or s. A map or a counter group that is there but holds no
+    object is refused naming it.
     """
+    cov = _object("the file entry", cov)
     for mapped, counters, kind in _COUNTED:
-        _require_counter_group(cov, rel, mapped, counters, kind)
-    _require_branch_paths(cov, rel)
+        _require_counter_group(cov, mapped, counters, kind)
+    _require_branch_paths(cov)
     return cov
 
 
@@ -137,12 +195,12 @@ _REGENERATE = ("regenerate the artifact with the coverage tool, or merge shards 
                "that keeps every counter")
 
 
-def _require_counter_group(cov: dict, rel: str, mapped: str, counters: str, kind: str) -> None:
-    hits = cov.get(counters, {})
-    missing = [key for key in cov.get(mapped, {}) if key not in hits]
+def _require_counter_group(cov: dict, mapped: str, counters: str, kind: str) -> None:
+    hits = _object(f"`{counters}`", cov.get(counters, {}))
+    missing = [key for key in _object(f"`{mapped}`", cov.get(mapped, {})) if key not in hits]
     if missing:
         raise ValueError(
-            f"{rel}: {kind} {missing[0]!r} has no hit count in `{counters}`, so crapkit cannot "
+            f"{kind} {missing[0]!r} has no hit count in `{counters}`, so crapkit cannot "
             f"tell whether it ran ({len(missing)} such in this file); {_REGENERATE}")
 
 
@@ -165,7 +223,7 @@ def _miscounted_branches(cov: dict) -> list[tuple[str, int, int]]:
     return wrong
 
 
-def _require_branch_paths(cov: dict, rel: str) -> None:
+def _require_branch_paths(cov: dict) -> None:
     """istanbul writes one hit count in `b` per location of a branchMap entry.
     Attribution counts the hit counts, so an array cut short read the paths it
     lost as no path at all: an if/else at [1] scored 1 of 1, and at [] it fell
@@ -175,7 +233,7 @@ def _require_branch_paths(cov: dict, rel: str) -> None:
     if wrong:
         key, counted, paths = wrong[0]
         raise ValueError(
-            f"{rel}: branch {key!r} has {counted} hit count(s) in `b` for its {paths} "
+            f"branch {key!r} has {counted} hit count(s) in `b` for its {paths} "
             f"location(s), so crapkit cannot tell which of its paths ran ({len(wrong)} such "
             f"in this file); {_REGENERATE}")
 
@@ -183,26 +241,42 @@ def _require_branch_paths(cov: dict, rel: str) -> None:
 def _fn_spans(cov: dict) -> list[list]:
     spans = []
     for fid, fn in cov.get("fnMap", {}).items():
-        start = fn["decl"]["start"]["line"]
-        end = fn.get("loc", {}).get("end", {}).get("line") or start
+        start = _decl_line(fid, fn)
+        end = _fn_end(fid, fn)
         invoked = cov.get("f", {}).get(fid, 0) > 0
-        spans.append([fn.get("name") or "(anonymous)", start, end, invoked, 0, 0, 0, 0])
+        spans.append([_field(fn, "name") or "(anonymous)", start, end, invoked, 0, 0, 0, 0])
     spans.sort(key=lambda s: s[1])
     return spans
 
 
-def _branch_line(branch: dict) -> int | None:
-    return branch.get("loc", {}).get("start", {}).get("line")
+def _branch_line(bid: str, branch: dict) -> int:
+    """Where a branch sits: loc.start.line, else the `line` producers write
+    beside it. Without the fallback a branch with no loc attached to no
+    function. A branch with neither was left out, and the function it sat in
+    lost its arms with nothing said, so the artifact is refused instead."""
+    line = _at(branch, "loc", "start", "line")
+    line = _field(branch, "line") if type(line) is not int else line
+    if type(line) is not int:
+        raise ValueError(f"branchMap[{bid!r}] has no loc.start.line and no line (every istanbul "
+                         "reporter writes one; regenerate the artifact with the runner's reporter)")
+    return line
 
 
-def _stmt_line(stmt: dict) -> int | None:
-    return stmt.get("start", {}).get("line")
+def _stmt_line(sid: str, stmt: object) -> int | None:
+    """Where a statement starts. A start with no line leaves the statement out,
+    as it always has; a statement or a start that is no object is refused."""
+    start = _object(f"`statementMap[{sid!r}]`", stmt).get("start", {})
+    line = _object(f"`statementMap[{sid!r}].start`", start).get("line")
+    if line is not None and type(line) is not int:
+        raise ValueError(f"`statementMap[{sid!r}].start.line` holds {json_kind(line)}, not a "
+                         f"line number; {covstream.REGENERATE}")
+    return line
 
 
 def _query_lines(cov: dict) -> set[int]:
     """Every line the attribution will ask about, branches and statements both."""
-    lines = {_branch_line(b) for b in cov.get("branchMap", {}).values()}
-    lines |= {_stmt_line(s) for s in cov.get("statementMap", {}).values()}
+    lines = {_branch_line(bid, b) for bid, b in cov.get("branchMap", {}).items()}
+    lines |= {_stmt_line(sid, s) for sid, s in cov.get("statementMap", {}).items()}
     lines.discard(None)
     return lines
 
@@ -246,7 +320,7 @@ def _span_owners(fn_spans: list[list], lines: set[int]) -> dict[int, list | None
 def _attach_branches(owners: dict[int, list | None], cov: dict) -> None:
     hits_by_id = cov.get("b", {})
     for bid, branch in cov.get("branchMap", {}).items():
-        best = owners.get(_branch_line(branch))
+        best = owners.get(_branch_line(bid, branch))
         if best is not None:
             hits = hits_by_id.get(bid, [])
             best[_B_TOTAL] += len(hits)
@@ -256,7 +330,7 @@ def _attach_branches(owners: dict[int, list | None], cov: dict) -> None:
 def _attach_statements(owners: dict[int, list | None], cov: dict) -> None:
     hits_by_id = cov.get("s", {})
     for sid, stmt in cov.get("statementMap", {}).items():
-        best = owners.get(_stmt_line(stmt))
+        best = owners.get(_stmt_line(sid, stmt))
         if best is not None:
             best[_S_TOTAL] += 1
             best[_S_COV] += 1 if hits_by_id.get(sid, 0) > 0 else 0
@@ -272,9 +346,24 @@ def _file_coverage(cov: dict) -> list[FnCoverage]:
     return ClampedBranchCounts(rows, clamped) if clamped else rows
 
 
+def _read_file(rel: str, cov: object) -> list[FnCoverage]:
+    """One file's function coverage, once its counters are all there."""
+    return _named_file(rel, lambda: _file_coverage(_require_counters(cov)))
+
+
+def _named_file(rel: str, read):
+    """What `read` makes of one file, or its refusal with the file named: an
+    fnMap or branchMap id alone does not say which of the artifact's files
+    holds it."""
+    try:
+        return read()
+    except ValueError as exc:
+        raise ValueError(f"{rel}: {exc}") from exc
+
+
 def _dead_lines(cov: dict) -> set[int]:
     hits_by_id = cov.get("s", {})
-    dead = {_stmt_line(stmt)
+    dead = {_stmt_line(sid, stmt)
             for sid, stmt in cov.get("statementMap", {}).items()
             if hits_by_id.get(sid, 0) == 0}
     dead.discard(None)
@@ -290,7 +379,7 @@ def _istanbul_map(w, repo_root: str, per_file) -> dict:
     out = {}
     for abs_path, cov in covstream.split_window(w):
         rel = _rel_path(abs_path, repo_root)
-        out[rel] = per_file(_require_counters(cov, rel))
+        out[rel] = _named_file(rel, lambda: per_file(_require_counters(cov)))
     return out
 
 
@@ -298,7 +387,7 @@ def _istanbul_both(w, repo_root: str) -> tuple[dict, dict]:
     per_file, dead = {}, {}
     for abs_path, cov in covstream.split_window(w):
         rel = _rel_path(abs_path, repo_root)
-        per_file[rel] = _file_coverage(_require_counters(cov, rel))
+        per_file[rel] = _read_file(rel, cov)
         dead[rel] = _dead_lines(cov)
     return per_file, dead
 
@@ -340,7 +429,8 @@ def _require_files(per_file: dict) -> None:
     """A zero-file artifact scores as full coverage if it is let through."""
     if not per_file:
         raise ToolError(
-            "istanbul artifact is empty (zero files) — the coverage run measured nothing")
+            "istanbul artifact is empty (zero files) — the coverage run measured nothing; "
+            "rerun the lane and check that its command runs the tests")
 
 
 def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = covstream.CHUNK

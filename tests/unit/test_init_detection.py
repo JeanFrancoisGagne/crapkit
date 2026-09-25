@@ -4,22 +4,25 @@ A starter config whose lanes are all commented out scores every function
 no-lane, so the burn-down has nothing to rank. Detection is file presence and
 package.json content only — nothing is executed, nothing is imported.
 """
-import json
+import pytest
 
 from crapkit.config import load_config_text
-from crapkit.scaffold import (DEFAULT_EXCLUDES, LaneSpec, detect_lanes, gitignore_entries,
-                              gitignore_update, live_lanes, lockfile_runner, pytest_testpaths,
-                              python_launcher, sniff_scopes, source_candidates, starter_toml)
+from crapkit.scaffold import (DEFAULT_EXCLUDES, LaneSpec, NpmPackage, detect_lanes,
+                              gitignore_entries, gitignore_update, live_lanes, lockfile_runner,
+                              npm_package, pytest_testpaths, python_launcher, sniff_scopes,
+                              source_candidates, starter_toml)
 
 SCOPES = {"pylib": ("python",), "src": ("typescript",)}
 
 
-def _package(**payload) -> str:
-    return json.dumps(payload)
+def _package(**payload) -> NpmPackage:
+    """One package.json object as init hands it to scaffold: parsed once, by
+    cli.admin, into the fields init reads."""
+    return npm_package(payload)
 
 
 def test_a_pyproject_yields_a_live_pytest_lane():
-    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), "")
+    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), None)
     assert lane.parser == "coveragepy"
     assert lane.command == ("python -m pytest --cov --cov-branch "
                             "--cov-report=json:.crapkit/cov/py.json "
@@ -31,13 +34,13 @@ def test_a_pyproject_yields_a_live_pytest_lane():
 
 
 def test_pytest_ini_and_setup_cfg_count_as_the_same_signal():
-    assert detect_lanes(frozenset({"pytest.ini"}), "")[0].parser == "coveragepy"
-    assert detect_lanes(frozenset({"setup.cfg"}), "")[0].parser == "coveragepy"
-    assert detect_lanes(frozenset({"Makefile"}), "") == ()
+    assert detect_lanes(frozenset({"pytest.ini"}), None)[0].parser == "coveragepy"
+    assert detect_lanes(frozenset({"setup.cfg"}), None)[0].parser == "coveragepy"
+    assert detect_lanes(frozenset({"Makefile"}), None) == ()
 
 
 def test_the_interpreter_the_config_will_call_is_the_one_that_resolves():
-    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), "", interpreter="python3")
+    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), None, interpreter="python3")
     assert lane.command.startswith("python3 -m pytest ")
 
 
@@ -65,10 +68,6 @@ def test_a_package_json_with_neither_signal_detects_nothing():
     assert detect_lanes(frozenset(), _package(dependencies={"react": "^19.0.0"})) == ()
 
 
-def test_a_package_json_that_does_not_parse_detects_nothing():
-    assert detect_lanes(frozenset(), "{ not json") == ()
-
-
 def test_both_runners_detected_gives_two_lanes_in_a_fixed_order():
     lanes = detect_lanes(frozenset({"pyproject.toml"}), _package(scripts={"test": "vitest run"}))
     assert [lane.parser for lane in lanes] == ["coveragepy", "istanbul"]
@@ -83,14 +82,14 @@ def test_a_detected_lane_claims_the_scopes_that_speak_its_languages():
 def test_a_detected_runner_with_no_scope_to_measure_stays_a_template():
     """pyproject.toml in a repo whose only source is TypeScript: a lane with an
     empty scopes list measures nothing and would hide the real gap."""
-    lanes = detect_lanes(frozenset({"pyproject.toml"}), "")
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), None)
     text = starter_toml({"src": ("typescript",)}, lanes)
     assert load_config_text(text).lanes == ()
     assert '# parser = "coveragepy"' in text
 
 
 def test_the_undetected_half_keeps_its_commented_template():
-    text = starter_toml(SCOPES, detect_lanes(frozenset({"pyproject.toml"}), ""))
+    text = starter_toml(SCOPES, detect_lanes(frozenset({"pyproject.toml"}), None))
     assert '# parser = "istanbul"' in text
     assert '# parser = "coveragepy"' not in text
     # a placeholder, not a real scope: writing one pointed a TS lane template
@@ -138,7 +137,7 @@ def test_an_artifact_inside_a_directory_ignores_the_directory():
 
 
 def test_entries_the_gitignore_already_carries_are_never_repeated():
-    lanes = detect_lanes(frozenset({"pyproject.toml"}), "")
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), None)
 
     text, added = gitignore_update("node_modules/\n.crapkit/\n", live_lanes(lanes, SCOPES))
 
@@ -148,7 +147,7 @@ def test_entries_the_gitignore_already_carries_are_never_repeated():
 
 def test_a_gitignore_that_already_covers_everything_is_left_byte_identical():
     current = "node_modules/\n.crapkit/\n.coverage\n__pycache__/\n"
-    lanes = detect_lanes(frozenset({"pyproject.toml"}), "")
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), None)
 
     assert gitignore_update(current, live_lanes(lanes, SCOPES)) == (current, [])
 
@@ -162,7 +161,7 @@ def test_a_file_with_no_trailing_newline_is_not_merged_into_its_last_entry():
 
 def test_a_lane_with_no_scope_to_measure_contributes_no_ignore_entry():
     """Same rule as the config: a lane init did not write cannot dirty the tree."""
-    lanes = detect_lanes(frozenset({"pyproject.toml"}), "")
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), None)
 
     assert live_lanes(lanes, {"src": ("typescript",)}) == ()
     assert gitignore_update("", live_lanes(lanes, {"src": ("typescript",)}))[1] == [".crapkit/"]
@@ -176,7 +175,7 @@ def test_a_lane_with_no_scope_to_measure_contributes_no_ignore_entry():
 # under it costs the consumer's tree nothing.
 
 def test_the_pytest_lane_reports_under_the_crapkit_directory():
-    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), "")
+    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), None)
 
     assert lane.artifact == ".crapkit/cov/py.json"
     assert "--cov-report=json:.crapkit/cov/py.json" in lane.command
@@ -305,7 +304,7 @@ def test_init_writes_live_entries_for_the_runner_it_detected():
     command known-good, so it lands live, in the whole-suite form since no
     tracked file list says the scope holds its own tests; with no package.json
     naming a runner the js entry is the commented placeholder."""
-    text = starter_toml(SCOPES, detect_lanes(frozenset({"pyproject.toml"}), ""))
+    text = starter_toml(SCOPES, detect_lanes(frozenset({"pyproject.toml"}), None))
 
     assert "[crapkit.scoped_tests]" in text
     assert 'pylib = "python -m pytest -q -p no:cacheprovider"' in text
@@ -321,7 +320,7 @@ def test_the_stub_stays_commented_so_no_scope_gets_a_command_it_cannot_run():
 def test_the_stub_uncomments_into_a_config_crapkit_reads_back():
     """A stub a reader cannot uncomment is decoration. Everything from the table
     header down is one paste."""
-    text = starter_toml(SCOPES, detect_lanes(frozenset({"pyproject.toml"}), ""))
+    text = starter_toml(SCOPES, detect_lanes(frozenset({"pyproject.toml"}), None))
     live = "\n".join(ln.removeprefix("# ") for ln in text.splitlines()
                      if ln.startswith("# src = "))
 
@@ -342,14 +341,14 @@ def test_a_detected_pytest_lane_activates_the_python_scoped_tests_entry():
     """The presence signal that wrote the py coverage lane is the same signal
     that makes `python -m pytest` known-good, so init writes it live:
     a fresh repo then has no scoped-tests gap for doctor to warn about."""
-    lanes = detect_lanes(frozenset({"pyproject.toml"}), "")
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), None)
     cfg = load_config_text(starter_toml({"src": ("python",)}, lanes))
 
     assert dict(cfg.scoped_tests)["src"] == "python -m pytest -q -p no:cacheprovider"
 
 
 def test_an_undetected_runner_keeps_its_scoped_tests_entry_commented():
-    lanes = detect_lanes(frozenset({"pyproject.toml"}), "")
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), None)
     text = starter_toml({"src": ("python",), "ui": ("typescript",)}, lanes)
     cfg = load_config_text(text)
 
@@ -371,7 +370,7 @@ def test_a_uv_lock_pins_the_lane_to_the_projects_own_environment():
     """The manager prefixes the whole invocation and changes nothing else: the
     junit flag and results_artifact the crashed-worker and no-new-failures
     checks read still ride on the lane."""
-    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), "", interpreter="uv run python")
+    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), None, interpreter="uv run python")
 
     assert lane.command == ("uv run python -m pytest --cov --cov-branch "
                             "--cov-report=json:.crapkit/cov/py.json "
@@ -400,7 +399,7 @@ def test_two_lockfiles_resolve_the_same_way_every_time():
 def test_the_scoped_tests_entry_runs_the_same_python_the_lane_does():
     """Step 3 measuring one environment and step 4 testing another is the same
     bug one command later."""
-    lanes = detect_lanes(frozenset({"pyproject.toml"}), "", interpreter="uv run python")
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), None, interpreter="uv run python")
 
     cfg = load_config_text(starter_toml({"src": ("python",)}, lanes))
 
@@ -409,7 +408,7 @@ def test_the_scoped_tests_entry_runs_the_same_python_the_lane_does():
 
 
 def test_the_launcher_is_read_back_off_the_lane_rather_than_guessed():
-    assert python_launcher(detect_lanes(frozenset({"pytest.ini"}), "",
+    assert python_launcher(detect_lanes(frozenset({"pytest.ini"}), None,
                                         interpreter="poetry run python")) == "poetry run python"
     assert python_launcher(()) == "python", "no pytest lane, no claim to make"
     assert python_launcher(detect_lanes(frozenset(), _package(scripts={"test": "vitest run"}))) \
@@ -419,7 +418,7 @@ def test_the_launcher_is_read_back_off_the_lane_rather_than_guessed():
 def test_a_managed_lane_still_reads_as_the_confirmed_pytest_runner():
     """The `-m pytest` shape is what marks the python scoped-tests entry live;
     a manager prefix in front of it must not retire that."""
-    lanes = detect_lanes(frozenset({"pyproject.toml"}), "", interpreter="pdm run python")
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), None, interpreter="pdm run python")
 
     assert "src" in dict(load_config_text(starter_toml({"src": ("python",)}, lanes)).scoped_tests)
 
@@ -700,14 +699,14 @@ def test_the_section_that_names_no_testpaths_still_ends_the_search():
 def test_a_single_testpath_leaves_the_detected_lane_alone():
     """One testpath collects in one process by definition, so there is nothing
     to split and no reason to put a second pattern in front of the reader."""
-    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), ""),
+    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), None),
                         testpaths=("tests",))
 
     assert "full_suite" not in text
 
 
 def test_several_testpaths_add_one_commented_lane_each_at_full_suite_false():
-    lanes = detect_lanes(frozenset({"pytest.ini"}), "")
+    lanes = detect_lanes(frozenset({"pytest.ini"}), None)
 
     text = starter_toml(IMPL_SCOPE, lanes, testpaths=("conform", "impl"))
 
@@ -722,7 +721,7 @@ def test_an_uncommented_sibling_lane_parses_and_clears_the_full_suite_guard():
     """What a reader uncomments has to load. A pytest lane carrying a positional
     is exactly what the full-suite guard refuses, so a stub without its own
     `full_suite = false` would be a config crapkit cannot read back."""
-    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), ""),
+    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), None),
                         testpaths=("conform", "impl"))
 
     lane = load_config_text('[[scope]]\nname = "impl"\npaths = ["impl"]\n'
@@ -741,7 +740,7 @@ def test_sibling_lanes_each_name_their_own_coverage_data_file():
     died with `sqlite3.OperationalError: table coverage_schema already exists`."""
     from crapkit.doctor import shared_coverage_data
 
-    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), ""),
+    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), None),
                         testpaths=("conform", "impl"))
 
     lanes = load_config_text('[[scope]]\nname = "impl"\npaths = ["impl"]\n'
@@ -771,7 +770,7 @@ def test_the_pytest_lane_keeps_going_past_a_collection_error():
     coverage JSON at all — one renamed module and every scope falls to no-lane,
     while the junit lands and makes the run read as half finished. This is
     pytest's `reportOnFailure`, and the vitest lane already carries its own."""
-    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), "")
+    (lane,) = detect_lanes(frozenset({"pyproject.toml"}), None)
 
     assert "--continue-on-collection-errors" in lane.command, lane.command
 
@@ -782,3 +781,78 @@ def test_the_commented_pytest_template_carries_the_same_flag():
     text = starter_toml({"pylib": ("python",)}, (), interpreter="python")
 
     assert "--continue-on-collection-errors" in text, text
+
+
+# --- package.json fields of the wrong type ------------------------------------
+#
+# init took `scripts` and `devDependencies` as objects because `.get(key, {})`
+# read that way, but the default only covers an absent key: a key present as
+# null, a number, a list or a string reached `in` and ended init in a TypeError
+# before crapkit.toml was written, or, for a list or a string of scripts, wrote
+# a lane that runs a script npm does not have. Each malformed file now detects
+# exactly what npm would read from it: scripts that are not an object, and a
+# script whose command is not a string, are no scripts; a list of
+# devDependencies names its packages, as npm reads it; anything else there
+# names none.
+
+_WORKSPACE_ROOT = _package(scripts={"test": "npm run --workspaces test"})
+_VITEST = {"vitest": "^2.0.0"}
+_READ_AS = {
+    "scripts-null-beside-a-runner": (_package(scripts=None, devDependencies=_VITEST),
+                                     _package(devDependencies=_VITEST)),
+    "scripts-a-number": (_package(scripts=5), _package()),
+    "scripts-a-list": (_package(scripts=["test"]), _package()),
+    "scripts-a-string": (_package(scripts="vitest run"), _package()),
+    "script-command-null": (_package(scripts={"test": None, "test:unit": "vitest"}),
+                            _package(scripts={"test:unit": "vitest"})),
+    "devDependencies-null": (_package(scripts={"test": "vitest run"}, devDependencies=None),
+                             _package(scripts={"test": "vitest run"})),
+    "devDependencies-a-number": (_package(scripts={"test": "x"}, devDependencies=3),
+                                 _package(scripts={"test": "x"})),
+    "devDependencies-a-string": (_package(scripts={"test": "x"}, devDependencies="vitest"),
+                                 _package(scripts={"test": "x"})),
+    "devDependencies-a-list": (_package(devDependencies=["vitest", 7]),
+                               _package(devDependencies={"vitest": ""})),
+    "workspace-devDependencies-null": (
+        {"": _WORKSPACE_ROOT, "web": _package(devDependencies=None)},
+        {"": _WORKSPACE_ROOT, "web": _package()}),
+    "workspace-scripts-null": (
+        {"": _WORKSPACE_ROOT, "web": _package(scripts=None, devDependencies=_VITEST)},
+        {"": _WORKSPACE_ROOT, "web": _package(devDependencies=_VITEST)}),
+}
+
+
+@pytest.mark.parametrize("shape", list(_READ_AS))
+def test_a_field_of_the_wrong_type_detects_what_npm_would_read(shape):
+    malformed, meant = _READ_AS[shape]
+    scopes = {"src": ("typescript",), "web": ("typescript",)}
+
+    lanes = detect_lanes(frozenset(), malformed)
+
+    assert lanes == detect_lanes(frozenset(), meant)
+    assert (starter_toml(scopes, lanes, package_json=malformed)
+            == starter_toml(scopes, lanes, package_json=meant))
+
+
+def test_scripts_absent_beside_a_runner_runs_the_runner():
+    (lane,) = detect_lanes(frozenset(), _package(devDependencies=_VITEST))
+
+    assert lane.command.startswith("npx vitest run --coverage "), lane.command
+
+
+def test_non_ascii_names_and_a_package_with_20000_scripts_still_pick_the_test_script():
+    many = {f"build:{n}": "tsc" for n in range(20000)}
+    accented = _package(name="café-世界", scripts={"tést": "x", "test": "vitest run"})
+
+    (lane,) = detect_lanes(frozenset(), accented)
+    (crowded,) = detect_lanes(frozenset(), _package(scripts={**many, "test:z": "vitest"}))
+
+    assert lane.command == "npm run test -- --coverage"
+    assert crowded.command == "npm run test:z -- --coverage"
+
+
+def test_a_package_json_that_names_nothing_detects_no_lane():
+    """An empty file, a top-level list and a file that does not parse are no
+    longer read as this: cli.admin refuses them by name before scaffold sees
+    them (test_outside_input_encodings)."""
+    assert detect_lanes(frozenset(), _package()) == ()

@@ -157,30 +157,60 @@ def _present_markers(root: Path) -> frozenset[str]:
 def _marker_texts(root: Path) -> dict[str, str]:
     """The pytest config files this repo carries, by name. Presence of one picks
     the lane; `testpaths` inside it says whether one lane can measure them all."""
+    from ..repotext import pytest_config_text
     from ..scaffold import PYTEST_MARKERS
 
-    return {name: (root / name).read_text(encoding="utf-8", errors="replace")
+    return {name: pytest_config_text((root / name).read_bytes())
             for name in PYTEST_MARKERS if (root / name).is_file()}
 
 
 
-def _package_json(root: Path) -> dict[str, str]:
-    """Every tracked package.json's text, keyed by the directory holding it and
-    "" for the root one.
+def _package_json(root: Path) -> dict:
+    """Every tracked package.json, parsed once here into the fields init reads
+    (scaffold.NpmPackage), keyed by the directory holding it and "" for the
+    root one. No other module parses the file.
 
     A monorepo names its test runner in the workspace that owns the tests. Read
     from the root alone, init bound the js lane to a root script that only
     chains the workspaces and produces no coverage of its own. A vendored
     node_modules is skipped: its packages describe somebody else's tests.
     """
-    found: dict[str, str] = {}
-    for path in ls_files(root):
-        directory, _, name = path.rpartition("/")
-        if name != "package.json" or "node_modules/" in path:
-            continue
-        if (root / path).is_file():
-            found[directory] = (root / path).read_text(encoding="utf-8")
+    from ..scaffold import npm_package
+
+    found = {}
+    for path in _package_files(root):
+        data = _package_object(root, path)
+        if data is not None:
+            found[path.rpartition("/")[0]] = npm_package(data)
     return found
+
+
+def _package_files(root: Path) -> list[str]:
+    return [path for path in ls_files(root) if path.rpartition("/")[2] == "package.json"
+            and "node_modules/" not in path and (root / path).is_file()]
+
+
+def _package_object(root: Path, rel: str) -> dict | None:
+    """A package.json read by repotext's JSON kind: UTF-8, a byte-order mark read
+    past as npm reads past it, one JSON object. A BOM used to cost the js lane
+    in silence, one é ended init with a traceback after crapkit.toml was
+    written, and a file that did not parse read as an empty one.
+
+    A root package.json init cannot read stops init before it writes anything:
+    the lane comes from that file, and a lane read off a guess is worse than
+    none. A nested one, a test fixture say, is skipped with one line naming it."""
+    from ..repotext import repo_json
+
+    if "/" not in rel:
+        try:
+            return repo_json(root / rel, rel)
+        except ConfigError as exc:
+            raise ConfigError(f"init wrote no file: {exc}") from None
+    try:
+        return repo_json(root / rel, "it")
+    except ConfigError as exc:
+        print(f"crapkit: init skipped {rel}: {exc}", file=sys.stderr)
+        return None
 
 def _next_step(scopes: dict, lanes: tuple) -> str:
     """What to run next, which is not the same sentence in all three cases.
@@ -218,7 +248,7 @@ def _unrouted_workspaces_note(written: tuple, package_json) -> str | None:
             "template, each with its own cwd and artifact")
 
 
-def _print_init_summary(scopes: dict, lanes: tuple, package_json="") -> None:
+def _print_init_summary(scopes: dict, lanes: tuple, package_json=None) -> None:
     from ..scaffold import live_lanes
 
     print(f"wrote crapkit.toml with {len(scopes)} scope(s): {', '.join(scopes)}")
@@ -474,27 +504,61 @@ def _store_ignored_above(root: Path) -> bool:
 def _ignores_store(gitignore: Path) -> bool:
     if not gitignore.is_file():
         return False
-    lines = {line.strip() for line in
-             gitignore.read_text(encoding="utf-8", errors="replace").splitlines()}
+    from ..repotext import lenient
+
+    lines = {line.strip() for line in lenient(gitignore.read_bytes()).splitlines()}
     return bool(lines & {".crapkit/", ".crapkit"})
 
 
-def _extend_gitignore(root: Path, lanes: tuple) -> None:
+def _extend_gitignore(root: Path, lanes: tuple) -> list[str]:
     """Ignore what adopting crapkit will write: the store, and each lane's
     artifact. Without this the consumer's next `git status` is a wall of
     untracked coverage output nobody asked for. A nested configuration under a
-    root whose .gitignore already ignores the store writes nothing (ADR 0002)."""
-    from ..scaffold import gitignore_update
+    root whose .gitignore already ignores the store writes nothing (ADR 0002).
+    The entries it added come back, for the caller to print.
+
+    git reads .gitignore as bytes, and so does this: every byte already there
+    stays, a cp1252 comment included, and the entries take the file's own line
+    ending. A UTF-16 file, which git cannot read, is left as it was and named."""
+    from ..repotext import utf16_marked
 
     if _store_ignored_above(root):
-        return
+        return []
     path = root / ".gitignore"
-    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    raw = path.read_bytes() if path.is_file() else b""
+    if utf16_marked(raw):
+        _name_unreadable_gitignore(raw, lanes)
+        return []
+    extended, added = _extended_gitignore(raw, lanes)
+    if added:
+        path.write_bytes(extended)
+    return added
+
+
+def _print_gitignore_added(added: list[str]) -> None:
+    if added:
+        print(f"added to .gitignore: {', '.join(added)}")
+
+
+def _extended_gitignore(raw: bytes, lanes: tuple) -> tuple[bytes, list[str]]:
+    """`raw` with crapkit's entries appended in the line ending it already uses.
+    The lines are compared as git reads them, past a UTF-8 BOM; the file's own
+    bytes are kept, and only the appended tail is new."""
+    from ..repotext import lenient
+    from ..scaffold import gitignore_update
+
+    current = lenient(raw)
     text, added = gitignore_update(current, lanes)
-    if not added:
-        return
-    path.write_text(text, encoding="utf-8", newline="\n")
-    print(f"added to .gitignore: {', '.join(added)}")
+    newline = "\r\n" if b"\r\n" in raw else "\n"
+    return raw + text[len(current):].replace("\n", newline).encode("utf-8"), added
+
+
+def _name_unreadable_gitignore(raw: bytes, lanes: tuple) -> None:
+    from ..scaffold import gitignore_entries
+
+    print(f"crapkit: left .gitignore as it was: it is UTF-16 (first bytes {raw[:2].hex(' ')}, "
+          "the PowerShell 5.1 Out-File default), which git cannot read; save it as UTF-8 "
+          f"and add {', '.join(gitignore_entries(lanes))}", file=sys.stderr)
 
 
 def _refuse_claimed_by_ancestor(root: Path) -> None:
@@ -515,14 +579,33 @@ def _refuse_claimed_by_ancestor(root: Path) -> None:
                           f"(scope {scope!r}); edit that configuration instead")
 
 
+def _finish_init(root: Path) -> int:
+    """A second init over a crapkit.toml an earlier run wrote. Before 0.8.1 init
+    wrote crapkit.toml first, so a run that died on the .gitignore step left a
+    config the next init refused to touch, and .crapkit/ was never ignored.
+    The missing .gitignore entries come from the lanes crapkit.toml declares
+    now; crapkit.toml itself is left byte for byte. With nothing missing, this
+    is the refusal it always was."""
+    added = _extend_gitignore(root, _load_repo_config(root).lanes)
+    if not added:
+        raise ConfigError(f"crapkit.toml already exists in {root} — edit it instead")
+    print("crapkit.toml was already there and init left it as it was; it finished the step "
+          "an earlier run left undone")
+    _print_gitignore_added(added)
+    return 0
+
+
 def cmd_init(args: argparse.Namespace) -> int:
+    """Every read comes first, so a file init cannot read stops it before it
+    writes anything. Then .gitignore, then crapkit.toml: a run stopped between
+    the two leaves no config, and the next init starts over."""
     from ..scaffold import (detect_lanes, live_lanes, pytest_testpaths, sniff_scopes,
                             starter_toml)
 
     root = Path(args.repo or ".").resolve()  # init writes where the user stands; it adopts nothing
     toml_path = root / "crapkit.toml"
     if toml_path.is_file():
-        raise ConfigError(f"crapkit.toml already exists in {root} — edit it instead")
+        return _finish_init(root)
     _refuse_claimed_by_ancestor(root)
     files = ls_files(root)
     scopes = sniff_scopes(files)
@@ -541,10 +624,11 @@ def cmd_init(args: argparse.Namespace) -> int:
                         testpaths=pytest_testpaths(_marker_texts(root)),
                         tracked=files, package_json=packages)
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
+    added = _extend_gitignore(root, live_lanes(lanes, scopes))
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes, packages)
     _warn_missing_pytest_cov(root, live_lanes(lanes, scopes))
-    _extend_gitignore(root, live_lanes(lanes, scopes))
+    _print_gitignore_added(added)
     return 0
 
 
@@ -759,6 +843,7 @@ def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str] | None:
     versions are split off the right."""
     from tempfile import TemporaryFile
     from ..procs import run_bounded
+    from ..repotext import lenient
 
     try:
         with TemporaryFile() as output:
@@ -766,7 +851,7 @@ def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str] | None:
                                _PROBE_TIMEOUT_SECONDS, stream=output,
                                **spec.popen_kwargs({"PYTHONIOENCODING": "utf-8"}))
             output.seek(0)
-            report = output.read().decode("utf-8", errors="replace")
+            report = lenient(output.read())
     except OSError:
         return None
     return _runner_versions(report) if code == 0 else None
@@ -1297,7 +1382,7 @@ def _junit_seconds(path: Path) -> float | None:
     if not path.is_file():
         return None
     try:
-        return suite_seconds(path.read_text(encoding="utf-8"))
+        return suite_seconds(path.read_bytes())
     except ToolError:
         return None
 
@@ -1347,18 +1432,19 @@ def _doctor_tune(root: Path, cfg) -> int:
     return 0
 
 
-def _plugin_json(path: Path):
-    """One JSON file off an installed plugin, or None.
+def _plugin_json(path: Path) -> dict | None:
+    """One JSON object off an installed plugin, or None.
 
-    Missing, unreadable and half-written all read the same, because doctor's job
-    here is to name the file rather than to raise inside it. A plugin cache is
-    written by an installer this process does not control.
+    Missing, unreadable, half-written and not an object all read the same,
+    because doctor's job here is to name the file rather than to raise inside
+    it. A plugin cache is written by an installer this process does not
+    control. repotext's JSON kind reads past a leading BOM, as Claude Code does.
     """
-    import json
+    from ..repotext import repo_json
 
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return repo_json(path, path.name)
+    except (OSError, ConfigError):
         return None
 
 
@@ -1400,7 +1486,19 @@ def _manifest_field(root: Path, field: str) -> str | None:
 
 
 def _manifest_version(root: Path) -> str | None:
-    return _manifest_field(root, "version")
+    """The manifest's version when it is a string, else None: a number or a
+    list there ranks no install and matches no CLI, and ranking by it raised."""
+    version = _manifest_field(root, "version")
+    return version if isinstance(version, str) and version else None
+
+
+def _manifest_fault(root: Path) -> str:
+    """Why the manifest gives no version, in doctor.plugin_handshake's words:
+    no file, a file that is not a JSON object, or an object with no version."""
+    path = root / ".claude-plugin" / "plugin.json"
+    if not path.is_file():
+        return "missing"
+    return "unversioned" if isinstance(_plugin_json(path), dict) else "not-an-object"
 
 
 # Claude Code keeps an install at <config>/plugins/cache/<marketplace>/<plugin>/
@@ -1453,11 +1551,33 @@ def _plugins_dir() -> Path:
     return (Path(base) if base else Path.home() / ".claude") / "plugins"
 
 
+def _plugin_entries(recorded) -> dict:
+    """installed_plugins.json's `plugins` object, or {} for any other shape."""
+    entries = recorded.get("plugins") if isinstance(recorded, dict) else None
+    return entries if isinstance(entries, dict) else {}
+
+
+def _install_path(entry) -> str:
+    path = entry.get("installPath") if isinstance(entry, dict) else None
+    return path if isinstance(path, str) else ""
+
+
+def _install_paths(installs) -> list[Path]:
+    """The install directories one plugin id records. Claude Code writes V2, a
+    list of installs; an older one wrote V1, one object, and a newer one
+    converts it only when it loads the file."""
+    listed = installs if isinstance(installs, list) else [installs]
+    return [Path(path) for path in map(_install_path, listed) if path]
+
+
 def _recorded_roots(recorded) -> list[Path]:
-    """Install directories installed_plugins.json records for crapkit."""
-    entries = recorded.get("plugins", {}) if isinstance(recorded, dict) else {}
-    return [Path(e["installPath"]) for key, installs in entries.items()
-            if key.startswith("crapkit@") for e in installs if e.get("installPath")]
+    """Install directories installed_plugins.json records for crapkit.
+
+    An entry of any shape but a string installPath records nothing, and the
+    cache scan beside this still finds the install: V1 and hand-edited files
+    ended the command meant to diagnose the plugin in a traceback."""
+    return [path for key, installs in _plugin_entries(recorded).items()
+            if key.startswith("crapkit@") for path in _install_paths(installs)]
 
 
 def _installed_crapkit_roots(plugins: Path) -> list[Path]:
@@ -1570,9 +1690,14 @@ def _doctor_plugin(plugin_root: str) -> int:
         print(f"crapkit doctor: FAIL {executable} did not answer `crapkit --version`. "
               "Repair this launcher or install crapkit on the PATH the plugin inherits.")
         return 1
-    lines = plugin_handshake(where=str(root), version=_manifest_version(root),
-                             cli_version=cli_version, cli_where=executable,
-                             protocols=_hook_protocols(root), supported=PROTOCOL)
+    return _report_lines(plugin_handshake(
+        where=str(root), version=_manifest_version(root), cli_version=cli_version,
+        cli_where=executable, protocols=_hook_protocols(root), supported=PROTOCOL,
+        manifest_fault=_manifest_fault(root)))
+
+
+def _report_lines(lines: list[str]) -> int:
+    """Print the handshake's lines; exit 1 when there was anything to say."""
     for line in lines:
         print(line)
     return 1 if lines else 0

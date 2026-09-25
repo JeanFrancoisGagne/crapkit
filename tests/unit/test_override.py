@@ -137,3 +137,47 @@ def test_hook_override_still_records_a_mark_for_a_new_function(tmp_path):
                     metric=metric_version())
     entries = load_ratchet((tmp_path / "ratchet.tsv").read_text(encoding="utf-8"))
     assert entries[0].crap == 90.0, "a function with no prior mark gets the synthesized one"
+
+
+# --- what the alert command is handed and hands back ---------------------------
+
+def _copy_stdin(tmp_path, exit_code: int = 0, noise: bytes = b""):
+    """An alert command that keeps the bytes it was handed, writes `noise` to
+    its own stdout, and exits `exit_code`."""
+    log = tmp_path / "alert.bin"
+    script = tmp_path / "alert.py"
+    script.write_text(
+        "import sys, pathlib\n"
+        f"pathlib.Path(r'{log}').write_bytes(sys.stdin.buffer.read())\n"
+        f"sys.stdout.buffer.write({noise!r})\n"
+        f"sys.exit({exit_code})\n", encoding="utf-8")
+    return f'"{sys.executable}" "{script}"', log
+
+
+def test_a_non_ascii_reason_and_name_reach_the_alert_as_utf8_and_the_audit_as_written(tmp_path):
+    store = SnapshotStore(tmp_path / "db.sqlite")
+    run_id = store.write_run(commit="c", tool_versions={}, rows=[])
+    command, log = _copy_stdin(tmp_path, noise=bytes([0xFF, 0xFE]))
+    violation = GateViolation("src/café.ts", "gräde_世( )", 3, 9, 0.0, 90.0, "decompose")
+
+    record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
+                    alert_command=command, violations=[violation], reason="déploiement 世",
+                    metric=metric_version())
+
+    sent = log.read_bytes().decode("utf-8")
+    assert "OVERRIDE (déploiement 世)" in sent and "src/café.ts:3 gräde_世( )" in sent
+    assert store.read_overrides(run_id) == [("src/café.ts", "gräde_世( )", 90.0, "déploiement 世")]
+
+
+def test_an_alert_that_fails_writing_bytes_that_are_not_utf8_grants_nothing(tmp_path):
+    store = SnapshotStore(tmp_path / "db.sqlite")
+    run_id = store.write_run(commit="c", tool_versions={}, rows=[])
+    command, _ = _copy_stdin(tmp_path, exit_code=3, noise=b"caf" + bytes([0xE9]))
+
+    with pytest.raises(ToolError, match="override alert command failed \\(exit 3\\)"):
+        record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
+                        alert_command=command, violations=[VIOLATION], reason="hotfix",
+                        metric=metric_version())
+
+    assert store.read_overrides(run_id) == []
+    assert not (tmp_path / "ratchet.tsv").exists()

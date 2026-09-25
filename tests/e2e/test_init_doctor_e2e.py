@@ -780,3 +780,45 @@ def test_init_writes_the_per_testpath_lanes_a_suite_that_cannot_collect_needs(tm
     assert '# name = "py-pylib"' in text
     assert text.count("# full_suite = false") == 2
     assert run_cli(repo, "doctor").returncode == 0, "the config init wrote still checks out"
+
+
+# init on a package.json whose fields are null: npm reads such a file, and init
+# ended in a TypeError before it wrote crapkit.toml.
+
+_NULL_FIELDS = {
+    "scripts-null": ({"package.json": {"scripts": None, "devDependencies": {"vitest": "^2"}}},
+                     "npx vitest run --coverage ", ""),
+    "devDependencies-null": ({"package.json": {"scripts": {"test": "vitest run"},
+                                               "devDependencies": None}},
+                             "npm run test -- --coverage", ""),
+    "workspace-devDependencies-null": (
+        {"package.json": {"scripts": {"test": "npm run --workspaces test"}},
+         "web/package.json": {"devDependencies": None}},
+        "npm run test -- --coverage", ""),
+    # Not a null: the control that a UTF-8 file with non-ASCII text reads as it did.
+    "utf8-non-ascii-description": ({"package.json": {"description": "café 世界",
+                                                     "scripts": {"test": "vitest run"}}},
+                                   "npm run test -- --coverage", ""),
+}
+
+
+@pytest.mark.parametrize("shape", list(_NULL_FIELDS))
+def test_init_reads_a_package_json_whose_fields_are_null(tmp_path: Path, shape: str):
+    from crapkit.config import load_config_text
+
+    files, command, cwd = _NULL_FIELDS[shape]
+    repo = _bare_git_repo(tmp_path, "nulls")
+    (repo / "src").mkdir()
+    (repo / "src" / "app.ts").write_text("export function f(a: number) { return a ? 1 : 2; }\n",
+                                         encoding="utf-8")
+    for name, payload in files.items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    _git_commit_all(repo, "init")
+
+    res = run_cli(repo, "init")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    (lane,) = load_config_text((repo / "crapkit.toml").read_text(encoding="utf-8")).lanes
+    assert lane.command.startswith(command), lane.command
+    assert lane.cwd == cwd

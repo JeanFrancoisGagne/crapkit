@@ -13,9 +13,10 @@ from pathlib import Path
 
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
+from ..gitpaths import readable, shown
 from ..invocation import _self
 from ..merge import UNREAD_ADVICE
-from ..repotext import repo_text
+from ..repotext import os_text, repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
 
@@ -120,11 +121,33 @@ def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) ->
     is root-relative as it always was.
     """
     path = raw.replace("\\", "/") if os.name == "nt" else raw
+    return _readable_argument(_placed(path, root, cwd), root)
+
+
+def _placed(path: str, root: Path, cwd: Path | None) -> str:
+    """The argument as a root-relative posix path, resolved as the OS spelled
+    it: a checkout under a directory named in Latin-1 resolves like any other."""
     if _is_rooted(path):
         return _under_root(path, root)
     if _below(cwd, root):
         return _under_root(str(cwd / path), root)
     return posixpath.normpath(path)
+
+
+def _readable_argument(rel: str, root: Path) -> str:
+    """A root-relative name as text a store, a marks file and a row can hold.
+
+    A name in bytes that are not UTF-8 arrives holding a lone surrogate, which
+    none of them can hold. When a file exists under that name the answer is the
+    rename, since no lookup can ever key it; otherwise each such byte reads as
+    U+FFFD, and the command answers for a file it does not have in its own
+    words."""
+    if readable(rel):
+        return rel
+    if os.path.lexists(root / rel):
+        raise ConfigError(f"{shown(rel)} is named in bytes that are not UTF-8, and crapkit reads "
+                          "every path as UTF-8: rename it (git mv) to a UTF-8 name")
+    return os_text(rel)
 
 
 def _below(cwd: Path | None, root: Path) -> bool:
@@ -147,7 +170,7 @@ def _under_root(path: str, root: Path) -> str:
     try:
         return Path(path).resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
-        raise ConfigError(f"{path} is outside the repo at {root}") from None
+        raise ConfigError(f"{shown(path)} is outside the repo at {shown(str(root))}") from None
 
 
 def _repo_out_path(root: Path, out: str) -> Path:
@@ -405,9 +428,14 @@ def _ratchet_entries(root: Path, cfg, rows=None, store=None) -> list | None:
 
 
 def _load_sources(root: Path, paths: set) -> dict:
+    """Each file's text as the scorer read it, so `brief --json`'s `source`
+    holds the `é` a cp1252 file holds, the `é` its long_name already showed,
+    where a UTF-8 read put U+FFFD for an agent to write back."""
+    from ..analyze import decode_source
+
     sources = {}
     for rel in paths:
         p = root / rel
         if p.is_file():
-            sources[rel] = p.read_text(encoding="utf-8", errors="replace")
+            sources[rel] = decode_source(p.read_bytes())
     return sources

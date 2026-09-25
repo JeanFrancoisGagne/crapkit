@@ -6,16 +6,23 @@ consumer finds out when the job exits 2 on their pull request. These read
 `action.yml` the way `test_cli_docs_contract.py` reads README's Subcommands
 table, and they read the dogfood job that runs the action on this repo.
 """
+import json
 import os
 import re
 import shutil
 import subprocess
+import sys
+import threading
 from functools import lru_cache
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import NamedTuple
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from crapkit.cli.parser import build_parser
+from hang_guard import HANG_SECONDS
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 ACTION = ROOT / "action.yml"
@@ -449,6 +456,48 @@ def test_top_caps_the_rows_after_the_filter_not_before():
     assert [row["path"] for row in picked] == ["calc/report.py"]
 
 
+def _three_rows(tmp_path) -> Path:
+    worklist = tmp_path / "worklist.json"
+    worklist.write_text(json.dumps({"active": [
+        {"path": f"calc/m{i}.py", "start": 1, "function": f"f{i}( x )", "ccn": 9 - i, "risk": 1.0,
+         "remedy": "decompose"} for i in range(3)]}), encoding="utf-8")
+    return worklist
+
+
+# The `top` input as a workflow hands it over: a string, "" when the expression
+# it names is unset. The number is the rows the table shows out of three.
+_TOPS = {"5": 3, "2": 2, " 5 ": 3, "": 3, "ten": 3, "five": 3, "5.0": 3, "-1": 3, "1" * 20: 3}
+
+
+@pytest.mark.parametrize("top", list(_TOPS), ids=[repr(top) for top in _TOPS])
+def test_the_top_input_renders_rows_whatever_string_the_workflow_hands_over(tmp_path, top, capsys):
+    """`--top` was `type=int`: "", "ten" and "5.0" exited 2 in "build the
+    comment", the composite stopped there, and the job failed with the gate off
+    and no comment. "-1" sliced the last row off without a word."""
+    out = tmp_path / "comment.md"
+
+    code = _builder().main(["--worklist", str(_three_rows(tmp_path)), "--top", top, "--out", str(out)])
+
+    assert code == 0
+    assert out.read_text(encoding="utf-8").count("| `calc/m") == _TOPS[top]
+
+
+@pytest.mark.parametrize("top", ["ten", "5.0", "-1"])
+def test_a_top_that_is_not_a_row_count_is_named_in_a_warning(tmp_path, top, capsys):
+    _builder().main(["--worklist", str(_three_rows(tmp_path)), "--top", top, "--out", str(tmp_path / "c.md")])
+
+    assert capsys.readouterr().out == (
+        f"::warning title=crapkit::input top is {top!r}, not a whole number of rows; the comment "
+        f"shows 5. Set top to a number such as \"10\", or leave it out for 5.\n")
+
+
+@pytest.mark.parametrize("top", ["5", "", " 5 "])
+def test_a_row_count_or_an_empty_top_warns_about_nothing(tmp_path, top, capsys):
+    _builder().main(["--worklist", str(_three_rows(tmp_path)), "--top", top, "--out", str(tmp_path / "c.md")])
+
+    assert capsys.readouterr().out == ""
+
+
 def test_a_changed_file_with_no_ranked_function_says_so():
     body = _builder().table([])
 
@@ -594,6 +643,239 @@ def test_the_exit_steps_failure_prints_the_reason_the_base_step_wrote(tmp_path):
     result = _run_exit_step(tmp_path, "true", "true", 0, None)
 
     assert _REASON in result.stdout
+
+
+def _two_commit_repo(repo: Path, fork_files: dict) -> str:
+    """A repo whose first commit, the fork point, holds `fork_files`; HEAD is a
+    second commit on top. Returns the fork point's sha."""
+    def git(*args):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.test", *args],
+                              cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+    repo.mkdir()
+    git("init", "-q")
+    for rel, text in {"README.md": "fork\n", **fork_files}.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(text, encoding="utf-8", newline="\n")
+    git("add", "-A")
+    git("commit", "-qm", "fork point")
+    fork = git("rev-parse", "HEAD")
+    (repo / "README.md").write_text("head\n", encoding="utf-8")
+    git("commit", "-qam", "head")
+    return fork
+
+
+def _run_base_step(tmp_path, shim_body: str, fork_files=None, env_extra=None) -> str:
+    """The base step under bash with a `crapkit` on PATH running `shim_body`,
+    in a repo whose fork point holds `fork_files`. Returns the reason it wrote."""
+    base_sha = _two_commit_repo(tmp_path / "repo", fork_files or {})
+    state, shim = tmp_path / "state", tmp_path / "bin"
+    state.mkdir()
+    shim.mkdir()
+    (shim / "crapkit").write_text("#!/bin/sh\n" + shim_body, encoding="utf-8", newline="\n")
+    (shim / "crapkit").chmod(0o755)
+    script = tmp_path / "base-step.sh"
+    script.write_text(_step_named("score the base commit")["run"], encoding="utf-8", newline="\n")
+    env = {**os.environ, **(env_extra or {}), "CRAPKIT_STATE": state.as_posix(), "BASE_SHA": base_sha,
+           "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"}
+    subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                   cwd=tmp_path / "repo", env=env, capture_output=True, text=True, timeout=HANG_SECONDS)
+    return (state / "crapkit-base.reason").read_text(encoding="utf-8").strip()
+
+
+# What `crapkit coverage` at the fork point printed on stderr and exited with,
+# and the words the reason must carry. A warning can come first: coverage.py's
+# no-branch-data line is the first stderr line of the default CI lane, and the
+# reason quoted it for a run whose other lane failed.
+_BASE_FAILURES = {
+    "warning-lane-then-failing-lane": (
+        "crapkit: lane 'a-py': coverage.py report carries no branch data, so the coverage term is "
+        "statement-based\ncrapkit: lane 'b-js' FAILED: lane 'b-js' produced no artifact at "
+        "coverage/coverage-final.json (command exit 1)\n", 5, "lane 'b-js' FAILED"),
+    "killed-with-no-stderr": ("", 137, "crapkit coverage exited 137 and printed nothing"),
+    "no-crapkit-toml-at-the-fork-point": (
+        "crapkit: no crapkit.toml at or above /tmp/base\n", 3, "no crapkit.toml at or above"),
+    "lane-exits-1-with-no-artifact": (
+        "crapkit: lane 'unit' FAILED: lane 'unit' produced no artifact at coverage/coverage-final.json "
+        "(command exit 1)\n", 5, "lane 'unit' FAILED"),
+    "an-empty-istanbul-artifact": (
+        "crapkit: lane 'unit' FAILED: istanbul artifact is empty (zero files)\n", 5, "istanbul artifact is empty"),
+    "a-key-of-the-wrong-type": (
+        "crapkit: crapkit.toml: scope 'src'.languages must be array\n", 3, ".languages must be array"),
+}
+
+
+@pytest.mark.parametrize("name", list(_BASE_FAILURES))
+def test_the_base_reason_quotes_the_line_that_names_the_failure(tmp_path, name):
+    """The step quoted `head -n 1` of crapkit's stderr: a warning a passing lane
+    printed first, or nothing at all when crapkit died silent. The comment and
+    the failing gate then named the wrong lane, or no cause."""
+    stderr, code, needle = _BASE_FAILURES[name]
+    (tmp_path / "stderr.txt").write_text(stderr, encoding="utf-8", newline="\n")
+
+    reason = _run_base_step(tmp_path, f"cat '{(tmp_path / 'stderr.txt').as_posix()}' >&2\nexit {code}\n")
+
+    assert needle in reason, reason
+
+
+_A_PY_LANE = """
+[[scope]]
+name = "py"
+paths = ["pylib"]
+languages = ["python"]
+
+[[scope]]
+name = "src"
+paths = ["src"]
+languages = ["typescript"]
+
+[[lane]]
+name = "a-py"
+command = "python py.py"
+artifact = "cov-py.json"
+parser = "coveragepy"
+scopes = ["py"]
+
+[[lane]]
+name = "b-js"
+command = "python fail.py"
+artifact = "coverage/coverage-final.json"
+parser = "istanbul"
+scopes = ["src"]
+"""
+
+_NO_BRANCH_REPORT = (
+    "import json\njson.dump({'meta': {'branch_coverage': False}, 'files': {'pylib/a.py': "
+    "{'executed_lines': [1, 2], 'missing_lines': [], 'summary': {'num_statements': 2, "
+    "'covered_lines': 2}, 'functions': {'f': {'executed_lines': [2], 'missing_lines': [], "
+    "'summary': {'num_statements': 1, 'covered_lines': 1}, 'start_line': 1}}}}}, "
+    "open('cov-py.json', 'w'))\n")
+
+
+def test_the_base_reason_names_the_failed_lane_under_the_real_cli(tmp_path):
+    """The same run through crapkit itself: lane a-py passes and warns about
+    branch data, lane b-js fails. The reason names b-js."""
+    files = {"crapkit.toml": _A_PY_LANE, "pylib/a.py": "def f():\n    return 1\n",
+             "src/app.ts": "export function f(x: number) { return x > 0 ? 1 : 0; }\n",
+             "fail.py": "import sys\nsys.exit(1)\n", "py.py": _NO_BRANCH_REPORT}
+    python = Path(sys.executable).as_posix()
+
+    reason = _run_base_step(tmp_path, f'exec "{python}" -m crapkit "$@"\n', files,
+                            {"PYTHONPATH": str(ROOT / "src")})
+
+    assert "lane 'b-js' FAILED" in reason, reason
+
+
+_ONE_PY_LANE = """
+[[scope]]
+name = "py"
+paths = ["pylib"]
+languages = ["python"]
+
+[[lane]]
+name = "py"
+# `&&`: the report exists only when the noise ran and exited 0.
+command = "python noise.py && python report.py"
+artifact = "cov-py.json"
+parser = "coveragepy"
+scopes = ["py"]
+"""
+
+
+def _report_script(branch: bool) -> str:
+    """A lane that writes coverage.py's JSON for pylib/a.py, with branch data
+    or without it (the default CI lane has no --cov-branch)."""
+    counts = {"num_statements": 2, "covered_lines": 2, "num_branches": 0, "covered_branches": 0}
+    report = {"meta": {"branch_coverage": branch}, "files": {"pylib/a.py": {
+        "executed_lines": [1, 2], "missing_lines": [], "summary": counts,
+        "functions": {"f": {"executed_lines": [2], "missing_lines": [], "summary": counts,
+                            "start_line": 1}}}}}
+    return f"open('cov-py.json', 'w').write({json.dumps(json.dumps(report))})\n"
+
+
+# What the lane prints before it writes its report, and whether the report
+# carries branch data. None of it may reach a --json payload.
+_LANE_OUTPUT = {
+    "json-looking-and-5000-character-lines": (
+        "print('{\"ok\": false, \"run_id\": 99}')\nprint('[1, 2]')\nprint('x' * 5000)\n", True),
+    "non-utf8-bytes-on-stdout-and-stderr": (
+        "import sys\nsys.stdout.buffer.write(b'caf\\xe9 \\xff\\n')\n"
+        "sys.stderr.buffer.write(b'caf\\xe9 \\xff\\n')\n", True),
+    "a-report-without-branch-data": ("", False),
+}
+
+_THE_CHAIN = ("score the checkout", "the verdict", "the ranked worklist", "the changed files",
+              "build the comment")
+
+
+def _run_the_chain(tmp_path, files: dict) -> Path:
+    """The action's scoring steps and the builder, in order, under bash, on a
+    push event (no base run), with `crapkit` on PATH running this checkout.
+    Returns the state directory the steps wrote."""
+    _two_commit_repo(tmp_path / "repo", files)
+    state, shim = tmp_path / "state", tmp_path / "bin"
+    state.mkdir()
+    shim.mkdir()
+    python = Path(sys.executable)
+    (shim / "crapkit").write_text(f'#!/bin/sh\nexec "{python.as_posix()}" -m crapkit "$@"\n',
+                                  encoding="utf-8", newline="\n")
+    (shim / "crapkit").chmod(0o755)
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src"), "CRAPKIT_STATE": state.as_posix(), "TOP": "5",
+           "BASE_SHA": "", "GITHUB_ACTION_PATH": ROOT.as_posix(),
+           "PATH": os.pathsep.join([str(shim), str(python.parent), os.environ["PATH"]])}
+    for name in _THE_CHAIN:
+        script = tmp_path / (name.replace(" ", "-") + ".sh")
+        script.write_text(_step_named(name)["run"], encoding="utf-8", newline="\n")
+        done = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                              cwd=tmp_path / "repo", env=env, capture_output=True, timeout=HANG_SECONDS)
+        assert done.returncode == 0, f"{name}: {done.stdout!r} {done.stderr!r}"
+    return state
+
+
+@pytest.mark.parametrize("name", list(_LANE_OUTPUT))
+def test_what_a_lane_prints_never_reaches_the_payloads_the_comment_reads(tmp_path, name):
+    """The comment reads crapkit's --json stdout from three files. A lane that
+    printed a JSON-looking line, a 5,000-character line or bytes that are not
+    UTF-8 into one of them would turn a passing run into `wrote no run
+    summary`, and a report without branch data only warns."""
+    noise, branch = _LANE_OUTPUT[name]
+    files = {"crapkit.toml": _ONE_PY_LANE, "pylib/a.py": "def f():\n    return 1\n",
+             "noise.py": noise, "report.py": _report_script(branch)}
+
+    state = _run_the_chain(tmp_path, files)
+
+    payloads = [json.loads((state / f"crapkit-{kind}.json").read_bytes())
+                for kind in ("coverage", "verify", "worklist")]
+    assert all(isinstance(payload, dict) for payload in payloads), payloads
+    assert (state / "crapkit-coverage.exit").read_text(encoding="utf-8").strip() == "0"
+    comment = (state / "crapkit-comment.md").read_text(encoding="utf-8")
+    assert comment.startswith(_builder().MARKER + "\n"), comment
+    assert "1 function in 1 file" in comment and "wrote no run summary" not in comment, comment
+    assert "### Worklist: the whole repository" in comment, comment
+    assert json.loads((state / "crapkit-comment.json").read_bytes())["body"] == comment
+
+
+@pytest.mark.parametrize("base, expected", [
+    ("the-fork-point", ["README.md"]),
+    ("", []),
+    ("0123456789abcdef0123456789abcdef01234567", []),
+], ids=["pull-request", "push-event", "base-not-in-a-shallow-clone"])
+def test_the_changed_files_step_lists_the_diff_or_nothing(tmp_path, base, expected):
+    """base.sha renders "" on a push, and a shallow clone lacks the commit it
+    names on a pull request. Either way the list is empty, the comment ranks
+    the whole repository, and the step exits 0."""
+    fork = _two_commit_repo(tmp_path / "repo", {})
+    state = tmp_path / "state"
+    state.mkdir()
+    script = tmp_path / "changed-files.sh"
+    script.write_text(_step_named("the changed files")["run"], encoding="utf-8", newline="\n")
+    env = {**os.environ, "CRAPKIT_STATE": state.as_posix(), "BASE_SHA": base.replace("the-fork-point", fork)}
+
+    done = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                          cwd=tmp_path / "repo", env=env, capture_output=True, text=True, timeout=HANG_SECONDS)
+
+    listed = [name for name in (state / "crapkit-changed.txt").read_bytes().decode().split("\0") if name]
+    assert (done.returncode, listed) == (0, expected), done.stderr
+    assert done.stdout.strip() == f"{len(expected)} changed file(s)"
 
 
 def test_the_comment_step_hands_the_builder_the_base_files():
@@ -849,6 +1131,87 @@ def test_the_verdict_prints_one_bullet_per_new_test_failure():
     line = _builder().verdict_line(_failing_verify(new_failures=["tests/test_calc.py::test_route"]), 8)
 
     assert "- new test failure: `tests/test_calc.py::test_route`" in line
+
+
+_GITHUB_COMMENT_LIMIT = 65536
+
+
+def _failures(count: int) -> list:
+    return [f"tests/unit/test_module_{i}.py::test_a_case_whose_name_runs_long_{i}" for i in range(count)]
+
+
+def _violations(count: int) -> list:
+    return [{**_violation(), "start": i, "long_name": f"route_{i}( a , b , c , d )"} for i in range(count)]
+
+
+def _regressions(count: int) -> list:
+    return [{"path": f"app/m{i}.py", "long_name": f"f{i}( x )", "recorded": 8.0, "fresh_crap": 9.0}
+            for i in range(count)]
+
+
+# A finding kind with more entries than one comment can carry: the entries the
+# verdict prints, and the line that counts the rest.
+_FLOODS = {
+    "10-new-failures": (dict(new_failures=_failures(10)), 8, 10, None),
+    "1500-new-failures": (dict(new_failures=_failures(1500)), 8, 50,
+                          "- and 1450 more new test failures; `crapkit verify` lists them all"),
+    "1000-gate-violations": (dict(gate_violations=_violations(1000)), 6, 50,
+                             "- and 950 more gate violations; `crapkit verify` lists them all"),
+    "1000-ratchet-regressions": (dict(ratchet_regressions=_regressions(1000)), 7, 50,
+                                 "- and 950 more ratchet regressions; `crapkit verify` lists them all"),
+}
+
+
+@pytest.mark.parametrize("name", list(_FLOODS))
+def test_a_flood_of_findings_prints_fifty_of_a_kind_and_counts_the_rest(name):
+    """Every entry was a bullet, and GitHub refuses a comment body over 65,536
+    characters: 1,500 new failures made a 152,245-character body, the POST came
+    back 422, and the pull request got no comment at all."""
+    over, code, shown, rest = _FLOODS[name]
+
+    text = _builder().body(None, _failing_verify(**over), code, None, [], 5)
+
+    assert len(text) <= _GITHUB_COMMENT_LIMIT
+    assert len([ln for ln in text.splitlines() if ln.startswith("- ") and " more " not in ln]) == shown
+    assert rest is None or rest in text
+
+
+def test_a_body_over_githubs_limit_is_cut_below_it_and_says_so(tmp_path):
+    """Long names and a large `top` still make a table GitHub refuses. The
+    request body is cut at a line under the limit, in UTF-8 bytes so no count
+    of a multibyte character can tip it over; the marker stays first, so the
+    next push still edits this comment, and the markdown the step prints to
+    the job log keeps every row."""
+    worklist = tmp_path / "worklist.json"
+    worklist.write_text(json.dumps({"active": [
+        {"path": f"app/m{i}.py", "start": 1, "function": "é" * 300, "ccn": 9, "risk": 1.0,
+         "remedy": "decompose"} for i in range(1000)]}), encoding="utf-8")
+    out, request = tmp_path / "c.md", tmp_path / "c.json"
+
+    _builder().main(["--worklist", str(worklist), "--top", str(10 ** 20), "--out", str(out),
+                     "--json-out", str(request)])
+
+    sent = json.loads(request.read_text(encoding="utf-8"))["body"]
+    assert len(sent.encode("utf-8")) <= _GITHUB_COMMENT_LIMIT
+    assert sent.startswith(_builder().MARKER)
+    assert sent.endswith("the comment stopped at GitHub's 65,536-character limit; the job log above "
+                         "holds the whole text.\n")
+    assert out.read_text(encoding="utf-8").count("| `app/m") == 1000
+
+
+def test_a_flood_of_new_failures_posts_one_comment_github_accepts(tmp_path):
+    """The whole route: main() writes the request body, the post step sends it,
+    and the local API refuses a body over the limit with 422 as GitHub does."""
+    verify = tmp_path / "verify.json"
+    verify.write_text(json.dumps(_failing_verify(new_failures=_failures(1500))), encoding="utf-8")
+    request = tmp_path / "request.json"
+    _builder().main(["--verify", str(verify), "--verify-exit", "8", "--out", str(tmp_path / "c.md"),
+                     "--json-out", str(request)])
+
+    result, writes = _post_under_real_gh(tmp_path, [], request=request)
+
+    assert writes == _POST_FRESH
+    assert "posting the crapkit comment exited 0" in result.stdout, result.stdout + result.stderr
 
 
 def test_the_verdict_lists_the_first_twenty_uncovered_changed_lines_grouped_per_file():
@@ -1183,21 +1546,24 @@ def test_the_readme_pins_uses_to_the_release_it_documents():
     assert pins == {__version__}, f"README pins {sorted(pins)}, this release is {__version__}"
 
 
-def _run_post_step(tmp_path, head_repo: str, gh_exit: int):
-    """The post step under bash, with a `gh` on PATH that prints an error and
-    exits `gh_exit`, the way a bad token or a missing permission answers."""
+def _run_post_step(tmp_path, head_repo: str, gh_exit: int, pr: str = "7"):
+    """The post step under bash, with a `gh` on PATH that appends its arguments
+    to gh-calls.txt, prints an error and exits `gh_exit`, the way a bad token or
+    a missing permission answers."""
     state = tmp_path / "state"
     state.mkdir(parents=True)
     (state / "crapkit-comment.json").write_text("{}", encoding="utf-8")
     shim = tmp_path / "bin"
     shim.mkdir()
-    (shim / "gh").write_text(f"#!/bin/sh\necho 'gh: Bad credentials (HTTP 401)' >&2\nexit {gh_exit}\n",
+    calls = (tmp_path / "gh-calls.txt").as_posix()
+    (shim / "gh").write_text(f"#!/bin/sh\necho \"$*\" >> '{calls}'\n"
+                             f"echo 'gh: Bad credentials (HTTP 401)' >&2\nexit {gh_exit}\n",
                              encoding="utf-8", newline="\n")
     (shim / "gh").chmod(0o755)
     script = tmp_path / "post-step.sh"
     script.write_text(_step_named("post the comment")["run"], encoding="utf-8", newline="\n")
     env = {**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}",
-           "CRAPKIT_STATE": state.as_posix(), "GH_TOKEN": "x", "PR": "7",
+           "CRAPKIT_STATE": state.as_posix(), "GH_TOKEN": "x", "PR": pr,
            "REPO": "owner/repo", "HEAD_REPO": head_repo}
     return subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
                           env=env, capture_output=True, text=True)
@@ -1216,7 +1582,339 @@ def test_a_failed_post_blames_the_fork_token_only_on_a_fork(tmp_path):
         same.stdout
 
 
+def test_a_pull_request_whose_fork_was_deleted_blames_the_fork_token(tmp_path):
+    """GitHub sends `head.repo: null` once the fork is deleted, and the
+    expression renders it as "". Only a fork pull request runs with that
+    read-only token, so the fork line is the right one."""
+    result = _run_post_step(tmp_path, "", 1)
+
+    assert "posting the crapkit comment exited 1: a fork pull request's token cannot write comments" \
+        in result.stdout, result.stdout
+    assert result.returncode == 0, result.stderr
+    calls = (tmp_path / "gh-calls.txt").read_text(encoding="utf-8").splitlines()
+    assert [("--paginate" in call, "--method POST" in call) for call in calls] == \
+        [(True, False), (True, False), (False, True)], calls
+
+
+def test_a_push_event_calls_no_gh_and_says_why(tmp_path):
+    """A push event carries no pull_request, so PR renders as "", and a
+    lookup under `issues//comments` would only put a 404 in the log."""
+    result = _run_post_step(tmp_path, "", 0, pr="")
+
+    assert result.stdout.strip() == "no pull request on this event: the comment above was not posted"
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "gh-calls.txt").exists()
+
+
 def test_the_post_step_reads_the_head_repository_off_the_event():
     env = _step_named("post the comment")["env"]
 
     assert env["HEAD_REPO"] == "${{ github.event.pull_request.head.repo.full_name }}"
+
+
+# --- the lookup, run under gh's own jq ----------------------------------------
+
+_MARK = "<!-- crapkit-action -->\n## crapkit\nthe previous push"
+
+
+def _c(ident: int, body="looks good") -> dict:
+    return {"id": ident, "user": {"login": "reviewer"}, "body": body}
+
+
+_MARKED = _c(2, _MARK)
+_POST_FRESH = ["POST /repos/owner/repo/issues/7/comments"]
+
+
+def _edit(ident: int) -> list:
+    return [f"PATCH /repos/owner/repo/issues/comments/{ident}"]
+
+
+_EDIT_IN_PLACE = _edit(2)
+
+
+class _FailsOnce(NamedTuple):
+    """A page that answers `status` to its first request and `comments` to
+    every request after it: a transient 502 or rate limit."""
+    status: int
+    comments: list
+
+
+class _CommentsApi(BaseHTTPRequestHandler):
+    """The two endpoints the post step calls: the pull request's comment list,
+    served one page per request from `server.pages` after `server.delay`
+    seconds, and the writes, recorded in `server.writes` as `METHOD path`. A
+    page is a list of comments, the HTTP status it fails with every time, or a
+    `_FailsOnce`. Each GET's page number goes to `server.gets`, so the page-1
+    count is the number of times the step listed the thread."""
+
+    def do_GET(self):
+        threading.Event().wait(self.server.delay)
+        url = urlsplit(self.path)
+        page = int(parse_qs(url.query).get("page", ["1"])[0])
+        self.server.gets.append(page)
+        answer = self.server.pages[page - 1]
+        if isinstance(answer, _FailsOnce):
+            answer = answer.status if self.server.gets.count(page) == 1 else answer.comments
+        if isinstance(answer, int):
+            self._answer(answer, {"message": f"fake {answer}", "documentation_url": "https://docs.github.com/rest"})
+            return
+        self._answer(200, answer, self._next(url.path, page))
+
+    def _next(self, path: str, page: int) -> dict:
+        if page >= len(self.server.pages):
+            return {}
+        return {"Link": f'<http://api.github.localhost{path}?page={page + 1}>; rel="next"'}
+
+    def do_PATCH(self):
+        self._write(200)
+
+    def do_POST(self):
+        self._write(201)
+
+    def _write(self, status: int):
+        sent = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+        if len(sent.get("body", "")) > 65536:
+            self._answer(422, {"message": "Validation Failed", "errors": [{"code": "too_long"}]})
+            return
+        self.server.writes.append(f"{self.command} {urlsplit(self.path).path}")
+        self._answer(status, {"id": 99})
+
+    def _answer(self, status: int, payload, headers=None):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def _env_routing_gh_to(port: int) -> dict:
+    """gh sends a `github.localhost` host's calls over plain http, so
+    HTTP_PROXY routes them to the local API. Every other proxy variable goes:
+    a `no_proxy=localhost` on the machine would send them past it."""
+    env = {key: value for key, value in os.environ.items() if not key.lower().endswith("_proxy")}
+    env.update(HTTP_PROXY=f"http://127.0.0.1:{port}", GH_HOST="github.localhost", GH_TOKEN="x")
+    return env
+
+
+def _comments_api(pages: list, delay: float, gets) -> ThreadingHTTPServer:
+    """A _CommentsApi serving `pages` on a free local port, running. Its GETs
+    go to `gets` when the caller hands a list over."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CommentsApi)
+    server.pages, server.writes, server.delay = pages, [], delay
+    server.gets = [] if gets is None else gets
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def _post_under_real_gh(tmp_path, comments: list, *, pages=None, delay: float = 0.0, request=None,
+                        gets=None) -> tuple:
+    """The post step under bash with the `gh` on PATH, whose built-in jq runs the
+    lookup, against a local API that lists `comments` on pull request 7 (or
+    serves `pages` one per request, the way GitHub pages a long thread), and
+    refuses a body over 65,536 characters with a 422 as GitHub does. The step
+    sends `request`, or a marker-only body. Returns the step's result and the
+    writes the API accepted; `gets`, when given, receives each GET's page."""
+    if shutil.which("gh") is None:
+        pytest.skip("needs gh on PATH, which the ubuntu-latest and windows-latest runners carry")
+    state = tmp_path / "state"
+    state.mkdir()
+    sent = request.read_text(encoding="utf-8") if request else '{"body": "<!-- crapkit-action -->"}'
+    (state / "crapkit-comment.json").write_text(sent, encoding="utf-8")
+    script = tmp_path / "post-step.sh"
+    script.write_text(_step_named("post the comment")["run"], encoding="utf-8", newline="\n")
+    server = _comments_api(pages or [comments], delay, gets)
+    env = {**_env_routing_gh_to(server.server_address[1]), "GH_CONFIG_DIR": str(tmp_path / "gh"),
+           "CRAPKIT_STATE": state.as_posix(), "PR": "7", "REPO": "owner/repo", "HEAD_REPO": "owner/repo"}
+    try:
+        result = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                                env=env, capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=HANG_SECONDS)
+    finally:
+        server.shutdown()
+        server.server_close()
+    return result, server.writes
+
+
+def test_the_lookup_edits_the_marked_comment_in_place(tmp_path):
+    result, writes = _post_under_real_gh(tmp_path, [{"id": 1, "body": "looks good"}, _MARKED])
+
+    assert writes == _EDIT_IN_PLACE, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("comments", [
+    [{"id": 1, "body": None}, _MARKED],
+    [{"id": 1}, _MARKED],
+    [_MARKED, {"id": 3, "body": None}],
+], ids=["null-body-before", "no-body-key", "null-body-after"])
+def test_a_comment_with_no_body_does_not_hide_the_marked_one(tmp_path, comments):
+    """The API schema does not require an issue comment's `body`. `contains` on
+    null is an error in gh's jq as in jq 1.7, so one such comment anywhere in the
+    list made gh exit 1, the lookup came back empty, and the step posted a second
+    crapkit comment instead of editing the first."""
+    result, writes = _post_under_real_gh(tmp_path, comments)
+
+    assert writes == _EDIT_IN_PLACE, result.stdout + result.stderr
+
+
+# Every shape a comment thread takes, one page per list: the body's state, the
+# list's state, where the marked comment sits and which page fails. The write
+# is the contract: PATCH the comment the marker opens, POST when there is none,
+# and never a URL built from anything but a comment id. A listing that fails
+# before it reaches the marked comment is _LISTING_FAILS below.
+_THREADS = {
+    "body-number": ([[_c(1, 5), _MARKED]], _EDIT_IN_PLACE),
+    "body-empty-string": ([[_c(1, ""), _MARKED]], _EDIT_IN_PLACE),
+    "body-non-ascii": ([[_c(1, "café 世界 \U0001f600"), _MARKED]], _EDIT_IN_PLACE),
+    "body-300-kB": ([[_c(1, "x" * 300_000), _MARKED]], _EDIT_IN_PLACE),
+    "no-comment": ([[]], _POST_FRESH),
+    "one-item-the-marked-one": ([[_MARKED]], _EDIT_IN_PLACE),
+    "one-item-another-comment": ([[_c(1)]], _POST_FRESH),
+    "no-marker-on-the-page": ([[_c(1), _c(3)]], _POST_FRESH),
+    "marker-on-page-2": ([[_c(1), _c(3)], [_c(4), _c(5, _MARK)]], _edit(5)),
+    "marker-on-page-3-of-3": ([[_c(1)], [_c(3)], [_c(9, _MARK)]], _edit(9)),
+    "null-body-on-page-1-marker-on-page-2": ([[_c(1, None), _c(3)], [_c(5, _MARK)]], _edit(5)),
+    "absent-body-on-page-1-marker-on-page-2": ([[{"id": 1}, _c(3)], [_c(5, _MARK)]], _edit(5)),
+    "marker-on-page-1-null-body-on-page-2": ([[_MARKED, _c(3)], [_c(4, None)]], _EDIT_IN_PLACE),
+    "a-quote-of-the-marker-before-the-marked-comment": ([[_c(1, "> " + _MARK + "\nwhy red?"), _MARKED]],
+                                                        _EDIT_IN_PLACE),
+    "marker-on-page-1-and-page-2-fails": ([[_MARKED], 502], _EDIT_IN_PLACE),
+}
+
+# A listing that fails before it reaches the marked comment, one page per list,
+# the failing page as a _FailsOnce, and the write the step owes once a second
+# listing gets through.
+_LISTING_FAILS = {
+    "page-1-fails-502": ([_FailsOnce(502, [_c(1)]), [_MARKED]], _EDIT_IN_PLACE),
+    "page-1-rate-limited-403": ([_FailsOnce(403, [_c(1)]), [_MARKED]], _EDIT_IN_PLACE),
+    "the-only-page-403": ([_FailsOnce(403, [])], _POST_FRESH),
+    "marker-on-page-2-and-page-2-fails": ([[_c(1)], _FailsOnce(502, [_c(5, _MARK)])], _edit(5)),
+    "page-2-fails-marker-on-page-3": ([[_c(1)], _FailsOnce(502, [_c(3)]), [_c(30, _MARK)]], _edit(30)),
+}
+
+
+def _failing_every_time(pages: list) -> list:
+    return [page.status if isinstance(page, _FailsOnce) else page for page in pages]
+
+
+@pytest.mark.parametrize("name", list(_THREADS))
+def test_every_thread_shape_gets_one_write_to_the_right_place(tmp_path, name):
+    """gh's jq errors on a string operation over a body that is not a string,
+    and on an error page gh prints GitHub's JSON on stdout and exits 1: the step
+    took that JSON as the comment id and PATCHed
+    `issues/comments/{"message": ...}`. A lookup that failed before it saw the
+    marked comment posts a fresh one, which is what its log line says."""
+    pages, expected = _THREADS[name]
+
+    result, writes = _post_under_real_gh(tmp_path, [], pages=pages)
+
+    assert writes == expected, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("name", [name for name, (_, writes) in _THREADS.items() if writes != _POST_FRESH])
+def test_the_log_never_says_posting_a_fresh_one_before_an_edit(tmp_path, name):
+    """A lookup that found the comment and then failed on a later page said
+    `posting a fresh one` and PATCHed: the log contradicted the write."""
+    pages, _ = _THREADS[name]
+
+    result, _ = _post_under_real_gh(tmp_path, [], pages=pages)
+
+    assert "posting a fresh one" not in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize("name", list(_LISTING_FAILS))
+def test_a_listing_that_fails_once_is_listed_again_before_anything_is_posted(tmp_path, name):
+    """A lookup that failed before it saw the marked comment posted a fresh one
+    at once, so one transient 502 left the pull request with two crapkit
+    comments. The step now lists the thread a second time and edits the
+    comment that listing finds."""
+    pages, expected = _LISTING_FAILS[name]
+    gets = []
+
+    result, writes = _post_under_real_gh(tmp_path, [], pages=pages, gets=gets)
+
+    assert (gets.count(1), writes) == (2, expected), result.stdout + result.stderr
+    assert "failed twice" not in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize("name", list(_LISTING_FAILS))
+def test_a_listing_that_fails_twice_posts_a_fresh_comment_and_says_so(tmp_path, name):
+    """A lasting error still puts this push's verdict on the pull request: a
+    stale verdict misleads a reviewer more than a second comment does."""
+    gets = []
+
+    result, writes = _post_under_real_gh(tmp_path, [], pages=_failing_every_time(_LISTING_FAILS[name][0]),
+                                         gets=gets)
+
+    assert (gets.count(1), writes) == (2, _POST_FRESH), result.stdout + result.stderr
+    assert "listing the comments failed twice before it found a crapkit comment" in result.stdout, \
+        result.stdout
+
+
+def test_the_readme_says_the_step_lists_once_more_before_it_posts_fresh():
+    section = " ".join(_readme_section().split())
+
+    assert "When it found none, it lists the comments once more before it posts fresh" in section
+    assert "the job log says the listing failed twice" in section
+
+
+def test_a_listing_that_fails_after_the_marked_comment_edits_it_without_listing_again(tmp_path):
+    gets = []
+
+    result, writes = _post_under_real_gh(tmp_path, [], pages=_THREADS["marker-on-page-1-and-page-2-fails"][0],
+                                         gets=gets)
+
+    assert (gets.count(1), writes) == (1, _EDIT_IN_PLACE), result.stdout + result.stderr
+    assert "after it found comment 2: editing that one" in result.stdout, result.stdout
+
+
+def test_marked_comments_on_two_pages_edit_the_first_and_log_no_failure(tmp_path):
+    """The reported bug left threads with a crapkit comment on two pages. `head
+    -n 1` closed the pipe after the first id, gh died writing the second (SIGPIPE
+    on Linux, a closed pipe on Windows), and the log said the lookup exited 141
+    and a fresh comment was coming before the step PATCHed. Each page answers
+    after a quarter second, the latency that made it fail every time."""
+    result, writes = _post_under_real_gh(tmp_path, [], pages=[[_MARKED], [_c(7, _MARK)]], delay=0.25)
+
+    assert writes == _EDIT_IN_PLACE, result.stdout + result.stderr
+    assert "looking the existing comment up exited" not in result.stdout, result.stdout
+
+
+def _lookup_filter() -> str:
+    """The --jq program the post step hands gh, as the step spells it."""
+    found = re.search(r"--jq '([^']+)'", _step_named("post the comment")["run"])
+    assert found, "the post step no longer passes gh a --jq filter"
+    return found.group(1)
+
+
+_ENGINE_PAGES = {
+    "body-null": ([{"id": 1, "body": None}, _MARKED], "2"),
+    "body-absent": ([{"id": 1}, _MARKED], "2"),
+    "body-number": ([{"id": 1, "body": 5}, _MARKED], "2"),
+    "body-empty": ([{"id": 1, "body": ""}, _MARKED], "2"),
+    "list-empty": ([], ""),
+    "quoted-marker": ([{"id": 1, "body": "> " + _MARK}], ""),
+}
+
+
+@pytest.mark.parametrize("engine", ["jq", "gojq", "jq-1.6"])
+@pytest.mark.parametrize("page", list(_ENGINE_PAGES))
+def test_the_lookup_filter_holds_under_every_jq_engine(engine, page):
+    """gh runs the filter in its built-in gojq; jq 1.6 and 1.7.1 fail `contains`
+    on null the same way, so the filter is held to all three. Each engine runs
+    where it is on PATH: jq 1.7.1 on every CI runner image, and gojq and jq 1.6
+    on the Linux jobs, whose ci.yml step puts both there."""
+    binary = shutil.which(engine)
+    if binary is None:
+        pytest.skip(f"needs {engine} on PATH; every Linux CI job carries all three engines")
+    comments, expected = _ENGINE_PAGES[page]
+
+    done = subprocess.run([binary, "-r", _lookup_filter()], input=json.dumps(comments),
+                          capture_output=True, text=True, timeout=HANG_SECONDS)
+
+    assert (done.returncode, done.stdout.strip()) == (0, expected), done.stderr

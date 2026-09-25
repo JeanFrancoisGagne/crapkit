@@ -24,6 +24,21 @@ def test_proc_stat_uses_group_and_live_state(tmp_path, group, state, expected):
     assert owner._proc_group_member(record, '71') is expected
 
 
+@pytest.mark.parametrize('comm', [
+    b'caf\xe9', b'\xc3\xa9' * 7 + b'\xc3', 'café'.encode(), b'cafe-daemon',
+], ids=['comm-invalid-utf8', 'comm-utf8-cut-mid-char', 'comm-valid-accent', 'comm-ascii'])
+@pytest.mark.parametrize(('group', 'expected'), [('71', True), ('72', False)])
+def test_any_process_name_reads_as_a_stat_record(tmp_path, comm, group, expected):
+    """Every /proc/<pid>/stat on the host is read, and the kernel keeps a
+    process name as the bytes it was set to, cut at 15 bytes, mid-character
+    or not. Decoded in the locale, one such name anywhere on the machine
+    stopped every owned command with `measurement owner stopped`, and the
+    owner's stderr, the only place the cause showed, goes nowhere."""
+    record = tmp_path / 'stat'
+    record.write_bytes(b'100 (' + comm + b') S 1 ' + group.encode() + b' 4 5\n')
+    assert owner._proc_group_member(record, '71') is expected
+
+
 @pytest.mark.parametrize('text', [None, ''])
 def test_a_disappearing_proc_record_does_not_keep_a_group_alive(tmp_path, text):
     record = tmp_path / 'stat'

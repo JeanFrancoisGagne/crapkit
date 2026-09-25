@@ -512,3 +512,71 @@ def test_an_unread_file_is_advised_only_when_the_edit_changed_it(ranges, advised
 
     assert claude_hook._unread_change(UnanalyzableFile("why"), ranges) is advised
     assert claude_hook._unread_change([], ranges) is False
+# --- every shape of the PostToolUse payload, through the whole subcommand -----
+#
+# A field null, absent, of another type or not UTF-8 either still names the
+# edited file, and the advisory fires (exit 2), or names none, and the hook
+# exits 0 in silence. Neither ends in a traceback.
+
+def _payload_bytes(root: Path, edited: Path, **over) -> bytes:
+    event = {"session_id": "s", "transcript_path": "t", "cwd": str(root),
+             "hook_event_name": "PostToolUse", "tool_name": "Edit",
+             "tool_input": {"file_path": str(edited), "old_string": "a", "new_string": "b"},
+             "tool_response": {"filePath": str(edited), "success": True}}
+    for key, value in over.items():
+        if value == "absent":
+            event.pop(key, None)
+        else:
+            event[key] = value
+    return json.dumps(event).encode("utf-8")
+
+
+_RELATIVE = {"file_path": "calc/café.py"}
+_PAYLOADS = {
+    "session_id-null": (lambda r, e: _payload_bytes(r, e, session_id=None), 2),
+    "tool_response-null": (lambda r, e: _payload_bytes(r, e, tool_response=None), 2),
+    "cwd-null-absolute-path": (lambda r, e: _payload_bytes(r, e, cwd=None), 2),
+    "cwd-a-number-absolute-path": (lambda r, e: _payload_bytes(r, e, cwd=5), 2),
+    "cwd-absent-relative-path": (lambda r, e: _payload_bytes(r, e, cwd="absent",
+                                                             tool_input=_RELATIVE), 2),
+    "cwd-null-relative-path": (lambda r, e: _payload_bytes(r, e, cwd=None, tool_input=_RELATIVE), 2),
+    # A number is no base to read a relative path against, so the hook stays silent.
+    "cwd-a-number-relative-path": (lambda r, e: _payload_bytes(r, e, cwd=5, tool_input=_RELATIVE),
+                                   0),
+    "a-byte-that-is-not-utf8": (lambda r, e: _payload_bytes(r, e).replace(
+        b'"session_id": "s"', b'"session_id": "' + bytes([0xE9]) + b'"'), 2),
+    "a-5-MB-field": (lambda r, e: _payload_bytes(r, e, transcript_path="x" * 5_000_000), 2),
+    "hook_event_name-null": (lambda r, e: _payload_bytes(r, e, hook_event_name=None), 0),
+    "hook_event_name-absent": (lambda r, e: _payload_bytes(r, e, hook_event_name="absent"), 0),
+    "tool_input-null": (lambda r, e: _payload_bytes(r, e, tool_input=None), 0),
+    "tool_input-a-list": (lambda r, e: _payload_bytes(r, e, tool_input=["x"]), 0),
+    "tool_input-a-string": (lambda r, e: _payload_bytes(r, e, tool_input="calc/café.py"), 0),
+    "file_path-null": (lambda r, e: _payload_bytes(r, e, tool_input={"file_path": None}), 0),
+    "file_path-a-number": (lambda r, e: _payload_bytes(r, e, tool_input={"file_path": 5}), 0),
+    "file_path-empty": (lambda r, e: _payload_bytes(r, e, tool_input={"file_path": ""}), 0),
+    "file_path-a-list": (lambda r, e: _payload_bytes(r, e, tool_input={"file_path": [str(e)]}), 0),
+    "bash-command-null": (lambda r, e: _payload_bytes(r, e, tool_name="Bash",
+                                                      tool_input={"command": None}), 0),
+    "payload-a-list": (lambda r, e: b"[1, 2]", 0),
+    "payload-null": (lambda r, e: b"null", 0),
+    "payload-a-json-string": (lambda r, e: b'"PostToolUse"', 0),
+    "payload-empty": (lambda r, e: b"", 0),
+    "payload-truncated": (lambda r, e: _payload_bytes(r, e)[:40], 0),
+}
+
+
+@pytest.mark.parametrize("shape", list(_PAYLOADS))
+def test_every_payload_shape_draws_the_advisory_or_silence_never_a_traceback(
+        tmp_path, capsys, monkeypatch, shape):
+    edited = _breaching_repo(tmp_path)
+    make, expected = _PAYLOADS[shape]
+    monkeypatch.chdir(tmp_path)  # where Claude Code starts the hook: the project
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(make(tmp_path, edited)),
+                                                      encoding="utf-8"))
+
+    code = main(["claude-hook", "--protocol", "1"])
+
+    err = capsys.readouterr().err
+    assert code == expected, err
+    assert "Traceback" not in err
+    assert ("calc/café.py" in err) == (expected == 2), err

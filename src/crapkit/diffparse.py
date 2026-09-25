@@ -3,7 +3,9 @@
 Ranges are new-side. A pure deletion (zero new lines) still marks the line it
 happened at, so a function shrunk by an edit is still a touched function.
 Paths come from the +++ header (the new side survives renames) and decode
-git's C-style quoting through the shared path decoder.
+git's C-style quoting through the shared path decoder. A path whose bytes are
+not UTF-8 keeps them as surrogates: no row is keyed on it, and the scope
+assignment refuses it when a scope takes it (gitpaths, universe).
 
 Hunk body lines are consumed by the counts the @@ header declares, never
 pattern-matched: an added source line whose text starts with "++ " arrives as
@@ -14,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-from .gitpaths import unquote_path
+from .gitpaths import header_path
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
@@ -39,12 +41,14 @@ def _spend_body_line(line: str, rem_old: int, rem_new: int) -> tuple[int, int] |
 
 
 def _open_file(line: str, ranges: dict[str, list[tuple[int, int]]]) -> str | None:
-    """Point the parser at the file a `+++ ` header names; None for /dev/null."""
+    """Point the parser at the file a `+++ ` header names; None for /dev/null.
+    A name that is not UTF-8 keys its ranges in its surrogateescape spelling
+    (gitpaths names it on stderr), so the scope assignment the gate runs next
+    refuses it when a scope takes it instead of passing a file it never read."""
     target = line[4:].removesuffix("\t")
     if target == "/dev/null":
         return None
-    target = unquote_path(target)
-    path = target[2:] if target.startswith("b/") else target
+    path = header_path(target)
     ranges.setdefault(path, [])
     return path
 

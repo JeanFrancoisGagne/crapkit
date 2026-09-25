@@ -2,9 +2,12 @@
 so ruleIds, levels, and locations are contract, not decoration."""
 import json
 from types import SimpleNamespace
+from urllib.parse import unquote
 
-from crapkit.sarif import (diff_uncovered_results, gate_results, over_target_results,
-                           sarif_document, unread_results)
+import pytest
+
+from crapkit.sarif import (diff_uncovered_results, gate_results, github_annotation,
+                           over_target_results, sarif_document, unread_results)
 from crapkit.score import ScoredRow
 from crapkit.verify import GateViolation, UnreadFile
 
@@ -95,3 +98,23 @@ def test_verify_writes_a_finding_per_uncovered_changed_line(tmp_path):
 
 def test_verify_writes_no_diff_uncovered_finding_when_the_diff_is_covered(tmp_path):
     assert _verify_sarif(tmp_path, []) == []
+
+
+# --- a path in every shape a consumer has to read back -------------------------
+#
+# Code scanning percent-decodes the SARIF uri, and the Actions runner unescapes
+# `%`, `:` and `,` in an annotation's file property. Each path below comes back
+# as the file it names from both.
+
+@pytest.mark.parametrize("path", ["pkg/branchy.py", "pkg/café_世.py", "pkg/a, b.py",
+                                  "pkg/100%25.py", "pkg/a:b.py"],
+                         ids=["ascii", "non-ascii", "comma-and-space", "a-percent-sign", "a-colon"])
+def test_a_finding_s_path_reads_back_as_the_file_from_the_uri_and_the_annotation(path):
+    (result,) = gate_results([GateViolation(path, "f( )", 3, 9, 0.0, 81.0, "decompose")])
+
+    uri = result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    prop = github_annotation(result).split("file=", 1)[1].split(",line=", 1)[0]
+
+    assert unquote(uri) == path
+    assert prop.replace("%2C", ",").replace("%3A", ":").replace("%25", "%") == path
+    assert result["locations"][0]["physicalLocation"]["region"]["startLine"] == 3

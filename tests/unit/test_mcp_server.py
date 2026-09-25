@@ -5,7 +5,8 @@ exactly the frames a client reads. What they pin is the contract ADR 0001
 records: a bad tools/call (missing positional, undeclared key, wrong type) is a
 tool result with isError true, written in the tool's vocabulary, and the session
 continues; JSON-RPC errors stay reserved for the protocol itself (unknown
-method, an exception escaping the server). Nothing here spawns the CLI: every
+method, params that are not an object, an exception escaping the server).
+Nothing here spawns the CLI: every
 refusal is decided before build_argv runs, which is the point.
 """
 import io
@@ -144,6 +145,8 @@ def test_an_undeclared_key_names_the_accepted_ones(monkeypatch, tmp_path):
     ("get_function_history", {"path": "a.py", "name": "f", "history": "yes"},
      'history must be a boolean (got "yes")'),
     ("get_function_brief", {"path": 7, "name": "f"}, "path must be a string (got 7)"),
+    ("list_runs", {"repo": 5}, "repo must be a string (got 5)"),
+    ("list_runs", {"repo": ["a"]}, 'repo must be a string (got ["a"])'),
 ])
 def test_a_wrong_type_is_named_in_the_tools_words(monkeypatch, tmp_path, tool, arguments,
                                                   sentence):
@@ -441,3 +444,168 @@ def test_a_repo_naming_no_directory_gets_the_no_config_answer_and_spawns_nothing
     assert call["isError"] is True, call
     assert call["content"][0]["text"].startswith(
         f"no crapkit.toml in {missing} - nothing measured here."), call
+
+
+# --- params and arguments that are not objects --------------------------------
+#
+# `x or {}` stood in for null and empty only. A list, a string or a number in
+# `params` or `arguments` reached `.get` and came back as -32603 carrying an
+# AttributeError. By-position values are the likeliest of these: JSON-RPC
+# allows them, MCP does not. `arguments` belong to a named tool, so ADR 0001's
+# tool result answers them in the tool's words. `params` that are not an object
+# name no tool, so tools/call and initialize answer JSON-RPC -32602 (invalid
+# params) with no result, and the session reads on.
+
+# The refusal names the JSON type, as the -32602 answer for params does, and
+# never echoes the value: a whole by-position list, or a long string, is not
+# what the agent needs to read to correct its call.
+@pytest.mark.parametrize("tool, arguments, sentence", [
+    ("list_runs", 3, "arguments must be an object (got a number)"),
+    ("list_runs", 1.5, "arguments must be an object (got a number)"),
+    ("list_worklist", "top=3", "arguments must be an object (got a string)"),
+    ("list_worklist", True, "arguments must be an object (got a boolean)"),
+    ("list_runs", [1], "arguments must be an object (got an array)"),
+    ("get_function_brief", ["a.py", "f"], "arguments must be an object (got an array)"),
+    ("list_runs", "", "arguments must be an object (got a string)"),
+    ("list_runs", 0, "arguments must be an object (got a number)"),
+    ("list_runs", False, "arguments must be an object (got a boolean)"),
+    ("list_runs", [], "arguments must be an object (got an array)"),
+], ids=["a-number", "a-float", "a-string", "true", "a-list-on-a-tool-without-positionals",
+        "positionals-by-position", "an-empty-string", "zero", "false", "an-empty-list"])
+def test_arguments_that_are_not_an_object_are_refused_in_the_tools_words(
+        monkeypatch, tmp_path, tool, arguments, sentence):
+    _no_cli(monkeypatch)
+    replies = _serve(monkeypatch, tmp_path, [_call(1, tool, arguments), _rpc(2, "ping")])
+
+    call = replies[1]["result"]
+    assert call["isError"] is True, replies[1]
+    assert call["content"][0]["text"] == sentence
+    assert replies[2]["result"] == {}
+
+
+# Only absent, null and {} mean no arguments. An empty string, 0, false and []
+# are values of the wrong type, refused above: read as none given, list_runs
+# ran its CLI on them.
+@pytest.mark.parametrize("arguments", ["omitted", None, {}],
+                         ids=["absent", "null", "an-empty-object"])
+def test_no_arguments_in_any_empty_shape_reads_as_none_given(monkeypatch, tmp_path, arguments):
+    _no_cli(monkeypatch)
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "get_function_brief", arguments)])
+
+    assert replies[1]["result"]["content"][0]["text"] == \
+        "get_function_brief needs path (see inputSchema.required)"
+
+
+# Every JSON type that is not an object, and the words the -32602 message uses
+# for it. An empty array, an empty string, zero and false are not null: each
+# is a value of the wrong type, not a missing one.
+_NOT_OBJECTS = [(["get_function_brief", {"path": "a.py", "name": "f"}], "an array"),
+                ([], "an array"), ("get_function_brief", "a string"), ("", "a string"),
+                (7, "a number"), (0, "a number"), (1.5, "a number"), (False, "a boolean")]
+_NOT_OBJECT_IDS = ["a-list-by-position", "an-empty-list", "a-string", "an-empty-string",
+                   "a-number", "zero", "a-float", "false"]
+
+
+def _invalid_params(msg_id, message: str) -> dict:
+    return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": -32602, "message": message}}
+
+
+@pytest.mark.parametrize("params, got", _NOT_OBJECTS, ids=_NOT_OBJECT_IDS)
+def test_tools_call_params_that_are_not_an_object_are_a_refusal(monkeypatch, tmp_path,
+                                                               params, got):
+    _no_cli(monkeypatch)
+    replies = _serve(monkeypatch, tmp_path, [_rpc(1, "tools/call", params), _rpc(2, "ping")])
+
+    assert replies[1] == _invalid_params(
+        1, f"params must be an object naming the tool and its arguments (got {got})")
+    assert replies[2]["result"] == {}
+
+
+@pytest.mark.parametrize("params", ["omitted", None, {}],
+                         ids=["params-absent", "params-null", "params-empty"])
+def test_tools_call_with_no_params_names_no_tool(monkeypatch, tmp_path, params):
+    _no_cli(monkeypatch)
+    replies = _serve(monkeypatch, tmp_path, [_rpc(1, "tools/call", params)])
+
+    call = replies[1]["result"]
+    assert call["isError"] is True, replies[1]
+    assert call["content"][0]["text"] == "unknown tool ''"
+
+
+@pytest.mark.parametrize("params, got", [(["2025-06-18"], "an array"),
+                                         ("2025-06-18", "a string"), (5, "a number"),
+                                         ([], "an array"), (False, "a boolean")],
+                         ids=["params-a-list", "params-a-string", "params-a-number",
+                              "params-an-empty-list", "params-false"])
+def test_initialize_params_that_are_not_an_object_are_invalid_params(monkeypatch, tmp_path,
+                                                                    params, got):
+    replies = _serve(monkeypatch, tmp_path, [_rpc(1, "initialize", params), _rpc(2, "ping")])
+
+    assert replies[1] == _invalid_params(
+        1, f"params must be an object carrying protocolVersion (got {got})")
+    assert replies[2]["result"] == {}
+
+
+@pytest.mark.parametrize("params", [[1], "x", 3], ids=["a-list", "a-string", "a-number"])
+def test_a_method_that_reads_no_params_answers_whatever_type_they_are(monkeypatch, tmp_path,
+                                                                     params):
+    replies = _serve(monkeypatch, tmp_path, [_rpc(1, "ping", params),
+                                             _rpc(2, "tools/list", params),
+                                             _rpc(3, "resources/list", params)])
+
+    assert replies[1]["result"] == {}
+    assert [t["name"] for t in replies[2]["result"]["tools"]] == [t["name"] for t in TOOLS]
+    assert replies[3]["error"] == {"code": -32601, "message": "unknown method 'resources/list'"}
+
+
+@pytest.mark.parametrize("name, shown", [(None, "None"), (5, "5"), (["list_runs"], "['list_runs']"),
+                                         ("", "''")],
+                         ids=["null", "a-number", "a-list", "empty"])
+def test_a_tool_name_of_any_other_type_is_an_unknown_tool(monkeypatch, tmp_path, name, shown):
+    _no_cli(monkeypatch)
+    replies = _serve(monkeypatch, tmp_path, [_rpc(1, "tools/call", {"name": name})])
+
+    assert replies[1]["result"]["content"][0]["text"] == f"unknown tool {shown}"
+
+
+@pytest.mark.parametrize("params", ["omitted", None, {},
+                                    {"protocolVersion": 20250618},
+                                    {"protocolVersion": ["2025-06-18"]},
+                                    {"protocolVersion": {"v": "2025-06-18"}}],
+                         ids=["params-absent", "params-null", "params-empty",
+                              "version-a-number", "version-a-list", "version-an-object"])
+def test_initialize_answers_the_newest_revision_when_it_cannot_read_one(monkeypatch, tmp_path,
+                                                                        params):
+    replies = _serve(monkeypatch, tmp_path, [_rpc(1, "initialize", params)])
+
+    assert replies[1]["result"]["protocolVersion"] == mcp_server.SUPPORTED_PROTOCOLS[0]
+
+
+@pytest.mark.parametrize("method, shown", [(None, "None"), ("omitted", "''"),
+                                           (["ping"], "['ping']"), (7, "7")],
+                         ids=["null", "absent", "a-list", "a-number"])
+def test_a_method_that_is_not_a_known_string_is_an_unknown_method(monkeypatch, tmp_path,
+                                                                  method, shown):
+    msg = {"jsonrpc": "2.0", "id": 1}
+    if method != "omitted":
+        msg["method"] = method
+    replies = _serve(monkeypatch, tmp_path, [json.dumps(msg), _rpc(2, "ping")])
+
+    assert replies[1]["error"] == {"code": -32601, "message": f"unknown method {shown}"}
+    assert replies[2]["result"] == {}
+
+
+@pytest.mark.parametrize("arguments, argv", [
+    ({"path": "src/café.py", "name": "naïve_世界"}, ["src/café.py", "naïve_世界"]),
+    ({"top": 10 ** 30}, ["--top", str(10 ** 30)]),
+    ({"repo": ""}, []),
+], ids=["non-ascii-name", "top-10-to-the-30", "repo-empty"])
+def test_values_at_the_edge_of_their_type_reach_the_cli_as_given(monkeypatch, tmp_path,
+                                                                 arguments, argv):
+    calls = _cli_answers(monkeypatch, 0, json.dumps({"schema": 1}))
+    tool = "get_function_brief" if "path" in arguments else "list_worklist"
+    replies = _serve(monkeypatch, tmp_path, [_call(1, tool, arguments)])
+
+    assert replies[1]["result"]["isError"] is False, replies[1]
+    assert all(word in calls[0] for word in argv), calls
+    assert calls[0][-2:] == ["--repo", str(tmp_path)]

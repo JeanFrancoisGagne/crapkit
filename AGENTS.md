@@ -614,8 +614,15 @@ Arguments are checked against the served schema before the CLI spawns. `tools/li
 carries `required` from each tool's positionals, and a missing positional, an undeclared
 key or a wrong type answers a tool result with `isError` true, naming the MCP tool rather
 than the CLI command behind it (`get_function_brief needs name (see inputSchema.required)`),
-not a `-32602` protocol error; ADR 0001 under `docs/adr/` says why. `ping` answers `{}`.
-An exception escaping the server answers `-32603` and the loop continues.
+not a `-32602` protocol error; ADR 0001 under `docs/adr/` says why. `arguments` sent as a
+list, a string or a number get the same kind of answer, naming the JSON type they came as
+(`arguments must be an object (got a number)`), since MCP takes them by name; only null
+or absent `arguments` read as `{}`. `params` that
+are not an object on `tools/call` or `initialize` name no tool, so they answer `-32602` with
+no result (`params must be an object naming the tool and its arguments (got an array)`) and
+the session reads on; null or absent `params` read as `{}`. `ping` answers `{}`.
+An exception escaping the server answers `-32603` and the loop continues. A frame that is
+not one JSON object gets no reply, and the server reads the next line.
 `structuredContent` rides beside the text whenever the CLI exited 0; a `doctor` that finds
 a FAIL exits 1 and answers its JSON text with `isError: true` and no `structuredContent`.
 `check_gate` is the one tool whose non-zero exit is an answer: exit 6 (a breach) comes
@@ -644,9 +651,11 @@ run. The store fills missing per-run rollups when `trend` or `report` asks for t
 The dev extra ships `pytest`, `pytest-cov`, `pytest-xdist` and `coverage`. None of the
 four is a convenience.
 
-`coverage>=7.10.6` is the floor `[tool.coverage.run] patch = ["subprocess"]` needs, and
-the key stays although tests/e2e now runs most CLI calls inside the pytest worker, where
-they are measured like any test. The files that bind `cli_runner(spawn=True)`, and every
+`coverage>=7.13.1` is the oldest coverage whose report the coverage.py reader takes (it
+writes `start_line`), and it clears 7.10.6, the floor the
+`[tool.coverage.run] patch = ["subprocess"]` key needs. The key stays although tests/e2e
+now runs most CLI calls inside the pytest worker, where they are measured like any test.
+The files that bind `cli_runner(spawn=True)`, and every
 Python child crapkit starts, run in processes of their own and are measured only through
 that patch. pytest-cov 7.0.0 dropped its own subprocess measurement, and without the
 patch what only they reach reads 0% with nothing said. An older coverage warns about the

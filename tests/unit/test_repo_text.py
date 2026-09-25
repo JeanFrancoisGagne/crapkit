@@ -12,6 +12,12 @@ callers cannot import `cli._shared`: the advisory hook (its module scope opens
 the snapshot store) and `override` (core never imports the CLI). The CLI name
 is the same function, not a copy.
 """
+import ast
+import codecs
+import fnmatch
+import io
+import os
+import json
 import re
 from pathlib import Path
 
@@ -25,7 +31,11 @@ from crapkit.errors import ConfigError
 
 TEXT = "[crapkit]\ntarget = 6\n"
 SRC = Path(crapkit.__file__).resolve().parent
-_DECODE = re.compile(r"[\"']utf-8-sig[\"']")
+# The BOM rule in every spelling a reader has used: the codec name, the
+# byte-order mark as bytes, and the mark as a character, escaped or literal. A
+# lenient reader that dropped the mark with removeprefix passed a guard that
+# looked for the codec name alone.
+_DECODE = re.compile("[\"']utf[-_]8[-_]sig[\"']|BOM_UTF8|\\\\ufeff|\ufeff")
 
 
 def test_the_cli_name_is_the_core_reader_not_a_copy():
@@ -33,13 +43,123 @@ def test_the_cli_name_is_the_core_reader_not_a_copy():
 
 
 def test_the_utf8_sig_decode_is_written_once():
-    """One reader, zero inline copies. A second decode is a second place where
+    """One module, zero inline copies. A second decode is a second place where
     a UTF-16 file is a traceback instead of the sentence: the hook's config
-    read, the override's marks read and the merge driver each had one."""
+    read, the override's marks read and the merge driver each had one, and
+    doctor's plugin read and the lenient reader for git's text later dropped
+    the mark by hand."""
     homes = sorted(p.relative_to(SRC).as_posix() for p in SRC.rglob("*.py")
                    if _DECODE.search(p.read_text(encoding="utf-8")))
 
     assert homes == ["repotext.py"], homes
+
+
+# --- every errors policy has one home ----------------------------------------
+#
+# An errors handler ("replace", "surrogateescape", ...) or utf-8-sig spelled at
+# a call site is a decode rule of its own: gitio's streamed log read replaced
+# bad bytes but kept a BOM that `lenient` drops, so a walk and a read of the
+# same log could differ. repotext names every kind, and gitpaths owns the path
+# kind. A site outside them is listed here by module and function, with the
+# seam that moves it or the reason it is no decode; a new one fails.
+
+_HANDLERS = {"strict", "replace", "ignore", "surrogateescape", "surrogatepass",
+             "backslashreplace", "xmlcharrefreplace", "namereplace"}
+_POLICY_HOMES = {"repotext.py", "gitpaths.py"}
+_ELSEWHERE = {
+    ("cli/claude_hook.py", "_repo_top"):
+        "git's answer to the advisory hook, which starts git itself; moves into gitio with Q54",
+    ("cli/claude_hook.py", "_porcelain"):
+        "git's answer to the advisory hook, which starts git itself; moves into gitio with Q54",
+    ("cli/claude_hook.py", "_tracked"):
+        "git's answer to the advisory hook, which starts git itself; moves into gitio with Q54",
+    ("cli/parser.py", "_version_field"): "crapkit's own dist-info METADATA, which pip wrote",
+    ("cli/parser.py", "_reconfigure_streams"): "the console streams: the console and locale seam",
+    ("coupling_cache.py", "_tracked_digest"): "an encode for a digest, not a decode",
+    ("dup.py", "_shingles"): "an encode for a digest, not a decode",
+    ("lanes.py", "_environment_digests"): "an encode for a digest, not a decode",
+    ("logs.py", "_CommandLog.write"): "crapkit writing its own log: an encode, not a decode",
+    ("logs.py", "command_log"): "crapkit writing its own log: an encode, not a decode",
+}
+
+
+def _literal(node) -> str | None:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _names_errors(call: ast.Call) -> bool:
+    """`errors="..."` on any call: open, read_text, TextIOWrapper, subprocess."""
+    return any(k.arg == "errors" and _literal(k.value) is not None for k in call.keywords)
+
+
+def _codec_method(call: ast.Call) -> bool:
+    return isinstance(call.func, ast.Attribute) and call.func.attr in ("decode", "encode")
+
+
+def _handler_by_position(call: ast.Call) -> bool:
+    """b.decode("utf-8", "replace"), s.encode(..., "surrogatepass"), and a
+    handler handed to a decoder factory: getincrementaldecoder("utf-8")("replace")."""
+    if isinstance(call.func, ast.Call):
+        return any(_literal(a) in _HANDLERS for a in call.args)
+    return _codec_method(call) and _literal((call.args + [None, None])[1]) in _HANDLERS
+
+
+def _names_utf8_sig(call: ast.Call) -> bool:
+    values = [*call.args, *(k.value for k in call.keywords)]
+    return any((_literal(v) or "").lower().replace("_", "-") == "utf-8-sig" for v in values)
+
+
+def _is_policy(call: ast.Call) -> bool:
+    return _names_errors(call) or _handler_by_position(call) or _names_utf8_sig(call)
+
+
+def _scope_of(child: ast.AST, scope: str) -> str:
+    if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return scope
+    return f"{scope}.{child.name}" if scope else child.name
+
+
+def _policy_sites(tree: ast.AST, scope: str = ""):
+    """(qualified function, line) for each call that spells a policy."""
+    for child in ast.iter_child_nodes(tree):
+        if isinstance(child, ast.Call) and _is_policy(child):
+            yield scope, child.lineno
+        yield from _policy_sites(child, _scope_of(child, scope))
+
+
+def _sites() -> dict[tuple[str, str], list[int]]:
+    found: dict[tuple[str, str], list[int]] = {}
+    for path in sorted(SRC.rglob("*.py")):
+        module = path.relative_to(SRC).as_posix()
+        if module in _POLICY_HOMES:
+            continue
+        for scope, line in _policy_sites(ast.parse(path.read_text(encoding="utf-8"))):
+            found.setdefault((module, scope), []).append(line)
+    return found
+
+
+def test_no_module_but_repotext_and_gitpaths_spells_a_new_errors_policy():
+    stray = {f"{m}:{lines[0]} {s}" for (m, s), lines in _sites().items()
+             if (m, s) not in _ELSEWHERE}
+
+    assert stray == set(), ("name the kind in repotext instead: " + ", ".join(sorted(stray)))
+
+
+def test_every_site_the_guard_lets_stand_still_spells_one():
+    """A listed site that was routed through repotext leaves a stale excuse."""
+    assert sorted(set(_ELSEWHERE) - set(_sites())) == []
+
+
+@pytest.mark.parametrize("source, found", [
+    ('b.decode("utf-8", "replace")', True),
+    ('p.read_text(encoding="utf-8", errors="replace")', True),
+    ('open(p, encoding="utf_8_sig")', True),
+    ('codecs.getincrementaldecoder("utf-8")("replace")', True),
+    ('b.decode("utf-8")', False),
+    ('p.read_text(encoding="utf-8")', False),
+])
+def test_the_guard_sees_each_spelling_of_a_policy(source, found):
+    assert bool(list(_policy_sites(ast.parse(source)))) is found
 
 
 def test_plain_utf8_reads_as_written(tmp_path):
@@ -83,3 +203,109 @@ def test_a_stray_byte_is_named_by_its_offset(tmp_path):
 
     assert str(refused.value) == \
         "crapkit.toml is not UTF-8 (byte e9 at offset 15); save it as UTF-8"
+
+
+# --- the JSON kind ----------------------------------------------------------------
+
+PACKAGE = {"name": "demo", "scripts": {"test": "vitest run"}}
+
+
+@pytest.mark.parametrize("data", [json.dumps(PACKAGE).encode(),
+                                  codecs.BOM_UTF8 + json.dumps(PACKAGE).encode(),
+                                  json.dumps(PACKAGE, indent=2).replace("\n", "\r\n").encode(),
+                                  json.dumps({**PACKAGE, "author": "René"},
+                                             ensure_ascii=False).encode()],
+                         ids=["plain", "utf8-bom", "crlf", "utf8-accent"])
+def test_a_json_object_reads_as_npm_reads_it(tmp_path, data):
+    path = tmp_path / "package.json"
+    path.write_bytes(data)
+
+    assert {k: v for k, v in repotext.repo_json(path, "package.json").items()
+            if k in PACKAGE} == PACKAGE
+
+
+@pytest.mark.parametrize("data, sentence", [
+    (b"\xff\xfe" + json.dumps(PACKAGE).encode("utf-16-le"),
+     "package.json is not UTF-8 (first bytes ff fe = UTF-16, the PowerShell 5.1 Out-File "
+     "default); save it as UTF-8"),
+    (b'{"author": "Ren\xe9"}', "package.json is not UTF-8 (byte e9 at offset 15); save it as UTF-8"),
+    (b'{ not json', "package.json is not valid JSON (Expecting property name enclosed in double "
+                    "quotes at line 1 column 3); fix that line"),
+    # json words this one differently from Python 3.13 on, so the parser's own
+    # words are left out; the file, the line, the column and the fix are not.
+    (b'{"scripts": {"test": "x"},}\n', "package.json is not valid JSON (* at line 1 column 2?); "
+                                       "fix that line"),
+    (b"", "package.json is not valid JSON (Expecting value at line 1 column 1); fix that line"),
+    (b"[]", "package.json holds an array, not a JSON object; save one object there"),
+    (b'"demo"', "package.json holds a string, not a JSON object; save one object there"),
+    (b"null", "package.json holds null, not a JSON object; save one object there"),
+    (b"7", "package.json holds a number, not a JSON object; save one object there"),
+    (b"true", "package.json holds a boolean, not a JSON object; save one object there"),
+], ids=["utf16", "latin1-byte", "not-json", "trailing-comma", "empty-file", "an-array",
+        "a-string", "null", "a-number", "true"])
+def test_json_that_is_not_one_readable_object_is_refused_naming_the_file(tmp_path, data,
+                                                                          sentence):
+    """Each refusal names the file and the fix, at exit 3. package.json read
+    each of these as an empty object, and UTF-16 as no file at all."""
+    path = tmp_path / "package.json"
+    path.write_bytes(data)
+
+    with pytest.raises(ConfigError) as refused:
+        repotext.repo_json(path, "package.json")
+
+    assert fnmatch.fnmatchcase(str(refused.value), sentence), str(refused.value)
+    assert refused.value.exit_code == 3
+
+
+# --- the kinds a stream, a chunked read, a child's stdin and a path take -------
+
+def test_lenient_lines_drops_a_leading_bom_and_ends_a_line_at_lf_alone():
+    """git's log streamed a line at a time reads as `lenient` reads it whole:
+    the mark dropped, a stray byte as U+FFFD, and a CR inside an author name
+    left inside its line."""
+    stream = io.BytesIO(codecs.BOM_UTF8 + b"Ren\xe9\rX\nnext\n")
+
+    lines = list(repotext.lenient_lines(stream))
+
+    assert lines == ["Ren\ufffd\rX\n", "next\n"]
+    assert "".join(lines) == repotext.lenient(codecs.BOM_UTF8 + b"Ren\xe9\rX\nnext\n")
+
+
+@pytest.mark.parametrize("cut", range(1, 12))
+def test_lenient_decoder_reads_a_character_a_chunk_cut_in_two(cut):
+    data = codecs.BOM_UTF8 + "\u6e21\u8fba\n".encode("utf-8") + b"caf\xe9\n"
+    decoder = repotext.lenient_decoder()
+
+    text = decoder.decode(data[:cut]) + decoder.decode(data[cut:], final=True)
+
+    assert text == repotext.lenient(data) == "\u6e21\u8fba\ncaf\ufffd\n"
+
+
+@pytest.mark.parametrize("data", [b"src/caf\xe9.py", "src/caf\u00e9.py".encode("utf-8"),
+                                  b"\xff\xfe", b""],
+                         ids=["latin-1-byte", "utf-8-accent", "utf-16-mark", "empty"])
+def test_exact_text_gives_back_every_byte(data):
+    assert repotext.exact_text(data).encode("utf-8", "surrogateescape") == data
+
+
+@pytest.mark.parametrize("text, sent", [("caf\u00e9", "caf\u00e9".encode("utf-8")),
+                                        ("a\nb\n", b"a" + os.linesep.encode() + b"b"
+                                         + os.linesep.encode()), ("", b"")],
+                         ids=["accent", "lf-as-the-os-line-ending", "empty"])
+def test_child_input_is_the_text_as_utf8_as_a_text_mode_pipe_wrote_it(text, sent):
+    """0.8.0 handed the alert text to a text-mode pipe, which wrote CRLF on
+    Windows. The bytes are the same now that crapkit encodes them itself."""
+    assert repotext.child_input(text) == sent
+
+
+def test_child_input_reads_a_lone_surrogate_as_a_replacement_character():
+    """An override reason or a function name in bytes that are not UTF-8
+    reaches the alert command as U+FFFD, never as an encode error."""
+    sent = repotext.child_input("caf\udce9")
+
+    assert sent.startswith(b"caf") and "\ufffd" in sent.decode("utf-8")
+
+
+def test_pytest_config_text_keeps_a_bom_as_pytest_does():
+    assert repotext.pytest_config_text(codecs.BOM_UTF8 + b"[pytest]\ncaf\xe9\n") == \
+        "\ufeff[pytest]\ncaf\ufffd\n"

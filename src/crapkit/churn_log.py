@@ -32,7 +32,6 @@ a force-push) rebuilds rather than prepends.
 """
 from __future__ import annotations
 
-import codecs
 import json
 import zlib
 from collections.abc import Iterable, Iterator
@@ -46,6 +45,7 @@ from typing import BinaryIO, NamedTuple
 
 from .errors import GitError
 from .gitio import _git_lines, head_commit, is_ancestor
+from .repotext import lenient_decoder
 
 # Versioned like churn_cache's map, and for the same reason: a version that
 # writes another key shape writes another file, so two installs on one tree
@@ -284,7 +284,7 @@ def _inflate(blob: bytes) -> Iterator[str]:
     the middle of a multi-byte character and author names are full of them.
     """
     dec = zlib.decompressobj()
-    utf8 = codecs.getincrementaldecoder("utf-8")("replace")
+    utf8 = lenient_decoder()
     tail = ""
     for start in range(0, len(blob), CHUNK):
         text = tail + utf8.decode(dec.decompress(blob[start:start + CHUNK]))

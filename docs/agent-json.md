@@ -396,7 +396,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
   "target": 6,
   "uncovered_lines": [6, 8, 12, 14],
   "unmeasured": false,
-  "versions": {"analysis_version": 11, "crapkit": "<version>", "lizard": "1.24.0", "python": "3.11.2"}
+  "versions": {"analysis_version": 12, "crapkit": "<version>", "lizard": "1.24.0", "python": "3.11.2"}
 }
 ```
 
@@ -1002,7 +1002,7 @@ reruns)``.
 ## `doctor --json`
 
 The captured example below uses analysis version 8. A current `doctor` reports
-version 11; read the field from the running tool when checking a ratchet stamp.
+version 12; read the field from the running tool when checking a ratchet stamp.
 
 The only health payload crapkit exposes. It works on a repo that has never run anything.
 
@@ -1036,7 +1036,7 @@ $ crapkit doctor --json
 | `problems` | The FAIL findings, as text. **Non-empty is exit 1.** |
 | `warnings` | The WARN findings: unmeasured directories, scopes a lane measures with no `scoped_tests` template, lanes writing their artifacts at the repo root instead of under `.crapkit/`, and lanes with no `results_artifact`. Exit stays 0. |
 | `versions` | crapkit, lizard, python. `lizard` is `null` when it is not importable, which is also a FAIL. |
-| `analysis_version` | The analysis semantics version, currently `11`. Together with `lizard` it forms the ratchet's metric stamp. Follow [the upgrade checks](upgrading.md#measure-before-changing-marks) before restamping; changed function identity can require a reviewed mapping. |
+| `analysis_version` | The analysis semantics version, currently `12`. Together with `lizard` it forms the ratchet's metric stamp. Follow [the upgrade checks](upgrading.md#measure-before-changing-marks) before restamping; changed function identity can require a reviewed mapping. |
 | `store` | `.crapkit/crap.sqlite`: whether it exists and how big it is. `present: false` and `size_bytes: 0` on a fresh repo. |
 | `newest_run` | `{id, kind, verdict_ok}`, or `null` when nothing has run. `verdict_ok` is `null` for non-verify runs. |
 | `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. |
@@ -1156,9 +1156,19 @@ crapkit doctor: no installed crapkit plugin under ...\.claude\plugins (install w
 (The absolute path is elided; the line prints it in full.)
 
 A plugin with no manifest gets one line saying so and no protocol check: there is no version
-to compare, and the protocol line underneath would bury the fact that explains both. A plugin
-shipping no `hooks/hooks.json` registers no advisory hook, and the output says that instead.
-It prints no JSON and ignores `--json`.
+to compare, and the protocol line underneath would bury the fact that explains both. A manifest
+that is there but gives no version gets its own line, so you repair the file rather than look
+for one:
+
+```
+crapkit doctor: the plugin at PATH has a .claude-plugin/plugin.json that is not a JSON object; reinstall the plugin or repair that file
+crapkit doctor: the plugin at PATH has a .claude-plugin/plugin.json with no version string; reinstall the plugin or repair that file
+```
+
+The first is a file that does not parse, or parses to a list or a string. The second is an
+object whose `version` is absent, null, a number or a list. A plugin shipping no
+`hooks/hooks.json` registers no advisory hook, and the output says that instead. It prints no
+JSON and ignores `--json`.
 
 `PATH` may be the plugin root itself or any directory above it: `~/.claude`, `~/.claude/plugins`,
 the cache root `~/.claude/plugins/cache`, or a marketplace or plugin directory inside it. Claude
@@ -1167,7 +1177,10 @@ beside the new one after an update, so among the manifests named `crapkit` under
 newest install is the one checked; the other plugins sharing that cache are never read. With no `PATH` at
 all, doctor looks in Claude Code's plugin directory (`CLAUDE_CONFIG_DIR`, else `~/.claude`),
 through `installed_plugins.json` and the cache, and names that directory when nothing is
-installed there.
+installed there. It reads `installed_plugins.json` as Claude Code writes it today, a list of
+installs per plugin id, and as an older Claude Code wrote it, one object per id. An entry of
+any other shape, or one with no string `installPath`, records nothing, and the cache scan
+still finds the install.
 
 ---
 
@@ -1534,14 +1547,27 @@ declares `required` from each tool's positionals (`get_function_brief` and
 `get_function_history` require `path` and `name`). A missing positional answers
 `get_function_brief needs name (see inputSchema.required)`, an undeclared key answers
 `list_worklist does not take 'bogus'; accepted: repo, top, scope`, and a wrong type answers
-`top must be an integer (got "three")`. The refusal names the MCP tool and the argument
-as the schema spells them, never the CLI command behind the tool. Each is a tool result with
+`top must be an integer (got "three")`. Arguments that are not an object, by-position ones
+included, answer with the JSON type they came as,
+`arguments must be an object (got a number)`: MCP takes them by name. Only null or absent
+`arguments` read as none given; an empty string, `0`, `false` and `[]` get the same
+refusal, such as `arguments must be an object (got a boolean)`. The refusal names the
+MCP tool and the argument as the schema spells them, never the CLI command behind the tool. Each is a tool result with
 `isError: true` in the tool's own vocabulary, not the protocol's `-32602` error, following
 the precedent the missing-config answer set; the reason is recorded in
 [ADR 0001](adr/0001-mcp-invalid-arguments-are-tool-results.md). Protocol errors stay
-reserved for the protocol: an unknown method answers `-32601`, and an exception escaping
-the server answers `-32603` and the loop reads on, so no single call ends the session.
-`ping` answers an empty result, so a client's keepalive never reads as an error.
+reserved for the protocol: an unknown method, or a `method` that is not a string, answers
+`-32601`, and an exception escaping the server answers `-32603` and the loop reads on, so no
+single call ends the session. `params` that are not an object name no tool to answer for, so
+on `tools/call` and `initialize` they answer `-32602` with no result:
+`params must be an object naming the tool and its arguments (got an array)` and
+`params must be an object carrying protocolVersion (got a string)`; the session reads on.
+`params` sent as null or left out read as an empty object: `tools/call` answers
+`unknown tool ''` and `initialize` the newest revision the server speaks.
+`ping` and `tools/list` read no `params`, and answer whatever they are.
+`ping` answers an empty result, so a client's keepalive never reads as an error. A frame
+that is not one JSON object, such as a line that is not JSON or an array, gets no reply,
+and the server reads the next line.
 
 ## Docker
 

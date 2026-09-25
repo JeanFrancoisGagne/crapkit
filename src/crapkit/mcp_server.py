@@ -1640,15 +1640,19 @@ def _wrong_type(tool: dict, arguments: dict) -> str | None:
     return None
 
 
-def _argument_error(tool: dict, arguments: dict) -> str | None:
+def _argument_error(tool: dict, arguments) -> str | None:
     """The first refusal the tool's own table finds, or None when the call can run.
 
     Answered as a tool result with isError true, in the tool's vocabulary, not
     as the protocol's -32602 example: ADR 0001 keeps the house precedent set by
     the unknown-tool and missing-config answers, because a coding agent reads
     tool results and corrects its next call, while a protocol error surfaces in
-    many clients as a transport failure the agent never sees.
+    many clients as a transport failure the agent never sees. Arguments that
+    are not an object, by-position ones included, are refused before any key
+    is read: a string's characters read as undeclared keys.
     """
+    if not isinstance(arguments, dict):
+        return f"arguments must be an object (got {_json_type(arguments)})"
     return (_missing_positional(tool, arguments) or _unknown_key(tool, arguments)
             or _wrong_type(tool, arguments))
 
@@ -1738,7 +1742,7 @@ def _respond(msg_id, result=None, error=None) -> dict:
     return resp
 
 
-def _initialize_result(params: dict) -> dict:
+def _initialize_result(params) -> dict:
     return {"protocolVersion": _negotiated(params),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "crapkit", "version": _version()},
@@ -1753,17 +1757,65 @@ _METHODS = {"initialize": _initialize_result,
 
 
 def _tools_call(root: Path, params: dict, run_cli=None) -> dict:
-    return _call_tool(root, params.get("name", ""), params.get("arguments") or {}, run_cli)
+    """Null or absent arguments read as none given, the rule `_params` keeps
+    for params. An empty string, 0, false and [] are values of the wrong type,
+    so they reach `_argument_error`: read as none given, a tool with no
+    required argument ran its CLI on them."""
+    arguments = params.get("arguments")
+    return _call_tool(root, params.get("name", ""), {} if arguments is None else arguments,
+                      run_cli)
+
+
+def _method_handler(method):
+    """The handler for a method name, or None: a name that is not a string is
+    an unknown method, never a lookup that raises."""
+    return _METHODS.get(method) if isinstance(method, str) else None
+
+
+# The methods that read params by name, and what the object must hold. ping and
+# tools/list read none, so they answer whatever params are.
+_PARAMS_HOLD = {"initialize": "carrying protocolVersion",
+                "tools/call": "naming the tool and its arguments"}
+# The JSON types json.loads hands over in place of an object; the rest are numbers.
+_JSON_TYPES = {list: "an array", str: "a string", bool: "a boolean"}
+
+
+def _json_type(value) -> str:
+    """The JSON type a value that is not an object arrived as, in the words both
+    refusals print. The type, not the value: a by-position list or a long string
+    echoed back tells the agent less than the name of what it sent."""
+    return _JSON_TYPES.get(type(value), "a number")
+
+
+def _params(msg: dict):
+    """The request's params, with null or absent read as the empty object."""
+    params = msg.get("params")
+    return {} if params is None else params
+
+
+def _invalid_params(method, params) -> dict | None:
+    """JSON-RPC -32602 for params that are not an object on a method that reads
+    them by name, or None. Arguments that are not an object belong to a named
+    tool and answer in its words (ADR 0001); such params name no tool, so the
+    protocol answers. By-position params are valid JSON-RPC and not MCP."""
+    holds = _PARAMS_HOLD.get(method) if isinstance(method, str) else None
+    if holds is None or isinstance(params, dict):
+        return None
+    return {"code": -32602,
+            "message": f"params must be an object {holds} (got {_json_type(params)})"}
 
 
 def _handle(root: Path, msg: dict, run_cli=None) -> dict | None:
     if "id" not in msg:
         return None  # a notification (e.g. notifications/initialized) needs no reply
     method = msg.get("method", "")
-    params = msg.get("params") or {}
+    params = _params(msg)
+    invalid = _invalid_params(method, params)
+    if invalid:
+        return _respond(msg["id"], error=invalid)
     if method == "tools/call":
         return _respond(msg["id"], _tools_call(root, params, run_cli))
-    handler = _METHODS.get(method)
+    handler = _method_handler(method)
     if handler is None:
         return _respond(msg["id"], error={"code": -32601,
                                           "message": f"unknown method {method!r}"})

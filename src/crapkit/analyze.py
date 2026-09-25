@@ -5,7 +5,6 @@ nested node_modules (measured hang on the first consumer repo).
 """
 from __future__ import annotations
 
-import codecs
 import hashlib
 import json
 import os
@@ -30,6 +29,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
 
 from .cache import partition_by_cache, updated_cache
 from .errors import ToolError
+from .repotext import source_chars
 from .lizardcognitive import LizardExtension as _Cognitive
 from .merge import FunctionRecord, UnanalyzableFile
 from .keys import bare_name
@@ -58,7 +58,11 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 11  # A Python def is named by its name token and names each enclosing def once.
+ANALYSIS_VERSION = 12  # A coverage.py function region starts at the start_line the
+#                       report writes, and a report without one is refused: coverage
+#                       7.6 to 7.13.0 write none, and the start read off the body gave a
+#                       nested function its encloser's coverage.
+# 11: a Python def is named by its name token and names each enclosing def once.
 #                       A Python def whose body sits on its colon line is listed and ends
 #                       with that logical line, so the lines after it go back to its
 #                       parent and a later def no longer carries its name. A file that
@@ -496,19 +500,11 @@ def _trusted_records(rel_path: str, functions) -> list[FunctionRecord]:
 # latin-1 because Windows PowerShell 5.1 writes cp1252, and because latin-1
 # decodes every byte and so can never say it was wrong.
 #
-# UTF-16 is NOT handled. `Out-File` and the ISE write it, and such a file
-# decodes here as NUL-separated cp1252 text that reports no function; it
-# reported none before this change either, so nothing regressed and the narrow
-# rule stays narrow.
-
-
-def _characters(raw: bytes) -> str:
-    if raw.startswith(codecs.BOM_UTF8):
-        raw = raw[len(codecs.BOM_UTF8):]
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return raw.decode("cp1252", "replace")
+# UTF-16 is read when a byte-order mark says so, which is how `Out-File` and
+# the ISE write it. Decoded as cp1252 it was NUL-separated text that scored no
+# function with nothing said, and the pre-commit gate passed a ccn-8 function
+# in it that it refused in UTF-8. No mark can name a function in such a file,
+# since none was ever scored, so reading it moves no recorded number.
 
 
 def decode_source(raw: bytes) -> str:
@@ -523,7 +519,7 @@ def decode_source(raw: bytes) -> str:
     every cache depends on it: a lone `\\r` left in the stream is one more
     whitespace token, not one more line.
     """
-    return _characters(raw).replace("\r\n", "\n").replace("\r", "\n")
+    return source_chars(raw).replace("\r\n", "\n").replace("\r", "\n")
 
 
 def read_source(path: str) -> str:
@@ -618,10 +614,12 @@ def content_hash(path: Path) -> str:
 
 
 def fingerprint() -> str:
-    """cache=6: a JavaScript-family template literal ends at its own closing backtick,
-    which a cache=5 record's reader did not do; cache=5 added inline_body."""
+    """cache=7: a UTF-16 file with a byte-order mark is decoded as UTF-16, where a
+    cache=6 record holds it as no function. cache=6: a JavaScript-family template
+    literal ends at its own closing backtick, which a cache=5 record's reader did
+    not do; cache=5 added inline_body."""
     from . import __version__
-    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=6"
+    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=7"
 
 
 def _analysis_key(path: str, digest: str) -> str:

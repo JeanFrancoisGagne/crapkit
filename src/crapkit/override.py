@@ -15,6 +15,7 @@ from .errors import ConfigError, ToolError
 from .keys import stated_key
 from .ratchet import RatchetEntry
 from .ratchetfile import RatchetFile
+from .repotext import child_input, lenient, os_text
 from .store import SnapshotStore
 from .verify import GateViolation
 
@@ -40,7 +41,12 @@ def record_override(
     an empty metric. The hook's grant (`raise_marks=False`) synthesizes its
     numbers from ccn alone and compares no mark, so it keeps the recorded
     stamps: a stale file stays stale and verify keeps refusing it. `metric`
-    then stamps only a file the grant creates."""
+    then stamps only a file the grant creates.
+
+    `reason` comes from argv or CRAPKIT_OVERRIDE_REASON, which can hold a byte
+    that is not UTF-8; the alert and the audit both carry it as U+FFFD, where
+    the store refused it after the alert had already gone out."""
+    reason = os_text(reason)
     saved = ratchet_input or RatchetFile.read(root / ratchet_file)
     text = _checked_grant_text(saved, violations, raise_marks=raise_marks, keys=key_version,
                                metric=metric)
@@ -111,12 +117,12 @@ def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolat
     line = f"crapkit OVERRIDE ({reason}): {summary}"
     # The line reaches the alert command on stdin, never interpolated into the
     # shell string: function names come from analyzed source and are not shell-safe.
-    proc = subprocess.run(alert_command, shell=True, cwd=root, input=line + "\n",
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    proc = subprocess.run(alert_command, shell=True, cwd=root, input=child_input(line + "\n"),
+                          capture_output=True)
     if proc.returncode != 0:
         raise ToolError(
             f"override alert command failed (exit {proc.returncode}): "
-            f"{(proc.stderr or proc.stdout).strip()[-300:]} — no alert, no override")
+            f"{lenient(proc.stderr or proc.stdout).strip()[-300:]} — no alert, no override")
 
 
 def _granted_marks(prior: list[RatchetEntry], violations: list[GateViolation], *,

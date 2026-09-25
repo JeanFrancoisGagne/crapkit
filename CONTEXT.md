@@ -59,6 +59,10 @@ A glob that removes files from the corpus before inventory.
 A source file the analysis names on stderr and scores as zero functions, because lizard failed on it or a Python def in it was read no further than its signature. Every run tries it again. A gate refuses a changed one, because it judged none of its functions, and no override grants past it; the advisory hook names it after the edit, and doctor WARNs about each one the newest run could not read. JSON calls it an unread file.
 _Avoid_: skipped file (nothing about it is silent)
 
+**Unreadable name**:
+A file name git gives in bytes that are not UTF-8, so no row, mark or cache can be keyed on it. When a scope takes the name, the command refuses with exit 3 and the `git mv` fix; any other is left out, named once on stderr.
+_Avoid_: unanalyzable file (lizard read that one)
+
 ### Runs
 
 **Run**:

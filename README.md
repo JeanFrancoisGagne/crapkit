@@ -196,9 +196,11 @@ where the flag goes.
 
 Keep the CLI and plugin versions aligned, measure fresh coverage after upgrading,
 and review any ratchet identity refusal before reseeding. The current reader is
-analysis version 11. It renames once each Python def with a PEP 695 type parameter
-list and each def nested three or more deep, and it lists a def whose body sits on
-its colon line; `crapkit ratchet prune` drops the marks left under the old names.
+analysis version 12. It reads a coverage.py function's span from the `start_line`
+coverage.py 7.13.1 and newer write, and refuses a report without one, so every marks
+file re-seeds once. Version 11, in 0.8.0, renamed once each Python def with a PEP 695
+type parameter list and each def nested three or more deep, and listed a def whose body
+sits on its colon line; `crapkit ratchet prune` drops the marks left under the old names.
 Older JavaScript and TypeScript callback marks can require a reviewed mapping.
 Follow the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
 for saved state, portable records and Windows launcher locks.
@@ -643,9 +645,15 @@ version policy; the snippets above name the current release.
 ### What the comment looks like
 
 One comment per pull request, edited in place on every push. A hidden
-`<!-- crapkit-action -->` line is how the next run finds it, so a fifteen-push branch
-carries one comment and not fifteen. On a `push` event there is no pull request to carry
-it, and the same text goes to the job log instead.
+`<!-- crapkit-action -->` line opens it, and the next run edits the first comment that
+starts with that line, so a fifteen-push branch carries one comment and not fifteen. A
+reviewer's reply that quotes the comment does not start with it and is left alone. When
+GitHub answers a page of the comment list with an error, the step edits the crapkit
+comment it found before the error. When it found none, it lists the comments once more
+before it posts fresh; if that listing fails too, it posts a fresh comment, so the pull
+request still gets this push's verdict, and the job log says the listing failed twice.
+On a `push` event there is no pull request to carry it, and the same text goes to the job
+log instead.
 
 Rendered from three saved payloads: a pull request that adds an untested `route()` (ccn 8)
 beside a ratchet-marked `legacy_router()`, in a repository whose `diff_uncovered_max` is 3.
@@ -688,16 +696,23 @@ finding: each gate violation with its function, ccn, coverage, CRAP and remedy; 
 changed file no reader could read, as `` - unread: `src/a.ts`, so the gate judged none of
 its functions: `` and the reader's reason; each ratchet regression as recorded -> fresh;
 each new test failure by id; and the first twenty uncovered changed lines, one bullet per
-file, with a count of the rest. The counts line closes it. An unread file fails the gate
-as a function over the ceiling does, so the counts line counts it among the gate
-violations and says how many were files: `1 gate violation (1 unread file)`. A verify
-that passed is one line: `**verify passed.** Run 2 against baseline 1,
-7 changed files.` A lane that recorded no test results (it declares no `results_artifact`)
+file, with a count of the rest. Each kind prints fifty bullets at most, then `- and 1450
+more new test failures; `crapkit verify` lists them all`. The counts line closes it. An
+unread file fails the gate as a function over the ceiling does, so the counts line counts
+it among the gate violations and says how many were files:
+`1 gate violation (1 unread file)`. A verify that passed is one line: `**verify passed.**
+Run 2 against baseline 1, 7 changed files.` A lane that recorded no test results (it declares no `results_artifact`)
 adds ``New test failures went unchecked in lane `py`: it recorded no test results.`` to
 that line, and a new failure in a lane whose baseline recorded no failure list gets a
 bullet of its own, ``- lane `py`: the baseline recorded no failure list, so its new failures
 may predate this change``: the fork point's lane declared no `results_artifact`, so nothing
 can tell the pull request's failures from older ones, and verify still counts them.
+
+GitHub refuses a comment over 65,536 characters, and a pull request then gets no comment
+at all. A body that still runs over (long names under a large `top`) is cut at the last
+line that fits, the marker line still first, and ends with `the comment stopped at
+GitHub's 65,536-character limit; the job log above holds the whole text.` The step prints
+the whole comment to the job log before it posts.
 
 The rows are the ranked worklist for the files the pull request changed, worst first,
 `top` of them, with the rows a finding names listed first. `risk` is ccn times churn
@@ -723,7 +738,7 @@ behind the checkout to measure from.
 |---|---|---|
 | `gate` | `"false"` | `"true"` exits with `crapkit verify`'s own code, so a finding fails the check. On a pull request with `delta` on it also exits 1 when the base run was not made, because a verdict with no base run judged no changed function. Anything else exits 0 and the comment is the whole output |
 | `delta` | `"true"` | scores the pull request's base commit first, so the verdict covers the commits the pull request adds. Costs a second lane run; `"false"` scores the checkout alone, and the verdict then judges no changed function |
-| `top` | `"5"` | worklist rows rendered in the table |
+| `top` | `"5"` | worklist rows rendered in the table. An empty value renders 5. A value that is not a whole number (`"ten"`, `"5.0"`, `"-1"`) renders 5 and puts a warning naming the input on the run's summary page |
 | `python-version` | `"3.12"` | the interpreter `actions/setup-python` installs crapkit into. Match it to the version your own setup-python step named, or the lanes run on an interpreter your dependencies never reached |
 
 `gate: "false"` is the default on purpose. A team adopts the action before it has decided
@@ -759,8 +774,10 @@ point, a fork point older than your `crapkit.toml`, and a lane that will not run
 that tree. The step logs `crapkit base scoring exited N` and writes the reason to
 `crapkit-base.reason` in the words the comment then quotes, `shallow clone does not hold
 the fork point of <sha>; set fetch-depth: 0 on the checkout`, `no usable crapkit.toml at
-the fork point <sha>: ...`, or `lane failed at the fork point <sha>: ...` with the lane's
-first error line. The verdict falls back the same way `delta: "false"` does, and the
+the fork point <sha>: ...`, or `lane failed at the fork point <sha>: ...` with the first
+`lane '<name>' FAILED:` line crapkit printed, so a warning from a lane that passed never
+stands in for the lane that failed. A crapkit that died printing nothing reads `crapkit
+coverage exited <code> and printed nothing`. The verdict falls back the same way `delta: "false"` does, and the
 ratchet still runs, so exit 7 there is a finding. What differs is the job's status. With
 `gate: "true"` on a pull request whose base run was attempted and not made, the exit step
 exits 1 and prints the reason, because `actions/checkout`'s default depth-1 clone would
@@ -1061,9 +1078,10 @@ pip install pytest-cov
 (`pip install "crapkit[py]"` pulls both at once when crapkit shares the suite's venv.)
 
 If your suite drives its own CLI through `subprocess.run`, add `[tool.coverage.run]
-patch = ["subprocess"]` to `pyproject.toml` and keep `coverage>=7.10.6`: pytest-cov 7.0.0
+patch = ["subprocess"]` to `pyproject.toml` and keep `coverage>=7.13.1`: pytest-cov 7.0.0
 dropped subprocess measurement, so without that key every entry point scores 0% and nothing
-warns. [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md) has the whole rule.
+warns. 7.13.1 is also the oldest coverage whose report crapkit reads; an older one fails the
+lane at exit 5. [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md) has the whole rule.
 
 ### 1. Scaffold the config
 
@@ -1086,6 +1104,22 @@ it detects, it also leaves commented templates for the runners it did not find, 
 carry the same launcher, so uncommenting one cannot hand the bare `python` back. Every lane
 it writes reports into `.crapkit/cov/`, which is why the `.gitignore` list is so short: see
 [Where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live).
+
+`init` reads each `package.json` past a UTF-8 byte-order mark, as npm does. A root
+`package.json` that is not one UTF-8 JSON object stops `init` at exit 3 before it writes any
+file, naming the file and the fix, since a lane read off such a file would be a guess: one in
+UTF-16 (what PowerShell 5.1's `Out-File` writes), one holding a byte that is not UTF-8, one
+that does not parse and one that holds an array or another value, as in
+`init wrote no file: package.json is not UTF-8 (byte e9 at offset 36); save it as UTF-8`. A
+nested one, a test fixture say, is skipped with one warning line naming it.
+
+`init` writes `.gitignore` before `crapkit.toml`, and appends in that file's own line ending
+without touching a byte already there. It reads the lines past a UTF-8 byte-order mark, as git
+does, so an entry already there is not added twice. A UTF-16 `.gitignore`, which git cannot
+read either, is named on stderr with the fix and left as it was. Run `init` again over an existing
+`crapkit.toml` and it adds the `.gitignore` entries its lanes need, says what it finished,
+exits 0 and leaves `crapkit.toml` byte for byte; with nothing missing it refuses with
+`already exists`.
 
 ```toml
 [crapkit]

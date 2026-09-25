@@ -47,23 +47,49 @@ names the exact project root; the flag belongs after the subcommand.
 | Relative path with explicit `--repo` | Relative to the named project root. |
 | Absolute source path | Accepted when it resolves inside the project root. |
 | Windows backslash | A directory separator on Windows; a literal filename character on POSIX. |
+| Bytes that are not UTF-8 | The path resolves as the OS spelled it, so a checkout under a directory named in Latin-1 places its files like any other. When the root-relative name itself is not UTF-8 and a file exists under it, the command exits 3 naming the rename, since no row can key that name. With no file behind it, each such byte reads as U+FFFD and the command answers as it does for a missing file. |
+
+    crapkit: src/caf\xe9.py is named in bytes that are not UTF-8, and crapkit reads every path as UTF-8: rename it (git mv) to a UTF-8 name
 
 These rules apply to source arguments such as `brief`, `rescore`, `test-scoped`
 and `claims release`. The `claude-hook` exception gets its root from its input
 payload. [MCP tools](agent-json.md#mcp-server) take project-relative paths because
 their CLI calls run at the server's selected root.
 
-Tracked Git paths preserve whitespace and Unicode separators. Their bytes must
-decode as UTF-8; invalid filename bytes are refused. Scope-prefix normalization
-below applies to configuration strings, not to the filenames Git reports.
+Tracked Git paths preserve whitespace and Unicode separators. crapkit reads every
+path as UTF-8, because rows, marks and caches are keyed on it. A file whose name
+Git reports in other bytes (a Latin-1 name made on Linux, which Git for Windows
+keeps in the index as it was) has no key, so crapkit runs the scope assignment
+itself (each scope's paths, its languages' extensions, its excludes) on the name,
+and the answer decides what happens:
+
+| The name | What crapkit does |
+|---|---|
+| A scope takes it: tracked, committed since the base, or staged | `inventory`, `coverage`, `verify`, `doctor`, `watch` and `hook-precommit` exit 3 with one line naming the path and `git mv`, before any lane runs. Left out, it would be a source file no reader read, and the gate would pass it. |
+| No scope takes it, or it is untracked | Left out of every command. stderr names it once, and the command keeps its own exit code. |
+
+    crapkit: src/caf\xe9.py is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name
+    crapkit: left out docs/r\xe9sum\xe9.txt: git names it in bytes that are not UTF-8, and crapkit reads every path as UTF-8; rename it (git mv) to have it read
+
+On Linux, `git mv $'src/caf\xe9.py' src/café.py` renames such a file. Git for Windows
+checks it out as `src/café.py` already, so there `git add -A` stages the rename.
+
+`init` has no scopes to assign with yet, so it prints the warning and writes the
+config; the first command that loads that config refuses a name a scope takes.
+
+Scope-prefix normalization below applies to configuration strings, not to the
+filenames Git reports.
 Output flags such as `--export`, `--sarif` and `--emit-baseline` are project-relative;
 an absolute output path explicitly selects a destination outside it.
 
 Parsed source diffs use Crapkit's own Git settings. Display preferences, external
 diff commands and textconv do not change attribution. A supported source file
 marked binary by Git attributes receives a text fallback; ordinary binary files
-remain outside source decoding. Source text is read as UTF-8, then cp1252 as a
-fallback. UTF-16 source is outside that reader policy.
+remain outside source decoding. Source text is read as UTF-16 when the file opens
+with a UTF-16 byte-order mark (what PowerShell 5.1's `Out-File` and the ISE write),
+else as UTF-8, else as cp1252. Inventory, the pre-commit gate, the advisory hook and
+`brief --json`'s `source` all read it that way. `mutate` writes a mutant back in the
+file's own encoding and changes no byte outside the mutated line.
 
 ## `[crapkit]`
 

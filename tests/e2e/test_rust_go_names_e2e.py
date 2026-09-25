@@ -94,7 +94,7 @@ MAKE_COV = '''import json
 
 SUMMARY = {"covered_lines": 0, "num_statements": 1, "num_branches": 0, "covered_branches": 0}
 FILE = {"missing_lines": [], "summary": SUMMARY,
-        "functions": {"ok": {"summary": SUMMARY, "missing_lines": []}}}
+        "functions": {"ok": {"summary": SUMMARY, "start_line": 1, "missing_lines": []}}}
 
 with open("cov.json", "w", encoding="utf-8") as fh:
     json.dump({"meta": {"branch_coverage": True}, "files": {"pylib/mod.py": FILE}}, fh)

@@ -195,7 +195,7 @@ ISTANBUL = {
         "f": {"0": 4},
         "branchMap": {
             "inside": {"loc": {"start": {"line": 12}}},
-            "noloc": {},
+            "noloc": {"line": 95},
             "outside": {"loc": {"start": {"line": 90}}},
         },
         "b": {"inside": [3, 0], "noloc": [1, 1], "outside": [0, 0, 0]},
@@ -212,7 +212,10 @@ def solo_of(artifact: dict):
     return fn
 
 
-def test_istanbul_branches_without_a_loc_line_and_outside_every_span_are_ignored():
+def test_istanbul_branches_outside_every_span_are_ignored():
+    """`noloc` has no loc and sits on the `line` beside it, 95, outside solo
+    too. A branch with neither refuses the artifact:
+    tests/unit/test_coverage_istanbul.py::test_a_branch_with_neither_loc_nor_line_refuses_the_artifact_naming_it"""
     fn = solo_of(ISTANBUL)
     assert (fn.branches_total, fn.branches_covered) == (2, 1), \
         "only the line-12 arms belong to solo"

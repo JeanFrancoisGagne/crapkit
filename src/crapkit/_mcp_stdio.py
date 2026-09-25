@@ -8,6 +8,7 @@ import sys
 import threading
 
 from .procs import CommandCancelled, own_processes
+from .repotext import lenient
 
 
 class _OutputClosed(Exception):
@@ -15,6 +16,10 @@ class _OutputClosed(Exception):
 
 
 def _lines(source):
+    """One frame per line. A frame's bytes read through repotext.lenient, one
+    frame at a time: a byte that is not UTF-8, which a client writing its ANSI
+    code page sends, used to end the session unanswered, and a BOM before the
+    first frame cost `initialize` its reply."""
     try:
         descriptor = source.fileno()
     except (AttributeError, OSError):
@@ -24,9 +29,9 @@ def _lines(source):
     while chunk := os.read(descriptor, 65536):
         pieces = (pending + chunk).split(b'\n')
         pending = pieces.pop()
-        yield from (piece.decode('utf-8') for piece in pieces)
+        yield from map(lenient, pieces)
     if pending:
-        yield pending.decode('utf-8')
+        yield lenient(pending)
 
 
 def _read(source, events, slots):

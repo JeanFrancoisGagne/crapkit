@@ -51,12 +51,13 @@ def _warn_skipped_runs(scored_runs: list[dict], pair) -> None:
 def _send_digest_alert(root: Path, cfg, prev: dict, cur: dict, lines: list[str]) -> None:
     """Hand the digest body to the configured alert command; a nonzero exit is fatal."""
     import subprocess
+    from ..repotext import child_input
 
     if not cfg.alert_command.strip():
         raise ConfigError("digest --alert needs [crapkit] alert_command")
     body = f"crapkit digest (runs {prev['id']} -> {cur['id']}):\n" + "\n".join(lines) + "\n"
-    proc = subprocess.run(cfg.alert_command, shell=True, cwd=root, input=body,
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    proc = subprocess.run(cfg.alert_command, shell=True, cwd=root, input=child_input(body),
+                          capture_output=True)
     if proc.returncode != 0:
         raise ToolError(f"digest alert command failed (exit {proc.returncode})")
 
@@ -503,12 +504,13 @@ def _function_commits(root: Path, rel_path: str, start: int, end: int,
     """Commits that touched one line span, subject AND body, from `git log -L`.
 
     The body is what says why a span keeps changing; a subject line rarely does.
+    Both, and the span's own patch lines, come out as the commit stored them.
     """
-    from ..gitio import _git
+    from ..gitio import _git_text
 
     try:
-        out = _git(root, "log", f"-L{start},{end}:{rel_path}", f"--format={_LOG_FORMAT}",
-                   "--date=short", f"--max-count={limit}")
+        out = _git_text(root, "log", f"-L{start},{end}:{rel_path}", f"--format={_LOG_FORMAT}",
+                        "--date=short", f"--max-count={limit}")
     except GitError:
         return []
     return _parse_log_records(out)

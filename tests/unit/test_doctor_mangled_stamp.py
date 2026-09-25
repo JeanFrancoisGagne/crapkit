@@ -8,6 +8,8 @@ names it in a WARN so the reader can find the line to delete.
 """
 import json
 
+import pytest
+
 from cli_inproc_repo import repo, template_repo  # noqa: F401
 
 from crapkit import mcp_server
@@ -137,3 +139,60 @@ def test_a_stamps_file_that_does_not_parse_draws_a_warn(repo, capsys):
             "reads as unstamped and `--reuse-artifacts` refuses each lane whose artifact is on "
             "disk; the next real run of any lane rewrites the file, or delete it to reuse the "
             "artifacts as they stand") in json.loads(out)["warnings"], out
+# --- every stamp shape an older crapkit, a hand edit or a torn write leaves ----
+#
+# The same file read by the commands that decide on it: coverage deciding
+# whether a stamp proves an artifact, and doctor reporting it. Each shape reads
+# as a stamp that proves nothing, so the artifact is read again or the entry is
+# named, and neither command raises. A file reuse cannot read at all (torn, a
+# top level or an entry that is not an object) may have held the refusal a
+# failed attempt recorded, so reuse refuses the lane naming the file (exit 5)
+# instead of scoring what may be a dead lane's leftover.
+
+def _head(root) -> str:
+    from cli_inproc_repo import git
+
+    return git(root, "rev-parse", "HEAD").strip()
+
+
+def _entry(root, **fields) -> dict:
+    return {"coverage/unit.json": {"commit": _head(root), "lane": "unit", "seconds": 1.0,
+                                   "proof": "x", **fields}}
+
+
+_STAMP_SHAPES = {
+    "entry-a-list": lambda root: {"coverage/unit.json": [1, 2]},
+    "older-entry-without-proof": lambda root: {"coverage/unit.json": {
+        "commit": "0" * 40, "lane": "unit", "seconds": 1.0}},
+    "seconds-a-string": lambda root: _entry(root, seconds="1.0"),
+    "commit-null": lambda root: _entry(root, commit=None),
+    "proof-a-number": lambda root: _entry(root, proof=5),
+    "artifacts-a-list": lambda root: _entry(root, artifacts=[1]),
+    "proof_parts-null": lambda root: _entry(root, proof="stale", proof_parts=None),
+    "refused_mtime_ns-a-string": lambda root: {"coverage/unit.json": {
+        "lane": "unit", "refused_mtime_ns": "5"}},
+    "top-level-list": lambda root: [],
+}
+
+
+_UNREADABLE = {"entry-a-list", "top-level-list", "torn-write"}
+
+
+@pytest.mark.parametrize("shape", [*_STAMP_SHAPES, "torn-write"])
+def test_every_stamp_shape_is_read_by_coverage_and_doctor_without_raising(repo, capsys, shape):
+    from cli_inproc_repo import seed_artifacts
+
+    seed_artifacts(repo)
+    stamps = repo / ".crapkit" / "artifacts.json"
+    stamps.parent.mkdir(parents=True, exist_ok=True)
+    text = ('{"coverage/unit.json": {"comm' if shape == "torn-write"
+            else json.dumps(_STAMP_SHAPES[shape](repo)))
+    stamps.write_text(text, encoding="utf-8")
+
+    coverage, _, coverage_err = _run(["coverage", "--reuse-artifacts"], repo, capsys)
+    doctor, out, doctor_err = _run(["doctor", "--json"], repo, capsys)
+
+    assert "Traceback" not in coverage_err, coverage_err
+    assert coverage == (5 if shape in _UNREADABLE else 0), coverage_err
+    assert (".crapkit/artifacts.json cannot be read" in coverage_err) == (shape in _UNREADABLE)
+    assert (doctor, json.loads(out)["problems"]) == (0, []), doctor_err

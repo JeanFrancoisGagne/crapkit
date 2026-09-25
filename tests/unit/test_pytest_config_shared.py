@@ -1,6 +1,11 @@
 """Setup and runtime follow the same installed-pytest configuration contract."""
+import codecs
+import subprocess
+import sys
+
 import pytest
 
+from crapkit.cli import admin
 from crapkit.config import pytest_testpaths_at
 from crapkit.scaffold import pytest_testpaths
 
@@ -19,3 +24,48 @@ def test_setup_and_runtime_select_the_same_testpaths(tmp_path, files, expected):
 
     assert pytest_testpaths_at(tmp_path) == expected
     assert pytest_testpaths(files) == expected
+
+
+
+# pytest reads its configuration as UTF-8 and keeps a BOM, so it refuses a
+# pytest.ini or pyproject.toml saved with one. init and the lane reader take no
+# testpaths from such a file: a reader that dropped the mark would name tests
+# pytest never runs. pytest itself is the oracle for each row.
+_CONFIGS = [("pytest.ini", "[pytest]\ntestpaths = tests\n", "unexpected line"),
+            ("pyproject.toml", '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
+             "Invalid statement")]
+
+
+def _collect(root) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, "-m", "pytest", "--co", "-q", "-p", "no:cacheprovider",
+                           "-p", "no:randomly"], cwd=root, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
+
+
+def _suite(root, name: str, raw: bytes) -> None:
+    (root / "tests").mkdir()
+    (root / "tests" / "test_a.py").write_text("def test_a():\n    pass\n", encoding="utf-8")
+    (root / name).write_bytes(raw)
+
+
+@pytest.mark.parametrize("name, text, refusal", _CONFIGS, ids=["pytest-ini", "pyproject"])
+def test_a_config_pytest_refuses_for_its_bom_names_no_testpaths(tmp_path, name, text, refusal):
+    _suite(tmp_path, name, codecs.BOM_UTF8 + text.encode("utf-8"))
+
+    ran = _collect(tmp_path)
+
+    assert ran.returncode != 0 and refusal in ran.stderr + ran.stdout, ran
+    assert pytest_testpaths_at(tmp_path) == ()
+    assert pytest_testpaths(admin._marker_texts(tmp_path)) == ()
+
+
+@pytest.mark.parametrize("name, text, refusal", _CONFIGS, ids=["pytest-ini", "pyproject"])
+def test_the_same_config_without_the_bom_names_the_testpaths_pytest_runs(tmp_path, name, text,
+                                                                        refusal):
+    _suite(tmp_path, name, text.encode("utf-8"))
+
+    ran = _collect(tmp_path)
+
+    assert ran.returncode == 0 and "tests/test_a.py::test_a" in ran.stdout, ran
+    assert pytest_testpaths_at(tmp_path) == ("tests",)
+    assert pytest_testpaths(admin._marker_texts(tmp_path)) == ("tests",)

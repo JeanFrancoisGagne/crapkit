@@ -39,6 +39,7 @@ from .errors import GitError, ToolError
 from .gitio import head_commit, status_names, worktree_add, worktree_remove, worktree_reset, worktree_root
 from .mutate import apply_mutant
 from .procs import own_processes, run_bounded
+from .repotext import source_bytes, source_text
 
 
 class MutantVerdict(Enum):
@@ -121,8 +122,10 @@ def run_one(tree: Path, cfg, mutant, *, owner=None) -> MutantVerdict:
     shutil.rmtree(p.parent / "__pycache__", ignore_errors=True)
     env = _suite_env()
     try:
-        p.write_text(apply_mutant(original.decode("utf-8", "replace"), mutant),
-                     encoding="utf-8", newline="")
+        # Every byte but the mutated line's comes back as it was: a cp1252 file
+        # rewritten as UTF-8 changed each accented constant, and a suite that
+        # checked one killed every mutant for a reason the mutant did not cause.
+        p.write_bytes(source_bytes(apply_mutant(source_text(original), mutant), original))
         # run_bounded, not subprocess.run: the command is a whole test suite
         # under a shell, and the timeout has to kill the tree. run()'s timeout
         # kills the shell alone and leaves the suite running, so a mutant that

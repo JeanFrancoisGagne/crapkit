@@ -1,11 +1,12 @@
 """Per-file coverage.py regions, context cleanup, and report completeness rules.
 
-Requires the per-function regions coverage.py has emitted since 7.6.0 and the
-start_line key from 7.13.1. Branch data is preferred and not required: the
+Requires the per-function regions coverage.py writes with their start_line,
+which it has done since 7.13.1. Branch data is preferred and not required: the
 coverage term falls back to statements, with a warning, so an artifact built by
 `pytest --cov --cov-report=json` — the default CI shape, with no --cov-branch —
-still scores. Function spans come from start_line and the maximum
-executed/missing line, the closest thing the report offers to an end line.
+still scores. Function spans run from start_line, the def statement's line, to
+the maximum executed/missing line, the closest thing the report offers to an
+end line.
 
 This module is also the coverage.py adapter (coverage_format looks it up from a
 lane's `parser`): it walks the report's "files" member through covstream's
@@ -21,43 +22,42 @@ from typing import TYPE_CHECKING
 from . import covstream
 from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
+from .repotext import json_kind
 
 if TYPE_CHECKING:
     from .config import Lane
 
 _NO_BRANCH = "coverage.py report lacks branch data — run the lane with branch coverage on"
-_OLD_COVERAGE = "needs coverage >= 7.6"
+# The oldest coverage.py whose report this reader takes: 7.13.1 writes each
+# region's start_line. pyproject.toml's py and dev extras pin the same floor.
+COVERAGE_FLOOR = "coverage>=7.13.1"
+_OLD_COVERAGE = f"needs {COVERAGE_FLOOR}"
+# What every refusal of a count or a line coverage.py itself writes tells the
+# user to do: the report was edited, merged or truncated after coverage.py
+# wrote it, and only a fresh one holds the numbers.
+_REGENERATE = "regenerate the report with `coverage json`"
 _SAMPLE = 3
 
 
 _PAIRS = (("num_branches", "covered_branches"), ("num_statements", "covered_lines"))
-_REGENERATE = "regenerate the report with the coverage tool"
 
 
 def _admit_summary(name: str, summary: object) -> dict:
     """One function's counts, each kind as a total and a covered count or not at
-    all. coverage.py writes both of every kind it measured, so a summary that is
-    gone, a count without its partner, or no count of either kind is a report
-    something else rewrote; each read as 0 of 0, and a function that ran scored
-    cov 0. A kind with neither count is one the report did not measure.
-
-    `name` is `path: function`, so the refusal names the file as well: a report
-    holds many files, and one function name can sit in several of them. Every
-    refusal ends with the fix, as the istanbul reader's do."""
-    try:
-        return _summary_counts(name, summary)
-    except ValueError as exc:
-        raise ValueError(f"{exc}; {_REGENERATE}") from exc
-
-
-def _summary_counts(name: str, summary: object) -> dict:
+    all. coverage.py writes a summary on every region, and both counts of every
+    kind it measured, so a summary that is gone or not an object, a count
+    without its partner, or no count of either kind is a report something else
+    rewrote; each read as 0 of 0, and a function that ran scored cov 0. A kind
+    with neither count is one the report did not measure."""
     if not isinstance(summary, dict):
-        raise ValueError(f"{name}: summary is missing, so crapkit cannot tell how much of it ran")
+        raise ValueError(f"{name}: no summary object, so crapkit cannot tell how much of it "
+                         f"ran; {_REGENERATE}")
     counts = {}
     for total, covered in _PAIRS:
         counts.update(_admit_pair(name, summary, total, covered))
     if not counts:
-        raise ValueError(f"{name}: summary holds neither statement nor branch counts")
+        raise ValueError(f"{name}: summary holds neither statement nor branch counts; "
+                         f"coverage.py writes one kind or both, so {_REGENERATE}")
     _require_deciding_statements(name, counts)
     return counts
 
@@ -69,7 +69,7 @@ def _require_deciding_statements(name: str, counts: dict) -> None:
     statement pair changes nothing."""
     if "num_statements" not in counts and counts["num_branches"] == 0:
         raise ValueError(f"{name}: summary holds no statement counts and no branch, so "
-                         "crapkit cannot tell how much of it ran")
+                         f"crapkit cannot tell how much of it ran; {_REGENERATE}")
 
 
 def _admit_pair(name: str, summary: dict, total: str, covered: str) -> dict:
@@ -83,20 +83,40 @@ def _admit_pair(name: str, summary: dict, total: str, covered: str) -> dict:
 def _counted_pair(name: str, summary: dict, total: str, covered: str) -> dict:
     counts = {key: coverage_count(summary[key], f"{name}: {key}") for key in (total, covered)}
     if counts[covered] > counts[total]:
-        raise ValueError(f"{name}: {covered} exceeds {total}")
+        raise ValueError(f"{name}: {covered} exceeds {total}; {_REGENERATE}")
     return counts
 
 
 def _require_partner(name: str, present: list[str], total: str, covered: str) -> None:
     if len(present) == 1:
         other = covered if present[0] == total else total
-        raise ValueError(f"{name}: {present[0]} without {other}")
+        raise ValueError(f"{name}: {present[0]} without {other}; coverage.py writes both, "
+                         f"so {_REGENERATE}")
 
 
-def _fn_coverage(name: str, fn: dict, path: str = "") -> FnCoverage:
-    summary = _admit_summary(f"{path}: {name}" if path else name, fn.get("summary"))
-    lines = list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
-    start = fn.get("start_line") or (min(lines) if lines else 0)
+def _region_start(name: str, fn: dict) -> int:
+    """The function's def line, which coverage.py writes as start_line from 7.13.1.
+
+    An older report carries none, and no line inside the region is the def's:
+    the body starts below it, and a nested function's def statement sits in its
+    encloser's region. Read from the body, a nested function that never ran
+    joined its encloser by exact start and scored as half covered, so the
+    report is refused instead.
+    """
+    start = fn.get("start_line")
+    if start is None:
+        raise ValueError(f"{name}: no start_line; coverage.py writes it on every function "
+                         f"from 7.13.1, so install {COVERAGE_FLOOR} and rerun the lane")
+    if type(start) is not int or start < 1:
+        raise ValueError(f"{name}: start_line must be a line number, got {start!r}; "
+                         f"coverage.py writes the def's line there, so {_REGENERATE}")
+    return start
+
+
+def _fn_coverage(name: str, fn: object) -> FnCoverage:
+    summary = _admit_summary(name, fn.get("summary") if isinstance(fn, dict) else None)
+    start = _region_start(name, fn)
+    lines = _line_list(name, fn, "executed_lines") + _line_list(name, fn, "missing_lines")
     end = max(lines) if lines else start
     # A kind the summary lacks reads 0 of 0 below only where it cannot decide:
     # _admit_summary refused every summary whose missing kind would.
@@ -106,6 +126,16 @@ def _fn_coverage(name: str, fn: dict, path: str = "") -> FnCoverage:
                       branches_covered=summary.get("covered_branches", 0),
                       statements_total=summary.get("num_statements", 0),
                       statements_covered=summary.get("covered_lines", 0))
+
+
+def _line_list(name: str, fn: dict, key: str) -> list[int]:
+    """A region's executed or missing lines: a list of line numbers when the
+    key is there, as coverage.py writes it."""
+    lines = fn.get(key, [])
+    if not isinstance(lines, list) or not all(type(line) is int for line in lines):
+        raise ValueError(f"{name}: {key} holds {json_kind(lines)}, not a list of line numbers; "
+                         f"{_REGENERATE}")
+    return lines
 
 
 def has_regions(data: object) -> bool:
@@ -120,13 +150,13 @@ def has_regions(data: object) -> bool:
     return isinstance(data, dict) and data.get("functions") is not None
 
 
-def _file_functions(data: dict, path: str = "") -> list[FnCoverage]:
+def _file_functions(data: dict) -> list[FnCoverage]:
     """One file's functions, sorted by start line. Ask `has_regions` first: this
     reads an absent "functions" key as an empty one. `path` names the file in a
     refusal."""
     # the "" key is the "(no function)" module-level bucket
-    fns = [_fn_coverage(name, fn, path) for name, fn in (data.get("functions") or {}).items()
-           if name]
+    fns = [_fn_coverage(name, fn)
+           for name, fn in (data.get("functions") or {}).items() if name]
     return sorted(fns, key=lambda f: f.start)
 
 
@@ -261,17 +291,35 @@ class _Files:
         self.branch_counted = 0
         self.branchless: list[str] = []
 
-    def add(self, prefix: str, raw_path: str, data: dict) -> None:
+    def add(self, prefix: str, raw_path: str, data: object) -> None:
         self.total += 1
         path = measured_key(prefix, raw_path)
-        self.dead[path] = set(data.get("missing_lines", ()))
+        self.dead[path] = set(_file_entry(path, data).get("missing_lines", ()))
         if not has_regions(data):
             self.regionless.append(raw_path)
             return
-        self.per_file[path] = _file_functions(data, path)
+        self.per_file[path] = _read_functions(path, data)
         branchless = _branchless(path, data)
         self.branchless += branchless
         self.branch_counted += len(self.per_file[path]) - len(branchless)
+
+
+def _file_entry(path: str, data: object) -> dict:
+    """One file's entry under "files", which coverage.py always writes as an
+    object."""
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: the file entry holds {json_kind(data)}, not an object; "
+                         f"{_REGENERATE}")
+    return data
+
+
+def _read_functions(path: str, data: dict) -> list[FnCoverage]:
+    """One file's functions, or a refusal that names the file: a function's
+    name alone does not say which of a report's files to look in."""
+    try:
+        return _file_functions(data)
+    except ValueError as exc:
+        raise ValueError(f"{path}: {exc}") from exc
 
 
 def _branchless(path: str, data: dict) -> list[str]:

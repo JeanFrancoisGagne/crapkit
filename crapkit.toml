@@ -23,7 +23,8 @@ notes = [
 # so whatever carries the source into the child has to resolve from the CHILD's
 # cwd. A path-based source measured nothing there and cli.py read a false 0%.
 # What carries it is pyproject.toml's [tool.coverage.run] patch = ["subprocess"]
-# (coverage >= 7.10.6), not pytest-cov: 7.0.0 dropped its own COV_CORE_SOURCE
+# (coverage >= 7.10.6; the dev extra pins 7.13.1, whose reports carry the
+# start_line crapkit reads), not pytest-cov: 7.0.0 dropped its own COV_CORE_SOURCE
 # hook, and without the patch key every cmd_* in cli/ reads 0% on pytest-cov 7.
 [[scope]]
 name = "tools"

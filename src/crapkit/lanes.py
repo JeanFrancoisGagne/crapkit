@@ -31,6 +31,7 @@ from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
+from .repotext import lenient, os_bytes
 from .universe import ScopeMatch, owning_scope, path_matchers
 
 
@@ -71,7 +72,7 @@ _ATTEMPT_BANNER = re.compile(r"--- attempt \d+ ---")
 def _log_lines(log_path: Path) -> list[str]:
     if not log_path.is_file():
         return []
-    return log_path.read_text(encoding="utf-8", errors="replace").strip().splitlines()
+    return lenient(log_path.read_bytes()).strip().splitlines()
 
 
 def _tail_lines(lines: list[str], budget: int) -> list[str]:
@@ -1280,7 +1281,7 @@ def _retested_passes(root: Path, lane: Lane, before: int | None) -> set[str]:
     if _mtime_ns(path) == before:
         return set()
     try:
-        return passed_test_ids(path.read_text(encoding="utf-8"))
+        return passed_test_ids(path.read_bytes())
     except (OSError, ToolError):
         return set()
 
@@ -1293,7 +1294,7 @@ def _still_failed(root: Path, lane: Lane) -> set[str] | None:
     if not results_path.is_file():
         return None
     try:
-        return failed_test_ids(results_path.read_text(encoding="utf-8"))
+        return failed_test_ids(results_path.read_bytes())
     except ToolError:
         return None
 
@@ -1398,8 +1399,10 @@ def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, ow
 
 def _output_lock(path: Path) -> Path:
     """Coordinate local outputs outside directories their runners may replace."""
-    key = os.path.normcase(str(path.resolve())).encode("utf-8")
-    host = hashlib.sha256(socket.gethostname().encode("utf-8")).hexdigest()[:16]
+    # The bytes the OS names them by: a checkout under a Latin-1 directory, or a
+    # host named in one, has no UTF-8 spelling, and encoding one raised here.
+    key = os_bytes(os.path.normcase(str(path.resolve())))
+    host = hashlib.sha256(os_bytes(socket.gethostname())).hexdigest()[:16]
     directory = Path.home() / ".cache" / "crapkit" / "measurements" / host
     return directory / ("measurement-" + hashlib.sha256(key).hexdigest() + ".lock")
 

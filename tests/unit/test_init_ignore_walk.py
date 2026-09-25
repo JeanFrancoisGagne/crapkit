@@ -5,6 +5,8 @@ coverage lane measures every branch (the e2e cases run the CLI in a child and
 are not measured)."""
 from pathlib import Path
 
+import pytest
+
 from crapkit.cli import admin
 
 IGNORE = ".crapkit/" + chr(10)
@@ -41,3 +43,17 @@ def test_no_ancestor_ignores_it(tmp_path: Path):
     root.mkdir(parents=True)
 
     assert admin._store_ignored_above(root) is False
+
+
+@pytest.mark.parametrize("raw", [b"\xef\xbb\xbf" + IGNORE.encode(),
+                                 b"# g\xe9n\xe9r\xe9s\r\n.crapkit/\r\n"],
+                         ids=["utf-8-bom", "cp1252-comment-crlf"])
+def test_an_ancestor_gitignore_is_read_as_git_reads_it(tmp_path: Path, raw):
+    """git reads past a UTF-8 BOM (`git check-ignore -v` names line 1), so a
+    `.crapkit/` first line behind one ignores the store. The walk read the mark
+    as part of the line and a nested init appended a second entry."""
+    (tmp_path / ".gitignore").write_bytes(raw)
+    root = tmp_path / "web"
+    root.mkdir()
+
+    assert admin._store_ignored_above(root) is True

@@ -26,11 +26,14 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 | "crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) — those files are skipped and the rest of the report is scored", from `crapkit coverage` | A plugin reporter, django or jinja templates, declares no code regions for those files. Every other file in the report scored. A report where NO file carries regions is still exit 5 | Nothing, unless you expected those files measured: [docs: a file the report carries no regions for](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-file-the-report-carries-no-regions-for) |
 | "warning: churn counts read only the commits this clone holds; this shallow clone does not hold every commit: set fetch-depth: 0 on the checkout or run git fetch --unshallow", from `crapkit worklist` or `crapkit next-item` (`brief` and `ratchet report` name mark ages too) | The checkout is a shallow clone, so churn, mark ages and repayments count only the commits it holds: one per file at depth 1. The command answered, and its JSON says `shallow: true` | Nothing blocks. Before trusting the ranking or a mark's age, set `fetch-depth: 0` on the checkout or run `git fetch --unshallow`: [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) |
 
-Four more lines come out of `crapkit doctor --plugin-root`, same exit 1.
+Six more lines come out of `crapkit doctor --plugin-root`, same exit 1.
 "crapkit doctor: the plugin at PATH asks for hook protocol N" means the plugin is ahead of
 the CLI, so the advisory hook exits 0 in silence on every edit.
 "crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json" means the path is not
-a plugin root and holds no crapkit install below it. "crapkit doctor: no installed crapkit
+a plugin root and holds no crapkit install below it. "has a .claude-plugin/plugin.json that
+is not a JSON object" and "has a .claude-plugin/plugin.json with no version string" mean the
+file is there but damaged: reinstall with `claude plugin install crapkit@crapkit`, or repair
+that file. "crapkit doctor: no installed crapkit
 plugin under DIR" means the bare flag found nothing in Claude Code's plugin directory: install
 with `claude plugin install crapkit@crapkit`, or pass a PATH.
 "crapkit doctor: FAIL no `crapkit` on PATH" means the plugin is installed but the bare name
@@ -50,7 +53,7 @@ in this version.
 |---|---|---|---|
 | 3 | config: `crapkit.toml` unparseable, a lane command the guard refuses, a metric-stamp mismatch, a `test-scoped` file under no templated scope | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
 | 4 | git: not a repository, a baseline commit rewritten out of the history, a baseline commit or fork point a shallow clone does not hold, or `crapkit ratchet report --enforce` with a debt key set in any shallow clone (mark ages and repayments need the whole history). The shallow ones end `set fetch-depth: 0 on the checkout or run git fetch --unshallow` | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list`, or `git fetch --unshallow` when the line names a shallow clone |
-| 5 | a lane produced no artifact, produced one measuring a different tree or spelling this one absolutely, timed out past its retries, or refused a container; or `crapkit verify --reuse-artifacts` found a lane's declared `results_artifact` missing or unreadable, stored no run, and ended `run verify without --reuse-artifacts so the lane writes it again`: run `crapkit verify` without the flag | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
+| 5 | a lane produced no artifact, produced one measuring a different tree or spelling this one absolutely, wrote a report crapkit refuses to read, timed out past its retries, or refused a container; or `crapkit verify --reuse-artifacts` found a lane's declared `results_artifact` missing or unreadable, stored no run, and ended `run verify without --reuse-artifacts so the lane writes it again`: run `crapkit verify` without the flag | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
 | 6 | gate: a function the diff touched is over its ceiling and above any ratchet mark it carries; or an `UNREAD` line names a changed file no reader could read (change what its reason names, or list it under `[exclude]`), and an override grants nothing until it is gone | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
 | 7 | ratchet: a marked function scores worse than its recorded mark | [docs: how verify uses the ratchet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#how-verify-uses-the-ratchet) | `crapkit explain PATH NAME` |
 | 8 | a test that passed in the baseline fails now | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit test-scoped FILE` |
@@ -82,6 +85,18 @@ the command the way the shell will. On Windows a single-quoted value reaches the
 one word per space, so the guard sees a positional that would narrow the run. Rewrite the
 value in double quotes:
 [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start).
+
+## An exit-5 line about the report itself
+
+`lane 'py' FAILED: unparseable coverage.py report PATH: pkg/mod.py: outer: no start_line;
+coverage.py writes it on every function from 7.13.1, so install coverage>=7.13.1 and rerun
+the lane` means the lane ran and wrote its report with coverage.py 7.6 to 7.13.0, which
+writes no `start_line`. crapkit reads each function's span from that line and refuses the
+whole report rather than guess it. Install coverage.py 7.13.1 or newer where the lane runs,
+`pip install "coverage>=7.13.1"`, or `pip install "crapkit[py]"` when crapkit shares the
+suite's venv, then rerun `crapkit coverage`. A nested function can then score above its mark
+once, which `verify` reports at exit 7:
+[docs: upgrading](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#081-on-coverage-76-to-7130).
 
 ## a lane that wrote no artifact: seven causes
 

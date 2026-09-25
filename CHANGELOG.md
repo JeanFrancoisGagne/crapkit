@@ -1,6 +1,29 @@
 # Changelog
 
-## Unreleased
+## 0.8.1 — unreleased
+
+### Upgrading from 0.8.0
+
+- The coverage.py reader moves to analysis version 12, so every repo re-seeds its marks
+  once: `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`.
+  When a failed verify pins the baseline, pass the new run to both, `crapkit ratchet prune
+  --baseline N` and then `crapkit ratchet seed --baseline N`. Until then `verify` refuses
+  the marks as recorded under another metric version. The first `inventory` or `coverage`
+  analyzes every file again. See the [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-12).
+- The `py` and `dev` extras require coverage.py 7.13.1 or newer. Coverage 7.6 to 7.13.0
+  write a function's region with no `start_line`, and `crapkit coverage` now refuses
+  such an artifact at exit 5 (see the coverage readers below). Upgrade coverage where
+  each Python lane runs, with `pip install -U "coverage>=7.13.1"`, or with `pip install
+  -U "crapkit[py]"` where crapkit shares that environment, then rerun `crapkit
+  coverage`. An artifact that carries `start_line` scores as it did in 0.8.0.
+- Where marks were measured on coverage 7.6 to 7.13.0, 0.8.0 gave a nested function its
+  encloser's coverage. On the new coverage that function scores its own region, so its
+  CRAP can rise once. `ratchet seed` never raises a mark, so after the re-seed `verify`
+  reports the rise as a `RATCHET` line at exit 7 on a function the diff never touched. The
+  [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#081-on-coverage-76-to-7130)
+  says how to find each such function before you seed.
 
 ### A lane with no test results is not a lane that ran 0 tests or failed none
 
@@ -111,18 +134,6 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   leftover as a trusted run. The file is now written through a temporary file, so a crash
   cannot cut it short, and `doctor` WARNs about a file that does not parse, as it did for a
   mangled entry.
-- A coverage artifact that lacks a count is refused and names it, where the parser read
-  the absent count as a zero and the score moved with nothing said. In istanbul that is
-  a `fnMap`, `statementMap` or `branchMap` id with no counter in `f`, `s` or `b`, or a
-  `b` array whose hit counts do not match its branch's `locations`: a dropped branch
-  counter flipped a function from `add-tests` to `ok`, and an if/else whose array was cut
-  to `[1]` scored 1 of 1. In coverage.py it is a function with no `summary`, one count of a
-  pair without its partner, no count of either kind, or no statement counts beside 0 of 0
-  branches: a function that ran scored cov 0, or, in a report that measures branches, a
-  function with no branch counts, which scored from its statements. A report with no `meta`
-  is judged by the counts its functions carry, where it said its term was statement-based
-  while scoring on branches. Each refusal names the source file and the function, and ends
-  with what to do: `regenerate the report with the coverage tool`.
 - `digest` lists an over-ceiling function in a scope the older run of its pair never
   scored as `newly scored over ceiling in scope NAME`. A scope added to `crapkit.toml`
   between two runs announced its old debt as `new over ceiling`, which now means only a
@@ -186,6 +197,219 @@ writes nothing.
   (`130.0s serial -> ~100.0s across 3 lane slot(s) for 2 of 3 lanes; cost unknown for
   'b'`). A lane with no duration was dropped from the sum, and one whose junit carries no
   `time` attribute was summed as 0 s.
+
+### The Action finds its own comment on every thread
+
+- The Action edits its pull request comment when another comment on the thread has no
+  body, or a body that is not a string. The GitHub API does not require a comment's
+  body, and one such comment anywhere in the thread failed the lookup, so every push
+  posted a second crapkit comment while the job stayed green.
+- The lookup takes the first comment that starts with the `<!-- crapkit-action -->`
+  line. A reviewer's reply quoting the crapkit comment carried the line too, and the
+  step tried to edit that reply, which the job's token cannot do.
+- When GitHub answers a page of the comment list with an error, the step no longer takes
+  GitHub's error JSON for a comment id. It sent the edit to
+  `issues/comments/{"message": ...}`, so no comment was written or updated and the
+  pull request kept the previous push's verdict. It now edits the crapkit comment it
+  found before the error, and the job log says so.
+- When the comment list fails before the step finds a crapkit comment, a 502 or a rate
+  limit on any page, the step lists the comments once more. The crapkit comment can sit
+  on the page that failed or on a later one, and posting at once would leave the thread
+  with two. When the second listing fails too, the step posts a fresh comment and the
+  job log says the listing failed twice.
+- A thread with a crapkit comment on two pages no longer logs `looking the existing
+  comment up exited 141: posting a fresh one` before editing the first one. `head -n 1`
+  closed the pipe while gh was still writing.
+- The reason a base run was not made quotes crapkit's first `lane '<name>' FAILED:`
+  line. It quoted the first stderr line, so a lane that passed with coverage.py's
+  no-branch-data warning was named in the comment and the failing gate in place of the
+  lane that failed, and a crapkit killed before it printed anything left the reason
+  empty after its colon. That case now reads `crapkit coverage exited <code> and printed
+  nothing`.
+- "build the comment" no longer stops the job on a changed file whose name is not UTF-8.
+  A Linux checkout keeps such names as git stores them, the builder decoded them as
+  strict UTF-8, and the composite stopped before it posted a comment or ran the gate, so
+  the job failed with `gate: "false"`. The name still counts as a changed file.
+- The `top` input takes whatever string the workflow hands over. `""` (an unset
+  expression) renders 5 rows. `"ten"`, `"5.0"` and `"-1"` render 5 and print a warning
+  naming the input on the run's summary page. The first three exited 2 and failed the job
+  with no comment, and `"-1"` dropped the last row without a word.
+- The verdict prints fifty bullets per finding kind at most, then a line counting the
+  rest, and a request body still over GitHub's 65,536-character limit is cut at a line
+  that fits, the marker first. A pull request with 1,500 new test failures made a
+  152,245-character body, GitHub answered 422, and no comment was posted.
+
+### `doctor --plugin-root` reads every shape of the installer's files
+
+- With no PATH, doctor reads `installed_plugins.json` as an older Claude Code wrote it,
+  one object per plugin id, beside today's list of installs. That file, a `plugins` key
+  that is null or a list, an install list holding null, and an `installPath` that is not
+  a string all ended the command in a traceback. Such an entry now records nothing, and
+  the cache scan still finds the install. A UTF-8 BOM before either file reads past.
+- A `.claude-plugin/plugin.json` that is there but gives no version no longer reads as a
+  missing file. A file that does not parse to an object says `has a
+  .claude-plugin/plugin.json that is not a JSON object`, and an object whose `version` is
+  absent, null, a number or a list says `has a .claude-plugin/plugin.json with no version
+  string`; both end `reinstall the plugin or repair that file`. A number or a list there
+  also ended a search over several installs in a traceback.
+
+### `init` reads package.json by one JSON rule, appends to .gitignore as git reads it, and finishes a half-done init
+
+- `init` no longer ends in a TypeError, before it writes `crapkit.toml`, on a
+  `package.json` whose `scripts` or `devDependencies` is null or a number, at the root or in
+  a workspace. It reads the file the way npm does: `scripts` that are not an object, and a
+  script whose command is not a string, are no scripts, and a `devDependencies` list names
+  the strings in it.
+- A `scripts` list such as `["test"]`, or a string such as `"vitest run"`, no longer writes
+  an `npm run test` lane: npm has no such script, and the lane failed on its first run.
+- `init` reads each `package.json` past a UTF-8 byte-order mark, as npm does; a BOM cost the
+  js lane in silence. A root `package.json` that is not one UTF-8 JSON object stops `init` at
+  exit 3 before it writes any file, naming the file and the fix: one in UTF-16 or holding a byte
+  that is not UTF-8 (`init wrote no file: package.json is not UTF-8 (byte e9 at offset 36);
+  save it as UTF-8`), where 0.8.0 ended in a traceback after `crapkit.toml` was written, and
+  one that does not parse or holds something other than a JSON object (`package.json holds
+  an array, not a JSON object; save one object there`), which 0.8.0 read as a package.json
+  naming no runner, so the js lane went missing without a word. A nested one, a test
+  fixture say, is skipped with one line naming it.
+- `init` appends to `.gitignore` as git reads it, as bytes: a cp1252 comment, CRLF lines and
+  a byte-order mark stay byte for byte, and the new entries take the file's own line
+  ending, where a CRLF `.gitignore` came back all LF and a cp1252 comment ended `init` after
+  `crapkit.toml` was written. A UTF-16 `.gitignore` is named with the fix and left as it was.
+- `init` reads each `.gitignore` line past a UTF-8 byte-order mark, as git does. A
+  `.crapkit/` first line behind the mark already ignores the store, in the repo's own
+  `.gitignore` or in one above a nested init, and `init` no longer appends a second one.
+- `init` writes `.gitignore` before `crapkit.toml`. Run over a `crapkit.toml` an earlier run
+  left behind, it adds the missing `.gitignore` entries, says so and exits 0, leaving
+  `crapkit.toml` byte for byte; 0.8.0 refused with `crapkit.toml already exists`, so
+  `.crapkit/` was never ignored.
+
+### The MCP server refuses `params` and `arguments` that are not objects in words an agent can act on
+
+- `tools/call` with `arguments` sent as a number, a string or a list, by-position
+  arguments included, answers a tool result with `isError: true` that names the JSON type
+  it got: `arguments must be an object (got a number)`. It answered `-32603` carrying a
+  Python `AttributeError`, and a string was read one character at a time, so the refusal
+  named `'t'` as an undeclared key. An empty string, `0`, `false` and an empty list get
+  the same refusal, where the server ran the tool as if no arguments were sent; only
+  null or absent `arguments` read as none given.
+- `tools/call` and `initialize` whose `params` are an array, a string, a number or a
+  boolean answer JSON-RPC error `-32602`, with a message naming `params` and the type it
+  got, and the session answers the next request. Both answered `-32603` carrying a
+  Python `AttributeError`. An empty array, an empty string, `0` and `false` get `-32602`
+  too, where 0.8.0 read them as no params. Null or absent `params` answer as before.
+- A `method` that is not a string answers `-32601 unknown method`, where it answered
+  `-32603`.
+- ADR 0001 said an unparsable frame gets a protocol error. The server sends no reply to a
+  frame that is not one JSON object and reads the next line, and the ADR, the agent JSON
+  page and AGENTS.md now say so.
+
+### The coverage readers stop reading an absent field as a value
+
+- A coverage.py artifact with a function region whose `start_line` is absent or null
+  exits 5 with a line naming the artifact, the file, the first such function,
+  `start_line` and `coverage>=7.13.1`. Coverage 7.6 to 7.13.0 write no `start_line`. The
+  reader took the body's first line as the start, which is the line of the `def inner`
+  statement in the encloser's region, so a nested function that never ran scored as half
+  covered. The `py` and `dev` extras now require `coverage>=7.13.1`, the first release
+  that writes `start_line`. A `start_line` that is not a positive whole number exits 5
+  naming the file, the function and the value it holds, and says to regenerate the report
+  with `coverage json`.
+- A coverage.py region without a `summary` object exits 5 naming the file and the
+  function, where it scored the function as never run. A null one exits 5 with the same
+  line, where it printed a Python `AttributeError`.
+- An istanbul `fnMap` entry without `loc.end.line` exits 5 naming the file and the entry.
+  The span fell back to the declaration line, the body's branches attached to nothing,
+  and a function that was called scored as covered. A `branchMap` entry without `loc`
+  counts against the function that holds its `line`, where it attached to none. One with
+  neither `loc.start.line` nor `line` exits 5 naming the file and the branch id, where
+  its branches counted against no function.
+- A coverage artifact that lacks a count exits 5 naming the file and the function, where
+  the reader took the absent count for a zero and the score moved with nothing said. In
+  istanbul that is a `fnMap`, `statementMap` or `branchMap` id with no counter in `f`, `s`
+  or `b`, a whole `s` or `f` record left out included, or a `b` array whose hit counts do
+  not match its branch's `locations`: a dropped branch counter flipped a function from
+  `add-tests` to `ok`, and an if/else whose array was cut to `[1]` scored 1 of 1. In
+  coverage.py it is one count of a pair without its partner (`num_statements without
+  covered_lines`), a summary with neither statement nor branch counts, no statement counts
+  beside 0 of 0 branches, or, in a report that measures branches, a function with no
+  branch counts, which scored from its statements. A report with no `meta` is judged by the
+  counts its functions carry, where it said its term was statement-based while scoring
+  on branches. Each refusal says to regenerate the report.
+- A coverage artifact that starts with a UTF-8 byte-order mark reads past it, as a copy
+  saved with PowerShell's `Out-File -Encoding utf8` has one. Both readers refused it at
+  exit 5 as `istanbul artifact is not a JSON object` or `coverage.py report is not a JSON
+  object`. The digest a run records is still the file's own bytes, mark included.
+- An artifact in UTF-16 or holding a byte that is not UTF-8 exits 5 naming the bytes:
+  `cov.json is not UTF-8 (first bytes ff fe = UTF-16, the PowerShell 5.1 Out-File
+  default); save it as UTF-8`, or `(byte e9 at offset 125)`. It printed Python's `'utf-8'
+  codec can't decode byte`. An artifact with no JSON in it, zero bytes or a mark alone,
+  says it is empty and to rerun the lane, where it said the file was not a JSON object.
+- A field the format writes as an object or a list that holds something else exits 5
+  naming the file, the field and the JSON type it holds, and says to regenerate the
+  artifact: ``src/app.ts: `s` holds null, not an object``. That covers an istanbul file
+  entry, `fnMap`, `f`, `s`, `b` or a `statementMap` entry, and a coverage.py file entry,
+  `executed_lines` or `missing_lines`. Each printed a Python error such as `argument of
+  type 'NoneType' is not iterable`. An istanbul `fnMap` entry with no `decl.start.line`,
+  as istanbul 0.x wrote, names the file and the entry where the line held only `'decl'`.
+- A non-finite count such as `NaN` in either format names the artifact and says to
+  regenerate it, where the line said `unparseable coverage artifact` and named no file.
+
+### Text that is not UTF-8
+
+A commit, a file name, a report or an MCP frame in bytes that are not UTF-8 no longer ends
+a command in a traceback.
+
+- An author name, subject, body or patch line a commit stored in bytes that are not UTF-8
+  reads as U+FFFD, in every command that reads churn (`worklist`, `next-item`, `brief`,
+  `coupling` and the MCP tools) and in `explain --history`. One such commit inside the
+  12-month window stopped every churn reader with a UnicodeDecodeError, and on Windows
+  `explain --history` died with an AttributeError. Every git crapkit starts passes
+  `-c i18n.logOutputEncoding=UTF-8`, so in a repo that sets `i18n.commitEncoding` or
+  `i18n.logOutputEncoding` a name stored as UTF-8 comes back as stored. A CR inside an
+  author name no longer cuts the commit off its dates. A past revision of the marks file
+  saved in cp1252 or UTF-16 no longer stops `ratchet report`, a `core.hooksPath` holding a
+  Latin-1 byte no longer ends `doctor`, and `verify --base` on such a ref gets its exit-4
+  sentence.
+- `mutate` builds and resets its worktree pool at a HEAD whose subject is not UTF-8.
+  `git worktree add` and a kept tree's `checkout --force` print that subject, and the
+  strict read stopped the run before any mutant; on Linux a leftover file named in
+  Latin-1 did the same through `clean`.
+- A file git names in bytes that are not UTF-8 (a Latin-1 name made on Linux, kept as it
+  was in a Windows clone's index) no longer ends every command with a UnicodeDecodeError.
+  When a scope takes it, `inventory`, `coverage`, `verify`, `doctor`, `watch` and
+  `hook-precommit` exit 3 before any lane runs, with one line naming the file and
+  `git mv`, so no gate passes a source file no reader read. Any other such name, an
+  untracked one included, is left out and named once on stderr: `crapkit: left out NAME:
+  git names it in bytes that are not UTF-8, and crapkit reads every path as UTF-8; rename
+  it (git mv) to have it read`.
+- A path argument, an override reason (`CRAPKIT_OVERRIDE_REASON` or `verify --override`),
+  a host name or a checkout directory in bytes that are not UTF-8 no longer ends a command
+  with a UnicodeEncodeError. A path argument that names an existing file whose name is not
+  UTF-8 exits 3 with `rename it (git mv) to a UTF-8 name` in `rescore`, `explain`, `brief`,
+  `claims release`, `test-scoped`, `mutate --files` and `ratchet move`; one with no file
+  behind it gets the command's sentence for a missing file. An absolute path argument
+  resolves as the OS spelled it, so under a checkout directory named in Latin-1 it lands
+  inside the repo. An override sends its alert and stores all three audit records, where the
+  store write failed after the alert had gone out; a lane run on such a host or under such
+  a directory takes its output lock.
+- A junit report declared ISO-8859-1 or written as UTF-16 is read as it declares, in
+  `coverage`, `verify`, `verify --reuse-artifacts`, the flake retest and `doctor --tune`.
+  Each ended with a UnicodeDecodeError. A report with no declaration is read as UTF-8, so a
+  raw Latin-1 byte there is an unparseable report: a refusal for a run and a warning for a
+  reuse.
+- The MCP server reads on past a stdin frame holding a byte that is not UTF-8, which ended
+  the session with exit 0 and nothing on stderr, and answers an `initialize` sent behind a
+  UTF-8 byte-order mark.
+- The Linux measurement owner reads every `/proc/<pid>/stat` as bytes, so a process
+  anywhere on the host named in Latin-1, or a UTF-8 name the kernel cut mid-character, no
+  longer stops `coverage`, `verify`, `test-scoped`, `mutate` and the MCP tools with
+  `measurement owner stopped before confirming ownership`.
+- A source file that opens with a UTF-16 byte-order mark, as PowerShell 5.1's `Out-File`
+  and the ISE save it, scores its functions. `inventory` read it as empty, the pre-commit
+  gate passed a ccn-8 function in it, and the advisory hook said nothing. `mutate` writes a
+  mutant back in the file's own encoding: in a cp1252 or Latin-1 file every accented byte
+  outside the mutated line became EF BF BD, and 2 of 2 mutants read killed where the UTF-8
+  twin kills 0. `brief --json`'s `source` reads the file the way the scorer does.
 
 ## 0.8.0 — 2026-09-23
 

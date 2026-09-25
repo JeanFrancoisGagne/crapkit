@@ -285,3 +285,18 @@ def test_a_row_no_run_scored_leaves_the_score_cells_empty():
     first = _rows(render_report(data))[0]
 
     assert "None" not in first
+
+
+@pytest.mark.parametrize("function, path, shown", [
+    ("gräde_世( n )", "pkg/mod.py", "gräde_世( n )"),
+    ("grade( n )", "pkg/a&b'c.py", "pkg/a&amp;b&#x27;c.py"),
+], ids=["a-non-ascii-name", "a-path-with-an-ampersand-and-a-quote"])
+def test_a_name_or_path_reaches_the_page_as_text_the_browser_shows_as_written(function, path, shown):
+    data = payload()
+    data["worklist"]["active"][0].update(function=function, path=path)
+
+    page = render_report(data)
+
+    assert shown in page
+    assert page.encode("utf-8").decode("utf-8") == page
+    assert '<meta charset="utf-8">' in page
