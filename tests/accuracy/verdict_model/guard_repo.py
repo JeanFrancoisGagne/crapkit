@@ -130,6 +130,9 @@ class Repos:
     def verdict(self, lane: Lane) -> str:
         return verdict(self.root(lane))
 
+    def advisory(self, lane: Lane) -> int:
+        return advisory_verdict(self.root(lane))
+
 
 def verdict(root: Path) -> str:
     """'ok' when the lane loads, else the word the refusal names."""
@@ -139,6 +142,27 @@ def verdict(root: Path) -> str:
     found = _REFUSAL.search(result.stderr)
     assert result.code == 3 and found, result.stdout + result.stderr
     return found.group(1)
+
+
+# ccn 8 by McCabe (seven ifs, plus one), over the lanes' target of 6.
+OVER_CEILING = "def hot(x):\n" + "".join(f"    if x > {i}:\n        return {i}\n"
+                                         for i in range(7)) + "    return x\n"
+
+
+def advisory_verdict(root: Path) -> int:
+    """claude-hook's exit after an unstaged edit that lifts calc/hot.py over
+    the ceiling; the committed source is put back after. README.md:812: exit
+    2 is the advisory, and a configuration it cannot load is exit 0 in
+    silence."""
+    source = root / "calc" / "hot.py"
+    committed = source.read_bytes()
+    payload = {"hook_event_name": "PostToolUse", "tool_name": "Edit", "cwd": str(root),
+               "tool_input": {"file_path": str(source)}}
+    source.write_bytes(OVER_CEILING.encode("utf-8"))
+    try:
+        return drive.Driver(root).run("claude-hook", "--protocol", "1", stdin=json.dumps(payload)).code
+    finally:
+        source.write_bytes(committed)
 
 
 # --- what the shell hands the runner -----------------------------------------------------------

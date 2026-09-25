@@ -205,6 +205,24 @@ def test_fix_9863e1d(guard):
 
 
 @pytest.mark.process
+def test_fix_53da05f(guard):
+    """claude-hook parses crapkit.toml without the CLI's loader; its lane
+    guard reads pytest's testpaths from the same root. A lane whose
+    positionals name every testpaths entry loads, so an edit over the ceiling
+    is advised (exit 2); one naming one entry of two is refused, which the
+    hook answers with silence (exit 0)."""
+    rows = {row[0]: row for row in COVER_ALL}
+    picked = (rows["both"], rows["half"])
+    got = {row[0]: guard.advisory(row[1]) for row in picked}
+    assert got == {row[0]: _advised(row) for row in picked}
+
+
+def _advised(row) -> int:
+    """README.md:812: exit 2 for an edit over the ceiling, 0 when the lane is refused."""
+    return 2 if expected(row) == OK else 0
+
+
+@pytest.mark.process
 def test_doctor_reads_a_lane_command_with_shell_words(guard):
     _agree(guard, SHELL_READING)
 
