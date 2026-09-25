@@ -880,7 +880,7 @@ claude plugin update crapkit@crapkit --scope user
 codex plugin marketplace upgrade crapkit
 codex plugin add crapkit@crapkit
 codex plugin list --marketplace crapkit --json</code></pre>
-<p>Refresh the marketplace before updating the installed copy. Restart existing Claude Code sessions to apply its plugin update, and start fresh MCP sessions after a CLI upgrade. <code>crapkit doctor --plugin-root PATH</code> checks installed files against the CLI on PATH; it does not reload a running session. Pass the installed Codex plugin directory explicitly because doctor's default cache is Claude Code's. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#plugin-and-mcp-clients">plugin upgrade guide</a> explains the installed path and Windows launcher locks.</p>
+<p>Refresh the marketplace before updating the installed copy. Restart existing Claude Code sessions to apply its plugin update, and start fresh MCP sessions after a CLI upgrade. <code>crapkit doctor --plugin-root PATH</code> checks installed files against the CLI on PATH; it does not reload a running session. With no PATH it checks the installs Claude Code recorded and looks in Codex's cache only when Claude Code has none, so pass the installed Codex plugin directory to check that one. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#plugin-and-mcp-clients">plugin upgrade guide</a> explains the installed path and Windows launcher locks.</p>
 
 <h3>Enforcement: seed the ratchet, then arm the hook</h3>
 <pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv
