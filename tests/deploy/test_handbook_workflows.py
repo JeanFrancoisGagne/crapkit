@@ -501,6 +501,23 @@ def test_ci_on_a_pull_request_reads_the_committed_baseline(box, templates):
 
 
 @cell("lin-handbook-ci", channel="pip venv", harness="none (a CI job's shell)",
+      scenario="fresh: with only what the handbook's blocks commit, the PR job's fresh clone reaches a verdict",
+      use_cases="verify --baseline-tsv", os="linux", image="core", cadence="nightly")
+@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-11: the handbook's Install and Enforcement "
+                                       "blocks commit only crapkit-ratchet.tsv, so the fresh clone workflow 4 runs "
+                                       "in has no crapkit.toml and verify --baseline-tsv refuses before a verdict")
+def test_the_handbook_blocks_alone_give_the_ci_clone_its_config(box, templates):
+    repo = adopted(box, templates)
+    box.run(["crapkit", "verify"], cwd=repo, expect=0)
+    box.script(_ci_step("crapkit verify --emit-baseline"), cwd=repo, expect=0)
+    installers.commit(box, repo, "the portable baseline", "crapkit-baseline.tsv")
+    job = _ci_job(box, _pull_request(box, repo, BREACH), "job-literal")
+    verdict = box.script(_ci_step("crapkit verify --baseline-tsv"), cwd=job)
+
+    assert verdict.exit == 6, said(verdict)
+
+
+@cell("lin-handbook-ci", channel="pip venv", harness="none (a CI job's shell)",
       scenario="fresh: a clean pull request passes the committed baseline", use_cases="verify --baseline-tsv",
       os="linux", image="core", cadence="nightly")
 def test_a_clean_pull_request_passes_the_committed_baseline(box, templates):
