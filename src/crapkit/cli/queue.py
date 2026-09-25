@@ -1015,6 +1015,32 @@ def _worklist_print(as_json: bool, wl, latest: dict, cfg, stale: bool,
     _print_batches(batches)
 
 
+def _print_next_step(as_json: bool, root: Path, cfg, latest: dict) -> None:
+    if not as_json:
+        print("\n".join(_worklist_next(root, cfg, latest)))
+
+
+def _worklist_next(root: Path, cfg, latest: dict) -> list[str]:
+    """The command to run after reading the map, and why when that is not plain.
+
+    The README's first run is coverage, worklist, ratchet seed and verify.
+    worklist was the one step that printed no next step, so a user who followed
+    what crapkit printed stopped at the map with no mark signed. The order here
+    is that path: a run next-item and seed can read, then a marks file, then
+    the burn-down queue, whose `empty: true` is its own stop condition.
+    """
+    from ..store import is_trusted, untrusted_reason
+
+    if not is_trusted(latest):
+        return [f"run {latest['id']} is {untrusted_reason(latest)} and cannot serve as a "
+                "baseline for next-item, ratchet seed or verify", f"-> next: {_self()} coverage"]
+    if not (root / cfg.ratchet_file).is_file():
+        return [f"no {cfg.ratchet_file} yet: seed marks each function over its ceiling at "
+                "today's score, and from then on a mark may only fall",
+                f"-> next: {_self()} ratchet seed"]
+    return [f"-> next: {_self()} next-item"]
+
+
 def _worklist_run(root: Path, store) -> dict:
     """The newest TRUSTED run, which is the run next-item ranks: one state, two
     commands.
@@ -1057,6 +1083,7 @@ def cmd_worklist(args: argparse.Namespace) -> int:
     batches = _worklist_batches(root, cfg, wl.active, args.batches)
     _worklist_print(args.json, wl, latest, cfg, latest["commit"] != head_commit(root), batches,
                     _cap_label(args.top, top))
+    _print_next_step(args.json, root, cfg, latest)
     return 0
 
 

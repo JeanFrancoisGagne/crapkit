@@ -91,7 +91,7 @@ def test_the_seed_line_names_the_run_it_used_and_the_verify_it_skipped(tmp_path,
 
     assert seed(repo) == 0
 
-    line = capsys.readouterr().out.strip()
+    line = capsys.readouterr().out.splitlines()[0]
     assert f"vs run {trusted} ({TRUSTED_SHA[:11]})" in line
     assert line.endswith(f", skipped failed verify run {failed}")
 
@@ -102,7 +102,7 @@ def test_the_seed_line_says_nothing_extra_when_nothing_was_skipped(tmp_path, cap
 
     assert seed(repo) == 0
 
-    assert capsys.readouterr().out.strip().endswith(f"vs run {trusted} ({TRUSTED_SHA[:11]})")
+    assert capsys.readouterr().out.splitlines()[0].endswith(f"vs run {trusted} ({TRUSTED_SHA[:11]})")
 
 
 def test_prune_reads_the_same_trusted_run_as_seed(tmp_path, capsys):
@@ -114,7 +114,7 @@ def test_prune_reads_the_same_trusted_run_as_seed(tmp_path, capsys):
 
     assert cmd_ratchet(argparse.Namespace(action="prune", repo=str(repo), baseline=None)) == 0
 
-    line = capsys.readouterr().out.strip()
+    line = capsys.readouterr().out.splitlines()[0]
     assert f"vs run {trusted} ({TRUSTED_SHA[:11]})" in line
     assert line.endswith(f", skipped failed verify run {failed}")
 
@@ -187,7 +187,7 @@ def test_the_seed_line_names_both_skipped_verifies(tmp_path, capsys):
 
     assert seed(repo) == 0
 
-    line = capsys.readouterr().out.strip()
+    line = capsys.readouterr().out.splitlines()[0]
     assert f"vs run {trusted} ({TRUSTED_SHA[:11]})" in line
     assert line.endswith(f", skipped failed verify runs {first}, {second} and the newer run "
                          f"{newer} (pass `--baseline {newer}` to read it)")

@@ -64,6 +64,11 @@ def stamp(repo) -> str:
     return read_stamp((repo / MARKS).read_text(encoding="utf-8"))
 
 
+def after_seed() -> str:
+    """The line every seed ends with: the README's next two steps."""
+    return f"-> next: commit {MARKS}, then run `{_self()} verify`\n"
+
+
 # --- seed ----------------------------------------------------------------------
 
 def test_seed_from_a_run_under_an_older_metric_signs_that_metric(repo, capsys):
@@ -78,7 +83,7 @@ def test_seed_from_a_run_under_an_older_metric_signs_that_metric(repo, capsys):
         f"{MARKS}: added 0, tightened 0 - 1 mark(s) vs run {run_id} ({SHA[:11]}); "
         f"run {run_id} was measured under [{OLD_STAMP}], not this crapkit's "
         f"[{metric_version()}], so verify refuses these marks until a fresh "
-        f"`{_self()} coverage` and another seed\n")
+        f"`{_self()} coverage` and another seed\n{after_seed()}")
 
 
 def test_seed_from_a_run_under_the_running_metric_prints_the_line_it_always_did(repo, capsys):
@@ -88,7 +93,7 @@ def test_seed_from_a_run_under_the_running_metric_prints_the_line_it_always_did(
 
     assert stamp(repo) == metric_version()
     assert capsys.readouterr().out == (
-        f"{MARKS}: added 1, tightened 0 - 1 mark(s) vs run {run_id} ({SHA[:11]})\n")
+        f"{MARKS}: added 1, tightened 0 - 1 mark(s) vs run {run_id} ({SHA[:11]})\n{after_seed()}")
 
 
 def test_seed_refuses_a_run_that_recorded_no_metric(repo):

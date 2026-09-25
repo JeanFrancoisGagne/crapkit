@@ -73,7 +73,7 @@ def test_seed_signs_the_marks_of_the_run_it_names_past_a_failed_verify(repo, cap
     code, out, err = ratchet(repo, capsys, "seed", "--baseline", str(new))
 
     assert code == 0, err
-    assert out.strip().endswith(f"vs run {new} ({NEW_SHA[:11]})"), "a named run skipped nothing"
+    assert out.splitlines()[0].endswith(f"vs run {new} ({NEW_SHA[:11]})"), "a named run skipped nothing"
     marks = (repo / MARKS).read_text(encoding="utf-8").splitlines()
     assert marks[-1] == "src/a.py\thot( n )\t90.0000", "run 3's 9*9+9, not run 1's 8*8+8"
 

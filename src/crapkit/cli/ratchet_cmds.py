@@ -405,6 +405,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     metric_note = _metric_note(work, action, created=saved.text is None)
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(work.skipped, work.newer)}{metric_note}")
+    _print_seed_next(action, cfg.ratchet_file)
     return 0
 
 
@@ -442,6 +443,14 @@ def _newer_than_install(saved, action: str, newer: list[str]) -> str:
             f"[{saved.metric_stamp}] and this crapkit measures [{metric_version()}] — "
             f"{upgrade_remedy(newer)}; {_BACKWARDS[action]}. A team going back to this release "
             f"on purpose restores the {saved.path.name} it last wrote from git history")
+
+
+def _print_seed_next(action: str, ratchet_file: str) -> None:
+    """The README's two steps after a seed. seed printed none, so a user who
+    followed what crapkit printed never committed the marks or ran the verify
+    that makes the first passing verdict."""
+    if action == "seed":
+        print(f"-> next: commit {ratchet_file}, then run `{_self()} verify`")
 
 
 def _identity_advice(work: _WorkRun, action: str) -> str:

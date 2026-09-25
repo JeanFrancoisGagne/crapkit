@@ -25,7 +25,7 @@ def seed(repo, capsys, *argv: str) -> str:
     code = main(["ratchet", "seed", *argv, "--repo", str(repo)])
     out = capsys.readouterr()
     assert code == 0, out.err
-    return out.out.strip()
+    return out.out.splitlines()[0]
 
 
 def clause(run_id: int, way_off: str) -> str:
