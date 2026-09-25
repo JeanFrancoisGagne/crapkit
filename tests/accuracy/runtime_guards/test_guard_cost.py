@@ -6,7 +6,7 @@ directory as one JSON file when it exits, as does each analysis-pool worker,
 with how long the process ran. The ratio is the tallies' check time over the
 processes' lifetimes, each measured with perf_counter_ns. The in-process
 timing runs the row check over 137,715 rows, one large consumer repo's run,
-and records nanoseconds per row on the JUnit report as the
+and records nanoseconds per row on the JUnit report, as the test suite's
 `invariant_ns_per_row` property.
 """
 from __future__ import annotations
@@ -49,13 +49,13 @@ def large_run() -> list:
     return [kinds[i % len(kinds)] for i in range(LARGE_REPO_ROWS)]
 
 
-def test_the_row_check_over_a_large_repo_s_run(record_property):
+def test_the_row_check_over_a_large_repo_s_run(record_testsuite_property):
     rows = large_run()
     check_rows = importlib.import_module("crapkit.invariants").check_rows
     began = perf_counter_ns()
     check_rows(rows, lambda scope: CEILING)
     per_row = (perf_counter_ns() - began) / LARGE_REPO_ROWS
-    record_property("invariant_ns_per_row", round(per_row, 1))
+    record_testsuite_property("invariant_ns_per_row", round(per_row, 1))
     assert per_row < MAX_NS_PER_ROW
 
 
@@ -81,14 +81,15 @@ def _tallied() -> int:
 
 
 @pytest.mark.process
-def test_the_checks_cost_at_most_one_percent_of_a_seed_run(seed, tmp_path, record_property):
+def test_the_checks_cost_at_most_one_percent_of_a_seed_run(seed, tmp_path,
+                                                           record_testsuite_property):
     """In process, where the tally is readable directly: the checks' share of
     one coverage run over the seed corpus."""
     driver = drive.Driver(seed.private_copy(tmp_path / "seed"), date_now=seed.date_now)
     before, began = _tallied(), perf_counter_ns()
     done = driver.run("coverage")
     wall, spent = perf_counter_ns() - began, _tallied() - before
-    record_property("invariant_cost_ratio", spent / wall)
+    record_testsuite_property("invariant_cost_ratio", spent / wall)
     assert done.code == 0, done.stderr
     assert spent > 0, "the checks ran"
     assert spent / wall <= 0.01
@@ -96,12 +97,13 @@ def test_the_checks_cost_at_most_one_percent_of_a_seed_run(seed, tmp_path, recor
 
 @pytest.mark.nightly
 @pytest.mark.process
-def test_the_checks_cost_at_most_one_percent_of_each_full_corpus_run(tmp_path, record_property):
+def test_the_checks_cost_at_most_one_percent_of_each_full_corpus_run(tmp_path,
+                                                                     record_testsuite_property):
     members = corpora.members(corpora.full_corpus())
     assert members, f"no full corpus: set {corpora.CORPUS_ENV}"
     ratios = {}
     for member in members:
         root = corpora.member_repo(member, tmp_path / member.name)
         ratios[member.name] = cost_share(root, tmp_path / f"{member.name}-tallies", "coverage")
-    record_property("invariant_cost_ratios", json.dumps(ratios, sort_keys=True))
+    record_testsuite_property("invariant_cost_ratios", json.dumps(ratios, sort_keys=True))
     assert {name: ratio for name, ratio in ratios.items() if ratio > 0.01} == {}
