@@ -111,6 +111,11 @@ WORD_BREAKS = [
 QUOTED_OPERATOR = [
     ("quoted-and", g.Lane(py('-k "a && b"')), OK, OK, "lanes.md:76 a quoted operator is an argument"),
     ("quoted-pipe", g.Lane(py('-k "x|y"')), OK, OK, "lanes.md:76"),
+    # A word that is nothing but a quoted operator: both shells hand the runner
+    # the bare `&&` or `|` (the shell argv oracle below), so it is a positional.
+    ("bare-quoted-and", g.Lane(f'{g.PYTEST} {g.COV} "&&"'), "&&", "&&",
+     "lanes.md:74,76 a quoted operator is an argument and starts no command"),
+    ("bare-quoted-pipe", g.Lane(f'{g.PYTEST} {g.COV} "|"'), "|", "|", "lanes.md:74,76"),
 ]
 EMPTY_ARGUMENT = [("empty-quotes", g.Lane(py('-k "" tests')), "tests", "tests",
                    "lanes.md:75 an empty pair of quotes writes an empty argument")]
@@ -286,6 +291,33 @@ def test_the_refused_word_is_one_the_shell_hands_the_runner(guard, row):
 
     assert argvs, "the shell started no runner"
     assert word == OK or any(word in argv for argv in argvs), (word, argvs)
+
+
+@pytest.mark.process
+@pytest.mark.platform("win32")
+def test_a_caret_escaped_operator_is_an_argument_under_cmd(guard):
+    """lanes.md:72: outside a quoted run cmd.exe drops the caret and hands on
+    the character behind it, so `^&` reaches the runner as the word `&`."""
+    lane = g.Lane(f"{g.PYTEST} {g.COV} ^&")
+    root = guard.root(lane)
+    assert [argv[-1] for argv in g.shell_argvs(root, lane.command)] == ["&"]
+    assert g.verdict(root) == "&"
+
+
+# An operator with no space before it: sh and cmd.exe both end the command at
+# an unquoted `&&`, whatever touches it (the shell argv oracle).
+GLUED = g.Lane(f"{g.PYTEST} {g.COV}&& python -m coverage json")
+
+
+@pytest.mark.process
+@rulings.applies("V9")
+def test_an_operator_touching_a_word_still_ends_the_command(guard):
+    """lanes.md:74: `&&` starts a new command. The shell's own argv says what
+    pytest is handed; pytest's parser says which of those words are positionals."""
+    root = guard.root(GLUED)
+    positionals = [word for argv in g.shell_argvs(root, GLUED.command)
+                   for word in g.pytest_positionals(root, argv) or ()]
+    rulings.pin_ruling("V9", crapkit=g.verdict(root), oracle=positionals[0] if positionals else OK)
 
 
 # --- metamorphic: a flag with its value never flips the verdict ----------------------------------
