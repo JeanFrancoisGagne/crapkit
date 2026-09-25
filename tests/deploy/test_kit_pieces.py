@@ -49,6 +49,14 @@ def test_a_transcript_writes_every_step_as_json_and_text(tmp_path):
     assert json.loads(text.with_suffix(".json").read_text(encoding="utf-8"))["steps"][0]["exit"] == 0
 
 
+def test_a_crashed_or_signalled_step_says_so():
+    crashed = Step(["pipx", "install", "crapkit"], "C:\\r", 3221226505, "", "", 5.3)
+    killed = Step(["crapkit", "mcp"], "/r", -9, "", "", 1.0)
+
+    assert "exit 3221226505 (0xC0000409, a crash)" in crashed.text()
+    assert "exit -9 (signal 9)" in killed.text()
+
+
 def test_a_cell_carries_its_cadence_os_and_image_markers():
     meta = {"id": "lin-x", "cadence": "weekly+published", "os": "linux", "image": "full", "real_cli": True}
     names = [mark.name for mark in cells.markers(meta)]

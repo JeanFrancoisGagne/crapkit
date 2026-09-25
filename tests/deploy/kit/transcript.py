@@ -28,10 +28,19 @@ class Step:
     note: str = ""
 
     def text(self) -> str:
-        head = f"$ {' '.join(self.argv)}    [cwd {self.cwd}, exit {self.exit}, {self.seconds:.1f}s]"
+        head = f"$ {' '.join(self.argv)}    [cwd {self.cwd}, exit {exit_text(self.exit)}, {self.seconds:.1f}s]"
         body = [f"  {self.note}"] if self.note else []
         body += _indented("stdout", self.stdout) + _indented("stderr", self.stderr)
         return "\n".join([head, *body])
+
+
+def exit_text(code: int) -> str:
+    """An exit code as a reader of a red cell needs it: a Windows crash
+    status also in hex (3221226505 is 0xC0000409, a process that died
+    without choosing its exit), a POSIX signal by number."""
+    if code >= 0xC0000000:
+        return f"{code} (0x{code:08X}, a crash)"
+    return f"{code} (signal {-code})" if code < 0 else str(code)
 
 
 def _indented(label: str, text: str) -> list[str]:
