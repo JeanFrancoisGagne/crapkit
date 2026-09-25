@@ -111,6 +111,15 @@ def five(a, b, c, d):
 
 
 def one_line(a, b): return a if a else b
+
+
+def both_wrapped(a, b):
+    return (a and
+            b)
+
+
+def wrapped_sig(a,
+                b): return a if a else b
 '''
 
 FLAT = "def flat(n):\n" + "".join(
@@ -180,6 +189,8 @@ except ZeroDivisionError:
     pass
 shapes.five(True, True, True, True)
 shapes.one_line(1, 2)
+shapes.both_wrapped(False, True)
+shapes.wrapped_sig(1, 2)
 '''
 
 FILES = {"crapkit.toml": CONFIG + LANES, "src/core/shapes.py": SHAPES, "src/wide/nest.py": NEST,
@@ -221,6 +232,9 @@ class Want:
 # - five: each of four `if`s takes its true arc only: 4 of 8.
 # - one_line: its body shares the def line, which runs at import, so no call
 #   can show; the definition floors it at 0 and asks for split-lines.
+# - both_wrapped: an `and` split over two lines is still one statement with no
+#   arc: 1/1. wrapped_sig: the body on a wrapped signature's last line is
+#   one_line's case again: 0 and split-lines.
 # - lonely: no test imports its file, so no artifact names it: untested, 0.
 # - plain: its scope has no lane: no-lane, 0. generated: cc-only, 0.
 # - called, idle: no statements, so invoked-or-not: 1 and 0.
@@ -232,6 +246,8 @@ EXPECTED = {
     ("src/core/shapes.py", "split_up"): Want(4, Fraction(0), "measured", 3),
     ("src/core/shapes.py", "five"): Want(5, Fraction(1, 2), "measured", 3),
     ("src/core/shapes.py", "one_line"): Want(2, Fraction(0), None, 3, shared=True),
+    ("src/core/shapes.py", "both_wrapped"): Want(2, Fraction(1), "measured", 3),
+    ("src/core/shapes.py", "wrapped_sig"): Want(2, Fraction(0), None, 3, shared=True),
     ("src/wide/unimported.py", "lonely"): Want(2, Fraction(0), "untested", 6),
     ("src/bare/plain.py", "plain"): Want(2, Fraction(0), "no-lane", 6),
     ("src/gen/gen.py", "generated"): Want(3, Fraction(0), "cc-only", 6),
@@ -241,11 +257,12 @@ EXPECTED = {
 # The remedy each row must carry, read off README's table by hand.
 REMEDIES = {"half": "ok", "both": "ok", "straight": "ok", "untaken": "add-tests",
             "split_up": "decompose", "five": "decompose", "one_line": "split-lines",
+            "both_wrapped": "ok", "wrapped_sig": "split-lines",
             "lonely": "ok", "plain": "ok", "generated": "ok", "called": "ok", "idle": "ok"}
 # coverage.py's own summary counts for the probes, by hand: (branches, covered
 # branches, statements, covered statements).
 COUNTS = {"half": (2, 1, 3, 2), "both": (0, 0, 1, 1), "straight": (0, 0, 3, 2),
-          "untaken": (2, 0, 3, 0), "five": (8, 4, 10, 10)}
+          "untaken": (2, 0, 3, 0), "five": (8, 4, 10, 10), "both_wrapped": (0, 0, 1, 1)}
 
 
 @dataclass(frozen=True)
@@ -340,8 +357,10 @@ def test_coverage_py_counts_what_the_hand_counts_say(measured, name):
 
 def test_coverage_py_gives_and_or_no_branch_arc(measured):
     """D9's claim, from the oracle itself: `return a and b` adds 1 to ccn and
-    coverage.py measures no branch for it, while `if x` gives two."""
+    coverage.py measures no branch for it, on one line or split over two,
+    while `if x` gives two."""
     assert _summary(measured.coverage_py, "both")[0] == 0
+    assert _summary(measured.coverage_py, "both_wrapped")[0] == 0
     assert _summary(measured.coverage_py, "half")[0] == 2
 
 
@@ -418,6 +437,7 @@ def test_est_uncovered_paths_rounds_half_to_even(measured):
 # lizard's long names for the probes, as its Python reader spells them.
 LONG_NAMES = {"untaken": "untaken( x )", "split_up": "split_up( a , b , c )",
               "five": "five( a , b , c , d )", "one_line": "one_line( a , b )",
+              "wrapped_sig": "wrapped_sig( a , b )",
               "flat": "flat( n )", "deep": "deep( a , b , c )",
               "with_in_if": "with_in_if( path , strict )"}
 NEST_WANT = {"flat": Want(8, Fraction(0), "measured", 6), "deep": Want(4, Fraction(0), "measured", 6),
