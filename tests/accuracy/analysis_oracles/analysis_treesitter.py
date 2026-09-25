@@ -52,14 +52,21 @@ def values(fn, spec, data: bytes) -> dict:
             "cognitive": cognitive.cognitive(fn, spec, data), "nesting": depth.depth(fn, spec)}
 
 
-def functions(path: str, data: bytes) -> list:
-    """(function node, spec, file context) for each function of one file."""
+def file_context(path: str, data: bytes):
+    """One file's parse, or None for a suffix no spec reads."""
     language = counters.language_of(path)
     if language is None:
+        return None
+    spec = counters.SPECS[language]
+    return ts_defect_shapes.Context(language, spec, data, counters.parse(language, data))
+
+
+def functions(path: str, data: bytes, context=None) -> list:
+    """(function node, spec, file context) for each function of one file."""
+    context = context or file_context(path, data)
+    if context is None:
         return []
-    spec, tree = counters.SPECS[language], counters.parse(language, data)
-    context = ts_defect_shapes.Context(language, spec, data, tree)
-    return [(fn, spec, context) for fn in counters.functions(tree, spec)]
+    return [(fn, context.spec, context) for fn in counters.functions(context.tree, context.spec)]
 
 
 def _rows_by_start(measured, path: str) -> dict:
@@ -77,12 +84,11 @@ def compare(files: dict, measured, columns: tuple, outcome: Outcome | None = Non
 
 
 def _compare_file(outcome: Outcome, path: str, data: bytes, measured, columns: tuple) -> None:
-    rows, found = _rows_by_start(measured, path), functions(path, data)
-    for fn, spec, context in found:
+    rows, context = _rows_by_start(measured, path), file_context(path, data)
+    for fn, spec, _ in functions(path, data, context):
         start = counters.start_line(fn)
         _compare_function(outcome, (path, start), fn, spec, context, rows.pop(start, None),
                           columns)
-    context = found[0][2] if found else None
     outcome.extra.extend((path, start, row["long_name"]) for start, row in rows.items()
                          if not _explained(context, start))
 

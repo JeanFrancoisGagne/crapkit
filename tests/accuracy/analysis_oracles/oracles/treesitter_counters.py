@@ -155,12 +155,22 @@ def own_nodes(fn, spec: Spec):
             stack.extend(reversed(node.children))
 
 
+BODIES = frozenset({"block", "constructor_body", "compound_statement", "function_body",
+                    "block_expression"})
+
+
+def has_body(node) -> bool:
+    """A declaration with a body; an interface or abstract method has none."""
+    return node.type != "method_declaration" or any(
+        child.type in BODIES for child in node.children)
+
+
 def functions(tree, spec: Spec) -> list:
-    """Every function declaration node in the tree, outer before inner."""
+    """Every function declaration node with a body in the tree, outer before inner."""
     found, stack = [], [tree.root_node]
     while stack:
         node = stack.pop()
-        if node.type in spec.functions:
+        if node.type in spec.functions and has_body(node):
             found.append(node)
         stack.extend(reversed(node.children))
     return found
@@ -315,9 +325,11 @@ def closing_lines(fn, spec: Spec) -> set:
 
 
 def opening_lines(fn, spec: Spec) -> set:
-    """AO-NLOC-OPEN-LINE: the line a nested function starts on counts for the enclosing
-    function too."""
-    return {node.start_point[0] for node in _nested(fn, spec)}
+    """AO-NLOC-OPEN-LINE: a nested function's header, from its first token (an
+    annotation, a modifier) to the line of its name, counts for the enclosing function
+    too."""
+    return {line for node in _nested(fn, spec)
+            for line in range(node.start_point[0], start_line(node))}
 
 
 def nloc(fn, spec: Spec, transform: bool = True) -> int:

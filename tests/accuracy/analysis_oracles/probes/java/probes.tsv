@@ -91,3 +91,12 @@ c-fact	Constructs.java	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch w
 c-fact	Constructs.java	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
 c-fact	Constructs.java	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
 c-fact	Constructs.java	fact	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+j-enum-body	Policy.java	value	rows	1	The Java Language Specification SE 21 sec. 8.9.1 Enum Constants: the constant's class body declares one method, value	AO-JAVA-ENUM-BODY
+j-annotated	Annotated.java	inlined	rows	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: inlined is one method; its annotations are modifiers	AO-JAVA-ANNOTATION-NAME
+j-local-annotation	Shapes.java	afterLocalAnnotation	rows	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: afterLocalAnnotation is one method	AO-JAVA-LOCAL-ANNOTATION
+j-local-annotation	Shapes.java	localAnnotation	end	6	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+j-field-anon	FieldAnon.java	check	rows	1	The Java Language Specification SE 21 sec. 15.9.5 Anonymous Class Declarations: the anonymous class declares one method, check	AO-JAVA-FIELD-ANON
+j-annotation-default	Element.java	alternate	rows	0	The Java Language Specification SE 21 sec. 9.6.1 Annotation Interface Elements: an element with a default declares no method body	AO-JAVA-ANNOTATION-DEFAULT
+j-anon-field	Anonymous.java	make	nloc	6	lizard 1.24.0 README: NLOC counts lines of code without comments; make's own lines, the anonymous class's field and its method's header among them	AO-JAVA-ANON-FIELD-NLOC
+j-nested-ternary	Ternaries.java	pick	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1, the ternary in its else operand +2	AO-COG-TERNARY-NEST
+j-try-loop	Ternaries.java	tryLoop	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: try opens no level, the for does	AO-N-TRY

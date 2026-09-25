@@ -347,8 +347,8 @@ def _else_parts(node, context: Context) -> list:
 
 
 def structure_in_else(fn, context: Context) -> bool:
-    """An if, loop or switch inside a plain else's body."""
-    kinds = context.spec.ifs | context.spec.loops | context.spec.switches
+    """An if, loop, switch, catch or conditional expression inside a plain else's body."""
+    kinds = _structures(context) | context.spec.catches | context.spec.ternaries
     return any(node.type in context.spec.ifs and any(
         inner.type in kinds for part in _else_parts(node, context) for inner in _walk(part))
                for node in own(fn, context))
@@ -392,12 +392,16 @@ def _semicolon_headers(fn, context: Context) -> list:
             if node.type in kinds and _semicolon_header(node, kinds)]
 
 
-def statement_then_structure(fn, context: Context) -> bool:
-    """AO-ND-SIBLING: an if ends before a structure that follows a statement inside
-    another structure, or before a structure with a `;` in its header."""
+def _header_after_if(fn, context: Context) -> bool:
     ifs = [node.end_byte for node in own(fn, context) if node.type in context.spec.ifs]
-    later = _nested_after_statement(fn, context) + _semicolon_headers(fn, context)
-    return any(end <= node.start_byte for node in later for end in ifs)
+    return any(end <= node.start_byte for node in _semicolon_headers(fn, context)
+               for end in ifs)
+
+
+def statement_then_structure(fn, context: Context) -> bool:
+    """AO-ND-SIBLING: a structure follows a statement inside another structure, or an
+    if ends before a structure with a `;` in its header."""
+    return bool(_nested_after_statement(fn, context)) or _header_after_if(fn, context)
 
 
 def arm_jump(fn, context: Context) -> bool:
@@ -447,10 +451,20 @@ def _holders(fn, context: Context) -> list:
             if node.type in kinds and _holds_structure(node, kinds)]
 
 
+def _starts_of(fn, context: Context, kinds) -> list:
+    return [node.start_byte for node in own(fn, context) if node.type in kinds]
+
+
+def _leaves_level_open(node, context: Context) -> bool:
+    return _braceless(node, context) or node.type in context.spec.ternaries
+
+
 def braceless_then_structure(fn, context: Context) -> bool:
-    """AO-ND-BRACELESS: a braceless if ends before a structure that holds another."""
-    ends = [node.end_byte for node in own(fn, context) if _braceless(node, context)]
-    return any(end <= start for end in ends for start in _holders(fn, context))
+    """AO-ND-BRACELESS: a braceless if or a conditional expression ends before another
+    structure."""
+    ends = [node.end_byte for node in own(fn, context) if _leaves_level_open(node, context)]
+    starts = _starts_of(fn, context, _structures(context))
+    return any(end <= start for end in ends for start in starts)
 
 
 def _valued_break(node) -> bool:
@@ -470,6 +484,86 @@ def prong_jump(fn, context: Context) -> bool:
     """A Zig switch prong whose value is an unlabeled break or continue, or a break
     with a value and no label."""
     return any(_jump_prong(node) or _valued_break(node) for node in own(fn, context))
+
+
+# --- Java -------------------------------------------------------------------------------------
+
+def in_enum_constant(fn, context: Context) -> bool:
+    """A method inside an enum constant's class body."""
+    return "enum_constant" in _ancestor_types(fn, None)
+
+
+def in_field_anonymous_class(fn, context: Context) -> bool:
+    """A method of an anonymous class created in a field initializer, outside any method."""
+    kinds = _ancestor_types(fn, None)
+    return "object_creation_expression" in kinds and not any(
+        kind in context.spec.functions for kind in kinds)
+
+
+def anonymous_class_field(fn, context: Context) -> bool:
+    """A field declared in an anonymous class inside fn."""
+    return any(node.type == "field_declaration" and "object_creation_expression"
+               in _ancestor_types(node, fn) for node in own(fn, context))
+
+
+def nested_ternary(fn, context: Context) -> bool:
+    """A conditional operator inside another's operand."""
+    kinds = context.spec.ternaries
+    return any(node.type in kinds and any(kind in kinds for kind in _ancestor_types(node, fn))
+               for node in own(fn, context))
+
+
+def _modifier_kinds(fn) -> list:
+    modifiers = next((kid for kid in fn.children if kid.type == "modifiers"), None)
+    return [] if modifiers is None else [kid.type for kid in modifiers.children]
+
+
+def annotation_after_annotation(fn, context: Context) -> bool:
+    """An annotation with arguments after another annotation among fn's modifiers."""
+    kinds = _modifier_kinds(fn)
+    marks = [index for index, kind in enumerate(kinds) if kind.endswith("annotation")]
+    return any(kinds[index] == "annotation" for index in marks[1:])
+
+
+def holds_annotated_method(fn, context: Context) -> bool:
+    """fn is, or holds, a method whose annotations take its place."""
+    return annotation_after_annotation(fn, context) or any(
+        node.type == "method_declaration" and annotation_after_annotation(node, context)
+        for node in own(fn, context))
+
+
+def _annotates_a_local(fn, context: Context) -> bool:
+    return any(node.type == "local_variable_declaration" and _modifier_kinds(node)
+               for node in own(fn, context))
+
+
+def _local_annotation_ends(context: Context) -> list:
+    if "local" not in context.facts:
+        context.facts["local"] = [fn.end_byte for fn in counters.functions(
+            context.tree, context.spec) if _annotates_a_local(fn, context)]
+    return context.facts["local"]
+
+
+PHANTOM_JAVA = frozenset({"enum_constant", "object_creation_expression"})
+
+
+def _java_extra_line(node) -> int | None:
+    """The line a phantom Java row starts on: an enum constant or an anonymous class
+    with a body, an annotation with arguments, or an annotation element with a default."""
+    if node.type in PHANTOM_JAVA and any(kid.type == "class_body" for kid in node.children):
+        return node.start_point[0] + 1
+    if node.type in ("annotation", "annotation_type_element_declaration"):
+        return node.start_point[0] + 1
+    return None
+
+
+def java_extra_line(context: Context, start: int) -> bool:
+    return any(_java_extra_line(node) == start for node in _walk(context.tree.root_node))
+
+
+def after_local_annotation(fn, context: Context) -> bool:
+    """A method after one that annotates a local variable."""
+    return any(end <= fn.start_byte for end in _local_annotation_ends(context))
 
 
 def struct_return(fn, context: Context) -> bool:
@@ -513,6 +607,8 @@ SHAPES = [
     Shape("AO-SH-CASE-MOD", _all("shell"), MOD, has_switch),
     Shape("AO-RS-MATCH-MOD", _all("rust"), MOD, has_switch),
     Shape("AO-N-ELSE", ND_LANGUAGES, NESTING, structure_in_else),
+    Shape("AO-N-TRY", _all("java", "cpp", "objc", "swift"), NESTING,
+          lambda fn, c: has_type(fn, c, {"try_statement", "do_statement"})),
     Shape("AO-ND-DEF", _all("c", "cpp", "objc", "java", "go", "rust", "swift", "zig"), NESTING,
           named_like({b"def", b"foreach", b"try", b"catch"})),
     Shape("AO-COG-KEYWORD-NAMES-BRACE", _all("go", "rust"), COGNITIVE,
@@ -534,6 +630,13 @@ SHAPES = [
     Shape("AO-SH-HEREDOC-NLOC", _all("shell"), NLOC,
           lambda fn, c: has_type(fn, c, {"heredoc_body", "heredoc_redirect"})),
     Shape("AO-ZIG-STRUCT-RETURN", _all("zig"), EVERY, struct_return),
+    Shape("AO-JAVA-ENUM-BODY", _all("java"), EVERY, in_enum_constant),
+    Shape("AO-JAVA-FIELD-ANON", _all("java"), EVERY, in_field_anonymous_class),
+    Shape("AO-JAVA-ANON-FIELD-NLOC", _all("java"), NLOC, anonymous_class_field),
+    Shape("AO-COG-TERNARY-NEST", _all("c", "cpp", "objc", "java", "swift"), COGNITIVE,
+          nested_ternary),
+    Shape("AO-JAVA-ANNOTATION-NAME", _all("java"), EVERY, holds_annotated_method),
+    Shape("AO-JAVA-LOCAL-ANNOTATION", _all("java"), EVERY, after_local_annotation),
     Shape("AO-ZIG-FN-PARAM", _all("zig"), PARAMS,
           parameter_holds({"function_signature", "function_type"})),
     Shape("AO-ZIG-TRY-ND", _all("zig"), NESTING,
@@ -595,4 +698,4 @@ def _loose_line(context: Context, start: int) -> bool:
     return start in lines
 
 
-EXTRA_ROWS = {"go": _loose_line, "rust": signature_line}
+EXTRA_ROWS = {"go": _loose_line, "rust": signature_line, "java": java_extra_line}
