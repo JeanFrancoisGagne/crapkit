@@ -1573,8 +1573,10 @@ def _newest_root(roots: list[Path]) -> Path | None:
 
 def _plugins_dir() -> Path:
     """Where Claude Code keeps plugins: under CLAUDE_CONFIG_DIR, else ~/.claude."""
+    from ..userhome import user_home
+
     base = os.environ.get("CLAUDE_CONFIG_DIR")
-    return (Path(base) if base else Path.home() / ".claude") / "plugins"
+    return (Path(base) if base else user_home() / ".claude") / "plugins"
 
 
 def _crapkit_install_lists(recorded) -> list:

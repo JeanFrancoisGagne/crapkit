@@ -53,3 +53,28 @@ def _dependency_venv(root: Path) -> tuple[Path, Path]:
 def dependency_venv():
     """Create a private venv without installing the suite's dependencies again."""
     return _dependency_venv
+
+
+HOME_VARIABLES = ("HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH")
+
+
+def _os_home() -> Path:
+    """The home this user's other processes see: USERPROFILE as logon set it on
+    Windows, the password database's entry on POSIX, which is what Path.home()
+    reads there once HOME is gone."""
+    if os.name == "nt":
+        return Path.home()
+    import pwd
+    return Path(pwd.getpwuid(os.getuid()).pw_dir)
+
+
+@pytest.fixture
+def without_home_variables(monkeypatch) -> Path:
+    """An environment holding none of the variables Path.home() reads, the way a
+    client that builds a server's environment from an allowlist, a service or a
+    scheduled task starts crapkit. Returns the home this user's other processes
+    see, which is where crapkit's caches and locks must still land."""
+    expected = _os_home()
+    for name in HOME_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    return expected

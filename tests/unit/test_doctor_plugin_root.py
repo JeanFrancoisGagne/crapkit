@@ -362,6 +362,22 @@ def test_no_path_and_no_claude_code_install_checks_codex_s_cache(tmp_path, capsy
     assert out.out.splitlines() == [f"crapkit doctor: checking {root}"], out.out
 
 
+def test_no_path_looks_under_the_user_home_without_home_variables(capsys, monkeypatch,
+                                                                  without_home_variables):
+    """With no CLAUDE_CONFIG_DIR and no USERPROFILE, `doctor --plugin-root` died
+    on `RuntimeError: Could not determine home directory.` instead of looking
+    where Claude Code keeps this user's plugins. The installs are stubbed away
+    so the answer does not depend on what this machine has installed."""
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setattr(admin, "_installed_crapkit_roots", lambda plugins: [])
+
+    code = main(["doctor", "--plugin-root"])
+    lines = capsys.readouterr().out.splitlines()
+
+    assert code == 1 and len(lines) == 1, lines
+    assert str(without_home_variables / ".claude" / "plugins") in lines[0], lines[0]
+
+
 def test_a_cache_shared_with_other_plugins_yields_crapkit_not_the_highest_version(tmp_path,
                                                                                     capsys):
     """A real cache holds every vendor's plugins. Picking the highest version

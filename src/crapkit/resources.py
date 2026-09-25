@@ -14,6 +14,7 @@ import socket
 
 from .errors import ToolError
 from .locks import exclusive_lock
+from .userhome import user_home
 
 
 WORKER_MEMORY_MB = 35
@@ -72,7 +73,7 @@ def _budget_directory() -> Path:
     if override:
         return Path(override).resolve()
     host = hashlib.sha256(socket.gethostname().encode()).hexdigest()[:16]
-    return Path.home() / ".cache" / "crapkit" / "workers" / host
+    return user_home() / ".cache" / "crapkit" / "workers" / host
 
 
 def _worker_limit(requested: int, shared: int, memory: int | None, inherited: int | None) -> int:

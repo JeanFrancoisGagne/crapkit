@@ -33,6 +33,7 @@ from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
 from .universe import ScopeMatch, owning_scope, path_matchers
+from .userhome import user_home
 
 
 def _in_container() -> bool:
@@ -1377,7 +1378,7 @@ def _output_lock(path: Path) -> Path:
     """Coordinate local outputs outside directories their runners may replace."""
     key = os.path.normcase(str(path.resolve())).encode("utf-8")
     host = hashlib.sha256(socket.gethostname().encode("utf-8")).hexdigest()[:16]
-    directory = Path.home() / ".cache" / "crapkit" / "measurements" / host
+    directory = user_home() / ".cache" / "crapkit" / "measurements" / host
     return directory / ("measurement-" + hashlib.sha256(key).hexdigest() + ".lock")
 
 
