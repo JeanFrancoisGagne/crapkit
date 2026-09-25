@@ -370,7 +370,8 @@ files crapkit wrote:
 
 ```sh
 git rm crapkit.toml crapkit-ratchet.tsv
-git commit -am "remove crapkit"
+git add .gitattributes .gitignore
+git commit -m "remove crapkit"
 rm -rf .crapkit
 ```
 

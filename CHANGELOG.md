@@ -537,11 +537,10 @@ nothing. Each of these now gets a line naming the object and the next step:
 
 - README Install says what to run when pip stops with `error: externally-managed-environment`,
   which Debian 12, Ubuntu 23.04 and later, Homebrew and uv's own Pythons print: `pipx install
-  crapkit`, `uv tool install crapkit`, or a venv, and that a commit hook for either tool
-  install runs `exec crapkit hook-precommit`, since the `python` on PATH does not hold
-  it. It also tells a Python 3.10 user that pip
-  ends with `No matching distribution found for crapkit` and that `uvx crapkit` runs crapkit
-  on a Python uv finds or downloads.
+  crapkit`, `uv tool install crapkit`, or a venv. A commit hook for either tool install runs
+  `exec crapkit hook-precommit`, since the `python` on PATH does not hold it. The section
+  also tells a Python 3.10 user that pip ends with `No matching distribution found for
+  crapkit` and that `uvx crapkit` runs crapkit on a Python uv finds or downloads.
 - README Install and the [upgrade
   guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) say where
   `pip install --user` puts the `crapkit` command (`~/.local/bin`,
@@ -565,7 +564,7 @@ nothing. Each of these now gets a line naming the object and the next step:
   `uv tool upgrade` fails with `os error 32`. `uv tool install crapkit@latest`, and pipx
   when it installs through uv, fail with `Access is denied. (os error 5)`, and after that
   `uv tool install` the `crapkit` command raises `ModuleNotFoundError` until the install
-  runs again. The page named only error 32, which pip never prints.
+  runs again. The page named only error 32, which pip did not print.
 - New section: [Removing
   crapkit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit).
   After `pip uninstall crapkit` alone, every commit stopped on the hook's `No module named
