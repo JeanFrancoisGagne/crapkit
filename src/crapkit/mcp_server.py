@@ -1633,6 +1633,28 @@ def _tool_named(name: str) -> dict | None:
     return next((t for t in TOOLS if t["name"] == name), None)
 
 
+# 0.6.0 renamed every tool to verb_noun (CHANGELOG, "The MCP tools follow one
+# naming pattern"). A client that pinned a 0.5.x name, a Codex `enabled_tools`
+# list or a Claude Code `mcp__...` allowlist among them, keeps sending it after
+# an upgrade, and a bare "unknown tool" gave its model nothing to try next.
+RENAMED_IN_0_6_0 = {
+    "next_item": "get_next_item", "worklist": "list_worklist", "runs": "list_runs",
+    "brief": "get_function_brief", "explain": "get_function_history", "doctor": "check_config",
+    "coupling": "list_coupled_files", "duplication": "list_duplicate_functions",
+    "ratchet_report": "get_ratchet_report", "gate": "check_gate",
+}
+
+
+def _unknown_tool(name: str) -> str:
+    """The refusal for a name no tool carries, with the new name when a 0.5.x
+    client sent the old one."""
+    renamed = RENAMED_IN_0_6_0.get(name)
+    if renamed is None:
+        return f"unknown tool {name!r}"
+    return (f"unknown tool {name!r}: renamed {renamed} in 0.6.0, with the same arguments "
+            f"and result; call {renamed}")
+
+
 def _config_root(repo: str) -> Path | None:
     """The crapkit root at or above `repo`, a call's own argument, found the
     way every command finds it (ADR 0002). A `repo` naming no directory finds
@@ -1658,7 +1680,7 @@ def _call_tool(root: Path, name: str, arguments: dict, run_cli=None) -> dict:
     call names, then the run. Every refusal is decided before a CLI spawns."""
     tool = _tool_named(name)
     if tool is None:
-        return _result(f"unknown tool {name!r}", is_error=True)
+        return _result(_unknown_tool(name), is_error=True)
     refusal = _argument_error(tool, arguments)
     if refusal:
         return _result(refusal, is_error=True)
