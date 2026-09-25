@@ -9,7 +9,8 @@ analysis version), and a fingerprint change drops the whole cache.
 
 A warm run must equal the cold one after every kind of change: an edit, a
 touch that keeps the bytes, a rename, equal bytes under two languages, a
-version bump, and an edit that lands while crapkit hashes the file. The
+version bump, and an edit that lands while crapkit hashes the file
+(test_cache_race_seam.py, which imports crapkit for that seam). The
 version-bump check first shows the cache is read (poisoned entries under the
 current fingerprint come back), so a pass is not a cache nobody consulted.
 """
@@ -207,37 +208,6 @@ def test_warm_equals_cold_after_every_step(tmp_path):
     for step, (name, change) in enumerate(_walk(warm)):
         change()
         assert warm.run().rows == _cold_of(warm, tmp_path / f"cold{step}").rows, name
-
-
-# --- an edit inside the hash call (R30) ------------------------------------------------------------
-
-def test_edit_during_analysis_publishes_the_new_digest(monkeypatch, tmp_path):
-    """The seam is crapkit's content hash: the wrapper hashes the old bytes and
-    then writes new ones, as an editor saving mid-run would. Whatever the raced
-    run answers, the next run must read the new bytes, as a cold run does."""
-    import crapkit.analyze as analyze
-
-    warm = Warm(SMALL, tmp_path / "warm")
-    warm.run()
-    edited = _edit(SMALL["a.py"], 7)
-    hashed = analyze.content_hash
-
-    def racing(path):
-        digest = hashed(path)
-        if path.name == "a.py" and path.read_text(encoding="utf-8") != edited:
-            path.write_text(edited, encoding="utf-8")
-        return digest
-
-    warm.write("a.py", SMALL["a.py"] + "\n")
-    monkeypatch.setattr(analyze, "content_hash", racing)
-    raced = analysis_inventory.run_inventory(warm.root, tmp_path / "raced.tsv")
-    monkeypatch.undo()
-    assert (warm.root / "a.py").read_text(encoding="utf-8") == edited, "the race never ran"
-    warm.files["a.py"] = edited
-    after = cold(dict(warm.files), tmp_path / "cold")
-    before = cold({**warm.files, "a.py": SMALL["a.py"] + "\n"}, tmp_path / "before")
-    assert raced.code != 0 or raced.rows in (before.rows, after.rows)
-    assert warm.run().rows == after.rows
 
 
 # --- the state machine (nightly) --------------------------------------------------------------------
