@@ -351,10 +351,11 @@ codex plugin add crapkit@crapkit
 
 Use the three skills and MCP server in Codex. Codex loads no crapkit hook: the plugin's
 Codex manifest leaves hooks out, because Codex reports an edit as `apply_patch` patch text,
-which the advisory does not read. Codex offers `crapkit-onboard` to the model only when you
-ask for it by name. A plugin from 0.8.0 or earlier ships no Codex manifest: Codex
-0.156.1 lists its hooks as untrusted PostToolUse hooks that run a bare `crapkit`, and
-they should stay untrusted.
+which the advisory does not read. Codex offers `crapkit` and `crapkit-recover` to the model
+by itself; `crapkit-onboard` stays out of the model's list until you type
+`$crapkit:crapkit-onboard`, as Claude Code waits for `/crapkit:crapkit-onboard`. A plugin
+from 0.8.0 or earlier ships no Codex manifest: Codex 0.156.1 lists its hooks as untrusted
+PostToolUse hooks that run a bare `crapkit`, and they should stay untrusted.
 
 Codex upgrades each configured git marketplace when it starts, and refreshes the
 installed plugin from it, so the plugin can reach a release before your CLI does.

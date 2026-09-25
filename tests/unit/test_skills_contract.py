@@ -172,6 +172,21 @@ def test_the_onboarding_skill_costs_no_context():
 
 
 @pytest.mark.parametrize("page", (CRAPKIT_SKILL, RECOVER_SKILL, ONBOARD_SKILL))
+def test_codex_offers_the_model_the_skills_claude_code_does(page: str):
+    """Codex installs these same skills from the plugin or from a copied
+    directory, and it ignores `disable-model-invocation`, which is Claude
+    Code's key. It reads agents/openai.yaml beside SKILL.md instead. With no
+    such file, Codex 0.156.1 listed crapkit-onboard in every model request,
+    so the model could start an adoption nobody asked for."""
+    yaml = pytest.importorskip("yaml")
+    policy_file = (ROOT / page).parent / "agents" / "openai.yaml"
+
+    explicit_only = yaml.safe_load(_frontmatter(page)).get("disable-model-invocation", False)
+    codex = yaml.safe_load(policy_file.read_text(encoding="utf-8")) if policy_file.is_file() else {}
+    assert codex.get("policy", {}).get("allow_implicit_invocation", True) is not explicit_only
+
+
+@pytest.mark.parametrize("page", (CRAPKIT_SKILL, RECOVER_SKILL, ONBOARD_SKILL))
 def test_each_frontmatter_block_parses_as_yaml(page: str):
     """The descriptions carry colons and quoted machine strings; unquoted, the
     loader that reads them stops at the colon."""

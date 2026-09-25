@@ -96,6 +96,17 @@ version stays 11, so no repo re-seeds.
   then `claude plugin update crapkit@crapkit --scope user`, then
   `crapkit doctor --plugin-root`, and restart open sessions.
 
+### The plugin's skills in Codex
+
+- Codex no longer offers `crapkit-onboard` to the model on its own. The skill's
+  `disable-model-invocation: true` is a Claude Code key, and Codex 0.156.1 ignored it
+  and listed the skill in every model request, so the model could start an adoption
+  nobody asked for. The skill now ships `agents/openai.yaml` with
+  `policy.allow_implicit_invocation: false`, which Codex reads from the plugin install
+  and from a copied skills directory alike. Type `$crapkit:crapkit-onboard` to run it
+  from the plugin, or `$crapkit-onboard` from a copied directory. `crapkit` and
+  `crapkit-recover` stay in the model's list.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.
