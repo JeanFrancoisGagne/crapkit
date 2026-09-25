@@ -210,7 +210,9 @@ from the repo's `node_modules` as they do today. `uv tool install crapkit` or
 [commit gate](#the-gate) and the Claude Code plugin call. uv brings its own Python when
 the machine has none.
 
-Requires Python 3.11 or newer and Git on PATH. The CLI has one runtime dependency,
+Requires Python 3.11 or newer and Git on PATH. On an older Python pip finds no release it
+can install, and `uvx crapkit` runs crapkit on a Python 3.11 or newer that uv finds or
+downloads. The CLI has one runtime dependency,
 `lizard>=1.24.0`; a package mirror needs both distributions. Install into the environment
 you intend to use, then check `crapkit --version`. The `pip install -e ".[dev]"` under
 [Development](#development) is a different thing: it adds the test extra, for people

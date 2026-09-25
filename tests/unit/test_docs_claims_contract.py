@@ -1089,6 +1089,16 @@ def test_no_skill_shows_a_codex_user_a_claude_command_as_theirs(page):
     assert "codex plugin add crapkit@crapkit" in text, "the Codex equivalent sits beside it"
 
 
+# --- a Python older than the floor -------------------------------------------
+
+def test_readme_install_sends_an_older_python_to_uvx():
+    """pip on Python 3.10 finds no release; the line that says so names the way out."""
+    install = " ".join(_section(_doc("README.md"), "## Install").split())
+    sentences = [s for s in install.split(". ") if "3.11" in s and "uvx crapkit" in s]
+
+    assert sentences, "README Install never tells a Python 3.10 user that uvx runs crapkit"
+
+
 # --- one read per page -------------------------------------------------------
 
 def test_each_doc_page_is_read_from_disk_once(monkeypatch):

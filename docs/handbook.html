@@ -926,17 +926,18 @@ $ crapkit verify                       # the full verdict; green releases the cl
 <p>Stop when <code>next-item</code> reports <code>empty: true</code> <em>and</em> nothing is skipped as claimed <em>and</em> no <code>no_lane_over_target</code> count appears (<a href="#queue">§11</a>). An empty-looking worklist is not the stop signal.</p>
 
 <h3>3 · Day one on a polyglot repo</h3>
-<p>A repo with Python, TypeScript, Rust and shell in it. <code>init</code> sniffs all four; the two with coverage tooling get live lanes, the other two get scored anyway.</p>
+<p>A repo with Python, TypeScript, Rust and shell in it. <code>init</code> sniffs all four; the two with coverage tooling get live lanes, and the other two are written cc-only, scored on complexity alone.</p>
 <pre><code>$ crapkit init
 wrote crapkit.toml with 4 scope(s): api, infra, ops, ui
 detected 2 lane(s) from this repo's own files: py, js - next: run `crapkit coverage`
 added to .gitignore: .crapkit/, .coverage, __pycache__/
 
-$ crapkit doctor
-ok   every tracked source file belongs to a scope
-FAIL scope 'infra' is in no lane's scopes list — its functions can only score no-lane (declare a lane, or coverage_optional = true)
-FAIL scope 'ops' is in no lane's scopes list — its functions can only score no-lane (declare a lane, or coverage_optional = true)
-doctor: 2 problem(s)
+$ crapkit doctor                       # the lines about the two cc-only scopes
+…
+ok   scope 'infra': 1 file
+ok   scope 'ops': 1 file
+…
+doctor: no problems found
 
 $ crapkit inventory                    # complexity alone, no lanes needed
 run 1 @ 8da79a04d51: 4 functions in 4 files (0 cached)
@@ -947,7 +948,7 @@ worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) - 4 of 4 active (wor
   risk      6.0  ccn   6  crap       -  cov    -    1c/1a  ui/panel.ts:1  label ( kind , hot )
   risk      5.0  ccn   5  crap       -  cov    -    1c/1a  infra/main.rs:1  route kind : u8
   risk      5.0  ccn   5  crap       -  cov    -    1c/1a  ops/deploy.sh:1  release()</code></pre>
-<p>Read those two FAILs as a fork, not an error: declare a lane for the scope, or set <code>coverage_optional = true</code> and accept cc-only. Both are correct answers; leaving it undecided is not, because <code>no-lane</code> debt is unreachable debt.</p>
+<p><code>init</code> took one side of a fork for <code>infra</code> and <code>ops</code>: it wrote <code>coverage_optional = true</code> on both, so they score cc-only and <code>doctor</code> passes. The other side stays open: when a scope gets a test runner, declare a lane for it and drop the line, and its <code>remedy</code> can say <code>add-tests</code> again. What <code>doctor</code> fails is a scope with neither, because <code>no-lane</code> debt is unreachable debt.</p>
 <p class="xanno">Note the Rust row. Stock lizard scores that five-arm <code>match</code> ccn 2, which is under the ceiling and invisible. crapkit's corrected reader scores it 5 (<a href="#languages">§03</a>).</p>
 
 <h3>4 · CI on a pull request</h3>
