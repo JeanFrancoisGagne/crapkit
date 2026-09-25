@@ -613,10 +613,21 @@ def _bug_for(bugs: list[dict], packet: str, listed: dict) -> dict:
 
 def synced_bugs(bugs: list[dict], tables: dict[str, list[dict]]) -> list[dict]:
     """bugs.tsv with each landed packet's rows replaced by the pairs its retro.tsv lists.
-    A pair bugs.tsv already held keeps its place; a new one follows its bug's rows."""
-    kept = [row for row in bugs if row["packet"] not in tables]
+    A pair bugs.tsv already held keeps its place; a new one follows its bug's rows. A bug
+    no landed packet lists keeps its proposed rows, so a triaged fix never loses its last row."""
     fresh = [_bug_for(bugs, packet, listed) for packet, rows in tables.items() for listed in rows]
-    return sorted(kept + fresh, key=_placed(bugs))
+    return sorted(_unsynced(bugs, tables) + fresh, key=_placed(bugs))
+
+
+def _unsynced(bugs: list[dict], tables: dict[str, list[dict]]) -> list[dict]:
+    """The rows sync keeps as they are: a packet that has not landed, or a bug no landed
+    packet lists."""
+    listed = _listed_ids(tables)
+    return [row for row in bugs if row["packet"] not in tables or row["id"] not in listed]
+
+
+def _listed_ids(tables: dict[str, list[dict]]) -> set[str]:
+    return {row["id"] for rows in tables.values() for row in rows}
 
 
 def _placed(bugs: list[dict]):

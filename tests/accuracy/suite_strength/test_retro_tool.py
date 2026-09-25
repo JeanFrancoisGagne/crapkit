@@ -572,6 +572,21 @@ def test_the_sync_command_rewrites_both_tables(tables, tmp_path, monkeypatch, ca
     assert capsys.readouterr().out == "retro: bugs.tsv holds 5 rows (2 new pairs); ledger.tsv follows\n"
 
 
+def test_sync_keeps_the_proposed_row_of_a_bug_no_landed_packet_lists():
+    """A triaged calc fix keeps a bugs.tsv row, pending, until some packet lands a check
+    for it: a packet that leaves the bug out of its retro.tsv does not erase it."""
+    tables = {"p1": [{"id": "R1", "test": "tests/accuracy/p1/test_a.py::test_confirmed"}],
+              "p2": [{"id": "R2", "test": "tests/accuracy/p2/test_b.py::test_moved_here"}]}
+
+    synced = retro.synced_bugs(BUGS_BEFORE, tables)
+
+    assert sorted((row["id"], row["packet"], row["test"]) for row in synced) == [
+        ("R1", "p1", "tests/accuracy/p1/test_a.py::test_confirmed"),
+        ("R2", "p2", "tests/accuracy/p2/test_b.py::test_moved_here"),
+        ("R3", "p3", "tests/accuracy/p3/test_c.py::test_not_landed"),
+        ("R4", "p1", "tests/accuracy/p1/test_a.py::test_open")]
+
+
 def test_sync_leaves_bugs_tsv_as_it_was_when_every_packet_lists_what_it_holds():
     tables = {"p2": [{"id": "R1", "test": "tests/accuracy/p2/test_b.py::test_kept"}]}
 
