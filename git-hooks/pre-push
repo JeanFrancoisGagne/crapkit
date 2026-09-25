@@ -1,0 +1,14 @@
+#!/bin/sh
+# Change control on every push: each pushed commit is judged against the
+# remote's main (origin/main when the remote has none), and the accuracy checks
+# of every calc whose module the branch touches run. A golden, an expected-value
+# file or a metric that moved without a declared change stops the push, with the
+# command that declares it. CI runs the same judgement against the last green
+# main commit, so a push that skips this hook is still judged.
+# Needs the accuracy-push extras: pip install -e ".[dev,accuracy-push]"
+if ! python -c "import filelock, html5lib, hypothesis" 2>/dev/null; then
+    echo "crapkit pre-push: change control needs the accuracy-push extras; install them with" >&2
+    echo "  pip install -e \".[dev,accuracy-push]\"" >&2
+    exit 1
+fi
+exec python "$(dirname "$0")/../tools/accuracy/change_control.py" pre-push "$@"
