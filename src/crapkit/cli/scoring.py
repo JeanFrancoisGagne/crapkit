@@ -307,7 +307,8 @@ class _ScoredRun(NamedTuple):
     inside the lanes that ran. coverage exits 5 on a lane error and reads no test
     failure; verify refuses to conclude on a lane error and weighs each test
     failure against its baseline. `corpus` and `cache_hits` are coverage's report
-    line, which is why verify names neither."""
+    line, which is why verify names neither. `sources` is the run's content
+    record for the store (store.write_run), None when git could not give it."""
     commit: str
     scored: list
     provenance: dict
@@ -317,6 +318,7 @@ class _ScoredRun(NamedTuple):
     corpus: _Corpus
     cache_hits: int
     dead_lines: DeadLineFold | None = None
+    sources: dict | None = None
 
 
 def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchanged: bool = False,
@@ -330,6 +332,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
 
     git = git or GitFacts(root)
     commit, rows, corpus, cache_hits, tool_versions = _build_inventory(root, cfg, git)
+    sources = _content_record(root, rows)
     dead_lines = DeadLineFold()
 
     coverage_by_path, provenance, lane_errors, succeeded = _run_lanes(
@@ -345,9 +348,23 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
                         cc_only_scopes=cfg.coverage_optional_scopes,
                         shared_spans=shared_spans)
     _note_shared_spans(shared_spans, cfg)
-    test_failures = {f for prov in provenance.values() for f in prov.get("failures", ())}
-    return _ScoredRun(commit, scored, provenance, lane_errors, test_failures, tool_versions,
-                      corpus, cache_hits, dead_lines)
+    return _ScoredRun(commit, scored, provenance, lane_errors, _test_failures(provenance),
+                      tool_versions, corpus, cache_hits, dead_lines, sources)
+
+
+def _test_failures(provenance: dict) -> set:
+    return {f for prov in provenance.values() for f in prov.get("failures", ())}
+
+
+def _content_record(root: Path, rows) -> dict | None:
+    """The git blob id of every scored file as the inventory read it, which
+    `scored_changes` compares with the tree; None when git cannot give it."""
+    from ..lane_sources import record
+
+    try:
+        return record(root, {row.path for row in rows})
+    except GitError:
+        return None
 
 
 _SPANS_NAMED = 3
@@ -612,7 +629,7 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     _warn_suite_drop(store, run.provenance)
     shape = _run_shape(lanes, cfg, run)
     run_id = store.write_run(commit=run.commit, tool_versions=run.tool_versions, rows=run.scored,
-                             lanes=run.provenance, kind=shape.kind)
+                             lanes=run.provenance, kind=shape.kind, sources=run.sources)
     _record_twin_index(root, store, run_id)
     if args.export:
         _export_scored(root, args.export, run.scored)

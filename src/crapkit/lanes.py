@@ -565,7 +565,7 @@ def _read_and_parse(lane: Lane, root: Path,
     """
     per_file, dead, digest = lane_format(lane).read(lane, root, artifact_path)
     if dead_lines is not None:
-        dead_lines.add(artifact_path, dead)
+        dead_lines.add(artifact_path, dead, digest)
     return per_file, digest
 
 

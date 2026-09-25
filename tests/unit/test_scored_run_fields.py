@@ -21,6 +21,7 @@ from crapkit.cli.scoring import _Corpus
 
 CORPUS = _Corpus(files=7, skipped_max_bytes=1)
 PROVENANCE = {"unit": {"failures": ["tests/test_a.py::test_a"]}}
+RECORD = {"src/a.py": "b" * 40}
 
 
 @pytest.fixture
@@ -34,12 +35,14 @@ def run(monkeypatch) -> _ScoredRun:
     monkeypatch.setattr(scoring, "_run_lanes",
                         lambda *a, **k: ({}, PROVENANCE, {"ui": "exit 2"}, []))
     monkeypatch.setattr(crapkit.score, "score_rows", lambda rows, cov, **k: ["scored row"])
+    monkeypatch.setattr(scoring, "_content_record",
+                        lambda root, rows: RECORD if rows == ["raw row"] else None)
     return _scored_run(None, cfg, [], reuse_artifacts=False, git=object())
 
 
 def test_a_scored_run_names_its_fields(run):
     assert run._fields == ("commit", "scored", "provenance", "lane_errors", "test_failures",
-                           "tool_versions", "corpus", "cache_hits", "dead_lines")
+                           "tool_versions", "corpus", "cache_hits", "dead_lines", "sources")
 
 
 def test_each_field_holds_what_its_name_says(run):
@@ -51,6 +54,7 @@ def test_each_field_holds_what_its_name_says(run):
     assert run.tool_versions == {"crapkit": "0.4.5"}
     assert run.corpus == CORPUS
     assert run.cache_hits == 3
+    assert run.sources == RECORD, "the content record of the rows the inventory read"
 
 
 def test_a_failed_lane_and_a_failed_test_are_separate_fields(run):
@@ -60,7 +64,7 @@ def test_a_failed_lane_and_a_failed_test_are_separate_fields(run):
 
 
 def test_the_positions_still_unpack_in_the_order_callers_read_them(run):
-    commit, scored, provenance, lane_errors, tests, versions, corpus, hits, dead_lines = run
+    commit, scored, provenance, lane_errors, tests, versions, corpus, hits, dead_lines, sources = run
 
     assert (commit, scored, provenance) == (run.commit, run.scored, run.provenance)
     assert (lane_errors, tests, versions) == (run.lane_errors, run.test_failures,

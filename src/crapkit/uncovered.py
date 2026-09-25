@@ -106,19 +106,19 @@ def _parse_missing(lane, root: Path, artifact: Path) -> dict[str, set[int]]:
 # lines fall out of that same decode, so the lane hands them here instead of
 # leaving this module to reopen the file and decode it all again.
 
-def _artifact_key(artifact: Path) -> tuple | None:
-    """Identity plus enough state to notice a rewrite, or None when the file
-    cannot be stat'd.
+def _artifact_key(artifact: Path, digest: str = "") -> tuple | None:
+    """The artifact's path and the sha256 of its bytes, or None when it cannot
+    be read. The walk hands its own digest over; the reader that asks later
+    hashes the file, which costs a read and never a decode.
 
-    Not the sha256, though the walk has one: the reader that asks does not, so
-    keying on a digest would buy back the second full read this whole path
-    exists to avoid.
+    It keyed on the modification time and size, so a same-size rewrite that
+    kept the old time between the walk and the read served the walked lines
+    for bytes that no longer held them.
     """
-    try:
-        stat = os.stat(artifact)
-    except OSError:
-        return None
-    return (os.path.abspath(artifact), stat.st_mtime_ns, stat.st_size)
+    from .lane_stamps import file_sha256
+
+    digest = digest or file_sha256(artifact)
+    return (os.path.abspath(artifact), digest) if digest else None
 
 
 def _fold_into(missing: dict[str, set[int]], lines_by_path: dict[str, set[int]]) -> None:
@@ -140,8 +140,10 @@ class DeadLineFold:
         self._missing: dict[str, set[int]] = {}
         self._sources: set[tuple] = set()
 
-    def add(self, artifact: Path, dead: dict[str, set[int]]) -> None:
-        key = _artifact_key(artifact)
+    def add(self, artifact: Path, dead: dict[str, set[int]], digest: str = "") -> None:
+        """The walk's dead lines for `artifact`, keyed on `digest`, the sha256 of
+        the bytes it walked (hashed now when the caller has none)."""
+        key = _artifact_key(artifact, digest)
         if key is None:
             return
         with self._lock:
