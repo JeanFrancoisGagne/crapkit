@@ -200,11 +200,11 @@ def _venv(box, python: str, name: str) -> Path:
 
 
 def pip_venv(box, python: str = "3.12", *, line: str | None = None, name: str = "venv",
-             channel: str = "pip venv", expect: int | None = 0) -> Install:
+             channel: str = "pip venv", expect: int | None = 0, cwd=None) -> Install:
     """A venv on the toolchain's `python`, activated (its scripts first on PATH),
-    then the README's `pip install crapkit` line, or `line`."""
+    then the README's `pip install crapkit` line, or `line`, run in `cwd`."""
     venv = _venv(box, python, name)
-    step = box.script(line or readme_install(), expect=expect)
+    step = box.script(line or readme_install(), expect=expect, cwd=cwd)
     launcher = scripts(venv) / exe("crapkit")
     return Install(channel, [str(launcher)], launcher, interpreter_of(box, scripts(venv) / exe("python")),
                    scripts(venv), [step])
@@ -387,3 +387,83 @@ def page_outputs(page: str, heading: str, *, index: int = 0, contains: str | Non
 
 def fence_commands(page: str, heading: str, *, index: int = 0, contains: str | None = None) -> list[str]:
     return docsnip.commands(docsnip.fence(page, heading, index=index, contains=contains))
+
+
+# --- the README's 60-second start ------------------------------------------------------
+
+PYCOV_HINT = re.compile(r"cannot import pytest_cov - run `([^`]+)`")
+GUARD = "runs the python suite, which is host-only (container runs OOM)"
+
+
+@dataclass(frozen=True)
+class Expect:
+    """What the start prints for one fixture repo: the lane init detects and the
+    worklist row its over-ceiling function makes."""
+    lane: str = "py"
+    row: str = r"calc/grade\.py:\d+\s+grade\( score , attempts , late , bonus \)"
+
+
+def _init(box, repo, line, want: Expect):
+    step = box.script(line, cwd=repo, expect=0)
+    assert f"detected 1 lane(s) from this repo's own files: {want.lane} - next: run `crapkit coverage`" in said(step)
+    hint = PYCOV_HINT.search(said(step))
+    if hint:
+        box.script(hint[1], cwd=repo, expect=0, note="the command init's note names")
+    return step
+
+
+def _doctor(box, repo, line, want: Expect):
+    step = box.script(line, cwd=repo, expect=0)
+    assert "ok   lizard 1.24.0" in step.stdout
+    return step
+
+
+def _coverage(box, repo, line, want: Expect):
+    """A coverage.py lane in a container meets the guard first; the user applies
+    the rule the refusal names from docs/lanes.md#containers and reruns."""
+    if in_container() and want.lane == "py":
+        refused = box.script(line, cwd=repo, expect=5)
+        assert GUARD in said(refused) and "set container_ok = true" in said(refused)
+        box.transcript.note(f"applied docs/lanes.md#containers: {allow_containers(repo)}")
+    step = box.script(line, cwd=repo, expect=0)
+    assert "-> next: crapkit worklist" in step.stdout
+    return step
+
+
+def _worklist(box, repo, line, want: Expect):
+    step = box.script(line, cwd=repo, expect=0)
+    assert re.search(want.row, step.stdout), step.stdout
+    return step
+
+
+def _seed(box, repo, line, want: Expect):
+    step = box.script(line, cwd=repo, expect=0)
+    assert said(step).startswith("crapkit-ratchet.tsv: added 1, tightened 0")
+    return step
+
+
+def _plain(box, repo, line, want: Expect):
+    return box.script(line, cwd=repo, expect=0, env=box.commit_env())
+
+
+START_STEPS = {"crapkit init": _init, "crapkit doctor": _doctor, "crapkit coverage": _coverage,
+               "crapkit worklist": _worklist, "crapkit ratchet seed": _seed}
+
+
+def _step_rule(line: str):
+    return next((rule for prefix, rule in START_STEPS.items() if line.startswith(prefix)), _plain)
+
+
+def readme_start(box, repo: Path, want: Expect = Expect()) -> dict[str, object]:
+    """The README's 60-second start after its install line, then the verify its
+    prose says establishes the first passing verdict. `cd your-repo` is the
+    cell's cwd."""
+    steps = {}
+    for line in fence_commands(README, START)[1:]:
+        if not line.startswith("cd "):
+            steps[line] = _step_rule(line)(box, repo, line, want)
+    box.run(["git", "commit", "-q", "-m", "adopt crapkit"], cwd=repo, env=box.commit_env(), expect=0)
+    verify = inline(README, START, "crapkit verify")
+    steps[verify] = box.script(verify, cwd=repo, expect=0)
+    assert said(steps[verify]).startswith("verify OK")
+    return steps

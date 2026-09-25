@@ -15,96 +15,19 @@ import os
 import platform
 import re
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
 from kit import docsnip, installers, repos, wheels
 from kit.cells import cell
-from kit.installers import README, START, said, shape
+from kit.installers import README, START, Expect, readme_start, said, shape
 
 PACKET = "deploy-channels"
 WINDOWS = os.name == "nt"
-PYCOV_HINT = re.compile(r"cannot import pytest_cov - run `([^`]+)`")
-GUARD = "runs the python suite, which is host-only (container runs OOM)"
 
 
 # --- the 60-second start -------------------------------------------------------------
-
-@dataclass(frozen=True)
-class Expect:
-    """What the start prints for one fixture repo: the lane init detects and the
-    worklist row its over-ceiling function makes."""
-    lane: str = "py"
-    row: str = r"calc/grade\.py:\d+\s+grade\( score , attempts , late , bonus \)"
-
-
-def _init(box, repo, line, want: Expect):
-    step = box.script(line, cwd=repo, expect=0)
-    assert f"detected 1 lane(s) from this repo's own files: {want.lane} - next: run `crapkit coverage`" in said(step)
-    hint = PYCOV_HINT.search(said(step))
-    if hint:
-        box.script(hint[1], cwd=repo, expect=0, note="the command init's note names")
-    return step
-
-
-def _doctor(box, repo, line, want: Expect):
-    step = box.script(line, cwd=repo, expect=0)
-    assert "ok   lizard 1.24.0" in step.stdout
-    return step
-
-
-def _coverage(box, repo, line, want: Expect):
-    """A coverage.py lane in a container meets the guard first; the user applies
-    the rule the refusal names from docs/lanes.md#containers and reruns."""
-    if installers.in_container() and want.lane == "py":
-        refused = box.script(line, cwd=repo, expect=5)
-        assert GUARD in said(refused) and "set container_ok = true" in said(refused)
-        box.transcript.note(f"applied docs/lanes.md#containers: {installers.allow_containers(repo)}")
-    step = box.script(line, cwd=repo, expect=0)
-    assert "-> next: crapkit worklist" in step.stdout
-    return step
-
-
-def _worklist(box, repo, line, want: Expect):
-    step = box.script(line, cwd=repo, expect=0)
-    assert re.search(want.row, step.stdout), step.stdout
-    return step
-
-
-def _seed(box, repo, line, want: Expect):
-    step = box.script(line, cwd=repo, expect=0)
-    assert said(step).startswith("crapkit-ratchet.tsv: added 1, tightened 0")
-    return step
-
-
-def _plain(box, repo, line, want: Expect):
-    return box.script(line, cwd=repo, expect=0, env=box.commit_env())
-
-
-START_STEPS = {"crapkit init": _init, "crapkit doctor": _doctor, "crapkit coverage": _coverage,
-               "crapkit worklist": _worklist, "crapkit ratchet seed": _seed}
-
-
-def _step_rule(line: str):
-    return next((rule for prefix, rule in START_STEPS.items() if line.startswith(prefix)), _plain)
-
-
-def readme_start(box, repo: Path, want: Expect = Expect()) -> dict[str, object]:
-    """The README's 60-second start after its install line, then the verify its
-    prose says establishes the first passing verdict. `cd your-repo` is the
-    cell's cwd."""
-    steps = {}
-    for line in installers.fence_commands(README, START)[1:]:
-        if not line.startswith("cd "):
-            steps[line] = _step_rule(line)(box, repo, line, want)
-    box.run(["git", "commit", "-q", "-m", "adopt crapkit"], cwd=repo, env=box.commit_env(), expect=0)
-    verify = installers.inline(README, START, "crapkit verify")
-    steps[verify] = box.script(verify, cwd=repo, expect=0)
-    assert said(steps[verify]).startswith("verify OK")
-    return steps
-
 
 def pip_start(box, templates, candidate, python: str) -> dict[str, object]:
     install = installers.pip_venv(box, python)
