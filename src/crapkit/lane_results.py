@@ -175,8 +175,7 @@ def suite_drops(behind: Callable[[], Iterable[dict]], current: dict, *,
     """
     counted_now = _counts(current)
     runs = list(behind()) if counted_now else []
-    notes = (_drop_note(name, tests, _newest(runs, name, _counted), fraction)
-             for name, tests in counted_now.items())
+    notes = (_drop_note(name, tests, runs, fraction) for name, tests in counted_now.items())
     return [note for note in notes if note]
 
 
@@ -186,13 +185,26 @@ def _counts(current: dict) -> dict[str, int]:
     return {name: count for name, count in tests.items() if count is not None}
 
 
-def _drop_note(name: str, now: int, source: dict | None, fraction: float) -> str | None:
+def _drop_note(name: str, now: int, runs: list[dict], fraction: float) -> str | None:
+    """The warning for lane `name`, when its count fell past `fraction` of the
+    newest count in `runs` (newest first)."""
+    source = _newest(runs, name, _counted)
     before = results_of(source, name).tests if source else None
     if not before or now >= before * (1 - fraction):
         return None
-    return (f"lane {name!r} ran {now} tests, {before - now} fewer than the last trusted "
-            f"run's {before} — check the runner's log for a worker that died without "
-            "reporting it")
+    whose, why = _drop_source(source, runs)
+    return (f"lane {name!r} ran {now} tests, {before - now} fewer than {whose}'s {before}{why} "
+            "— check the runner's log for a worker that died without reporting it")
+
+
+def _drop_source(source: dict, runs: list[dict]) -> tuple[str, str]:
+    """Whose count a drop line compares with: the last trusted run, or the older
+    run that counted the lane when the last one recorded no count, named with
+    why, as verify names the run it read in place of its baseline."""
+    if source is runs[0]:
+        return "the last trusted run", ""
+    return (f"run {source['id']}",
+            f" (the last trusted run, run {runs[0]['id']}, recorded no test count for it)")
 
 
 _COUNTS = ("tests_total", "tests_skipped")

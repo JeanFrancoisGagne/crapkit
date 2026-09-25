@@ -108,7 +108,32 @@ def test_coverage_compares_with_the_newest_trusted_run_that_counted_the_lane(tmp
 
     (note,) = suite_drops(lambda: reversed(runs), {"py": {"tests_total": 12}})
 
-    assert note.startswith("lane 'py' ran 12 tests, 8 fewer than the last trusted run's 20")
+    assert note.startswith(f"lane 'py' ran 12 tests, 8 fewer than run {runs[0]['id']}'s 20 "
+                           f"(the last trusted run, run {runs[1]['id']}, recorded no test "
+                           "count for it)")
+
+
+def test_the_lanes_page_quotes_both_drop_lines_coverage_prints():
+    root = Path(__file__).resolve().parents[2]
+    page = (root / "docs" / "lanes.md").read_text(encoding="utf-8").splitlines()
+    runs = [{"id": 2, "kind": "coverage", "lanes": {"py": {}}},
+            {"id": 1, "kind": "coverage", "lanes": {"py": {"tests_total": 20}}}]
+
+    for behind in (runs, runs[1:]):
+        (note,) = suite_drops(lambda: behind, {"py": {"tests_total": 12}})
+        assert f"crapkit: {note}" in page, note
+
+
+def test_a_drop_from_the_last_trusted_run_says_so_without_a_run_id(tmp_path):
+    stored(tmp_path, "junit-parsed")
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    with closing(store._conn):
+        runs = trusted_runs(store)
+
+    (note,) = suite_drops(lambda: reversed(runs), {"py": {"tests_total": 12}})
+
+    assert note == ("lane 'py' ran 12 tests, 8 fewer than the last trusted run's 20 — check "
+                    "the runner's log for a worker that died without reporting it")
 
 
 @pytest.mark.parametrize("current", [{"py": {"exit_code": 0}}, {"py": {}}, {}],

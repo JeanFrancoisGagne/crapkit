@@ -9,7 +9,9 @@ records neither when it declares no `results_artifact`, or when `--reuse-artifac
 the report gone or unreadable. Every reader of those fields took that absence for a value.
 
 - `coverage` no longer reports a lane that wrote no test counts as having run 0 tests, and
-  a run that counted nothing no longer hides the next run's suite drop.
+  a run that counted nothing no longer hides the next run's suite drop. The drop line then
+  names the older run it compared with, `fewer than run 1's 20 (the last trusted run, run
+  2, recorded no test count for it)`, where it called that count the last trusted run's.
 - `verify` compares a lane's suite size and failures with the newest trusted run at or
   behind the baseline's commit that recorded them, when the baseline recorded neither, and
   a line names that run. A suite that fell from 20 tests to 2 passed without a word, and a

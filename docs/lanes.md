@@ -1458,7 +1458,12 @@ the lane had already run.
 nothing and prints no drop: a lane with no `results_artifact` has nothing to count, and
 under `--reuse-artifacts` the reuse warning above already names the missing junit. A
 trusted run that counted nothing for a lane is passed over, so a drop is measured from the
-newest count a trusted run recorded, even when an older run holds it.
+newest count a trusted run recorded, even when an older run holds it. The line then names
+that run and why:
+
+```
+crapkit: lane 'py' ran 12 tests, 8 fewer than run 1's 20 (the last trusted run, run 2, recorded no test count for it) — check the runner's log for a worker that died without reporting it
+```
 
 `verify` reaches past its baseline the same way, for the count and for the failure list.
 When the baseline recorded neither for a lane, it compares with the newest trusted run at

@@ -210,13 +210,17 @@ def test_a_lane_left_out_of_a_subset_run_cannot_drop(counted, capsys):
 
 @pytest.mark.parametrize("form", BASELINE_GAPS)
 def test_a_run_that_counted_nothing_does_not_hide_the_next_drop(counted, capsys, form):
+    """The line names the older run it compared with, and why: the last trusted
+    run is not the one that counted 20, as verify's line says of its baseline."""
     run_without_results(counted, capsys, form)
+    first, last = (run_["id"] for run_ in runs(counted))
     junit(counted, 12)
 
     code, _, err = run(["coverage", "--reuse-artifacts"], counted, capsys)
 
     assert code == 0, err
-    assert "lane 'unit' ran 12 tests, 8 fewer than the last trusted run's 20" in err, err
+    assert (f"lane 'unit' ran 12 tests, 8 fewer than run {first}'s 20 (the last trusted run, "
+            f"run {last}, recorded no test count for it)") in err, err
 
 
 # --- verify: suite size against a baseline with no count ------------------------

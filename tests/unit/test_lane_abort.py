@@ -238,10 +238,12 @@ def test_a_run_that_counted_no_tests_does_not_hide_the_next_runs_drop(tmp_path, 
 
     store = _counted_runs(tmp_path, {"py": {"tests_total": 20}}, {"py": {}})
 
+    first, last = (run["id"] for run in store.list_runs())
+
     _warn_suite_drop(store, {"py": {"tests_total": 12}})
 
-    assert "lane 'py' ran 12 tests, 8 fewer than the last trusted run's 20" \
-        in capsys.readouterr().err
+    assert (f"lane 'py' ran 12 tests, 8 fewer than run {first}'s 20 (the last trusted run, "
+            f"run {last}, recorded no test count for it)") in capsys.readouterr().err
 
 
 def test_the_newest_count_is_the_one_compared(tmp_path, capsys):
