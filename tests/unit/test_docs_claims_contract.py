@@ -339,6 +339,45 @@ def test_the_gate_section_says_a_set_hooks_path_moves_every_hook():
     assert "`.husky/pre-commit`" in section, "husky repos add the line to husky's own hook"
 
 
+# The two lines README's hook body is made of, as a block writes each one.
+HOOK_BODY = ("command -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit",
+             "exec python -m crapkit hook-precommit")
+FENCE_NAMES = {"sh": "sh", "powershell": "PowerShell", "yaml": "YAML"}
+
+
+def _route_blocks() -> dict[str, list[tuple[str, bool]]]:
+    """Each README route's fenced blocks, by route number: the fence language,
+    and whether the block writes both lines of the hook body."""
+    gate = _section(_doc("README.md"), "## The gate")
+    return {number: [(lang, all(line in block for line in HOOK_BODY))
+                     for lang, block in re.findall(r"^```(\w+)\n(.*?)^```$", body, re.M | re.S)]
+            for number, body in re.findall(r"^### Route (\d):[^\n]*\n(.*?)(?=^### |\Z)", gate, re.M | re.S)}
+
+
+def _body_routes(routes: dict[str, list[tuple[str, bool]]]) -> set[str]:
+    return {number for number, blocks in routes.items() if any(writes for _, writes in blocks)}
+
+
+def _forms_without_the_body(routes: dict[str, list[tuple[str, bool]]]) -> set[str]:
+    """The blocks, in routes that write the hook body, that write something else."""
+    return {f"Route {number}'s {FENCE_NAMES[lang]} form"
+            for number in _body_routes(routes) for lang, writes in routes[number] if not writes}
+
+
+def test_the_gate_section_names_the_routes_that_write_the_hook_body():
+    """The section said every route below writes the same hook body. Route 1's
+    PowerShell form bakes in the launcher's path instead, Route 3 hands `crapkit
+    hook-precommit` to the pre-commit framework, and Route 4 gates in CI with no
+    hook: the sentence names the routes whose blocks write the body, and the
+    section names each form in them that does not."""
+    routes = _route_blocks()
+    intro = " ".join(_section(_doc("README.md"), "## The gate").split("\n### Route 1")[0].split())
+    claim = next((s for s in re.split(r"(?<=\.)\s+", intro) if "hook body" in s), "")
+
+    assert set(re.findall(r"Route (\d)", claim)) == _body_routes(routes), claim
+    assert _forms_without_the_body(routes) <= set(re.findall(r"Route \d's \w+ form", intro)), intro
+
+
 def test_route_one_says_git_refuses_the_commit_a_marked_hook_cannot_spawn():
     """Measured on git 2.43.0.windows.1: a hook starting with a UTF-8 or UTF-16
     byte-order mark fails `git commit` with exit 1 and HEAD unchanged. The page

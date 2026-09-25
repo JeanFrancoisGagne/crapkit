@@ -626,11 +626,13 @@ nothing. Each of these now gets a line naming the object and the next step:
 
 ### The gate recipes in README and the handbook arm a gate that runs
 
-- The hook body README's routes and the handbook write runs the `crapkit` on PATH and
-  falls back to `python -m crapkit`. It was `exec python -m crapkit hook-precommit`
-  alone, so a pipx or uv tool install, the installs README names for the gate, and any
-  machine with `python3` and no `python` (Debian, Ubuntu, macOS) refused every commit
-  with `exec: python: not found`.
+- The hook body README's Route 1 and Route 2 and the handbook write runs the `crapkit`
+  on PATH and falls back to `python -m crapkit`. It was `exec python -m crapkit
+  hook-precommit` alone, so a pipx or uv tool install, the installs README names for the
+  gate, and any machine with `python3` and no `python` (Debian, Ubuntu, macOS) refused
+  every commit with `exec: python: not found`. The gate section says what a hook that
+  still reaches no crapkit prints: exit 127 and `exec: python: not found` with no
+  python, exit 1 and `No module named crapkit` from a python that lacks it.
 - Route 1 and the handbook's Enforcement block write the hook to `$(git rev-parse
   --git-common-dir)/hooks/pre-commit`. In a linked worktree, where `.git` is a file,
   `.git/hooks/pre-commit` failed with `Directory nonexistent` and the next commit went

@@ -67,6 +67,15 @@ def handbook_pres(heading: str) -> list[str]:
     return [html.unescape(code) for code in re.findall(r"<pre><code>(.*?)</code></pre>", section, re.S)]
 
 
+def handbook_callout(heading: str) -> str:
+    """The text of the first callout under one of the handbook's h3 headings,
+    tags dropped, as a reader sees it."""
+    page = (ROOT / "docs" / "handbook.html").read_text(encoding="utf-8")
+    section = page.split(f"<h3>{heading}</h3>", 1)[1].split("<h3", 1)[0]
+    callout = re.search(r'<div class="callout[^"]*">(.*?)</div>', section, re.S).group(1)
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", "", callout)).split())
+
+
 def handbook_lines(heading: str) -> list[str]:
     """What a reader types from the first <pre> under an h3: `$ ` prompts
     stripped, comment and blank lines dropped."""
@@ -82,16 +91,23 @@ def _script(directory: Path, name: str, body: str) -> None:
     path.chmod(0o755)
 
 
-def shims(tmp_path: Path, *, crapkit: bool = True, python: bool = False) -> Path:
+# The `python` a reader's PATH holds: none (a name sh cannot run, 127, as sh
+# says it for a missing command), one that imports this crapkit, or a system
+# python that does not (-I drops PYTHONPATH, -S drops site-packages).
+PYTHONS = {"missing": 'echo "python: not found" >&2\nexit 127',
+           "crapkit": 'exec "{exe}" "$@"',
+           "bare": 'exec "{exe}" -I -S "$@"'}
+
+
+def shims(tmp_path: Path, *, crapkit: bool = True, python: str = "missing") -> Path:
     """A PATH directory holding `crapkit`, which runs this crapkit, when
-    `crapkit`, and `python`: an interpreter that imports crapkit when `python`,
-    else a name sh cannot run (127, as sh says it for a missing command)."""
+    `crapkit`, and the `python` PYTHONS names."""
     here, exe = tmp_path / "bin", Path(sys.executable).as_posix()
     here.mkdir()
     if crapkit:
         _script(here, "crapkit", f'exec "{exe}" -m crapkit "$@"')
         (here / "crapkit.cmd").write_text(f'@"{sys.executable}" -m crapkit %*\r\n', encoding="ascii")
-    _script(here, "python", f'exec "{exe}" "$@"' if python else 'echo "python: not found" >&2\nexit 127')
+    _script(here, "python", PYTHONS[python].format(exe=exe))
     return here
 
 
@@ -211,10 +227,42 @@ def test_route_one_pasted_in_a_linked_worktree_arms_the_gate(tmp_path):
 def test_the_hook_body_falls_back_to_python_m_crapkit(tmp_path):
     """A venv whose console script is not on the hook's PATH still has its
     python: the second line of the body is what runs the gate then."""
-    env = machine(tmp_path, shims(tmp_path, crapkit=False, python=True))
+    env = machine(tmp_path, shims(tmp_path, crapkit=False, python="crapkit"))
     repo = adopted(tmp_path, env)
 
     assert_gated(repo, env, paste([sh()], readme_fence(ROUTE_ONE, "sh"), repo, env))
+
+
+def readme_exit_code(said: str) -> int:
+    """The exit code README's gate section gives, above Route 1, for the hook
+    that prints `said`."""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    intro = " ".join(text.split("\n## The gate\n", 1)[1].split(f"\n{ROUTE_ONE}\n", 1)[0].split())
+    sentences = [sentence for sentence in re.split(r"(?<=\.)\s+", intro) if said in sentence]
+    assert len(sentences) == 1, f"README's gate section names {said!r} in {len(sentences)} sentences"
+    stated = re.search(r"\bexits (\d+)\b", sentences[0])
+    assert stated, sentences[0]
+    return int(stated.group(1))
+
+
+@pytest.mark.parametrize("python, said", [("missing", "python: not found"),
+                                          ("bare", "No module named crapkit")])
+def test_the_pages_name_what_a_hook_that_reaches_no_crapkit_prints(tmp_path, python, said):
+    """README said the hook exits 127 whenever its PATH holds neither a
+    `crapkit` nor a `python` that imports it. That holds with no python at all.
+    A system python without crapkit runs, prints `No module named crapkit` and
+    exits 1. Git refuses the commit both ways, with that line on stderr, and
+    the handbook's callout names it for the reader who sees it."""
+    env = machine(tmp_path, shims(tmp_path, crapkit=False, python=python))
+    repo = adopted(tmp_path, env)
+    paste([sh()], readme_fence(ROUTE_ONE, "sh"), repo, env)
+
+    committed = commit_breach(repo, env)
+    hook = run([sh(), ".git/hooks/pre-commit"], repo, env)
+
+    assert committed.returncode != 0 and said in committed.stderr, committed.stderr
+    assert hook.returncode == readme_exit_code(said), hook.stderr
+    assert said in handbook_callout(ENFORCE), "the handbook names the line the reader sees"
 
 
 def test_route_two_gates_a_commit_where_crapkit_is_on_path_and_python_is_not(tmp_path):
@@ -309,7 +357,7 @@ def test_the_handbook_blocks_alone_give_a_fresh_ci_clone_its_config(tmp_path):
     clone. The Enforcement block committed only crapkit-ratchet.tsv, so that
     clone had no crapkit.toml and verify stopped at `no crapkit.toml` (exit 3)
     before any verdict."""
-    env = machine(tmp_path, shims(tmp_path, python=True))
+    env = machine(tmp_path, shims(tmp_path, python="crapkit"))
     repo = shell_repo(tmp_path, env)
     typed(repo, env, [line for line in handbook_lines(BASE) if not line.startswith(("pip ", "cd "))])
     typed(repo, env, handbook_lines(ENFORCE))
