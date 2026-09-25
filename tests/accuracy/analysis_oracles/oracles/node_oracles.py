@@ -38,6 +38,7 @@ class Fn:
     defaults: int
     return_type: bool
     features: frozenset
+    param_list: tuple = ()  # ((name text, type text or None, rest), ...)
 
 
 def write(files: dict, work: Path) -> list[str]:
@@ -66,7 +67,8 @@ def functions(node_modules: Path, work: Path, paths: list[str]) -> list[Fn]:
 def _fn(path: str, item: dict) -> Fn:
     return Fn(path, item["kind"], item["name"], item["start"], item["column"], item["end"],
               item["endColumn"], item["params"], item["defaults"], item["returnType"],
-              frozenset(item["features"]))
+              frozenset(item["features"]),
+              tuple(tuple(param) for param in item.get("paramList", ())))
 
 
 def messages(node_modules: Path, work: Path, mode: str, paths: list[str]) -> dict[str, list]:

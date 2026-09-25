@@ -2,7 +2,7 @@
 //
 // Usage: node ts_functions.cjs <typescript module dir> <file>...
 // Prints one JSON object: {file: [{kind, name, start, column, end, endColumn,
-// params, defaults, returnType, features}]}.
+// params, paramList, defaults, returnType, features}]}.
 //
 // A function is a node of kind FunctionDeclaration, FunctionExpression,
 // ArrowFunction, MethodDeclaration, Constructor, GetAccessor or SetAccessor
@@ -11,7 +11,11 @@
 // getLineAndCharacterOfPosition is 0-based). params is parameters.length with
 // a `this` parameter left out, since it is a type annotation, not an argument
 // (TypeScript handbook, "Declaring this in a Function"); defaults counts the
-// parameters with an initializer. features names the constructs in the
+// parameters with an initializer. paramList holds, for each of those
+// parameters, [the name's source text, the type annotation's source text or
+// null, whether it is a rest parameter]; the name's text of `...rest` is
+// `rest` and of `b?` is `b` (ParameterDeclaration keeps dotDotDotToken and
+// questionToken apart from the name). features names the constructs in the
 // function's own body (nested functions left out) that an oracle reads its own
 // way: "or", "and", "nullish" (?? and ??=), "optional" (?.), "ternary",
 // "nested_ternary", "negated_logical" (! over a parenthesized && or ||),
@@ -66,9 +70,17 @@ function nameOf(node) {
   return node.kind === ts.SyntaxKind.Constructor ? "constructor" : "(anonymous)";
 }
 
+function declared(node) {
+  return node.parameters.filter((p) => !(ts.isIdentifier(p.name) && p.name.text === "this"));
+}
+
 function params(node) {
-  return node.parameters.filter((p) => !(ts.isIdentifier(p.name) && p.name.text === "this"))
-    .length;
+  return declared(node).length;
+}
+
+function paramList(node) {
+  return declared(node).map((p) => [p.name.getText(), p.type ? p.type.getText() : null,
+    Boolean(p.dotDotDotToken)]);
 }
 
 function line(sf, pos, offset) {
@@ -166,6 +178,7 @@ function record(sf, node, offset) {
     end: end.line + 1 + offset,
     endColumn: end.character,
     params: params(node),
+    paramList: paramList(node),
     defaults: node.parameters.filter((p) => p.initializer).length,
     returnType: Boolean(node.type),
     features: features(node),
