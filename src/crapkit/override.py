@@ -105,6 +105,10 @@ def _require_auditable_override(reason: str, alert_command: str) -> None:
             "set [crapkit] alert_command in crapkit.toml")
 
 
+# What a refusal over a failed alert tells its reader to do.
+ALERT_FIX = "rerun once [crapkit] alert_command in crapkit.toml exits 0"
+
+
 def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolation],
                      reason: str) -> None:
     """Put the debt in front of a human first; a silent alert grants nothing."""
@@ -114,16 +118,14 @@ def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolat
     # shell string: function names come from analyzed source and are not shell-safe.
     code, printed = send_alert(alert_command, root, line + "\n")
     if code != 0:
-        raise ToolError(
-            f"override alert command failed (exit {code}): "
-            f"{printed.strip()[-300:]} - no alert, no override; "
-            "rerun once [crapkit] alert_command in crapkit.toml exits 0")
+        raise ToolError(f"override alert command failed (exit {code}): "
+                        f"{printed} - no alert, no override; {ALERT_FIX}")
 
 
 def send_alert(alert_command: str, root: Path, text: str) -> tuple[int, str]:
     """Hand `text` to the alert command on stdin, and return its exit code and
-    what it printed as plain text with LF line ends: stderr when it holds text
-    once its escape codes are gone, else stdout.
+    the last 300 characters it printed as plain text with LF line ends: stderr
+    when it holds text once its escape codes are gone, else stdout.
 
     The bytes are UTF-8 with LF line ends on every OS. A text-mode pipe turned
     each LF into CR LF on Windows, so an alert log fed by `cat >>` held CR LF
@@ -136,8 +138,8 @@ def send_alert(alert_command: str, root: Path, text: str) -> tuple[int, str]:
 def _message(stderr: bytes, stdout: bytes) -> str:
     """The stream that says something, chosen after the escape codes are gone:
     a stderr that held only a colour reset would otherwise hide stdout's message."""
-    said = printed_text(stderr)
-    return said if said.strip() else printed_text(stdout)
+    said = printed_text(stderr).strip()
+    return (said or printed_text(stdout).strip())[-300:]
 
 
 def _granted_marks(prior: list[RatchetEntry], violations: list[GateViolation], *,

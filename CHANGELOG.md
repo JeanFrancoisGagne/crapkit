@@ -85,6 +85,9 @@
   `[skip]` line for `src/café.ts` reached the parent as the lone byte 0xe9 on Windows.
 - The override and `digest --alert` hand `alert_command` UTF-8 bytes with LF line ends
   on every OS. On Windows each LF arrived as CR LF.
+- A failed `digest --alert` quotes what `alert_command` printed, as the override's
+  refusal does, and says the digest above was not alerted. It used to name only the
+  exit code.
 
 ### CI and tests
 

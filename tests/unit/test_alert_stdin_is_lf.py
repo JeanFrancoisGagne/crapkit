@@ -172,6 +172,23 @@ def test_a_failed_digest_alert_names_the_exit_code(tmp_path):
                            {"id": 1}, {"id": 2}, ["CRAP load 1.0 -> 2.0"])
 
 
+# The digest's lines are on stdout before the alert runs; the refusal says the
+# alert did not go out, quotes why, and names the field, as the override's does.
+DIGEST_NEXT = (" - the digest above was not alerted; "
+               "rerun once [crapkit] alert_command in crapkit.toml exits 0")
+
+
+@pytest.mark.parametrize("printed", list(PRINTED))
+def test_a_failed_digest_alert_quotes_what_the_command_printed_as_plain_text(tmp_path, printed):
+    data, quoted = PRINTED[printed]
+    cfg = SimpleNamespace(alert_command=_printing(tmp_path, data))
+
+    with pytest.raises(ToolError) as refused:
+        _send_digest_alert(tmp_path, cfg, {"id": 1}, {"id": 2}, ["CRAP load 1.0 -> 2.0"])
+
+    assert str(refused.value) == f"digest alert command failed (exit 3): {quoted}{DIGEST_NEXT}"
+
+
 # --- the same bytes through the CLI, under what a shell leaves in the environment -------
 
 ENVS = [{}, {"PYTHONIOENCODING": "cp1252"}, {"LANG": "C", "LC_ALL": "C"}, {"PYTHONUTF8": "1"}]
