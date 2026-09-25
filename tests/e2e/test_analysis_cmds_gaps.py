@@ -372,6 +372,7 @@ def test_mutate_json_stays_well_formed_with_zero_mutants(diff_repo: Path):
     res = run_cli(diff_repo, "mutate", "--files", "src/noop.py", "--json")
     assert res.returncode == 0, res.stdout + res.stderr
     assert json.loads(res.stdout) == {"mutants": 0, "killed": 0, "survived": 0,
+                                      "timed_out": 0, "no_verdict": 0,
                                       "survivors": [], "outside_corpus": [], "schema": 1}
 
 
