@@ -152,6 +152,10 @@ nothing. Each of these now gets a line naming the object and the next step:
 - Two or more `crapkit` launchers on PATH get a note naming each with its version. The
   shell, a git hook, the plugin's hooks and an MCP client each run the first one their
   own PATH lists.
+- In a venv uv made, which holds no pip, the install lines `init` and `doctor` print for a
+  missing pytest-cov or an old coverage.py read `uv pip install --python <that python>
+  ...`. The `<python> -m pip install` they printed failed there with "No module named
+  pip".
 
 `crapkit doctor --plugin-root`:
 

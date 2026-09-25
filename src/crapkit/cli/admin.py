@@ -371,12 +371,15 @@ def _missing_pytest_cov_note(name: str, word: str, spec: LaunchSpec) -> str:
     `python` a stock PATH answers with, and then installing a package is the
     wrong move: the reader has to be able to tell which of the two was asked.
     The install command carries the same word, so it lands in that interpreter's
-    environment rather than whichever one the reader's shell has active. Where
+    environment rather than whichever one the reader's shell has active; in a
+    venv uv made, which holds no pip, it is `uv pip install --python WORD`. Where
     the word lands is read the way the lane's shell reads it, so a relative
     launcher names the same file from any directory doctor runs in."""
+    from ..launchers import pip_install
+
     resolved = spec.resolve(word) or word
     return (f"note: lane {name!r} names `{word}`, which resolves here to {resolved} and "
-            f"cannot import pytest_cov - run `{word} -m pip install pytest-cov` in the "
+            f"cannot import pytest_cov - run `{pip_install(resolved, 'pytest-cov', word)}` in the "
             "environment the suite runs in "
             # Double quotes, not single: cmd.exe passes ' through as an
             # ordinary character and pip rejects the requirement. Double
@@ -844,8 +847,9 @@ def _coverage_floor(name: str, executable: str, version: str) -> tuple[Finding, 
     the install line spelled for the interpreter that lane runs."""
     from ..coverage_py import REGIONS_FLOOR
     from ..doctor import coverage_floor_gap
+    from ..launchers import pip_install
 
-    upgrade = f'{_shell_quote(executable)} -m pip install "coverage>={REGIONS_FLOOR}"'
+    upgrade = pip_install(executable, f'"coverage>={REGIONS_FLOOR}"', _shell_quote(executable))
     return coverage_floor_gap(name, executable, version, upgrade)
 
 

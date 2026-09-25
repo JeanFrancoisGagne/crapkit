@@ -119,12 +119,21 @@ def _uv_made(python: str) -> bool:
         return False
 
 
+def pip_install(python: str, requirement: str, spelled: str | None = None) -> str:
+    """The command that installs `requirement` into `python`'s environment:
+    uv's pip for a venv uv made, which holds no pip, else that python's pip.
+    `spelled` is how the command names the interpreter (quoted, or the word a
+    lane wrote), `python` itself when omitted."""
+    word = spelled or python
+    if _uv_made(python):
+        return f"uv pip install --python {word} {requirement}"
+    return f"{word} -m pip install {requirement}"
+
+
 def _pip_line(python: str | None, quote) -> str:
     if python is None:
         return "python -m pip install --upgrade crapkit"
-    if _uv_made(python):
-        return f"uv pip install --python {quote(python)} --upgrade crapkit"
-    return f"{quote(python)} -m pip install --upgrade crapkit"
+    return pip_install(python, "--upgrade crapkit", quote(python))
 
 
 def upgrade_command(launcher: str, quote) -> str:
