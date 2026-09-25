@@ -16,13 +16,14 @@
   (`blobs` in `.crapkit/artifacts.json`), the id `git add` would store, and the
   `--reuse-artifacts` warning, the `uncovered_lines_note` and the report banner compare
   blob ids instead of asking git about the stamp's commit. git's index gives the id of a
-  file its worktree diff calls unchanged, and `git hash-object --path` hashes the rest, so
-  a CRLF checkout under `core.autocrlf=true` keeps its blob's id, and a submodule is
-  recorded by the commit checked out in it. A message-only amend, a rebase, a detached
-  HEAD, a mode bit and a shallow CI clone with `.crapkit/` restored used to withhold every
-  dark line; they no longer do. An artifact measured on an uncommitted edit is fresh at
-  once, and reverting that edit now withholds the lines, where git called the tree clean
-  and the old lines were served against the reverted file.
+  file its worktree diff calls unchanged, and `git hash-object --stdin-paths` hashes the
+  rest through the repo's filters, so a CRLF checkout under `core.autocrlf=true` keeps its
+  blob's id, and a submodule is recorded by the commit checked out in it. A message-only
+  amend, a rebase, a detached HEAD, a mode bit and a shallow CI clone with `.crapkit/`
+  restored used to withhold every dark line; they no longer do. An artifact measured on
+  an uncommitted edit is fresh at once, and reverting that edit now withholds the lines,
+  where git called the tree clean and the old lines were served against the reverted
+  file.
 - The dead lines crapkit folds out of a lane's artifact for diff coverage are cached by the
   artifact's sha256. The key was its path, modification time and size, so an artifact
   rewritten with the same size under its old time served the lines of bytes it no longer

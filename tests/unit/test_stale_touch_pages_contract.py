@@ -1003,3 +1003,43 @@ def test_every_agent_json_table_types_scored_changes_int_or_null():
 
     types = [line.split("|")[2].replace("*", "").strip() for line in rows]
     assert len(types) == 3 and set(types) == {"int or null"}, rows
+
+
+# -- the git command the content record runs is the one the pages name ------------
+
+_HASH_OBJECT = re.compile(r"`git hash-object([^`]*)`")
+_CONTENT_PAGES = ("CHANGELOG.md", "AGENTS.md", "README.md", "CONTEXT.md", "docs/lanes.md",
+                  "docs/upgrading.md", "docs/agent-json.md", "docs/configuration.md")
+
+
+def _hash_object_options(root: Path, monkeypatch) -> set[str]:
+    """The options crapkit passes `git hash-object` while it records an edited
+    file's blob id, read off the processes it starts."""
+    from crapkit import gitio
+
+    started = []
+    real = subprocess.Popen
+
+    def spy(argv, *args, **kwargs):
+        started.append(list(argv))
+        return real(argv, *args, **kwargs)
+
+    _one_commit_repo(root)
+    (root / "a.py").write_text("x = 2\n", encoding="utf-8")
+    monkeypatch.setattr(subprocess, "Popen", spy)
+    gitio.worktree_blobs(root, ["a.py"])
+    return {arg for argv in started if "hash-object" in argv
+            for arg in argv[argv.index("hash-object") + 1:] if arg.startswith("--") and arg != "--"}
+
+
+def test_each_hash_object_command_a_page_names_is_the_one_crapkit_runs(tmp_path, monkeypatch):
+    """CHANGELOG and AGENTS.md said `git hash-object --path` hashes a file the
+    index cannot vouch for; crapkit runs `git hash-object --stdin-paths`."""
+    runs = _hash_object_options(tmp_path, monkeypatch)
+    named = {(page, options.strip()) for page in _CONTENT_PAGES
+             for options in _HASH_OBJECT.findall(_page(page))}
+
+    assert runs == {"--stdin-paths"}, runs
+    assert named, "no page names the command that hashes an edited file"
+    assert [(page, options) for page, options in sorted(named)
+            if not set(re.findall(r"--[\w-]+", options)) <= runs] == []
