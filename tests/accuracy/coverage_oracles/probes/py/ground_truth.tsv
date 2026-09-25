@@ -1,0 +1,37 @@
+path	function	start	end	layout	scenario	arms	arms_taken	stmts	stmts_run	source
+py/shapes.py	if_else	5	8	own-lines	call	6>7 6>8	6>7	6 7 8	6 7	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works (an if line has two exits); drive.py call() passes True
+py/shapes.py	if_else	5	8	own-lines	idle	6>7 6>8	-	6 7 8	-	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works; drive.py idle imports only
+py/shapes.py	if_no_else	11	15	own-lines	call	13>14 13>15	13>14	12 13 14 15	12 13 14 15	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works (an if with no else still exits two ways); drive.py call() passes -1
+py/shapes.py	if_no_else	11	15	own-lines	idle	13>14 13>15	-	12 13 14 15	-	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works; drive.py idle imports only
+py/shapes.py	for_loop	18	22	own-lines	call	20>21 20>22	20>21 20>22	19 20 21 22	19 20 21 22	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works (a for line enters its body or leaves the loop); drive.py call() passes [1, 2]
+py/shapes.py	for_loop	18	22	own-lines	idle	20>21 20>22	-	19 20 21 22	-	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works; drive.py idle imports only
+py/shapes.py	while_loop	25	30	own-lines	call	27>28 27>30	27>30	26 27 28 29 30	26 27 30	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works (a while test enters its body or leaves); drive.py call() passes 0, so the body never runs
+py/shapes.py	while_loop	25	30	own-lines	idle	27>28 27>30	-	26 27 28 29 30	-	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works; drive.py idle imports only
+py/shapes.py	match_case	33	40	own-lines	call	35>36 35>37 37>38 37>39	35>36 35>37 37>39	34 35 36 37 38 39 40	34 35 36 37 39 40	https://github.com/coveragepy/coveragepy/blob/7.16.1/coverage/parser.py#L1118 (each refutable case pattern exits to its body or the next case; the wildcard case has one exit); drive.py call() passes "go" and "halt"
+py/shapes.py	match_case	33	40	own-lines	idle	35>36 35>37 37>38 37>39	-	34 35 36 37 38 39 40	-	https://github.com/coveragepy/coveragepy/blob/7.16.1/coverage/parser.py#L1118; drive.py idle imports only
+py/shapes.py	and_or	43	44	own-lines	call	-	-	44	44	https://coverage.readthedocs.io/en/7.16.1/branch.html#structurally-partial-branches (short-circuit operators on one line are not measured as branches); drive.py call() calls it once
+py/shapes.py	and_or	43	44	own-lines	idle	-	-	44	-	https://coverage.readthedocs.io/en/7.16.1/branch.html#structurally-partial-branches; drive.py idle imports only
+py/shapes.py	comprehension_if	47	48	own-lines	call	-	-	48	48	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works (arcs are between lines; the comprehension's condition stays on line 48); drive.py call() calls it once
+py/shapes.py	comprehension_if	47	48	own-lines	idle	-	-	48	-	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works; drive.py idle imports only
+py/shapes.py	branchless	51	55	own-lines	call	-	-	52 53 54 55	52 53	https://coverage.readthedocs.io/en/7.16.1/cmd.html#json-reporting (executed and missing lines per region); drive.py call() makes fail() raise on line 53, so 54 and 55 never run
+py/shapes.py	branchless	51	55	own-lines	idle	-	-	52 53 54 55	-	https://coverage.readthedocs.io/en/7.16.1/cmd.html#json-reporting; drive.py idle imports only
+py/shapes.py	fail	58	59	own-lines	call	-	-	59	59	https://coverage.readthedocs.io/en/7.16.1/cmd.html#json-reporting; branchless() calls it once
+py/shapes.py	fail	58	59	own-lines	idle	-	-	59	-	https://coverage.readthedocs.io/en/7.16.1/cmd.html#json-reporting; drive.py idle imports only
+py/shapes.py	outer	62	69	own-lines	call	67>68 67>69	67>69	63 67 68 69	63 67 69	https://coverage.readthedocs.io/en/7.16.1/changes.html#version-7-6-0 (a nested function's lines leave its encloser's region); drive.py call() passes False
+py/shapes.py	outer	62	69	own-lines	idle	67>68 67>69	-	63 67 68 69	-	https://coverage.readthedocs.io/en/7.16.1/changes.html#version-7-6-0; drive.py idle imports only
+py/shapes.py	outer.inner	63	66	own-lines	call	64>65 64>66	-	64 65 66	-	https://coverage.readthedocs.io/en/7.16.1/changes.html#version-7-6-0; outer(False) defines inner and never calls it
+py/shapes.py	outer.inner	63	66	own-lines	idle	64>65 64>66	-	64 65 66	-	https://coverage.readthedocs.io/en/7.16.1/changes.html#version-7-6-0; drive.py idle imports only
+py/shapes.py	async_if	72	75	own-lines	call	73>74 73>75	73>74	73 74 75	73 74	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works; drive.py call() awaits it with True through run_async
+py/shapes.py	async_if	72	75	own-lines	idle	73>74 73>75	-	73 74 75	-	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works; drive.py idle imports only
+py/shapes.py	Box.method	79	82	own-lines	call	80>81 80>82	80>82	80 81 82	80 82	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works; drive.py call() passes 5
+py/shapes.py	Box.method	79	82	own-lines	idle	80>81 80>82	-	80 81 82	-	https://coverage.readthedocs.io/en/7.16.1/branch.html#how-it-works; drive.py idle imports only
+py/shapes.py	one_line	85	85	one-line	call	85>88 85>-85	85>88 85>-85	85	85	https://github.com/coveragepy/coveragepy/blob/7.16.1/coverage/parser.py#L814 (the def statement flows on to line 88 at import and the call returns from the same line, so line 85 has two exits); README.md#remedy-what-to-do-about-it (split-lines)
+py/shapes.py	one_line	85	85	one-line	idle	85>88 85>-85	85>88	85	85	https://github.com/coveragepy/coveragepy/blob/7.16.1/coverage/parser.py#L814 (the import runs the def statement); README.md#remedy-what-to-do-about-it (split-lines)
+py/shapes.py	body_on_signature	88	89	body-on-signature	call	n/a	n/a	n/a	n/a	README.md#remedy-what-to-do-about-it (a body on the last line of a multi-line signature: coverage.py cannot show a call, so the producer counts are asserted only as equal across call and idle)
+py/shapes.py	body_on_signature	88	89	body-on-signature	idle	n/a	n/a	n/a	n/a	README.md#remedy-what-to-do-about-it
+py/shapes.py	excluded	92	95	own-lines	call	-	-	-	-	https://coverage.readthedocs.io/en/7.16.1/excluding.html#excluding-code (a pragma on a def line excludes the whole function); drive.py call() passes 1
+py/shapes.py	excluded	92	95	own-lines	idle	-	-	-	-	https://coverage.readthedocs.io/en/7.16.1/excluding.html#excluding-code; drive.py idle imports only
+py/shapes.py	exclude_also	98	101	own-lines	call	-	-	99 101	99 101	https://coverage.readthedocs.io/en/7.16.1/excluding.html#advanced-exclusion (exclude_also drops line 100, so line 99 keeps one exit and is no branch); drive.py call() passes 3
+py/shapes.py	exclude_also	98	101	own-lines	idle	-	-	99 101	-	https://coverage.readthedocs.io/en/7.16.1/excluding.html#advanced-exclusion; drive.py idle imports only
+py/shapes.py	run_async	104	105	own-lines	call	-	-	105	105	https://coverage.readthedocs.io/en/7.16.1/cmd.html#json-reporting; drive.py call() calls it once
+py/shapes.py	run_async	104	105	own-lines	idle	-	-	105	-	https://coverage.readthedocs.io/en/7.16.1/cmd.html#json-reporting; drive.py idle imports only

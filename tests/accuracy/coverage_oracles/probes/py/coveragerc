@@ -1,0 +1,10 @@
+# coverage.py settings for the Python probe: branch data, repository-relative keys,
+# and the exclusions ground_truth.tsv names.
+[run]
+branch = true
+relative_files = true
+include = py/shapes.py
+
+[report]
+exclude_also =
+    raise NotImplementedError
