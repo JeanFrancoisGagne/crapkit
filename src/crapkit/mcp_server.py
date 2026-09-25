@@ -1690,6 +1690,26 @@ def _missing_positional(tool: dict, arguments: dict) -> str | None:
     return None
 
 
+# JSON's names for the shapes json.loads produces, bool before int since a bool
+# is an int in Python.
+_JSON_KINDS = ((bool, "a boolean"), (dict, "an object"), (list, "an array"), (str, "a string"),
+               ((int, float), "a number"))
+
+
+def _json_kind(value) -> str:
+    return next((name for kind, name in _JSON_KINDS if isinstance(value, kind)), "null")
+
+
+def _not_an_object(tool: dict, arguments) -> str | None:
+    """`arguments` sent as an array, a string, a number or a boolean: every
+    other check reads it as an object, and a list reached them as JSON-RPC
+    -32603 AttributeError."""
+    if isinstance(arguments, dict):
+        return None
+    return (f"{tool['name']} takes its arguments as a JSON object of argument name to value, "
+            f"got {_json_kind(arguments)} ({json.dumps(arguments)}); see inputSchema")
+
+
 def _unknown_key(tool: dict, arguments: dict) -> str | None:
     accepted = _accepted(tool)
     for key in arguments:
@@ -1715,8 +1735,8 @@ def _argument_error(tool: dict, arguments: dict) -> str | None:
     tool results and corrects its next call, while a protocol error surfaces in
     many clients as a transport failure the agent never sees.
     """
-    return (_missing_positional(tool, arguments) or _unknown_key(tool, arguments)
-            or _wrong_type(tool, arguments))
+    return (_not_an_object(tool, arguments) or _missing_positional(tool, arguments)
+            or _unknown_key(tool, arguments) or _wrong_type(tool, arguments))
 
 
 def _tool_named(name: str) -> dict | None:
@@ -1737,8 +1757,8 @@ RENAMED_IN_0_6_0 = {
 
 def _unknown_tool(name: str) -> str:
     """The refusal for a name no tool carries, with the new name when a 0.5.x
-    client sent the old one."""
-    renamed = RENAMED_IN_0_6_0.get(name)
+    client sent the old one. A name that is not a string is named as sent."""
+    renamed = RENAMED_IN_0_6_0.get(name) if isinstance(name, str) else None
     if renamed is None:
         return f"unknown tool {name!r}"
     return (f"unknown tool {name!r}: renamed {renamed} in 0.6.0, with the same arguments "
@@ -1943,7 +1963,11 @@ def _call_root(session: _Session, arguments: dict):
 CLIENT_KEYS = frozenset({"wait_for_previous"})
 
 
-def _own_arguments(arguments: dict) -> dict:
+def _own_arguments(arguments):
+    """The call's arguments without the client's keys; anything but an object
+    is left for the table to refuse."""
+    if not isinstance(arguments, dict):
+        return arguments
     return {key: value for key, value in arguments.items() if key not in CLIENT_KEYS}
 
 
@@ -2081,14 +2105,25 @@ def _notified(session: _Session, method) -> dict | None:
     return session.ask() if method in _ASK_ROOTS_ON else None
 
 
-def _request(session: _Session, msg: dict, run_cli=None) -> dict:
-    method, params = msg["method"], msg.get("params") or {}
+def _handler(method, run_cli):
     if method == "tools/call":
-        return _respond(msg["id"], _tools_call(session, params, run_cli))
-    handler = _METHODS.get(method) if isinstance(method, str) else None
+        return lambda params, session: _tools_call(session, params, run_cli)
+    return _METHODS.get(method) if isinstance(method, str) else None
+
+
+def _request(session: _Session, msg: dict, run_cli=None) -> dict:
+    """An unknown method is -32601; `params` that is not an object is -32602,
+    malformed JSON-RPC rather than a tool's arguments (ADR 0001), which every
+    handler would otherwise have read as an object and answered -32603."""
+    method, params = msg["method"], msg.get("params") or {}
+    handler = _handler(method, run_cli)
     if handler is None:
         return _respond(msg["id"], error={"code": -32601,
                                           "message": f"unknown method {method!r}"})
+    if not isinstance(params, dict):
+        return _respond(msg["id"], error={
+            "code": -32602, "message": f"{method} takes params as a JSON object, got "
+                                       f"{_json_kind(params)}"})
     return _respond(msg["id"], handler(params, session))
 
 
