@@ -174,6 +174,55 @@ def _crap(key, status):
     return _result("src/crapkit/score.py", "crap", key, status)
 
 
+def _sha(*lines: str) -> str:
+    """The plan's survivor key: sha256 over the diff's changed lines, no line numbers."""
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+
+
+def _worklist_diff(start: int, mutated: str) -> str:
+    return (f"--- src/crapkit/worklist.py\n+++ src/crapkit/worklist.py\n@@ -{start},1 +{start},1 @@\n"
+            f"-    return commits > 0\n+{mutated}")
+
+
+# A weekly run of four mutants, worked by hand. score.crap's mutant 3 is the
+# canary and dies. build_worklist's mutant 1 survives and survivors.tsv lists it
+# under the key its diff had before lines moved; mutant 2 survives unlisted;
+# mutant 3 dies. The core group then kills 2 of 4, 50 percent, under its 95.
+HAND_RUN = (("crapkit.score.x_crap__mutmut_3", "killed", SHOW_3),
+            ("crapkit.worklist.x_build_worklist__mutmut_1", "survived",
+             _worklist_diff(52, "    return commits >= 0")),
+            ("crapkit.worklist.x_build_worklist__mutmut_2", "survived",
+             _worklist_diff(52, "    return commits > 1")),
+            ("crapkit.worklist.x_build_worklist__mutmut_3", "killed",
+             _worklist_diff(52, "    return not commits > 0")))
+HAND_GROUPS = [{"group": "core", "paths": "src/crapkit/score.py,src/crapkit/worklist.py", "floor": "95",
+                "source": "plan"},
+               {"group": "readers", "paths": "src/crapkit/lizard*.py", "floor": "85", "source": "plan"}]
+
+
+def test_a_recorded_weekly_run_reads_the_verdict_worked_by_hand():
+    run = [mutation.result(*mutant) for mutant in HAND_RUN]
+    listed = _row("src/crapkit/worklist.py", "build_worklist",
+                  _sha("-    return commits > 0", "+    return commits >= 0"))
+
+    verdict = mutation.gate(run, [listed], [])
+    held = mutation.floors(run, [], HAND_GROUPS)
+
+    assert mutation.mutant_key(_worklist_diff(40, "    return commits >= 0")) == listed["diff_sha256"]
+    assert verdict.new == (("src/crapkit/worklist.py", "build_worklist",
+                            _sha("-    return commits > 0", "+    return commits > 1")),)
+    assert (verdict.gone, verdict.void, verdict.passed) == ((), "", False)
+    assert [(f.group, f.killed, f.counted, f.rate, f.ok) for f in held] == [
+        ("core", 2, 4, 50.0, False), ("readers", 0, 0, None, True)]
+
+
+def test_a_surviving_canary_voids_the_hand_worked_run():
+    run = [mutation.result("crapkit.score.x_crap__mutmut_3", "survived", SHOW_3)]
+
+    assert mutation.gate(run, [], []).void == (
+        "canary mutants of score.crap survived: crapkit.score.x_crap__mutmut_3")
+
+
 def test_a_new_survivor_fails_and_a_listed_one_passes():
     run = [_crap(KEYS[0], "survived"), _crap(KEYS[1], "killed")]
 
