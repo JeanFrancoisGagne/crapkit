@@ -286,8 +286,11 @@ def test_an_edit_to_a_file_git_was_told_to_skip_reruns_the_lane(flag, inputs, tm
     assert "make_cov.py" in _verdict(root)
 
 
+@pytest.mark.parametrize("ignore", ["none", "dirty"])
 @pytest.mark.parametrize("inputs", [(), (*INPUTS, "sub")], ids=["whole-tree", "inputs"])
-def test_an_edit_inside_a_submodule_git_ignores_when_dirty_reruns_the_lane(inputs, tmp_path):
+def test_an_edit_inside_a_submodule_reruns_the_lane_whatever_git_ignores(inputs, ignore, tmp_path):
+    """With `ignore = dirty` in .gitmodules, git status and diff call a
+    submodule with an edited file clean, and the lane was reused over it."""
     library = tmp_path / "library"
     library.mkdir()
     stale_tree.git(library, "init", "-q", "-b", "main")
@@ -297,7 +300,7 @@ def test_an_edit_inside_a_submodule_git_ignores_when_dirty_reruns_the_lane(input
     root = stale_tree.build(tmp_path / "repo", inputs=inputs)
     stale_tree.git(root, "-c", "protocol.file.allow=always", "submodule", "--quiet", "add",
                    library.as_uri(), "sub")
-    stale_tree.git(root, "config", "-f", ".gitmodules", "submodule.sub.ignore", "dirty")
+    stale_tree.git(root, "config", "-f", ".gitmodules", "submodule.sub.ignore", ignore)
     stale_tree.git(root, "commit", "-q", "-am", "sub")
     stale_tree.measure(root)
     stale_tree.write(root / "sub" / "lib.py", "def f():\n    return 2\n")

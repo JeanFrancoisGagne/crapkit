@@ -504,6 +504,21 @@ def test_a_stamp_commit_force_pushed_away_keeps_the_lines(tmp_path):
     assert _explained(clone) == ("", sorted(DARK))
 
 
+def test_a_stamp_commit_force_pushed_away_still_names_a_real_edit(tmp_path, capsys):
+    """The same clone after src/app.ts really changed. The commit check could
+    not reach the stamp's commit, so it could not say what moved; the blob ids
+    name the edited file in the note and in the reuse warning."""
+    origin = stale_tree.measure(stale_tree.build(tmp_path / "origin"))
+    stale_tree.git(origin, "commit", "-q", "--amend", "-m", "force-pushed")
+    clone = stale_tree.clone_with_state(origin, tmp_path / "clone")
+    stale_tree.write(clone / REL, "// one\n// two\n" + stale_tree.APP_TS)
+
+    note, lines = _explained(clone)
+
+    assert lines == [] and f"{REL} changed since coverage/coverage-final.json measured it" in note
+    assert REL in _reuse_warning(clone, capsys)
+
+
 def test_a_stamp_from_an_older_crapkit_still_reads_by_its_commit(tmp_path):
     """A stamp with no `blobs` (0.8.0 and older) is judged the old way until
     the next run writes one, and withholds every file while it is stale."""
