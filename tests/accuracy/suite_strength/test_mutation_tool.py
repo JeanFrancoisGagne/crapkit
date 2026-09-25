@@ -533,6 +533,19 @@ def test_survivors_unreached_mutants_and_timeouts_carry_a_key_and_kills_do_not()
     assert mutation.keyed_names(statuses) == ["b", "c", "d"]
 
 
+@pytest.mark.parametrize("module", ["tools/accuracy/mutation.py", "tools/accuracy/retro.py",
+                                    "tools/accuracy/run.py", "tests/accuracy/kit/exact.py"])
+def test_no_mutated_function_has_a_name_mutmut_misreads(module):
+    """mutmut names a mutant x_<function>__mutmut_<n> and reads the function back
+    up to the first `__mutmut`, so a function called _mutmut had no diff for any
+    of its mutants and stopped the tools run."""
+    tree = mutation.ast.parse((REPO / module).read_text(encoding="utf-8"))
+    names = [node.name for node in mutation.ast.walk(tree)
+             if isinstance(node, (mutation.ast.FunctionDef, mutation.ast.AsyncFunctionDef))]
+
+    assert [name for name in names if "__mutmut" in f"x_{name}"] == []
+
+
 def test_a_weekly_shard_runs_the_independent_suite_on_its_modules_and_the_canary():
     """The floors are computed on tests/unit and the accuracy tests, golden,
     change_control and cross_surface ones left out (the plan's mutation section).
@@ -718,8 +731,8 @@ def test_mutmut_s_exit_code_comes_back_and_a_budget_that_runs_out_reads_minus_on
     (tmp_path / "exits.py").write_text("import sys, time\ntime.sleep(float(sys.argv[1]))\n"
                                        "sys.exit(7)\n", encoding="utf-8")
 
-    assert mutation._mutmut(tmp_path, ["0"], None, ("exits.py",)) == 7
-    assert mutation._mutmut(tmp_path, ["5"], 0.5, ("exits.py",)) == -1
+    assert mutation._run_mutmut(tmp_path, ["0"], None, ("exits.py",)) == 7
+    assert mutation._run_mutmut(tmp_path, ["5"], 0.5, ("exits.py",)) == -1
 
 
 # --- the commands that read receipts --------------------------------------------------------------

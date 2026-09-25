@@ -282,3 +282,123 @@ def test_all_names_every_replayable_row():
 
     assert [row["id"] for row in retro.chosen(rows, {"all"})] == ["R1", "R2"]
     assert [row["id"] for row in retro.chosen(rows, {"R2"})] == ["R2"]
+
+
+# --- the commands, in-process, with the replay stood in for ---------------------------------------
+#
+# Each command reads bugs.tsv and ledger.tsv, picks rows and replays them. The
+# replay itself (worktrees and venvs) is what the planted repo above checks;
+# here it is a stand-in that returns the outcomes a test names, so the row
+# choice, the ledger rewrite and the exit codes are checked on every push.
+
+CHECK = "tests/accuracy/suite_strength/test_retro_tool.py::test_double_doubles"
+
+
+def _bug_row(bug_id: str, replay: str = "public", platform: str = "any") -> dict:
+    return {"id": bug_id, "fix_commits": "b" * 12, "before_commit": "a" * 12, "packet": "p",
+            "test": CHECK, "probe": "", "method": "hand", "platform": platform,
+            "replay": replay, "calc": "c", "symptom": "s"}
+
+
+def _ledger_row(bug_id: str, before: str = "red", digest: str = "") -> dict:
+    return {"id": bug_id, "test": CHECK, "before_commit": "a" * 12, "fix_commit": "b" * 12,
+            "lizard": retro.LIZARD, "before": before, "failure_class": "AssertionError",
+            "before_evidence": "e", "fix": "pass", "fix_evidence": "f",
+            "digest": digest or retro.digest(CHECK), "replayed": "2026-09-01", "note": ""}
+
+
+@pytest.fixture
+def tables(tmp_path, monkeypatch):
+    """bugs.tsv and ledger.tsv under tmp_path, and a replay that answers from `answers`."""
+    bugs, ledger = tmp_path / "bugs.tsv", tmp_path / "ledger.tsv"
+    monkeypatch.setattr(retro, "BUGS", bugs)
+    monkeypatch.setattr(retro, "LEDGER", ledger)
+    answers, replayed = {}, []
+
+    def replay(bug, python, site=None):
+        replayed.append(bug.id)
+        return answers.get(bug.id, (retro.Outcome("red", "AssertionError", "wrong"),
+                                    retro.Outcome("pass", "", "1 item(s) passed")))
+
+    monkeypatch.setattr(retro, "replay", replay)
+
+    def write(bug_rows: list[dict], ledger_rows: list[dict]) -> None:
+        retro.write_table(bugs, retro.BUG_COLUMNS, bug_rows)
+        retro.write_table(ledger, retro.LEDGER_COLUMNS, ledger_rows)
+
+    return SimpleNamespace(write=write, answers=answers, replayed=replayed, ledger=ledger)
+
+
+def test_run_record_rewrites_the_replayed_rows_and_keeps_the_rest(tables):
+    tables.write([_bug_row("R1"), _bug_row("R2")], [_ledger_row("R2")])
+
+    assert retro.main(["run", "R1", "--record"]) == 0
+
+    rows = {row["id"]: row for row in retro.read_table(tables.ledger, retro.LEDGER_COLUMNS)}
+    assert tables.replayed == ["R1"]
+    assert (rows["R1"]["before"], rows["R1"]["fix"], rows["R1"]["digest"]) == (
+        "red", "pass", retro.digest(CHECK))
+    assert rows["R2"] == _ledger_row("R2")
+
+
+def test_run_without_record_leaves_the_ledger_as_it_was(tables):
+    tables.write([_bug_row("R1")], [])
+
+    assert retro.main(["run", "all"]) == 0
+    assert retro.read_table(tables.ledger, retro.LEDGER_COLUMNS) == []
+
+
+def test_a_replay_that_contradicts_the_ledger_exits_one_and_says_why(tables, capsys):
+    tables.write([_bug_row("R1")], [_ledger_row("R1")])
+    tables.answers["R1"] = (retro.Outcome("not replayable", "KeyError", "k"),
+                            retro.Outcome("pass"))
+
+    assert retro.main(["run", "R1"]) == 1
+    assert "R1: the ledger says red on the before commit, the replay says not replayable" in (
+        capsys.readouterr().err)
+
+
+def test_run_refuses_ids_with_no_replayable_row(tables, capsys):
+    tables.write([_bug_row("R1", replay="open")], [])
+
+    assert retro.main(["run", "R1", "R9"]) == 3
+    assert "no replayable bugs.tsv row for R1, R9 here" in capsys.readouterr().err
+
+
+def test_nightly_replays_stale_rows_and_its_slice_and_never_a_bundle_row(tables):
+    rows = [_bug_row("R1"), _bug_row("R2"), _bug_row("R3", replay="bundle"), _bug_row("R4")]
+    tables.write(rows, [_ledger_row("R1"), _ledger_row("R2"), _ledger_row("R3"),
+                        _ledger_row("R4", digest="0" * 64)])
+
+    assert retro.main(["nightly", "--slice-of", "3", "--day", "0"]) == 0
+    # R4's digest moved; slice 0 of the public rows R1, R2, R4 in id order is R1.
+    assert sorted(tables.replayed) == ["R1", "R4"]
+
+
+def test_release_replays_stale_rows_and_every_bundle_row(tables):
+    rows = [_bug_row("R1"), _bug_row("R2", replay="bundle"), _bug_row("R3"),
+            _bug_row("R4", platform="macos" if not sys.platform.startswith("darwin") else "linux")]
+    tables.write(rows, [_ledger_row("R1"), _ledger_row("R2"), _ledger_row("R4")])
+
+    assert retro.main(["release"]) == 0
+    # R3 has no ledger row (stale), R2 is a bundle row, R4 runs on another platform.
+    assert sorted(tables.replayed) == ["R2", "R3"]
+
+
+def test_stale_lists_the_rows_to_replay(tables, capsys):
+    tables.write([_bug_row("R1"), _bug_row("R2")], [_ledger_row("R1")])
+
+    assert retro.main(["stale"]) == 0
+    assert capsys.readouterr().out == f"R2\t{CHECK}\n"
+
+
+def test_digest_prints_the_check_s_digest(capsys):
+    assert retro.main(["digest", CHECK]) == 0
+    assert capsys.readouterr().out == retro.digest(CHECK) + "\n"
+
+
+def test_a_bug_s_replayed_fix_is_its_last_fix_commit():
+    row = {**_bug_row("R1"), "fix_commits": "aaaaaaaaaaaa, bbbbbbbbbbbb", "probe": "R1.py"}
+
+    assert retro.bug_of(row) == retro.Bug("R1", CHECK, "a" * 12, "b" * 12, "R1.py")
+    assert retro.bug_of({**row, "fix_commits": ""}).fix == ""

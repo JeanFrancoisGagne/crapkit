@@ -558,7 +558,7 @@ LAUNCHER_FILE = "mutmut_launch.py"
 LAUNCH = (LAUNCHER_FILE,)
 
 
-def _mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple = LAUNCH,
+def _run_mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple = LAUNCH,
             env: dict | None = None) -> int:
     argv = [sys.executable, *mutmut, *args]
     try:
@@ -621,7 +621,7 @@ def _rerun_timeouts(repo: Path, rows: list[Result], mutmut: tuple = LAUNCH,
     names = [row.name for row in rows if row.status == TIMEOUT]
     if not names:
         return rows
-    _mutmut(repo, ["run", "--max-children", "1", *names], None, mutmut, env)
+    _run_mutmut(repo, ["run", "--max-children", "1", *names], None, mutmut, env)
     return collect(repo, [row.name for row in rows], mutmut)
 
 
@@ -718,7 +718,10 @@ def diffs():
     import sys
     from mutmut.mutation.diff_apply import get_diff_for_mutant
     for name in sys.stdin.read().split():
-        print(json.dumps([name, get_diff_for_mutant(name)]), flush=True)
+        try:
+            print(json.dumps([name, get_diff_for_mutant(name)]), flush=True)
+        except Exception as missed:  # the caller names every mutant left without a diff
+            print(f"{name}: {missed!r}", file=sys.stderr)
 
 
 import sys
@@ -735,7 +738,7 @@ def present(targets: dict, repo: Path = REPO) -> dict:
     return {path: tests for path, tests in targets.items() if (repo / path).is_file()}
 
 
-def _mutmut_table(targets: dict, copies: list[str]) -> str:
+def _stage_table(targets: dict, copies: list[str]) -> str:
     tests = sorted({test for listed in targets.values() for test in listed})
     return "\n".join((
         "[tool.mutmut]",
@@ -750,7 +753,7 @@ def stage_config(text: str, targets: dict, copies: list[str]) -> str:
     its own, copying `copies` beside the mutants."""
     head, _, rest = text.partition("[tool.mutmut]")
     tail = rest[rest.index("\n["):] if "\n[" in rest else ""
-    return f"{head.rstrip()}\n\n{tail.strip()}\n\n{_mutmut_table(targets, copies)}"
+    return f"{head.rstrip()}\n\n{tail.strip()}\n\n{_stage_table(targets, copies)}"
 
 
 def stage_copies(stage: Path) -> list[str]:
@@ -810,7 +813,7 @@ def staged_run(where: Path, targets: dict, globs: list[str], env: dict, children
     """mutmut over `globs` in a stage whose [tool.mutmut] names `targets`: the results,
     and whether the run finished inside `budget` seconds (a capped run reruns nothing)."""
     stage = _prepare_stage(targets, where)
-    code = _mutmut(stage, ["run", "--max-children", str(children), *globs], budget, LAUNCH, env)
+    code = _run_mutmut(stage, ["run", "--max-children", str(children), *globs], budget, LAUNCH, env)
     rows = collect(stage, globs, LAUNCH)
     if code == -1:
         return rows, False
