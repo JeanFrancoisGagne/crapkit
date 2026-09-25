@@ -594,7 +594,9 @@ def _configured_outputs(config: bytes) -> frozenset[str]:
 
 
 def _normalized(name: str) -> str:
-    return posixpath.normpath(name.replace("\\", "/"))
+    """A lane output as the loaded config spells it (repopath's declared entry
+    already put `/` between its directories), with `a/../b` resolved."""
+    return posixpath.normpath(name)
 
 
 def write_stamps(root: Path, entries: dict[str, dict]) -> None:

@@ -9,12 +9,14 @@ beside each reader feed the same spellings through that reader.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import pytest
 
-from crapkit.repopath import (Reported, disk_spelling, entries, file_separators, fragments,
-                              inside, native, on_a_share, typed, typed_path)
+from crapkit.repopath import (Refused, Reported, declared, disk_spelling, entries,
+                              file_separators, fragments, inside, native, on_a_share, typed,
+                              typed_path)
 
 from path_spellings import (admin_share, link_directory, lower_drive, need_case_insensitive,
                             need_case_sensitive, only_posix, only_windows)
@@ -215,6 +217,75 @@ def test_windows_places_the_checkout_reached_through_its_admin_share(tmp_path):
 
     assert inside(alias + "\\src\\pkg\\mod.py", root) == "src/pkg/mod.py"
     assert on_a_share(alias) and not on_a_share(root)
+
+
+# --- the declared entry --------------------------------------------------------
+# What crapkit.toml holds, read by the kind its key's row in config._PATH_KEYS
+# names. test_config_path_spellings feeds each key through the loader and the
+# reader that consumes it; these rows pin the entry.
+
+def _declared_tree(root: Path) -> Path:
+    for folder in ("web/dist", "api", "backend", ".crapkit"):
+        (root / folder).mkdir(parents=True, exist_ok=True)
+    return root
+
+
+@pytest.mark.parametrize("kind, raw, expected", [
+    ("file", ".crapkit\\cov.json", ".crapkit/cov.json"),
+    ("file", "./.crapkit/cov.json", ".crapkit/cov.json"),
+    ("file", ".\\api\\", "api/"),
+    ("scope", "web", "web"),
+    ("scope", "./web/", "web"),
+    ("scope", ".\\web\\", "web"),
+    ("scope", "/web", "web"),
+    ("scope", ".", "."),
+    ("prefix", ".", ""),
+    ("prefix", "api\\", "api"),
+    ("prefix", "/api/", "api"),
+    ("input", ".\\backend", "backend"),
+    ("input", "./", "."),
+    ("glob", "web/dist/", "web/dist/**"),
+    ("glob", "web\\dist\\**", "web/dist/**"),
+    ("glob", "/web/dist/**", "web/dist/**"),
+    ("glob", "**\\dist\\**", "**/dist/**"),
+])
+def test_the_declared_entry_reads_a_key_as_its_kind_says(tmp_path, kind, raw, expected):
+    assert declared(raw, kind, _declared_tree(tmp_path)) == expected
+
+
+@pytest.mark.parametrize("kind, raw, says", [
+    ("scope", "../web", "can never match a tracked file"),
+    ("scope", "src/../web", "can never match a tracked file"),
+    ("scope", "C:/web", "can never match a tracked file"),
+    ("scope", "", "can never match a tracked file"),
+    ("scope", "/elsewhere/web", "names nothing under the root as 'elsewhere/web'"),
+    ("input", "../shared", "is not a path inside the root"),
+    ("input", "/abs", "is not a path inside the root"),
+    ("input", "D:\\x", "is not a path inside the root"),
+    ("input", "src/*.ts", "is a glob"),
+])
+def test_the_declared_entry_refuses_a_value_that_can_never_name_a_tracked_file(tmp_path, kind,
+                                                                               raw, says):
+    with pytest.raises(Refused, match=re.escape(says)):
+        declared(raw, kind, _declared_tree(tmp_path))
+
+
+def test_a_declared_scope_path_in_this_checkout_is_refused_with_its_relative_spelling(tmp_path):
+    """Written from `/`: on POSIX the path itself, on Windows Git Bash's `/c/...`."""
+    root = _declared_tree(tmp_path).resolve()
+    web = (root / "web").as_posix()
+    written = web if web.startswith("/") else "/" + web[0].lower() + web[2:]
+
+    with pytest.raises(Refused, match=re.escape(": write 'web'")):
+        declared(written, "scope", root)
+
+
+@pytest.mark.parametrize("kind", ["scope", "prefix", "input"])
+def test_a_declared_directory_takes_the_case_its_directory_lists(tmp_path, kind):
+    need_case_insensitive(tmp_path)
+
+    assert declared("BACKEND", kind, _declared_tree(tmp_path)) == "backend"
+    assert declared("BACKEND", kind) == "BACKEND"
 
 
 def test_a_fragment_folds_case_where_the_disk_under_the_root_does(tmp_path):

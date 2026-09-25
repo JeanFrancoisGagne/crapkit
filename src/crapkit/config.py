@@ -2,10 +2,11 @@
 
 Pure, with two exceptions, both only given a `root`. The full-suite guard reads
 pytest's own configuration in a lane's working directory, and only when the
-lane's pytest command carries a positional to judge against `testpaths`. And a
-path the file declares takes the letter case the directory lists where the
-filesystem opens it in another case (repopath.disk_spelling), because git and
-every reader after this compare the text."""
+lane's pytest command carries a positional to judge against `testpaths`. And
+every path-valued key is read by repopath's declared entry (_PATH_KEYS), which
+gives a declared directory the letter case the directory lists where the
+filesystem opens it in another case, because git and every reader after this
+compare the text."""
 from __future__ import annotations
 
 import os
@@ -18,7 +19,7 @@ from typing import NamedTuple
 
 from .errors import ConfigError
 from .config_contract import admit, enum_values
-from .repopath import disk_spelling, file_separators, inside, is_unc, native
+from .repopath import Refused, declared, disk_spelling, file_separators
 
 # `cpp` is the whole C family, C included: lizard resolves every one of its
 # suffixes to a single CLikeReader, so a `c` label beside this one could never
@@ -421,7 +422,7 @@ def _as_testpath(token: str, base: Path | None = None) -> str:
     trailing separator. `tests/`, `./tests` and `tests` name one directory.
     Given the directory it is read from, it takes the case that directory
     lists: on NTFS `Tests` is tests/."""
-    spelled = token.replace("\\", "/")
+    spelled = file_separators(token)
     if spelled.startswith("./"):
         spelled = spelled[2:]
     spelled = spelled.rstrip("/")
@@ -633,77 +634,38 @@ def load_config_text(text: str, *, root: str | os.PathLike | None = None) -> Con
         raise ConfigError(f"crapkit.toml is missing a required key: {exc}") from exc
 
 
-def _unrooted(raw: str) -> str:
-    r"""One declared scope path spelled the way `git ls-files` spells a path.
-
-    universe.py hoists the declared string straight into a prefix, so `./src`
-    looked for `./src/...` while git emits `src/a.py`. Backslashes were already
-    collapsed one layer down, which made the tool look like it normalized paths
-    when it normalized one spelling of them.
-    """
-    path = raw.replace("\\", "/").rstrip("/")
-    while path.startswith("./"):
-        path = path[2:]
-    return path.lstrip("/")
-
-
-def _on_disk(root: str | os.PathLike | None, path: str) -> str:
-    """A declared root-relative path in the letter case its directories list,
-    when there is a root to list. Without this, `paths = ["Src"]` on a
-    case-insensitive disk claimed nothing: git names the directory `src`."""
-    return disk_spelling(root, path) if root is not None and path else path
+# Every path-valued key crapkit.toml holds, and the kind repopath's declared
+# entry reads it as: "file" (a path the OS opens), "scope", "prefix" and "input"
+# (a directory as git spells it, in the case the directory lists) or "glob".
+_PATH_KEYS = {
+    "scope.paths": "scope",
+    "lane.path_prefix": "prefix",
+    "lane.inputs": "input",
+    "lane.cwd": "file",
+    "lane.artifact": "file",
+    "lane.results_artifact": "file",
+    "crapkit.ratchet_file": "file",
+    "exclude.globs": "glob",
+    "{python:VENV}": "file",
+}
 
 
-def _scope_path(name, raw: str, root: str | os.PathLike | None = None) -> str:
-    """A declared path a tracked file could actually match.
-
-    `./src` claimed nothing: the scope scored zero files, every file under it
-    came back unclaimed, and neither doctor FAIL named the dot — so the reader
-    was sent to declare a second scope for a path the first one already owned.
-    A path that climbs above the root or names a drive can never match a
-    tracked path at all, so it is refused here rather than reported later as an
-    empty scope. `..` is refused as a SEGMENT, not as a prefix: `src/../etc` is
-    the spelling a reader reaches for when they mean a sibling directory, and
-    matching a leading `../` alone let it through into the same silent empty
-    scope. A bare `.` is the repo root. The matcher gives it the lowest path
-    precedence so a deeper scope can own its subtree.
-    """
-    path = _unrooted(raw)
-    if path == "" or ".." in path.split("/") or ":" in path:
-        raise ConfigError(f"scope {name!r}: path {raw!r} can never match a tracked file — "
-                          "scope paths are repo-relative, with no drive and no `..` "
-                          "(docs/configuration.md)")
-    _refuse_absolute(name, raw, path, root)
-    return _on_disk(root, path)
-
-
-def _refuse_absolute(name, raw: str, path: str, root: str | os.PathLike | None) -> None:
-    """A path written from `/` reads two ways: `/web` is the root's web/, and
-    `/home/dev/repo/web` or `/c/repo/web` is a directory spelled absolutely.
-    Folded, the second named nothing under the root and the scope scored zero
-    files, reported later by doctor alone. When the root-relative reading names
-    nothing either, the path is refused, with the relative path it would be."""
-    rooted = raw.replace("\\", "/").startswith("/")
-    if root is None or not rooted or os.path.lexists(os.path.join(root, path)):
-        return
-    raise ConfigError(f"scope {name!r}: path {raw!r} names nothing under the root as {path!r}; "
-                      f"scope paths are repo-relative{_relative_hint(raw, root)} "
-                      "(docs/configuration.md)")
-
-
-def _relative_hint(raw: str, root: str | os.PathLike) -> str:
-    """`: write 'web'` when the absolute spelling lands in this checkout. A
-    network share is never asked: resolving one can wait on the network."""
-    absolute = native(raw)
-    rel = None if is_unc(absolute) else inside(absolute, root)
-    return f": write {rel!r}" if rel else ""
+def _path(key: str, raw: str, root: str | os.PathLike | None = None, owner: str = "") -> str:
+    """One value of a path-valued key, read by repopath's declared entry as
+    _PATH_KEYS marks the key. A refusal names the key's owner and the value as
+    written, so `scope 'web': path '../web'` says which line to fix."""
+    try:
+        return declared(raw, _PATH_KEYS[key], root)
+    except Refused as exc:
+        raise ConfigError(f"{owner}{raw!r} {exc}") from None
 
 
 def _parse_scope(row: dict, root: str | os.PathLike | None = None) -> Scope:
     languages = tuple(row.get("languages", ()))
     scope_target = row.get("target")
     return Scope(name=row["name"],
-                 paths=tuple(_scope_path(row.get("name"), p, root) for p in row["paths"]),
+                 paths=tuple(_path("scope.paths", p, root, f"scope {row.get('name')!r}: path ")
+                             for p in row["paths"]),
                  languages=languages,
                  target=scope_target,
                  coverage_optional=row.get("coverage_optional", False))
@@ -766,7 +728,7 @@ def _launcher(venv: str | None, windows: bool) -> str:
     if venv is None:
         return _BARE_PYTHON[windows]
     separator, *layout = _VENV_LAYOUT[windows]
-    return separator.join([*filter(None, _file_path(venv).split("/")), *layout])
+    return separator.join([*filter(None, _path("{python:VENV}", venv).split("/")), *layout])
 
 
 def _validate_lane_command(parser: str, full_suite: bool, name: str, command: str,
@@ -792,17 +754,17 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
     if unknown_scopes:
         raise ConfigError(f"lane {row.get('name')!r} references undeclared scope(s) {sorted(unknown_scopes)}")
     full_suite = row.get("full_suite", True)
-    cwd = _file_path(row.get("cwd", ""))
+    cwd = _path("lane.cwd", row.get("cwd", ""))
     command = expand_launchers(row["command"])
     _validate_lane_command(parser, full_suite, row.get("name", "?"), command,
                            _lane_dir(root, cwd))
     return Lane(name=row["name"], command=command,
-                artifact=_file_path(row["artifact"]),
+                artifact=_path("lane.artifact", row["artifact"]),
                 parser=parser, scopes=lane_scopes,
-                cwd=cwd, path_prefix=_path_prefix(row.get("path_prefix", ""), root),
+                cwd=cwd, path_prefix=_path("lane.path_prefix", row.get("path_prefix", ""), root),
                 env=tuple(sorted(row.get("env", {}).items())),
                 full_suite=full_suite, container_ok=row.get("container_ok", False),
-                results_artifact=_file_path(row.get("results_artifact", "")),
+                results_artifact=_path("lane.results_artifact", row.get("results_artifact", "")),
                 timeout_seconds=row.get("timeout_seconds", 0),
                 no_progress_seconds=row.get("no_progress_seconds", 0),
                 retries=row.get("retries", 0),
@@ -810,60 +772,9 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
                 inputs=_lane_inputs(row, root))
 
 
-def _file_path(raw: str) -> str:
-    r"""A lane's cwd, artifact or results_artifact, or the ratchet_file, as the
-    OS opens it: `/` between directories, no leading `./`. A lane committed
-    from Windows says `cwd = 'api\'` or `artifact = '.crapkit\cov.json'`, and
-    Linux read the backslash as part of one name: the lane crashed with a
-    traceback on a cwd that did not exist, or failed over an artifact it had
-    just written. `ratchet_file = 'gates\ratchet.tsv'` read no marks there.
-    The file is read on every OS, so a tree that holds a literal backslash name
-    does not change the reading."""
-    path = file_separators(raw)
-    while path.startswith("./"):
-        path = path[2:]
-    return path
-
-
-def _path_prefix(raw: str, root: str | os.PathLike | None) -> str:
-    r"""The lane's path_prefix, spelled as a scope path is. It is glued onto
-    every key the runner wrote, so `api\`, `./api` and `/api` keyed each
-    measured file outside every scope and scored a tested function untested."""
-    prefix = _unrooted(raw)
-    return "" if prefix == "." else _on_disk(root, prefix)
-
-
-_DRIVE_PATH = re.compile(r"[A-Za-z]:")
-
-
-def _outside_root(entry: str) -> bool:
-    """An input git would read outside the root, or could not read at all.
-
-    Inputs become pathspecs read from the root with diff.relative on, and that
-    diff never reports a change above the root: a `../shared` input would be
-    trusted forever."""
-    path = entry.replace("\\", "/")
-    return not path or path.startswith("/") or bool(_DRIVE_PATH.match(path)) or ".." in path.split("/")
-
-
 def _lane_inputs(row: dict, root: str | os.PathLike | None = None) -> tuple[str, ...]:
-    return tuple(_lane_input(row.get("name"), entry, root) for entry in row.get("inputs", ()))
-
-
-def _lane_input(name, entry: str, root: str | os.PathLike | None = None) -> str:
-    r"""One input spelled the way `git ls-files` spells a root-relative path.
-
-    git reads inputs with --literal-pathspecs, so `src/*.ts` would match no
-    file at all and the lane would be reused forever while its sources change.
-    `src\app.ts` matched on Windows git and named a file holding a backslash on
-    Linux; the scope-path spelling rule settles that before git sees it."""
-    if _outside_root(entry):
-        raise ConfigError(f"lane {name!r}: inputs entry {entry!r} is not a path "
-                          "inside the root; list paths relative to crapkit.toml, without '..'")
-    if "*" in entry or "?" in entry:
-        raise ConfigError(f"lane {name!r}: inputs entry {entry!r} is a glob; inputs are literal "
-                          "paths from the root, so list the directory or file itself")
-    return _on_disk(root, _unrooted(entry) or ".")
+    owner = f"lane {row.get('name')!r}: inputs entry "
+    return tuple(_path("lane.inputs", entry, root, owner) for entry in row.get("inputs", ()))
 
 
 def _reject_shared_artifacts(lanes: list, root=None) -> None:
@@ -888,16 +799,6 @@ def _unique_lanes(rows, scope_names: set, root) -> list[Lane]:
     return list(lanes.values())
 
 
-def _exclude_glob(raw: str) -> str:
-    r"""One [exclude] glob, spelled the way scope paths are, since it is matched
-    against the paths git spells: `web\dist\**`, `./web/dist/**` and
-    `/web/dist/**` all read `web/dist/**`. A trailing `/` names the directory's
-    contents, as in .gitignore: `web/dist/` reads `web/dist/**`. Each of these
-    excluded nothing before, silently, and the files stayed scored."""
-    glob = _unrooted(raw)
-    return f"{glob}/**" if glob and raw.replace("\\", "/").endswith("/") else glob
-
-
 def _scoped_tests(main: dict) -> tuple[tuple[str, str], ...]:
     """Each scope's test-scoped template, by scope name, with its launcher
     token expanded; `{files}` stays for test-scoped to fill in."""
@@ -915,13 +816,14 @@ def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
     return Config(
         target=main.get("target", DEFAULT_TARGET),
         scopes=scopes,
-        exclude_globs=tuple(map(_exclude_glob, raw.get("exclude", {}).get("globs", ()))),
+        exclude_globs=tuple(_path("exclude.globs", glob)
+                            for glob in raw.get("exclude", {}).get("globs", ())),
         max_file_bytes=raw.get("exclude", {}).get("max_file_bytes"),
         churn_window_months=main.get("churn_window_months", 12),
         worklist_floor=main.get("worklist_floor", 5),
         worklist_top=main.get("worklist_top", 50),
         lanes=tuple(lanes),
-        ratchet_file=_file_path(main.get("ratchet_file", "crapkit-ratchet.tsv")),
+        ratchet_file=_path("crapkit.ratchet_file", main.get("ratchet_file", "crapkit-ratchet.tsv")),
         alert_command=main.get("alert_command", ""),
         scoped_tests=_scoped_tests(main),
         mutation_command=expand_launchers(main.get("mutation_command", "")),

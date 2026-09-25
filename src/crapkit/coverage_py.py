@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 from . import covstream
 from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
-from .repopath import Reported
+from .repopath import Reported, file_separators
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -145,7 +145,7 @@ def measured_key(prefix: str, raw_path: str) -> str:
 
     The one spelling of the forward rule. The reader prepends the prefix to
     EVERY key, an absolute one included, which is why as_reported exists."""
-    return prefix + raw_path.replace("\\", "/")
+    return prefix + file_separators(raw_path)
 
 
 def as_reported(lane: Lane, key: str) -> str:

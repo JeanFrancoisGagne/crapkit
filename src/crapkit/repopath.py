@@ -10,20 +10,26 @@ fold one of those spellings and compare the rest as text, which on a
 case-insensitive disk, or with a config shared between two OSes, named no file
 or another file.
 
-Four rules, and every reader goes through them:
+One entry per source of a path, since each source brings its own extra input:
 
-- `native`: on Windows, the drive spelling of an MSYS (`/c/...`), WSL
-  (`/mnt/c/...`), extended-length (`\\?\C:\...`) or local admin share
-  (`\\localhost\C$\...`) path.
-- `file_separators`: a path a file carries (crapkit.toml, a coverage report, a
-  JUnit report) with `/` between directories. Such a file travels between OSes,
-  so its backslash separates directories on every OS, and a tracked name that
-  holds a backslash is unsupported.
-- `disk_spelling`: a root-relative path in the letter case its directories list,
-  where the filesystem opened it in another case.
-- `inside`: an absolute path relative to the root, decided by the file it names,
-  so a symlink, a junction, a lower-case drive letter or a UNC alias of a local
-  drive still lands in this checkout.
+- typed (`typed`, `typed_path`): a path a person or agent typed, a CLI or MCP
+  argument, `--repo`, the working directory, a hook payload's `file_path` or
+  `cwd`. It takes the directory the user stands in.
+- declared (`declared`): a path crapkit.toml holds, read as its key's kind.
+- reported (`Reported`): a path a runner wrote into its report, with a
+  per-folder cache for a report of thousands of keys.
+- fragment (`fragment`, `fragments`): a piece of a path to match.
+
+They share four rules. `native` gives, on Windows, the drive spelling of an
+MSYS (`/c/...`), WSL (`/mnt/c/...`), extended-length (`\\?\C:\...`) or local
+admin share (`\\localhost\C$\...`) path. `file_separators` puts `/` between
+directories of a path a file carries: such a file travels between OSes, so its
+backslash separates directories on every OS, and a tracked name that holds one
+is unsupported. `disk_spelling` gives a root-relative path the letter case its
+directories list. And `inside`, the one placing rule, answers whether an
+absolute path is in this checkout by the file it names, so a symlink, a
+junction, a lower-case drive letter or a UNC alias of a local drive still lands
+in it; istanbul's rebase and lanes' wrong-tree check both ask it (`Placing`).
 
 Stdlib only: the advisory hook imports this on every edit.
 """
@@ -315,6 +321,123 @@ def _same_file(a: Path, b: Path) -> bool:
         return False
 
 
+# --- the declared entry: a path crapkit.toml holds ----------------------------
+
+class Refused(ValueError):
+    """A declared path that can never become the path git spells. The text
+    follows the value it refuses and says why, in crapkit.toml's terms."""
+
+
+def declared(raw: str, kind: str, root: str | os.PathLike | None = None) -> str:
+    r"""A path crapkit.toml holds, as git spells it, read the way its key's
+    `kind` says. The file is committed and read on every OS, so `\` separates
+    directories on every OS and a leading `./` names nothing.
+
+    - "file" (a lane's cwd, artifact or results_artifact, the ratchet_file, a
+      launcher's venv): a path the OS opens under the root.
+    - "scope" (scope `paths`): a directory git lists, with no trailing or
+      leading `/`. One that climbs above the root, names a drive or is empty is
+      refused; so is one written from `/` that names nothing under the root,
+      with its relative spelling when it lands in this checkout.
+    - "prefix" (`path_prefix`): spelled as a scope path, and `.` is none.
+    - "input" (lane `inputs`): a literal path under the root; one that climbs
+      out, names a drive or holds a glob is refused.
+    - "glob" (`[exclude] globs`): spelled as a scope path, and a trailing `/`
+      names the directory's contents, as in .gitignore.
+
+    Given the root, a scope, prefix or input path takes the letter case its
+    directories list: `paths = ["Src"]` claimed nothing where git names `src`.
+    Raises Refused."""
+    return _DECLARED[kind](raw, root)
+
+
+def _undotted(path: str) -> str:
+    while path.startswith("./"):
+        path = path[2:]
+    return path
+
+
+def _unrooted(raw: str) -> str:
+    return _undotted(file_separators(raw).rstrip("/")).lstrip("/")
+
+
+def _on_disk(root: str | os.PathLike | None, path: str) -> str:
+    return disk_spelling(root, path) if root is not None and path else path
+
+
+def _declared_file(raw: str, root: str | os.PathLike | None) -> str:
+    return _undotted(file_separators(raw))
+
+
+_NEVER_MATCHES = ("can never match a tracked file — scope paths are repo-relative, with no "
+                  "drive and no `..` (docs/configuration.md)")
+
+
+def _declared_scope(raw: str, root: str | os.PathLike | None) -> str:
+    path = _unrooted(raw)
+    if path == "" or ".." in path.split("/") or ":" in path:
+        raise Refused(_NEVER_MATCHES)
+    _refuse_absolute(raw, path, root)
+    return _on_disk(root, path)
+
+
+def _refuse_absolute(raw: str, path: str, root: str | os.PathLike | None) -> None:
+    """`/web` is the root's web/; `/home/dev/repo/web` or `/c/repo/web` is a
+    directory spelled absolutely, and folded it named nothing under the root,
+    so the scope scored zero files. When the root-relative reading names
+    nothing either, the path is refused."""
+    rooted = file_separators(raw).startswith("/")
+    if root is None or not rooted or os.path.lexists(os.path.join(root, path)):
+        return
+    raise Refused(f"names nothing under the root as {path!r}; scope paths are "
+                  f"repo-relative{_relative_hint(raw, root)} (docs/configuration.md)")
+
+
+def _relative_hint(raw: str, root: str | os.PathLike) -> str:
+    """`: write 'web'` when the absolute spelling lands in this checkout. A
+    network share is never asked: resolving one can wait on the network."""
+    absolute = native(raw)
+    rel = None if _unc(absolute) else inside(absolute, root)
+    return f": write {rel!r}" if rel else ""
+
+
+def _declared_prefix(raw: str, root: str | os.PathLike | None) -> str:
+    prefix = _unrooted(raw)
+    return "" if prefix == "." else _on_disk(root, prefix)
+
+
+_DRIVE_PATH = re.compile(r"[A-Za-z]:")
+
+
+def _declared_input(raw: str, root: str | os.PathLike | None) -> str:
+    """git reads inputs as literal pathspecs from the root, and its diff never
+    reports a change above the root: a `../shared` input would be trusted
+    forever, and `src/*.ts` would match no file at all."""
+    if _outside_root(file_separators(raw)):
+        raise Refused("is not a path inside the root; list paths relative to crapkit.toml, "
+                      "without '..'")
+    if "*" in raw or "?" in raw:
+        raise Refused("is a glob; inputs are literal paths from the root, so list the "
+                      "directory or file itself")
+    return _on_disk(root, _unrooted(raw) or ".")
+
+
+def _outside_root(path: str) -> bool:
+    return (not path or path.startswith("/") or bool(_DRIVE_PATH.match(path))
+            or ".." in path.split("/"))
+
+
+def _declared_glob(raw: str, root: str | os.PathLike | None) -> str:
+    glob = _unrooted(raw)
+    return f"{glob}/**" if glob and file_separators(raw).endswith("/") else glob
+
+
+_DECLARED: dict[str, Callable[[str, str | os.PathLike | None], str]] = {
+    "file": _declared_file, "scope": _declared_scope, "prefix": _declared_prefix,
+    "input": _declared_input, "glob": _declared_glob,
+}
+
+
 # --- the fragment entry: a piece of a path to match ---------------------------
 
 class Fragment(NamedTuple):
@@ -351,9 +474,3 @@ def _folds_case(root: str | os.PathLike) -> bool:
     path = Path(root).resolve()
     other = path.with_name(path.name.swapcase())
     return other.name != path.name and _same_file(other, path)
-
-
-def is_unc(path: str | os.PathLike) -> bool:
-    r"""Is this a network path (`\\host\share\...`)? cmd.exe refuses to stand in
-    one and starts the command in C:\Windows instead."""
-    return str(path).replace("/", "\\").startswith("\\\\")

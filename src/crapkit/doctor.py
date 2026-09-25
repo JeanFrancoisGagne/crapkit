@@ -245,7 +245,9 @@ _STORE_DIR = ".crapkit"
 
 
 def _first_part(path: str) -> str:
-    return path.replace("\\", "/").partition("/")[0]
+    """`path` comes from the loaded config, already spelled with `/`
+    (repopath's declared entry)."""
+    return path.partition("/")[0]
 
 
 def scope_top_dirs(scopes) -> frozenset[str]:
@@ -260,8 +262,7 @@ def scope_top_dirs(scopes) -> frozenset[str]:
 def _artifact_top(path: str) -> str:
     """The top-level directory this artifact lands in, or "" for a repo-root
     file — which has no directory to be excused by."""
-    normalized = path.replace("\\", "/")
-    return _first_part(normalized) if "/" in normalized else ""
+    return _first_part(path) if "/" in path else ""
 
 
 def _lane_outputs(lane) -> tuple[str, ...]:
