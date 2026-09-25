@@ -50,4 +50,9 @@ The environment a run.py invocation hands the kit:
   CRAPKIT_DEPLOY_CANDIDATE   the candidate.py output dir (staged/, dist/)
   CRAPKIT_DEPLOY_MIRROR      a bare mirror cloned from the exported bundle
   CRAPKIT_DEPLOY_OUT         where JUnit and transcripts go
+  CRAPKIT_DEPLOY_SRC         the source tree wheels reads the locks from;
+                             this checkout when unset
+  CRAPKIT_DEPLOY_IMAGE_DIGEST
+                             the digest of the image a cell ran in, for its
+                             JUnit record; "native" when unset
 """

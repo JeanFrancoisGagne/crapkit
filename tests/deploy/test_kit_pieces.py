@@ -398,6 +398,23 @@ def test_kit_init_names_every_module_and_folder_the_kit_holds():
                             "list saying what each is for, which is where tools/deploy/README.md sends a cell's author")
 
 
+VARIABLE = re.compile(r"CRAPKIT_DEPLOY_[A-Z_]+")
+
+
+def unlisted_variables(kit: Path = KIT) -> list[str]:
+    """The CRAPKIT_DEPLOY_* variables the kit and its conftest name that kit/__init__.py's list leaves out."""
+    named = {name for path in [*kit.glob("*.py"), kit.parent / "conftest.py"]
+             for name in VARIABLE.findall(path.read_text(encoding="utf-8"))}
+    return sorted(named - listed_pieces(kit))
+
+
+def test_kit_init_names_every_variable_the_kit_reads():
+    unlisted = unlisted_variables()
+
+    assert unlisted == [], (f"tests/deploy/kit/__init__.py does not name {', '.join(unlisted)}: add each to its list "
+                            "of the environment run.py hands the kit, with what it holds and what happens when unset")
+
+
 def test_a_piece_is_listed_only_by_its_name_in_the_first_column(tmp_path):
     listed = '"""The kit.\n\n  sandbox       the state a cell runs in\n  stub_a, stub_b\n                two stubs\n  stub_gh/\n"""\n'
     (tmp_path / "__init__.py").write_text(listed, encoding="utf-8")
