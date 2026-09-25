@@ -89,6 +89,6 @@ def test_a_configured_repo_answers_normally_with_no_repo_flag(configured_repo: P
     call = replies[2]["result"]
     assert call["isError"] is False, call
     text = call["content"][0]["text"]
-    assert call["structuredContent"]["problems"] == [], \
+    assert json.loads(text)["problems"] == [], \
         "doctor answers its JSON report; a configured repo with no FAIL is an empty list"
     assert "crapkit init" not in text, "a configured repo must never get the no-config guidance"

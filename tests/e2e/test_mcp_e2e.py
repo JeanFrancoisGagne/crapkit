@@ -61,9 +61,11 @@ def test_initialize_list_and_call(repo: Path):
     assert "get_next_item" in tool_names and "check_config" in tool_names
     call = responses[3]["result"]
     assert call["isError"] is False, call
-    assert call["structuredContent"]["problems"] == [], \
+    assert "structuredContent" not in call, "2024-11-05 defines no structuredContent"
+    report = json.loads(call["content"][0]["text"])
+    assert report["problems"] == [], \
         "doctor answers the JSON report: a passing doctor is an empty problems list"
-    assert json.loads(call["content"][0]["text"])["schema"] == 1
+    assert report["schema"] == 1
 
 
 def test_a_bad_call_is_a_tool_error_and_the_server_keeps_answering(repo: Path):

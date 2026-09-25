@@ -299,6 +299,12 @@ def _call(msg_id, name, arguments=None) -> str:
     return _rpc(msg_id, "tools/call", {"name": name, "arguments": arguments or {}})
 
 
+def _payload(result: dict) -> dict:
+    """The answer a 2024-11-05 client reads: the text, since that revision
+    defines no structuredContent."""
+    return json.loads(result["content"][0]["text"])
+
+
 def _serve(cwd: Path, requests: list[str], *flags: str) -> dict:
     proc = run_cli(cwd, "mcp", *flags, stdin="\n".join(requests) + "\n")
     assert proc.returncode == 0, (proc.returncode, proc.stdout, proc.stderr)
@@ -319,7 +325,7 @@ def test_a_server_started_below_the_root_serves_the_configuration_above_it(mono:
     for msg_id in (2, 3):
         call = replies[msg_id]["result"]
         assert call["isError"] is False, call
-        assert [e["path"] for e in call["structuredContent"]["active"]] == ["web/src/grade.py"]
+        assert [e["path"] for e in _payload(call)["active"]] == ["web/src/grade.py"]
 
 
 def test_a_server_started_in_a_workspace_reads_the_documented_repo_relative_path(mono: Path):
@@ -340,8 +346,8 @@ def test_a_server_started_in_a_workspace_reads_the_documented_repo_relative_path
     for msg_id in (2, 3):
         call = replies[msg_id]["result"]
         assert call["isError"] is False, call
-        assert call["structuredContent"]["path"] == "web/src/grade.py"
-    gate = replies[4]["result"]["structuredContent"]["gate"]
+        assert _payload(call)["path"] == "web/src/grade.py"
+    gate = _payload(replies[4]["result"])["gate"]
     assert gate["ok"] is False, gate
     assert [b["path"] for b in gate["breaches"]] == ["web/src/grade.py"], gate
 
@@ -364,4 +370,4 @@ def test_the_servers_repo_flag_names_an_exact_root_like_every_other_subcommand(m
         refused
     walked = replies[3]["result"]
     assert walked["isError"] is False, walked
-    assert [e["path"] for e in walked["structuredContent"]["active"]] == ["web/src/grade.py"]
+    assert [e["path"] for e in _payload(walked)["active"]] == ["web/src/grade.py"]
