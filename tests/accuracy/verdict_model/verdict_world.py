@@ -180,17 +180,27 @@ class World:
         return replace(self, tests=kept + (test,))
 
 
+def fn_lines(fn: Fn) -> list[str]:
+    """One function's lines. Every line names its function and position, and the
+    return line its decision count, so no two lines of a file are equal and any
+    edit to a function rewrites a line inside it: whichever diff algorithm reads
+    two versions, the changed lines are the edited functions' own."""
+    lines = [f"def {fn.name}(x):"]
+    for number in range(fn.decisions):
+        lines += [f"    if x > {number}:  # {fn.name} {number}",
+                  f"        x += {number + 1}  # {fn.name} {number}"]
+    return lines + [f"    return x  # {fn.name} {fn.decisions}"]
+
+
 def source(fns) -> tuple[str, list[tuple[Fn, int, int]]]:
-    """The file's text and each function's (fn, start, end) lines."""
+    """The file's text and each function's (fn, start, end) lines. A comment
+    line naming the function closes each one, in place of a blank line."""
     lines, spans = [], []
     for fn in fns:
         start = len(lines) + 1
-        lines.append(f"def {fn.name}(x):")
-        for number in range(fn.decisions):
-            lines += [f"    if x > {number}:", "        x += 1"]
-        lines.append("    return x")
+        lines += fn_lines(fn)
         spans.append((fn, start, len(lines)))
-        lines.append("")
+        lines.append(f"# end {fn.name}")
     return "\n".join(lines) + "\n", spans
 
 

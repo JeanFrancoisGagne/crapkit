@@ -430,14 +430,31 @@ def override_refusal(reason: str, alert: bool, regressions: int, new_failures: i
 
 # --- retention (README.md:802) -----------------------------------------------------------------
 
-def keep_set(runs: list[Run], keep: int, override_runs: set[int], digest_pair: set[int],
-             verify_baselines: set[int]) -> set[int]:
+def keep_set(runs: list[Run], keep: int, override_runs: set[int], digest_pair: set[int]) -> set[int]:
     """`runs prune --keep N` keeps the newest N trusted runs, the digest pair,
-    every passing verify's baseline, every run an override names, and the
-    newest non-hook run. It is a floor, not a cap."""
+    every passing verify baseline, every run an override names, and the newest
+    non-hook run. It is a floor, not a cap. "Every passing verify baseline" is
+    read as every passing verify, the run kind that can serve as a baseline;
+    the older reading, every run some passing verify measured against, keeps
+    runs no reader picks again. The taint rule's runs are kept too (ruling V1)."""
+    passing = [run.id for run in runs if _passed(run)]
     non_hook = [run.id for run in runs if run.kind != HOOK][-1:]
-    return set(chain(_newest_trusted(runs, keep), digest_pair, verify_baselines, override_runs,
-                     non_hook))
+    return set(chain(_newest_trusted(runs, keep), digest_pair, passing, override_runs, non_hook,
+                     taint_runs(runs)))
+
+
+def taint_runs(runs: list[Run]) -> set[int]:
+    """The runs verify's pick and its taint warning name (README.md, The taint
+    rule): the baseline, the newest trusted run the rule passed over, and every
+    failed verify after the baseline. README.md:802 does not list them; a prune
+    that dropped them would move the baseline past the findings the rule
+    protects, so they are the doc gap ruling V1 records."""
+    picked = baseline(runs)
+    cutoff = picked.id if picked else 0
+    after = [run for run in runs if run.id > cutoff]
+    passed_over = [run.id for run in after if trusted(run)][-1:]
+    failed = [run.id for run in after if _failed(run)]
+    return set(chain([picked.id] if picked else [], passed_over, failed))
 
 
 def _newest_trusted(runs: list[Run], keep: int) -> list[int]:
