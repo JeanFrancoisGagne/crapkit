@@ -47,7 +47,9 @@ names the exact project root; the flag belongs after the subcommand.
 | Relative path with explicit `--repo` | Relative to the named project root. |
 | Absolute source path | Accepted when it resolves inside the project root. |
 | Windows backslash | A directory separator on Windows; a literal filename character on POSIX. |
-| Bytes that are not UTF-8 | Read with each such byte as U+FFFD, so the argument names no file crapkit reads and the command answers as it does for a missing file. |
+| Bytes that are not UTF-8 | The path resolves as the OS spelled it, so a checkout under a directory named in Latin-1 places its files like any other. When the root-relative name itself is not UTF-8 and a file exists under it, the command exits 3 naming the rename, since no row can key that name. With no file behind it, each such byte reads as U+FFFD and the command answers as it does for a missing file. |
+
+    crapkit: src/caf\xe9.py is named in bytes that are not UTF-8, and crapkit reads every path as UTF-8: rename it (git mv) to a UTF-8 name
 
 These rules apply to source arguments such as `brief`, `rescore`, `test-scoped`
 and `claims release`. The `claude-hook` exception gets its root from its input

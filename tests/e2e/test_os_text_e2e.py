@@ -238,18 +238,22 @@ def _commands_under(parent: Path) -> dict:
     repo = repository(parent / "repo")
     commit(repo, {**SCAFFOLD, b"crapkit.toml": TOML.replace(b"[crapkit]\n", b"[crapkit]\n" + MUT_TOML, 1),
                   b"t.py": MUT_TEST, b"src/app.py": APP})
+    absolute = str(repo / "src" / "app.py")  # the form tab completion hands over
     codes = {}
     for args in (["init"], ["coverage"], ["inventory"], ["worklist"], ["brief", "src/app.py", "pick"],
-                 ["doctor"], ["verify"], ["mutate", "--files", "src/app.py"]):
+                 ["doctor"], ["verify"], ["mutate", "--files", "src/app.py"], ["explain", absolute, "pick"],
+                 ["brief", absolute, "pick"], ["rescore", "--gate", absolute]):
         res = run_cli(repo, *args)
         assert clean(res), shown(res)
-        codes[args[0]] = res.returncode
+        codes[" ".join(args).replace(absolute, "ABSOLUTE")] = (res.returncode, "outside the repo" in res.stderr)
     return codes
 
 
 @pytest.mark.parametrize("parent", [pytest.param(LATIN1, marks=ONLY_LINUX), "José François", "李雷 \U0001f600"],
                          ids=["dir-invalid-utf8", "dir-valid-accent", "dir-cjk-emoji"])
 def test_every_command_answers_the_same_under_any_directory_name(tmp_path, parent):
+    """An absolute path argument under a Latin-1 parent read as outside the
+    repo at exit 3 (utf8-author U20), where the ASCII parent's answer is 0."""
     assert _commands_under(tmp_path / parent) == _commands_under(tmp_path / "ascii")
 
 

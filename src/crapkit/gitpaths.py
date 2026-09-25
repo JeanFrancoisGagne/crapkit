@@ -56,8 +56,14 @@ def spelled(raw: bytes) -> str:
 
 
 def shown(path: str) -> str:
-    r"""A path for a message: each byte that is not UTF-8 as `\xNN`."""
-    return path.encode("utf-8", "surrogateescape").decode("utf-8", "backslashreplace")
+    r"""A path for a message: each byte that is not UTF-8 as `\xNN`. A lone
+    surrogate outside the escape range, which only a Windows command line hands
+    over, shows as the three bytes of broken UTF-16 it stands for."""
+    try:
+        raw = path.encode("utf-8", "surrogateescape")
+    except UnicodeEncodeError:
+        raw = path.encode("utf-8", "surrogatepass")
+    return raw.decode("utf-8", "backslashreplace")
 
 
 def repo_path(raw: bytes) -> str | None:
