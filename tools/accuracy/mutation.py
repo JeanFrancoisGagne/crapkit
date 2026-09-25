@@ -12,8 +12,11 @@
 mutmut 3.8.0 runs in the accuracy image (it forks, so Linux only). `weekly`
 mutates one shard of the modules every tests/accuracy/*/calcs.tsv row names;
 `diff` mutates only the functions changed since the last weekly run and stops
-at its cap, reporting `incomplete`, never `pass`. Both write a receipt under
-.crapkit/accuracy/mutation/ and then run the gate.
+at its cap, reporting `incomplete`, never `pass`. Both run in a detached
+worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose [tool.mutmut]
+names the modules and the suite, tests/unit and tests/accuracy at the push tier
+with the dependent methods deselected, then write a receipt under
+.crapkit/accuracy/mutation/ and run the gate.
 
 The gate is a survivor set, not a rate. A survivor is keyed by (module,
 function, sha256 of its mutant diff with line numbers and mutmut's numbering
