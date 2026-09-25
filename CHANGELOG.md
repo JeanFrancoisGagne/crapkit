@@ -37,6 +37,11 @@ Two of the source reads below move function keys and scores, so the analysis ver
   name reran it. `claude-hook` read the working tree's names leniently, so a Bash-written
   file named in Latin-1 under a scope named no file on disk and its breach passed with no
   advisory; it now exits 2 with an advisory naming the file and the rename.
+- Under `--json`, the error object of each such refusal lists every refused file in a new
+  `unread_files` field, a `path` and a `reason` per file, where the stderr line names the
+  first and counts the rest. The `check_gate` MCP tool answers a `path` whose name is not
+  UTF-8 with a verdict, `gate.ok` false, `judged` 0 and the file in `gate.unread_files`,
+  where it answered `isError: true` with the error object.
 - Under a POSIX locale that is not UTF-8, `crapkit` restarts itself once with `-X utf8`,
   so `coverage` scores, and `claude-hook` advises on, `pkg/café.py`; each opened
   `pkg/caf\xe9.py`, which does not exist, and skipped the file as missing. The POSIX

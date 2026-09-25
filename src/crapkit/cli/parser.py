@@ -554,7 +554,10 @@ def main(argv: list[str] | None = None) -> int:
 def _print_error_object(exc: CrapkitError) -> None:
     """The one object `--json` promised, when the command died before printing
     its own: a wrapper reads the sentence naming the fix off stdout instead of
-    "wrote no run summary". The stderr line and the exit code are unchanged."""
+    "wrote no run summary". The stderr line and the exit code are unchanged.
+    A refusal that names files adds them (`unread_files` for a name that is
+    not UTF-8)."""
     from ._shared import _print_json
 
-    _print_json({"error": {"exit": exc.exit_code, "kind": exc.kind, "message": str(exc)}})
+    _print_json({"error": {"exit": exc.exit_code, "kind": exc.kind, "message": str(exc),
+                           **exc.json_fields()}})

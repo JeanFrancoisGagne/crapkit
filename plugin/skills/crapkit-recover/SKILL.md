@@ -98,7 +98,8 @@ where Git for Windows checked the file out as `src/café.py`, `git add -A` stage
 `crapkit claude-hook` says the same about a file an agent just wrote under such a name, as an
 advisory at exit 2 (`crapkit advisory: src/caf\xe9.py is in scope 'src', but git names it in
 bytes that are not UTF-8 ...`): the edit landed, no function in it was judged, and the rename is
-the fix. `left out docs/r\xe9sum\xe9.txt: git names it in
+the fix. The `check_gate` tool answers such a file with `gate.ok` false and the file in
+`gate.unread_files`, a failed gate and not a broken tool. `left out docs/r\xe9sum\xe9.txt: git names it in
 bytes that are not UTF-8` is a warning for a tracked name no scope takes, and the command's
 own exit stands; `--json` lists the same names in `unreadable_names`:
 [docs: file paths](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery).

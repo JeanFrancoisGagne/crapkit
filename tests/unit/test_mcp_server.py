@@ -371,6 +371,44 @@ def test_the_other_exits_stay_tool_errors(monkeypatch, tmp_path, exit_code, line
     assert "structuredContent" not in call
 
 
+UNREAD_NAME = {"path": "src/caf\\xe9.py", "reason": "its name is not UTF-8, and crapkit reads every "
+               "path as UTF-8: rename it (git mv) to a UTF-8 name"}
+NAME_REFUSAL = json.dumps({"error": {"exit": 3, "kind": "config", "unread_files": [UNREAD_NAME],
+                                     "message": "src/caf\\xe9.py is named in bytes that are not UTF-8"},
+                           "schema": 1})
+
+
+def test_a_name_the_gate_refused_as_not_utf8_is_a_failed_verdict(monkeypatch, tmp_path):
+    """rescore --gate exits 3 on such a name, as every CLI gate does; check_gate
+    speaks MCP and returns that refusal in its verdict as the unread finding,
+    so an agent reads a gate that failed, not a tool that broke."""
+    _cli_answers(monkeypatch, 3, NAME_REFUSAL, "crapkit: src/caf\\xe9.py is named ...")
+    replies = _serve(monkeypatch, tmp_path, [_call(1, "check_gate", {"path": "src/caf\udce9.py"})])
+
+    call = replies[1]["result"]
+    assert call["isError"] is False, call
+    assert call["structuredContent"] == {"functions": [], "schema": 1, "gate": {
+        "ok": False, "judged": 0, "ceilings": {}, "breaches": [], "untracked": [],
+        "unread_files": [UNREAD_NAME]}}
+    assert json.loads(call["content"][0]["text"]) == call["structuredContent"]
+
+
+@pytest.mark.parametrize("tool, arguments, stdout", [
+    ("get_function_brief", {"path": "src/caf\udce9.py", "name": "f"}, NAME_REFUSAL),
+    ("check_gate", {"path": "src/a.py"},
+     json.dumps({"error": {"exit": 3, "kind": "config", "message": "no crapkit.toml"}, "schema": 1})),
+    ("check_gate", {"path": "src/a.py"}, "not json"),
+], ids=["brief-has-no-verdict", "gate-refusal-naming-no-file", "gate-refusal-not-json"])
+def test_every_other_refusal_stays_a_tool_error(monkeypatch, tmp_path, tool, arguments, stdout):
+    _cli_answers(monkeypatch, 3, stdout, "crapkit: refused")
+    replies = _serve(monkeypatch, tmp_path, [_call(1, tool, arguments)])
+
+    call = replies[1]["result"]
+    assert call["isError"] is True, call
+    assert call["content"][0]["text"] == stdout
+    assert "structuredContent" not in call
+
+
 def test_exit_six_is_a_verdict_only_for_the_gate_tool(monkeypatch, tmp_path):
     """No other tool exits 6; if one ever did, that is still a failure."""
     _cli_answers(monkeypatch, 6, json.dumps({"runs": [], "schema": 1}))

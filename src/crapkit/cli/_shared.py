@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from ..config import load_config_text
-from ..errors import ConfigError, CrapkitError, ToolError
+from ..errors import ConfigError, CrapkitError, ToolError, UnreadableNameError
 from ..gitpaths import readable, shown
 from ..invocation import _self
 from ..rootfind import find_root
@@ -145,8 +145,9 @@ def _readable_argument(rel: str, root: Path) -> str:
     if readable(rel):
         return rel
     if os.path.lexists(root / rel):
-        raise ConfigError(f"{shown(rel)} is named in bytes that are not UTF-8, and crapkit reads "
-                          "every path as UTF-8: rename it (git mv) to a UTF-8 name")
+        raise UnreadableNameError(f"{shown(rel)} is named in bytes that are not UTF-8, and crapkit "
+                                  "reads every path as UTF-8: rename it (git mv) to a UTF-8 name",
+                                  [shown(rel)])
     return os_text(rel)
 
 

@@ -19,7 +19,7 @@ from collections.abc import Callable
 from typing import NamedTuple
 
 from .config import Config, Scope
-from .errors import ConfigError
+from .errors import UnreadableNameError
 from .gitpaths import readable, shown
 
 LANGUAGE_EXTENSIONS = {
@@ -303,11 +303,12 @@ def claiming_scope(path: str, cfg: Config) -> str | None:
 
 
 def _refuse_claimed(names: list[str], cfg: Config, matchers: tuple[ScopeMatch, ...]) -> None:
-    """Exit 3 when the scope assignment takes a name crapkit cannot read."""
+    """Exit 3 when the scope assignment takes a name crapkit cannot read. The
+    sentence names the first and counts the rest; --json lists each."""
     claimed = sorted((path, owner) for path, owner in _candidates(names, cfg, matchers)
                      if owner is not None)
     if claimed:
-        raise ConfigError(_claimed_text(claimed))
+        raise UnreadableNameError(_claimed_text(claimed), [shown(path) for path, _ in claimed])
 
 
 def scan_files(files: list[str], cfg: Config, *,

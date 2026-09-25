@@ -251,6 +251,69 @@ def test_a_command_handed_a_name_that_is_not_utf8_names_the_rename(tmp_path, nam
     assert result.stderr == f"crapkit: {_shown(name)} {ARGUMENT_REFUSAL}\n", result.stderr
 
 
+# The argument a caller hands for a file whose name is not UTF-8: on POSIX the
+# surrogateescape spelling of b"src/caf\xe9.py", on NTFS a lone UTF-16 surrogate.
+# Either OS keeps such a file on disk, and no lookup can key it.
+UNREADABLE_ARGUMENT = "src/caf\udce9.py"
+UNREAD_FILE = {"path": "src/caf\\xe9.py",
+               "reason": "its name is not UTF-8, and crapkit reads every path as UTF-8: "
+                         "rename it (git mv) to a UTF-8 name"}
+
+
+def _measured_with_an_unreadable_file(tmp_path: Path) -> Path:
+    repo = _repo(tmp_path)
+    assert run_cli(repo, "coverage").returncode == 0
+    (repo / UNREADABLE_ARGUMENT).write_text(TANGLED, encoding="utf-8")
+    return repo
+
+
+def test_the_gates_error_object_lists_the_name_in_unread_files(tmp_path):
+    """rescore --gate still exits 3 with its one stderr line; --json adds the
+    name and the reason as `unread_files`, the shape a gate verdict lists."""
+    repo = _measured_with_an_unreadable_file(tmp_path)
+
+    result = run_cli(repo, "rescore", "--gate", UNREADABLE_ARGUMENT, "--json")
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert result.stderr == f"crapkit: src/caf\\xe9.py {ARGUMENT_REFUSAL}\n", result.stderr
+    assert json.loads(result.stdout)["error"]["unread_files"] == [UNREAD_FILE]
+
+
+def test_check_gate_answers_such_a_name_with_a_failed_verdict(tmp_path):
+    """check_gate answered isError true with the exit-3 error object: no
+    verdict, no finding. It speaks MCP, so it returns the gate's refusal as a
+    verdict that fails, with the name in unread_files."""
+    repo = _measured_with_an_unreadable_file(tmp_path)
+    frames = "\n".join(json.dumps(frame) for frame in (
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+         "params": {"protocolVersion": "2025-06-18", "capabilities": {}}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+         "params": {"name": "check_gate", "arguments": {"path": UNREADABLE_ARGUMENT}}}))
+
+    result = run_cli(repo, "mcp", stdin=frames)
+
+    reply = json.loads(result.stdout.splitlines()[-1])["result"]
+    assert reply["isError"] is False, reply
+    gate = reply["structuredContent"]["gate"]
+    assert (gate["ok"], gate["judged"], gate["breaches"]) == (False, 0, []), gate
+    assert gate["unread_files"] == [UNREAD_FILE]
+
+
+@pytest.mark.parametrize("command", ["inventory", "coverage", "verify"])
+def test_a_refused_scoped_name_is_listed_in_the_error_objects_unread_files(tmp_path, command):
+    """The scan's refusal names the first file on stderr and counts the rest;
+    --json lists each one."""
+    repo = _repo(tmp_path)
+    assert run_cli(repo, "coverage").returncode == 0
+    _commit(repo, {b"src/caf\xe9.py": SOURCE, b"src/o\x92brien.py": SOURCE}, "add two Latin-1 names")
+
+    result = run_cli(repo, command, "--json")
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert json.loads(result.stdout)["error"]["unread_files"] == [
+        UNREAD_FILE, {**UNREAD_FILE, "path": "src/o\\x92brien.py"}]
+
+
 # --- a name no scope takes: left out, one line ---------------------------------------
 
 @pytest.mark.parametrize("name", [row[1] for row in UNCLAIMED], ids=[row[0] for row in UNCLAIMED])
