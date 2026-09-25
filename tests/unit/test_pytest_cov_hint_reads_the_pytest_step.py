@@ -30,7 +30,12 @@ def _hint(tmp_path, command: str) -> str:
 @pytest.mark.parametrize("command", ["cd web && python -m pytest --cov=src",
                                      "set X=1 && python -m pytest --cov=src",
                                      "python -m pytest --cov=src"])
-def test_the_hint_binds_the_install_to_the_python_running_pytest(tmp_path, command):
+def test_the_hint_binds_the_install_to_the_python_running_pytest(tmp_path, monkeypatch, command):
+    """`python` resolves to whatever this machine's PATH holds, so its venv
+    kind is pinned; a venv uv made gets the case below."""
+    from crapkit import launchers
+    monkeypatch.setattr(launchers, "_uv_made", lambda python: False)
+
     assert "the environment `python` runs in (`python -m pip install pytest-cov`)" in \
         _hint(tmp_path, command)
 

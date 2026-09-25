@@ -10,6 +10,9 @@ no crapkit.toml, on both the CLI and the MCP side.
 """
 from pathlib import Path
 
+import pytest
+
+from crapkit import launchers
 from crapkit.cli._shared import _load_repo_config
 from crapkit.cli.admin import _missing_pytest_cov_note
 from crapkit.cli.verifying import _require_ancestor
@@ -26,10 +29,17 @@ class _Git:
         return False
 
 
-def test_the_pytest_cov_note_is_ascii():
+@pytest.mark.parametrize("uv_made, install", [
+    (False, "python -m pip install pytest-cov"),
+    (True, "uv pip install --python python pytest-cov"),
+], ids=["pip-venv", "uv-venv"])
+def test_the_pytest_cov_note_is_ascii(monkeypatch, uv_made, install):
+    """The install differs in a venv uv made, so the venv kind is pinned: the
+    `python` this machine's PATH resolves to is the suite runner's business."""
+    monkeypatch.setattr(launchers, "_uv_made", lambda python: uv_made)
     note = _missing_pytest_cov_note("py", "python", LaunchSpec(Path.cwd()))
 
-    assert "cannot import pytest_cov - run `python -m pip install pytest-cov`" in note
+    assert f"cannot import pytest_cov - run `{install}`" in note
     assert note.isascii()
 
 

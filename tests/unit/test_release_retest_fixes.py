@@ -49,7 +49,9 @@ def test_a_repo_with_no_coverable_language_gets_no_lane_template_at_all():
     assert _template_lines(set(), {"cmd": ("go",)}) == []
 
 
-def test_missing_pytest_cov_failure_names_the_package(tmp_path):
+def test_missing_pytest_cov_failure_names_the_package(tmp_path, monkeypatch):
+    from crapkit import launchers
+    monkeypatch.setattr(launchers, "_uv_made", lambda python: False)  # `python` is PATH's
     with pytest.raises(ToolError) as err:
         _raise_no_artifact(tmp_path, _lane(), _FakeLog("ERROR: usage: python -m pytest\n"
                                              "python -m pytest: error: unrecognized "

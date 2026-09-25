@@ -16,7 +16,11 @@ from pathlib import Path
 
 import crapkit
 from crapkit.doctor import InstallScope, plugin_handshake, stale_copy
+# The copy tests' autouse stub of the crapkit on PATH and the claude it probes,
+# imported so it runs here too: without it these lines depended on which
+# crapkit the machine's PATH held, and a PATH with none printed the FAIL instead.
 from test_doctor_plugin_copy import GITHUB, SKILL, claude_home, run
+from test_doctor_plugin_copy import _agreeing_path_crapkit  # noqa: F401
 from test_doctor_plugin_root import _write, plugin
 
 CLI = crapkit.__version__

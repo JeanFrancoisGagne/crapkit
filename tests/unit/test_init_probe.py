@@ -236,6 +236,10 @@ def test_a_probe_that_raises_oserror_says_yes(monkeypatch):
 
 
 def test_a_failing_probe_prints_both_install_commands(monkeypatch, capsys):
+    """`python` resolves to whatever this machine's PATH holds, so its venv
+    kind is pinned: a venv uv made gets `uv pip install --python` instead."""
+    from crapkit import launchers
+    monkeypatch.setattr(launchers, "_uv_made", lambda python: False)
     monkeypatch.setattr(admin, "_pytest_cov_probe", lambda spec, command: False)
     _warn_missing_pytest_cov((_lane("python -m pytest --cov"),))
     err = capsys.readouterr().err
