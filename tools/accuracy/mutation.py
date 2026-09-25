@@ -707,13 +707,10 @@ def canonical(relative: str) -> str:
 
 
 # --- mutmut ---
-import mutmut.utils.format_utils as names
-
-CONFIG = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["mutmut"]
-SOURCES = set(CONFIG["source_paths"])
-MUTANTS = Path("mutants").resolve()
-_strip, _spec = names.strip_prefix, importlib.util.spec_from_file_location
-
+# The rest runs only as the stage's main script. multiprocessing's spawn method
+# runs the parent's __main__ again in each child as __mp_main__, from the cwd
+# mutmut gives the tests (mutants/); unguarded, a unit test's spawned worker
+# started a second mutmut there.
 
 def strip_prefix(text, *, prefix, strict=False):
     text = _strip(text, prefix=prefix, strict=strict)
@@ -733,10 +730,6 @@ def spec_from_file_location(name, location=None, *args, **kwargs):
     return _spec(canonical(relative) if relative else name, location, *args, **kwargs)
 
 
-names.strip_prefix = strip_prefix
-importlib.util.spec_from_file_location = spec_from_file_location
-
-
 def diffs():
     """`diffs`: the diff of every mutant named on stdin, one JSON [name, diff] line each."""
     import json
@@ -749,12 +742,21 @@ def diffs():
             print(f"{name}: {missed!r}", file=sys.stderr)
 
 
-import sys
-if sys.argv[1:2] == ["diffs"]:
-    diffs()
-else:
-    from mutmut.__main__ import cli
-    cli()
+if __name__ == "__main__":
+    import sys
+    import mutmut.utils.format_utils as names
+
+    CONFIG = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["mutmut"]
+    SOURCES = set(CONFIG["source_paths"])
+    MUTANTS = Path("mutants").resolve()
+    _strip, _spec = names.strip_prefix, importlib.util.spec_from_file_location
+    names.strip_prefix = strip_prefix
+    importlib.util.spec_from_file_location = spec_from_file_location
+    if sys.argv[1:2] == ["diffs"]:
+        diffs()
+    else:
+        from mutmut.__main__ import cli
+        cli()
 '''
 
 

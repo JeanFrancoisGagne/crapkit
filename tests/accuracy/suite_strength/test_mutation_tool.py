@@ -18,6 +18,7 @@ import json
 import os
 import re
 from pathlib import Path
+import runpy
 import sys
 import time
 
@@ -628,8 +629,7 @@ def test_the_launcher_names_a_module_the_way_its_tests_import_it(tmp_path):
     """mutmut strips `src.` from a path's dotted name; the launcher also strips
     `tests.`, and a mutated file a test loads by path takes that same name."""
     namespace: dict = {}
-    source = mutation.LAUNCHER.replace("from mutmut.__main__ import cli\ncli()\n", "")
-    exec(compile(source.split("# --- mutmut ---")[0], "launcher", "exec"), namespace)
+    exec(compile(mutation.LAUNCHER.split("# --- mutmut ---")[0], "launcher", "exec"), namespace)
 
     assert namespace["canonical"]("tests/accuracy/kit/exact.py") == "accuracy.kit.exact"
     assert namespace["canonical"]("tools/accuracy/run.py") == "tools.accuracy.run"
@@ -1704,3 +1704,23 @@ def test_a_pyproject_with_no_mutmut_table_gets_the_stage_s_alone():
 
     assert mutation.stage_config("[project]\nname = 'x'\n", targets, ["src"]) == (
         "[project]\nname = 'x'\n\n\n\n" + mutation._stage_table(targets, ["src"]))
+
+
+# --- the launcher starts mutmut only as the stage's main script -------------------------------------
+
+def test_a_child_that_runs_the_launcher_again_as_its_main_starts_nothing(tmp_path, monkeypatch):
+    """multiprocessing's spawn method runs the parent's __main__ again in each child,
+    as __mp_main__. A unit test that spawns workers did so under the calc stage,
+    from mutants/, where mutmut runs the tests; the unguarded launcher started a
+    second mutmut there, which copied the tree into mutants/mutants, and 137 unit
+    test modules then failed to import during the stats run."""
+    launcher = tmp_path / mutation.LAUNCHER_FILE
+    launcher.write_bytes(mutation.LAUNCHER.encode())
+    monkeypatch.chdir(tmp_path)
+    loader = importlib.util.spec_from_file_location
+
+    namespace = runpy.run_path(str(launcher), run_name="__mp_main__")
+
+    assert importlib.util.spec_from_file_location is loader
+    assert "CONFIG" not in namespace and "cli" not in namespace
+    assert sorted(path.name for path in tmp_path.iterdir()) == [mutation.LAUNCHER_FILE]
