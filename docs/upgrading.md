@@ -284,6 +284,15 @@ MCP clients use the [stdio setup](agent-json.md#mcp-server); skill copies and cu
 hook entries need their own update. Run packet commands as supplied, in the
 environment that owns the intended CLI, to retain literal arguments and exit codes.
 
+0.6.0 renamed every MCP tool to verb_noun. A client that still sends a 0.5.x name, from
+a Codex `enabled_tools` list, a `mcp__crapkit__worklist` allowlist entry or a script,
+gets a tool error that names the new tool:
+
+    unknown tool 'worklist': renamed list_worklist in 0.6.0, with the same arguments and result; call list_worklist
+
+Replace the old name where the client lists it. The 0.6.0 entry of the
+[changelog](../CHANGELOG.md) has the full table.
+
 ## Windows launcher locks
 
 A running `crapkit.exe mcp` can hold the console launcher open. An upgrade then

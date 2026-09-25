@@ -320,6 +320,14 @@ nothing. Each of these now gets a line naming the object and the next step:
 - Exit codes do not change. A failure in a repository git can use keeps git's own reason,
   and a git answer given as exit 1, such as an unset config key, starts no extra process.
 
+### The MCP server answers calls it used to fail
+
+- A call to a 0.5.x tool name answers with the name 0.6.0 gave it: `unknown tool
+  'worklist': renamed list_worklist in 0.6.0, with the same arguments and result; call
+  list_worklist`. A client that pinned the old names, in a Codex `enabled_tools` list or a
+  Claude Code `mcp__crapkit__worklist` allowlist, got `unknown tool 'worklist'` and nothing
+  its model could try next. A name that was never a tool keeps the bare refusal.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

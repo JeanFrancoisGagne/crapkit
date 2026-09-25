@@ -1598,7 +1598,10 @@ the stderr line; `get_next_item`, which has no `--json` flag, answers the stderr
 `isError: false` with `structuredContent` attached and `gate.ok` false, while exits 3, 4 and 5
 (and 1, no scored run yet) stay tool errors. `isError` is also
 true in the cases where no CLI call runs at all: the missing-config result above, an
-unknown tool name, and an argument the tool's own table refuses.
+unknown tool name, and an argument the tool's own table refuses. A 0.5.x tool name is
+unknown too, and its answer names the tool 0.6.0 renamed it to:
+`unknown tool 'worklist': renamed list_worklist in 0.6.0, with the same arguments and
+result; call list_worklist`.
 
 Arguments are checked against the served schema before anything is spawned. `tools/list`
 declares `required` from each tool's positionals (`get_function_brief` and
