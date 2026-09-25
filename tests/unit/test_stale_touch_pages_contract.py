@@ -983,3 +983,16 @@ def test_the_upgrade_notes_say_a_0_8_0_stamp_is_judged_by_its_commit_until_the_l
 
     assert "A stamp 0.8.0 wrote records only its commit" in notes
     assert "`lanes.staleness_reads` is gone, with no shim" in notes
+
+
+# -- scored_changes is null when crapkit cannot compare, in every payload ---------
+
+def test_every_agent_json_table_types_scored_changes_int_or_null():
+    """next-item, brief and worklist each carry `null` for a run 0.8.0 wrote or
+    a git failure. The brief table said `int`, so an agent that read that table
+    alone had no branch for the null the packet carries."""
+    rows = [line for line in _page("docs/agent-json.md").splitlines()
+            if line.startswith("| `scored_changes` |")]
+
+    types = [line.split("|")[2].replace("*", "").strip() for line in rows]
+    assert len(types) == 3 and set(types) == {"int or null"}, rows
