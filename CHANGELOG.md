@@ -425,6 +425,29 @@ nothing. Each of these now gets a line naming the object and the next step:
 - A Windows command line printed by crapkit writes a long flag such as `--top` bare, as
   cmd.exe and PowerShell both pass it on.
 
+### Running crapkit through uvx
+
+- Under `uvx crapkit`, every next step and refusal names `uvx crapkit`: `init` ends with
+  ``next: run `uvx crapkit coverage` ``, and `coverage` with `-> next: uvx crapkit
+  worklist`. They named `crapkit`, which uvx never puts on PATH, so the command the
+  README's route for a repo that is not Python printed next answered `crapkit: not found`
+  (exit 127). crapkit started from another runner's cache, such as `pipx run`, names the
+  interpreter running it (`<python> -m crapkit`). A runner's cache is a directory tagged
+  CACHEDIR.TAG above the environment; `uv tool install` and `pipx install` still get
+  `crapkit`.
+- `uvx crapkit doctor --plugin-root` no longer counts the launcher uvx put on its own PATH.
+  It found that copy and passed, exit 0, a plugin whose hooks spawn a `crapkit` that no
+  other process's PATH carries. It now prints ``FAIL no `crapkit` on PATH``.
+- [The git merge driver](docs/ratchet.md#the-git-merge-driver) gives a uvx clone
+  `git config merge.crapkit-ratchet.driver "uvx crapkit ratchet merge %O %A %B"`. The
+  documented `crapkit ratchet merge %O %A %B` failed every marks-file merge there with
+  `crapkit: not found` and left your side in crapkit-ratchet.tsv with no conflict markers.
+  The page and the recover skill quote that failure and say to run `git merge --abort`
+  rather than stage the file.
+- README says a Python repo installs crapkit with pip, `uv tool install` or `pipx install`
+  rather than running it through uvx: uvx puts its own interpreter first on the PATH the
+  lane inherits, so the lane's `python` has neither the suite's packages nor pytest-cov.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

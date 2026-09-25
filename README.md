@@ -71,8 +71,10 @@ git add crapkit.toml crapkit-ratchet.tsv .gitignore
 ```
 
 Not a Python repo? `uvx crapkit init` runs the same commands and adds nothing to your
-manifest: see [A repo that is not Python](#a-repo-that-is-not-python). pip stops with
-`externally-managed-environment`? See [When pip refuses](#when-pip-refuses).
+manifest: see [A repo that is not Python](#a-repo-that-is-not-python). A Python repo
+skips uvx and installs crapkit as above, or with `uv tool install` or `pipx install`; that
+section says why. pip stops with `externally-managed-environment`? See
+[When pip refuses](#when-pip-refuses).
 
 `coverage` measures a commit, so a fresh `git init` repo needs its first commit before
 it. Until then it exits 4 and says so:
@@ -205,18 +207,27 @@ on the machine, `uvx` fetches crapkit into a cache of its own and runs it:
 ```
 $ uvx crapkit init
 wrote crapkit.toml with 1 scope(s): src
-detected 1 lane(s) from this repo's own files: js - next: run `crapkit coverage`
+detected 1 lane(s) from this repo's own files: js - next: run `uvx crapkit coverage`
 added to .gitignore: .crapkit/
 
 $ uvx crapkit coverage
 $ uvx crapkit worklist
 ```
 
-The lane still runs your own test runner, so Vitest or Jest and its coverage package come
-from the repo's `node_modules` as they do today. `uv tool install crapkit` or
+uvx puts no `crapkit` on PATH, so every next step crapkit prints under uvx starts with
+`uvx crapkit`. The lane still runs your own test runner, so Vitest or Jest and its coverage
+package come from the repo's `node_modules` as they do today. `uv tool install crapkit` or
 `pipx install crapkit` puts a `crapkit` command on PATH once, which is what the
-[commit gate](#the-gate) and the Claude Code plugin call. uv brings its own Python when
-the machine has none.
+[commit gate](#the-gate) and the Claude Code plugin call. The ratchet's merge driver takes
+either form; [the git merge driver](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-git-merge-driver)
+gives the uvx line. uv brings its own Python when the machine has none.
+
+A Python repo installs crapkit instead: in the environment its suite runs in
+(`pip install "crapkit[py]"`), or with `uv tool install crapkit` or `pipx install crapkit`.
+uvx puts its own environment first on the PATH the lane inherits, so the lane's `python`
+starts uv's cached interpreter, which holds neither the suite's packages nor pytest-cov.
+`init` then says that interpreter cannot import pytest_cov, and installing pytest-cov into
+uv's cache fixes nothing the suite needs.
 
 Requires Python 3.11 or newer and Git on PATH. On an older Python pip finds no release it
 can install, and `uvx crapkit` runs crapkit on a Python 3.11 or newer that uv finds or

@@ -182,3 +182,17 @@ def test_the_module_run_prescribes_the_interpreter_that_is_running_it(message, t
 @MESSAGES
 def test_a_uvx_run_prescribes_uvx(message, tmp_path, as_uvx):
     assert "`uvx crapkit coverage`" in message(tmp_path)
+
+
+def test_the_readme_uvx_transcript_quotes_the_next_step_uvx_prints(as_uvx):
+    """README's `uvx crapkit init` block showed `next: run \\`crapkit coverage\\``,
+    the line a reader then pasted into a shell with no crapkit on PATH."""
+    from types import SimpleNamespace
+
+    from crapkit.cli.admin import _next_step
+
+    line = _next_step({"src": ("typescript",)}, (SimpleNamespace(name="js"),))
+    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    block = readme.split("$ uvx crapkit init\n", 1)[1].split("\n\n", 1)[0]
+
+    assert line in block.splitlines(), block
