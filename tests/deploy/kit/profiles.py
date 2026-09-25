@@ -355,11 +355,24 @@ def initialize_params(start: dict) -> dict:
     return first.get("params", {}) if first.get("method") == "initialize" else {}
 
 
+# On Windows, `npm ci` of the harness locks leaves no .bin shim for cline:
+# cline and its platform package both declare the bin name, and the platform
+# package's cline.exe is the binary cline's own launcher runs. A global
+# `npm i -g cline` nests that package and links cline.cmd.
+PLATFORM_BINS = {"nt": [Path("@cline") / "cli-windows-x64" / "bin"]}
+
+
+def harness_dirs(box) -> list[str]:
+    """The toolchain's harness bin directories, and the platform binaries npm left unlinked."""
+    listed = [Path(directory) for directory in box.toolchain.get("harness_bin", [])]
+    unlinked = [directory.parent / relative for directory in listed for relative in PLATFORM_BINS.get(os.name, [])]
+    return [str(directory) for directory in [*listed, *unlinked] if directory.is_dir()]
+
+
 def add_harnesses(box) -> None:
     """The pinned harness CLIs after everything on the sandbox PATH, and the
     switches that keep them offline and inside the sandbox."""
-    extra = [directory for directory in box.toolchain.get("harness_bin", []) if Path(directory).is_dir()]
-    box.env["PATH"] = os.pathsep.join([*box.path_dirs(), *extra])
+    box.env["PATH"] = os.pathsep.join([*box.path_dirs(), *harness_dirs(box)])
     box.env.update(REAL_CLI_ENV, JUNIE_HOME=str(box.home / ".junie"))
 
 
