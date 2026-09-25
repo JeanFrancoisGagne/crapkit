@@ -339,8 +339,9 @@ def test_a_mixed_artifact_is_another_tree_and_the_outside_paths_win(tmp_path):
 
 
 def test_a_js_lane_is_told_about_its_own_reporter_not_about_coveragepy(tmp_path):
-    """The istanbul reader strips the root off every path literally, so an
-    absolute in-tree path means the reporter spelled the root some other way."""
+    """The istanbul reader rebases every key that resolves under this checkout,
+    so an absolute in-tree key left over is one this machine could not open:
+    the advice is to rerun the lane here, not a coverage.py setting."""
     measured = {_inside(tmp_path, "web/src/app.ts"): []}
 
     with pytest.raises(ToolError) as raised:
@@ -349,4 +350,4 @@ def test_a_js_lane_is_told_about_its_own_reporter_not_about_coveragepy(tmp_path)
     message = str(raised.value)
     assert "under this checkout" in message
     assert "relative_files" not in message, "a coverage.py key a JS reporter never reads"
-    assert "cwd" in message and "root" in message
+    assert "rerun the lane on this machine" in message
