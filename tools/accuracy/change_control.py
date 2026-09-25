@@ -1683,10 +1683,10 @@ def _recorded(row: dict) -> tuple[str, str]:
 
 def _misrecorded(key: str, row: dict, judged: Judgement) -> Problem:
     cell = judged.cell
-    return Problem("B11", f"changes/{key}.moved.tsv records {row.get('oracle') or 'no oracle'} "
-                          f"{row.get('oracle_value')} at {cell.path}:{cell.handle} {cell.column}; "
-                          f"{judged.oracle or 'no oracle'} says {judged.value or 'nothing'}",
-                   f"rerun the declare of {key}")
+    recorded = " ".join(filter(None, _recorded(row))) or "no oracle"
+    now = f"{judged.oracle} says {judged.value}" if judged.oracle else "no oracle answers"
+    return Problem("B11", f"changes/{key}.moved.tsv records {recorded} at {cell.path}:"
+                          f"{cell.handle} {cell.column}; {now}", f"rerun the declare of {key}")
 
 
 def _oracle_problem(diff: Diff, key: str, row: dict) -> Problem | None:

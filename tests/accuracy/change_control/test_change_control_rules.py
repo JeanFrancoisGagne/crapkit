@@ -1048,8 +1048,11 @@ def test_declare_refuses_a_move_the_oracle_disagrees_with(make_repo, oracle):
     with pytest.raises(cc.ChangeControlError) as refused:
         _declare(top, _request())
 
-    assert "crapkit now says 9, radon says 7 at src/a.py:parse (ccn)" in str(refused.value)
-    assert "--against-oracle <ruling-id>" in str(refused.value)
+    assert str(refused.value).startswith(
+        "declare refused:\n  crapkit now says 9, radon says 7 at src/a.py:parse (ccn): this looks "
+        "like a regression, fix the code; if crapkit is right to differ, name the rulings row "
+        "that covers it with --against-oracle <ruling-id>\n")
+    assert "\nmoved calcs: " in str(refused.value)
     assert not (top / cc.MOVED).exists()
 
 
@@ -1088,7 +1091,11 @@ def test_declare_asks_for_the_analysis_bump_a_moved_digest_needs(make_repo):
     with pytest.raises(cc.ChangeControlError) as refused:
         _declare(top, _request())
 
-    assert ("bump ANALYSIS_VERSION in src/crapkit/analyze.py to 12 (A1), then rerun this "
+    moved_to = seeds.corpus_digest(head)  # the corpus is unchanged; the metrics moved
+    assert moved_to == seeds.corpus_digest(BASE_CCN8)
+    assert (f"the metric digest moved from {_last_digest(BASE_CCN8)} to "
+            f"{cc.metric_digest(_tree(head))} under analysis 11, lizard 1.24.0: bump "
+            "ANALYSIS_VERSION in src/crapkit/analyze.py to 12 (A1), then rerun this "
             "declare") in str(refused.value)
 
 
@@ -1231,7 +1238,8 @@ def test_declare_none_records_a_change_that_moves_nothing(make_repo):
 def _cognitive9(tree: dict) -> dict:
     """parse's cognitive at 9, where complexipy gives 8."""
     head = seeds.replace(tree, seeds.SCORED, "add-tests\t8\t1", "add-tests\t9\t1")
-    return seeds.bump(seeds.replace(head, seeds.INVENTORY, "\t2\t2\t8\t1\n", "\t2\t2\t9\t1\n"), "12")
+    head = seeds.replace(head, seeds.INVENTORY, "\t2\t2\t8\t1\n", "\t2\t2\t9\t1\n")
+    return seeds.bump(head, "12")
 
 
 @pytest.mark.process
@@ -1289,7 +1297,8 @@ def test_declare_refuses_a_fix_when_nothing_moved_and_a_reused_id(make_repo):
 # --- what moved, and what a declaration answers for, read on in-memory trees ---------------------
 
 def test_a_column_the_head_adds_moves_on_every_row():
-    base = seeds.tool().DictTree({seeds.SCORED: b"path\tlong_name\tstart\tccn\nsrc/a.py\tf( )\t1\t2\n"})
+    base = seeds.tool().DictTree({seeds.SCORED: b"path\tlong_name\tstart\tccn\n"
+                                                b"src/a.py\tf( )\t1\t2\n"})
     head = seeds.tool().DictTree({seeds.SCORED: b"path\tlong_name\tstart\tccn\tnesting\n"
                                                 b"src/a.py\tf( )\t1\t2\t0\n"})
 
@@ -1532,3 +1541,31 @@ def test_the_check_reads_the_running_lizard_and_a_gone_row_at_the_base(make_repo
     assert "metric-digests.tsv: the last row has lizard_version 1.24.0, the tree gives 1.25.0" \
         in text
     assert f"  {seeds.SCORED}\tsrc/a.py\tf11\trow\tpresent\tabsent\tast present" in text
+
+
+def test_a_declaration_names_every_problem_with_its_id_kind_reason_and_calcs():
+    changes = cc.changes_of(_tree(BASE))
+    known = cc.known_calcs(_tree(BASE))
+
+    wrong = cc._request_problems(cc.Request("c3", "tweak", ("Nope", "Nor this"), " "), changes,
+                                 known)
+    fine = cc._request_problems(cc.Request("Cfix", "none", (), "why"), changes, known)
+
+    assert wrong == ["id 'c3' is not a word starting with a capital, such as C3",
+                     "kind 'tweak' is not one of fix, definition, feature, none",
+                     "a declared change gives a --reason",
+                     "no calc is named 'Nope', 'Nor this'"]
+    assert fine == []
+
+
+F1 = cc.Cell(seeds.SCORED, "src/a.py", "f1", "crap", "1.5", "1.0")
+
+
+@pytest.mark.parametrize("row, judged, text", [
+    ({"oracle": "radon", "oracle_value": "7"}, cc.Judgement(F1, "", ""),
+     "changes/C3.moved.tsv records radon 7 at src/a.py:f1 crap; no oracle answers"),
+    ({"oracle": "", "oracle_value": ""}, cc.Judgement(F1, "kit.exact", "1.0"),
+     "changes/C3.moved.tsv records no oracle at src/a.py:f1 crap; kit.exact says 1.0"),
+])
+def test_a_misquoted_oracle_names_what_was_recorded_and_what_answers_now(row, judged, text):
+    assert cc._misrecorded("C3", row, judged) == cc.Problem("B11", text, "rerun the declare of C3")

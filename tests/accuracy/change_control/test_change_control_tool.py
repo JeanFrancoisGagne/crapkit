@@ -334,18 +334,30 @@ def test_counts_says_which_packet_moved_and_write_records_it(make_repo, capsys, 
 def test_a_collection_error_stops_the_count(make_repo):
     top = seeds.seeded(make_repo, {**BASE, seeds.SEED_TEST: "def broken(:\n"})
 
-    with pytest.raises(cc.ChangeControlError, match="^pytest --collect-only tests/accuracy exited [1-9]"):
+    with pytest.raises(cc.ChangeControlError,
+                       match="^pytest --collect-only tests/accuracy exited [1-9]"):
         cc.collect_counts(top)
 
 
 def test_count_problems_name_each_packet_that_differs():
     committed = b"packet\ttests\nkit\t10\nscore_model\t3\n"
 
-    problems = cc.count_problems(committed, {"kit": 10, "score_model": 4, "verdict_model": 2})
+    problems = cc.count_problems(committed, {"score_model": 4, "verdict_model": 2})
 
     assert [problem.text for problem in problems] == [
+        f"packet kit collects 0 tests, {cc.COUNTS} says 10",
         f"packet score_model collects 4 tests, {cc.COUNTS} says 3",
         f"packet verdict_model collects 2 tests, {cc.COUNTS} says 0"]
+
+
+def test_a_test_run_gets_the_checkout_s_tests_first_on_the_path_and_no_bytecode(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHONPATH", "elsewhere")
+
+    env = cc._tests_env(tmp_path, {"EXTRA": "1"})
+
+    assert (env["PYTHONPATH"], env["PYTHONDONTWRITEBYTECODE"], env["EXTRA"]) == (
+        os.pathsep.join((str(tmp_path / "tests"), "elsewhere")), "1", "1")
 
 
 # --- the pre-push hook ------------------------------------------------------------------------
@@ -600,7 +612,8 @@ def _disagrees(judgement) -> bool:
 def test_declare_stops_when_the_regenerator_fails(make_repo):
     top = seeds.seeded(make_repo, {**BASE, cc.REGENERATE: "import sys\nsys.exit('no corpus')\n"})
 
-    with pytest.raises(cc.ChangeControlError, match=r"regenerate.py goldens exited 1:\n.*no corpus"):
+    with pytest.raises(cc.ChangeControlError,
+                       match=r"regenerate.py goldens exited 1:\n.*no corpus"):
         cc.declare(top, cc.Request("C3", "none", (), "a refactor"), lizard="1.24.0")
 
 
@@ -1070,8 +1083,14 @@ def test_the_first_lock_writes_each_table_s_header_into_a_tree_without_it(tmp_pa
 
     cc.lock_initial(tmp_path, cc.Running("11", "1.24.0"), "2026-09-25", {"score_model": 3})
 
-    assert (tmp_path / cc.CHANGES).read_text().splitlines()[0] == "\t".join(cc.CHANGE_COLUMNS)
-    assert (tmp_path / cc.DIGESTS).read_text().splitlines()[0] == "\t".join(cc.DIGEST_COLUMNS)
+    assert (tmp_path / cc.CHANGES).read_text().splitlines() == [
+        "\t".join(cc.CHANGE_COLUMNS),
+        "C1\t2026-09-25\tnone\t\t11\t1.24.0\t\tthe first lock over every golden and "
+        "expected-value file"]
+    metrics = cc.metric_digest(seeds._tree_bytes(tree))
+    assert (tmp_path / cc.DIGESTS).read_text().splitlines() == [
+        "\t".join(cc.DIGEST_COLUMNS),
+        f"11\t1.24.0\t{seeds.corpus_digest(tree)}\t{metrics}\tC1"]
 
 
 def test_eslint_not_installed_names_the_install_command(tmp_path, monkeypatch):

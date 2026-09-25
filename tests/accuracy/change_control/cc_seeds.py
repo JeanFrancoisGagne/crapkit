@@ -159,7 +159,8 @@ def base(rows: list[dict] | None = None) -> dict[str, str]:
                         "C2)\n",
         ANALYZE: "import lizard\n\nANALYSIS_VERSION = 11  # the reader's version\n",
         MODULE: "def crap(ccn, cov):\n    return ccn * ccn * (1 - cov) ** 3 + ccn\n",
-        HOOK: "def violations(rows, marks):\n    return [row for row in rows if row not in marks]\n",
+        HOOK: ("def violations(rows, marks):\n"
+               "    return [row for row in rows if row not in marks]\n"),
         SOURCE: SMALL,
         SCORED: scored(rows),
         INVENTORY: inventory(rows),
