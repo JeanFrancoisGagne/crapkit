@@ -57,4 +57,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_rust_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
     {"name": "Java ccn, cognitive and nesting against Checkstyle and PMD", "seconds": 90,
      "pytest": [_PACKET + "test_java_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "C-family ccn, cognitive and nesting against OCLint and clang-tidy", "seconds": 120,
+     "pytest": [_PACKET + "test_c_family_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
 ]

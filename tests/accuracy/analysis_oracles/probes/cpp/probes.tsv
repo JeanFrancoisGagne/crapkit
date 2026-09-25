@@ -94,3 +94,4 @@ c-guarded	constructs.cpp	guarded	params	1	ISO/IEC 14882:2020 [dcl.fct.def.genera
 c-closure-if	shapes.cpp	closure_if	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the closure raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
 c-closure-if	shapes.cpp	closure_if	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the closure	AO-N-CLOSURE-IF
 c-closure-if	shapes.cpp	closure_if	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+cpp-template-less	shapes.cpp	after_limit	start	16	ISO/IEC 14882:2020 [temp.param] and [dcl.fct.def.general]: a default template argument is an expression, so (N < 19) is a parenthesized comparison and after_limit is a function definition that starts on its defining line	AO-CPP-TEMPLATE-DEFAULT-LESS

@@ -6,3 +6,16 @@ void closure_if(std::vector<int> v) {
         }
     });
 }
+
+// A template parameter whose default holds a less-than comparison.
+template <int N, bool E = (N < 19)>
+struct Limit {
+    static constexpr int value = N;
+};
+
+int after_limit(int a) {
+    if (a) {
+        return 1;
+    }
+    return 0;
+}

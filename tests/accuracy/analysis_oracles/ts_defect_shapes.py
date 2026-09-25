@@ -54,6 +54,37 @@ def own(fn, context: Context):
     return counters.own_nodes(fn, context.spec)
 
 
+def _holds_less(node) -> bool:
+    """A `<` comparison anywhere inside node."""
+    stack = [node]
+    while stack:
+        node = stack.pop()
+        if node.type == "binary_expression" and any(kid.type == "<" for kid in node.children):
+            return True
+        stack.extend(node.children)
+    return False
+
+
+def _first_template_less(root) -> int | None:
+    """The end byte of the first template parameter list holding a `<` comparison."""
+    stack, found = [root], []
+    while stack:
+        node = stack.pop()
+        found += [node.end_byte] if node.type == "template_parameter_list" and \
+            _holds_less(node) else []
+        stack.extend(node.children)
+    return min(found, default=None)
+
+
+def after_template_less(fn, context: Context) -> bool:
+    """AO-CPP-TEMPLATE-DEFAULT-LESS: fn comes after a template parameter whose
+    default holds a `<` comparison, past which crapkit lists no function."""
+    if "template-less" not in context.facts:
+        context.facts["template-less"] = _first_template_less(context.tree.root_node)
+    first = context.facts["template-less"]
+    return first is not None and fn.start_byte > first
+
+
 def has_type(fn, context: Context, kinds) -> bool:
     return any(node.type in kinds for node in own(fn, context))
 
@@ -771,6 +802,7 @@ SHAPES = [
     Shape("AO-COG-CLOSURE", ND_LANGUAGES, COGNITIVE, closure_structure),
     Shape("AO-COG-RECURSION-NAME-C", C_FAMILY, COGNITIVE, name_not_called),
     Shape("AO-C-DIRECTIVE-NLOC", C_FAMILY, NLOC, lambda fn, c: has_type(fn, c, {"preproc_call"})),
+    Shape("AO-CPP-TEMPLATE-DEFAULT-LESS", _all("cpp"), EVERY, after_template_less),
 ]
 
 
