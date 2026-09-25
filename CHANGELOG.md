@@ -91,19 +91,8 @@ Two of the source reads below move function keys and scores, so the analysis ver
   tighten, the merge driver) refuses at exit 3 naming the byte, and a UTF-16 file is
   written back as UTF-16 in its own line endings. A past revision in cp1252 or UTF-16 no
   longer stops `ratchet report`, and a UTF-16 one keeps each mark's entry date.
-- `init` reads a root `package.json` past a UTF-8 byte-order mark, as npm does; a BOM used
-  to cost the js lane in silence. A root one in UTF-16 or holding a byte that is not UTF-8
-  stops `init` at exit 3 before it writes any file, naming the file, its first bad bytes
-  and `save it as UTF-8`, where 0.8.0 ended in a traceback after `crapkit.toml` was
-  written. A nested one is skipped with one line naming it.
-- `init` appends to `.gitignore` as git reads it, as bytes: a cp1252 comment, CRLF lines
-  and a byte-order mark stay byte for byte, and the new entries take the file's own line
-  ending, where a CRLF `.gitignore` came back all LF. A UTF-16 `.gitignore` is named with
-  the fix and left as it was.
-- `init` writes `.gitignore` before `crapkit.toml`. Run over a `crapkit.toml` an earlier run
-  left behind, it adds the missing `.gitignore` entries, says so and exits 0, leaving
-  `crapkit.toml` byte for byte; 0.8.0 refused with `crapkit.toml already exists`, so
-  `.crapkit/` was never ignored.
+- `init`'s reads of a `package.json` or `.gitignore` in UTF-16, behind a byte-order mark or
+  holding a byte that is not UTF-8 are in the next section.
 - Lane, flake-retest and mutation children start with `PYTHONIOENCODING=utf-8` on every
   OS unless the lane's `env` sets it. A refusal quotes `No module named 'café'` as the
   child wrote it, a `pytest -s` test that prints an emoji passes under crapkit as it does
@@ -154,7 +143,9 @@ The exit codes, the lane environment and the files that change on upgrade are in
 - `init` writes `.gitignore` before `crapkit.toml`. Run over a `crapkit.toml` an earlier run
   left behind, it adds the missing `.gitignore` entries, says so and exits 0, leaving
   `crapkit.toml` byte for byte; 0.8.0 refused with `crapkit.toml already exists`, so
-  `.crapkit/` was never ignored.
+  `.crapkit/` was never ignored. When that `.gitignore` is UTF-16, the step it cannot
+  finish, it exits 3 with the one line that names the file and the fix, where it went on to
+  say `crapkit.toml already exists ... edit it instead`, a file that needed nothing.
 
 ## 0.8.0 — 2026-09-23
 

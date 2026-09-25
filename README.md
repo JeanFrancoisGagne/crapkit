@@ -1037,7 +1037,8 @@ nested one, a test fixture say, is skipped with one warning line naming it.
 without touching a byte already there. A UTF-16 `.gitignore`, which git cannot read either, is
 named on stderr with the fix and left as it was. Run `init` again over an existing
 `crapkit.toml` and it adds the `.gitignore` entries its lanes need, says what it finished,
-exits 0 and leaves `crapkit.toml` byte for byte; with nothing missing it refuses with
+exits 0 and leaves `crapkit.toml` byte for byte. Over a UTF-16 `.gitignore` it exits 3 with
+the line that names that file and the entries to add; with nothing missing it refuses with
 `already exists`.
 
 ```toml

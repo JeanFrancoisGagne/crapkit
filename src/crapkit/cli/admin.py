@@ -11,6 +11,7 @@ import re
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 
 from .. import __version__, config
 from ..config import load_config_text
@@ -516,34 +517,44 @@ def _ignores_store(gitignore: Path) -> bool:
     return bool(lines & {".crapkit/", ".crapkit"})
 
 
-def _extend_gitignore(root: Path, lanes: tuple) -> list[str]:
+class _GitignoreStep(NamedTuple):
+    """What init's .gitignore step did: the entries it appended, or, for a
+    UTF-16 file git cannot read, the sentence saying init left it as it was
+    and which entries to add. Each caller decides what that sentence is: a
+    first init prints it and still writes crapkit.toml, and a second init
+    refuses with it, since the .gitignore is the one step left to finish."""
+    added: list[str]
+    unreadable: str | None = None
+
+
+def _extend_gitignore(root: Path, lanes: tuple) -> _GitignoreStep:
     """Ignore what adopting crapkit will write: the store, and each lane's
     artifact. Without this the consumer's next `git status` is a wall of
     untracked coverage output nobody asked for. A nested configuration under a
     root whose .gitignore already ignores the store writes nothing (ADR 0002).
-    The entries it added come back, for the caller to print.
 
     git reads .gitignore as bytes, and so does this: every byte already there
     stays, a cp1252 comment included, and the entries take the file's own line
-    ending. A UTF-16 file, which git cannot read, is left as it was and named."""
+    ending. A UTF-16 file, which git cannot read, is left as it was."""
     from ..repotext import utf16_marked
 
     if _store_ignored_above(root):
-        return []
+        return _GitignoreStep([])
     path = root / ".gitignore"
     raw = path.read_bytes() if path.is_file() else b""
     if utf16_marked(raw):
-        _name_unreadable_gitignore(raw, lanes)
-        return []
+        return _GitignoreStep([], _unreadable_gitignore(raw, lanes))
     extended, added = _extended_gitignore(raw, lanes)
     if added:
         path.write_bytes(extended)
-    return added
+    return _GitignoreStep(added)
 
 
-def _print_gitignore_added(added: list[str]) -> None:
-    if added:
-        print(f"added to .gitignore: {', '.join(added)}")
+def _print_gitignore_step(step: _GitignoreStep) -> None:
+    if step.unreadable:
+        print(f"crapkit: {step.unreadable}", file=sys.stderr)
+    if step.added:
+        print(f"added to .gitignore: {', '.join(step.added)}")
 
 
 def _extended_gitignore(raw: bytes, lanes: tuple) -> tuple[bytes, list[str]]:
@@ -557,12 +568,12 @@ def _extended_gitignore(raw: bytes, lanes: tuple) -> tuple[bytes, list[str]]:
     return raw + text[len(current):].replace("\n", newline).encode("utf-8"), added
 
 
-def _name_unreadable_gitignore(raw: bytes, lanes: tuple) -> None:
+def _unreadable_gitignore(raw: bytes, lanes: tuple) -> str:
     from ..scaffold import gitignore_entries
 
-    print(f"crapkit: left .gitignore as it was: it is UTF-16 (first bytes {raw[:2].hex(' ')}, "
-          "the PowerShell 5.1 Out-File default), which git cannot read; save it as UTF-8 "
-          f"and add {', '.join(gitignore_entries(lanes))}", file=sys.stderr)
+    return (f"left .gitignore as it was: it is UTF-16 (first bytes {raw[:2].hex(' ')}, "
+            "the PowerShell 5.1 Out-File default), which git cannot read; save it as UTF-8 "
+            f"and add {', '.join(gitignore_entries(lanes))}")
 
 
 def _refuse_claimed_by_ancestor(root: Path) -> None:
@@ -588,14 +599,17 @@ def _finish_init(root: Path) -> int:
     wrote crapkit.toml first, so a run that died on the .gitignore step left a
     config the next init refused to touch, and .crapkit/ was never ignored.
     The missing .gitignore entries come from the lanes crapkit.toml declares
-    now; crapkit.toml itself is left byte for byte. With nothing missing, this
-    is the refusal it always was."""
-    added = _extend_gitignore(root, _load_repo_config(root).lanes)
-    if not added:
+    now; crapkit.toml itself is left byte for byte. A UTF-16 .gitignore is the
+    step it cannot finish, so the refusal names that file and nothing else.
+    With nothing missing, this is the refusal it always was."""
+    step = _extend_gitignore(root, _load_repo_config(root).lanes)
+    if step.unreadable:
+        raise ConfigError(step.unreadable)
+    if not step.added:
         raise ConfigError(f"crapkit.toml already exists in {root} — edit it instead")
     print("crapkit.toml was already there and init left it as it was; it finished the step "
           "an earlier run left undone")
-    _print_gitignore_added(added)
+    _print_gitignore_step(step)
     return 0
 
 
@@ -628,11 +642,11 @@ def cmd_init(args: argparse.Namespace) -> int:
                         testpaths=pytest_testpaths(_marker_texts(root)),
                         tracked=files, package_json=packages)
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
-    added = _extend_gitignore(root, live_lanes(lanes, scopes))
+    gitignore = _extend_gitignore(root, live_lanes(lanes, scopes))
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes, packages)
     _warn_missing_pytest_cov(root, live_lanes(lanes, scopes))
-    _print_gitignore_added(added)
+    _print_gitignore_step(gitignore)
     return 0
 
 
