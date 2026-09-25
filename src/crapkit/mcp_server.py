@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from ._package import upgraded_to
 from .invocation import _self
 from .rootfind import CONFIG_NAME, find_root
 
@@ -1943,22 +1944,6 @@ def _own_arguments(arguments: dict) -> dict:
     return {key: value for key, value in arguments.items() if key not in CLIENT_KEYS}
 
 
-# The package directory this server was imported from. An upgrade rewrites it
-# under a running server, which keeps the old code in memory.
-_PACKAGE_INIT = Path(__file__).with_name("__init__.py")
-_VERSION_LINE = re.compile(r'^__version__ = "([^"]+)"', re.MULTILINE)
-
-
-def _installed_version() -> str | None:
-    """The version the package directory holds now, or None when it cannot be
-    read (a zip import, a directory mid-install): no evidence of an upgrade."""
-    try:
-        found = _VERSION_LINE.search(_PACKAGE_INIT.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError):
-        return None
-    return found[1] if found else None
-
-
 def _upgraded_under_us(name: str) -> str | None:
     """The restart the caller needs when the package on disk is no longer the
     one this process loaded, else None.
@@ -1970,8 +1955,8 @@ def _upgraded_under_us(name: str) -> str | None:
     TypeError between two releases' signatures, which named no restart and
     looked random because a session that had already served a call kept
     working. Checked before anything is imported or spawned."""
-    installed, loaded = _installed_version(), _version()
-    if installed in (None, loaded):
+    installed, loaded = upgraded_to(), _version()
+    if installed is None:
         return None
     return (f"crapkit was upgraded from {loaded} to {installed} while this MCP server ran, and "
             f"the server still runs {loaded}'s code, which cannot load the new files. Restart the "

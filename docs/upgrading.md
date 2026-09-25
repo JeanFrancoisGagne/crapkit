@@ -85,7 +85,8 @@ tool call with that instruction instead of running it:
 A server from 0.8.0 or earlier does not check, and its first call after the upgrade can
 fail with a JSON-RPC `-32603` error such as `TypeError: _operation() takes 2 positional
 arguments but 3 were given` or `ToolError: measurement owner stopped before confirming
-ownership`. The restart fixes that too.
+ownership`. The restart fixes that too. A running `crapkit watch` stops at its next
+rescore after the upgrade, exits 1 and says to restart it.
 
 Keep a copy of the committed ratchet and its diff before an upgrade. In each repo:
 

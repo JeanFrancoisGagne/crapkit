@@ -15,9 +15,10 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .. import __version__, config
+from .._package import upgraded_to
 from ..config import load_config_text
 from ..doctor import Finding
-from ..errors import ConfigError, GitError, ToolError
+from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
 from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
@@ -2024,7 +2025,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 1 if _at_level(findings, "FAIL") else 0
 
 
+def _refuse_upgraded() -> None:
+    """A rescore after `pip install -U` would import the new release's modules
+    into this process, and the watcher died with a traceback from inside them:
+    stop and name the restart instead."""
+    installed = upgraded_to()
+    if installed:
+        raise CrapkitError(f"crapkit was upgraded from {__version__} to {installed} while "
+                           f"`crapkit watch` ran, and this process still runs {__version__}'s "
+                           "code, which cannot load the new files; restart `crapkit watch`")
+
+
 def _watch_rescore(root: Path, moved: list[str]) -> None:
+    _refuse_upgraded()
     from ..procs import run_owned
 
     present = [f for f in moved if (root / f).is_file()]

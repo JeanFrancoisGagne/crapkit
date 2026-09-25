@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 import crapkit
-from crapkit import mcp_server
+from crapkit import _package, mcp_server
 from hang_guard import exited, next_line
 
 _CONFIG = '[crapkit]\ntarget = 6\n[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n'
@@ -48,7 +48,7 @@ def _installed_init(tmp_path: Path, text: str) -> Path:
 
 def test_a_changed_version_on_disk_answers_the_restart_and_spawns_nothing(monkeypatch, tmp_path):
     init = _installed_init(tmp_path, '"""crapkit."""\n__version__ = "99.0.0"\n')
-    monkeypatch.setattr(mcp_server, "_PACKAGE_INIT", init)
+    monkeypatch.setattr(_package, "_INIT", init)
 
     result = mcp_server._call_tool(_measured(tmp_path / "repo"), "list_runs", {}, run_cli=_no_cli)
 
@@ -61,7 +61,7 @@ def test_a_changed_version_on_disk_answers_the_restart_and_spawns_nothing(monkey
 
 
 def test_every_tool_and_an_unknown_name_answer_the_restart(monkeypatch, tmp_path):
-    monkeypatch.setattr(mcp_server, "_PACKAGE_INIT",
+    monkeypatch.setattr(_package, "_INIT",
                         _installed_init(tmp_path, '__version__ = "99.0.0"\n'))
     repo = _measured(tmp_path / "repo")
 
@@ -72,7 +72,7 @@ def test_every_tool_and_an_unknown_name_answer_the_restart(monkeypatch, tmp_path
 
 def test_the_version_the_server_loaded_runs_the_call(monkeypatch, tmp_path):
     ran = []
-    monkeypatch.setattr(mcp_server, "_PACKAGE_INIT",
+    monkeypatch.setattr(_package, "_INIT",
                         _installed_init(tmp_path, f'__version__ = "{crapkit.__version__}"\n'))
 
     mcp_server._call_tool(_measured(tmp_path / "repo"), "list_runs", {},
@@ -86,7 +86,7 @@ def test_a_package_file_it_cannot_read_runs_the_call(monkeypatch, tmp_path):
     readable __init__.py: that is no evidence of an upgrade, and refusing every
     call on it would break a server that works."""
     ran = []
-    monkeypatch.setattr(mcp_server, "_PACKAGE_INIT", tmp_path / "gone" / "__init__.py")
+    monkeypatch.setattr(_package, "_INIT", tmp_path / "gone" / "__init__.py")
 
     mcp_server._call_tool(_measured(tmp_path / "repo"), "list_runs", {},
                           run_cli=lambda tool, arguments, repo: ran.append(tool["name"]))
@@ -95,8 +95,8 @@ def test_a_package_file_it_cannot_read_runs_the_call(monkeypatch, tmp_path):
 
 
 def test_the_server_reads_its_own_package_directory():
-    assert mcp_server._PACKAGE_INIT == Path(crapkit.__file__)
-    assert mcp_server._installed_version() == crapkit.__version__
+    assert _package._INIT == Path(crapkit.__file__)
+    assert _package.installed_version() == crapkit.__version__
 
 
 # --- the real process ---------------------------------------------------------

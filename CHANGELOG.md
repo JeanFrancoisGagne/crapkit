@@ -339,15 +339,21 @@ nothing. Each of these now gets a line naming the object and the next step:
   below its own and answered every call `no crapkit.toml in <cwd>/${workspaceFolder}`
   while the client listed it as ready. A `--repo` that holds `${...}` is now ignored and
   stderr names it; `crapkit mcp --help` says so.
-- A server that outlives `pip install -U crapkit` says to restart it. The server imports
-  some modules only at its first tool call, so after an upgrade that call loaded the new
-  release's files into the old process and answered a JSON-RPC `-32603` such as
+
+### A process that outlives an upgrade says to restart it
+
+- An MCP server that outlives `pip install -U crapkit` says to restart it. The server
+  imports some modules only at its first tool call, so after an upgrade that call loaded
+  the new release's files into the old process and answered a JSON-RPC `-32603` such as
   `TypeError: _operation() takes 2 positional arguments but 3 were given`, while a session
   that had already served a call kept working, so the failure looked random. Each call now
   reads the version in its own package directory first, and when it changed, answers a
   tool result that names both versions and the restart. The check lives in the old
   process, so it helps from the next upgrade on: a 0.8.0 server upgraded to 0.8.1 can
   still answer the old error once, and the restart fixes it the same way.
+- `crapkit watch` checks the same way before each rescore. After an upgrade it exits 1
+  with one line that names both versions and says to restart it, where its first rescore
+  died with a traceback from inside the new files.
 
 ### The MCP server finds the workspace when the client starts it elsewhere
 
