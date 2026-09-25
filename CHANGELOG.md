@@ -6,8 +6,9 @@
 
 - crapkit's own messages spell a dash as ` - ` where 0.8.0 printed an em dash. 95
   string literals changed, among them doctor on a repo with no lane and worklist, brief
-  and digest before the first run. A script or a test that matches one of those lines has to
-  match ` - ` now. A path or a function name crapkit quotes keeps its own characters.
+  and digest before the first run. A script or a test that matches one of those lines
+  has to match ` - ` now. A path or a function name crapkit quotes keeps its own
+  characters.
 - The churn window is counted on the UTC calendar. On a machine whose local date is not
   the UTC date, a commit on the window's first day can move in or out of churn once, and
   worklist and brief can rank a function differently from 0.8.0 on that machine. Scores
@@ -25,10 +26,10 @@
   child coloured an uncaught traceback on 3.13 and 3.14 and a usage error on 3.14.
 - A failed lane names its cause, and the pull-request comment reads as plain text, when
   FORCE_COLOR or PY_COLORS colours the test runner's output. pytest's colour code in
-  front of `E   ModuleNotFoundError` hid the cause behind the `ERROR path` summary lines,
-  and the refusal on stderr, `--json` lane_failures, the junit collection refusal, the
-  comment and the base run's reason quoted the escape codes. The lane log file keeps its
-  colour.
+  front of `E   ModuleNotFoundError` hid the cause behind the `ERROR path` summary
+  lines, and the refusal on stderr, `--json` lane_failures, the junit collection
+  refusal, the comment and the base run's reason quoted the escape codes. The lane log
+  file keeps its colour.
 
 ### MCP and hook arguments
 
@@ -37,11 +38,12 @@
   `get_next_item exclude=["-legacy"]` and `check_gate path="-x.py"` answered a usage
   dump where the tool promises JSON, on Python 3.11 to 3.14.
 - A `claude-hook` flag this crapkit does not know exits 0 with one line naming the
-  version skew: `crapkit claude-hook: this crapkit does not know `--budget 5`; the hook
-  was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, then run
-  `crapkit doctor --plugin-root``. It exited 2 with the usage block, and PostToolUse
-  hands the model an exit 2's stderr on every Edit or Write. The flags this build knows,
-  `--protocol` included, are still read, and other subcommands keep argparse's refusal.
+  version skew, ``crapkit claude-hook: this crapkit does not know `--budget 5`; the hook
+  was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, then
+  run `crapkit doctor --plugin-root` ``. It exited 2 with the usage block, and
+  PostToolUse hands the model an exit 2's stderr on every Edit or Write. The flags this
+  build knows, `--protocol` included, are still read, and other subcommands keep
+  argparse's refusal.
 
 ### The same repo prints the same bytes on every machine
 
@@ -74,8 +76,8 @@
   a lane ran, and on Linux every MCP tool call answered a JSON-RPC error.
 - An analysis worker writes UTF-8 to stderr whatever PYTHONIOENCODING says. lizard's
   `[skip]` line for `src/café.ts` reached the parent as the lone byte 0xe9 on Windows.
-- The override and `digest --alert` hand `alert_command` UTF-8 bytes with LF line ends on
-  every OS. On Windows each LF arrived as CR LF.
+- The override and `digest --alert` hand `alert_command` UTF-8 bytes with LF line ends
+  on every OS. On Windows each LF arrived as CR LF.
 
 ### CI and tests
 
@@ -84,8 +86,8 @@
   CLICOLOR_FORCE and sets COLUMNS=80 for every test, so the help tests pass whatever
   colour or width the contributor's shell exports. The scripts under tools/ print plain
   help and usage in a pipe on 3.14.
-- Every Python file under src/crapkit, tests and tools compiles with warnings as errors on
-  each CI interpreter, so no SyntaxWarning reaches a first run's stderr.
+- Every Python file under src/crapkit, tests and tools compiles with warnings as errors
+  on each CI interpreter, so no SyntaxWarning reaches a first run's stderr.
 
 ## 0.8.0 — 2026-09-23
 
