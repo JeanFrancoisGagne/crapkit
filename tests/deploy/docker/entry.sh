@@ -16,9 +16,14 @@ set -eu
 RUNNER=/opt/runner/bin/python
 
 first_line() {
-    # A CLI that hangs under --network none must not hang the listing. Amp
-    # prints its release's age ("6h ago"), which the manifest must not hold.
-    HOME="$VERSION_HOME" timeout 60 "$@" 2>&1 </dev/null | head -n 1 | sed -E 's/, [0-9]+[a-z]+ ago\)/)/' || true
+    # The first line that carries a version, else the first line. A CLI that
+    # hangs under --network none must not hang the listing. Copilot unpacks
+    # itself on its first run in a new HOME and, when that is slow, prints
+    # "Package extraction took 7426ms" first. Amp prints its release's age
+    # ("6h ago"), which the manifest must not hold.
+    HOME="$VERSION_HOME" timeout 60 "$@" 2>&1 </dev/null \
+        | awk '/[0-9]+\.[0-9]+/ { print; found = 1; exit } NR == 1 { first = $0 } END { if (!found) print first }' \
+        | sed -E 's/, [0-9]+[a-z]+ ago\)/)/' || true
 }
 
 versions() {

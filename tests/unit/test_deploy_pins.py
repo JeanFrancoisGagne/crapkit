@@ -12,6 +12,8 @@ import datetime
 import io
 import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -787,3 +789,16 @@ def test_a_failing_toolchain_step_shows_the_command_and_what_it_printed():
         toolchain.run_step(fail)
     assert "exited 3" in str(stopped.value) and "npm error code ENOTFOUND" in str(stopped.value)
     assert toolchain.run_step([sys.executable, "-c", "print('ok')"]).stdout == "ok\n"
+
+
+def test_the_version_listing_takes_the_first_line_that_carries_a_version():
+    """Copilot printed "Package extraction took 7426ms" before its version on a
+    slow first run, and the gui image failed its pins check on that line."""
+    awk = shutil.which("awk") or pytest.skip("no awk on this machine")
+    program = re.search(r"awk '([^']+)'", (DOCKER / "entry.sh").read_text(encoding="utf-8"))[1]
+
+    def listed(text):
+        return subprocess.run([awk, program], input=text, capture_output=True, text=True, check=True).stdout
+
+    assert listed("Package extraction took 7426ms\n1.0.88\n") == "1.0.88\n"
+    assert listed("no version here\nnor here\n") == "no version here\n"
