@@ -306,7 +306,7 @@ def test_the_lines_a_shell_captures_are_ascii(scored_repo: Path, tmp_path: Path)
     assert " - 1 of 1 active (worklist_top 50), 0 dormant" in captured["worklist"].stdout
     assert f"{MARKS}: added 1, tightened 0 - 1 mark(s) vs run 1 (" in seeded.stdout
     assert " - next: run `" in captured["init"].stdout
-    assert captured["watch"].stdout.startswith("watching 2 tracked files every 2.0s - 0 poll(s)")
+    assert captured["watch"].stdout.startswith("watching 2 file(s) in scope every 2.0s - 0 poll(s)")
 
 
 # --- the merge driver reads its three sides the way every other reader does ------------

@@ -1663,9 +1663,10 @@ def _watch_cycles(cycles: int | None):
 
 def _watch_banner(watched: int, interval: float, cycles: int | None) -> str:
     """The first line, naming how this run ends. Telling an operator to press
-    ctrl-c on a `--cycles 3` run describes a loop that is not the one running."""
+    ctrl-c on a `--cycles 3` run describes a loop that is not the one running.
+    `watched` counts every file a scope claims, untracked ones included."""
     stop = "ctrl-c to stop" if cycles is None else f"{cycles} poll(s) then stop"
-    return f"watching {watched} tracked files every {interval}s - {stop}"
+    return f"watching {watched} file(s) in scope every {interval}s - {stop}"
 
 
 def _watch_cycle(root: Path, cfg, state: _Watching, interval: float) -> _Watching:

@@ -255,7 +255,8 @@
   rescored; the list used to come from `git ls-files` once, at start. When git cannot
   list them, `watch` keeps polling the last list and says so once. New bytes written
   under the file's old mtime (`cp -p`, `touch -r`) are not seen, the same limit the
-  analysis cache has.
+  analysis cache has. The first line reads `watching 12 file(s) in scope`, where it
+  said `tracked files`, because the count now holds the files not yet added too.
 - After `git fetch --unshallow` or `--deepen` at an unmoved HEAD, the churn map, the churn
   log and the coupling cache rebuild from the whole history. Their keys held HEAD but not
   how much history the clone holds, so `worklist` kept a shallow clone's churn (1 commit
