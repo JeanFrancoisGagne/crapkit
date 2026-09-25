@@ -421,3 +421,96 @@ def test_a_fix_of_a_calc_no_golden_shows_needs_its_module_changed(make_repo):
 
     assert "declared calc did not move: Pre-commit gate" in str(refused.value)
     assert "nothing moved since the lock" in str(refused.value)
+
+
+# --- the JS and TS oracles: ESLint complexity and sonarjs cognitive complexity -------------------
+
+# Worked by hand from the ESLint complexity rule docs (1, plus each if, loop,
+# logical operator including ??, and each case in the classic variant or each
+# switch in the modified one) and the Sonar paper v1.7 (if and loops +1 plus
+# their nesting, a switch +1, a sequence of && +1; ?? is no increment):
+#   pick: classic 1 + for + if + && + ?? = 5, modified 5, cognitive for 1 + if 2 + && 1 = 4
+#   kind: classic 1 + two cases = 3, modified 1 + switch = 2, cognitive switch 1 = 1
+#   flat: 1, 1 and 0
+KINDS_TS = '''export function pick<T>(xs: T[], strict: boolean): T | undefined {
+  for (const x of xs) {
+    if (strict && x) {
+      return x;
+    }
+  }
+  return xs[0] ?? undefined;
+}
+
+export const kind = (n: number) => {
+  switch (n) {
+    case 1: return "one";
+    case 2: return "two";
+    default: return "many";
+  }
+};
+
+function flat() {
+  return 1;
+}
+'''
+TS_PATH = "src/web/kinds.ts"
+TS_ROWS = (("pick( xs , strict )", 1, 8), ("kind( n )", 10, 16), ("flat( )", 18, 20))
+HAND = {("pick", "ccn_std"): "5", ("pick", "ccn_mod"): "5", ("pick", "ccn"): "5",
+        ("pick", "cognitive"): "4", ("kind", "ccn_std"): "3", ("kind", "ccn_mod"): "2",
+        ("kind", "ccn"): "2", ("kind", "cognitive"): "1", ("flat", "ccn"): "1",
+        ("flat", "cognitive"): "0"}
+
+
+def _ts_tree(suffix: str = ".ts") -> cc.DictTree:
+    path = TS_PATH.replace(".ts", suffix)
+    table = "path\tlong_name\tstart\tend\n" + "".join(
+        f"{path}\t{name}\t{start}\t{end}\n" for name, start, end in TS_ROWS)
+    source = KINDS_TS if suffix != ".js" else KINDS_TS.replace("<T>(xs: T[], strict: boolean): "
+                                                               "T | undefined", "(xs, strict)"
+                                                               ).replace("(n: number)", "(n)")
+    return cc.DictTree({f"{cc.SMALL_CORPUS}/{path}": source.encode(),
+                        seeds.SCORED: table.encode()})
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("suffix", [".ts", ".js"])
+def test_eslint_and_sonarjs_answer_each_js_and_ts_column(oracle, suffix):
+    list(map(oracle, ("eslint", "eslint-plugin-sonarjs", "@typescript-eslint/parser")))
+
+    answers = _judged_hand(_ts_tree(suffix), TS_PATH.replace(".ts", suffix))
+
+    assert answers == {key: (_oracle_of(key[1]), value, True) for key, value in HAND.items()}
+
+
+def _judged_hand(tree, path: str) -> dict:
+    """{(handle, column): (oracle, its value, agrees)} for each hand-worked cell."""
+    judged = {key: cc.judge(tree, cc.Cell(seeds.SCORED, path, *key, "0", value))
+              for key, value in HAND.items()}
+    return {key: (found.oracle, found.value, found.agrees) for key, found in judged.items()}
+
+
+def _oracle_of(column: str) -> str:
+    return "sonarjs" if column == "cognitive" else "eslint"
+
+
+
+@pytest.mark.process
+def test_a_ts_file_eslint_cannot_parse_answers_nothing(oracle):
+    oracle("eslint")
+    tree = cc.DictTree({f"{cc.SMALL_CORPUS}/{TS_PATH}": b"function (\n",
+                        seeds.SCORED: f"path\tlong_name\tstart\tend\n{TS_PATH}\tf( )\t1\t1\n"
+                        .encode()})
+
+    judged = cc.judge(tree, cc.Cell(seeds.SCORED, TS_PATH, "f", "ccn", "1", "2"))
+
+    assert (judged.oracle, judged.value, judged.agrees) == ("", "", True)
+
+
+@pytest.mark.process
+def test_a_ts_move_eslint_disagrees_with_is_refused_by_name(oracle):
+    oracle("eslint")
+    judged = cc.judge(_ts_tree(), cc.Cell(seeds.SCORED, TS_PATH, "kind", "ccn", "2", "3"))
+
+    assert not judged.agrees
+    assert cc._refusal(judged).startswith(
+        f"crapkit now says 3, eslint says 2 at {TS_PATH}:kind (ccn): this looks like a regression")

@@ -5,7 +5,7 @@ the collected tests, so they carry the change_control marker: they
 guard against an unannounced move and are not an independent method. Until
 kit-close runs `python tools/accuracy/change_control.py lock --initial`, the
 lock, CHANGES.tsv, metric-digests.tsv and test-counts.tsv hold headers only,
-and no file waits for the lock.
+and the lockable files wait for the lock.
 """
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ TOOLS = REPO / "tools" / "accuracy"
 if str(TOOLS) not in sys.path:
     sys.path.append(str(TOOLS))
 import change_control as cc  # noqa: E402
+from accuracy.kit.test_kit_contract import KIT_CLOSED  # noqa: E402
+
 
 pytestmark = pytest.mark.change_control
 
@@ -27,13 +29,20 @@ def _report(problems) -> str:
     return cc.report(problems, [], "this checkout")
 
 
+def _before_the_first_lock(problems) -> list:
+    """Until kit-close, the one problem allowed: lockable files wait for the lock."""
+    return [problem for problem in problems if problem.fix == f"{cc.TOOL} lock --initial"]
+
+
 def test_the_lock_the_changes_the_changelog_and_the_metric_digests_agree():
-    """T2 to T5."""
+    """T2 to T5. Before kit-close sets KIT_CLOSED, files may wait for the first
+    lock; after it, the lock holds every lockable file."""
     tree = cc.DirTree(REPO)
 
     problems = cc.in_tree(tree, cc.running(tree))
 
-    assert problems == [], _report(problems)
+    allowed = [] if KIT_CLOSED or cc._initialized(tree) else _before_the_first_lock(problems)
+    assert problems == allowed, _report(problems)
 
 
 T1 = "tests/accuracy/corpus_goldens/test_goldens.py"

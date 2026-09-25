@@ -85,16 +85,18 @@ and session sets all measure the small corpus, and a set named after a
 `declare` first rewrites the goldens with `python tools/accuracy/regenerate.py
 goldens` (the corpus packet's regenerator), then judges each moved cell against
 an outside oracle before it records anything: radon for Python ccn, complexipy
-for Python cognitive, and kit.exact for CRAP from the row's own ccn and cov. A
-cell the oracle disagrees with stops the declare ("crapkit now says 9, radon
-says 7 at src/a.py:parse"), unless --against-oracle names a rulings row of that
-calc whose oracle cell names that oracle. A cell no oracle here answers (another
-language, or a start line the oracle finds no function at) is recorded with no
-oracle, and its packet's oracle checks judge it. When the metric digest moves,
-the running ANALYSIS_VERSION must be new to metric-digests.tsv (default A1: a
-move bumps it). A golden a fresh change already relocked belongs to that
-change, so a second declare in the same diff (a kind none for a refactor next
-to a fix) answers only for what is left.
+for Python cognitive, ESLint's complexity rule (classic for ccn_std, modified
+for ccn_mod, the lower for ccn) and sonarjs's cognitive complexity for JS, TS
+and Vue (oracles/eslint_values.cjs), and kit.exact for CRAP from the row's own
+ccn and cov. A cell the oracle disagrees with stops the declare ("crapkit now
+says 9, radon says 7 at src/a.py:parse"), unless --against-oracle names a
+rulings row of that calc whose oracle cell names that oracle. A cell no oracle
+here answers (another language, or a start line the oracle finds no function
+at) is recorded with no oracle, and its packet's oracle checks judge it. When
+the metric digest moves, the running ANALYSIS_VERSION must be new to
+metric-digests.tsv (default A1: a move bumps it). A golden a fresh change already
+relocked belongs to that change, so a second declare in the same diff (a kind
+none for a refactor next to a fix) answers only for what is left.
 
 
 Exit codes: 0 when every rule holds, or with one skip line when --measured
@@ -110,7 +112,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import fnmatch
 from fractions import Fraction
-from functools import lru_cache
+from functools import lru_cache, partial
 import hashlib
 import importlib.metadata
 import json
@@ -120,12 +122,14 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tests"))
 
-from accuracy.kit import exact, goldens, surfaces, tiers  # noqa: E402
+from accuracy.kit import exact, goldens, oracles, surfaces, tiers  # noqa: E402
+
 
 TOOL = "python tools/accuracy/change_control.py"
 HOME = "tests/accuracy/change_control"
@@ -716,6 +720,68 @@ def complexipy_cognitive(row: dict, source: str | None) -> str | None:
 
 
 
+ESLINT = f"{HOME}/oracles/eslint_values.cjs"
+JS_SUFFIXES = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".vue")
+# The ESLint rule answering each column; ccn is the lower of the two variants.
+ESLINT_RULES = {"ccn_std": ("classic",), "ccn_mod": ("modified",), "ccn": ("classic", "modified"),
+                "cognitive": ("cognitive",)}
+NODE_SECONDS = 180
+
+
+def _node(script: Path, *args: str) -> str:
+    tiers.require_process("node")
+    done = subprocess.run(["node", str(script), *args], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=NODE_SECONDS)
+    if done.returncode != 0:
+        raise ChangeControlError(f"node {script.name} exited {done.returncode}: "
+                                 f"{done.stderr.strip()[-2000:]}")
+    return done.stdout
+
+
+@lru_cache(maxsize=32)
+def eslint_values(source: str, suffix: str) -> dict:
+    """ESLint's complexity (classic and modified) and sonarjs's cognitive complexity
+    for every function of one JS, TS or Vue file (oracles/eslint_values.cjs)."""
+    modules = oracles.node_modules("push")
+    if not (modules / "eslint").is_dir():
+        raise ChangeControlError("oracle eslint is not installed; run: npm ci --prefix "
+                                 "tools/accuracy/node/push")
+    with tempfile.TemporaryDirectory(prefix="crapkit-eslint-") as work:
+        target = Path(work) / f"source{suffix}"
+        target.write_bytes(source.encode("utf-8"))
+        return json.loads(_node(REPO / ESLINT, str(modules), str(target)))
+
+
+def _in_head(heads: list, line: int) -> bool:
+    return any(start <= line <= body for start, body in heads)
+
+
+def _heads(found: dict, start: int) -> list[tuple[int, int]]:
+    return [(first, body) for first, body in found.get("functions", ()) if first == start]
+
+
+def _reported(found: dict, rule: str, heads: list) -> list[int]:
+    return [value["value"] for value in found.get("values", ())
+            if value["rule"] == rule and _in_head(heads, value["line"])]
+
+
+def _rule_value(found: dict, start: int, rule: str) -> str | None:
+    """The rule's value for the function starting at `start`, reported on a line of
+    its head; sonarjs leaves out a function whose value is 0."""
+    heads = _heads(found, start)
+    unreported = [0] if heads and rule == "cognitive" else []
+    return _one(_reported(found, rule, heads) or unreported)
+
+
+
+def eslint_answer(row: dict, source: str | None, column: str) -> str | None:
+    if source is None:
+        return None
+    found = eslint_values(source, PurePosixPath(row["path"]).suffix.lower())
+    answers = [_rule_value(found, int(row["start"]), rule) for rule in ESLINT_RULES[column]]
+    return None if None in answers else str(min(map(int, answers)))
+
+
 def exact_crap(row: dict, source: str | None) -> str | None:
     """The README's CRAP from the row's own ccn and cov, exactly."""
     try:
@@ -728,7 +794,10 @@ def exact_crap(row: dict, source: str | None) -> str | None:
 ORACLES = {("ccn_std", ".py"): ("radon", radon_ccn), ("ccn_mod", ".py"): ("radon", radon_ccn),
            ("ccn", ".py"): ("radon", radon_ccn),
            ("cognitive", ".py"): ("complexipy", complexipy_cognitive),
-           ("crap", ""): ("kit.exact", exact_crap)}
+           ("crap", ""): ("kit.exact", exact_crap),
+           **{(column, suffix): ("sonarjs" if column == "cognitive" else "eslint",
+                                 partial(eslint_answer, column=column))
+              for column in ESLINT_RULES for suffix in JS_SUFFIXES}}
 
 
 def oracle_for(cell: Cell):

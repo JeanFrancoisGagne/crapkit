@@ -413,8 +413,9 @@ def test_each_surface_maps_to_its_calc(path, calcs):
     assert cc.surface_calcs(path)[:len(calcs)] == calcs
 
 
-def test_a_history_row_is_judged_on_the_small_corpus_source():
+def test_a_history_row_is_judged_on_the_small_corpus_source(oracle):
     """The history bundle's last commit is the small corpus, so radon reads parse there."""
+    oracle("radon")
     tree = _tree({**BASE, HISTORY: seeds.scored(seeds.ccn8())})
     cell = cc.Cell(HISTORY, "src/a.py", "parse", "ccn", "7", "8")
 
@@ -423,7 +424,8 @@ def test_a_history_row_is_judged_on_the_small_corpus_source():
     assert (judged.oracle, judged.value, judged.agrees) == ("radon", "7", False)
 
 
-def test_a_member_set_reads_the_full_corpus(tmp_path, monkeypatch):
+def test_a_member_set_reads_the_full_corpus(tmp_path, monkeypatch, oracle):
+    oracle("radon")
     member = tmp_path / "requests" / "src" / "a.py"
     member.parent.mkdir(parents=True)
     member.write_text(seeds.PARSE.replace("    return text\n", ""), encoding="utf-8")
@@ -438,7 +440,9 @@ def test_a_member_set_reads_the_full_corpus(tmp_path, monkeypatch):
     assert cc.corpus_name(tree, "tests/accuracy/corpus_goldens/goldens/history/x") == "small"
 
 
-def test_an_oracle_that_finds_no_function_at_the_start_line_answers_nothing():
+def test_an_oracle_that_finds_no_function_at_the_start_line_answers_nothing(oracle):
+    oracle("radon")
+    oracle("complexipy")
     tree = _tree(BASE)
     cell = cc.Cell(seeds.SCORED, "src/a.py", "parse", "ccn", "8", "7")
     moved = cc.Cell(seeds.SCORED, "src/a.py", "f1", "cognitive", "0", "1")
@@ -568,7 +572,8 @@ def _declare(top: Path, request) -> str:
 
 
 @pytest.mark.process
-def test_declare_refuses_a_move_the_oracle_disagrees_with(make_repo):
+def test_declare_refuses_a_move_the_oracle_disagrees_with(make_repo, oracle):
+    oracle("radon")
     top = _working(make_repo, BASE, _ccn9(BASE))
 
     with pytest.raises(cc.ChangeControlError) as refused:
@@ -580,7 +585,8 @@ def test_declare_refuses_a_move_the_oracle_disagrees_with(make_repo):
 
 
 @pytest.mark.process
-def test_declare_takes_a_disagreement_a_named_ruling_covers(make_repo):
+def test_declare_takes_a_disagreement_a_named_ruling_covers(make_repo, oracle):
+    oracle("radon")
     top = _working(make_repo, BASE, _ccn9(BASE))
 
     text = _declare(top, _request(against=("R-D5", "R-CCN")))
@@ -635,9 +641,10 @@ def test_declare_refuses_undeclared_and_over_declared_calcs_and_a_none_that_move
 
 
 @pytest.mark.process
-def test_a_declared_and_committed_move_passes_the_check(make_repo):
+def test_a_declared_and_committed_move_passes_the_check(make_repo, oracle):
     """parse's ccn goes from 8 to 7, where radon puts it; declare records it, the
     author adds the CHANGELOG line, the bug and its retro row, and the push passes."""
+    oracle("radon")
     head = seeds.bump({**BASE_CCN8, **{path: BASE[path] for path in (seeds.SCORED,
                                                                      seeds.INVENTORY)}}, "12")
     top = _working(make_repo, BASE_CCN8, head)
@@ -675,7 +682,8 @@ def _cognitive9(tree: dict) -> dict:
 
 
 @pytest.mark.process
-def test_declare_judges_python_cognitive_by_complexipy(make_repo):
+def test_declare_judges_python_cognitive_by_complexipy(make_repo, oracle):
+    oracle("complexipy")
     top = _working(make_repo, BASE, _cognitive9(BASE))
 
     with pytest.raises(cc.ChangeControlError) as refused:
