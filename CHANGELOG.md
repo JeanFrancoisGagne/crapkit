@@ -636,8 +636,10 @@ nothing. Each of these now gets a line naming the object and the next step:
   `.git/hooks/pre-commit` failed with `Directory nonexistent` and the next commit went
   through ungated. Route 1's PowerShell form takes the same path and bakes in the
   `crapkit` launcher your shell resolves, not `python`.
-- Route 2 has a PowerShell block. Pasted into PowerShell, the sh block stopped at its
-  heredoc, wrote no hook, and the next commit went through ungated.
+- Route 2 and the handbook's Enforcement section have a PowerShell block. Pasted into
+  PowerShell, Route 2's sh block stopped at its heredoc; the handbook's met no `printf`
+  or `chmod`, and in 5.1 a `&&` it cannot parse. Neither wrote a hook, and the next
+  commit went through ungated.
 - The gate section says to run `git config core.hooksPath` first. A hooks path set
   globally or by husky makes git skip `.git/hooks`; a husky repo adds `crapkit
   hook-precommit` to `.husky/pre-commit` instead of setting the path.

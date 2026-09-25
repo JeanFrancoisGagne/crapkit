@@ -60,12 +60,17 @@ def readme_fence(heading: str, lang: str) -> str:
     return found.group(1)
 
 
-def handbook_lines(heading: str) -> list[str]:
-    """What a reader types from the handbook's first <pre> under an h3: `$ `
-    prompts stripped, comment and blank lines dropped."""
+def handbook_pres(heading: str) -> list[str]:
+    """Every <pre> under one of the handbook's h3 headings, down to the next one."""
     page = (ROOT / "docs" / "handbook.html").read_text(encoding="utf-8")
-    code = re.search(r"<pre><code>(.*?)</code></pre>", page.split(f"<h3>{heading}</h3>", 1)[1], re.S)
-    lines = [line.removeprefix("$ ") for line in html.unescape(code.group(1)).splitlines()]
+    section = page.split(f"<h3>{heading}</h3>", 1)[1].split("<h3", 1)[0]
+    return [html.unescape(code) for code in re.findall(r"<pre><code>(.*?)</code></pre>", section, re.S)]
+
+
+def handbook_lines(heading: str) -> list[str]:
+    """What a reader types from the first <pre> under an h3: `$ ` prompts
+    stripped, comment and blank lines dropped."""
+    lines = [line.removeprefix("$ ") for line in handbook_pres(heading)[0].splitlines()]
     return [line for line in lines if line.strip() and not line.startswith("#")]
 
 
@@ -95,23 +100,34 @@ def _git_root() -> Path:
     return next((up for up in git.parents if (up / "usr" / "bin").is_dir()), git.parent)
 
 
-def _tool_dirs() -> list[str]:
-    """Where git, sh and the coreutils a paste calls live, and nothing else."""
-    if os.name == "nt":
-        system = Path(os.environ.get("SystemRoot", r"C:\Windows"))
-        return [str(Path(shutil.which("git")).parent), str(_git_root() / "usr" / "bin"),
-                str(system / "System32"), str(system)]
-    return [str(Path(shutil.which("git")).parent), "/usr/bin", "/bin"]
+def _git_dir() -> str:
+    """Git's cmd directory on Windows, the one the Git for Windows installer puts
+    on PATH by default. Its git.exe finds the sh a hook needs; the
+    mingw64/bin/git.exe a Git Bash PATH leads to does not, once usr/bin is gone."""
+    cmd = _git_root() / "cmd"
+    return str(cmd) if os.name == "nt" and cmd.is_dir() else str(Path(shutil.which("git")).parent)
 
 
-def machine(tmp_path: Path, bin_dir: Path) -> dict:
+def _tool_dirs(posix: bool) -> list[str]:
+    """Where git lives, and with `posix` the coreutils a pasted sh block calls.
+    A PowerShell reader on Windows has Git's cmd directory alone: no printf,
+    no chmod."""
+    git = _git_dir()
+    if os.name != "nt":
+        return [git, "/usr/bin", "/bin"]
+    system = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    usr = [str(_git_root() / "usr" / "bin")] if posix else []
+    return [git, *usr, str(system / "System32"), str(system)]
+
+
+def machine(tmp_path: Path, bin_dir: Path, *, posix: bool = True) -> dict:
     """The environment a paste and its commit run in: `bin_dir` first on a
     PATH of tools, a git identity, and no global git config (a global
     core.hooksPath would move every hook these tests arm)."""
     (tmp_path / "gitconfig").write_text("", encoding="utf-8")
     env = {key: value for key, value in os.environ.items() if key != "CRAPKIT_OVERRIDE_REASON"}
     env.update(IDENTITY, GIT_CONFIG_GLOBAL=str(tmp_path / "gitconfig"),
-               PATH=os.pathsep.join([str(bin_dir), *_tool_dirs()]))
+               PATH=os.pathsep.join([str(bin_dir), *_tool_dirs(posix)]))
     return env
 
 
@@ -126,15 +142,21 @@ def sh() -> str:
 # --- the repo and the commit ------------------------------------------------------
 
 def run(argv: list[str], cwd: Path, env: dict):
-    return hang_guard.run(argv, cwd=cwd, env=env, text=True, encoding="utf-8", errors="replace")
+    """argv under `env`, its first word found on env's PATH the way the reader's
+    shell finds it. Windows looks a bare name up on the parent's PATH instead."""
+    first = shutil.which(argv[0], path=env["PATH"]) or argv[0]
+    return hang_guard.run([first, *argv[1:]], cwd=cwd, env=env, text=True, encoding="utf-8",
+                          errors="replace")
 
 
 def adopted(tmp_path: Path, env: dict) -> Path:
-    """A committed repo with a crapkit.toml and one clean module."""
+    """A committed repo with a crapkit.toml, the ignore line init writes and
+    one clean module."""
     repo = tmp_path / "repo"
     (repo / "calc").mkdir(parents=True)
     (repo / "calc" / "__init__.py").write_text("", encoding="utf-8")
     (repo / "crapkit.toml").write_text(CONFIG, encoding="utf-8")
+    (repo / ".gitignore").write_text(".crapkit/\n", encoding="utf-8")
     for argv in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"], ["git", "commit", "-qm", "adopt"]):
         assert run(argv, repo, env).returncode == 0
     return repo
@@ -216,7 +238,7 @@ def ps_paste(shell: str, block: str, cwd: Path, env: dict):
 @WINDOWS
 @pytest.mark.parametrize("shell", powershells() or ["powershell"])
 def test_route_one_powershell_form_arms_the_gate_in_a_linked_worktree(tmp_path, shell):
-    env = machine(tmp_path, shims(tmp_path))
+    env = machine(tmp_path, shims(tmp_path), posix=False)
     tree = worktree(adopted(tmp_path, env), env)
     block = readme_fence(ROUTE_ONE, "powershell")
 
@@ -228,7 +250,7 @@ def test_route_one_powershell_form_arms_the_gate_in_a_linked_worktree(tmp_path, 
 def test_route_two_has_a_powershell_form_that_arms_the_gate(tmp_path, shell):
     """The sh block's heredoc does not parse in PowerShell: the paste stopped
     before any hook was written, and the next commit went through ungated."""
-    env = machine(tmp_path, shims(tmp_path))
+    env = machine(tmp_path, shims(tmp_path), posix=False)
     repo = adopted(tmp_path, env)
     block = readme_fence(ROUTE_TWO, "powershell")
 
@@ -246,6 +268,22 @@ def test_the_handbook_hook_lines_arm_the_gate_in_a_linked_worktree(tmp_path):
     tree = worktree(adopted(tmp_path, env), env)
 
     assert_gated(tree, env, paste([sh()], hook_lines(), tree, env))
+
+
+@WINDOWS
+@pytest.mark.parametrize("shell", powershells() or ["powershell"])
+def test_the_handbook_enforcement_block_has_a_powershell_form_that_arms_the_gate(tmp_path, shell):
+    """The block was sh alone. Pasted into PowerShell, `printf` is no command
+    and 5.1 cannot parse `&&`, so no hook was written and the breach committed.
+    A PowerShell reader pastes the section's PowerShell form, or the only block
+    there is."""
+    env = machine(tmp_path, shims(tmp_path), posix=False)
+    repo = adopted(tmp_path, env)
+    assert run([sys.executable, "-m", "crapkit", "coverage"], repo, env).returncode == 0
+    blocks = handbook_pres(ENFORCE)
+    form = next((pre for pre in blocks if "Set-Content" in pre), blocks[0])
+
+    assert_gated(repo, env, ps_paste(shell, form, repo, env))
 
 
 def shell_repo(tmp_path: Path, env: dict) -> Path:
