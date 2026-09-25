@@ -55,4 +55,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_go_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
     {"name": "Rust ccn and cognitive against rust-code-analysis and cargo-crap", "seconds": 60,
      "pytest": [_PACKET + "test_rust_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "Java ccn, cognitive and nesting against Checkstyle and PMD", "seconds": 90,
+     "pytest": [_PACKET + "test_java_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
 ]
