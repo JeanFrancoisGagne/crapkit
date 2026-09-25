@@ -122,14 +122,22 @@ def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolat
 
 def send_alert(alert_command: str, root: Path, text: str) -> tuple[int, str]:
     """Hand `text` to the alert command on stdin, and return its exit code and
-    what it printed (stderr, else stdout) as plain text with LF line ends.
+    what it printed as plain text with LF line ends: stderr when it holds text
+    once its escape codes are gone, else stdout.
 
     The bytes are UTF-8 with LF line ends on every OS. A text-mode pipe turned
     each LF into CR LF on Windows, so an alert log fed by `cat >>` held CR LF
     from a Windows committer and LF from everyone else."""
     proc = subprocess.run(alert_command, shell=True, cwd=root,
                           input=text.encode("utf-8", "replace"), capture_output=True)
-    return proc.returncode, printed_text(proc.stderr or proc.stdout)
+    return proc.returncode, _message(proc.stderr, proc.stdout)
+
+
+def _message(stderr: bytes, stdout: bytes) -> str:
+    """The stream that says something, chosen after the escape codes are gone:
+    a stderr that held only a colour reset would otherwise hide stdout's message."""
+    said = printed_text(stderr)
+    return said if said.strip() else printed_text(stdout)
 
 
 def _granted_marks(prior: list[RatchetEntry], violations: list[GateViolation], *,

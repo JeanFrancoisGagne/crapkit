@@ -105,6 +105,37 @@ def test_a_failed_override_alert_is_quoted_as_plain_lf_text(tmp_path, printed, s
     assert str(refused.value) == f"override alert command failed (exit 3): {quoted}{NEXT}"
 
 
+def _printing_both(root: Path, err: bytes, out: bytes) -> str:
+    """An alert command that prints `err` on stderr and `out` on stdout, then exits 3."""
+    (root / "alert.py").write_text(
+        "import sys\nsys.stdin.buffer.read()\n"
+        f"sys.stderr.buffer.write({err!r})\nsys.stdout.buffer.write({out!r})\nsys.exit(3)\n",
+        encoding="utf-8")
+    return f'"{sys.executable}" alert.py'
+
+
+# stderr is quoted when it holds text once the escape codes are gone. A stderr
+# that held only a colour reset, a window title or blank lines says nothing, so
+# the quote falls back to stdout, where the command put its message.
+BOTH_STREAMS = {
+    "reset-only-stderr": (b"\x1b[0m", b"relay down\n", "relay down"),
+    "reset-crlf-stderr": (b"\x1b[0m\r\n", b"relay down\r\n", "relay down"),
+    "window-title-stderr": (b"\x1b]0;alert\x07", b"relay down\n", "relay down"),
+    "blank-stderr": (b"\r\n\n", b"\x1b[31mrelay down\x1b[0m\n", "relay down"),
+    "text-on-both": (b"relay down\n", b"sent 0 of 1\n", "relay down"),
+}
+
+
+@pytest.mark.parametrize("printed", list(BOTH_STREAMS))
+def test_a_failed_alert_quotes_the_stream_that_holds_text_once_colour_is_gone(tmp_path, printed):
+    err, out, quoted = BOTH_STREAMS[printed]
+
+    with pytest.raises(ToolError) as refused:
+        _alert_or_refuse(_printing_both(tmp_path, err, out), tmp_path, [VIOLATION], "hotfix")
+
+    assert str(refused.value) == f"override alert command failed (exit 3): {quoted}{NEXT}"
+
+
 TRACEBACK = "import sys; sys.stdin.read(); 1/0"
 
 

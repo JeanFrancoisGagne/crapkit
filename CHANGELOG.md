@@ -34,8 +34,9 @@
   hook-precommit's override refuse when `alert_command` exits non-zero, and the refusal
   on stderr and in `--json`'s error object quoted what the command printed with its
   escape codes: a Python alert script coloured its traceback under FORCE_COLOR from 3.13
-  on. The refusal now also says what to fix: `rerun once [crapkit] alert_command in
-  crapkit.toml exits 0`.
+  on. A stderr that held only escape codes, such as a lone colour reset, hid the message
+  the command printed on stdout; the refusal now quotes stdout then. It also says what
+  to fix: `rerun once [crapkit] alert_command in crapkit.toml exits 0`.
 
 ### MCP and hook arguments
 
