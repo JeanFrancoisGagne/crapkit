@@ -253,6 +253,51 @@ def method_after_loose_function_type(fn, context: Context) -> bool:
     return fn.type == "method_declaration" and bool(top) and fn.start_byte > top[0]
 
 
+# --- Rust -------------------------------------------------------------------------------------
+
+def let_else_in(fn, context: Context) -> bool:
+    return any(counters.let_else(node) for node in own(fn, context))
+
+
+def _empty_closure(node, context: Context) -> bool:
+    params = node.child_by_field_name("parameters")
+    return node.type == "closure_expression" and params is not None and (
+        context.text(params) == b"||")
+
+
+def empty_closure(fn, context: Context) -> bool:
+    return any(_empty_closure(node, context) for node in own(fn, context))
+
+
+def maybe_bound(fn, context: Context) -> bool:
+    """A ?Sized (or any ?Trait) bound in fn's generics or where clause."""
+    return any(node.type in ("type_parameters", "where_clause") and b"?" in context.text(node)
+               for node in fn.children)
+
+
+def signature_before(fn, context: Context) -> bool:
+    """fn is the first function after a trait method with no body."""
+    if "sig" not in context.facts:
+        context.facts["sig"] = _after_signatures(context)
+    return fn.start_byte in context.facts["sig"]
+
+
+def _first_after(starts: list, end: int):
+    return next((start for start in starts if start > end), None)
+
+
+def _after_signatures(context: Context) -> set:
+    signatures = [node.end_byte for node in _walk(context.tree.root_node)
+                  if node.type == "function_signature_item"]
+    starts = sorted(fn.start_byte for fn in counters.functions(context.tree, context.spec))
+    return {_first_after(starts, end) for end in signatures}
+
+
+def signature_line(context: Context, start: int) -> bool:
+    return any(node.type == "function_signature_item" and node.start_point[0] + 1 == start
+               for node in _walk(context.tree.root_node))
+
+
 # --- every brace language -----------------------------------------------------------------------
 
 def run_over_lines(fn, context: Context) -> bool:
@@ -302,6 +347,43 @@ def structure_in_else(fn, context: Context) -> bool:
                for node in own(fn, context))
 
 
+def _structures(context: Context) -> frozenset:
+    return context.spec.ifs | context.spec.loops | context.spec.switches
+
+
+def _statement(node):
+    """The statement a structure stands in (Rust wraps an if in an expression statement)."""
+    parent = node.parent
+    return parent if parent is not None and parent.type == "expression_statement" else node
+
+
+def _after_statement(node, kinds) -> bool:
+    """A structure with a statement before it in the same block."""
+    before = _statement(node).prev_named_sibling
+    return node.type in kinds and before is not None and before.type not in kinds
+
+
+def _nested_after_statement(fn, context: Context) -> list:
+    kinds = _structures(context)
+    return [node for node in own(fn, context) if _after_statement(node, kinds)
+            and any(kind in kinds for kind in _ancestor_types(node, fn))]
+
+
+def statement_then_structure(fn, context: Context) -> bool:
+    """AO-ND-SIBLING: an if ends before a structure that follows a statement inside
+    another structure."""
+    ifs = [node.end_byte for node in own(fn, context) if node.type in context.spec.ifs]
+    return any(end <= node.start_byte for node in _nested_after_statement(fn, context)
+               for end in ifs)
+
+
+def arm_jump(fn, context: Context) -> bool:
+    """A Rust match arm whose value is an unlabeled break or continue."""
+    jumps = ("break_expression", "continue_expression")
+    return any(node.type == "match_arm" and any(kid.type in jumps for kid in node.named_children)
+               for node in own(fn, context))
+
+
 def _all(*languages: str) -> frozenset:
     return frozenset(languages)
 
@@ -318,6 +400,7 @@ SHAPES = [
     Shape("AO-N-MATCH", _all("rust", "zig"), NESTING, has_switch),
     Shape("AO-N-SH-CASE", _all("shell"), NESTING, has_switch),
     Shape("AO-ND-LOOPS", ND_LANGUAGES, NESTING, nested_loop),
+    Shape("AO-ND-SIBLING", ND_LANGUAGES, NESTING, statement_then_structure),
     Shape("AO-SH-NESTING-DEEP", _all("shell"), NESTING,
           lambda fn, c: has_type(fn, c, c.spec.ifs | c.spec.loops)),
     # cognitive
@@ -338,8 +421,14 @@ SHAPES = [
     Shape("AO-N-ELSE", ND_LANGUAGES, NESTING, structure_in_else),
     Shape("AO-ND-DEF", _all("c", "cpp", "objc", "java", "go", "rust", "swift", "zig"), NESTING,
           named_like({b"def", b"foreach", b"try", b"catch"})),
-    Shape("AO-COG-KEYWORD-NAMES-BRACE", _all("go", "rust", "zig"), COGNITIVE,
-          named_like({b"do", b"foreach", b"catch", b"except", b"while"})),
+    Shape("AO-COG-KEYWORD-NAMES-BRACE", _all("go", "rust"), COGNITIVE,
+          named_like({b"do", b"foreach", b"catch", b"except", b"while", b"and", b"or"})),
+    Shape("AO-COG-KEYWORD-NAMES-BRACE", _all("zig"), COGNITIVE,
+          named_like({b"do", b"foreach", b"except"})),
+    Shape("AO-N-CLOSURE", ND_LANGUAGES, NESTING,
+          lambda fn, c: has_type(fn, c, c.spec.lambdas)),
+    Shape("AO-LOOP-NO-CONDITION", _all("go", "c", "cpp", "objc", "java"), CCN,
+          lambda fn, c: any(counters._conditionless_for(node) for node in own(fn, c))),
     # params
     Shape("AO-C-VOID-FNPTR-PARAM", _all("c", "cpp", "objc"), PARAMS, void_function_pointer_param),
     # Go
@@ -350,6 +439,26 @@ SHAPES = [
     Shape("AO-GO-FUNC-PARAM", _all("go"), PARAMS, parameter_holds({"function_type"})),
     Shape("AO-GO-ND-INIT", _all("go"), NESTING, if_initializer),
     Shape("AO-COG-RUNS-GO", _all("go"), COGNITIVE, negated_call_run),
+    # Rust
+    Shape("AO-RS-TRY-COG", _all("rust"), COGNITIVE, lambda fn, c: has_type(fn, c, {"try_expression"})),
+    Shape("AO-RS-TRY-ND", _all("rust"), NESTING, lambda fn, c: has_type(fn, c, {"try_expression"})),
+    Shape("AO-RS-LETELSE", _all("rust"), CCN, let_else_in),
+    Shape("AO-RS-LETELSE-ND", _all("rust"), NESTING, let_else_in),
+    Shape("AO-RS-EMPTY-CLOSURE", _all("rust"), CCN + NESTING, empty_closure),
+    Shape("AO-RS-EMPTY-CLOSURE-COG", _all("rust"), COGNITIVE, empty_closure),
+    Shape("AO-RS-MAYBE-BOUND", _all("rust"), CCN + COGNITIVE + NESTING, maybe_bound),
+    Shape("AO-RS-TUPLE-PARAM", _all("rust"), PARAMS, parameter_holds({"tuple_type"})),
+    Shape("AO-RS-TRAIT-SIG", _all("rust"), EVERY, signature_before),
+    Shape("AO-RS-LOOP-COG", _all("rust"), COGNITIVE,
+          lambda fn, c: has_type(fn, c, {"loop_expression"})),
+    Shape("AO-RS-LOOP-ND", _all("rust"), NESTING,
+          lambda fn, c: has_type(fn, c, {"loop_expression"})),
+    Shape("AO-COG-GUARD", _all("rust"), COGNITIVE,
+          lambda fn, c: any(counters.match_guard(node) for node in own(fn, c))),
+    Shape("AO-RS-LETELSE-COG", _all("rust"), COGNITIVE, let_else_in),
+    Shape("AO-RS-ARM-JUMP", _all("rust"), COGNITIVE, arm_jump),
+    Shape("AO-RS-WHERE", _all("rust"), CCN,
+          lambda fn, c: any(node.type == "where_clause" for node in fn.children)),
 ]
 
 
@@ -363,8 +472,15 @@ def reasons(fn, context: Context, columns: tuple) -> list[str]:
 
 def extra_explained(context: Context, start: int) -> bool:
     """Whether a crapkit row at a line the oracle lists no function on comes from a
-    recorded shape (a phantom row that starts at a loose Go function type)."""
-    if context.language != "go":
-        return False
+    recorded shape: a phantom row that starts at a loose Go function type, or at a Rust
+    trait method with no body."""
+    explain = EXTRA_ROWS.get(context.language)
+    return explain is not None and explain(context, start)
+
+
+def _loose_line(context: Context, start: int) -> bool:
     lines = {context.data[:loose].count(b"\n") + 1 for loose in loose_function_types(context)}
     return start in lines
+
+
+EXTRA_ROWS = {"go": _loose_line, "rust": signature_line}

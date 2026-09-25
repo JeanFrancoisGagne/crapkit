@@ -72,3 +72,14 @@ func LongRun(a, b, c bool) int {
 	}
 	return 0
 }
+
+func Spin(n int) int {
+	i := 0
+	for {
+		if i > n {
+			break
+		}
+		i++
+	}
+	return i
+}

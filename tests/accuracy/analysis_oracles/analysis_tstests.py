@@ -25,7 +25,7 @@ LANGUAGES = {
 }
 # The languages whose full-corpus differential has every difference triaged into a
 # rulings row; the rest are added as their members are.
-CORPUS_LANGUAGES = ("go",)
+CORPUS_LANGUAGES = ("go", "rust")
 GROUPS = {"spans": analysis_treesitter.SPAN, "ccn": analysis_treesitter.COUNTS,
           "cognitive": analysis_treesitter.COGNITIVE, "nesting": analysis_treesitter.NESTING,
           "sizes": analysis_treesitter.SIZES}

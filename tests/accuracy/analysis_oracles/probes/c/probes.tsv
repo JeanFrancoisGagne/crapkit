@@ -84,3 +84,6 @@ c-fact	constructs.c	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch with
 c-fact	constructs.c	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	
 c-fact	constructs.c	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
 c-fact	constructs.c	fact	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+c-sibling	shapes.c	sibling_ifs	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the inner if body is two levels deep	AO-ND-SIBLING
+c-sibling	shapes.c	sibling_ifs	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, if +1, the inner if +2	
+c-sibling	shapes.c	sibling_ifs	start	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	

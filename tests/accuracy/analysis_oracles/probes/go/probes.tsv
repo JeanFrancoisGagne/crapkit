@@ -92,3 +92,5 @@ g-case-run	shapes.go	CaseRun	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-0
 g-case-run	shapes.go	CaseRun	ccn_std	7	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; for, the case, three &&, if	
 g-do-call	shapes.go	DoCall	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a call to a function named do is no loop	AO-COG-KEYWORD-NAMES-BRACE
 g-long-run	shapes.go	LongRun	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, one && sequence over two lines +1	AO-COG-RUNS-LINES
+g-spin	shapes.go	Spin	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the if; a for with no condition decides nothing	AO-LOOP-NO-CONDITION
+g-spin	shapes.go	Spin	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, the if inside it +2	

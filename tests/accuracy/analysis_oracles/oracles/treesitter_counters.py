@@ -52,7 +52,9 @@ class Spec:
     @property
     def decisions(self) -> frozenset:
         return (self.ifs | self.loops | self.catches | self.ternaries | self.guards
-                | self.coalescing | self.early_returns)
+                | self.coalescing | self.early_returns) - self.unconditional
+
+    unconditional: frozenset = frozenset()  # a loop with no condition: no decision
 
 
 def _f(*names: str) -> frozenset:
@@ -75,7 +77,7 @@ SPECS = {
                  _f("for_expression", "while_expression", "loop_expression"),
                  _f("match_expression"), _f("match_arm"),
                  _f("parameter", "self_parameter", "variadic_parameter"),
-                 early_returns=_f("try_expression"),
+                 early_returns=_f("try_expression"), unconditional=_f("loop_expression"),
                  lambdas=_f("closure_expression"),
                  comments=_f("line_comment", "block_comment"),
                  jumps=_f("break_expression", "continue_expression"), labels=_f("label")),
@@ -269,8 +271,19 @@ def _lines(node) -> range:
     return range(node.start_point[0], node.end_point[0] + 1)
 
 
+def _code_leaves(fn, spec: Spec):
+    """fn's own leaf tokens, a comment's inner tokens (Rust's // and doc markers) left out."""
+    stack = list(reversed(fn.children))
+    while stack:
+        node = stack.pop()
+        if node.child_count == 0:
+            yield node
+        elif node.type not in spec.functions and node.type not in spec.comments:
+            stack.extend(reversed(node.children))
+
+
 def _code_lines(fn, spec: Spec):
-    for node in own_nodes(fn, spec):
+    for node in _code_leaves(fn, spec):
         if _code_leaf(node, spec):
             yield from _lines(node)
 
@@ -281,14 +294,26 @@ def raw_nloc(fn, spec: Spec) -> set:
     return {line for line in _code_lines(fn, spec) if line >= first}
 
 
+def _nested(fn, spec: Spec) -> list:
+    return [node for node in own_nodes(fn, spec) if node.type in spec.functions]
+
+
 def closing_lines(fn, spec: Spec) -> set:
     """AO-NLOC-CLOSE-LINE: the line a nested function ends on is that function's."""
-    return {node.end_point[0] for node in own_nodes(fn, spec) if node.type in spec.functions}
+    return {node.end_point[0] for node in _nested(fn, spec)}
+
+
+def opening_lines(fn, spec: Spec) -> set:
+    """AO-NLOC-OPEN-LINE: the line a nested function starts on counts for the enclosing
+    function too."""
+    return {node.start_point[0] for node in _nested(fn, spec)}
 
 
 def nloc(fn, spec: Spec, transform: bool = True) -> int:
     lines = raw_nloc(fn, spec)
-    return len(lines - closing_lines(fn, spec) if transform else lines)
+    if transform:
+        lines = (lines | opening_lines(fn, spec)) - closing_lines(fn, spec)
+    return len(lines)
 
 
 # --- ccn ---------------------------------------------------------------------------------------
@@ -316,6 +341,20 @@ def logical_operators(node, spec: Spec) -> int:
     return sum(1 for child in node.children if not child.is_named and child.type in spec.logical)
 
 
+def match_guard(node) -> bool:
+    """A Rust match arm's `if` guard: one more decision on its arm."""
+    return node.type == "match_pattern" and any(child.type == "if" for child in node.children)
+
+
+def _conditionless_for(node) -> bool:
+    """A Go `for { ... }` or a C `for (;;)`: a loop with no condition decides nothing."""
+    if node.type != "for_statement":
+        return False
+    kinds = [child.type for child in node.children]
+    c_style = {"(", ";"} <= set(kinds) and node.child_by_field_name("condition") is None
+    return kinds == ["for", "block"] or c_style
+
+
 def let_else(node) -> bool:
     """A Rust `let PATTERN = VALUE else { ... }`: a decision, like the if let it spells."""
     return node.type == "let_declaration" and any(child.type == "else" for child in node.children)
@@ -332,8 +371,14 @@ def _switch_or_operators(node, spec: Spec, mod: bool) -> int:
     return logical_operators(node, spec)
 
 
+def _one_decision(node, spec: Spec) -> bool:
+    if _conditionless_for(node):
+        return False
+    return node.type in spec.decisions or let_else(node) or match_guard(node)
+
+
 def _decisions(node, spec: Spec, data: bytes, mod: bool) -> int:
-    if node.type in spec.decisions or let_else(node):
+    if _one_decision(node, spec):
         return 1
     if node.type in spec.cases:
         return _case(node, data, mod)

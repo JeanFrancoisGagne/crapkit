@@ -83,3 +83,27 @@ c-fact	constructs.rs	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch wit
 c-fact	constructs.rs	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
 c-fact	constructs.rs	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
 c-fact	constructs.rs	fact	params	1	The Rust Reference, Functions: the parameters the function declares	
+r-try	shapes.rs	try_op	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; an early return is no increment	AO-RS-TRY-COG
+r-try	shapes.rs	try_op	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; none here	AO-RS-TRY-ND
+r-try	shapes.rs	try_op	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the ? operator returns early on an error, one binary decision	
+r-let-else	shapes.rs	let_else	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a let-else is a binary decision	AO-RS-LETELSE
+r-let-else	shapes.rs	let_else	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the else block sits one level deep	AO-RS-LETELSE-ND
+r-let-else	shapes.rs	let_else	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the let-else is one if let, +1	
+r-empty-closure	shapes.rs	empty_closure	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	AO-RS-EMPTY-CLOSURE
+r-empty-closure	shapes.rs	empty_closure	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a closure raises the nesting level and adds nothing	AO-RS-EMPTY-CLOSURE-COG
+r-maybe-sized	shapes.rs	maybe_sized	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a trait bound decides nothing	AO-RS-MAYBE-BOUND
+r-maybe-sized	shapes.rs	maybe_sized	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	AO-RS-MAYBE-BOUND-COG
+r-maybe-sized	shapes.rs	maybe_sized	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: no structure	AO-RS-MAYBE-BOUND-ND
+r-tuple-param	shapes.rs	tuple_param	params	3	The Rust Reference, Functions: the parameters the function declares, glob, r and c	AO-RS-TUPLE-PARAM
+r-tuple-param	shapes.rs	tuple_param	start	21	The Rust Reference, Functions: a function starts on its defining line	
+r-trait-sig	shapes.rs	after_trait	rows	1	The Rust Reference, Traits: a trait method with no body declares no function body, so after_trait is one function	AO-RS-TRAIT-SIG
+r-spin	shapes.rs	spin	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, the if inside it +2	AO-RS-LOOP-COG
+r-spin	shapes.rs	spin	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if body inside the loop is two levels deep	AO-RS-LOOP-ND
+r-spin	shapes.rs	spin	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the if; a loop with no condition decides nothing	
+r-where	shapes.rs	with_where	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a trait bound decides nothing	AO-RS-WHERE
+r-guard	shapes.rs	guarded_arm	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the match +1; a case and its guard add nothing	AO-COG-GUARD
+r-guard	shapes.rs	guarded_arm	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one non-default arm and its guard	
+r-nested-let-else	shapes.rs	nested_let_else	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, the let-else as an if let +2	AO-RS-LETELSE-COG
+r-closure-depth	shapes.rs	closure_depth	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: a closure raises the nesting level	AO-N-CLOSURE
+r-arm-continue	shapes.rs	arm_continue	cognitive	5	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, match +2, if +2; an unlabeled continue adds nothing (Jumps to labels)	AO-RS-ARM-JUMP
+r-arm-continue	shapes.rs	arm_continue	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; for, the arm 0, if	
