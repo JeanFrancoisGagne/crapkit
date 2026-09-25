@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
+from ..gitpaths import readable, shown
 from ..invocation import _self
 from ..repotext import os_text, repo_text
 from ..rootfind import find_root
@@ -118,13 +119,34 @@ def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) ->
     At the root, from a directory outside it, or under `--repo`, the argument
     is root-relative as it always was.
     """
-    raw = os_text(raw)  # a byte argv held that is not UTF-8 names no file crapkit reads
     path = raw.replace("\\", "/") if os.name == "nt" else raw
+    return _readable_argument(_placed(path, root, cwd), root)
+
+
+def _placed(path: str, root: Path, cwd: Path | None) -> str:
+    """The argument as a root-relative posix path, resolved as the OS spelled
+    it: a checkout under a directory named in Latin-1 resolves like any other."""
     if _is_rooted(path):
         return _under_root(path, root)
     if _below(cwd, root):
         return _under_root(str(cwd / path), root)
     return posixpath.normpath(path)
+
+
+def _readable_argument(rel: str, root: Path) -> str:
+    """A root-relative name as text a store, a marks file and a row can hold.
+
+    A name in bytes that are not UTF-8 arrives holding a lone surrogate, which
+    none of them can hold. When a file exists under that name the answer is the
+    rename, since no lookup can ever key it; otherwise each such byte reads as
+    U+FFFD, and the command answers for a file it does not have in its own
+    words."""
+    if readable(rel):
+        return rel
+    if os.path.lexists(root / rel):
+        raise ConfigError(f"{shown(rel)} is named in bytes that are not UTF-8, and crapkit reads "
+                          "every path as UTF-8: rename it (git mv) to a UTF-8 name")
+    return os_text(rel)
 
 
 def _below(cwd: Path | None, root: Path) -> bool:
@@ -147,7 +169,7 @@ def _under_root(path: str, root: Path) -> str:
     try:
         return Path(path).resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
-        raise ConfigError(f"{path} is outside the repo at {root}") from None
+        raise ConfigError(f"{shown(path)} is outside the repo at {shown(str(root))}") from None
 
 
 def _repo_out_path(root: Path, out: str) -> Path:

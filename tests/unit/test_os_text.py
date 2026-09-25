@@ -20,6 +20,7 @@ from hand_scored_repo import make_repo, run, scored, write_run
 
 from crapkit import lanes, repotext, resources
 from crapkit.cli._shared import _repo_relative
+from crapkit.errors import ConfigError
 from crapkit.override import record_override
 from crapkit.ratchet import metric_version
 from crapkit.store import SnapshotStore
@@ -41,6 +42,44 @@ IDS = [row[0] for row in SURROGATE]
 @pytest.mark.parametrize("given, kept", [row[1:] for row in SURROGATE], ids=IDS)
 def test_a_file_argument_becomes_text_every_reader_can_hold(given, kept):
     assert _repo_relative(given) == kept
+
+
+# b"caf\xe9" on POSIX; on Windows the same str is broken UTF-16, which NTFS
+# stores in a name all the same.
+NOT_UTF8 = "caf\udce9"
+DIRECTORIES = [("dir-not-utf8", NOT_UTF8), ("dir-valid-accent", "café"), ("dir-cjk-emoji", "渡辺\U0001f680")]
+
+
+@pytest.mark.parametrize("directory", [row[1] for row in DIRECTORIES], ids=[row[0] for row in DIRECTORIES])
+@pytest.mark.parametrize("form", ["absolute", "from-below-the-root"])
+def test_an_argument_under_a_directory_named_in_any_bytes_is_placed_in_the_repo(tmp_path, directory, form):
+    """The path resolves as the OS spelled it, and only the root-relative
+    answer is held to UTF-8: an absolute argument under a checkout whose
+    parent directory is named in Latin-1 read as outside the repo."""
+    root = tmp_path / directory / "repo"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "app.py").write_bytes(b"x = 1\n")
+
+    placed = (_repo_relative(str(root / "src" / "app.py"), root) if form == "absolute"
+              else _repo_relative("app.py", root, root / "src"))
+
+    assert placed == "src/app.py"
+
+
+@pytest.mark.parametrize("form", ["root-relative", "absolute"])
+def test_an_argument_naming_a_file_whose_name_is_not_utf8_is_refused_with_the_rename(tmp_path, form):
+    """A file that exists under such a name can be keyed by nothing, so the
+    answer is the rename, not a lookup of a name with U+FFFD in it."""
+    root = tmp_path / "repo"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / f"{NOT_UTF8}.py").write_bytes(b"x = 1\n")
+    raw = f"src/{NOT_UTF8}.py" if form == "root-relative" else str(root / "src" / f"{NOT_UTF8}.py")
+
+    with pytest.raises(ConfigError) as refused:
+        _repo_relative(raw, root)
+
+    assert str(refused.value) == ("src/caf\\xe9.py is named in bytes that are not UTF-8, and crapkit reads "
+                                  "every path as UTF-8: rename it (git mv) to a UTF-8 name")
 
 
 @pytest.mark.parametrize("given", [row[1] for row in SURROGATE], ids=IDS)

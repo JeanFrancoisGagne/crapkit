@@ -183,8 +183,12 @@ a command in a traceback.
   it (git mv) to have it read`.
 - A path argument, an override reason (`CRAPKIT_OVERRIDE_REASON` or `verify --override`),
   a host name or a checkout directory in bytes that are not UTF-8 no longer ends a command
-  with a UnicodeEncodeError. `explain` and `brief` answer with their sentence for a
-  missing file; an override sends its alert and stores all three audit records, where the
+  with a UnicodeEncodeError. A path argument that names an existing file whose name is not
+  UTF-8 exits 3 with `rename it (git mv) to a UTF-8 name` in `rescore`, `explain`, `brief`,
+  `claims release`, `test-scoped`, `mutate --files` and `ratchet move`; one with no file
+  behind it gets the command's sentence for a missing file. An absolute path argument
+  resolves as the OS spelled it, so under a checkout directory named in Latin-1 it lands
+  inside the repo. An override sends its alert and stores all three audit records, where the
   store write failed after the alert had gone out; a lane run on such a host or under such
   a directory takes its output lock.
 - A junit report declared ISO-8859-1 or written as UTF-16 is read as it declares, in

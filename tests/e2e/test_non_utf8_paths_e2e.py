@@ -223,18 +223,28 @@ def test_a_second_coverage_with_a_lane_stamp_refuses_a_scoped_name(tmp_path):
     _refused(run_cli(repo, "coverage", "--reuse-unchanged"), b"src/caf\xe9.py")
 
 
+ARGUMENT_REFUSAL = ("is named in bytes that are not UTF-8, and crapkit reads every path as UTF-8: "
+                    "rename it (git mv) to a UTF-8 name")
+
+
 @POSIX_NAME
-@pytest.mark.xfail(strict=True, reason=(
-    "cli/_shared._repo_relative turns each byte of a path argument that is not UTF-8 into "
-    "U+FFFD (repotext.os_text) before any scope assignment, so rescore answers "
-    "'src/caf\ufffd.py does not exist' at exit 3 instead of naming the rename"))
-def test_rescore_refuses_a_scoped_name_it_is_handed(tmp_path):
-    """A Linux shell hands the name over as its own bytes."""
+@pytest.mark.parametrize("name", [b"src/caf\xe9.py", b"docs/caf\xe9.md"], ids=["scoped", "unscoped"])
+@pytest.mark.parametrize("command", [("rescore",), ("rescore", "--gate"), ("explain",), ("brief",),
+                                     ("ratchet", "move", "src/app.py")],
+                         ids=["rescore", "rescore-gate", "explain", "brief", "ratchet-move-to"])
+def test_a_command_handed_a_name_that_is_not_utf8_names_the_rename(tmp_path, name, command):
+    """A Linux shell hands the name over as its own bytes. rescore answered
+    'src/caf\ufffd.py does not exist', a file nobody named, where the file does
+    exist and only a rename lets crapkit read it."""
     repo = _repo(tmp_path)
     assert run_cli(repo, "coverage").returncode == 0
-    _commit(repo, {b"src/caf\xe9.py": SOURCE}, "add a Latin-1 name")
+    _commit(repo, {name: SOURCE}, "add a Latin-1 name")
+    tail = ("f",) if command[0] in ("explain", "brief") else ()
 
-    _refused(run_cli(repo, "rescore", os.fsdecode(b"src/caf\xe9.py")), b"src/caf\xe9.py")
+    result = run_cli(repo, *command, os.fsdecode(name), *tail)
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert result.stderr == f"crapkit: {_shown(name)} {ARGUMENT_REFUSAL}\n", result.stderr
 
 
 # --- a name no scope takes: left out, one line ---------------------------------------
