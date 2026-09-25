@@ -517,6 +517,31 @@ def test_the_stage_config_replaces_only_the_mutmut_table():
     assert parsed["tool"]["mutmut"]["also_copy"] == ["README.md", "docs", "tests", "tools"]
 
 
+def test_a_weekly_shard_runs_the_independent_suite_on_its_modules_and_the_canary():
+    """The floors are computed on tests/unit and the accuracy tests, golden,
+    change_control and cross_surface ones left out (the plan's mutation section).
+    The repo's own [tool.mutmut] names no test selection and no marker, so mutmut
+    would run all of tests/, e2e and goldens included."""
+    targets = mutation.calc_targets(["src/crapkit/digest.py"])
+    parsed = mutation.tomllib.loads(mutation.stage_config(PYPROJECT, targets, ["src", "tests"]))
+
+    assert parsed["tool"]["mutmut"]["source_paths"] == ["src/crapkit/digest.py",
+                                                         "src/crapkit/score.py"]
+    assert parsed["tool"]["mutmut"]["pytest_add_cli_args_test_selection"] == [
+        "tests/accuracy", "tests/unit"]
+    assert parsed["tool"]["mutmut"]["pytest_add_cli_args"][-2:] == ["-m", mutation.FLOOR_SUITE]
+
+
+def test_the_weekly_suite_runs_the_push_tier_on_this_platform_only():
+    """Every tier's tests would bring in the ones marked for another platform,
+    which fail mutmut's stats run and leave every mutant unjudged."""
+    env = mutation.calc_env({"CRAPKIT_ACCURACY_TIER": "nightly", "CRAPKIT_ACCURACY_COLLECT_ALL": "1"})
+
+    assert env["CRAPKIT_ACCURACY_TIER"] == "push"
+    assert "CRAPKIT_ACCURACY_COLLECT_ALL" not in env
+    assert env["PYTHONDONTWRITEBYTECODE"] == "1"
+
+
 def test_the_stage_copies_every_top_level_entry_its_tests_may_read(tmp_path):
     """A tools test that reads README.md failed mutmut's stats run in a stage that
     copied only tests/ and tools/, and every mutant stayed `not checked`."""

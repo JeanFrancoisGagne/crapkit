@@ -741,8 +741,27 @@ def tools_env(environ: dict) -> dict:
             "PYTHONDONTWRITEBYTECODE": "1"}
 
 
-def _prepare_stage(targets: dict) -> Path:
-    stage = _stage(REPO, REPO / TOOLS_STAGE)
+# The weekly and nightly runs: the calc modules against tests/unit and the
+# accuracy tests, in a stage of their own, so the repo's [tool.mutmut] (which
+# names no tests and no marker) never decides the suite the floors count.
+CALC_STAGE = RECEIPTS / "calc-stage"
+CALC_TESTS = ("tests/unit", "tests/accuracy")
+
+
+def calc_targets(modules: list[str]) -> dict:
+    """The modules a calc run mutates, score.py (the canary's home) always among them."""
+    return {module: CALC_TESTS for module in sorted({*modules, CANARY[0]})}
+
+
+def calc_env(environ: dict) -> dict:
+    """The push tier on this platform: every tier would bring in tests marked for
+    another platform, which fail mutmut's stats run."""
+    env = {key: value for key, value in environ.items() if key != "CRAPKIT_ACCURACY_COLLECT_ALL"}
+    return {**env, "CRAPKIT_ACCURACY_TIER": "push", "PYTHONDONTWRITEBYTECODE": "1"}
+
+
+def _prepare_stage(targets: dict, where: Path = TOOLS_STAGE) -> Path:
+    stage = _stage(REPO, REPO / where)
     pyproject = stage / "pyproject.toml"
     pyproject.write_text(stage_config(pyproject.read_text(encoding="utf-8"), targets,
                                       stage_copies(stage)), encoding="utf-8")
@@ -750,12 +769,25 @@ def _prepare_stage(targets: dict) -> Path:
     return stage
 
 
+LAUNCH = (LAUNCHER_FILE,)
+
+
+def staged_run(where: Path, targets: dict, globs: list[str], env: dict, children: int,
+               budget: float | None = None) -> tuple[list[Result], bool]:
+    """mutmut over `globs` in a stage whose [tool.mutmut] names `targets`: the results,
+    and whether the run finished inside `budget` seconds (a capped run reruns nothing)."""
+    stage = _prepare_stage(targets, where)
+    code = _mutmut(stage, ["run", "--max-children", str(children), *globs], budget, LAUNCH, env)
+    rows = collect(stage, globs, LAUNCH)
+    if code == -1:
+        return rows, False
+    return _rerun_timeouts(stage, rows, LAUNCH, env), True
+
+
 def _tools(args) -> int:
     targets = present(TOOL_TARGETS)
-    stage, globs, env = _prepare_stage(targets), _globs_for(list(targets)), tools_env(dict(os.environ))
-    launcher = (LAUNCHER_FILE,)
-    _mutmut(stage, ["run", "--max-children", str(args.max_children), *globs], None, launcher, env)
-    rows = _rerun_timeouts(stage, collect(stage, globs, launcher), launcher, env)
+    rows, _ = staged_run(TOOLS_STAGE, targets, _globs_for(list(targets)),
+                         tools_env(dict(os.environ)), args.max_children)
     receipt = _receipt("tools", modules=sorted(targets), results=[asdict(row) for row in rows])
     _write_receipt(receipt, "tools.json")
     return _judge(rows, update=False, canary=False)
@@ -802,20 +834,22 @@ def _print_floor(floor: Floor) -> None:
 def _weekly(args) -> int:
     modules = shard(calc_modules(), args.shard, args.of)
     globs = _globs_for(modules) + _canary_globs()
-    _mutmut(REPO, ["run", "--max-children", str(args.max_children), *globs], None)
-    rows = _rerun_timeouts(REPO, collect(REPO, globs))
+    rows, _ = staged_run(CALC_STAGE, calc_targets(modules), globs, calc_env(dict(os.environ)),
+                         args.max_children)
     receipt = _receipt("weekly", shard=args.shard, of=args.of, modules=modules,
                        results=[asdict(row) for row in rows])
     _write_receipt(receipt, f"weekly-{args.shard}.json")
     return _judge(rows, update=False)
 
 
-def _run_globs(globs: list[str], budget: float) -> tuple[list[Result], bool]:
-    """The results for `globs`, and whether the run finished inside `budget` seconds."""
-    if not globs:
+def _run_changed(changed: list, budget: float) -> tuple[list[Result], bool]:
+    """The results for the changed functions, and whether the run finished inside
+    `budget` seconds."""
+    if not changed:
         return [], True
-    code = _mutmut(REPO, ["run", *globs], budget)
-    return collect(REPO, globs), code != -1
+    targets = calc_targets([path for path, _ in changed])
+    return staged_run(CALC_STAGE, targets, [mutmut_glob(*pair) for pair in changed],
+                      calc_env(dict(os.environ)), os.cpu_count() or 2, budget)
 
 
 def _diff_receipt(base: str, changed: list, rows: list[Result], complete: bool) -> dict:
@@ -826,7 +860,7 @@ def _diff_receipt(base: str, changed: list, rows: list[Result], complete: bool) 
 def _diff_run(args) -> int:
     base = args.base or weekly_base(REPO, datetime.datetime.now(datetime.timezone.utc))
     changed = changed_functions(REPO, base, calc_modules())
-    rows, complete = _run_globs([mutmut_glob(*pair) for pair in changed], args.cap_minutes * 60)
+    rows, complete = _run_changed(changed, args.cap_minutes * 60)
     receipt = _diff_receipt(base, changed, rows, complete)
     _write_receipt(receipt, f"diff-{receipt['head'][:12]}.json")
     if not complete:
