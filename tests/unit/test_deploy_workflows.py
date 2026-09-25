@@ -839,3 +839,26 @@ def test_a_job_that_builds_a_cached_image_with_the_local_cache_is_caught():
                                              "runs": ["--online --cadence {cadence} --os linux --image core -n 4"]}}
 
     assert ("weekly-online", "core") in cold_builds(cache_rows(jobs))
+
+
+# The images built on full, whose layers take 13.62 GB of the runner's disk in
+# the daemon alone.
+ON_FULL = {image for image, chain in pinsfile.IMAGE_CHAIN.items() if "full" in chain}
+
+
+def crowded_builds(jobs):
+    """Linux entries that build full or an image on it without freeing the
+    runner's disk first (deploy.yml's free_disk step)."""
+    builds = {name for name, argv in _linux_entry_calls(jobs) if run.parse(argv).image in ON_FULL}
+    return sorted(name for name in builds if not jobs[name].get("free_disk"))
+
+
+def test_every_job_that_builds_full_or_an_image_on_it_frees_the_runners_disk_first():
+    assert ON_FULL == {"full", "gui", "full-latest"}
+    assert crowded_builds(MAP["jobs"]) == []
+
+
+def test_a_job_that_builds_gui_on_a_full_disk_is_caught():
+    jobs = {**MAP["jobs"], "nightly-gui": {**MAP["jobs"]["nightly-gui"], "free_disk": False}}
+
+    assert crowded_builds(jobs) == ["nightly-gui"]

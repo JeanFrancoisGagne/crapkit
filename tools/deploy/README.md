@@ -231,6 +231,11 @@ build takes up to 40 minutes on a 4-core runner (`[budget.deploy-linux]` in
 builds a cached image with `--cache local`, and on a row here that no longer
 says what the workflows run.
 
+A job that builds `full`, `gui` or `full-latest` also frees the runner's disk
+before it builds (`free_disk = true` in its `tests/deploy/MAP.toml` entry):
+`full` takes 13.62 GB in the daemon, and the builder keeps its layers as well.
+The same test file fails on such a job that does not.
+
 Compressed sizes of the images built at 9707cc6d, read layer by layer from
 `docker save` on 2026-09-25: `core` 1.45 GB, `ci` 0.56 GB, `full` 3.76 GB,
 `gui` 4.36 GB. `gui` is `full` plus 0.70 GB, `full` is `core`'s first 18
