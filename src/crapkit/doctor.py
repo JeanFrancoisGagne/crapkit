@@ -488,15 +488,44 @@ def unmeasured_directories(counts, tracked: list[str]) -> tuple[UnmeasuredDir, .
 
 # The commands that move an installed plugin to the marketplace's current copy,
 # and what makes a running client load it, per harness. `claude plugin install`
-# over an older install prints "already installed" and moves nothing.
+# over an older install prints "already installed" and moves nothing. The
+# update runs once per scope that holds the install (see InstallScope).
 _PLUGIN_UPDATE = {
     "claude": ("claude plugin marketplace update crapkit",
-               "claude plugin update crapkit@crapkit --scope user",
+               ("claude plugin update crapkit@crapkit --scope {scope}",),
                "restart Claude Code's sessions"),
-    "codex": ("codex plugin marketplace upgrade crapkit", "codex plugin add crapkit@crapkit",
+    "codex": ("codex plugin marketplace upgrade crapkit", ("codex plugin add crapkit@crapkit",),
               "start a new Codex task"),
 }
 _PLAIN_RELEASE = re.compile(r"\d+(?:\.\d+)*")
+
+
+class InstallScope(NamedTuple):
+    """One scope Claude Code's installed_plugins.json records an install under,
+    and the project directory a project or local install belongs to.
+
+    Claude Code picks which project a `--scope project` or `--scope local`
+    command acts on from the directory it runs in: outside it, `claude plugin
+    update` moved the first project install on the list, and `claude plugin
+    install` writes to whatever project the shell stands in. So a repair names
+    that directory.
+    """
+    scope: str
+    project: str | None = None
+
+
+USER_SCOPE = (InstallScope("user"),)
+
+
+def _for_scope(commands: tuple[str, ...], at: InstallScope) -> str:
+    spelled = ", then ".join(f"`{command.format(scope=at.scope)}`" for command in commands)
+    return f"{spelled} (run in {at.project})" if at.project else spelled
+
+
+def _for_each_scope(commands: tuple[str, ...], scopes: tuple[InstallScope, ...]) -> str:
+    """`commands` spelled once per scope that holds the install, in the order
+    installed_plugins.json lists them; the user scope when none is known."""
+    return "; ".join(_for_scope(commands, at) for at in scopes or USER_SCOPE)
 
 
 def plugin_harness(where: str, codex_home: str | None) -> str:
@@ -521,25 +550,28 @@ def _behind(version: str, cli_version: str) -> str | None:
     return "plugin" if plugin < cli else "cli"
 
 
-def _repair(behind: str | None, harness: str, cli_upgrade: str) -> str:
+def _repair(behind: str | None, harness: str, cli_upgrade: str,
+            scopes: tuple[InstallScope, ...]) -> str:
     fetch, update, reload = _PLUGIN_UPDATE[harness]
+    updates = _for_each_scope(update, scopes)
     if behind == "plugin":
-        return f"The plugin is behind; update it with `{fetch}`, then `{update}`, and {reload}."
+        return f"The plugin is behind; update it with `{fetch}`, then {updates}, and {reload}."
     if behind == "cli":
         return f"The CLI is behind; upgrade it with `{cli_upgrade}`."
-    return (f"Update whichever is behind: the plugin with `{fetch}`, then `{update}`; the CLI "
+    return (f"Update whichever is behind: the plugin with `{fetch}`, then {updates}; the CLI "
             f"with `{cli_upgrade}`.")
 
 
 def _version_gap(where: str, version: str, cli_version: str, cli_where: str, harness: str,
-                 cli_upgrade: str) -> str | None:
+                 cli_upgrade: str, scopes: tuple[InstallScope, ...]) -> str | None:
     """One line naming both numbers, the executable the second one came from,
     which side is behind, and the commands that move it.
 
-    The plugin's repair is its harness's: Claude Code's update lines, or
-    Codex's refresh for a plugin Codex installed. The CLI's is the upgrade of
-    the installer that owns the launcher (`cli_upgrade`). Both are named when
-    the versions do not order plainly.
+    The plugin's repair is its harness's: Claude Code's update lines, one per
+    scope that holds the install (`scopes`), or Codex's refresh for a plugin
+    Codex installed. The CLI's is the upgrade of the installer that owns the
+    launcher (`cli_upgrade`). Both are named when the versions do not order
+    plainly.
 
     `cli_where` is the console script the plugin will spawn, which on a machine
     with a venv crapkit and a pipx crapkit is not the module answering this
@@ -555,7 +587,7 @@ def _version_gap(where: str, version: str, cli_version: str, cli_where: str, har
         return None
     return (f"crapkit doctor: the plugin at {where} is version {version}, and the crapkit "
             f"its hooks spawn ({cli_where}) is {cli_version}. "
-            + _repair(_behind(version, cli_version), harness, cli_upgrade))
+            + _repair(_behind(version, cli_version), harness, cli_upgrade, scopes))
 
 
 def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str) -> str | None:
@@ -578,10 +610,11 @@ def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str)
 _STALE_COPY = (
     "crapkit doctor: the plugin at {where} is version {version}, and so is the marketplace's copy "
     "at {source}, but {count} between them ({named}); `claude plugin update` keeps an install "
-    "whose version did not move, so reinstall it with `claude plugin uninstall crapkit@crapkit "
-    "--scope {scope}`, then `claude plugin install crapkit@crapkit --scope {scope}`, and restart "
-    "Claude Code's sessions."
+    "whose version did not move, so reinstall it with {reinstall}, and restart Claude Code's "
+    "sessions."
 )
+_REINSTALL = ("claude plugin uninstall crapkit@crapkit --scope {scope}",
+              "claude plugin install crapkit@crapkit --scope {scope}")
 _NAMED_FILES = 2
 
 
@@ -595,21 +628,24 @@ def _first_files(differing: tuple[str, ...]) -> str:
 
 
 def stale_copy(*, where: str, version: str | None, source: str, source_version: str | None,
-               differing: tuple[str, ...], scope: str) -> str | None:
+               differing: tuple[str, ...], scopes: tuple[InstallScope, ...]) -> str | None:
     """One line when an install and the marketplace's copy carry one version
     and different files. Main between releases keeps the release's version
     string, so `claude plugin update` answers "already at the latest version"
     and the install keeps the release's files. A different version is the
-    update's business, and says nothing here."""
+    update's business, and says nothing here. The reinstall is named once per
+    scope that holds the install."""
     if not differing or version != source_version:
         return None
-    return _STALE_COPY.format(where=where, version=version, source=source, scope=scope,
+    return _STALE_COPY.format(where=where, version=version, source=source,
+                              reinstall=_for_each_scope(_REINSTALL, scopes),
                               count=_files_differ(len(differing)), named=_first_files(differing))
 
 
 def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,
                      protocols: tuple[str, ...] | None, supported: str, harness: str = "claude",
-                     cli_upgrade: str = "python -m pip install --upgrade crapkit") -> list[str]:
+                     cli_upgrade: str = "python -m pip install --upgrade crapkit",
+                     scopes: tuple[InstallScope, ...] = USER_SCOPE) -> list[str]:
     """Every disagreement between an installed plugin and this CLI, one per line.
 
     Empty is the answer that matters: the two agree, and a check that prints on
@@ -621,7 +657,7 @@ def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_w
     if version is None:
         return [f"crapkit doctor: the plugin at {where} has no .claude-plugin/plugin.json"]
     return [line for line in (_version_gap(where, version, cli_version, cli_where, harness,
-                                           cli_upgrade),
+                                           cli_upgrade, scopes),
                               _protocol_gap(where, protocols, supported)) if line]
 
 

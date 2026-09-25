@@ -1854,9 +1854,10 @@ def _spawn_failure() -> list[str]:
 
 def _plugin_lines(root: Path) -> list[str]:
     """Every disagreement between the plugin at `root` and the crapkit its
-    hooks spawn, each repair spelled for the harness that installed the plugin
-    and the installer that owns the launcher; then an install whose files the
-    marketplace has moved past at one version, and the Claude Code floor."""
+    hooks spawn, each repair spelled for the harness that installed the plugin,
+    each scope that holds it, and the installer that owns the launcher; then an
+    install whose files the marketplace has moved past at one version, and the
+    Claude Code floor."""
     from ..doctor import plugin_handshake, plugin_harness
     from ..launchers import upgrade_command
     from .claude_hook import PROTOCOL
@@ -1866,7 +1867,8 @@ def _plugin_lines(root: Path) -> list[str]:
                                  cli_version=cli_version, cli_where=executable,
                                  protocols=_hook_protocols(root), supported=PROTOCOL,
                                  harness=plugin_harness(str(root), os.environ.get("CODEX_HOME")),
-                                 cli_upgrade=upgrade_command(executable, _shell_quote))
+                                 cli_upgrade=upgrade_command(executable, _shell_quote),
+                                 scopes=_install_scopes(root))
     return handshake + _stale_copy(root) + _claude_code_floor(root)
 
 
@@ -1884,12 +1886,27 @@ def _differing_files(source: Path, install: Path) -> tuple[str, ...]:
     return tuple(sorted(rel.as_posix() for rel in files if not _same_bytes(source / rel, install / rel)))
 
 
-def _install_scope(root: Path) -> str:
-    """The scope installed_plugins.json records for this install, else user."""
-    recorded = _plugin_json(_claude_plugins_of(root) / "installed_plugins.json")
-    same = (e.get("scope") for e in _crapkit_records(recorded)
+def _scope_of(record: dict):
+    """The scope one installed_plugins.json record names, with its project
+    directory when it has one, or None for a record naming no scope."""
+    from ..doctor import InstallScope
+
+    scope, project = record.get("scope"), record.get("projectPath")
+    if not isinstance(scope, str):
+        return None
+    return InstallScope(scope, project if isinstance(project, str) and project else None)
+
+
+def _install_scopes(root: Path) -> tuple:
+    """Every scope installed_plugins.json records this install under, in its
+    order. Claude Code keeps one cache directory per version, so a user install
+    and project installs of one version share it. Empty for an install no
+    record names, or one outside Claude Code's cache."""
+    plugins = _claude_plugins_of(root)
+    recorded = _plugin_json(plugins / "installed_plugins.json") if plugins else None
+    same = (e for e in _crapkit_records(recorded)
             if os.path.normcase(str(e.get("installPath", ""))) == os.path.normcase(str(root)))
-    return next((scope for scope in same if isinstance(scope, str)), "user")
+    return tuple(filter(None, map(_scope_of, same)))
 
 
 def _stale_copy(root: Path) -> list[str]:
@@ -1903,7 +1920,7 @@ def _stale_copy(root: Path) -> list[str]:
         return []
     source = listed[1]
     line = stale_copy(where=str(root), version=_manifest_version(root), source=str(source),
-                      source_version=_manifest_version(source), scope=_install_scope(root),
+                      source_version=_manifest_version(source), scopes=_install_scopes(root),
                       differing=_differing_files(source, root))
     return [line] if line else []
 

@@ -19,7 +19,7 @@ import pytest
 
 import crapkit
 from crapkit.cli import admin, main
-from crapkit.doctor import stale_copy
+from crapkit.doctor import USER_SCOPE, stale_copy
 from test_doctor_plugin_root import ON_PATH, _write, plugin
 
 CLI = crapkit.__version__
@@ -132,13 +132,13 @@ def test_an_unreadable_marketplace_record_is_no_comparison(tmp_path, monkeypatch
 
 def test_the_pure_rule_counts_and_names_the_first_differing_file():
     line = stale_copy(where="/c/0.8.0", version="0.8.0", source="/m/plugin", source_version="0.8.0",
-                      differing=("a.md", "b.md", "c.md"), scope="user")
+                      differing=("a.md", "b.md", "c.md"), scopes=USER_SCOPE)
 
     assert "3 files differ between them (a.md, b.md and 1 more)" in line
     assert stale_copy(where="/c", version="0.8.0", source="/m", source_version="0.8.0",
-                      differing=(), scope="user") is None
+                      differing=(), scopes=USER_SCOPE) is None
     assert stale_copy(where="/c", version="0.8.0", source="/m", source_version="0.8.1",
-                      differing=("a.md",), scope="user") is None
+                      differing=("a.md",), scopes=USER_SCOPE) is None
 
 
 # --- a marketplace added from a local directory ------------------------------------------
