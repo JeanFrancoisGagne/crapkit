@@ -596,7 +596,7 @@ def test_the_help_says_where_a_bare_plugin_root_looks_and_what_it_names(capsys):
     text = _doctor_help(capsys)
 
     assert "check an installed crapkit plugin, Claude Code's or Codex's," in text
-    assert ("with no PATH, the newest install Claude Code recorded or cached (a local directory "
-            "marketplace is checked in that directory, where Claude Code loads it), else the "
-            "newest in Codex's plugin cache") in text
+    assert ("with no PATH, every install Claude Code recorded, one per scope and version (a "
+            "local directory marketplace is checked in that directory, where Claude Code loads "
+            "it), else the newest in Claude Code's plugin cache, else the newest in Codex's") in text
     assert "each line names the command that closes it" in text

@@ -1158,7 +1158,11 @@ crapkit doctor: checking plugin
 ```
 
 With no `PATH` at all it reads Claude Code's own plugin directory (`CLAUDE_CONFIG_DIR`, else
-`~/.claude`), then Codex's plugin cache (`CODEX_HOME`, else `~/.codex`). A marketplace added
+`~/.claude`) and checks every install `installed_plugins.json` records, newest first, each
+under its own `checking` line: a user install made at one version and a project install
+made at a later one are two cache directories, and sessions run both. With no record on
+disk it checks the newest install in Claude Code's cache, then in Codex's plugin cache
+(`CODEX_HOME`, else `~/.codex`). A marketplace added
 from a local directory is checked in that directory, because Claude Code loads its plugin in
 place; the `checking` line says so. When nothing is installed in either, it names both
 directories and both harnesses' install lines and exits 1:
@@ -1180,9 +1184,10 @@ the cache root `~/.claude/plugins/cache`, or a marketplace or plugin directory i
 Code keeps an install at `cache/<marketplace>/<plugin>/<version>/` and leaves the old version
 beside the new one after an update, so among the manifests named `crapkit` under `PATH` the
 newest install is the one checked; the other plugins sharing that cache are never read. With no `PATH` at
-all, doctor looks in Claude Code's plugin directory (`CLAUDE_CONFIG_DIR`, else `~/.claude`),
-through `installed_plugins.json` and the cache, then in Codex's cache, and names both
-directories when nothing is installed there.
+all, doctor checks every install `installed_plugins.json` records in Claude Code's plugin
+directory (`CLAUDE_CONFIG_DIR`, else `~/.claude`), else the newest in that cache, then in
+Codex's cache, and names both directories when nothing is installed there. A cached version
+no record names is one an update left behind, and no session runs it.
 
 ---
 

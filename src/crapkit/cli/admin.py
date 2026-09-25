@@ -1574,14 +1574,23 @@ def _recorded_roots(recorded) -> list[Path]:
     return [Path(e["installPath"]) for e in _crapkit_records(recorded) if e.get("installPath")]
 
 
-def _installed_crapkit_roots(plugins: Path) -> list[Path]:
-    """Every crapkit install under Claude Code's plugin directory: what the
-    installer recorded plus what the cache holds, so a stale record and a
-    missing record alone cannot hide the plugin."""
+def _newest_first(root: Path) -> tuple:
+    return _version_key(_manifest_version(root)), str(root)
+
+
+def _recorded_installs(plugins: Path) -> list[Path]:
+    """Every install installed_plugins.json records that is still on disk,
+    newest version first. Each is a plugin some session runs: a user install
+    made at one version and a project install made at a later one are two
+    cache directories, and both run."""
     recorded = _recorded_roots(_plugin_json(plugins / "installed_plugins.json"))
-    cached = _manifest_roots(plugins)
-    return [r for r in dict.fromkeys(recorded + cached)
-            if (r / ".claude-plugin" / "plugin.json").is_file()]
+    live = [r for r in dict.fromkeys(recorded) if (r / ".claude-plugin" / "plugin.json").is_file()]
+    return sorted(live, key=_newest_first, reverse=True)
+
+
+def _newest(roots: list[Path]) -> list[Path]:
+    newest = _newest_root(roots)
+    return [newest] if newest else []
 
 
 def _codex_home() -> Path:
@@ -1590,40 +1599,53 @@ def _codex_home() -> Path:
     return Path(base) if base else Path.home() / ".codex"
 
 
-class _PluginRoot(NamedTuple):
-    """The plugin root to check (None when none was found), where it was
-    looked for, and why a root the search found is the one checked."""
-    root: Path | None
-    looked_in: str
+class _Found(NamedTuple):
+    """A plugin root to check, and why a root the search found is that one."""
+    root: Path
     why: str = ""
+
+
+class _PluginRoots(NamedTuple):
+    """The plugin roots to check, none when none was found, and where they
+    were looked for."""
+    roots: tuple[_Found, ...]
+    looked_in: str
 
 
 _IN_PLACE = " (Claude Code loads a plugin from a local directory marketplace in place)"
 
 
-def _resolve_plugin_root(arg: str) -> _PluginRoot:
-    """The plugin root to check, and where it was looked for.
+def _resolve_plugin_root(arg: str) -> _PluginRoots:
+    """The plugin roots to check, and where they were looked for.
 
-    An explicit PATH with no manifest at or under it resolves to itself, so
-    the handshake names the missing file at the path the operator typed. With
-    none, Claude Code's install, else the one in Codex's plugin cache. Claude
-    Code runs a plugin from a marketplace added as a local directory in place,
-    so for that one the directory is checked instead of its cache copy.
+    An explicit PATH resolves to the newest install at or under it, or to
+    itself when it holds no manifest, so the handshake names the missing file
+    at the path the operator typed. With none, every install Claude Code
+    recorded, else the newest in its cache, else the newest in Codex's.
     """
     if not arg:
         return _default_plugin_root()
     under = Path(arg)
-    return _PluginRoot(_newest_root(_manifest_roots(under)) or under, str(under))
+    return _PluginRoots((_Found(_newest_root(_manifest_roots(under)) or under),), str(under))
 
 
-def _default_plugin_root() -> _PluginRoot:
+def _where_it_loads(root: Path) -> _Found:
+    """The copy Claude Code runs for the install at `root`. It runs a plugin
+    from a marketplace added as a local directory in place, so for that one it
+    is the directory, not its cache copy."""
+    listed = _marketplace_copy(root)
+    return _Found(listed[1], _IN_PLACE) if listed and listed[0] == "directory" else _Found(root)
+
+
+def _default_plugin_root() -> _PluginRoots:
+    """Every install Claude Code recorded; the newest in its cache when no
+    record names one on disk; else the newest in Codex's cache. A cached
+    version no record names is one `claude plugin update` left behind, and no
+    session runs it."""
     plugins, codex = _plugins_dir(), _codex_home()
-    found = _newest_root(_installed_crapkit_roots(plugins)) or _newest_root(_manifest_roots(codex))
-    listed = _marketplace_copy(found) if found else None
-    looked_in = f"{plugins} or {codex}"
-    if listed and listed[0] == "directory":
-        return _PluginRoot(listed[1], looked_in, _IN_PLACE)
-    return _PluginRoot(found, looked_in)
+    found = (_recorded_installs(plugins) or _newest(_manifest_roots(plugins))
+             or _newest(_manifest_roots(codex)))
+    return _PluginRoots(tuple(dict.fromkeys(map(_where_it_loads, found))), f"{plugins} or {codex}")
 
 
 def _claude_plugins_of(root: Path) -> Path | None:
@@ -1802,12 +1824,12 @@ _INSTALL_PLUGIN = (
 )
 
 
-def _name_found_root(found: _PluginRoot) -> None:
+def _name_found_root(found: _Found, looked_in: str) -> None:
     """A root the search found, not one the operator typed: the glob reaches
     three levels under the named directory, so a source checkout can win over an
     install. Naming it is how the reader knows which tree the verdict is about.
     """
-    if str(found.root) != found.looked_in:
+    if str(found.root) != looked_in:
         print(f"crapkit doctor: checking {found.root}{found.why}")
 
 
@@ -1862,11 +1884,21 @@ def _doctor_plugin(plugin_root: str) -> int:
     hooks and its MCP server spawn — see `_spawned_cli`.
     """
     found = _resolve_plugin_root(plugin_root)
-    if found.root is None:
+    if not found.roots:
         print(f"crapkit doctor: no installed crapkit plugin under {found.looked_in}. {_INSTALL_PLUGIN}")
         return 1
-    _name_found_root(found)
-    lines = _spawn_failure() or _plugin_lines(found.root)
+    for each in found.roots:
+        _name_found_root(each, found.looked_in)
+    return _print_problems(_spawn_failure() or _roots_lines(found.roots))
+
+
+def _roots_lines(roots: tuple[_Found, ...]) -> list[str]:
+    """Every root's disagreements, each once: the Claude Code floor is one
+    machine fact, whichever install it came up under."""
+    return list(dict.fromkeys(line for each in roots for line in _plugin_lines(each.root)))
+
+
+def _print_problems(lines: list[str]) -> int:
     for line in lines:
         print(line)
     return 1 if lines else 0

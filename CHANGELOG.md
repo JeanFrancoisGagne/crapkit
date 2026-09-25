@@ -183,9 +183,12 @@ nothing. Each of these now gets a line naming the object and the next step:
   `claude mcp list` failed with ENOENT; it now FAILs naming the install that stays: `uv
   tool install crapkit`, or `pipx install crapkit` if `pipx run` started it (pipx 1.17 on
   its uv backend runs the command through `uv tool run`, in uv's cache).
-- With no PATH it looks in Codex's plugin cache when Claude Code has no install, checks a
-  marketplace added from a local directory in that directory (Claude Code loads it in
-  place), and the no-install line names both harnesses' install commands.
+- With no PATH it checks every install `installed_plugins.json` records, not only the
+  newest: with a user install at 0.8.0 and a project install at 0.8.1 it checked the 0.8.1
+  copy and exited 0 while every session outside that project ran 0.8.0. It looks in
+  Codex's plugin cache when Claude Code has no install, checks a marketplace added from a
+  local directory in that directory (Claude Code loads it in place), and the no-install
+  line names both harnesses' install commands.
 - A hook's `--protocol` is read from a shell-form command string as well as from `args`,
   and the Claude Code 2.1.139 line prints only for a plugin whose hooks pass `args`.
 

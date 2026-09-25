@@ -17,7 +17,7 @@ from pathlib import Path
 import crapkit
 from crapkit.doctor import InstallScope, plugin_handshake, stale_copy
 from test_doctor_plugin_copy import GITHUB, SKILL, claude_home, run
-from test_doctor_plugin_root import _write
+from test_doctor_plugin_root import _write, plugin
 
 CLI = crapkit.__version__
 FETCH = "`claude plugin marketplace update crapkit`"
@@ -134,3 +134,43 @@ def test_the_pure_stale_rule_names_every_scope():
 
     assert line.endswith(f"reinstall it with {_reinstall('project')} (run in /w/pa); "
                          f"{_reinstall('user')}, and restart Claude Code's sessions."), line
+
+
+# --- every install a session runs, with no PATH ----------------------------------------
+#
+# A user install made at 0.8.0 and a project install made later at 0.8.1 are two
+# cache directories. doctor with no PATH checked only the newest and exited 0
+# while every session outside that project ran the 0.8.0 plugin.
+
+def _two_installs(tmp_path, monkeypatch) -> tuple[Path, Path]:
+    """A project install at this CLI's version and a user install at 0.0.1,
+    each recorded, returned (newer, older)."""
+    newer, _ = claude_home(tmp_path, monkeypatch, GITHUB)
+    older = plugin(newer.parent / "0.0.1", version="0.0.1")
+    _write(tmp_path / "claude" / "plugins" / "installed_plugins.json",
+           {"version": 2, "plugins": {"crapkit@crapkit": [
+               {"scope": "user", "installPath": str(older), "version": "0.0.1"},
+               {"scope": "project", "projectPath": str(tmp_path / "pa"),
+                "installPath": str(newer), "version": CLI}]}})
+    return newer, older
+
+
+def test_with_no_path_every_recorded_install_is_checked_newest_first(tmp_path, monkeypatch, capsys):
+    newer, older = _two_installs(tmp_path, monkeypatch)
+
+    code, lines = run(capsys)
+
+    assert code == 1
+    assert lines[:2] == [f"crapkit doctor: checking {newer}", f"crapkit doctor: checking {older}"]
+    (gap,) = lines[2:]
+    assert gap.startswith(f"crapkit doctor: the plugin at {older} is version 0.0.1"), gap
+    assert gap.endswith(f"then {_update('user')}, and restart Claude Code's sessions."), gap
+
+
+def test_a_cached_version_no_record_names_is_not_checked(tmp_path, monkeypatch, capsys):
+    """`claude plugin update` leaves the old version's directory beside the new
+    one, and no session runs it."""
+    root, _ = claude_home(tmp_path, monkeypatch, GITHUB)
+    plugin(root.parent / "0.0.1", version="0.0.1")
+
+    assert run(capsys) == (0, [f"crapkit doctor: checking {root}"])
