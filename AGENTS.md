@@ -568,7 +568,8 @@ marks instead of hand-resolving them, which is how a mark silently rises.
 
     crapkit mcp --repo /abs/path/to/repo
 
-Stdio JSON-RPC, newline-delimited, no SDK dependency. Client config:
+Stdio JSON-RPC, newline-delimited, no SDK dependency. Client config, in the `mcpServers`
+form Claude Code and Cursor read:
 
     {
       "mcpServers": {
@@ -578,6 +579,10 @@ Stdio JSON-RPC, newline-delimited, no SDK dependency. Client config:
         }
       }
     }
+
+Other agents take other keys and fields: OpenCode, Amp and VS Code ignore this block
+without an error, and a headless Gemini CLI offers none of the tools without `"trust": true`.
+[docs/harnesses.md](docs/harnesses.md) gives the block for each agent.
 
 `--repo` names an exact root, as on every subcommand; without it the server walks up from
 where it started, and a tool's optional `repo` argument overrides the root per call and is

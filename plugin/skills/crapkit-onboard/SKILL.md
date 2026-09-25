@@ -68,7 +68,9 @@ server, and carries no version to compare against the CLI. Codex keeps `crapkit-
 out of the model's list through the skill's `agents/openai.yaml`, which the whole-directory
 copy carries. Gemini CLI reads no such file and lists all three skills to its model; once
 the repo is adopted, `gemini skills disable crapkit-onboard --scope user` takes the
-onboarding skill out.
+onboarding skill out. That runtime
+starts the MCP server from its own config file, in its own key and fields:
+[the block for each agent](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md).
 
 ### Optional, Claude Code: advise Bash writes too
 

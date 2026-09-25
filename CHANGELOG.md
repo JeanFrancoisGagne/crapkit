@@ -28,6 +28,24 @@ version stays 11, so no repo re-seeds.
   Gemini CLI, Goose, Zed and Aider, with where each starts the server, what environment it
   passes, the versions checked, what it does with the plugin's hook, and how to restart
   after an upgrade.
+- The README, AGENTS.md, the adoption and upgrading pages, the onboard skill and
+  `crapkit mcp --help` send every agent but Claude Code and Codex to that page. They sent
+  them to one `mcpServers` block, which OpenCode 1.18.32 and Amp ignore, printing
+  `No MCP servers configured` and exiting 0, and which VS Code 1.139.0 ignores in
+  `.vscode/mcp.json` with no log and no error.
+- Gemini CLI's block carries `"trust": true`. With the old block `gemini mcp list` showed
+  crapkit connected, and a headless `gemini -p` still handed the model none of the twelve
+  tools, because it drops every tool that would ask for a confirmation. Its section also
+  says that an untrusted folder disables every server and that a project
+  `.gemini/settings.json` is read only when Gemini starts in that directory.
+- Goose: `goose plugin install` finds no plugin in crapkit's repository (`Error: No
+  supported plugin format found`), and the Goose section says so and gives the
+  `config.yaml` extension that connects.
+- Cline's block carries `"timeout": 60`: Cline waits 3 s for `initialize` otherwise and
+  logs a skipped server only to `~/.cline/data/logs/cline.log`. The page also says which
+  agents take PATH from the login shell (Zed, VS Code launched from the desktop), that Qwen
+  Code starts no server from a project file, and that Junie writes `.output.txt` and
+  `.output.json` into the repository.
 - The plugin ships a Codex manifest whose `hooks` is empty. Codex 0.156.1 read Claude
   Code's `hooks/hooks.json` and listed its 50 handlers as PostToolUse hooks that each ran
   a bare `crapkit`, which exits 2 with its usage. Codex also offers `crapkit-onboard` to

@@ -445,7 +445,12 @@ def build_parser() -> argparse.ArgumentParser:
                      help="stop after N polls (default: poll until ctrl-c)")
     wat.set_defaults(func=_Handler("admin", "cmd_watch"))
 
-    srv = sub.add_parser("mcp", help="stdio MCP server exposing the read-side tools (JSON-RPC, no deps)")
+    srv = sub.add_parser("mcp", help="stdio MCP server exposing the read-side tools (JSON-RPC, no deps)",
+                         description="Serves crapkit's twelve read-side tools over stdio to the agent that "
+                                     "starts it. Each agent starts it from its own config file and reads its "
+                                     "own key and fields, so a block written for another agent can start nothing "
+                                     "and report no error. The block for each agent is in "
+                                     "https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md")
     srv.add_argument("--repo", default=None,
                      help="exact crapkit root, served or refused as named (default: the "
                           "nearest crapkit.toml at or above cwd, else the first workspace folder "

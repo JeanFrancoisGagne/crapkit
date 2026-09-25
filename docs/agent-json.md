@@ -1615,7 +1615,9 @@ Both halves are deliberate. The result keeps the client's session alive, so a gl
 registration never turns into a dead server in unmeasured repos. `isError` stays true so
 nothing reads an unmeasured directory as a repo with nothing to report.
 
-Client wiring:
+Client wiring: each agent reads its own file, key and fields, and
+[Wiring crapkit into your agent](harnesses.md) gives the block for each of 27, with where it
+starts the server and what environment it passes. This is the `mcpServers` form:
 
 ```json
 {
@@ -1628,10 +1630,11 @@ Client wiring:
 }
 ```
 
-That block pastes as it is into Claude Code's `.mcp.json`, Cursor, Cline, Kiro, Junie and
-oh-my-pi. Every other agent names its file and format differently, and
-[Wiring crapkit into your agent](harnesses.md) gives the block for each one, with where it
-starts the server and what environment it passes.
+It pastes as it is into Claude Code's `.mcp.json`, Cursor, Kiro, Junie and oh-my-pi; Cline
+takes it with `"timeout": 60` added, and Gemini CLI with `"trust": true`, without which a
+headless `gemini -p` offers the model none of the tools. OpenCode, Amp and VS Code's
+`.vscode/mcp.json` read other keys and ignore this block without an error, so take theirs
+from the page above.
 
 A client that expands variables in this file can pass one, such as Cursor's
 `${workspaceFolder}`. A client that does not passes the variable itself: the Cursor agent

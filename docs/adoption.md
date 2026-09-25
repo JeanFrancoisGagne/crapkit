@@ -283,4 +283,7 @@ get the skills alone: `~/.claude/skills` for Claude Code, `$CODEX_HOME/skills`
 (`~/.codex/skills` by default) for Codex, `~/.gemini/skills` for Gemini CLI. Codex and
 Claude Code keep `crapkit-onboard` out of the model's list, Gemini CLI does not;
 `gemini skills disable crapkit-onboard --scope user` takes it out once the repo is
-adopted. MCP wiring is in [agent-json.md](agent-json.md#mcp-server).
+adopted. Each agent reads its own MCP key and fields, and one agent's block starts
+nothing in another's, without an error: [Wiring crapkit into your agent](harnesses.md)
+gives the block for each of 27. The server's contract is in
+[agent-json.md](agent-json.md#mcp-server).

@@ -240,7 +240,7 @@ args = ["mcp", "--repo", "/absolute/path/to/your/repo"]
 | Config file | `~/.codeium/windsurf/mcp_config.json`, opened from Cascade's MCP settings. |
 | Starts in | Not your repository in general; `--repo` names it. |
 | Environment | Not measured. `env` adds variables. |
-| Versions | No floor measured. |
+| Versions | No floor measured. Windsurf's command-line agent, `devin`, starts no MCP server before you sign in (measured, 3000.11.3), so `devin mcp list` cannot check this block until then. |
 | Plugin hooks | None. Windsurf installs no Claude Code plugin. |
 | After an upgrade | Refresh the server in Cascade's MCP panel, or restart Windsurf. |
 
@@ -260,9 +260,9 @@ args = ["mcp", "--repo", "/absolute/path/to/your/repo"]
 
 | | VS Code with GitHub Copilot |
 |---|---|
-| Config file | Your user `mcp.json` (MCP: Open User Configuration), which serves every workspace. In a workspace's `.vscode/mcp.json`, write `${workspaceFolder}` in place of the path. |
+| Config file | Your user `mcp.json` (MCP: Open User Configuration), which serves every workspace. In a workspace's `.vscode/mcp.json`, write `${workspaceFolder}` in place of the path. The key is `servers`: a block keyed `mcpServers`, the form Cursor and Claude Desktop take, starts nothing there and reports no error (measured, 1.139.0). |
 | Starts in | Servers from the user profile start in your home directory, not the workspace, so the user file needs the absolute path. `"cwd"` sets it. |
-| Environment | VS Code's own environment. `env` and `envFile` add variables. |
+| Environment | VS Code's own environment. `env` and `envFile` add variables. Launched from the desktop rather than as `code` from a terminal, VS Code takes PATH from your login shell, so a crapkit that only an activated virtualenv holds fails with `spawn crapkit ENOENT` (measured, 1.139.0). Give `command` the absolute path, or install crapkit with pipx or `uv tool install`: one in `~/.local/bin` started. |
 | Versions | The deploy suite runs 1.139.0, in a check that does not block a release yet. |
 | Plugin hooks | None from this config. Do not add crapkit's Claude Code plugin to VS Code as an agent plugin: VS Code keeps only each hook's `command`, so every hook would run a bare `crapkit`, and it starts the plugin's server in the plugin's directory, where the server finds no repository (measured, 1.139.0). |
 | After an upgrade | MCP: List Servers, pick crapkit, Restart Server. |
@@ -354,7 +354,7 @@ jobs:
 | Config file | `.kiro/settings/mcp.json` in the workspace, or `~/.kiro/settings/mcp.json`. |
 | Starts in | Not measured; `--repo` names the repository. |
 | Environment | Not measured. `env` adds variables. |
-| Versions | No floor measured. |
+| Versions | No floor measured. `kiro-cli` 2.24.0 starts no MCP server before you sign in, so `kiro-cli mcp status` cannot check this block until then (measured). |
 | Plugin hooks | None. Kiro's agent hooks are its own format. |
 | After an upgrade | Reconnect the server from Kiro's MCP panel, or restart Kiro. |
 
@@ -365,18 +365,26 @@ jobs:
   "mcpServers": {
     "crapkit": {
       "command": "crapkit",
-      "args": ["mcp", "--repo", "/absolute/path/to/your/repo"]
+      "args": ["mcp", "--repo", "/absolute/path/to/your/repo"],
+      "trust": true
     }
   }
 }
 ```
 
+`"trust": true` lets Gemini call crapkit's tools without asking you first. Leave it out and
+a headless `gemini -p` in the default approval mode hands the model none of the twelve
+tools and says nothing, because it drops every tool that would need a confirmation: 0 of 12
+reached the model without it, all 12 with it (measured, 0.61.0). `--approval-mode yolo` also
+sends them, and approves every other tool as well. crapkit's tools edit no source file and
+run no tests; calls can write crapkit's own caches ([the MCP contract](agent-json.md#mcp-server)).
+
 | | Gemini CLI |
 |---|---|
-| Config file | `~/.gemini/settings.json`, or `.gemini/settings.json` in the project. `gemini mcp add -s user crapkit crapkit mcp --repo /absolute/path/to/your/repo` writes the user entry (measured, 0.61.0). |
+| Config file | `~/.gemini/settings.json`, or `.gemini/settings.json` in the project. Gemini reads the project file only when it starts in that directory: started in a subdirectory, `gemini mcp list` prints `No MCP servers configured.` (measured, 0.61.0). `gemini mcp add -s user --trust crapkit crapkit mcp --repo /absolute/path/to/your/repo` writes the user entry, `trust` included (measured, 0.61.0). |
 | Starts in | The folder Gemini runs in (measured, 0.61.0). In a folder Gemini does not trust it disables every MCP server, user ones included: `gemini mcp list` shows crapkit as Disabled until you trust the folder, or set `GEMINI_CLI_TRUST_WORKSPACE=true` for a headless run (measured). |
 | Environment | Gemini's own environment, plus `GEMINI_CLI` (measured). `env` adds variables. |
-| Versions | The deploy suite runs 0.61.0. |
+| Versions | The deploy suite runs 0.61.0. `gemini mcp list` gives each server 5 s to connect unless the entry sets `timeout` in milliseconds, so on a loaded machine the list can show crapkit as not connected; `"timeout": 30000` gives it longer. |
 | Plugin hooks | None. crapkit ships no Gemini extension. |
 | After an upgrade | `/mcp refresh` restarts the servers; a new session also does. |
 
@@ -395,9 +403,9 @@ jobs:
 
 | | Qwen Code |
 |---|---|
-| Config file | `~/.qwen/settings.json`, or `.qwen/settings.json` in the project. Qwen Code is a fork of Gemini CLI and reads the same `mcpServers` block. |
-| Starts in | Not measured; `--repo` names the repository. |
-| Environment | Not measured. `env` adds variables. |
+| Config file | `~/.qwen/settings.json`. A server in a project's `.qwen/settings.json` is listed as `Pending approval` and never starts (measured, 0.24.5), so put crapkit in the user file. Qwen Code is a fork of Gemini CLI and reads the same `mcpServers` block. |
+| Starts in | The folder Qwen Code runs in (measured, 0.24.5). |
+| Environment | Qwen Code's own environment (measured, 0.24.5). `env` adds variables. |
 | Versions | No floor measured. |
 | Plugin hooks | None. |
 | After an upgrade | Start a new session. |
@@ -419,7 +427,7 @@ jobs:
 
 | | OpenCode |
 |---|---|
-| Config file | `opencode.json` in the project, or `~/.config/opencode/opencode.json`. `opencode mcp list` shows crapkit as connected (measured, 1.18.32). |
+| Config file | `opencode.json` in the project, or `~/.config/opencode/opencode.json`. `opencode mcp list` shows crapkit as connected (measured, 1.18.32). OpenCode ignores an `mcpServers` block without a warning: `opencode mcp list` then prints `No MCP servers configured` and exits 0. |
 | Starts in | The project directory (measured, 1.18.32). |
 | Environment | OpenCode's own environment, plus `OPENCODE` and `OPENCODE_PID` (measured). `environment` adds variables. |
 | Versions | The deploy suite runs 1.18.32. |
@@ -445,7 +453,7 @@ extensions:
 | Starts in | The directory Goose runs in (measured, 1.52.0). |
 | Environment | Goose's own environment (measured). `envs` adds variables. |
 | Versions | The deploy suite runs 1.52.0. |
-| Plugin hooks | None. |
+| Plugin hooks | None. `goose plugin install https://github.com/JeanFrancoisGagne/crapkit` prints `Error: No supported plugin format found` and installs nothing (measured, 1.52.0): Goose looks for a plugin manifest at the top of the repository, and crapkit's plugin sits under `plugin/` in Claude Code's layout. The block above is the way in. |
 | After an upgrade | Start a new session. |
 
 ## Amp
@@ -463,7 +471,7 @@ extensions:
 
 | | Amp |
 |---|---|
-| Config file | `~/.config/amp/settings.json`. `amp mcp add crapkit -- crapkit mcp --repo /absolute/path/to/your/repo` writes the entry; `--workspace` writes it into the workspace's settings instead, which `amp mcp approve crapkit` then has to approve. |
+| Config file | `~/.config/amp/settings.json`. `amp mcp add crapkit -- crapkit mcp --repo /absolute/path/to/your/repo` writes the entry; `--workspace` writes it into the workspace's settings instead, which `amp mcp approve crapkit` then has to approve. Amp reads only the dotted key `amp.mcpServers`: under `mcpServers`, `amp mcp doctor` prints `No MCP servers configured` and exits 0 (measured). |
 | Starts in | The directory Amp runs in (measured). |
 | Environment | Amp's own environment (measured). `env` adds variables. |
 | Versions | The deploy suite runs 0.0.1790265644. `amp mcp doctor crapkit` checks the server; with no `AMP_API_KEY` set it opens a browser login first (measured). |
@@ -510,8 +518,8 @@ extensions:
 | | oh-my-pi |
 |---|---|
 | Config file | `.omp/mcp.json` in the project, or `~/.omp/agent/mcp.json`. It also reads the `.mcp.json`, `.cursor/mcp.json` and `.vscode/mcp.json` other agents write. |
-| Starts in | Not measured; `--repo` names the repository. |
-| Environment | Not measured. `env` adds variables. |
+| Starts in | The project directory (measured, 18.3.0). On Windows it looks for `crapkit` in that directory before PATH. |
+| Environment | oh-my-pi's own environment (measured, 18.3.0). `env` adds variables. |
 | Versions | The deploy suite runs 18.3.0. |
 | Plugin hooks | None. |
 | After an upgrade | Start a new session; `/mcp test crapkit` checks the server. |
@@ -523,15 +531,21 @@ extensions:
   "mcpServers": {
     "crapkit": {
       "command": "crapkit",
-      "args": ["mcp", "--repo", "/absolute/path/to/your/repo"]
+      "args": ["mcp", "--repo", "/absolute/path/to/your/repo"],
+      "timeout": 60
     }
   }
 }
 ```
 
+Cline waits 3 s for a server to answer `initialize` unless its entry sets `timeout`, in
+seconds. A crapkit that starts slower, as one did on a loaded Windows machine, is skipped:
+the model is offered none of its tools, and the only trace is a line in
+`~/.cline/data/logs/cline.log` (measured, 3.0.65). `"timeout": 60` gives it a minute.
+
 | | Cline |
 |---|---|
-| Config file | In the editor extension, `cline_mcp_settings.json`, opened from the MCP Servers panel, Configure. The CLI writes its own copy: `cline mcp install crapkit --yes -- crapkit mcp --repo /absolute/path/to/your/repo` stores it in `~/.cline/data/settings/cline_mcp_settings.json` (measured, 3.0.65). |
+| Config file | In the editor extension, `cline_mcp_settings.json`, opened from the MCP Servers panel, Configure. The CLI writes its own copy: `cline mcp install crapkit --yes -- crapkit mcp --repo /absolute/path/to/your/repo` stores it in `~/.cline/data/settings/cline_mcp_settings.json` (measured, 3.0.65); add `"timeout": 60` to the entry it writes. |
 | Starts in | Not your workspace: the extension starts servers from the editor's own process. `--repo` is required. |
 | Environment | The MCP SDK's short default list, not the editor's: `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM` and `USER` on macOS and Linux. `env` adds variables. |
 | Versions | The deploy suite runs the CLI 3.0.65. |
@@ -623,8 +637,8 @@ mcpServers:
 | | Zed |
 |---|---|
 | Config file | Zed's `settings.json` (zed: open settings). |
-| Starts in | Not measured; `--repo` names the repository. |
-| Environment | Not measured. `env` adds variables. On Windows Zed runs the command through PowerShell without `-NoProfile`, so anything your PowerShell profile prints lands in the protocol stream: keep the profile silent. |
+| Starts in | The project directory, through `sh -c` (measured, 1.21.0). |
+| Environment | PATH comes from your login shell in the project directory, wherever Zed was launched from (measured, 1.21.0). A crapkit that only an activated virtualenv holds fails with `/bin/sh: 1: crapkit: not found`, and 60 s later Zed reports `Context server request timeout`. Give `command` the absolute path, or install crapkit with pipx or `uv tool install`: one in `~/.local/bin` started. `env` adds variables. On Windows Zed runs the command through PowerShell without `-NoProfile`, so anything your PowerShell profile prints lands in the protocol stream: keep the profile silent. |
 | Versions | The deploy suite runs 1.21.0, in a check that does not block a release yet. |
 | Plugin hooks | None. Zed loads skills from `~/.agents/skills`, so a copy of `plugin/skills/*` there gives it crapkit's three skills. |
 | After an upgrade | Restart the server from the agent panel's settings, or restart Zed. |
@@ -669,7 +683,7 @@ mcpServers:
 | Config file | `~/.junie/mcp/mcp.json`, or `.junie/mcp/mcp.json` in the project. Junie reads `~` as your account's home directory (or `JUNIE_HOME`), not `$HOME`. |
 | Starts in | The directory Junie runs in (measured, 1468.30.0). |
 | Environment | Junie's own environment (measured). `env` adds variables. |
-| Versions | The deploy suite runs the CLI 1468.30.0. It offers protocol revision `2025-03-26`, which crapkit speaks. |
+| Versions | The deploy suite runs the CLI 1468.30.0. It offers protocol revision `2025-03-26`, which crapkit speaks. It cuts a tool result over about 15,000 characters and writes the whole of it to `.output.txt` and `.output.json` at the top of the repository, where the next long result overwrites both (measured): add them to `.gitignore`. |
 | Plugin hooks | None. Junie runs no PostToolUse hooks. |
 | After an upgrade | Start a new session. |
 

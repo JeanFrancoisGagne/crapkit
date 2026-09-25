@@ -474,6 +474,16 @@ once the repo is adopted. Other MCP clients use the
 [stdio setup](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server)
 or their section of [Wiring crapkit into your agent](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md).
 
+### Other agents
+
+Every other agent starts `crapkit mcp` from its own config file, and each one reads its own
+key and fields. The `mcpServers` block Cursor takes starts nothing in OpenCode, Amp or VS
+Code's `.vscode/mcp.json`, and none of them says so; in Gemini CLI it connects, but a
+headless `gemini -p` offers the model none of the tools without `"trust": true`.
+[Wiring crapkit into your agent](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md)
+gives the block for each of 27 agents, Gemini CLI, Goose, Zed and Continue among them, with
+the file it goes in and where the agent starts the server.
+
 ## Languages
 
 14 languages, two coverage parsers. Coverage joins where a parser exists; everything else
@@ -1106,7 +1116,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `claude-hook [--protocol N]` | Reads one PostToolUse payload from stdin, as Claude Code, Copilot CLI, Cursor or VS Code sends it, and judges each file it edited: ccn against the scope ceiling, on functions the edit changed, minus functions a ratchet mark already covers. Advisory only: the edit has landed, and `hook-precommit` stays the enforcement point. The advisory is the only thing it ever says, one block per judged file (a head line, one line per breaching function, a closing line): on stderr with exit 2 for Claude Code, and as one JSON object on stdout with exit 0 for Copilot CLI, Cursor and VS Code, which read exit 2 otherwise. A file type crapkit does not measure, no `crapkit.toml` above the edited file, an unscoped file, mid-rebase or mid-merge, a `--protocol` other than 1, source that parses to no functions, or any internal failure all exit 0 in silence. The root is the first `crapkit.toml` above the edited file; the walk stops at a `.git` entry, so a worktree never borrows its parent's config. A `Bash` event names no file, so it judges the working tree instead: the dirty or untracked `*.py` files touched in the last 12 seconds, 25 at most, each through the same ladder, and silence for a clean tree or a cwd outside any repo. That half fires only where you register a `Bash` matcher ([The Claude Code plugin](#the-claude-code-plugin)). It opens no snapshot and writes nothing. |
 | `watch [--interval SECONDS] [--cycles N]` | Rescores tracked files as they change (mtime polling, default 2s, subprocess-isolated so a half-saved syntax error never kills the watcher). `--cycles N` polls exactly N times and exits 0; without it the loop runs until ctrl-c. After a `pip install -U` under it, the next rescore exits 1 and says to restart it. |
 | `help [TOPIC]` | The help git, npm and docker answer to. With no TOPIC it prints the command list; with one it prints that subcommand's own help, the same page as `crapkit TOPIC --help`. A TOPIC that names no subcommand exits 3. |
-| `mcp` | A stdio MCP server with no extra dependency, exposing twelve read-side tools named `verb_noun`, each with a title and output schema. Tools call the CLI to inspect current scores, source and edited-file gates. They take no claims and run no verification; calls can write caches or store metadata. See [the MCP contract and setup](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server). |
+| `mcp` | A stdio MCP server with no extra dependency, exposing twelve read-side tools named `verb_noun`, each with a title and output schema. Tools call the CLI to inspect current scores, source and edited-file gates. They take no claims and run no verification; calls can write caches or store metadata. See [the MCP contract](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server), and [Wiring crapkit into your agent](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md) for the block each agent's config file takes. |
 
 ## Reading the output
 

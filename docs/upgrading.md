@@ -338,9 +338,10 @@ such a marketplace, upgrade the CLI before the next Codex start, or the plugin r
 ahead of it, then move the marketplace onto the tag with the lines above and run
 `crapkit doctor --plugin-root PATH` to confirm the two agree.
 
-Start fresh MCP sessions after upgrading so their server uses the installed code. Other
-MCP clients use the [stdio setup](agent-json.md#mcp-server); skill copies and custom
-hook entries need their own update. Run packet commands as supplied, in the
+Start fresh MCP sessions after upgrading so their server uses the installed code. Every
+other agent restarts its server its own way: the After an upgrade row of its section in
+[Wiring crapkit into your agent](harnesses.md) says how. Skill copies and custom hook
+entries need their own update. Run packet commands as supplied, in the
 environment that owns the intended CLI, to retain literal arguments and exit codes.
 
 0.6.0 renamed every MCP tool to verb_noun. A client that still sends a 0.5.x name, from
