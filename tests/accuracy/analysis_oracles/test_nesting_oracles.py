@@ -15,8 +15,8 @@ import ast
 
 import pytest
 
-from accuracy.analysis_oracles import (analysis_choices, analysis_pydiff, analysis_shapes,
-                                       py_defect_shapes)
+from accuracy.analysis_oracles import (analysis_choices, analysis_js, analysis_pydiff,
+                                       analysis_shapes, py_defect_shapes)
 from accuracy.analysis_oracles.oracles import py_sonar, pylint_nesting
 from accuracy.kit import rulings, runlog
 
@@ -105,3 +105,30 @@ def test_each_pylint_difference_is_pinned_by_a_hand_case(ruling_id, pylint_cases
     assert not pylint_nesting.comparable(fn)
     rulings.pin_ruling(ruling_id, crapkit=row["nesting"],
                        oracle=pylint_nesting.depth_of(fn, path, reported))
+
+
+# --- JavaScript and TypeScript: ESLint's max-depth ------------------------------------------------
+
+def test_js_depth_matches_eslint_max_depth(js_push, eslint_push):
+    """ESLint 10.11.0 max-depth against crapkit's nesting (lizard's ND column,
+    docs/agent-json.md "nesting") on every function built of if, loop and block
+    nesting only, where the two definitions coincide."""
+    pairs = analysis_js.all_pairs(js_push.measured, js_push.compiled)
+    outcome = analysis_js.judge(analysis_js.Outcome(), pairs, analysis_js.ORACLES["max-depth"],
+                                eslint_push("max-depth"))
+
+    assert outcome.differing == []
+    assert outcome.compared > 20
+
+
+# Where lizard's ND and ESLint's max-depth part, one function each.
+DEPTH_CASES = {"AO-N-ESLINT-ELSE": ("ts/flow.ts", 17), "AO-N-ESLINT-SWITCH": ("ts/flow.ts", 94),
+               "AO-N-ESLINT-TERNARY": ("ts/flow.ts", 75), "AO-N-ESLINT-LABEL": ("ts/sonar.ts", 4),
+               "AO-N-ESLINT-TRY": ("ts/sonar.ts", 30), "AO-N-ESLINT-LOGICAL": ("ts/sonar.ts", 46)}
+
+
+@pytest.mark.parametrize("ruling_id", sorted(DEPTH_CASES))
+def test_each_max_depth_difference_is_pinned(ruling_id, js_push, eslint_push):
+    crapkit, raw = analysis_js.case(js_push, eslint_push, *DEPTH_CASES[ruling_id], "max-depth")
+
+    rulings.pin_ruling(ruling_id, crapkit=crapkit, oracle=raw)

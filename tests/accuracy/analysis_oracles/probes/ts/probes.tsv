@@ -127,3 +127,4 @@ templated	templates.ts	templated	start	1	ECMA-262 (2025) sec. 15 Functions and T
 templated	templates.ts	templated	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function	
 after-template	templates.ts	afterTemplate	start	5	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
 after-template	templates.ts	afterTemplate	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function; a template nested in a substitution ends at its own closing backtick (ECMA-262 sec. 12.9.6)	
+optional-read	sonar.ts	optionalRead	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; `a?.b` evaluates `.b` only when a is not null or undefined (ECMA-262 sec. 13.3.9 OptionalChain)	AO-TS-OPTIONAL-CHAIN

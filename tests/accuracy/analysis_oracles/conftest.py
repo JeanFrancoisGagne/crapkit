@@ -11,14 +11,19 @@ equivalence and oracle tests all read one run:
   standard library (nightly tests only);
 - `py_shape_inventory`: the named Python shapes of analysis_shapes;
 - `measure_set(files, launch=PLAIN)`: any other file set, measured once per
-  session under that launch.
+  session under that launch;
+- `js_push`: the JS/TS probe files and shapes, written out, listed by the
+  TypeScript compiler and measured; `eslint_push(mode)` is ESLint's numbers
+  for them under one analysis_js oracle.
 """
 import os
 
 import pytest
 
-from accuracy.analysis_oracles import (analysis_corpora, analysis_inventory, analysis_shapes,
-                                       analysis_tables)
+from accuracy.analysis_oracles import (analysis_corpora, analysis_inventory, analysis_js,
+                                       analysis_shapes, analysis_tables)
+from accuracy.analysis_oracles.oracles import node_oracles
+from accuracy.kit import oracles
 
 
 def _shared_base(tmp_path_factory):
@@ -86,3 +91,27 @@ def stdlib_unparsed(stdlib_corpus):
 @pytest.fixture(scope="session")
 def stdlib_unparsed_inventory(stdlib_unparsed, tmp_path_factory):
     return _measured(stdlib_unparsed.files, tmp_path_factory, "analysis-stdlib-unparsed")
+
+
+@pytest.fixture(scope="session")
+def js_push(oracle, measure_set, tmp_path_factory):
+    oracle("typescript")
+    files = analysis_js.push_files()
+    work = tmp_path_factory.mktemp("js-push")
+    paths = node_oracles.write(files, work)
+    compiled = node_oracles.functions(oracles.node_modules("push"), work, paths)
+    return analysis_js.Setup(work, paths, compiled, measure_set(files))
+
+
+@pytest.fixture(scope="session")
+def eslint_push(js_push, oracle):
+    cache = {}
+
+    def run(mode: str) -> dict:
+        if mode not in cache:
+            oracle("eslint-plugin-sonarjs" if mode == "cognitive" else "eslint")
+            found = node_oracles.messages(oracles.node_modules("push"), js_push.work, mode,
+                                          js_push.paths)
+            cache[mode] = analysis_js.numbers(js_push.compiled, found, mode)
+        return cache[mode]
+    return run

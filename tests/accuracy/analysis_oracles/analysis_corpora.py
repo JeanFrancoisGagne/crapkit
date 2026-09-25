@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import sysconfig
 
@@ -59,6 +60,34 @@ STDLIB_SKIP = ("site-packages", "test", "tests", "idle_test", "__pycache__")
 
 def stdlib_sources() -> Corpus:
     return _collect(Path(sysconfig.get_paths()["stdlib"]), "stdlib", STDLIB_SKIP)
+
+
+# The full corpus (tools/accuracy/corpus.py builds it): one directory per
+# member. CRAPKIT_ACCURACY_CORPUS names it; else the local fetch cache; else
+# /corpus, where the accuracy image keeps it.
+CORPUS_ENV = "CRAPKIT_ACCURACY_CORPUS"
+
+
+def corpus_root() -> Path:
+    named = os.environ.get(CORPUS_ENV)
+    if named:
+        return Path(named)
+    local = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".cache") / "crapkit-accuracy"
+    return local / "corpus" if (local / "corpus").is_dir() else Path("/corpus")
+
+
+def corpus_files(suffixes: tuple[str, ...]) -> dict[str, bytes]:
+    """{<member>/<path>: bytes} for every full-corpus file with one of `suffixes`.
+    A missing corpus fails the test that asked, naming where it looked."""
+    root = corpus_root()
+    assert root.is_dir(), (f"the full corpus is not at {root}; set {CORPUS_ENV} or run "
+                           "python tools/accuracy/corpus.py fetch")
+    paths = sorted(path for path in root.rglob("*") if _wanted(path, suffixes))
+    return {path.relative_to(root).as_posix(): path.read_bytes() for path in paths}
+
+
+def _wanted(path: Path, suffixes: tuple[str, ...]) -> bool:
+    return path.suffix.lower() in suffixes and "node_modules" not in path.parts and path.is_file()
 
 
 def unparsed(corpus: Corpus) -> Corpus:

@@ -18,8 +18,8 @@ import ast
 
 import pytest
 
-from accuracy.analysis_oracles import (analysis_choices, analysis_pydiff, analysis_shapes,
-                                       py_defect_shapes)
+from accuracy.analysis_oracles import (analysis_choices, analysis_js, analysis_pydiff,
+                                       analysis_shapes, py_defect_shapes)
 from accuracy.analysis_oracles.oracles import complexipy_adapter, py_sonar
 from accuracy.kit import rulings, runlog
 
@@ -144,3 +144,27 @@ def test_each_complexipy_convention_is_pinned_by_a_hand_case(ruling_id, complexi
 
     assert complexipy_adapter.comparable(fn) == (ruling_id not in OUTSIDE_THE_COMPARISON)
     rulings.pin_ruling(ruling_id, crapkit=row["cognitive"], oracle=raw)
+
+
+# --- JavaScript and TypeScript: sonarjs --------------------------------------------------------
+
+def test_js_cognitive_matches_sonarjs(js_push, eslint_push):
+    """eslint-plugin-sonarjs 4.2.1 cognitive-complexity against crapkit's column,
+    over every function the compiler and crapkit both list."""
+    pairs = analysis_js.all_pairs(js_push.measured, js_push.compiled)
+    outcome = analysis_js.judge(analysis_js.Outcome(), pairs, analysis_js.ORACLES["cognitive"],
+                                eslint_push("cognitive"))
+
+    assert outcome.differing == []
+    assert outcome.compared > 30
+
+
+SONARJS_CASES = {"AO-SONARJS-RECURSION": ("ts/sonar.ts", 60, "cognitive"),
+                 "AO-SONARJS-OR": ("js/callbacks.js", 6, "cognitive")}
+
+
+@pytest.mark.parametrize("ruling_id", sorted(SONARJS_CASES))
+def test_each_sonarjs_difference_is_pinned(ruling_id, js_push, eslint_push):
+    crapkit, raw = analysis_js.case(js_push, eslint_push, *SONARJS_CASES[ruling_id])
+
+    rulings.pin_ruling(ruling_id, crapkit=crapkit, oracle=raw)

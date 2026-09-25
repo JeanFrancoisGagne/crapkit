@@ -16,7 +16,8 @@ import ast
 
 import pytest
 
-from accuracy.analysis_oracles import analysis_pydiff, analysis_shapes, py_defect_shapes
+from accuracy.analysis_oracles import (analysis_js, analysis_pydiff, analysis_shapes,
+                                       py_defect_shapes)
 from accuracy.analysis_oracles.oracles import radon_mccabe
 from accuracy.kit import rulings, runlog
 
@@ -149,3 +150,30 @@ def test_python_ccn_mod_counts_each_match_as_one_decision(src_unparsed, src_unpa
     analysis_pydiff.compare(shapes, py_shape_inventory, "ccn_mod", _modified, detectors, outcome)
 
     assert outcome.differing == []
+
+
+# --- JavaScript and TypeScript: ESLint's complexity rule -----------------------------------------
+
+ESLINT_CCN = ("complexity-classic", "complexity-modified")
+
+
+@pytest.mark.parametrize("mode", ESLINT_CCN)
+def test_js_ccn_matches_eslint(mode, js_push, eslint_push):
+    """ESLint 10.11.0 complexity, variant classic against ccn_std and modified
+    against ccn_mod, over every function the compiler and crapkit both list."""
+    pairs = analysis_js.all_pairs(js_push.measured, js_push.compiled)
+    outcome = analysis_js.judge(analysis_js.Outcome(), pairs, analysis_js.ORACLES[mode],
+                                eslint_push(mode))
+
+    assert outcome.differing == []
+    assert outcome.compared > 40
+
+
+JS_CASES = {"AO-ESLINT-DEFAULTS": ("ts/shapes.ts", 1, "complexity-classic")}
+
+
+@pytest.mark.parametrize("ruling_id", sorted(JS_CASES))
+def test_each_eslint_complexity_transform_is_pinned(ruling_id, js_push, eslint_push):
+    crapkit, raw = analysis_js.case(js_push, eslint_push, *JS_CASES[ruling_id])
+
+    rulings.pin_ruling(ruling_id, crapkit=crapkit, oracle=raw)
