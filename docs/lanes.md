@@ -43,7 +43,7 @@ ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
 WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
-ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0)
+ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.10.6)
 ok   lizard 1.24.0
 doctor: no problems found
 ```
@@ -671,9 +671,15 @@ uncomment later.
 sync the project environment before running anything, and `init` has no business
 provisioning one to ask a question about it. If the plugin is missing, the lane says so on
 its first run — with the log path. `doctor` holds to the same rule and says so: where a
-python-headed lane gets `ok   lane 'py': python -> <path> (pytest X, pytest-cov Y)`, a
-managed one gets a `note` that its interpreter and pytest-cov were not probed, so a lane
-doctor did not ask never reads as one it found healthy.
+python-headed lane gets `ok   lane 'py': python -> <path> (pytest X, pytest-cov Y, coverage Z)`,
+a managed one gets a `note` that its interpreter and pytest-cov were not probed, so a lane
+doctor did not ask never reads as one it found healthy. A probed lane whose coverage.py is
+older than 7.6 FAILs, because coverage.py writes the function regions crapkit scores from
+only since 7.6 and `crapkit coverage` refuses that lane's report with exit 5:
+
+```
+FAIL lane 'py' runs coverage 7.4.4 (/home/you/ledger/.venv/bin/python), which writes no function regions, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.6); install 7.6 or later there with `/home/you/ledger/.venv/bin/python -m pip install "coverage>=7.6"` and raise any pin that holds it lower
+```
 
 It does check that the manager itself is installed here, because the lockfile is the
 repo's property and the PATH is the machine's. A `uv.lock` a teammate committed on a

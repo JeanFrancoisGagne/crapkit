@@ -26,7 +26,10 @@ if TYPE_CHECKING:
     from .config import Lane
 
 _NO_BRANCH = "coverage.py report lacks branch data — run the lane with branch coverage on"
-_OLD_COVERAGE = "needs coverage >= 7.6"
+# The first coverage.py that writes per-function regions. `crapkit doctor` asks
+# each lane's interpreter for its coverage version against the same number.
+REGIONS_FLOOR = "7.6"
+_OLD_COVERAGE = f"needs coverage >= {REGIONS_FLOOR}"
 _SAMPLE = 3
 
 

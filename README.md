@@ -1162,7 +1162,7 @@ ok   config keys all recognized
 ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
-ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0)
+ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.10.6)
 ok   lizard 1.24.0
 doctor: no problems found
 ```

@@ -651,6 +651,34 @@ def _release(text: str) -> tuple[int, ...] | None:
     return tuple(int(part) for part in match.groups()) if match else None
 
 
+# --- the coverage.py floor ---------------------------------------------------------
+#
+# coverage.py writes the per-function regions crapkit scores from since 7.6. A
+# lane whose interpreter carries an older one runs its suite, writes a report,
+# and `crapkit coverage` refuses that report with exit 5. The lane probe starts
+# that interpreter anyway, so it asks coverage's version on the same start.
+
+_COVERAGE_FLOOR = (
+    "lane {name!r} runs coverage {version} ({executable}), which writes no function "
+    "regions, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= {floor}); "
+    "install {floor} or later there with `{upgrade}` and raise any pin that holds it lower"
+)
+
+
+def coverage_floor_gap(name: str, executable: str, version: str,
+                       upgrade: str) -> tuple[Finding, ...]:
+    """One FAIL when the lane's coverage.py predates function regions. A
+    version this cannot read says nothing: the lane's own run will."""
+    from .coverage_py import REGIONS_FLOOR
+
+    found = _release(version)
+    floor = tuple(int(part) for part in REGIONS_FLOOR.split("."))
+    if found is None or found >= floor:
+        return ()
+    return (Finding("FAIL", _COVERAGE_FLOOR.format(name=name, version=version, executable=executable,
+                                                   floor=REGIONS_FLOOR, upgrade=upgrade)),)
+
+
 def claude_code_floor_gap(where: str, answer: str) -> str | None:
     """One line when the Claude Code at `where` answered `--version` with a
     release below the floor; None at or past it, or for an answer that names

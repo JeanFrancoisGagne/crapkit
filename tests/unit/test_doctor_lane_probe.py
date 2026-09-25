@@ -11,6 +11,7 @@ import os
 import sys
 from pathlib import Path
 
+import coverage
 import pytest
 
 from crapkit.cli import admin
@@ -89,7 +90,7 @@ def test_a_healthy_lane_costs_one_interpreter_start_not_two(monkeypatch):
     def boom(spec, lane):
         raise AssertionError("the first-run note must not be asked once the report answered")
 
-    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: (sys.executable, "8.3.3", "7.1.0"))
+    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: (sys.executable, "8.3.3", "7.1.0", "7.16.0"))
     monkeypatch.setattr(admin, "_lane_first_run_note", boom)
 
     assert [f.level for f in admin._doctor_lane_probes(Path.cwd(), [_lane()])] == ["ok"]
@@ -97,19 +98,47 @@ def test_a_healthy_lane_costs_one_interpreter_start_not_two(monkeypatch):
 
 def test_a_healthy_lane_prints_the_interpreter_and_plugin_versions_it_resolves_to(monkeypatch):
     monkeypatch.setattr(admin, "_lane_first_run_note", lambda spec, lane: None)
-    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: (sys.executable, "8.3.3", "7.1.0"))
+    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: (sys.executable, "8.3.3", "7.1.0", "7.16.0"))
 
     findings = admin._doctor_lane_probes(Path.cwd(), [_lane()])
 
     assert [f.level for f in findings] == ["ok"]
     assert findings[0].text == (f"lane 'py': python -> {sys.executable} "
-                                "(pytest 8.3.3, pytest-cov 7.1.0)")
+                                "(pytest 8.3.3, pytest-cov 7.1.0, coverage 7.16.0)")
+
+
+@pytest.mark.parametrize("version", ["7.4.4", "7.5.4", "6.5.0"])
+def test_a_lane_whose_coverage_writes_no_function_regions_fails_naming_the_floor(monkeypatch,
+                                                                                version):
+    """A repo that pins coverage 7.4 in its dev requirements passed doctor, and
+    then `crapkit coverage` refused the lane's report with exit 5 and "needs
+    coverage >= 7.6". The probe already starts that interpreter, so it asks
+    coverage's version on the same start and FAILs below the floor."""
+    monkeypatch.setattr(admin, "_runner_report",
+                        lambda word, spec: (sys.executable, "8.3.3", "5.0.0", version))
+
+    findings = admin._doctor_lane_probes(Path.cwd(), [_lane()])
+
+    assert [f.level for f in findings] == ["ok", "FAIL"]
+    assert findings[1].text == (
+        f"lane 'py' runs coverage {version} ({sys.executable}), which writes no function "
+        "regions, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.6); "
+        f'install 7.6 or later there with `{admin._shell_quote(sys.executable)} -m pip install '
+        '"coverage>=7.6"` and raise any pin that holds it lower')
+
+
+@pytest.mark.parametrize("version", ["7.6.0", "7.10.6", "7.16.0", "8.0.0b1", "unknown"])
+def test_coverage_at_or_past_the_floor_or_unreadable_adds_nothing(monkeypatch, version):
+    monkeypatch.setattr(admin, "_runner_report",
+                        lambda word, spec: (sys.executable, "8.3.3", "7.1.0", version))
+
+    assert [f.level for f in admin._doctor_lane_probes(Path.cwd(), [_lane()])] == ["ok"]
 
 
 def test_a_lane_running_another_python_than_this_doctor_warns(monkeypatch):
     monkeypatch.setattr(admin, "_lane_first_run_note", lambda spec, lane: None)
     monkeypatch.setattr(admin, "_runner_report",
-                        lambda word, spec: ("/srv/venv/bin/python", "8.3.3", "7.1.0"))
+                        lambda word, spec: ("/srv/venv/bin/python", "8.3.3", "7.1.0", "7.16.0"))
 
     findings = admin._doctor_lane_probes(Path.cwd(), [_lane()])
 
@@ -174,6 +203,7 @@ def test_the_real_probe_answers_for_this_interpreter():
     assert report is not None
     assert report[0].lower() == sys.executable.lower()
     assert report[1] == pytest.__version__
+    assert report[3] == coverage.__version__
 
 
 def test_a_timed_out_probe_cannot_keep_running(monkeypatch, tmp_path):

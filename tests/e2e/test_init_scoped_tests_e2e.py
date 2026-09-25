@@ -142,7 +142,7 @@ def test_doctor_names_the_interpreter_and_plugin_versions_the_lane_resolves_to(t
 
     assert res.returncode == 0, res.stdout + res.stderr
     (line,) = [ln for ln in res.stdout.splitlines() if ln.startswith("ok   lane 'py'")]
-    assert re.fullmatch(rf"ok   lane 'py': {_LAUNCHER} -> .+ \(pytest [\d.]+\S*, pytest-cov [\d.]+\S*\)",
+    assert re.fullmatch(rf"ok   lane 'py': {_LAUNCHER} -> .+ \(pytest [\d.]+\S*, pytest-cov [\d.]+\S*, coverage [\d.]+\S*\)",
                         line), line
     assert "no problems found" in res.stdout
 

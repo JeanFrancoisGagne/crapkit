@@ -737,26 +737,27 @@ def _doctor_lanes(root: Path, cfg) -> list[Finding]:
 # doctor, because `no problems found` on a lane running the system python
 # while the repo's own venv held the plugin is the report this came from.
 _RUNNER_MARKER = "CRAPKIT_RUNNER_REPORT "
-_VERSION_PROBE = ('-c "import sys, pytest, pytest_cov; '
+_VERSION_PROBE = ('-c "import sys, pytest, pytest_cov, coverage; '
                   f"print('{_RUNNER_MARKER}' + sys.executable, "
-                  'pytest.__version__, pytest_cov.__version__)"')
+                  'pytest.__version__, pytest_cov.__version__, coverage.__version__)"')
 
 
-def _runner_versions(report: str) -> tuple[str, str, str] | None:
+def _runner_versions(report: str) -> tuple[str, str, str, str] | None:
     line = next((line[len(_RUNNER_MARKER):] for line in report.splitlines()
                  if line.startswith(_RUNNER_MARKER)), "")
-    parts = line.rsplit(None, 2)
-    return (parts[0], parts[1], parts[2]) if len(parts) == 3 else None
+    parts = line.rsplit(None, 3)
+    return (parts[0], parts[1], parts[2], parts[3]) if len(parts) == 4 else None
 
 
 @lru_cache(maxsize=None)
-def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str] | None:
-    """(executable, pytest version, pytest-cov version) the interpreter word
-    answers through the lane's shell, from the lane's directory and with its
-    environment, or None when it cannot say. Memoized on the word and the
+def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str, str] | None:
+    """(executable, pytest, pytest-cov and coverage.py versions) the interpreter
+    word answers through the lane's shell, from the lane's directory and with
+    its environment, or None when it cannot say. Memoized on the word and the
     launch spec for the reason `_start_probe` is: one fact per child, however
-    many lanes start it the same way. The path may hold spaces, so the two
-    versions are split off the right."""
+    many lanes start it the same way. The path may hold spaces, so the three
+    versions are split off the right. pytest-cov imports coverage, so asking
+    for it costs no import the probe did not already pay."""
     from tempfile import TemporaryFile
     from ..procs import run_bounded
 
@@ -816,7 +817,8 @@ def _first_run_failure(spec: LaunchSpec, lane) -> list[Finding]:
 
 def _lane_probe_findings(root: Path, lane) -> list[Finding]:
     """The interpreter and plugin versions a healthy lane resolves to, plus a
-    WARN when that interpreter is foreign; init's first-run note as a FAIL when
+    FAIL when its coverage.py predates function regions and a WARN when that
+    interpreter is foreign; init's first-run note as a FAIL when
     the interpreter cannot say; a note when no python heads the lane. The
     version report goes first: it imports pytest_cov on its way, so it answers
     the first-run question too, and a healthy lane costs one interpreter start
@@ -828,10 +830,21 @@ def _lane_probe_findings(root: Path, lane) -> list[Finding]:
     report = _runner_report(word, spec)
     if report is None:
         return _first_run_failure(spec, lane)
-    executable, pytest_version, cov_version = report
-    resolved = Finding("ok", f"lane {lane.name!r}: {word} -> {executable} "
-                             f"(pytest {pytest_version}, pytest-cov {cov_version})")
-    return [resolved, *_foreign_interpreter(lane.name, executable)]
+    executable, pytest_version, plugin_version, coverage_version = report
+    resolved = Finding("ok", f"lane {lane.name!r}: {word} -> {executable} (pytest {pytest_version}, "
+                             f"pytest-cov {plugin_version}, coverage {coverage_version})")
+    return [resolved, *_coverage_floor(lane.name, executable, coverage_version),
+            *_foreign_interpreter(lane.name, executable)]
+
+
+def _coverage_floor(name: str, executable: str, version: str) -> tuple[Finding, ...]:
+    """The FAIL for a lane whose coverage.py writes no function regions, with
+    the install line spelled for the interpreter that lane runs."""
+    from ..coverage_py import REGIONS_FLOOR
+    from ..doctor import coverage_floor_gap
+
+    upgrade = f'{_shell_quote(executable)} -m pip install "coverage>={REGIONS_FLOOR}"'
+    return coverage_floor_gap(name, executable, version, upgrade)
 
 
 def _doctor_lane_probes(root: Path, lanes) -> list[Finding]:
