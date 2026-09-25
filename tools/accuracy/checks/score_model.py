@@ -19,3 +19,7 @@ CHECKS += [
     {"name": "ceiling per row", "seconds": 3, "pytest": [_SM + "test_ceiling.py"]},
     {"name": "rescore overlay", "seconds": 2, "pytest": [_SM + "test_overlay.py"]},
 ]
+CHECKS += [
+    {"name": "queue admission, worklist ranking, next-item", "seconds": 7,
+     "pytest": [_SM + "test_queue.py"]},
+]

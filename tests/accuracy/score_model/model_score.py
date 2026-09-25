@@ -217,12 +217,31 @@ def split_active(entries: list[Entry]) -> tuple[list[Entry], list[Entry]]:
 
 # --- next-item (agent-json.md:113-227) -----------------------------------------------------
 
+def queue_takes(flag: str, remedy_now: str, has_churn: bool, admits: bool) -> bool:
+    """A row next-item ranks: never no-lane; over its ceiling at any churn
+    (agent-json.md:210: an over-target row is queued whatever its ccn); else it
+    needs churn in the window and the admission rule."""
+    if flag == "no-lane":
+        return False
+    return admits and (has_churn or remedy_now != "ok")
+
+
+def skip_bucket(flag: str, excluded: bool, taken: bool, has_churn: bool) -> str | None:
+    """agent-json.md:208-216: the reasons bucket of a row the queue did not take."""
+    if flag == "no-lane":
+        return "no_lane"
+    if excluded:
+        return "excluded_by_flag"
+    if taken:
+        return None
+    return "below_floor" if has_churn else "no_churn_in_window"
+
+
 def next_item_order(rows: list[Row], commits: dict[str, int]) -> list[Row]:
-    """The queue by crap descending; no-lane rows never rank. ASSUMED ties: more
-    commits first, then path and start (rulings SM-NEXT-TAIL)."""
-    queue = [row for row in rows if row.flag != "no-lane"]
-    return sorted(queue, key=lambda row: (-row.crap, -commits.get(row.path, 0), row.path,
-                                          row.start))
+    """The queue by crap descending. ASSUMED ties: more commits first, then path
+    and start (rulings SM-NEXT-TAIL)."""
+    return sorted(rows, key=lambda row: (-row.crap, -commits.get(row.path, 0), row.path,
+                                         row.start))
 
 
 # --- batches (agent-json.md:709-740) -------------------------------------------------------
