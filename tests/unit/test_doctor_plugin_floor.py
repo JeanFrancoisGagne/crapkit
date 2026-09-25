@@ -62,8 +62,12 @@ def test_the_floor_itself_newer_releases_and_non_versions_say_nothing(answer):
 
 def test_the_floor_is_the_one_the_deploy_suite_pins():
     """tools/deploy/pins.toml installs the floor Claude Code beside the pinned
-    one, and the lin-plugin-floors cell runs the plugin on it. One number."""
-    pins = tomllib.loads((ROOT / "tools" / "deploy" / "pins.toml").read_text(encoding="utf-8"))
+    one, and the lin-plugin-floors cell runs the plugin on it. One number. A
+    tree without the deploy kit has no pin to hold the floor to."""
+    pins_file = ROOT / "tools" / "deploy" / "pins.toml"
+    if not pins_file.is_file():
+        pytest.skip("this tree carries no tools/deploy/pins.toml")
+    pins = tomllib.loads(pins_file.read_text(encoding="utf-8"))
     assert pins["harness"]["claude-code"]["floors"][0] == CLAUDE_CODE_ARGS_FLOOR
 
 
