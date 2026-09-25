@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from hang_guard import HANG_SECONDS
 
 CLAMP = (
     "def clamp(x):\n"
@@ -377,13 +378,21 @@ _NO_RESULT = {
 }
 
 
+# The timeout mode's suite sleeps 60 s, so its deadline is short on purpose. Every
+# other mode must finish, and on a loaded machine a 3 s deadline would read its
+# suite as timed out, so it waits the hang bound.
+def _deadline(mode: str) -> str:
+    if mode == "timeout":
+        return "mutation_timeout_seconds = 3\n"
+    return f"mutation_timeout_seconds = {HANG_SECONDS}\n"
+
+
 def _no_result_repo(root: Path, mode: str) -> Path:
     (root / "hot.py").write_text(HOT, encoding="utf-8")
     (root / "mut.py").write_text(MUT, encoding="utf-8")
     (root / "mode.txt").write_text(mode, encoding="utf-8")
     (root / "crapkit.toml").write_text(
-        '[crapkit]\ntarget = 6\nmutation_command = "python mut.py"\n'
-        'mutation_timeout_seconds = 3\n\n'
+        '[crapkit]\ntarget = 6\nmutation_command = "python mut.py"\n' + _deadline(mode) + '\n'
         '[[scope]]\nname = "py"\npaths = ["hot.py"]\nlanguages = ["python"]\n', encoding="utf-8")
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True, capture_output=True)
     commit(root, "-A")
