@@ -230,6 +230,31 @@ def _read_line(line: str, found: dict) -> None:
         found["marks"][(fields[0], fields[1])] = Decimal(fields[2])
 
 
+# The characters a writer encodes (docs/portable-records.md:37-39).
+ENCODED = frozenset("\t\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029")
+
+
+def needs_record(fields: list[str]) -> bool:
+    """A row holding an encoded character, or whose first field starts with #."""
+    return fields[0].startswith("#") or any(ENCODED.intersection(field) for field in fields)
+
+
+def mark_line(path: str, key: str, value) -> str | list[str]:
+    """One mark's line: the raw row, or the fields an encoded record must hold
+    (its JSON spelling is the writer's, so a test compares the decoded array)."""
+    fields = [path, key, four(value)]
+    return fields if needs_record(fields) else "\t".join(fields)
+
+
+def dump_marks(marks: MarksFile) -> list:
+    """The file a writer leaves: the stamp comments, the header, then one line
+    per mark sorted by (path, key name), CRAP to four decimals."""
+    head = [f"# {marks.stamp}"] if marks.stamp else []
+    head += [f"# crapkit-keys={marks.keys_version}"] if marks.keys_version else []
+    rows = [mark_line(path, key, marks.marks[(path, key)]) for path, key in sorted(marks.marks)]
+    return head + ["\t".join(HEADER)] + rows
+
+
 # --- the three gates and verify (docs/ratchet.md:87-111, 626-676) --------------------------
 
 def within_mark(crap, mark: Decimal | None) -> bool:
