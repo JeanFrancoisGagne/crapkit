@@ -21,13 +21,13 @@ from typing import TYPE_CHECKING
 from . import covstream
 from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
+from .named import first_few
 
 if TYPE_CHECKING:
     from .config import Lane
 
 _NO_BRANCH = "coverage.py report lacks branch data — run the lane with branch coverage on"
 _OLD_COVERAGE = "needs coverage >= 7.6"
-_SAMPLE = 3
 
 
 def _admit_summary(name: str, summary: dict) -> dict:
@@ -80,12 +80,6 @@ def _named(label: str) -> str:
     return f"{label}: " if label else ""
 
 
-def _sample(paths: list[str]) -> str:
-    rest = len(paths) - _SAMPLE
-    shown = ", ".join(sorted(paths)[:_SAMPLE])
-    return f"{shown} and {rest} more" if rest > 0 else shown
-
-
 def judge_branch(branch: bool, per_file: dict[str, list[FnCoverage]], label: str = "") -> None:
     """No branch data downgrades the coverage term; it does not fail the lane.
 
@@ -117,7 +111,7 @@ def judge_regions(regionless: list[str], total: int, label: str = "") -> None:
         raise ToolError(f"coverage.py report has no function regions for any of its "
                         f"{total} file(s) — {_OLD_COVERAGE}")
     print(f"crapkit: {_named(label)}coverage.py report has no function regions for "
-          f"{len(regionless)} of {total} file(s) ({_sample(regionless)}) — those files "
+          f"{len(regionless)} of {total} file(s) ({first_few(sorted(regionless))}) — those files "
           f"are skipped and the rest of the report is scored", file=sys.stderr)
 
 

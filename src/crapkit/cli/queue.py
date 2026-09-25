@@ -16,6 +16,7 @@ from ..errors import ConfigError, CrapkitError
 from ..gitio import head_commit, ls_files
 from ..invocation import _self
 from ..keys import claim_key, key_names, key_of, lookup, position, split_ordinal
+from ..named import first_few
 from ..score import SCORED_COLUMNS
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
@@ -966,22 +967,11 @@ def _freshness_warnings(fresh: RunFreshness, latest: dict) -> list[str]:
                      f"rerun `{_self()} coverage`")
     if fresh.changed:
         lines.append(f"warning: {len(fresh.changed)} file(s) changed since run {latest['id']} "
-                     f"scored them: {_sample(fresh.changed)} — rerun `{_self()} coverage`")
+                     f"scored them: {first_few(fresh.changed)} — rerun `{_self()} coverage`")
     if fresh.unread:
         lines.append(f"warning: cannot tell which files changed since run {latest['id']} "
                      f"scored them, because git failed: {fresh.unread}")
     return lines
-
-
-_NAMED = 3
-
-
-def _sample(paths: list[str]) -> str:
-    """The first few paths and a count of the rest, so the next step stays on
-    the line a reader sees."""
-    shown = ", ".join(paths[:_NAMED])
-    rest = len(paths) - _NAMED
-    return f"{shown} and {rest} more" if rest > 0 else shown
 
 
 def _entry_json(e) -> dict:

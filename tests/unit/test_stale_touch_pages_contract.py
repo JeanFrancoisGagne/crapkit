@@ -8,11 +8,6 @@ content. CHANGELOG.md, docs/upgrading.md, README.md, AGENTS.md, the handbook and
 the onboard skill each describe some of that. Each test here reads one claim off
 a page and checks it against the code that makes it true, and a line a page
 quotes is built by the code that prints it.
-
-Several of those changes land in other changes of this release. Until that code
-is in the tree, `landed` marks the row as an expected failure, and a strict one:
-a row that passes while its probe says the code is absent fails, so a probe that
-stops finding the code cannot hide the row.
 """
 from __future__ import annotations
 
@@ -56,12 +51,6 @@ def _release(version: str = "0.8.1") -> str:
     return text[start:end if end != -1 else None]
 
 
-def landed(present: bool, change: str):
-    """An expected failure while `change` is not in the tree yet; nothing once it is."""
-    return pytest.mark.xfail(not present, strict=True,
-                             reason=f"{change} lands with another change of this release")
-
-
 def _git(root: Path, *args: str) -> None:
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=root,
                    check=True, capture_output=True)
@@ -87,7 +76,6 @@ def test_the_changelog_no_longer_tells_library_callers_to_rename():
     assert "`DeprecationWarning`" in section and "0.9.0 removes it" in section
 
 
-@landed(hasattr(lanes, "lane_sources_unchanged"), "the lane_sources_unchanged shim")
 def test_the_shim_the_changelog_names_answers_a_bool_and_warns(tmp_path):
     from crapkit.config import Lane
 
@@ -131,7 +119,6 @@ def _not_behind(shallow: bool, held: bool) -> str:
     return verifying._not_behind(git, _BASELINE, lambda commit: held)
 
 
-@landed(hasattr(verifying, "_not_behind"), "verify's not-in-this-clone refusal")
 def test_the_readme_quotes_the_refusal_for_a_baseline_the_clone_does_not_hold(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["crapkit"])
 
@@ -150,7 +137,6 @@ def test_the_readme_no_longer_says_a_full_clone_always_blames_a_rewrite():
     assert "does not hold it at all" in text
 
 
-@landed(hasattr(verifying, "_not_behind"), "verify's not-in-this-clone refusal")
 def test_the_changelog_quotes_the_not_in_this_clone_refusal(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["crapkit"])
     missing = _not_behind(shallow=False, held=False)
@@ -184,7 +170,6 @@ def _handbook_sentence(opening: str) -> str:
     return next(s for s in _prose(_page("docs/handbook.html")).split(". ") if s.startswith(opening))
 
 
-@landed(_has_history_depth(), "the history depth in the churn and coupling keys")
 def test_the_pages_name_every_part_of_the_coupling_cache_key(tmp_path):
     from crapkit import coupling_cache
 
@@ -219,7 +204,6 @@ def _watch_row() -> str:
     return next(line for line in _page("README.md").splitlines() if line.startswith("| `watch "))
 
 
-@landed(_watch_polls_content(), "watch's content check")
 def test_the_watch_row_says_a_touch_rescores_nothing_and_new_bytes_do(tmp_path):
     import os
 
@@ -260,7 +244,6 @@ def _help_line(command: str) -> str:
     return next(c.help for c in sub._choices_actions if c.dest == command)
 
 
-@landed(_watch_polls_content(), "watch's content check")
 def test_the_changelog_and_the_help_agree_on_what_watch_rescores():
     help_line = _help_line("watch")
     section = _prose(_release())
@@ -287,14 +270,12 @@ HOOK_PAGES = ("README.md", "AGENTS.md", "plugin/skills/crapkit-onboard/SKILL.md"
 
 
 @pytest.mark.parametrize("page", HOOK_PAGES)
-@landed(_hook_remembers(), "claude-hook's session memory")
 def test_each_page_names_where_the_hook_keeps_its_session_memory(page):
     where = ".git/" + "/".join(_hook()._MEMORY_DIR) + "/"
 
     assert where in _page(page)
 
 
-@landed(_hook_remembers(), "claude-hook's session memory")
 def test_the_pages_state_how_long_an_idle_session_is_kept():
     days = _hook()._MEMORY_DAYS
 
@@ -319,14 +300,12 @@ def _unjudged_head(what: str) -> str:
     return hook._unjudged_lines(what, "the reason", hook._UNREAD_NEXT)[0]
 
 
-@landed(hasattr(_hook(), "_unjudged_lines"), "claude-hook's unjudged advisory")
 @pytest.mark.parametrize("what", ["could not read calc/grade.py",
                                   "git could not report what changed in calc/grade.py"])
 def test_agents_quotes_the_head_line_of_an_edit_the_hook_could_not_judge(what):
     assert f"`{_unjudged_head(what)}`" in _prose(_page("AGENTS.md"))
 
 
-@landed(hasattr(_hook(), "_unjudged_lines"), "claude-hook's unjudged advisory")
 @pytest.mark.parametrize("page", ["CHANGELOG.md", "plugin/skills/crapkit-onboard/SKILL.md"])
 def test_the_pages_name_both_unjudged_advisories_as_the_hook_words_them(page):
     text = _prose(_page(page))
@@ -336,7 +315,6 @@ def test_the_pages_name_both_unjudged_advisories_as_the_hook_words_them(page):
         assert head.split(" (")[0].startswith(what)
 
 
-@landed(hasattr(_hook(), "_unjudged_lines"), "claude-hook's unjudged advisory")
 def test_the_unread_next_step_agents_gives_is_the_one_the_hook_prints():
     """AGENTS.md tells an agent to fix what the reason names or exclude the
     file; the hook's own closing line says the same two moves."""
@@ -356,7 +334,6 @@ def _ratchet_cmds():
 _FIRST_RUN = {"id": 1, "commit": "35f524b3f89" + "a" * 29}
 
 
-@landed(hasattr(_ratchet_cmds(), "_unseen_refusal"), "prune's missing-anchor refusal")
 def test_the_changelog_quotes_the_refusal_prune_raises_for_a_missing_anchor(tmp_path):
     _one_commit_repo(tmp_path)
     refusal = _ratchet_cmds()._unseen_refusal(tmp_path, _FIRST_RUN, ["src/old.py"])
@@ -366,7 +343,6 @@ def test_the_changelog_quotes_the_refusal_prune_raises_for_a_missing_anchor(tmp_
     assert "nothing was written" in refusal and "exits 4" in _prose(_release())
 
 
-@landed(hasattr(_ratchet_cmds(), "_followed_names"), "prune naming the renames it followed")
 def test_the_changelog_prints_the_renames_the_prune_line_names():
     from typing import NamedTuple
 
@@ -394,7 +370,6 @@ def _admin():
     return admin
 
 
-@landed(hasattr(_admin(), "_lane_refusal"), "doctor's per-lane refusal")
 def test_the_doctor_row_documents_the_refusal_each_json_lane_carries(tmp_path):
     from crapkit.config import Lane
 
@@ -428,7 +403,6 @@ def _samples(page: str) -> list[dict]:
             if line.strip().startswith('{"comm')]
 
 
-@landed(_has_run_freshness(), "scored_changes and commands.refresh")
 @pytest.mark.parametrize("page, count", [("README.md", 1), ("AGENTS.md", 2)])
 def test_each_next_item_sample_carries_the_envelope_the_command_builds(page, count):
     queue = _queue()
@@ -442,7 +416,6 @@ def test_each_next_item_sample_carries_the_envelope_the_command_builds(page, cou
         assert sample["scored_changes"] == 0 and sample["commands"] == head["commands"]
 
 
-@landed(_has_run_freshness(), "scored_changes and commands.refresh")
 def test_agents_and_agent_json_stop_on_the_same_scored_changes_clause():
     rule = _page("AGENTS.md").split("\n## The termination rule\n", 1)[1].split("\n## ", 1)[0]
     stop = _page("docs/agent-json.md")
@@ -452,7 +425,6 @@ def test_agents_and_agent_json_stop_on_the_same_scored_changes_clause():
     assert "null` included" in _prose(rule) and "null` included" in _prose(stop)
 
 
-@landed(_has_run_freshness(), "the worklist's changed-files warning")
 def test_the_changelog_quotes_the_worklist_warning_that_names_changed_files(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["crapkit"])
     queue = _queue()
@@ -470,7 +442,6 @@ def test_the_readme_says_what_scored_changes_and_stale_each_answer():
     assert "`stale: false` says HEAD is still the run's commit" in section
 
 
-@landed(_has_run_freshness(), "scored_changes and commands.refresh")
 def test_agents_names_the_batch_envelope_the_command_builds():
     line = next(ln for ln in _page("AGENTS.md").splitlines() if ln.startswith('`{"schema": 1, "run_id"'))
     named = set(re.findall(r'"(\w+)":', line)) - {"refresh"}
@@ -524,7 +495,6 @@ def _names_shown(count: int) -> re.Pattern:
     return re.compile(rf"  changed files: [^,\s]+(, [^,\s]+){{{min(count, 3) - 1}}}{rest}")
 
 
-@landed(hasattr(verifying, "_print_changed_paths"), "verify's changed-files line")
 @pytest.mark.parametrize("page", ["README.md", "AGENTS.md"])
 def test_every_verdict_with_a_diff_names_its_files_on_the_next_line(page, capsys):
     verifying._print_changed_paths(["a.py", "b.py", "c.py", "d.py"])
@@ -537,7 +507,6 @@ def test_every_verdict_with_a_diff_names_its_files_on_the_next_line(page, capsys
         assert _names_shown(count).fullmatch(under.removeprefix(indent)), (page, count, under)
 
 
-@landed(hasattr(verifying, "_print_changed_paths"), "verify's changed-files line")
 def test_the_changelog_quotes_the_line_that_names_the_changed_files(capsys):
     verifying._print_changed_paths(["app/m.py", "app/n.py", "tests/test_m.py"])
     printed = capsys.readouterr().out.strip()
@@ -548,7 +517,6 @@ def test_the_changelog_quotes_the_line_that_names_the_changed_files(capsys):
             "all as `changed_paths`") in _prose(_readme_row("verify"))
 
 
-@landed(hasattr(verifying, "_warn_untracked_in_scope"), "verify's untracked-in-scope warning")
 def test_the_changelog_quotes_the_warning_for_untracked_source_verify_did_not_judge(capsys):
     verifying._warn_untracked_in_scope(["src/added.ts"])
     line = capsys.readouterr().err.strip()
@@ -567,7 +535,6 @@ def _unmarked(count: int) -> list:
     return [Row("calc/a.py", f"f{n}( x )") for n in range(count)]
 
 
-@landed(hasattr(verifying, "_warn_untracked_in_scope"), "the debt warning naming its functions")
 def test_the_readme_says_the_debt_warning_names_three_functions(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["crapkit"])
     verifying._warn_standing_debt(_unmarked(4))
@@ -587,7 +554,6 @@ def _untracked_repo(root: Path, names: list[str]) -> str:
     return _admin()._no_scopes_reason(root)
 
 
-@landed(hasattr(_admin(), "_first_few"), "init naming the untracked source")
 @pytest.mark.parametrize("names, shown", [
     (["src/app.ts", "lib/util.py"], "lib/util.py, src/app.ts"),
     (["a/e.py", "a/b.py", "a/a.py", "a/d.py", "a/c.py"], "a/a.py, a/b.py, a/c.py and 2 more"),
@@ -598,7 +564,6 @@ def test_init_names_up_to_three_untracked_sources(tmp_path, names, shown):
     assert reason.endswith(f"run `git add` first ({len(names)} untracked source file(s) found: {shown})")
 
 
-@landed(hasattr(_admin(), "_first_few"), "init naming the untracked source")
 def test_the_changelog_quotes_what_init_says_about_untracked_source(tmp_path):
     reason = _untracked_repo(tmp_path, ["src/app.ts", "lib/util.py"])
 
@@ -621,7 +586,6 @@ def _comment_builder():
 _ACTION_NAMES_ITS_DIFF = hasattr(_comment_builder(), "_scope_lines")
 
 
-@landed(_ACTION_NAMES_ITS_DIFF, "the Action naming a failed base diff")
 def test_the_readme_says_what_the_comment_prints_when_the_base_diff_fails():
     builder = _comment_builder()
     worklist = {"active": [], "dormant_top": []}
@@ -634,7 +598,6 @@ def test_the_readme_says_what_the_comment_prints_when_the_base_diff_fails():
     assert "quoting git's first line and naming `fetch-depth: 0`" in readme
 
 
-@landed(_ACTION_NAMES_ITS_DIFF, "the Action naming a failed base diff")
 def test_the_changelog_quotes_the_action_log_line_for_a_push():
     step = _page("action.yml")
     said = "no base commit on this event: the comment ranks the whole repository"
@@ -643,7 +606,6 @@ def test_the_changelog_quotes_the_action_log_line_for_a_push():
     assert f"`{said}`" in _prose(_release())
 
 
-@landed(_ACTION_NAMES_ITS_DIFF, "the Action naming verify's changed files")
 def test_the_pages_quote_the_names_the_comment_gives_verify_s_count():
     verify = {"run_id": 3, "baseline_run": 1, "changed_files": 1,
               "changed_paths": ["app/calc.py"]}
@@ -658,13 +620,10 @@ def test_the_pages_quote_the_names_the_comment_gives_verify_s_count():
 # -- Q67: the stamp records git blob ids -------------------------------------------
 
 def _module(name: str):
-    """crapkit.NAME, or None while the change that adds it has not landed."""
+    """crapkit.NAME."""
     import importlib
 
-    try:
-        return importlib.import_module(f"crapkit.{name}")
-    except ImportError:
-        return None
+    return importlib.import_module(f"crapkit.{name}")
 
 
 def _hash_object(root: Path, name: str) -> str:
@@ -672,7 +631,6 @@ def _hash_object(root: Path, name: str) -> str:
                           capture_output=True, text=True).stdout.strip()
 
 
-@landed(hasattr(_module("lane_sources"), "record"), "the blob-id content record")
 def test_the_record_the_pages_describe_is_the_id_git_add_would_store(tmp_path):
     _one_commit_repo(tmp_path)
     (tmp_path / "b.py").write_text("y = 2\n", encoding="utf-8")
@@ -687,7 +645,6 @@ def test_the_record_the_pages_describe_is_the_id_git_add_would_store(tmp_path):
 
 # -- Q33: a failed lane's leftover stays refused until new bytes replace it --------
 
-@landed(_module("lane_stamps") is not None, "the refusal keyed on the leftover's sha256")
 def test_a_leftover_stays_refused_through_a_touch_and_a_lost_stamp_file_until_new_bytes(tmp_path):
     import os
 
@@ -716,7 +673,6 @@ def test_a_leftover_stays_refused_through_a_touch_and_a_lost_stamp_file_until_ne
     assert "so deleting `.crapkit/artifacts.json` does not lift it. New bytes lift it" in _prose(_release())
 
 
-@landed(_module("lane_outputs") is not None, "declared outputs moved aside per attempt")
 def test_a_declared_output_is_gone_while_the_attempt_runs_and_a_leftover_comes_back(tmp_path):
     report = tmp_path / ".crapkit" / "cov" / "py.json"
     report.parent.mkdir(parents=True)
@@ -749,7 +705,6 @@ def test_the_upgrade_notes_name_the_stop_rule_the_shim_and_prune_s_exit():
     assert "it exits 4 before writing anything" in notes
 
 
-@landed(hasattr(verifying, "_not_behind"), "verify's not-in-this-clone refusal")
 def test_the_upgrade_notes_quote_the_not_in_this_clone_refusal(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["crapkit"])
     missing = _not_behind(shallow=False, held=False)
@@ -800,7 +755,6 @@ def _tests_withheld() -> bool:
     return "withheld" in inspect.signature(_reports()._tests_fields).parameters
 
 
-@landed(_tests_withheld(), "explain --tests withheld with the dark lines")
 def test_the_pages_say_explain_tests_withholds_its_ids_with_the_dark_line_note():
     fields = _reports()._tests_fields({3: {"tests/test_m.py::test_a"}}, (1, 5), "the note")
 
@@ -810,7 +764,6 @@ def test_the_pages_say_explain_tests_withholds_its_ids_with_the_dark_line_note()
         _prose(_page("README.md"))
 
 
-@landed(hasattr(_reports(), "_span_commits"), "explain --history on HEAD's lines")
 def test_the_changelog_quotes_the_note_for_a_span_no_commit_holds(tmp_path):
     _git(tmp_path, "init", "-q")
 
@@ -825,7 +778,6 @@ def _freshness_carries_git_errors() -> bool:
     return "unread" in getattr(getattr(_queue(), "RunFreshness", None), "_fields", ())
 
 
-@landed(_freshness_carries_git_errors(), "scored_changes null on a git failure")
 def test_the_changelog_quotes_the_worklist_warning_when_git_cannot_read_the_tree(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["crapkit"])
     queue = _queue()
@@ -851,7 +803,6 @@ _FRESHNESS = _module("lane_freshness")
 _ONE_VERDICT = _FRESHNESS is not None
 
 
-@landed(_ONE_VERDICT, "the reuse line naming what its proof leaves out")
 def test_the_changelog_quotes_the_reuse_line_and_what_each_lane_kind_leaves_out(capsys):
     from crapkit.cli import scoring
 
@@ -867,7 +818,6 @@ def test_the_changelog_quotes_the_reuse_line_and_what_each_lane_kind_leaves_out(
     assert "the line that reuses a lane names what its proof leaves out" in _prose(_page("docs/upgrading.md"))
 
 
-@landed(_ONE_VERDICT, "a rerun naming the uncommitted changes a stamp was measured over")
 def test_the_changelog_quotes_why_a_stamp_holds_no_proof():
     proof = _FRESHNESS.Proof("", {}, "x", ("calc/grade.py", "calc/report.py"))
     why = _FRESHNESS.unproved(proof, proof)
@@ -875,7 +825,6 @@ def test_the_changelog_quotes_why_a_stamp_holds_no_proof():
     assert f"`its stamp holds no proof: {why}`" in _prose(_release())
 
 
-@landed(_ONE_VERDICT, "PSModulePath among the session variables")
 def test_the_session_variables_the_changelog_names_are_the_ones_the_proof_leaves_out():
     session = _FRESHNESS._SESSION_VARIABLES
     section = _prose(_release())
@@ -885,7 +834,6 @@ def test_the_session_variables_the_changelog_names_are_the_ones_the_proof_leaves
     assert "PATHEXT" not in session and "names `PATHEXT` alone" in section
 
 
-@landed(_ONE_VERDICT, "the crapkit version in both proofs")
 @pytest.mark.parametrize("inputs", [(), ("calc",)], ids=["tree", "inputs"])
 def test_both_lane_kinds_prove_the_crapkit_version(tmp_path, inputs):
     from crapkit import __version__
@@ -902,7 +850,6 @@ def test_both_lane_kinds_prove_the_crapkit_version(tmp_path, inputs):
     assert "A lane's proof holds the crapkit version, with `inputs` or without" in _prose(_release())
 
 
-@landed(_ONE_VERDICT, "staleness_reads replaced by lane_freshness.Freshness")
 def test_the_changelog_names_the_0_8_0_library_name_that_is_gone():
     assert not hasattr(lanes, "staleness_reads") and hasattr(_FRESHNESS, "Freshness")
     assert "`lanes.staleness_reads`, which 0.8.0 exported, is gone" in _prose(_release())
@@ -924,7 +871,6 @@ def _fold_keys_on_content() -> bool:
     return "digest" in inspect.signature(_module("uncovered")._artifact_key).parameters
 
 
-@landed(_fold_keys_on_content(), "the dead-line fold keyed on the artifact's sha256")
 def test_the_changelog_says_the_dead_line_fold_keys_on_the_artifact_s_sha256(tmp_path):
     import hashlib
 
@@ -937,7 +883,6 @@ def test_the_changelog_says_the_dead_line_fold_keys_on_the_artifact_s_sha256(tmp
     assert "cached by the artifact's sha256" in _prose(_release())
 
 
-@landed(hasattr(_admin(), "_first_few"), "init naming the untracked source")
 def test_the_onboard_skill_quotes_what_init_says_when_no_source_is_tracked(tmp_path):
     reason = _untracked_repo(tmp_path, ["src/app.ts", "lib/util.py"])
     skill = _prose(_page("plugin/skills/crapkit-onboard/SKILL.md"))
@@ -952,7 +897,6 @@ def _handbook() -> str:
     return _prose(_page("docs/handbook.html"))
 
 
-@landed(hasattr(_module("lane_sources"), "record"), "the blob-id content record")
 def test_the_handbook_says_the_stamp_holds_blob_ids_and_staleness_is_per_file(tmp_path):
     _one_commit_repo(tmp_path)
 
@@ -963,7 +907,6 @@ def test_the_handbook_says_the_stamp_holds_blob_ids_and_staleness_is_per_file(tm
             "for the files whose bytes moved and for no others") in _handbook()
 
 
-@landed(_module("lane_outputs") is not None, "declared outputs moved aside per attempt")
 def test_the_handbook_says_a_touch_does_not_lift_a_leftover_s_refusal(tmp_path):
     report = tmp_path / "py.json"
     report.write_text("{}", encoding="utf-8")
@@ -976,7 +919,6 @@ def test_the_handbook_says_a_touch_does_not_lift_a_leftover_s_refusal(tmp_path):
     assert "a <code>touch</code> does not lift the refusal, new bytes do" in _handbook()
 
 
-@landed(_watch_polls_content(), "watch's content check")
 def test_the_handbook_lookup_row_says_watch_rescores_on_new_bytes(tmp_path):
     import os
 
@@ -994,7 +936,6 @@ def test_the_handbook_lookup_row_says_watch_rescores_on_new_bytes(tmp_path):
     assert "Rescores tracked files as they change" not in row
 
 
-@landed(_module("lane_stamps") is not None, "the refusal query over an unreadable stamp file")
 def test_an_unreadable_stamp_file_refuses_the_artifact_and_says_why(tmp_path):
     stamps = _module("lane_stamps")
     artifact = tmp_path / ".crapkit" / "cov" / "py.json"
@@ -1011,7 +952,6 @@ def test_an_unreadable_stamp_file_refuses_the_artifact_and_says_why(tmp_path):
 
 # -- what the lane-freshness change hands library callers and git --------------------
 
-@landed(_ONE_VERDICT and hasattr(lanes, "lane_sources_unchanged"), "Freshness.lines beside the shim")
 def test_the_replacement_the_pages_name_for_the_shim_gives_the_shim_s_answer(tmp_path):
     from crapkit.config import Lane
 
@@ -1033,7 +973,6 @@ def _git_environment() -> dict:
     return getattr(_module("gitio"), "_environment", dict)()
 
 
-@landed(_git_environment().get("GIT_OPTIONAL_LOCKS") == "0", "git spawned without optional locks")
 def test_the_changelog_says_every_git_process_takes_no_optional_lock():
     assert _git_environment()["GIT_OPTIONAL_LOCKS"] == "0"
     assert "Every git process crapkit starts sets `GIT_OPTIONAL_LOCKS=0`" in _prose(_release())

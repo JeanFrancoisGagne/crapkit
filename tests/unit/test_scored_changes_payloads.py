@@ -16,7 +16,7 @@ import pytest
 
 from crapkit import lane_sources
 from crapkit.cli import queue
-from crapkit.cli.queue import RunFreshness, _freshness_warnings, _sample, run_freshness
+from crapkit.cli.queue import RunFreshness, _freshness_warnings, run_freshness
 from crapkit.errors import GitError
 from hand_scored_repo import make_repo, run, scored, write_run
 
@@ -118,15 +118,6 @@ def test_a_git_failure_gets_a_line_quoting_git_instead_of_silence():
     assert _freshness_warnings(fresh, LATEST) == [
         "warning: cannot tell which files changed since run 4 scored them, because git "
         "failed: git diff failed: fatal: index file corrupt"]
-
-
-@pytest.mark.parametrize("paths,expected", [
-    (["a"], "a"),
-    (["a", "b", "c"], "a, b, c"),
-    (["a", "b", "c", "d", "e"], "a, b, c and 2 more"),
-])
-def test_the_sample_names_three_and_counts_the_rest(paths, expected):
-    assert _sample(paths) == expected
 
 
 # --- every payload, off a run that recorded no content ---------------------------

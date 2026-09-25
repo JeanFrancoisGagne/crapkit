@@ -20,6 +20,7 @@ from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
 from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
+from ..named import first_few
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
@@ -245,17 +246,7 @@ def _no_scopes_reason(root: Path) -> str:
         return "no source files found to scope — is this the repo root?"
     return ("no tracked source files to scope — crapkit scores git-tracked files only; "
             f"run `git add` first ({len(untracked)} untracked source file(s) found: "
-            f"{_first_few(untracked)})")
-
-
-_NAMED_FEW = 3
-
-
-def _first_few(paths: list[str]) -> str:
-    """The first three, and a count of the rest: enough to find them by."""
-    rest = len(paths) - _NAMED_FEW
-    shown = ", ".join(paths[:_NAMED_FEW])
-    return f"{shown} and {rest} more" if rest > 0 else shown
+            f"{first_few(untracked)})")
 
 
 _PROBE_TIMEOUT_SECONDS = 15
@@ -1194,15 +1185,9 @@ def _lane_refusal(lane, stamps) -> str | None:
     so both give one answer for a leftover, touched or not, and for an artifact
     whose record crapkit cannot read. An artifact on disk used to read as the
     lane's healthy output even when its last attempt wrote nothing."""
-    from ..lane_stamps import STAMPS_FILE
-
-    refusal = stamps.refusal(lane.artifact)
-    if not refusal.kind:
+    cause = stamps.refusal(lane.artifact).cause(lane.artifact)
+    if not cause:
         return None
-    cause = (f"its last attempt wrote no artifact, and the {lane.artifact} on disk predates it"
-             if refusal.kind == "leftover" else
-             f"{STAMPS_FILE} cannot be read ({refusal.why}), so crapkit cannot tell whether "
-             f"the {lane.artifact} on disk is the file a failed attempt left")
     return f"{cause}; --reuse-artifacts will not score it until a run of the lane writes it again"
 
 
@@ -1213,7 +1198,9 @@ def _unreadable_stamp_note(key: str, writers: dict[str, str]) -> str:
     writer = writers.get(key)
     fix = (f"lane {writer!r} replaces it on its next successful run, or delete the entry"
            if writer else "no declared lane writes this key, so delete the entry")
-    return (f".crapkit/artifacts.json: the entry for {key!r} is not an object, so crapkit "
+    from ..lane_stamps import STAMPS_FILE
+
+    return (f"{STAMPS_FILE}: the entry for {key!r} is not an object, so crapkit "
             f"reads it as no stamp (no commit, no duration); {fix}")
 
 
@@ -1224,10 +1211,9 @@ def _doctor_stamps(root: Path, lanes) -> list[Finding]:
     WARN too: the lane's next run clears it."""
     from ..lane_stamps import read
 
-    fault = _stamps_file_fault(root)
-    if fault:
-        return [Finding("WARN", _unreadable_stamps_file_note(fault))]
     stamps = read(root)
+    if stamps.unreadable:
+        return [Finding("WARN", _unreadable_stamps_file_note(stamps.unreadable))]
     writers = {lane.artifact: lane.name for lane in lanes}
     mangled = [Finding("WARN", _unreadable_stamp_note(key, writers)) for key in stamps.mangled()]
     return mangled + _refusal_findings(lanes, stamps)
@@ -1240,25 +1226,10 @@ def _refusal_findings(lanes, stamps) -> list[Finding]:
             if refusal]
 
 
-_STAMPS_FILE = ".crapkit/artifacts.json"
-
-
-def _stamps_file_fault(root: Path) -> str:
-    """Why the stamps file cannot be read as stamps, or "" when it can or is
-    not there. lanes.read_stamps reads such a file as no stamps at all."""
-    import json
-
-    try:
-        data = json.loads((root / _STAMPS_FILE).read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return ""
-    except (OSError, ValueError) as exc:  # UnicodeDecodeError is a ValueError
-        return str(exc)
-    return "" if isinstance(data, dict) else f"it holds a JSON {type(data).__name__}, not an object"
-
-
 def _unreadable_stamps_file_note(fault: str) -> str:
-    return (f"{_STAMPS_FILE} cannot be read ({fault}), so crapkit reads it as no stamps: "
+    from ..lane_stamps import STAMPS_FILE
+
+    return (f"{STAMPS_FILE} cannot be read ({fault}), so crapkit reads it as no stamps: "
             "--reuse-unchanged reruns every lane and --reuse-artifacts refuses every lane's "
             "artifact, since it cannot tell a failed attempt's leftover; the next lane run "
             "writes the file again, or delete it")

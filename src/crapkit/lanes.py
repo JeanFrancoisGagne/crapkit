@@ -29,12 +29,13 @@ from .errors import GitError, ToolError
 from .gitio import GitFacts, untracked_files
 from .lane_command import launch_spec, pytest_python
 from .lane_freshness import (Freshness, Proof, ReuseVerdict, measurement_proof,  # noqa: F401
-                             sample, uncommitted_changes, unproved)
+                             uncommitted_changes, unproved)
 from .lane_outputs import declared_files, declared_outputs, owned, owners, put_back, retest_owner
 from .lane_sources import lane_matchers, lane_record, settled
 from .lane_stamps import (STAMPS_FILE, Stamps, file_sha256, read, read_stamps,  # noqa: F401
                           recorded_seconds, refusal_entry, stamp_for, unreadable_stamps,
                           write as write_stamps)
+from .named import first_few
 from .procs import NoProgress, own_processes, run_bounded
 from .universe import owning_scope
 
@@ -660,14 +661,14 @@ def _zero_overlap(lane: Lane, coverage: dict, declared) -> str:
     measured, and that none of it is in scope. The two messages part company
     after it, and a sentence kept in two places is a sentence that drifts."""
     return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
-            f"paths its scopes declare ({sample(declared)})")
+            f"paths its scopes declare ({first_few(sorted(declared))})")
 
 
 def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]) -> str:
     return (f"{_zero_overlap(lane, coverage, declared)}, and {len(outside)} of them "
             f"outside this checkout entirely — {lane.artifact} describes a different tree, "
             f"so joining it would score every function in those scopes untested; it reports "
-            f"paths like {sample(outside)}. {lane_format(lane).WRONG_TREE_FIX}")
+            f"paths like {first_few(sorted(outside))}. {lane_format(lane).WRONG_TREE_FIX}")
 
 
 def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -> str:
@@ -675,11 +676,11 @@ def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -
             f"as absolute paths that DO sit under this checkout — {lane.artifact} measured "
             f"this tree and spelled it absolutely, and the join is on root-relative paths, "
             f"so it still matches nothing and every function in those scopes would score "
-            f"untested; it reports paths like {sample(inside)}. {lane_format(lane).ABSOLUTE_FIX}")
+            f"untested; it reports paths like {first_few(sorted(inside))}. {lane_format(lane).ABSOLUTE_FIX}")
 
 
 def _unmeasured_message(lane: Lane, coverage: dict, declared) -> str:
-    reports = f"; it measured {sample(coverage)}" if coverage else ""
+    reports = f"; it measured {first_few(sorted(coverage))}" if coverage else ""
     return (f"{_zero_overlap(lane, coverage, declared)}, so every function in those "
             f"scopes will score untested{reports} — either nothing in them is exercised yet, "
             f"{lane_format(lane).UNMEASURED_READING}")
@@ -905,17 +906,16 @@ def _refuse_unwritten_artifact(root: Path, lane: Lane, stamps: Stamps) -> None:
         _raise_no_artifact(root, lane, _lane_log_path(root, lane), None,
                            {lane.artifact: file_sha256(root / lane.artifact)}, reuse=True)
     if refusal.kind == "unknown":
-        _refuse_unreadable_stamp(lane, refusal.why)
+        _refuse_unreadable_stamp(lane, refusal)
 
 
-def _refuse_unreadable_stamp(lane: Lane, why: str) -> None:
+def _refuse_unreadable_stamp(lane: Lane, refusal) -> None:
     """The record that would say whether the file on disk is a failed
     attempt's leftover cannot be read, so reuse cannot score it."""
     from .invocation import _self
 
     raise ToolError(
-        f"lane {lane.name!r}: {STAMPS_FILE} cannot be read ({why}), so crapkit cannot tell "
-        f"whether {lane.artifact} is the file a failed attempt left; rerun the lane "
+        f"lane {lane.name!r}: {refusal.cause(lane.artifact)}; rerun the lane "
         f"(`{_self()} coverage --lane {lane.name}`), or delete {STAMPS_FILE} to reuse the file "
         "as it stands")
 

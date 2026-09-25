@@ -13,12 +13,12 @@ from typing import TYPE_CHECKING
 from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
+from ..named import first_few
 from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
                       _ratchet_key_version, _repo_out_path, _repo_relative, _stand, _write_tsv, repo_text)
-from .ratchet_cmds import _first_three
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -583,7 +583,7 @@ def _warn_standing_debt(unmarked: list) -> None:
     """
     if not unmarked:
         return
-    named = _first_three([f"{row.path} {row.long_name}" for row in unmarked])
+    named = first_few([f"{row.path} {row.long_name}" for row in unmarked])
     print(f"warning: {len(unmarked)} function(s) over the ceiling carry no ratchet mark "
           f"({named}), so a rise on them (coverage loss included) passes unseen; record them "
           f"with `{_self()} ratchet seed`", file=sys.stderr)
@@ -608,7 +608,7 @@ def _warn_untracked_in_scope(untracked: list[str]) -> None:
     it as `untracked_in_scope`."""
     if untracked:
         print(f"warning: {len(untracked)} untracked file(s) in a scope were not judged "
-              f"({_first_three(untracked)}): verify scores git-tracked files only; `git add` "
+              f"({first_few(untracked)}): verify scores git-tracked files only; `git add` "
               "them to have them judged", file=sys.stderr)
 
 
@@ -696,7 +696,7 @@ def _print_changed_paths(paths: list[str]) -> None:
     """The files behind the count, on their own line so the verdict line keeps
     its shape. Nothing for an empty diff."""
     if paths:
-        print(f"  changed files: {_first_three(paths)}")
+        print(f"  changed files: {first_few(paths)}")
 
 
 def _refuse_lane_less_verify(cfg) -> None:

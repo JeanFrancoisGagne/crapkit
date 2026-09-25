@@ -1155,7 +1155,7 @@ object) may have held a refusal the store does not, so reuse refuses that lane t
 
 ```
 $ crapkit coverage --reuse-artifacts
-crapkit: lane 'py' FAILED: lane 'py': .crapkit/artifacts.json cannot be read (it does not parse as JSON), so crapkit cannot tell whether .crapkit/cov/py.json is the file a failed attempt left; rerun the lane (`crapkit coverage --lane py`), or delete .crapkit/artifacts.json to reuse the file as it stands
+crapkit: lane 'py' FAILED: lane 'py': .crapkit/artifacts.json cannot be read (it does not parse as JSON), so crapkit cannot tell whether the .crapkit/cov/py.json on disk is the file a failed attempt left; rerun the lane (`crapkit coverage --lane py`), or delete .crapkit/artifacts.json to reuse the file as it stands
 ```
 
 A refusal crapkit 0.8.0 recorded holds a modification time (`refused_mtime_ns`) and no

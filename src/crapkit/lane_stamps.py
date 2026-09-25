@@ -41,6 +41,17 @@ class Refusal(NamedTuple):
     kind: str
     why: str = ""
 
+    def cause(self, artifact: str) -> str:
+        """Why the file at `artifact` may not be read as a measurement, in the
+        one sentence doctor, the dark-line note and reuse all quote, or "" when
+        it may."""
+        if self.kind == "leftover":
+            return f"its last attempt wrote no artifact, and the {artifact} on disk predates it"
+        if self.kind == "unknown":
+            return (f"{STAMPS_FILE} cannot be read ({self.why}), so crapkit cannot tell whether "
+                    f"the {artifact} on disk is the file a failed attempt left")
+        return ""
+
 
 NOT_REFUSED = Refusal("")
 LEFTOVER = Refusal("leftover")

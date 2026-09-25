@@ -32,19 +32,8 @@ from .gitio import GitFacts, worktree_root
 from .lane_outputs import config_bytes, configured_outputs, declared_outputs
 from .lane_sources import declared_paths, lane_matchers, listing, moved, record
 from .lane_stamps import LEGACY, STAMPS_FILE, Stamps, file_sha256, read
+from .named import first_few
 from .universe import owning_scope
-
-_SAMPLE_PATHS = 3
-
-
-def sample(paths) -> str:
-    """A few of them and a count of the rest. A lane scoped to forty declared
-    paths listed all forty, which pushed the sentence saying what to do off the
-    end of a line nobody reads that far into."""
-    ordered = sorted(paths)
-    shown = ", ".join(ordered[:_SAMPLE_PATHS])
-    rest = len(ordered) - _SAMPLE_PATHS
-    return f"{shown} and {rest} more" if rest > 0 else shown
 
 
 # --- the proof builder: one for both lane kinds ---------------------------------
@@ -131,7 +120,7 @@ def measurement_proof(root: Path, lane, skip: frozenset = frozenset()) -> Proof:
 
 def _dirty_sentence(lane, dirty: list[str]) -> str:
     where = "its inputs have" if lane.inputs else "the working tree has"
-    return f"{where} {len(dirty)} uncommitted change(s): {sample(dirty)}"
+    return f"{where} {len(dirty)} uncommitted change(s): {first_few(sorted(dirty))}"
 
 
 def _dirty(root: Path, lane, skip: frozenset) -> tuple[str, list[str]]:
@@ -174,11 +163,11 @@ def unproved(before: Proof, after: Proof) -> str:
     """What a stamp records when its proof did not hold from start to finish,
     so a rerun can say why: the changes it was measured over, or git's error."""
     if before.dirty:
-        return f"it was measured with {len(before.dirty)} uncommitted change(s): {sample(before.dirty)}"
+        return f"it was measured with {len(before.dirty)} uncommitted change(s): {first_few(sorted(before.dirty))}"
     if before.why:
         return f"when it was measured, {before.why}"
     if after.dirty:
-        return f"{sample(after.dirty)} changed while it ran"
+        return f"{first_few(sorted(after.dirty))} changed while it ran"
     return f"when it finished, {after.why}" if after.why else "something it reads changed while it ran"
 
 
@@ -215,7 +204,7 @@ def _moved_parts(lane, now: dict, then) -> str:
 def _moved_names(now: dict, then: dict) -> list[str]:
     moved = [f"{name} changed" for key, name in _PART_NAMES if now.get(key) != then.get(key)]
     env = _environment_moved(now.get("env", {}), then.get("env"))
-    return moved + ([f"{len(env)} environment variable(s) changed: {sample(env)}"] if env else [])
+    return moved + ([f"{len(env)} environment variable(s) changed: {first_few(sorted(env))}"] if env else [])
 
 
 def _environment_moved(now: dict, then) -> list[str]:
@@ -240,7 +229,7 @@ def _scope_drift(facts, lane, scope_paths: dict, commit: str) -> str:
     if not changed:
         return ""
     return (f"{len(changed)} file(s) in its scopes changed since {commit[:11]} "
-            f"({sample(changed)}), uncommitted edits included")
+            f"({first_few(sorted(changed))}), uncommitted edits included")
 
 
 def _owned_changes(facts, matchers, commit: str) -> list[str]:
@@ -321,7 +310,7 @@ class Freshness:
             return f"no artifact at {lane.artifact}"
         refusal = self.stamps.refusal(lane.artifact)
         if refusal.kind == "leftover":
-            return f"its last attempt wrote no artifact, and the {lane.artifact} on disk predates it"
+            return refusal.cause(lane.artifact)
         unread = f" ({STAMPS_FILE}: {refusal.why})" if refusal.why else ""
         return f"no stamp records the commit {lane.artifact} was built at{unread}"
 
@@ -359,7 +348,7 @@ class Freshness:
             return f"git cannot say which files in its scopes changed since it measured them ({exc})"
         if not changed:
             return ""
-        return f"{len(changed)} file(s) in its scopes changed since it measured them ({sample(changed)})"
+        return f"{len(changed)} file(s) in its scopes changed since it measured them ({first_few(sorted(changed))})"
 
     def _commit_drift(self, lane, commit: str) -> str:
         """A legacy stamp's verdict: git's diff since its commit, which needs that
@@ -531,7 +520,7 @@ class Freshness:
             return f"nothing proves its inputs unchanged: {exc}"
         if not changed:
             return ""
-        return f"{len(changed)} change(s) under its inputs since {commit[:11]}: {sample(changed)}"
+        return f"{len(changed)} change(s) under its inputs since {commit[:11]}: {first_few(sorted(changed))}"
 
 
 def _not_behind(root: Path, commit: str) -> str:
@@ -564,4 +553,4 @@ def _artifact_gap(root: Path, lane, stamp: dict) -> str:
     if not isinstance(expected, dict):
         return "its stamp records no digest of its artifact"
     changed = [name for name in declared_files(lane) if file_sha256(root / name) != expected.get(name)]
-    return f"{sample(changed)}: bytes differ from its stamp" if changed else ""
+    return f"{first_few(sorted(changed))}: bytes differ from its stamp" if changed else ""

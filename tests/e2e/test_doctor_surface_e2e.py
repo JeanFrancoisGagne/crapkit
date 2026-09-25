@@ -253,9 +253,9 @@ def test_doctor_reports_a_refusal_exactly_when_reuse_refuses(measured_repo: Path
 
 
 @pytest.mark.parametrize("content, why", [
-    ("{ not json", "Expecting property name"),
-    ("[1, 2]", "it holds a JSON list, not an object"),
-    (b"\xff\xfe{", "codec can't decode"),
+    ("{ not json", "(it does not parse as JSON)"),
+    ("[1, 2]", "(its top level is not an object)"),
+    (b"\xff\xfe{", "(it does not parse as JSON)"),
 ], ids=["torn", "a-list", "not-utf8"])
 def test_doctor_names_a_stamps_file_it_cannot_read(measured_repo: Path, content, why):
     """Read as no stamps, the file hides every commit, proof and refusal, so a

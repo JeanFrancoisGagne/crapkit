@@ -12,6 +12,7 @@ from typing import NamedTuple
 
 from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
+from ..named import first_few
 from ..store import SnapshotStore
 from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
                       _print_json, _ratchet_or_die, _repo_relative, _stand, repo_text)
@@ -360,7 +361,7 @@ def _unseen(root: Path, anchor: dict | None, left: list[str]) -> list[str]:
 def _unseen_refusal(root: Path, missing: dict, unseen: list[str]) -> str:
     commit = missing["commit"]
     return (f"ratchet prune: run {missing['id']}'s commit {commit[:11]} is not in this clone, so "
-            f"git cannot say whether {_first_three(unseen)} was renamed or deleted, and prune would "
+            f"git cannot say whether {first_few(unseen)} was renamed or deleted, and prune would "
             f"drop the marks there as repaid debt; {_anchor_fetch(root, commit)}; nothing was written")
 
 
@@ -380,7 +381,7 @@ def _followed_names(prior: list, followed: list, pairs: dict[str, str]) -> str:
     """` (a.py -> b.py, ...)`: the renames the marks followed, up to three."""
     kept = set(followed)
     moved = sorted({f"{e.path} -> {pairs[e.path]}" for e in prior if e not in kept})
-    return f" ({_first_three(moved)})" if moved else ""
+    return f" ({first_few(moved)})" if moved else ""
 
 
 def _note_window(renames: _Renames) -> None:
@@ -396,12 +397,6 @@ def _note_window(renames: _Renames) -> None:
     print(f"{gone}, so renames were followed from run {renames.anchor['id']} "
           f"({renames.anchor['commit'][:11]}), the oldest run whose commit it holds",
           file=sys.stderr)
-
-
-def _first_three(names: list[str]) -> str:
-    """`a, b, c and 2 more`."""
-    shown = ", ".join(names[:3])
-    return f"{shown} and {len(names) - 3} more" if len(names) > 3 else shown
 
 
 def _print_ratchet_report(report: dict, violations: list, ratchet_file: str) -> None:

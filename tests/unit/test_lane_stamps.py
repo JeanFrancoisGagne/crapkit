@@ -135,3 +135,41 @@ def test_byproducts_are_read_per_artifact_and_across_every_stamp(tmp_path):
     assert stamps.byproducts(ART) == {".coverage"}
     assert stamps.byproducts() == {".coverage", "src/__pycache__/x.pyc"}
     assert stamps.mangled() == ["c.json"]
+
+
+# (stamp file text, the cause the refusal gives for the file on disk)
+CAUSES = {
+    "not-refused": (json.dumps({ART: {"commit": "c"}}), ""),
+    "leftover": (None, "its last attempt wrote no artifact, and the cov/a.json on disk predates it"),
+    "unknown": ('{"cov/a.json": {"commit"',
+                ".crapkit/artifacts.json cannot be read (it does not parse as JSON), so crapkit "
+                "cannot tell whether the cov/a.json on disk is the file a failed attempt left"),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(CAUSES))
+def test_each_refusal_names_its_cause_in_one_sentence(shape, tmp_path):
+    """doctor's lane refusal, the dark-line note and reuse's refusal of an
+    unreadable record each built this sentence, twice in two wordings."""
+    digest = _artifact(tmp_path)
+    text, cause = CAUSES[shape]
+    _stamps_file(tmp_path, text if text is not None else json.dumps({ART: {"refused_sha256": digest}}))
+
+    assert read(tmp_path).refusal(ART).cause(ART) == cause
+
+
+SRC = Path(__file__).resolve().parents[2] / "src" / "crapkit"
+
+
+@pytest.mark.parametrize("sentence", [
+    "wrote no artifact, and the",
+    "is the file a failed attempt left",
+    '".crapkit/artifacts.json"',
+])
+def test_only_the_stamp_module_says_what_the_stamp_file_holds(sentence):
+    """doctor parsed .crapkit/artifacts.json a second time under a constant of
+    its own, beside the unreadable state lane_stamps.read gives every reader."""
+    homes = sorted(path.relative_to(SRC).as_posix() for path in SRC.rglob("*.py")
+                   if sentence in path.read_text(encoding="utf-8"))
+
+    assert homes == ["lane_stamps.py"]
