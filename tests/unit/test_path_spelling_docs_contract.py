@@ -20,7 +20,7 @@ import pytest
 from crapkit import config, doctor, lanes, procs
 from crapkit.cli import _shared
 from crapkit.cli._shared import _repo_relative
-from crapkit.cli.queue import _path_fragment
+from crapkit.repopath import fragment
 from crapkit.cli.verifying import _test_files
 from crapkit.config import load_config_text
 from crapkit.repopath import file_separators, native
@@ -237,21 +237,21 @@ def test_the_exclude_fragment_pages_name_the_dot_slash_spelling():
     for text in (readme, mcp):
         assert "`./pkg/legacy`" in text, text
 
-    assert _path_fragment("./pkg/legacy", folds=False) == "pkg/legacy"
+    assert fragment("./pkg/legacy", False).path == "pkg/legacy"
 
 
 @only_windows
 def test_an_exclude_fragment_with_a_backslash_reads_as_git_spells_it_on_windows():
-    assert _path_fragment("pkg\\legacy", folds=False) == "pkg/legacy"
+    assert fragment("pkg\\legacy", False).path == "pkg/legacy"
 
 
 @only_posix
 def test_an_exclude_fragment_with_a_backslash_stays_literal_on_posix():
-    assert _path_fragment("pkg\\legacy", folds=False) == "pkg\\legacy"
+    assert fragment("pkg\\legacy", False).path == "pkg\\legacy"
 
 
 def test_an_exclude_fragment_in_another_case_reads_as_the_listed_case_where_the_disk_folds():
-    assert _path_fragment("PKG/Legacy", folds=True) == _path_fragment("pkg/legacy", folds=True)
+    assert fragment("PKG/Legacy", True).path == fragment("pkg/legacy", True).path
 
 
 # -- dirty_failures --------------------------------------------------------------

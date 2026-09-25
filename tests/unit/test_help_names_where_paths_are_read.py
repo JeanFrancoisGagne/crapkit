@@ -9,7 +9,7 @@ import pytest
 
 from crapkit.cli import main
 from crapkit.cli._shared import _repo_relative
-from crapkit.cli.queue import _path_fragment
+from crapkit.repopath import fragment as path_fragment
 
 WHERE = ("(repo-relative or absolute; ./src/a.py, SRC/a.py where the disk ignores case, "
          "and on Windows src\\a.py, /c/... and /mnt/c/... name src/a.py; "
@@ -72,11 +72,11 @@ def test_next_item_exclude_help_names_the_path_fragment_spellings(capsys):
             "skip pkg/legacy") in text, text
 
 
-@pytest.mark.parametrize("fragment", ["./pkg/legacy", "PKG/Legacy"])
-def test_the_exclude_fragments_the_help_names_read_as_git_s_path(fragment):
-    assert _path_fragment(fragment, folds=True) == "pkg/legacy"
+@pytest.mark.parametrize("typed", ["./pkg/legacy", "PKG/Legacy"])
+def test_the_exclude_fragments_the_help_names_read_as_git_s_path(typed):
+    assert path_fragment(typed, True).path == "pkg/legacy"
 
 
 @pytest.mark.skipif(os.name != "nt", reason="a backslash is a separator on Windows only")
 def test_the_backslash_fragment_the_help_names_reads_as_git_s_path_on_windows():
-    assert _path_fragment("pkg\\legacy", folds=False) == "pkg/legacy"
+    assert path_fragment("pkg\\legacy", False).path == "pkg/legacy"

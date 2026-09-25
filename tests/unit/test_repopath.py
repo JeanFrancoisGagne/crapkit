@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.repopath import (Reported, disk_spelling, entries, file_separators, inside,
-                              native, on_a_share, typed, typed_path)
+from crapkit.repopath import (Reported, disk_spelling, entries, file_separators, fragments,
+                              inside, native, on_a_share, typed, typed_path)
 
 from path_spellings import (admin_share, link_directory, lower_drive, need_case_insensitive,
                             need_case_sensitive, only_posix, only_windows)
@@ -217,13 +217,48 @@ def test_windows_places_the_checkout_reached_through_its_admin_share(tmp_path):
     assert on_a_share(alias) and not on_a_share(root)
 
 
-def test_folds_case_says_what_the_disk_under_the_root_does(tmp_path):
+def test_a_fragment_folds_case_where_the_disk_under_the_root_does(tmp_path):
     from path_spellings import case_insensitive
-    from crapkit.repopath import folds_case
+    from crapkit.repopath import fragments
 
     root = _tree(tmp_path / "Repo")
 
-    assert folds_case(root) is case_insensitive(root)
+    assert [f.folds for f in fragments(["x", "y"], root)] == [case_insensitive(root)] * 2
+    assert fragments([], root) == []
+
+
+# id -> (what the host needs, a typed fragment of src/pkg, whether it is within)
+FRAGMENTS = {
+    "as-git": ("", "src/pkg", True),
+    "dot-slash": ("", "./src/pkg", True),
+    "file-part": ("", "pkg/mod", True),
+    "backslash": ("windows", "src\\pkg", True),
+    "dot-backslash": ("windows", ".\\src\\pkg", True),
+    "posix-backslash": ("posix", "src\\pkg", False),
+    "dir-case": ("case", "SRC/Pkg", True),
+    "case-on-ext4": ("case-sensitive", "SRC/Pkg", False),
+    "elsewhere": ("", "lib/pkg", False),
+}
+
+
+# need -> a skip naming it where this host lacks it
+NEEDS = {
+    "": lambda folder: None,
+    "windows": lambda folder: os.name == "nt" or pytest.skip("needs Windows path rules"),
+    "posix": lambda folder: os.name != "nt" or pytest.skip("needs POSIX path rules"),
+    "case": need_case_insensitive,
+    "case-sensitive": need_case_sensitive,
+}
+
+
+@pytest.mark.parametrize("which", FRAGMENTS)
+def test_the_fragment_entry_matches_a_typed_piece_of_the_path_git_spells(tmp_path, which):
+    need, raw, within = FRAGMENTS[which]
+    NEEDS[need](tmp_path)
+    [piece] = fragments([raw], _tree(tmp_path))
+
+    assert piece.within("src/pkg/mod.py") is within
+    assert piece.typed == raw
 
 
 # --- the typed entry ----------------------------------------------------------

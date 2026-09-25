@@ -177,7 +177,7 @@ _WHERE = (" (repo-relative or absolute; ./src/a.py, SRC/a.py where the disk igno
           " and on Windows src\\a.py, /c/... and /mnt/c/... name src/a.py;"
           " without --repo, read from the working directory)")
 # next-item --exclude compares a path fragment with git's path the way a file
-# argument is read (cli.queue._path_fragment); a function name keeps its case.
+# argument is read (repopath.fragment); a function name keeps its case.
 _EXCLUDE_HELP = ("skip items whose path or function name contains this (repeatable); a path"
                  " fragment reads as git spells it: ./pkg/legacy, PKG/Legacy where the disk"
                  " ignores case, and pkg\\legacy on Windows all skip pkg/legacy")

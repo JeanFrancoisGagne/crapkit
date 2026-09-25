@@ -35,6 +35,7 @@ import posixpath
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 _WINDOWS = os.name == "nt"
 
@@ -314,7 +315,37 @@ def _same_file(a: Path, b: Path) -> bool:
         return False
 
 
-def folds_case(root: str | os.PathLike) -> bool:
+# --- the fragment entry: a piece of a path to match ---------------------------
+
+class Fragment(NamedTuple):
+    r"""A piece of a path a person typed to match against the paths git spells
+    (`next-item --exclude`). `typed` stays as given, for a caller that matches
+    a function name too; `path` is the path side: on Windows `pkg\legacy` is
+    `pkg/legacy`, a leading `./` names nothing a path holds, and where the disk
+    folds case the match folds too, so `PKG/Legacy` is `pkg/legacy`. Each of
+    those was compared as text with git's spelling, and the directory the
+    caller excluded came back as the next item."""
+    typed: str
+    path: str
+    folds: bool
+
+    def within(self, path: str) -> bool:
+        return self.path in (path.casefold() if self.folds else path)
+
+
+def fragment(raw: str, folds: bool) -> Fragment:
+    path = (file_separators(raw) if _WINDOWS else raw).removeprefix("./")
+    return Fragment(raw, path.casefold() if folds else path, folds)
+
+
+def fragments(raws: list[str], root: str | os.PathLike) -> list[Fragment]:
+    """Each of `raws` as a Fragment, asking once, and only when there is a
+    fragment to read, whether the disk under `root` folds case."""
+    folds = _folds_case(root) if raws else False
+    return [fragment(raw, folds) for raw in raws]
+
+
+def _folds_case(root: str | os.PathLike) -> bool:
     """Does the filesystem at `root` open a name in another letter case? Asked
     of the root's own name, the one entry sure to exist."""
     path = Path(root).resolve()
