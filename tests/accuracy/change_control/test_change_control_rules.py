@@ -359,6 +359,10 @@ MORE_FAILING = {
     "a golden gone from the lock with no change": (_golden_gone_from_the_lock, {"B5"}),
     "a packet gone from the test counts": (lambda tree: seeds.replace(
         tree, seeds.COUNTS, "score_model\t3\n", ""), {"B4"}),
+    "the first bugs.tsv row deleted": (lambda tree: seeds.without_line(
+        tree, seeds.BUGS, "R01\t"), {"B2"}),
+    "a metric-digests row written twice": (lambda tree: seeds.append(
+        tree, seeds.DIGESTS, *tree[seeds.DIGESTS].splitlines()[-1].split("\t")), {"T5"}),
 }
 
 
@@ -526,6 +530,12 @@ def _facts(name: str, head: dict) -> list[tuple]:
         "a packet gone from the test counts": [(
             "B4", "packet score_model collects 0 tests, the base 3",
             "restore the tests; a check is replaced, never dropped")],
+        "the first bugs.tsv row deleted": [(
+            "B2", f"{seeds.BUGS} lost or changed 1 row(s) the base had, the first being R01",
+            f"restore them from the base (git checkout <base> -- {seeds.BUGS}) and add new rows "
+            "below them")],
+        "a metric-digests row written twice": _t5(
+            head, f"row 11/1.24.0/{seeds.corpus_digest(head)} appears 2 times"),
     }[name]
 
 
@@ -1264,3 +1274,117 @@ def test_declare_refuses_a_fix_when_nothing_moved_and_a_reused_id(make_repo):
     assert "nothing moved since the lock; a change that moves nothing is kind none" in text
     assert "C2 is already declared; the next free id is C3" in text
     assert "no calc is named 'No such calc'" in text
+
+
+# --- what moved, and what a declaration answers for, read on in-memory trees ---------------------
+
+def test_a_column_the_head_adds_moves_on_every_row():
+    base = seeds.tool().DictTree({seeds.SCORED: b"path\tlong_name\tstart\tccn\nsrc/a.py\tf( )\t1\t2\n"})
+    head = seeds.tool().DictTree({seeds.SCORED: b"path\tlong_name\tstart\tccn\tnesting\n"
+                                                b"src/a.py\tf( )\t1\t2\t0\n"})
+
+    assert [cell.key() for cell in cc.moved_cells(base, head)] == [
+        (seeds.SCORED, "src/a.py", "f", "nesting", "", "0")]
+
+
+def test_a_row_that_appears_moves_from_absent_to_present():
+    rows = seeds.scored_rows()
+    rows.append({**rows[1], "long_name": "g( x )", "start": 58, "end": 59})
+    head = {**BASE, seeds.SCORED: seeds.scored(rows)}
+
+    assert [cell.key() for cell in cc.moved_cells(_tree(BASE), _tree(head))] == [
+        (seeds.SCORED, "src/a.py", "g", "row", "absent", "present")]
+
+
+def test_a_survivor_the_base_had_without_evidence_is_left_alone():
+    base = seeds.append(BASE, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "ab" * 32, "")
+    head = seeds.append(base, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "cd" * 32,
+                        "10,000 examples equal (mutation.py run 7)")
+
+    assert pure_rules(base, head) == set()
+
+
+def test_an_initialized_tree_with_no_metric_row_says_the_last_row_is_missing():
+    tree = {**BASE, seeds.DIGESTS: BASE[seeds.DIGESTS].splitlines()[0] + "\n"}
+
+    texts = [problem.text for problem in cc.in_tree(_tree(tree), cc.running(_tree(tree), LIZARD))]
+
+    assert texts[:2] == ["metric-digests.tsv: the last row has analysis_version <none>, the tree "
+                         "gives 11", "metric-digests.tsv: the last row has lizard_version <none>, "
+                                     "the tree gives 1.24.0"]
+
+
+def test_a_corpus_toml_with_no_member_leaves_every_set_on_the_small_corpus():
+    tree = _tree({**BASE, cc.CORPUS_TOML: "[small]\npath = 'small'\n"})
+
+    assert cc.corpus_name(tree, "tests/accuracy/corpus_goldens/goldens/requests/scored.tsv") == \
+        "small"
+
+
+def test_a_declaration_answers_for_changed_rulings_and_moved_files_it_did_not_relock():
+    """R-D2 goes from defect to fixed and worklist.json moves. Relocked under the
+    fresh C3, the file is C3's; relocked under the old C2 it is still to declare."""
+    head = seeds.replace(BASE, seeds.RULINGS, "\t2\t1\tdefect\t", "\t1\t1\tfixed\t")
+    head = seeds.change(seeds.replace(head, seeds.WORKLIST, "12", "13"), "C3", "fix",
+                        "Cognitive complexity")
+    changed = frozenset({seeds.WORKLIST, seeds.RULINGS})
+
+    fresh = cc.moves_of(_tree(BASE), _tree(seeds.relock(head, "C3", seeds.WORKLIST)), changed)
+    old = cc.moves_of(_tree(BASE), _tree(seeds.relock(head, "C2", seeds.WORKLIST)), changed)
+
+    assert (fresh.surfaces, old.surfaces) == ([], [seeds.WORKLIST])
+    assert fresh.more == old.more == {"Cognitive complexity"}
+
+
+def test_a_relock_keeps_rows_of_files_still_there_and_adds_new_ones():
+    head = {path: text for path, text in BASE.items() if path != seeds.WORKLIST}
+    head = {**head, "tests/accuracy/score_model/hand_extra.tsv": "a\tsource\n1\tpaper\n"}
+
+    lock, moved = cc._relock(_tree(head), "C3")
+
+    assert moved == ["tests/accuracy/corpus_goldens/goldens/small/worklist.json",
+                     "tests/accuracy/score_model/hand_extra.tsv"]
+    assert sorted(lock) == sorted([*(path for path in seeds.LOCKED if path != seeds.WORKLIST),
+                                   "tests/accuracy/score_model/hand_extra.tsv"])
+    assert lock["tests/accuracy/score_model/hand_extra.tsv"][1] == "C3"
+
+
+@pytest.mark.parametrize("values, answer", [([], None), ([3, 3], "3"), ([3, 4], None)])
+def test_an_oracle_answers_only_when_every_function_at_the_line_agrees(values, answer):
+    assert cc._one(values) == answer
+
+
+def test_declare_refuses_before_the_first_lock():
+    bare = _tree(seeds.uninitialized())
+
+    with pytest.raises(cc.ChangeControlError, match="the lock is not initialized: run python "
+                                                    "tools/accuracy/change_control.py lock "
+                                                    "--initial first"):
+        cc.plan_declare(bare, bare, _request(kind="none", calcs=()), cc.running(bare, LIZARD))
+
+
+def test_the_commit_that_takes_the_first_lock_is_judged_by_the_base_aware_rules():
+    """kit-close's commit locks for the first time: the base has no lock, the head
+    has one, so a bugs.tsv row the same commit deletes is still refused (B2)."""
+    assert "B2" in pure_rules(seeds.uninitialized(),
+                              seeds.without_line(BASE, seeds.BUGS, "R01\t"))
+
+
+def test_a_path_on_one_side_only_changed():
+    base = seeds.tool().DictTree({"a.txt": b"1\n", "gone.txt": b"x\n"})
+    head = seeds.tool().DictTree({"a.txt": b"1\n", "new.txt": b"y\n"})
+
+    assert cc.changed_paths(base, head) == frozenset({"gone.txt", "new.txt"})
+
+
+def test_a_changelog_byte_that_is_not_utf8_hides_no_change():
+    tree = {path: text.encode("utf-8") for path, text in BASE.items()}
+    tree["CHANGELOG.md"] = b"# Changelog\n\xff\n- f1's CRAP. (accuracy change C2)\n"
+
+    assert cc.changelog_problems(seeds.tool().DictTree(tree)) == []
+
+
+def test_the_first_ten_refusals_and_a_count_of_the_rest():
+    assert cc._first_ten([f"r{k}" for k in range(10)]) == [f"r{k}" for k in range(10)]
+    assert cc._first_ten([f"r{k}" for k in range(12)])[10:] == [
+        "... and 2 more moved cells an oracle disagrees with"]

@@ -330,6 +330,16 @@ def _push_line(top: Path) -> str:
 
 
 IN_TREE_SOURCE = "def test_in_tree():\n    assert True\n"
+# A regenerator that checks how declare starts it: from the checkout's top, with its
+# tests/ first on PYTHONPATH, asked for the goldens.
+CHECKED_REGENERATOR = """import os
+import sys
+from pathlib import Path
+assert sys.argv[1:] == ["goldens"], sys.argv
+assert Path.cwd().resolve() == Path(__file__).resolve().parents[2]
+first = os.environ["PYTHONPATH"].split(os.pathsep)[0]
+assert Path(first).resolve() == Path.cwd().resolve() / "tests"
+"""
 TIERED_CONFTEST = """import os
 
 
@@ -762,7 +772,7 @@ def test_a_refusal_lists_the_first_ten_disagreements_and_counts_the_rest(make_re
 @pytest.mark.process
 def test_a_refusal_after_regenerating_says_how_to_put_the_goldens_back(make_repo, oracle):
     oracle("radon")
-    base = {**BASE, cc.REGENERATE: "import sys\nassert sys.argv[1:] == ['goldens']\n"}
+    base = {**BASE, cc.REGENERATE: CHECKED_REGENERATOR}
     top = seeds.seeded(make_repo, base)
     rows = seeds.scored_rows(parse_ccn=9, parse_crap="19.125")
     seeds.write(top, base, seeds.bump({**base, seeds.SCORED: seeds.scored(rows),

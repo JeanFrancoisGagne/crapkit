@@ -701,12 +701,12 @@ def allowed(cells: list[Cell], moved_surfaces_: list[str], more: set[str]) -> se
 # --- oracles -----------------------------------------------------------------------------
 
 def _functions(blocks) -> list:
-    """radon's blocks flattened: functions, methods and closures."""
+    """radon's functions with their closures. radon lists a class's methods beside
+    the class itself; it reads no method of a class nested in a function or class."""
     found = []
     for block in blocks:
-        found += [block] if hasattr(block, "closures") else []
-        found += _functions(getattr(block, "methods", None) or [])
-        found += _functions(getattr(block, "closures", None) or [])
+        if hasattr(block, "closures"):
+            found += [block, *_functions(block.closures)]
     return found
 
 
@@ -1933,8 +1933,7 @@ def _digest_row(head, now: Running, change_id: str) -> tuple[dict | None, list[s
     row = _new_digest_row(head, now, change_id)
     if _same_metrics(found, row):
         return None, []
-    refusals = _digest_refusal(found, row, now)
-    return (None if refusals else row), refusals
+    return row, _digest_refusal(found, row, now)
 
 
 @dataclass
