@@ -99,9 +99,11 @@ you gave them. `-X utf8=0` turns the restart off. Windows and macOS always spell
 in UTF-8.
 
 Under such a locale a Python lane's child still spells paths in the locale's
-encoding, so its coverage.py names `pkg/café.py` as `pkg/cafÃ©.py`, and that file's
-functions read as untested rather than measured. Set `PYTHONUTF8 = "1"` in the
-lane's `env`, or run under a UTF-8 locale, to have them measured.
+encoding, so its coverage.py names `pkg/café.py` as `pkg/cafÃ©.py`. crapkit reads
+such a key back through the locale's encoding when `pkg/café.py` exists and
+`pkg/cafÃ©.py` does not, so the file's functions read as measured, as they do under
+a UTF-8 locale. `PYTHONUTF8 = "1"` in the lane's `env` has the child write UTF-8
+names in the first place.
 
 A checkout under a directory whose name is not UTF-8, or on a host whose name is
 not, works for every crapkit command: both names are hashed as the bytes the OS

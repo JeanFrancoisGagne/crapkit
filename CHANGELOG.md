@@ -41,8 +41,9 @@ Two of the source reads below move function keys and scores, so the analysis ver
   start gate and the measurement owner start in UTF-8 mode with it, so the MCP tools
   (`get_function_brief`, `check_gate` and the rest) reach such a file too, and the owner
   holds the lane output crapkit means rather than a file beside it. Lane and
-  mutation children keep your locale: set `PYTHONUTF8 = "1"` in a Python lane's `env`
-  to have its coverage.py name such a file.
+  mutation children keep your locale, so a Python lane's coverage.py keys the file as
+  `pkg/cafÃ©.py`; crapkit reads that key back as `pkg/café.py`, where the file's
+  functions read as untested (5 measured files where a UTF-8 locale gives 6).
 - A path argument, an override reason (`CRAPKIT_OVERRIDE_REASON` or `verify --override`),
   a host name or a checkout directory in bytes that are not UTF-8 no longer ends a command
   with a UnicodeEncodeError. A path argument that names an existing file whose name is not

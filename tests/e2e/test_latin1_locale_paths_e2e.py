@@ -269,22 +269,23 @@ def test_the_larger_repo_scores_the_same_under_latin1_as_under_utf8(tmp_path, lo
     assert (by_locale["latin1"][0], by_locale["latin1"][2]) == (9, 127.87)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "coverage.py's limit, not crapkit's: the lane's own interpreter keeps the Latin-1 locale "
-    "(no PYTHONUTF8, as ruled) and names the file 'pkg/cÃ©.py' in its report, so accent() "
-    "reads untested at 0% instead of measured at 0%; its CRAP is the same"))
 def test_the_accented_file_reads_measured_under_latin1_as_under_utf8(tmp_path, locpath):
+    """The lane's own interpreter keeps the Latin-1 locale (no PYTHONUTF8, as
+    ruled) and names the file 'pkg/cÃ©.py' in its report. That key matched no
+    row, so accent() read untested where UTF-8 reads it measured: 5 measured
+    files against 6. The adapter reads the key back as pkg/cé.py."""
     latin1 = _in_force(locpath, LATIN1, "iso8859-1")
     measured = {}
     for name, env in (("utf8", _env(locpath, UTF8)), ("latin1", latin1)):
-        measured[name] = _coverage(_repo(tmp_path / name, MORE), env)["measured"]
+        summary = _coverage(_repo(tmp_path / name, MORE), env)
+        measured[name] = (summary["measured"], summary["untested"], summary["crap_load"])
 
     assert measured["latin1"] == measured["utf8"]
 
 
 def test_pythonutf8_in_the_lanes_env_has_the_accented_file_measured(tmp_path, locpath):
-    """The fix docs/configuration.md gives for the xfail above: the lane's own
-    `env` puts its coverage.py in UTF-8 mode, under the same Latin-1 locale."""
+    """PYTHONUTF8 in the lane's own `env` puts its coverage.py in UTF-8 mode
+    under the same Latin-1 locale, and the file reads the same way."""
     latin1 = _in_force(locpath, LATIN1, "iso8859-1")
     utf8_lane = TOML.replace('COV_CORE_DATAFILE = "" }', 'COV_CORE_DATAFILE = "", PYTHONUTF8 = "1" }')
     measured = {name: _coverage(_repo(tmp_path / name, {**MORE, "crapkit.toml": toml}), env)["measured"]
