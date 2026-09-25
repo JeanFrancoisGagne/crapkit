@@ -224,15 +224,32 @@ def moved(tree: dict[str, str], key: str, cells: list[tuple]) -> dict[str, str]:
 # --- the declared changes a head can carry ---------------------------------------------------
 
 def fixed_crap(tree: dict[str, str], key: str = "C3", kind: str = "fix",
-               calcs: str = "CRAP score", bug: bool = True) -> dict[str, str]:
-    """f1's CRAP goes from the wrong 1.5 to 1.0 (ccn 1, cov 1.0), declared in full."""
-    rows = scored_rows(f_crap={1: "1.0"})
+               calcs: str = "CRAP score", bug: bool = True, new: str = "1.0",
+               listed: tuple | None = None) -> dict[str, str]:
+    """f1's CRAP goes from the wrong 1.5 to `new` (1.0 at ccn 1, cov 1.0), declared in
+    full; `listed` replaces the moved.tsv rows the change records."""
+    rows = scored_rows(f_crap={1: new})
     head = {**tree, SCORED: scored(rows)}
     head = relock(change(head, key, kind, calcs, analysis="12"), key, SCORED)
-    head = moved(head, key, [(SCORED, "src/a.py", "f1", "crap", "1.5", "1.0", "kit.exact", "1.0",
-                              "")])
+    head = moved(head, key, list(listed if listed is not None else [
+        (SCORED, "src/a.py", "f1", "crap", "1.5", new, "kit.exact", "1.0", "")]))
     head = with_digest(bump(changelog(head, key), "12"), "12", key)
     return with_bug(head) if bug else head
+
+
+def uninitialized() -> dict[str, str]:
+    """base() before `lock --initial`: the four tables hold headers only and no
+    change is declared yet."""
+    tree = base()
+    headers = {path: tree[path].splitlines()[0] + "\n" for path in (CHANGES, LOCK, DIGESTS,
+                                                                    COUNTS)}
+    return {**tree, **headers, "CHANGELOG.md": "# Changelog\n"}
+
+
+def without_line(tree: dict[str, str], path: str, start: str) -> dict[str, str]:
+    """The tree with the first line of `path` that starts with `start` removed."""
+    line = next(line for line in tree[path].splitlines() if line.startswith(start))
+    return replace(tree, path, line + "\n", "")
 
 
 def with_bug(tree: dict[str, str], bug: str = "R02") -> dict[str, str]:
@@ -262,3 +279,45 @@ def ccn_cells() -> list[tuple]:
     inventory_ = [(INVENTORY, "src/a.py", "parse", column, "8", "7", "radon", "7", "")
                   for column in ("ccn", "ccn_mod", "ccn_std")]
     return inventory_ + scored_[:3] + crap
+
+
+def module_changed(tree: dict[str, str]) -> dict[str, str]:
+    """A comment added to the CRAP module: a calc-module diff that moves nothing."""
+    return replace(tree, MODULE, "** 3 + ccn", "** 3 + ccn  # the README formula")
+
+
+# --- the trees as git repos ---------------------------------------------------------------
+
+def delta(before: dict, after: dict) -> dict:
+    """The files a commit writes (None deletes) to turn `before` into `after`."""
+    gone = {path: None for path in before if path not in after}
+    return {**gone, **{path: text for path, text in after.items() if before.get(path) != text}}
+
+
+def write(top, before: dict, after: dict) -> None:
+    """Turn the working tree at `top` from `before` into `after`."""
+    for path, text in delta(before, after).items():
+        target = top / path
+        if text is None:
+            target.unlink()
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(text.encode("utf-8"))
+
+
+def commit(top, before: dict, after: dict, number: int) -> None:
+    """One commit turning `before` into `after`, with two git calls."""
+    from accuracy.kit import repos
+    write(top, before, after)
+    repos.git(top, "add", "-A")
+    repos.git(top, "commit", "-q", "--allow-empty", "-m", f"step {number}",
+              date=repos.EPOCH + 60 * number)
+
+
+def seeded(make_repo, *trees: dict):
+    """A repo whose commits hold `trees` in order; the first is built once per session."""
+    from accuracy.kit import repos
+    top = make_repo(repos.Spec(steps=(repos.Commit(files=trees[0], message="base"),))).top
+    for number, (before, after) in enumerate(zip(trees, trees[1:]), start=1):
+        commit(top, before, after, number)
+    return top

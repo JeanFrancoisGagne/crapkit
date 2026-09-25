@@ -16,16 +16,13 @@ verdict it gets as one).
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 import re
 import sys
-import time
 
 from hypothesis import given, strategies as st
 import pytest
 
-import hang_guard
 from accuracy.change_control import cc_seeds as seeds
 from accuracy.kit import repos
 from accuracy.kit.settings import pure
@@ -77,10 +74,6 @@ def _deleted_rulings_row(tree, key="C3"):
     return seeds.relock(head, key, seeds.RULINGS)
 
 
-def _module_changed(tree):
-    return seeds.replace(tree, seeds.MODULE, "** 3 + ccn", "** 3 + ccn  # the README formula")
-
-
 def _declared_definition(tree):
     head = seeds.fixed_crap(tree, kind="definition", bug=False)
     head = seeds.append(head, seeds.RULINGS, "R-F1", "CRAP score", "kit.exact",
@@ -115,57 +108,25 @@ FAILING = {
                         {"B3"}),
     "a dropped test count": (BASE, lambda tree: seeds.replace(tree, seeds.COUNTS, "\t3", "\t2"),
                              {"B4"}),
-    "a calc-module diff with no change row": (BASE, _module_changed, {"B6"}),
+    "a calc-module diff with no change row": (BASE, seeds.module_changed, {"B6"}),
 }
 CLEAN = {
     "a declared fix": (BASE, seeds.fixed_crap),
     "a declared ccn fix": (BASE_CCN8, seeds.fixed_ccn),
     "a declared definition": (BASE, _declared_definition),
     "a module refactor declared as none": (BASE, lambda tree: seeds.change(
-        _module_changed(tree), "C3", "none", "", reason="a comment, nothing moves")),
+        seeds.module_changed(tree), "C3", "none", "", reason="a comment, nothing moves")),
 }
 
 
 # --- hand: each scenario on a real two-commit repo ------------------------------------------
-
-def _delta(before: dict, after: dict) -> dict:
-    """The files a commit writes (None deletes) to turn `before` into `after`."""
-    gone = {path: None for path in before if path not in after}
-    return {**gone, **{path: text for path, text in after.items() if before.get(path) != text}}
-
-
-def _write(top: Path, before: dict, after: dict) -> None:
-    for path, text in _delta(before, after).items():
-        target = top / path
-        if text is None:
-            target.unlink()
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(text.encode("utf-8"))
-
-
-def _commit(top: Path, before: dict, after: dict, number: int) -> None:
-    """One commit turning `before` into `after`, with two git calls."""
-    _write(top, before, after)
-    repos.git(top, "add", "-A")
-    repos.git(top, "commit", "-q", "--allow-empty", "-m", f"step {number}",
-              date=repos.EPOCH + 60 * number)
-
-
-def seeded(make_repo, *trees: dict) -> Path:
-    """A repo whose commits hold `trees` in order; the first is built once per session."""
-    top = make_repo(repos.Spec(steps=(repos.Commit(files=trees[0], message="base"),))).top
-    for number, (before, after) in enumerate(zip(trees, trees[1:]), start=1):
-        _commit(top, before, after, number)
-    return top
-
 
 def _rules(text: str) -> set[str]:
     return set(re.findall(r"^(T\d|B\d+) ", text, re.M))
 
 
 def git_verdict(make_repo, *trees: dict) -> tuple[int, str]:
-    top = seeded(make_repo, *trees)
+    top = seeds.seeded(make_repo, *trees)
     return cc.check(top, f"HEAD~{len(trees) - 1}", "HEAD", lizard=LIZARD)
 
 
@@ -192,7 +153,7 @@ def test_a_declared_change_passes_its_seeded_repo(make_repo, name):
 
 def _many_moved(tree):
     rows = seeds.scored_rows(f_cov="0.5", f_crap={k: "1.125" for k in range(1, 12)})
-    return _module_changed({**tree, seeds.SCORED: seeds.scored(rows)})
+    return seeds.module_changed({**tree, seeds.SCORED: seeds.scored(rows)})
 
 
 @pytest.mark.process
@@ -217,7 +178,7 @@ def test_a_failure_prints_the_moved_calcs_the_first_ten_rows_and_the_fix(make_re
 
 def _halves(base: dict, head: dict) -> dict:
     """base with the first half (by path) of the diff to head applied."""
-    delta = sorted(_delta(base, head).items())
+    delta = sorted(seeds.delta(base, head).items())
     first = dict(delta[:len(delta) // 2])
     tree = {**base, **{path: text for path, text in first.items() if text is not None}}
     return {path: text for path, text in tree.items() if first.get(path, "") is not None}
@@ -244,7 +205,7 @@ EDITS = {
     "metric": _edited_metric_row,
     "floor": lambda tree: seeds.replace(tree, seeds.FLOORS, "\t95", "\t90"),
     "count": lambda tree: seeds.replace(tree, seeds.COUNTS, "\t3", "\t2"),
-    "module": _module_changed,
+    "module": seeds.module_changed,
     "ruling fixed": lambda tree: _defect_to_fixed_with_no_fix_change(tree, "C4"),
     "ruling deleted": lambda tree: _deleted_rulings_row(tree, "C5"),
     "surface": _golden_relocked_under_an_old_change,
@@ -301,6 +262,84 @@ def test_each_scenario_gets_the_same_verdict_in_memory(name):
     base, edit, expected = FAILING[name]
 
     assert pure_rules(base, edit(base)) == expected
+
+
+# --- more ways to break a rule, judged in memory ------------------------------------------------
+
+def _unlogged_fix(tree):
+    return seeds.without_line(seeds.fixed_crap(tree), "CHANGELOG.md", "- a change.")
+
+
+def _stale_metric_row(tree):
+    return seeds.without_line(seeds.fixed_crap(tree), seeds.DIGESTS, "12\t")
+
+
+def _swapped_metric_rows(tree):
+    first, second = tree[seeds.DIGESTS].splitlines()[1:3]
+    return seeds.replace(tree, seeds.DIGESTS, f"{first}\n{second}\n", f"{second}\n{first}\n")
+
+
+def _hand_row_under_another_packets_calc(tree):
+    head = seeds.append(tree, seeds.HAND, 1, "1.0", "1.0", "Savoia and Evans (2007)")
+    head = seeds.change(head, "C3", "fix", "Churn counts and recency weight")
+    return seeds.relock(seeds.changelog(head, "C3"), "C3", seeds.HAND)
+
+
+def _silent_none(tree):
+    return seeds.change(seeds.module_changed(tree), "C3", "none", "", reason="")
+
+
+def _misquoted_oracle(tree):
+    return seeds.fixed_crap(tree, listed=[(seeds.SCORED, "src/a.py", "f1", "crap", "1.5", "1.0",
+                                           "kit.exact", "2.0", "")])
+
+
+def _disagreement_under_a_ruling_of_another_calc(tree):
+    """f1's CRAP set to 1.25, which the formula does not give (1.0), cited under the
+    ccn ruling R-CCN."""
+    return seeds.fixed_crap(tree, new="1.25", listed=[
+        (seeds.SCORED, "src/a.py", "f1", "crap", "1.5", "1.25", "kit.exact", "1.0", "R-CCN")])
+
+
+MORE_FAILING = {
+    "an unknown change kind": (lambda tree: seeds.changelog(
+        seeds.change(tree, "C3", "tweak", "CRAP score"), "C3"), {"T3"}),
+    "a repeated change id": (lambda tree: seeds.change(tree, "C2", "none", "", reason="again"),
+                             {"T3"}),
+    "a fix missing from the changelog": (_unlogged_fix, {"T4"}),
+    "a stale last metric row": (_stale_metric_row, {"T5"}),
+    "metric rows out of order": (_swapped_metric_rows, {"T5", "B1"}),
+    "a renamed column in bugs.tsv": (lambda tree: seeds.replace(
+        tree, seeds.BUGS, "id\tplatform", "bug\tplatform"), {"B2"}),
+    "a survivor added with no evidence": (lambda tree: seeds.append(
+        tree, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "ab" * 32, ""), {"B3"}),
+    "a hand row relocked under another packet's calc": (_hand_row_under_another_packets_calc,
+                                                        {"B5", "B7", "B10"}),
+    "a bug with no retro row": (lambda tree: seeds.without_line(
+        seeds.fixed_crap(tree), seeds.RETRO, "R02\t"), {"B7"}),
+    "a none change with no reason": (_silent_none, {"B6"}),
+    "golden cells moved under a none change": (lambda tree: seeds.fixed_crap(
+        tree, kind="none", calcs="", bug=False), {"B6", "B10"}),
+    "moved.tsv misses its cell": (lambda tree: seeds.fixed_crap(tree, listed=[]), {"B11"}),
+    "moved.tsv misquotes the oracle": (_misquoted_oracle, {"B11"}),
+    "a disagreement under a ruling of another calc": (
+        _disagreement_under_a_ruling_of_another_calc, {"B11"}),
+}
+
+
+@pytest.mark.parametrize("name", sorted(MORE_FAILING))
+def test_each_further_break_fails_its_rule_in_memory(name):
+    edit, expected = MORE_FAILING[name]
+
+    assert pure_rules(BASE, edit(BASE)) == expected
+
+
+def test_a_survivor_with_evidence_passes_and_is_printed(capsys):
+    head = seeds.append(BASE, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "cd" * 32,
+                        "10,000 examples equal (mutation.py run 7)")
+
+    assert pure_rules(BASE, head) == set()
+    assert "survivors.tsv adds src/crapkit/score.py/crap/cdcd" in capsys.readouterr().out
 
 
 # --- pieces the verdict rests on -----------------------------------------------------------------
@@ -379,8 +418,8 @@ def test_the_pushed_heads_are_every_line_that_deletes_nothing():
 
 def _working(make_repo, base: dict, head: dict):
     """A repo holding `base` as its one commit and `head` in its working tree."""
-    top = seeded(make_repo, base)
-    _write(top, base, head)
+    top = seeds.seeded(make_repo, base)
+    seeds.write(top, base, head)
     return top
 
 
@@ -490,7 +529,7 @@ def test_a_declared_and_committed_move_passes_the_check(make_repo):
 
 @pytest.mark.process
 def test_declare_none_records_a_change_that_moves_nothing(make_repo):
-    top = _working(make_repo, BASE, _module_changed(BASE))
+    top = _working(make_repo, BASE, seeds.module_changed(BASE))
     lock = (top / cc.LOCK).read_bytes()
 
     text = _declare(top, _request(kind="none", calcs=()))
@@ -500,80 +539,55 @@ def test_declare_none_records_a_change_that_moves_nothing(make_repo):
     assert cc.changes_of(cc.DirTree(top))["C3"]["kind"] == "none"
 
 
-# --- the pre-push hook ------------------------------------------------------------------------
-
-def _pushed(make_repo, head: dict):
-    """A repo at `head` whose origin/main is BASE."""
-    top = seeded(make_repo, BASE, head)
-    repos.git(top, "update-ref", "refs/remotes/origin/main", "HEAD~1")
-    return top
-
-
-def _push_line(top: Path) -> str:
-    sha = repos.git(top, "rev-parse", "HEAD").strip()
-    return f"refs/heads/main {sha} refs/heads/main {'0' * 40}\n"
+def _cognitive9(tree: dict) -> dict:
+    """parse's cognitive at 9, where complexipy gives 8."""
+    head = seeds.replace(tree, seeds.SCORED, "add-tests\t8\t1", "add-tests\t9\t1")
+    return seeds.bump(seeds.replace(head, seeds.INVENTORY, "\t2\t2\t8\t1\n", "\t2\t2\t9\t1\n"), "12")
 
 
 @pytest.mark.process
-def test_pre_push_refuses_an_undeclared_module_change_and_runs_its_calc_checks(make_repo,
-                                                                               capfd):
-    top = _pushed(make_repo, _module_changed(BASE))
+def test_declare_judges_python_cognitive_by_complexipy(make_repo):
+    top = _working(make_repo, BASE, _cognitive9(BASE))
 
-    code = cc.pre_push(top, "origin", _push_line(top))
+    with pytest.raises(cc.ChangeControlError) as refused:
+        _declare(top, _request(calcs=("Cognitive complexity",)))
 
-    out = capfd.readouterr().out
-    assert code == 1
-    assert "B6 src/crapkit/score.py holds CRAP score and changed with no declared change" in out
-    assert "1 passed" in out
+    assert "crapkit now says 9, complexipy says 8 at src/a.py:parse (cognitive)" in \
+        str(refused.value)
 
 
 @pytest.mark.process
-def test_pre_push_passes_a_declared_fix_and_runs_the_checks_of_the_bumped_module(make_repo,
-                                                                                 capfd):
-    """The fix bumps ANALYSIS_VERSION in analyze.py, the module of two seeded calcs."""
-    top = _pushed(make_repo, seeds.fixed_crap(BASE))
+def test_a_definition_records_its_named_ruling_on_every_cell_of_that_calc(make_repo):
+    top = _working(make_repo, BASE_CCN8, seeds.bump(
+        {**BASE_CCN8, **{path: BASE[path] for path in (seeds.SCORED, seeds.INVENTORY)}}, "12"))
 
-    code = cc.pre_push(top, "origin", _push_line(top))
+    _declare(top, _request(kind="definition", against=("R-CCN",)))
 
-    out = capfd.readouterr().out
-    assert code == 0, out
-    assert "change control: pass" in out and "2 passed" in out
-
-
-@pytest.mark.process
-def test_pre_push_runs_nothing_when_no_calc_module_moved(make_repo, capfd):
-    top = _pushed(make_repo, seeds.replace(BASE, "CONTEXT.md", "# Context", "# The context"))
-
-    code = cc.pre_push(top, "origin", _push_line(top))
-
-    assert code == 0
-    assert "the push changes no calc module; no accuracy check to run" in capfd.readouterr().out
+    moved = cc.rows((top / cc.MOVED / "C3.moved.tsv").read_bytes())
+    assert {(row["column"], row["ruling"]) for row in moved} == {
+        ("ccn", "R-CCN"), ("ccn_mod", "R-CCN"), ("ccn_std", "R-CCN"), ("crap", "")}
 
 
 @pytest.mark.process
-def test_the_hook_script_stops_a_real_push_within_a_minute(make_repo, tmp_path):
-    """git runs git-hooks/pre-push itself: an undeclared module change is refused,
-    and a declared fix goes through."""
-    remote = tmp_path / "remote.git"
-    repos.git(tmp_path, "init", "-q", "--bare", str(remote))
-    bad = _pushed(make_repo, _module_changed(BASE))
-    good = _pushed(make_repo, seeds.fixed_crap(BASE))
+def test_declare_refuses_a_lizard_older_than_the_last_metric_row(make_repo):
+    head = {**BASE_CCN8, **{path: BASE[path] for path in (seeds.SCORED, seeds.INVENTORY)}}
+    top = _working(make_repo, BASE_CCN8, head)
 
-    refused, refused_seconds = _push(bad, remote)
-    accepted, accepted_seconds = _push(good, remote)
+    with pytest.raises(cc.ChangeControlError) as refused:
+        cc.declare(top, _request(), "HEAD", regenerate_goldens=False, lizard="1.23.0")
 
-    assert refused.returncode != 0 and "B6 src/crapkit/score.py" in refused.stdout + refused.stderr
-    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
-    assert max(refused_seconds, accepted_seconds) < 60
+    assert ("analysis 11, lizard 1.23.0 is older than the last metric-digests row (11, 1.24.0)"
+            in str(refused.value))
 
 
-def _push(top: Path, remote: Path):
-    """`git push` with core.hooksPath at this checkout's git-hooks, the way
-    CONTRIBUTING sets it up, and this interpreter first on PATH."""
-    repos.git(top, "config", "core.hooksPath", (REPO / "git-hooks").as_posix())
-    env = {**os.environ, "PATH": os.pathsep.join((str(Path(sys.executable).parent),
-                                                  os.environ["PATH"]))}
-    started = time.monotonic()
-    done = hang_guard.run(["git", "push", "-q", str(remote), "HEAD:refs/heads/main", "--force"],
-                          cwd=top, env=env, text=True, encoding="utf-8", errors="replace")
-    return done, time.monotonic() - started
+@pytest.mark.process
+def test_declare_refuses_a_fix_when_nothing_moved_and_a_reused_id(make_repo):
+    top = _working(make_repo, BASE, BASE)
+
+    with pytest.raises(cc.ChangeControlError) as refused:
+        _declare(top, _request(key="C2", calcs=("No such calc",)))
+
+    text = str(refused.value)
+    assert "nothing moved since the lock; a change that moves nothing is kind none" in text
+    assert "C2 is already declared; the next free id is C3" in text
+    assert "no calc is named 'No such calc'" in text
