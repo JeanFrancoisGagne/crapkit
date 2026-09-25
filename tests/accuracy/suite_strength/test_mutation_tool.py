@@ -517,6 +517,22 @@ def test_the_stage_config_replaces_only_the_mutmut_table():
     assert parsed["tool"]["mutmut"]["also_copy"] == ["README.md", "docs", "tests", "tools"]
 
 
+def test_the_launcher_s_diffs_read_as_a_map_and_mutmut_s_chatter_is_left_out():
+    printed = ('     also copying tests\n'
+               f'{json.dumps(["crapkit.score.x_crap__mutmut_3", SHOW_3])}\n'
+               '["crapkit.score.x_crap__mutmut_4", ""]\n')
+
+    assert mutation.parse_diffs(printed) == {"crapkit.score.x_crap__mutmut_3": SHOW_3,
+                                             "crapkit.score.x_crap__mutmut_4": ""}
+
+
+def test_survivors_unreached_mutants_and_timeouts_carry_a_key_and_kills_do_not():
+    statuses = {"a": "killed", "b": "survived", "c": "no tests", "d": "timeout",
+                "e": "caught by type check", "f": "skipped"}
+
+    assert mutation.keyed_names(statuses) == ["b", "c", "d"]
+
+
 def test_a_weekly_shard_runs_the_independent_suite_on_its_modules_and_the_canary():
     """The floors are computed on tests/unit and the accuracy tests, golden,
     change_control and cross_surface ones left out (the plan's mutation section).

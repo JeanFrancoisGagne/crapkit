@@ -553,10 +553,12 @@ def calc_modules(repo: Path = REPO) -> list[str]:
     return calcs.modules(calcs.load(repo / "tests" / "accuracy"))
 
 
-MUTMUT = ("-m", "mutmut")
+# Every mutmut call goes through the stage's launcher (see LAUNCHER below).
+LAUNCHER_FILE = "mutmut_launch.py"
+LAUNCH = (LAUNCHER_FILE,)
 
 
-def _mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple = MUTMUT,
+def _mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple = LAUNCH,
             env: dict | None = None) -> int:
     argv = [sys.executable, *mutmut, *args]
     try:
@@ -574,29 +576,46 @@ def _meta_statuses(repo: Path) -> dict[str, str]:
     return statuses
 
 
-def _diff(repo: Path, name: str, mutmut: tuple = MUTMUT) -> str:
-    done = subprocess.run([sys.executable, *mutmut, "show", name], cwd=repo,
+def parse_diffs(printed: str) -> dict[str, str]:
+    """The launcher's `diffs` output, one JSON [name, diff] pair per line, as a map;
+    anything else mutmut prints on the way is not a pair and is left out."""
+    pairs = [json.loads(line) for line in printed.splitlines() if line.startswith('["')]
+    return {name: diff for name, diff in pairs}
+
+
+def _diffs(repo: Path, names: list[str], mutmut: tuple) -> dict[str, str]:
+    """Every named mutant's diff from one process: a `mutmut show` per mutant starts
+    Python once each, about a second apiece, and a run can leave thousands alive."""
+    if not names:
+        return {}
+    done = subprocess.run([sys.executable, *mutmut, "diffs"], cwd=repo, input="\n".join(names),
                           capture_output=True, text=True, encoding="utf-8", errors="replace")
-    return done.stdout
+    found = parse_diffs(done.stdout)
+    missing = [name for name in names if not found.get(name)]
+    if missing:
+        raise MutationError(f"no diff for {len(missing)} mutant(s) ({', '.join(missing[:3])}): "
+                            f"{done.stderr.strip()[-500:]}")
+    return found
 
 
 def _wanted(name: str, globs: list[str] | None) -> bool:
     return globs is None or any(fnmatch.fnmatchcase(name, glob) for glob in globs)
 
 
-def _keyed(repo: Path, name: str, status: str, mutmut: tuple) -> Result:
-    """Survivors and timeouts carry their key; a kill needs none."""
-    keyed = status in ALIVE | {TIMEOUT}
-    return result(name, status, _diff(repo, name, mutmut) if keyed else "", repo)
+def keyed_names(statuses: dict[str, str]) -> list[str]:
+    """Survivors, unreached mutants and timeouts carry their key; a kill needs none."""
+    return [name for name, status in statuses.items() if status in ALIVE | {TIMEOUT}]
 
 
-def collect(repo: Path, wanted: list[str] | None = None, mutmut: tuple = MUTMUT) -> list[Result]:
+def collect(repo: Path, wanted: list[str] | None = None, mutmut: tuple = LAUNCH) -> list[Result]:
     """Results from mutmut's meta files, for the mutant names `wanted` globs match."""
-    return [_keyed(repo, name, status, mutmut)
-            for name, status in sorted(_meta_statuses(repo).items()) if _wanted(name, wanted)]
+    statuses = {name: status for name, status in sorted(_meta_statuses(repo).items())
+                if _wanted(name, wanted)}
+    diffs = _diffs(repo, keyed_names(statuses), mutmut)
+    return [result(name, status, diffs.get(name, ""), repo) for name, status in statuses.items()]
 
 
-def _rerun_timeouts(repo: Path, rows: list[Result], mutmut: tuple = MUTMUT,
+def _rerun_timeouts(repo: Path, rows: list[Result], mutmut: tuple = LAUNCH,
                     env: dict | None = None) -> list[Result]:
     """One serial rerun per timeout; what still times out stays a timeout."""
     names = [row.name for row in rows if row.status == TIMEOUT]
@@ -642,7 +661,6 @@ TOOL_TARGETS = {
     "tools/accuracy/change_control.py": ("tests/accuracy/change_control",),
     "tools/accuracy/wheel_diff.py": ("tests/accuracy/corpus_goldens/test_wheel_diff_tool.py",),
 }
-LAUNCHER_FILE = "mutmut_launch.py"
 LAUNCHER = '''"""mutmut 3.8.0 for the accuracy tools, started in the stage by tools/accuracy/mutation.py.
 
 mutmut names a module by its path with `src.` left off, and a trampoline runs a
@@ -692,8 +710,23 @@ def spec_from_file_location(name, location=None, *args, **kwargs):
 
 names.strip_prefix = strip_prefix
 importlib.util.spec_from_file_location = spec_from_file_location
-from mutmut.__main__ import cli
-cli()
+
+
+def diffs():
+    """`diffs`: the diff of every mutant named on stdin, one JSON [name, diff] line each."""
+    import json
+    import sys
+    from mutmut.mutation.diff_apply import get_diff_for_mutant
+    for name in sys.stdin.read().split():
+        print(json.dumps([name, get_diff_for_mutant(name)]), flush=True)
+
+
+import sys
+if sys.argv[1:2] == ["diffs"]:
+    diffs()
+else:
+    from mutmut.__main__ import cli
+    cli()
 '''
 
 
@@ -770,9 +803,6 @@ def _prepare_stage(targets: dict, where: Path = TOOLS_STAGE) -> Path:
                                       stage_copies(stage)), encoding="utf-8")
     (stage / LAUNCHER_FILE).write_text(LAUNCHER, encoding="utf-8")
     return stage
-
-
-LAUNCH = (LAUNCHER_FILE,)
 
 
 def staged_run(where: Path, targets: dict, globs: list[str], env: dict, children: int,
