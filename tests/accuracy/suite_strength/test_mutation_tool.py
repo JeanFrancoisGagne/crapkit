@@ -571,6 +571,7 @@ def test_the_weekly_suite_runs_the_push_tier_on_this_platform_only():
     assert env["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
+@pytest.mark.process
 def test_the_stage_copies_every_top_level_entry_its_tests_may_read(tmp_path):
     """A tools test that reads README.md failed mutmut's stats run in a stage that
     copied only tests/ and tools/, and every mutant stayed `not checked`."""
@@ -794,6 +795,7 @@ def _dated_repo(tmp_path: Path, commits: list[tuple[str, str]]) -> Path:
     return tmp_path
 
 
+@pytest.mark.process
 def test_the_weekly_base_is_the_newest_commit_before_saturday_six_utc(tmp_path):
     repo = _dated_repo(tmp_path, [("2026-09-18T12:00:00Z", "a = 1\n"),
                                   ("2026-09-20T12:00:00Z", "a = 2\n")])
@@ -804,6 +806,7 @@ def test_the_weekly_base_is_the_newest_commit_before_saturday_six_utc(tmp_path):
         mutation.weekly_base(repo, _utc(2026, 9, 17, 12, 0))
 
 
+@pytest.mark.process
 def test_changed_functions_name_what_a_diff_from_the_base_touches(tmp_path):
     before = "def a():\n    return 1\n\n\ndef b():\n    return 2\n"
     repo = _dated_repo(tmp_path, [("2026-09-18T12:00:00Z", before),
