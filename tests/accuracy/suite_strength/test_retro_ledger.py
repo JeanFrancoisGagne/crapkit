@@ -76,7 +76,9 @@ def _ids(cell: str) -> list[str]:
 # --- triage -----------------------------------------------------------------------------------
 
 def _src_commits() -> list[str]:
-    argv = ["git", "rev-list", TRIAGE_THROUGH, "--", *TRIAGED_PATHS]
+    """The commits that touched the triaged paths, named from the repository's top:
+    mutmut runs this test from its mutants/ copy, a folder inside the checkout."""
+    argv = ["git", "rev-list", TRIAGE_THROUGH, "--", *(f":(top){path}" for path in TRIAGED_PATHS)]
     done = hang_guard.run(argv, cwd=REPO, text=True, encoding="utf-8", errors="replace")
     assert done.returncode == 0, (f"git rev-list {TRIAGE_THROUGH[:12]} failed: {done.stderr}; "
                                   "the triage check needs full history (fetch-depth: 0)")
