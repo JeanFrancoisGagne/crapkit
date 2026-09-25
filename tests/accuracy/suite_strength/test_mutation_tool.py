@@ -540,16 +540,21 @@ def test_no_mutated_function_has_a_name_mutmut_misreads(module):
     up to the first `__mutmut`, so a function called _mutmut had no diff for any
     of its mutants and stopped the tools run. Under mutmut the file read here is
     mutmut's copy, whose generated x_..._mutmut_<n> functions are left out."""
-    tree = mutation.ast.parse((REPO / module).read_text(encoding="utf-8"))
-    names = [node.name for node in mutation.ast.walk(tree)
-             if isinstance(node, (mutation.ast.FunctionDef, mutation.ast.AsyncFunctionDef))]
-    written = [name for name in names if not MUTMUT_MADE.search(name)]
+    written = _written_functions(REPO / module)
 
     assert [name for name in written if "__mutmut" in f"x_{name}"] == []
     assert "_run_mutmut" in written or module != "tools/accuracy/mutation.py"
 
 
 MUTMUT_MADE = re.compile(r"__mutmut_(?:orig|\d+)$")
+DEFS = (mutation.ast.FunctionDef, mutation.ast.AsyncFunctionDef)
+
+
+def _written_functions(path: Path) -> list[str]:
+    """Every function a module defines, less the ones mutmut generated in its copy."""
+    tree = mutation.ast.parse(path.read_text(encoding="utf-8"))
+    names = [node.name for node in mutation.ast.walk(tree) if isinstance(node, DEFS)]
+    return [name for name in names if not MUTMUT_MADE.search(name)]
 
 
 def test_a_weekly_shard_runs_the_independent_suite_on_its_modules_and_the_canary():
