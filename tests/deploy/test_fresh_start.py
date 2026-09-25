@@ -166,8 +166,17 @@ def _held_to_the_page(step, printed: str) -> None:
     may not, so rows count only as present: the page prints some, so must we."""
     mine = {_row(line) for line in said(step).splitlines()}
     wanted = [_row(line) for line in printed.splitlines() if line.strip()]
-    assert [line for line in wanted if line not in mine and not ROW.search(line)] == [], said(step)
-    assert any(ROW.search(line) for line in mine) or not any(ROW.search(line) for line in wanted), said(step)
+    assert _missing(wanted, mine) == [], said(step)
+    assert _has_row(mine) or not _has_row(wanted), said(step)
+
+
+def _missing(wanted: list[str], mine: set[str]) -> list[str]:
+    """Lines the page prints that the command did not, table rows aside."""
+    return [line for line in wanted if line not in mine and not ROW.search(line)]
+
+
+def _has_row(lines) -> bool:
+    return any(ROW.search(line) for line in lines)
 
 
 def _doctor_lines(text: str) -> list[str]:
@@ -397,8 +406,13 @@ def pep668_fallback() -> str:
     prose = " ".join(installers.section_prose(README, "Install"))
     if "externally-managed" not in prose:
         raise docsnip.DocSnipError("README.md > Install: the refusal `externally-managed-environment` is not named")
+    return next(line for line in _install_lines() if _answers_a_refusal(line))
+
+
+def _install_lines() -> list[str]:
+    """Every fence line, then every code span, of the README's Install section."""
     fenced = [line for block in installers.section_fences(README, "Install") for line in docsnip.commands(block)]
-    return next(line for line in [*fenced, *installers.spans(README, "Install")] if _answers_a_refusal(line))
+    return [*fenced, *installers.spans(README, "Install")]
 
 
 @cell("lin-sys-python-start", channel="system pip (Debian python3, EXTERNALLY-MANAGED)", harness="none",

@@ -50,16 +50,39 @@ def _types(spec: dict) -> tuple:
 def _mismatches(content: dict, schema: dict) -> list[str]:
     """Top-level keys the schema does not declare, and declared keys of another type."""
     declared = schema.get("properties", {})
-    unknown = [f"{key}: not in outputSchema" for key in content if key not in declared]
-    wrong = [f"{key}: {type(value).__name__} is not {declared[key].get('type')}" for key, value in content.items()
-             if key in declared and _types(declared[key]) and not _typed(value, declared[key])]
-    return unknown + wrong
+    return _undeclared(content, declared) + _mistyped(content, declared)
+
+
+def _undeclared(content: dict, declared: dict) -> list[str]:
+    return [f"{key}: not in outputSchema" for key in content if key not in declared]
+
+
+def _mistyped(content: dict, declared: dict) -> list[str]:
+    return [f"{key}: {type(value).__name__} is not {declared[key].get('type')}" for key, value in content.items()
+            if key in declared and _types(declared[key]) and not _typed(value, declared[key])]
 
 
 def _typed(value, spec: dict) -> bool:
     """JSON types, with a bool never passing for an integer or a number."""
     kinds = _types(spec)
     return isinstance(value, kinds) and not (isinstance(value, bool) and bool not in kinds)
+
+
+def _off_schema(seen: dict) -> dict:
+    """Tools that answered isError, or whose structuredContent strays from the
+    outputSchema tools/list declared: name -> the result or the strays."""
+    problems = {}
+    for name, result in seen["results"].items():
+        if result["isError"]:
+            problems[name] = result
+        elif strays := _mismatches(result["structuredContent"], seen["tools"][name]["outputSchema"]):
+            problems[name] = strays
+    return problems
+
+
+def _validated(result: dict) -> bool:
+    """The TypeScript SDK's own validation passed: no isError, structuredContent kept."""
+    return result.get("isError") is False and "structuredContent" in result
 
 
 def _python_client(box, repo: Path) -> dict:
@@ -93,14 +116,14 @@ def test_every_tool_answers_within_its_output_schema(box, templates, candidate):
     assert seen["info"]["protocolVersion"] == PROTOCOL
     assert seen["info"]["serverInfo"] == {"name": "crapkit", "version": candidate.version}
     assert sorted(seen["tools"]) == sorted(CALLS)
-    for name, result in seen["results"].items():
-        assert result["isError"] is False, (name, result)
-        assert _mismatches(result["structuredContent"], seen["tools"][name]["outputSchema"]) == [], name
-    assert all(result.get("isError") is False and "structuredContent" in result for result in validated.values())
+    assert _off_schema(seen) == {}
+    assert [name for name, result in validated.items() if not _validated(result)] == []
     assert seen["results"]["get_function_brief"]["structuredContent"]["path"] == "calc/grade.py"
     assert seen["pong"] == {}
-    assert seen["unknown"]["isError"] and "unknown tool 'worklist_of_nothing'" in seen["unknown"]["content"][0]["text"]
-    assert seen["bad"]["isError"] and "get_function_brief needs name" in seen["bad"]["content"][0]["text"]
+    assert seen["unknown"]["isError"]
+    assert "unknown tool 'worklist_of_nothing'" in seen["unknown"]["content"][0]["text"]
+    assert seen["bad"]["isError"]
+    assert "get_function_brief needs name" in seen["bad"]["content"][0]["text"]
 
 
 @cell("lin-mcp-all-tools", channel="pip venv `crapkit mcp`", harness="spec client 2025-06-18",
