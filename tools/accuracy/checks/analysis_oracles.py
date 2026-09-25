@@ -59,4 +59,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_java_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
     {"name": "C-family ccn, cognitive and nesting against OCLint and clang-tidy", "seconds": 120,
      "pytest": [_PACKET + "test_c_family_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "shell ccn against shellmetrics", "seconds": 30,
+     "pytest": [_PACKET + "test_shell_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
 ]
