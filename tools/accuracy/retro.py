@@ -5,6 +5,7 @@
     python tools/accuracy/retro.py release
     python tools/accuracy/retro.py digest NODE_ID
     python tools/accuracy/retro.py stale
+    python tools/accuracy/retro.py sync
 
 tests/accuracy/suite_strength/retro/bugs.tsv names each bug (an R id), its fix
 commits, the commit before them and the check that must catch it: a node id in
@@ -32,6 +33,13 @@ replays every row whose digest changed plus the bundle rows, whose commits live
 only in the pre-2026-08-24 history bundle (CRAPKIT_RETRO_BUNDLE). Both exit 1
 when a replay contradicts its ledger row: a before that is no longer red, a fix
 that no longer passes.
+
+Each packet confirms the check names bugs.tsv proposed and lists the ones it
+landed in its own tests/accuracy/<packet>/retro.tsv. `sync` rewrites a landed
+packet's bugs.tsv rows to those (id, test) pairs, carrying each bug's commits,
+calc and symptom over, gives every new pair a pending ledger row and drops the
+ledger rows of pairs no packet names any more; `run all --record` then replays
+them.
 """
 from __future__ import annotations
 
@@ -488,6 +496,73 @@ def _bundle(row: dict) -> bool:
     return row["replay"] == "bundle"
 
 
+# --- syncing bugs.tsv with the packets' own retro tables ------------------------------------------------
+
+ACCURACY = REPO / "tests" / "accuracy"
+PENDING_NOTE = "no replay yet: the check lands with its packet"
+
+
+def landed(accuracy: Path = ACCURACY) -> dict[str, list[dict]]:
+    """{packet: its retro.tsv rows} for every packet that has one; each row has at
+    least an id and a test, and may name a platform."""
+    tables = {}
+    for path in sorted(accuracy.glob("*/retro.tsv")):
+        lines = _lines(path)
+        header = lines[0].split("\t")
+        tables[path.parent.name] = [dict(zip(header, line.split("\t"))) for line in lines[1:]]
+    return tables
+
+
+def _rows_of(bugs: list[dict], bug_id: str, packet: str | None = None) -> list[dict]:
+    return [row for row in bugs if row["id"] == bug_id and packet in (None, row["packet"])]
+
+
+def _template(bugs: list[dict], packet: str, bug_id: str) -> dict:
+    """The row a new (id, test) pair copies: this packet's own row for the bug, else any."""
+    rows = _rows_of(bugs, bug_id)
+    if not rows:
+        raise RetroError(f"{packet}/retro.tsv names {bug_id}, which bugs.tsv has no row for: "
+                         "triage the commit that fixed it first")
+    return (_rows_of(rows, bug_id, packet) or rows)[0]
+
+
+def _bug_for(bugs: list[dict], packet: str, listed: dict) -> dict:
+    base = _template(bugs, packet, listed["id"])
+    same = base["packet"] == packet and base["test"] == listed["test"]
+    return {**base, "packet": packet, "test": listed["test"], "probe": base["probe"] if same else "",
+            "platform": listed.get("platform") or base["platform"]}
+
+
+def synced_bugs(bugs: list[dict], tables: dict[str, list[dict]]) -> list[dict]:
+    """bugs.tsv with each landed packet's rows replaced by the pairs its retro.tsv lists.
+    A pair bugs.tsv already held keeps its place; a new one follows its bug's rows."""
+    kept = [row for row in bugs if row["packet"] not in tables]
+    fresh = [_bug_for(bugs, packet, listed) for packet, rows in tables.items() for listed in rows]
+    return sorted(kept + fresh, key=_placed(bugs))
+
+
+def _placed(bugs: list[dict]):
+    """A sort key: by bug id, then where bugs.tsv held the pair, new pairs last."""
+    place = {row_key(row): index for index, row in enumerate(bugs)}
+    return lambda row: (int(row["id"][1:]), place.get(row_key(row), len(bugs)), row["test"])
+
+
+def _waiting(bug: dict) -> dict:
+    """A ledger row for a bug nobody has replayed yet: open while its fix is off main."""
+    state = "open" if bug["replay"] == "open" else "pending"
+    note = "branch not merged: strict xfail until it lands" if state == "open" else PENDING_NOTE
+    fix = bug_of(bug).fix
+    return {"id": bug["id"], "test": bug["test"], "before_commit": bug["before_commit"],
+            "fix_commit": fix, "lizard": "", "before": state, "failure_class": "",
+            "before_evidence": "", "fix": state, "fix_evidence": "", "digest": "", "replayed": "",
+            "note": note}
+
+
+def synced_ledger(ledger: dict, bugs: list[dict]) -> list[dict]:
+    """One ledger row per bugs row: the recorded one where there is one, else a waiting one."""
+    return sorted((ledger.get(row_key(row)) or _waiting(row) for row in bugs), key=_ledger_order)
+
+
 # --- commands ------------------------------------------------------------------------------------------
 
 def _load() -> tuple[list[dict], dict]:
@@ -575,6 +650,16 @@ def _stale_cmd(args) -> int:
     return 0
 
 
+def _sync_cmd(args) -> int:
+    bugs, ledger = _load()
+    fresh = synced_bugs(bugs, landed(ACCURACY))
+    write_table(BUGS, BUG_COLUMNS, fresh)
+    write_table(LEDGER, LEDGER_COLUMNS, synced_ledger(ledger, fresh))
+    added = len({row_key(row) for row in fresh} - {row_key(row) for row in bugs})
+    print(f"retro: bugs.tsv holds {len(fresh)} rows ({added} new pairs); ledger.tsv follows")
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="retro.py", description=__doc__.splitlines()[0])
     parser.add_argument("--python", default=CURRENT)
@@ -590,11 +675,12 @@ def _parser() -> argparse.ArgumentParser:
     digest_p.add_argument("test")
     digest_p.add_argument("--probe", default="")
     sub.add_parser("stale")
+    sub.add_parser("sync")
     return parser
 
 
 COMMANDS = {"run": _run_cmd, "nightly": _nightly, "release": _release, "digest": _digest_cmd,
-            "stale": _stale_cmd}
+            "stale": _stale_cmd, "sync": _sync_cmd}
 
 
 def main(argv: list[str] | None = None) -> int:

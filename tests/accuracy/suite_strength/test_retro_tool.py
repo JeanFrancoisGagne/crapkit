@@ -291,20 +291,20 @@ def test_all_names_every_replayable_row():
 # here it is a stand-in that returns the outcomes a test names, so the row
 # choice, the ledger rewrite and the exit codes are checked on every push.
 
-CHECK = "tests/accuracy/suite_strength/test_retro_tool.py::test_double_doubles"
+NODE = "tests/accuracy/suite_strength/test_retro_tool.py::test_double_doubles"
 
 
 def _bug_row(bug_id: str, replay: str = "public", platform: str = "any") -> dict:
     return {"id": bug_id, "fix_commits": "b" * 12, "before_commit": "a" * 12, "packet": "p",
-            "test": CHECK, "probe": "", "method": "hand", "platform": platform,
+            "test": NODE, "probe": "", "method": "hand", "platform": platform,
             "replay": replay, "calc": "c", "symptom": "s"}
 
 
 def _ledger_row(bug_id: str, before: str = "red", digest: str = "") -> dict:
-    return {"id": bug_id, "test": CHECK, "before_commit": "a" * 12, "fix_commit": "b" * 12,
+    return {"id": bug_id, "test": NODE, "before_commit": "a" * 12, "fix_commit": "b" * 12,
             "lizard": retro.LIZARD, "before": before, "failure_class": "AssertionError",
             "before_evidence": "e", "fix": "pass", "fix_evidence": "f",
-            "digest": digest or retro.digest(CHECK), "replayed": "2026-09-01", "note": ""}
+            "digest": digest or retro.digest(NODE), "replayed": "2026-09-01", "note": ""}
 
 
 @pytest.fixture
@@ -337,7 +337,7 @@ def test_run_record_rewrites_the_replayed_rows_and_keeps_the_rest(tables):
     rows = {row["id"]: row for row in retro.read_table(tables.ledger, retro.LEDGER_COLUMNS)}
     assert tables.replayed == ["R1"]
     assert (rows["R1"]["before"], rows["R1"]["fix"], rows["R1"]["digest"]) == (
-        "red", "pass", retro.digest(CHECK))
+        "red", "pass", retro.digest(NODE))
     assert rows["R2"] == _ledger_row("R2")
 
 
@@ -389,16 +389,111 @@ def test_stale_lists_the_rows_to_replay(tables, capsys):
     tables.write([_bug_row("R1"), _bug_row("R2")], [_ledger_row("R1")])
 
     assert retro.main(["stale"]) == 0
-    assert capsys.readouterr().out == f"R2\t{CHECK}\n"
+    assert capsys.readouterr().out == f"R2\t{NODE}\n"
 
 
 def test_digest_prints_the_check_s_digest(capsys):
-    assert retro.main(["digest", CHECK]) == 0
-    assert capsys.readouterr().out == retro.digest(CHECK) + "\n"
+    assert retro.main(["digest", NODE]) == 0
+    assert capsys.readouterr().out == retro.digest(NODE) + "\n"
 
 
 def test_a_bug_s_replayed_fix_is_its_last_fix_commit():
     row = {**_bug_row("R1"), "fix_commits": "aaaaaaaaaaaa, bbbbbbbbbbbb", "probe": "R1.py"}
 
-    assert retro.bug_of(row) == retro.Bug("R1", CHECK, "a" * 12, "b" * 12, "R1.py")
+    assert retro.bug_of(row) == retro.Bug("R1", NODE, "a" * 12, "b" * 12, "R1.py")
     assert retro.bug_of({**row, "fix_commits": ""}).fix == ""
+
+
+# --- sync: bugs.tsv follows the check names each packet landed -----------------------------------
+
+def _bug(bug_id, packet, test, **fields):
+    row = {**_bug_row(bug_id), "packet": packet, "test": test, "calc": f"calc {bug_id}",
+           "symptom": f"symptom {bug_id}"}
+    return {**row, **fields}
+
+
+BUGS_BEFORE = [
+    _bug("R1", "p1", "tests/accuracy/p1/test_a.py::test_proposed"),
+    _bug("R1", "p2", "tests/accuracy/p2/test_b.py::test_kept", calc="calc R1 in p2"),
+    _bug("R2", "p1", "tests/accuracy/p1/test_a.py::test_probe", probe="R2.py", method="model"),
+    _bug("R3", "p3", "tests/accuracy/p3/test_c.py::test_not_landed"),
+    _bug("R4", "p1", "tests/accuracy/p1/test_a.py::test_open", replay="open"),
+]
+P1_RETRO = ("id\tfix_commit\ttest\tplatform\n"
+            "R1\tbbb\ttests/accuracy/p1/test_a.py::test_confirmed[x]\twindows\n"
+            "R2\tbbb\ttests/accuracy/p1/test_a.py::test_probe\t\n"
+            "R4\tbbb\ttests/accuracy/p1/test_a.py::test_open_confirmed\t\n")
+
+
+def _landed(tmp_path: Path, table: str = P1_RETRO) -> Path:
+    accuracy = tmp_path / "accuracy"
+    (accuracy / "p1").mkdir(parents=True)
+    (accuracy / "p1" / "retro.tsv").write_text(table, encoding="utf-8")
+    (accuracy / "p3").mkdir()
+    return accuracy
+
+
+def test_sync_replaces_a_landed_packet_s_rows_with_the_pairs_it_lists(tmp_path):
+    synced = retro.synced_bugs(BUGS_BEFORE, retro.landed(_landed(tmp_path)))
+
+    by_key = {(row["id"], row["test"]): row for row in synced}
+    assert sorted(by_key) == [
+        ("R1", "tests/accuracy/p1/test_a.py::test_confirmed[x]"),
+        ("R1", "tests/accuracy/p2/test_b.py::test_kept"),
+        ("R2", "tests/accuracy/p1/test_a.py::test_probe"),
+        ("R3", "tests/accuracy/p3/test_c.py::test_not_landed"),
+        ("R4", "tests/accuracy/p1/test_a.py::test_open_confirmed")]
+    confirmed = by_key[("R1", "tests/accuracy/p1/test_a.py::test_confirmed[x]")]
+    assert (confirmed["calc"], confirmed["platform"], confirmed["probe"]) == ("calc R1", "windows", "")
+    assert by_key[("R2", "tests/accuracy/p1/test_a.py::test_probe")] == BUGS_BEFORE[2]
+    assert by_key[("R1", "tests/accuracy/p2/test_b.py::test_kept")] == BUGS_BEFORE[1]
+
+
+def test_sync_copies_another_packet_s_row_when_the_bug_is_new_to_this_one(tmp_path):
+    table = "id\ttest\nR3\ttests/accuracy/p1/test_a.py::test_moved\n"
+
+    synced = retro.synced_bugs(BUGS_BEFORE, retro.landed(_landed(tmp_path, table)))
+
+    moved = [row for row in synced if row["test"].endswith("test_moved")]
+    assert [(row["packet"], row["calc"], row["platform"]) for row in moved] == [
+        ("p1", "calc R3", "any")]
+
+
+def test_sync_refuses_a_bug_bugs_tsv_does_not_know(tmp_path):
+    table = "id\ttest\nR9\ttests/accuracy/p1/test_a.py::test_new\n"
+
+    with pytest.raises(retro.RetroError, match="p1/retro.tsv names R9, which bugs.tsv has no row"):
+        retro.synced_bugs(BUGS_BEFORE, retro.landed(_landed(tmp_path, table)))
+
+
+def test_the_synced_ledger_keeps_what_was_replayed_and_waits_on_the_rest(tmp_path):
+    synced = retro.synced_bugs(BUGS_BEFORE, retro.landed(_landed(tmp_path)))
+    recorded = {**_ledger_row("R2"), "test": "tests/accuracy/p1/test_a.py::test_probe"}
+    stale = {**_ledger_row("R1"), "test": "tests/accuracy/p1/test_a.py::test_proposed"}
+    ledger = {retro.row_key(row): row for row in (recorded, stale)}
+
+    rows = {retro.row_key(row): row for row in retro.synced_ledger(ledger, synced)}
+
+    assert sorted(rows) == sorted(retro.row_key(row) for row in synced)
+    assert rows[retro.row_key(recorded)] == recorded
+    confirmed = rows[("R1", "tests/accuracy/p1/test_a.py::test_confirmed[x]")]
+    assert (confirmed["before"], confirmed["fix"], confirmed["fix_commit"], confirmed["note"]) == (
+        "pending", "pending", "b" * 12, retro.PENDING_NOTE)
+    assert rows[("R4", "tests/accuracy/p1/test_a.py::test_open_confirmed")]["before"] == "open"
+
+
+def test_the_sync_command_rewrites_both_tables(tables, tmp_path, monkeypatch, capsys):
+    tables.write(BUGS_BEFORE, [])
+    monkeypatch.setattr(retro, "ACCURACY", _landed(tmp_path))
+
+    assert retro.main(["sync"]) == 0
+
+    assert len(retro.read_table(retro.BUGS, retro.BUG_COLUMNS)) == 5
+    assert len(retro.read_table(tables.ledger, retro.LEDGER_COLUMNS)) == 5
+    assert capsys.readouterr().out == "retro: bugs.tsv holds 5 rows (2 new pairs); ledger.tsv follows\n"
+
+
+def test_sync_leaves_bugs_tsv_as_it_was_when_every_packet_lists_what_it_holds():
+    tables = {"p2": [{"id": "R1", "test": "tests/accuracy/p2/test_b.py::test_kept"}]}
+
+    assert retro.synced_bugs(BUGS_BEFORE, tables) == BUGS_BEFORE
