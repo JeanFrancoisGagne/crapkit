@@ -377,9 +377,14 @@ def test_every_cell_and_packet_a_run_py_call_names_is_in_the_map():
 FLAGS = {"online": False, "docker_host": False, "nonblocking": False, "real_cli": True}
 
 
+def oses(cell):
+    """The OSes a cell names: one, or a list when its tests run on each of them."""
+    return list(cell["os"]) if isinstance(cell["os"], list) else [cell["os"]]
+
+
 def markers(cell):
     """The pytest markers @cell gives a cell with these fields (kit/cells.py)."""
-    names = {*cell["cadence"].split("+"), cell["os"], *([f"image_{cell['image']}"] if cell.get("image") else [])}
+    names = {*cell["cadence"].split("+"), *oses(cell), *([f"image_{cell['image']}"] if cell.get("image") else [])}
     return names | {flag for flag, default in FLAGS.items() if cell.get(flag, default)}
 
 
@@ -408,14 +413,29 @@ def reaches(cell_id, cell, trigger, calls):
     return any(when == trigger and selects(argv, cell_id, cell) for when, argv in calls)
 
 
+def halves(cell):
+    """The cell once for each OS a job must select it on. A gap may block all
+    of it or one OS; a job cell is its workflow job, whatever OS a test models."""
+    blocked = cell.get("blocked", {})
+    if isinstance(blocked, str):
+        return []
+    if "job" in cell:
+        return [cell]
+    return [{**cell, "os": name} for name in oses(cell) if name not in blocked]
+
+
 def waiting(cells):
-    """The cells a job must run: a blocked cell, or one no packet owns yet, waits."""
-    return [(cell_id, cell) for cell_id, cell in cells.items() if not cell.get("blocked") and cell["packet"] != "unowned"]
+    """The cells a job must run, once per OS: a blocked cell or OS, or a cell no packet owns yet, waits."""
+    return [(cell_id, half) for cell_id, cell in cells.items() if cell["packet"] != "unowned" for half in halves(cell)]
+
+
+def _label(cell_id, cell, cadence):
+    return f"{cell_id} on {cadence}" + ("" if "job" in cell else f", {cell['os']}")
 
 
 def unreached(cells, calls):
-    """(cell, cadence) pairs no job runs."""
-    return [f"{cell_id} on {cadence}" for cell_id, cell in waiting(cells) for cadence in cell["cadence"].split("+")
+    """(cell, cadence, os) no job runs."""
+    return [_label(cell_id, cell, cadence) for cell_id, cell in waiting(cells) for cadence in cell["cadence"].split("+")
             if not reaches(cell_id, cell, cadence, calls)]
 
 
@@ -430,8 +450,8 @@ def release_calls(calls):
 
 def unreached_by_release(cells, calls):
     release = release_calls(calls)
-    return [cell_id for cell_id, cell in waiting(cells)
-            if IN_RELEASE & set(cell["cadence"].split("+")) and not reaches(cell_id, cell, "release", release)]
+    return sorted({cell_id for cell_id, cell in waiting(cells)
+                   if IN_RELEASE & set(cell["cadence"].split("+")) and not reaches(cell_id, cell, "release", release)})
 
 
 CALLS = invocations()
@@ -455,8 +475,8 @@ def test_a_cell_only_a_nonblocking_job_selects_is_caught():
     no_full = invocations({name: job for name, job in MAP["jobs"].items()
                            if name != "nightly-linux-full" and not job.get("nonblocking")})
 
-    assert "lin-gemini on nightly" in unreached(by_blocking(False), no_full)
-    assert "lin-gemini on nightly" not in unreached(by_blocking(False), CALLS)
+    assert "lin-gemini on nightly, linux" in unreached(by_blocking(False), no_full)
+    assert "lin-gemini on nightly, linux" not in unreached(by_blocking(False), CALLS)
 
 
 def test_every_push_nightly_and_weekly_cell_runs_in_a_release():
@@ -474,7 +494,22 @@ def test_a_release_with_no_release_entries_is_caught():
 def test_a_cell_no_job_selects_is_caught():
     cells = {"win-odd-cell": {"packet": "deploy-ci", "cadence": "nightly", "os": "windows"}}
 
-    assert unreached(cells, CALLS) == ["win-odd-cell on nightly"]
+    assert unreached(cells, CALLS) == ["win-odd-cell on nightly, windows"]
+
+
+def test_a_cell_on_two_oses_reaches_a_job_on_each():
+    """The nightly Windows jobs run one packet each, so a packet they leave out
+    runs its Windows half nowhere while a Linux job still selects its Linux half."""
+    cells = {"docs-odd-cell": {"packet": "deploy-ci", "cadence": "nightly", "os": ["linux", "windows"], "image": "core"}}
+
+    assert unreached(cells, CALLS) == ["docs-odd-cell on nightly, windows"]
+
+
+def test_the_one_os_a_gap_blocks_needs_no_job():
+    cell = {"packet": "deploy-ci", "cadence": "nightly", "os": ["linux", "windows"], "image": "core"}
+
+    assert unreached({"docs-odd-cell": {**cell, "blocked": {"windows": "a-gap"}}}, CALLS) == []
+    assert unreached({"docs-odd-cell": {**cell, "blocked": "a-gap"}}, CALLS) == []
 
 
 def test_a_container_run_never_selects_a_host_cell():

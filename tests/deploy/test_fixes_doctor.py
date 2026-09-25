@@ -287,9 +287,10 @@ def _sixty_second_start(box, templates, python: str):
     assert (repo / "crapkit-ratchet.tsv").exists()
 
 
-@cell("lin-pip-start-py314", channel="pip venv", harness="none",
-      scenario="fresh: the 60-second start on CPython 3.14", use_cases="60-second start",
-      os="linux", image="core", cadence="push")
+@cell("lin-pyextra-start-py314", channel="pip [py] extra", harness="none",
+      scenario='fresh: the 60-second start on CPython 3.14 after `pip install "crapkit[py]"`; '
+               "lin-pip-start-py314 runs it after plain `pip install crapkit`",
+      use_cases="60-second start", os="linux", image="core", cadence="push")
 def test_the_60_second_start_runs_on_python_3_14(box, templates):
     _sixty_second_start(box, templates, "3.14")
 

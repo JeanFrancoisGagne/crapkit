@@ -223,18 +223,39 @@ def _known(value, allowed, what):
     return [] if value in allowed else [f"{what} {value!r}"]
 
 
+def oses(cell):
+    """The OSes a cell names: one, or a list when its tests run on each of them."""
+    value = cell.get("os")
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
+def _where(cell):
+    problems = [problem for name in oses(cell) for problem in _known(name, kitcells.OSES, "os")]
+    return problems + _known(cell.get("image", "cells"), kitcells.IMAGES, "image")
+
+
 def _placement(cell):
-    """A job cell names workflow:job; a pytest cell names its os, and an image when it has one."""
-    if "job" in cell:
-        return _known(cell["job"].partition(":")[0], ("ci.yml", "deploy.yml"), "workflow")
-    return _known(cell.get("os"), kitcells.OSES, "os") + _known(cell.get("image", "cells"), kitcells.IMAGES, "image")
+    """A job cell names workflow:job, and the os and image of the @cell that models the job when
+    one does; a pytest cell names its os, and an image when it has one."""
+    if "job" not in cell:
+        return _where(cell)
+    workflow = _known(cell["job"].partition(":")[0], ("ci.yml", "deploy.yml"), "workflow")
+    return workflow + (_where(cell) if "os" in cell else [])
+
+
+def blocking_gaps(item):
+    """The gaps a cell or a job names: one that blocks all of it, or one per os it blocks."""
+    blocked = item.get("blocked")
+    if isinstance(blocked, dict):
+        return list(blocked.values())
+    return [blocked] if blocked else []
 
 
 def cell_problems(cell, data=MAP):
     problems = _known(cell["packet"], data["packets"], "packet") + _placement(cell)
     problems += [problem for cadence in cell["cadence"].split("+")
                  for problem in _known(cadence, kitcells.CADENCES, "cadence")]
-    return problems + _known(cell.get("blocked", "none"), {"none", *data["gaps"]}, "gap")
+    return problems + [problem for gap in blocking_gaps(cell) for problem in _known(gap, data["gaps"], "gap")]
 
 
 def test_every_cell_names_a_known_packet_cadence_placement_and_gap():
@@ -249,8 +270,29 @@ def test_a_cell_with_an_unknown_cadence_or_os_is_caught():
     assert cell_problems(cell) == ["os 'plan9'", "cadence 'hourly'", "gap 'no-such-gap'"]
 
 
+def test_a_cell_on_two_oses_names_each_one_known():
+    cell = {"packet": "deploy-channels", "cadence": "push", "os": ["linux", "windows"], "image": "core"}
+
+    assert cell_problems(cell) == []
+    assert cell_problems({**cell, "os": ["linux", "plan9"]}) == ["os 'plan9'"]
+
+
+def test_a_job_cell_that_a_test_also_models_names_a_known_os_and_image():
+    cell = {"packet": "deploy-action", "cadence": "push", "job": "ci.yml:deploy-action", "os": "linux", "image": "ci"}
+
+    assert cell_problems(cell) == []
+    assert cell_problems({**cell, "os": "plan9", "image": "huge"}) == ["os 'plan9'", "image 'huge'"]
+
+
+def test_a_gap_that_blocks_one_os_of_a_cell_is_a_known_gap():
+    cell = {"packet": "deploy-channels", "cadence": "nightly", "os": ["linux", "windows"], "docker_host": True}
+
+    assert cell_problems({**cell, "blocked": {"windows": next(iter(MAP["gaps"]))}}) == []
+    assert cell_problems({**cell, "blocked": {"windows": "no-such-gap"}}) == ["gap 'no-such-gap'"]
+
+
 def _blockers(data):
-    return {item.get("blocked") for section in ("cell", "jobs") for item in data[section].values()}
+    return {gap for section in ("cell", "jobs") for item in data[section].values() for gap in blocking_gaps(item)}
 
 
 def test_every_gap_blocks_something_and_says_what_is_missing():
@@ -388,10 +430,20 @@ FLAGS = {"online": False, "docker_host": False, "nonblocking": False, "real_cli"
 
 
 def _selection(fields):
-    """What run.py selects a cell on. The image counts only for Linux, the one os run in a container."""
-    image = fields.get("image") if _parts(fields.get("os")) == {"linux"} else "native"
+    """What run.py selects a cell on. The image counts only where the cell runs in a container: on Linux."""
+    image = fields.get("image") if "linux" in _parts(fields.get("os")) else "native"
     return {"cadence": _parts(fields.get("cadence")), "os": _parts(fields.get("os")), "image": image,
             "packet": fields.get("packet"), **{flag: bool(fields.get(flag, default)) for flag, default in FLAGS.items()}}
+
+
+def _shown(value):
+    return sorted(value) if isinstance(value, frozenset) else value
+
+
+def _agrees(field, actual, wanted):
+    """A cell's tests may split its cadences (lin-up-pip-0.7.6 runs 3.12 on push and the other
+    Pythons nightly), so each runs on cadences the map gives; every other field matches exactly."""
+    return actual <= wanted if field == "cadence" else actual == wanted
 
 
 def disagreements(meta, data=MAP):
@@ -401,12 +453,25 @@ def disagreements(meta, data=MAP):
         return []
     actual = _selection({**meta, "packet": meta.get("packet") or meta.get("module_packet")})
     wanted = _selection(mapped)
-    return [f"{cell_id(meta)} {field}: @cell {actual[field]!r}, map {wanted[field]!r}"
-            for field in wanted if actual[field] != wanted[field]]
+    return [f"{cell_id(meta)} {field}: @cell {_shown(actual[field])!r}, map {_shown(wanted[field])!r}"
+            for field in wanted if not _agrees(field, actual[field], wanted[field])]
+
+
+def uncovered_cadences(metas, data=MAP):
+    """Each cadence the map gives a cell that none of the cell's tests runs on."""
+    runs = {}
+    for meta in metas:
+        runs.setdefault(cell_id(meta), set()).update(_parts(meta.get("cadence")))
+    return [f"{cell} never runs on {cadence}" for cell, seen in sorted(runs.items()) if cell in data["cell"]
+            for cadence in sorted(_parts(data["cell"][cell]["cadence"]) - seen)]
 
 
 def test_each_cell_in_the_tree_carries_the_fields_the_map_gives(tree_cells):
     assert [problem for meta in tree_cells["cells"] for problem in disagreements(meta)] == []
+
+
+def test_each_cadence_the_map_gives_a_cell_is_one_its_tests_run_on(tree_cells):
+    assert uncovered_cadences(tree_cells["cells"]) == []
 
 
 def test_a_native_linux_cell_left_on_the_default_image_is_caught():
@@ -419,3 +484,31 @@ def test_a_windows_cell_matches_whatever_image_its_decorator_defaulted_to():
     meta = {"id": "win-pip-start", "cadence": "push", "os": "windows", "image": "core", "packet": "deploy-channels"}
 
     assert disagreements(meta) == []
+
+
+TWO_OS = {"cell": {"docs-x": {"packet": "deploy-docs", "cadence": "push", "os": ["linux", "windows"], "image": "core"}}}
+
+
+def test_a_cell_on_linux_and_windows_is_held_to_the_image_its_linux_half_runs_in():
+    meta = {"id": "docs-x", "cadence": "push", "os": ("linux", "windows"), "image": "cells", "packet": "deploy-docs"}
+
+    assert disagreements(meta, TWO_OS) == ["docs-x image: @cell 'cells', map 'core'"]
+    assert disagreements({**meta, "image": "core"}, TWO_OS) == []
+
+
+SPLIT = {"cell": {"lin-up-x": {"packet": "deploy-upgrade", "cadence": "push+nightly", "os": "linux", "image": "core"}}}
+
+
+def _split_meta(cadence):
+    return {"id": "lin-up-x", "cadence": cadence, "os": "linux", "image": "core", "packet": "deploy-upgrade"}
+
+
+def test_a_cell_whose_tests_split_its_cadences_runs_each_on_one_the_map_gives():
+    assert disagreements(_split_meta("push"), SPLIT) == disagreements(_split_meta("nightly"), SPLIT) == []
+    assert disagreements(_split_meta("weekly"), SPLIT) == [
+        "lin-up-x cadence: @cell ['weekly'], map ['nightly', 'push']"]
+
+
+def test_a_cadence_the_map_gives_that_no_test_of_the_cell_runs_on_is_caught():
+    assert uncovered_cadences([_split_meta("push"), _split_meta("nightly")], SPLIT) == []
+    assert uncovered_cadences([_split_meta("push")], SPLIT) == ["lin-up-x never runs on nightly"]

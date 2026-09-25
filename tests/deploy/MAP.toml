@@ -11,14 +11,20 @@
 #
 # A cell id is the one its @cell decorator names. A cell that pytest runs
 # carries the markers run.py selects on: its cadence, its os, and image_<image>
-# when it runs in a container. A cell with no image runs on the host (native,
-# or next to the host's Docker daemon), so a container run never picks it up.
+# when it runs in a container. `os` is a list for a cell whose tests run on
+# each OS it names (in a container on Linux, natively on Windows), and a job
+# must select it on each. A cell with no image runs on the host (native, or
+# next to the host's Docker daemon), so a container run never picks it up.
+# Several tests may share a cell id: the map gives the cadences they run on
+# between them ("push+nightly"), and each test runs on one of those.
 # A cell whose `job` names a workflow job is that job: a real GitHub runner
-# drives it, not pytest.
+# drives it. When a test also models the job (under act, or through
+# calibrate.py), the entry gives that test's os and image too.
 #
-# `blocked` names the kit gap that keeps a cell or a job from running today.
-# The scope job never schedules a blocked job, and a blocked cell is exempt
-# from the reach check until the gap closes.
+# `blocked` names the gap that keeps a cell or a job from running today, or,
+# as { <os> = "<gap>" }, the one OS of a cell no runner can take. The scope
+# job never schedules a blocked job, and a blocked cell (or OS) is exempt from
+# the reach check until the gap closes.
 
 # --- packets ------------------------------------------------------------------
 # The packet that writes each cell, and the files that show it has landed in
@@ -67,6 +73,17 @@ scripts = ["tools/deploy/calibrate.py"]
 modules = ["tests/deploy/test_action_act.py"]
 scripts = ["tools/deploy/consumer.py", "tools/deploy/assert_action.py"]
 
+# The commands the docs print, run as the page prints them, on Linux and Windows.
+[packets.deploy-docs]
+modules = ["tests/deploy/test_docs_install_paths.py", "tests/deploy/test_docs_hook_line.py",
+           "tests/deploy/test_docs_harness_sections.py", "tests/deploy/test_docs_docker.py",
+           "tests/deploy/test_docs_plugins.py"]
+
+# The cells that prove each fix the deploy suite's first run prompted.
+[packets.deploy-fixes]
+modules = ["tests/deploy/test_fixes_doctor.py", "tests/deploy/test_fixes_plugins.py",
+           "tests/deploy/test_fixes_action.py", "tests/deploy/test_fixes_release.py"]
+
 # The workflow jobs in .github/workflows/ci.yml and deploy.yml.
 [packets.deploy-ci]
 modules = []
@@ -80,7 +97,7 @@ modules = []
 # `params` is the number of profiles one parametrized cell runs.
 
 [cell]
-# push, Linux, in crapkit-deploy:core
+# push, Linux, in crapkit-deploy:core (deploy-git's cells in :cells, which holds all they run)
 lin-pip-start-py311 = { packet = "deploy-channels", cadence = "push", os = "linux", image = "core" }
 lin-pip-start-py314 = { packet = "deploy-channels", cadence = "push", os = "linux", image = "core" }
 lin-sys-python-start = { packet = "deploy-channels", cadence = "push", os = "linux", image = "core" }
@@ -101,14 +118,34 @@ lin-cursor-cli = { packet = "deploy-harnesses", cadence = "push", os = "linux", 
 "lin-up-cursor-0.7.6" = { packet = "deploy-harnesses", cadence = "push", os = "linux", image = "core" }
 lin-profiles-sim = { packet = "deploy-harnesses", cadence = "push", os = "linux", image = "core", params = 27, real_cli = false }
 lin-hooks-sim = { packet = "deploy-harnesses", cadence = "push", os = "linux", image = "core", params = 27, real_cli = false }
-lin-gate-route1-sh = { packet = "deploy-git", cadence = "push", os = "linux", image = "core" }
-lin-gate-route2 = { packet = "deploy-git", cadence = "push", os = "linux", image = "core" }
-lin-merge-driver = { packet = "deploy-git", cadence = "push", os = "linux", image = "core" }
-lin-teammate-clone = { packet = "deploy-git", cadence = "push", os = "linux", image = "core" }
-lin-worktree = { packet = "deploy-git", cadence = "push", os = "linux", image = "core" }
-"lin-up-pip-0.7.6" = { packet = "deploy-upgrade", cadence = "push", os = "linux", image = "core" }
+lin-gate-route1-sh = { packet = "deploy-git", cadence = "push", os = "linux", image = "cells" }
+lin-gate-route2 = { packet = "deploy-git", cadence = "push", os = "linux", image = "cells" }
+lin-merge-driver = { packet = "deploy-git", cadence = "push", os = "linux", image = "cells" }
+lin-teammate-clone = { packet = "deploy-git", cadence = "push", os = "linux", image = "cells" }
+lin-worktree = { packet = "deploy-git", cadence = "push", os = "linux", image = "cells" }
+"lin-up-pip-0.7.6" = { packet = "deploy-upgrade", cadence = "push+nightly", os = "linux", image = "core" }
 lin-up-pip-n1 = { packet = "deploy-upgrade", cadence = "push", os = "linux", image = "core" }
 lin-up-live-server = { packet = "deploy-upgrade", cadence = "push", os = "linux", image = "core" }
+lin-pyextra-start-py314 = { packet = "deploy-fixes", cadence = "push", os = "linux", image = "core" }
+lin-doctor-container-warn = { packet = "deploy-fixes", cadence = "push", os = "linux", image = "core" }
+lin-codex-plugin-manifest = { packet = "deploy-fixes", cadence = "push", os = "linux", image = "core" }
+lin-codex-onboard-explicit = { packet = "deploy-fixes", cadence = "push", os = "linux", image = "core" }
+lin-plugin-floor-doctor = { packet = "deploy-fixes", cadence = "push", os = "linux", image = "core" }
+lin-plugin-floor-doctor-silent = { packet = "deploy-fixes", cadence = "push", os = "linux", image = "core" }
+lin-plugin-validate-strict = { packet = "deploy-fixes", cadence = "push", os = "linux", image = "core" }
+lin-mcp-renamed-tools = { packet = "deploy-fixes", cadence = "push", os = "linux", image = "core", real_cli = false }
+lin-release-check-candidate = { packet = "deploy-fixes", cadence = "push", os = "linux", image = "core", real_cli = false }
+docs-pip-refused = { packet = "deploy-docs", cadence = "push", os = "linux", image = "core" }
+# push, Linux in crapkit-deploy:core and Windows natively
+docs-pip-fallback = { packet = "deploy-docs", cadence = "push", os = ["linux", "windows"], image = "core" }
+docs-hook-line = { packet = "deploy-docs", cadence = "push", os = ["linux", "windows"], image = "core" }
+docs-upgrade-pipx = { packet = "deploy-docs", cadence = "push", os = ["linux", "windows"], image = "core" }
+docs-upgrade-uvx = { packet = "deploy-docs", cadence = "push", os = ["linux", "windows"], image = "core" }
+docs-pip-user-path = { packet = "deploy-docs", cadence = "push", os = ["linux", "windows"], image = "core" }
+docs-downgrade = { packet = "deploy-docs", cadence = "push", os = ["linux", "windows"], image = "core" }
+docs-harness-sections = { packet = "deploy-docs", cadence = "push", os = ["linux", "windows"], image = "core", real_cli = false }
+docs-harness-aider = { packet = "deploy-docs", cadence = "push", os = ["linux", "windows"], image = "core", real_cli = false }
+docs-codex-skills = { packet = "deploy-docs", cadence = "push", os = ["linux", "windows"], image = "core" }
 # push, on the bare ubuntu runner
 lin-native-start = { packet = "deploy-channels", cadence = "push", os = "linux" }
 # push, Windows, native
@@ -120,11 +157,16 @@ win-profiles-sim = { packet = "deploy-harnesses", cadence = "push", os = "window
 win-gate-route1-ps51 = { packet = "deploy-git", cadence = "push", os = "windows" }
 win-gate-route1-pwsh = { packet = "deploy-git", cadence = "push", os = "windows" }
 "win-up-pip-0.7.6" = { packet = "deploy-upgrade", cadence = "push", os = "windows" }
-# push, a real GitHub runner
-gha-action-consumer = { packet = "deploy-action", cadence = "push", job = "ci.yml:deploy-action" }
-gha-action-readonly-token = { packet = "deploy-action", cadence = "push", job = "ci.yml:deploy-action" }
+win-doctor-container-warn = { packet = "deploy-fixes", cadence = "push", os = "windows" }
+win-codex-plugin-manifest = { packet = "deploy-fixes", cadence = "push", os = "windows" }
+win-plugin-validate-strict = { packet = "deploy-fixes", cadence = "push", os = "windows" }
+win-mcp-renamed-tools = { packet = "deploy-fixes", cadence = "push", os = "windows", real_cli = false }
+win-release-check-candidate = { packet = "deploy-fixes", cadence = "push", os = "windows", real_cli = false }
+# push, a real GitHub runner; a test models each job under act in crapkit-deploy:ci
+gha-action-consumer = { packet = "deploy-action", cadence = "push", job = "ci.yml:deploy-action", os = "linux", image = "ci" }
+gha-action-readonly-token = { packet = "deploy-action", cadence = "push", job = "ci.yml:deploy-action", os = "linux", image = "ci" }
 
-# nightly, Linux, in crapkit-deploy:core
+# nightly, Linux, in crapkit-deploy:core (deploy-git's cells in :cells)
 lin-pip-old-python = { packet = "deploy-channels", cadence = "nightly", os = "linux", image = "core" }
 lin-pyextra-conflict = { packet = "deploy-channels", cadence = "nightly", os = "linux", image = "core" }
 lin-jest-start = { packet = "deploy-channels", cadence = "nightly", os = "linux", image = "core" }
@@ -146,25 +188,25 @@ lin-local-checkout = { packet = "deploy-channels", cadence = "nightly", os = "li
 lin-sdist = { packet = "deploy-channels", cadence = "nightly", os = "linux", image = "core" }
 lin-uninstall = { packet = "deploy-channels", cadence = "nightly", os = "linux", image = "core" }
 lin-registry-entry = { packet = "deploy-channels", cadence = "nightly", os = "linux", image = "core", real_cli = false }
-lin-precommit = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-precommit-all-files = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-prek = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-husky = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-global-hookspath = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-route4-ci = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-pair-pipx-route1 = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-pair-uvtool-route2 = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-pair-uvx-merge-driver = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-pair-python3-only = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-submodule = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-zero-commit = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-not-git = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-brownfield-arm-first = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-monorepo = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-lin-override-commit = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-"lin-up-hooks-0.4.0" = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-"lin-up-merge-driver-0.7.6" = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
-"lin-up-precommit-0.7.6" = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "core" }
+lin-precommit = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-precommit-all-files = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-prek = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-husky = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-global-hookspath = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-route4-ci = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-pair-pipx-route1 = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-pair-uvtool-route2 = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-pair-uvx-merge-driver = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-pair-python3-only = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-submodule = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-zero-commit = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-not-git = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-brownfield-arm-first = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-monorepo = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+lin-override-commit = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+"lin-up-hooks-0.4.0" = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+"lin-up-merge-driver-0.7.6" = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
+"lin-up-precommit-0.7.6" = { packet = "deploy-git", cadence = "nightly", os = "linux", image = "cells" }
 "lin-up-pip-0.4.0" = { packet = "deploy-upgrade", cadence = "nightly", os = "linux", image = "core" }
 "lin-up-pip-0.4.4" = { packet = "deploy-upgrade", cadence = "nightly", os = "linux", image = "core" }
 "lin-up-pipx-0.4.15" = { packet = "deploy-upgrade", cadence = "nightly", os = "linux", image = "core" }
@@ -194,6 +236,11 @@ lin-pair-uvx-plugin = { packet = "deploy-plugins", cadence = "nightly", os = "li
 lin-plugin-floors = { packet = "deploy-plugins", cadence = "nightly", os = "linux", image = "core" }
 lin-call-claude = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "core" }
 lin-cursor-claude-import = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "core" }
+lin-doctor-global-hookspath = { packet = "deploy-fixes", cadence = "nightly", os = "linux", image = "core" }
+lin-doctor-precommit-ci = { packet = "deploy-fixes", cadence = "nightly", os = "linux", image = "core" }
+"lin-codex-plugin-hooks-0.8.0" = { packet = "deploy-fixes", cadence = "nightly", os = "linux", image = "core" }
+"lin-up-pyextra-0.5.1-renames" = { packet = "deploy-fixes", cadence = "nightly", os = "linux", image = "core", real_cli = false }
+docs-plugin-floors = { packet = "deploy-docs", cadence = "nightly", os = "linux", image = "core" }
 lin-odd-paths = { packet = "unowned", cadence = "nightly", os = "linux", image = "core" }
 # nightly, Linux, in crapkit-deploy:full
 lin-skills-copy = { packet = "deploy-plugins", cadence = "nightly", os = "linux", image = "full" }
@@ -227,10 +274,12 @@ gha-act-readonly = { packet = "deploy-action", cadence = "nightly", os = "linux"
 gha-act-no-install = { packet = "deploy-action", cadence = "nightly", os = "linux", image = "ci" }
 gha-act-monorepo = { packet = "deploy-action", cadence = "nightly", os = "linux", image = "ci" }
 gha-act-skew = { packet = "deploy-action", cadence = "nightly", os = "linux", image = "ci" }
+gha-act-monorepo-workdir = { packet = "deploy-fixes", cadence = "nightly", os = "linux", image = "ci" }
 lin-vscode-electron = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "gui", nonblocking = true }
 lin-zed-xvfb = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "gui", nonblocking = true }
 # nightly, next to the host's Docker daemon
-lin-host-docker-product = { packet = "deploy-channels", cadence = "nightly", os = "linux", docker_host = true, blocked = "linux-toolchain" }
+lin-host-docker-product = { packet = "deploy-channels", cadence = "nightly", os = "linux", docker_host = true, online = true, blocked = "linux-toolchain" }
+docs-docker-user = { packet = "deploy-docs", cadence = "nightly", os = ["linux", "windows"], docker_host = true, online = true, blocked = "linux-toolchain" }
 "lin-host-up-docker-0.7.6" = { packet = "unowned", cadence = "nightly", os = "linux", docker_host = true, blocked = "linux-toolchain" }
 lin-devcontainer = { packet = "unowned", cadence = "nightly", os = "linux", docker_host = true, blocked = "linux-toolchain" }
 # nightly, Windows, native
@@ -248,12 +297,16 @@ win-claude-hook-stub = { packet = "deploy-plugins", cadence = "nightly", os = "w
 "win-up-plugins-0.7.6" = { packet = "deploy-plugins", cadence = "nightly", os = "windows" }
 win-cursor-cli = { packet = "deploy-harnesses", cadence = "nightly", os = "windows" }
 win-real-cli = { packet = "deploy-harnesses", cadence = "nightly", os = "windows" }
+win-doctor-global-hookspath = { packet = "deploy-fixes", cadence = "nightly", os = "windows" }
+win-pip-start-py314 = { packet = "deploy-fixes", cadence = "nightly", os = "windows" }
+win-plugin-floor-doctor = { packet = "deploy-fixes", cadence = "nightly", os = "windows" }
+"win-up-pyextra-0.5.1-renames" = { packet = "deploy-fixes", cadence = "nightly", os = "windows", real_cli = false }
 win-odd-paths = { packet = "unowned", cadence = "nightly", os = "windows" }
 win-wsl = { packet = "unowned", cadence = "nightly", os = "windows" }
 # nightly, a real GitHub runner, or a job that reruns other cells
-gha-action-container-job = { packet = "deploy-action", cadence = "nightly", job = "deploy.yml:gha-action-container-job" }
-gha-action-tag-upgrade = { packet = "deploy-action", cadence = "nightly", job = "deploy.yml:gha-action-tag-upgrade" }
-gha-action-windows = { packet = "deploy-action", cadence = "nightly", job = "deploy.yml:gha-action-windows" }
+gha-action-container-job = { packet = "deploy-action", cadence = "nightly", job = "deploy.yml:gha-action-container-job", os = "linux", image = "ci" }
+gha-action-tag-upgrade = { packet = "deploy-action", cadence = "nightly", job = "deploy.yml:gha-action-tag-upgrade", os = "linux", image = "ci" }
+gha-action-windows = { packet = "deploy-action", cadence = "nightly", job = "deploy.yml:gha-action-windows", os = "windows" }
 lin-repeat = { packet = "deploy-ci", cadence = "nightly", job = "deploy.yml:lin-repeat" }
 win-repeat = { packet = "deploy-ci", cadence = "nightly", job = "deploy.yml:win-repeat" }
 lock-drift = { packet = "deploy-ci", cadence = "nightly", job = "deploy.yml:lock-drift" }
@@ -265,8 +318,8 @@ lin-arm64 = { packet = "deploy-channels", cadence = "weekly", os = "linux", imag
 lin-py315-start = { packet = "deploy-channels", cadence = "weekly", os = "linux", image = "core", nonblocking = true, blocked = "prerelease-python" }
 lin-codex-cloud-sim = { packet = "unowned", cadence = "weekly", os = "linux", docker_host = true, blocked = "linux-toolchain" }
 lin-podman = { packet = "unowned", cadence = "weekly", os = "linux", docker_host = true, blocked = "linux-toolchain" }
-calibrate-all = { packet = "deploy-harnesses", cadence = "weekly", job = "deploy.yml:calibrate-all" }
-latest-harnesses = { packet = "deploy-harnesses", cadence = "weekly", job = "deploy.yml:latest-harnesses", blocked = "latest-mode" }
+calibrate-all = { packet = "deploy-harnesses", cadence = "weekly", job = "deploy.yml:calibrate-all", os = "linux", image = "full" }
+latest-harnesses = { packet = "deploy-harnesses", cadence = "weekly", job = "deploy.yml:latest-harnesses", os = "linux", image = "full", online = true, blocked = "latest-mode" }
 # weekly and after each publish, with the network on
 lin-online-pypi = { packet = "deploy-channels", cadence = "weekly+published", os = "linux", image = "core", online = true }
 lin-online-pipgit = { packet = "deploy-channels", cadence = "weekly+published", os = "linux", image = "core", online = true }
@@ -389,13 +442,16 @@ timeout = 40
 measured = 0
 
 # Split by packet so each half fits its timeout; one run.py invocation per packet.
+# A packet with a nightly Windows cell needs a run here: the reach check in
+# test_deploy_workflows.py names each cell no run selects.
 [jobs.nightly-windows-a]
 runner = "windows"
 when = ["nightly", "release"]
 harness = "core"
 runs = ["--native --os windows --cadence {cadence} --packet deploy-channels -n 4",
         "--native --os windows --cadence {cadence} --packet deploy-git -n 4",
-        "--native --os windows --cadence {cadence} --packet deploy-upgrade -n 4"]
+        "--native --os windows --cadence {cadence} --packet deploy-upgrade -n 4",
+        "--native --os windows --cadence {cadence} --packet deploy-fixes -n 4"]
 timeout = 60
 measured = 0
 
@@ -522,26 +578,26 @@ paths = [
 
 [channels]
 "pip venv" = ["lin-pip-start-py311", "lin-pip-start-py314", "lin-native-start", "win-pip-start", "lin-up-pip-0.7.6", "lin-up-pip-n1", "mac-core"]
-"pip [py] extra" = ["lin-pyextra-quickstart-py313", "lin-pyextra-conflict", "lin-up-pyextra-0.5.1"]
-"system pip under PEP 668" = ["lin-sys-python-start", "lin-pipuser-path"]
-"pip --user" = ["lin-pipuser-path", "win-pipuser-path", "lin-two-installs", "win-two-installs"]
+"pip [py] extra" = ["lin-pyextra-quickstart-py313", "lin-pyextra-conflict", "lin-up-pyextra-0.5.1", "lin-pyextra-start-py314", "win-pip-start-py314"]
+"system pip under PEP 668" = ["lin-sys-python-start", "lin-pipuser-path", "docs-pip-refused", "docs-pip-fallback"]
+"pip --user" = ["lin-pipuser-path", "win-pipuser-path", "lin-two-installs", "win-two-installs", "docs-pip-user-path"]
 "pip on Python 3.10" = ["lin-pip-old-python"]
-"pipx" = ["lin-pipx-agent-loop", "lin-up-pipx-0.4.15", "lin-pair-pipx-route1", "win-pipx-uvx-uvtool"]
-"uv tool" = ["lin-uvtool-ts-quickstart", "lin-up-uvtool-0.6.0", "lin-pair-uvtool-route2", "win-ts-quickstart", "win-uvtool-claude-plugin", "win-launcher-lock", "win-pipx-uvx-uvtool"]
-"uvx" = ["lin-uvx-polyglot-start", "lin-up-uvx-n1", "lin-pair-uvx-merge-driver", "lin-pair-uvx-plugin", "lin-registry-entry", "win-pipx-uvx-uvtool"]
+"pipx" = ["lin-pipx-agent-loop", "lin-up-pipx-0.4.15", "lin-pair-pipx-route1", "win-pipx-uvx-uvtool", "docs-pip-fallback", "docs-upgrade-pipx"]
+"uv tool" = ["lin-uvtool-ts-quickstart", "lin-up-uvtool-0.6.0", "lin-pair-uvtool-route2", "win-ts-quickstart", "win-uvtool-claude-plugin", "win-launcher-lock", "win-pipx-uvx-uvtool", "docs-pip-fallback"]
+"uvx" = ["lin-uvx-polyglot-start", "lin-up-uvx-n1", "lin-pair-uvx-merge-driver", "lin-pair-uvx-plugin", "lin-registry-entry", "win-pipx-uvx-uvtool", "docs-upgrade-uvx"]
 "pip git+https" = ["lin-pipgit-mirror", "lin-up-pipgit", "lin-online-pipgit"]
 "pip from a checkout" = ["lin-local-checkout", "lin-up-local"]
 "sdist" = ["lin-sdist"]
 "PyPI, online" = ["lin-online-pypi"]
-"Docker product image" = ["lin-host-docker-product", "lin-host-up-docker-0.7.6"]
+"Docker product image" = ["lin-host-docker-product", "lin-host-up-docker-0.7.6", "docs-docker-user"]
 "MCP registry entry" = ["lin-registry-entry", "published-registry"]
 "Claude Code marketplace" = ["lin-claude-plugin-fresh", "lin-up-claude-plugin-0.7.6", "lin-claude-plugin-ahead", "lin-main-between-releases", "lin-marketplace-pinned-tag", "lin-up-claude-plugin-0.4.2", "lin-up-claude-plugin-0.5.1", "win-uvtool-claude-plugin", "lin-online-marketplaces"]
-"Codex marketplace" = ["lin-codex-plugin-fresh", "lin-up-codex-plugin-0.7.6", "lin-codex-autoupgrade", "win-codex-plugin", "lin-online-marketplaces"]
+"Codex marketplace" = ["lin-codex-plugin-fresh", "lin-up-codex-plugin-0.7.6", "lin-codex-autoupgrade", "win-codex-plugin", "lin-online-marketplaces", "lin-codex-plugin-manifest", "win-codex-plugin-manifest", "lin-codex-onboard-explicit", "lin-codex-plugin-hooks-0.8.0"]
 "Copilot CLI plugin" = ["lin-copilot-plugin-hooks"]
 "skills copy" = ["lin-skills-copy"]
 "claude mcp add" = ["lin-claude-mcp-scopes"]
 "codex mcp add and config.toml" = ["lin-codex-mcp-add", "lin-up-codex-tools-0.5.1"]
-"harness MCP config from the docs" = ["lin-profiles-sim", "win-profiles-sim", "lin-cursor-cli", "lin-up-cursor-0.7.6", "win-cursor-cli", "win-real-cli", "lin-gemini", "lin-opencode", "lin-copilot-cli", "lin-cline", "lin-amp", "lin-crush", "lin-omp", "lin-goose", "lin-continue", "lin-junie"]
+"harness MCP config from the docs" = ["lin-profiles-sim", "win-profiles-sim", "lin-cursor-cli", "lin-up-cursor-0.7.6", "win-cursor-cli", "win-real-cli", "lin-gemini", "lin-opencode", "lin-copilot-cli", "lin-cline", "lin-amp", "lin-crush", "lin-omp", "lin-goose", "lin-continue", "lin-junie", "docs-harness-sections", "docs-harness-aider"]
 "Agent SDK mcpServers and plugins" = ["lin-agent-sdk", "lin-agent-sdk-py"]
 "Route 1 sh" = ["lin-gate-route1-sh", "lin-native-start", "lin-worktree", "lin-override-commit"]
 "Route 1 PowerShell" = ["win-gate-route1-ps51", "win-gate-route1-pwsh"]
@@ -550,7 +606,7 @@ paths = [
 "prek" = ["lin-prek"]
 "merge driver" = ["lin-merge-driver", "lin-teammate-clone", "lin-up-merge-driver-0.7.6"]
 "Route 4 CI" = ["lin-route4-ci", "lin-skew-baseline"]
-"GitHub Action" = ["gha-action-consumer", "gha-action-readonly-token", "gha-action-container-job", "gha-action-tag-upgrade", "gha-action-windows", "gha-act-delta", "gha-act-gate-base", "gha-act-push", "gha-act-readonly", "gha-act-no-install", "gha-act-monorepo", "gha-act-skew", "published-action-tag"]
+"GitHub Action" = ["gha-action-consumer", "gha-action-readonly-token", "gha-action-container-job", "gha-action-tag-upgrade", "gha-action-windows", "gha-act-delta", "gha-act-gate-base", "gha-act-push", "gha-act-readonly", "gha-act-no-install", "gha-act-monorepo", "gha-act-skew", "published-action-tag", "gha-act-monorepo-workdir"]
 "devcontainer" = ["lin-devcontainer"]
 "Codex cloud setup script" = ["lin-codex-cloud-sim"]
 "Copilot cloud agent setup steps" = ["lin-copilot-cloud-sim"]
@@ -562,10 +618,10 @@ paths = [
 # The 27 harness profiles, then the tools that drive a surface without an agent.
 
 [harnesses]
-claude-code = ["lin-claude-plugin-fresh", "lin-claude-mcp-scopes", "lin-call-claude", "lin-claude-hook-stub", "lin-plugin-floors", "win-uvtool-claude-plugin", "win-claude-hook-stub", "lin-profiles-sim", "lin-hooks-sim"]
+claude-code = ["lin-claude-plugin-fresh", "lin-claude-mcp-scopes", "lin-call-claude", "lin-claude-hook-stub", "lin-plugin-floors", "win-uvtool-claude-plugin", "win-claude-hook-stub", "lin-profiles-sim", "lin-hooks-sim", "lin-plugin-floor-doctor", "lin-plugin-validate-strict", "win-plugin-validate-strict", "docs-plugin-floors"]
 claude-desktop = ["lin-profiles-sim", "win-profiles-sim"]
 claude-agent-sdk = ["lin-agent-sdk", "lin-agent-sdk-py"]
-codex = ["lin-codex-plugin-fresh", "lin-codex-mcp-add", "lin-codex-autoupgrade", "lin-up-codex-plugin-0.7.6", "lin-up-codex-tools-0.5.1", "win-codex-plugin"]
+codex = ["lin-codex-plugin-fresh", "lin-codex-mcp-add", "lin-codex-autoupgrade", "lin-up-codex-plugin-0.7.6", "lin-up-codex-tools-0.5.1", "win-codex-plugin", "lin-codex-plugin-manifest", "win-codex-plugin-manifest", "lin-codex-onboard-explicit", "lin-codex-plugin-hooks-0.8.0", "docs-codex-skills"]
 cursor = ["lin-cursor-cli", "lin-up-cursor-0.7.6", "lin-cursor-claude-import", "win-cursor-cli"]
 windsurf = ["lin-profiles-sim", "calibrate-all"]
 vscode-copilot = ["lin-vscode-electron", "lin-profiles-sim", "lin-hooks-sim"]
@@ -584,7 +640,7 @@ continue = ["lin-continue", "lin-call-continue"]
 zed = ["lin-zed-xvfb", "win-profiles-sim"]
 jetbrains-ai-assistant = ["lin-profiles-sim"]
 junie = ["lin-junie", "lin-call-junie"]
-aider = ["lin-aider"]
+aider = ["lin-aider", "docs-harness-aider"]
 antigravity = ["lin-profiles-sim"]
 kilo-code = ["lin-profiles-sim"]
 qwen-code = ["lin-profiles-sim", "calibrate-all"]
@@ -654,11 +710,11 @@ devcontainers-cli = ["lin-devcontainer"]
 # --- use cases -------------------------------------------------------------------
 
 [use_cases]
-"60-second start" = ["lin-pip-start-py311", "lin-pip-start-py314", "lin-native-start", "win-pip-start"]
+"60-second start" = ["lin-pip-start-py311", "lin-pip-start-py314", "lin-native-start", "win-pip-start", "lin-pyextra-start-py314", "win-pip-start-py314"]
 "install" = ["lin-sys-python-start", "lin-pip-old-python", "lin-pipuser-path", "lin-pipgit-mirror", "lin-sdist"]
 "init" = ["lin-pyextra-quickstart-py313", "lin-follow-hints", "lin-lockfile-uv"]
-"doctor" = ["lin-pip-start-py311", "lin-gate-route2", "lin-global-hookspath"]
-"doctor --plugin-root" = ["lin-claude-plugin-fresh", "lin-codex-autoupgrade", "lin-plugin-floors"]
+"doctor" = ["lin-pip-start-py311", "lin-gate-route2", "lin-global-hookspath", "lin-doctor-container-warn", "win-doctor-container-warn", "lin-doctor-global-hookspath", "win-doctor-global-hookspath", "lin-doctor-precommit-ci"]
+"doctor --plugin-root" = ["lin-claude-plugin-fresh", "lin-codex-autoupgrade", "lin-plugin-floors", "lin-plugin-floor-doctor", "lin-plugin-floor-doctor-silent", "win-plugin-floor-doctor", "docs-plugin-floors"]
 "coverage with coverage.py" = ["lin-pip-start-py311", "lin-pyextra-quickstart-py313"]
 "coverage with istanbul" = ["lin-uvtool-ts-quickstart", "lin-jest-start"]
 "coverage with no lane (cc only)" = ["lin-uvx-polyglot-start"]
@@ -671,26 +727,28 @@ devcontainers-cli = ["lin-devcontainer"]
 "ratchet seed" = ["lin-pip-start-py311", "lin-up-pip-0.7.6"]
 "ratchet prune" = ["lin-up-pip-0.7.6"]
 "ratchet merge" = ["lin-merge-driver", "lin-teammate-clone"]
-"commit gate" = ["lin-gate-route1-sh", "lin-gate-route2", "lin-precommit", "win-gate-route1-ps51"]
+"commit gate" = ["lin-gate-route1-sh", "lin-gate-route2", "lin-precommit", "win-gate-route1-ps51", "docs-hook-line"]
 "override audit" = ["lin-override-commit"]
 "all 12 MCP tools" = ["lin-mcp-all-tools"]
-"MCP tool renames" = ["lin-up-pyextra-0.5.1", "lin-up-codex-tools-0.5.1"]
+"MCP tool renames" = ["lin-up-pyextra-0.5.1", "lin-up-codex-tools-0.5.1", "lin-mcp-renamed-tools", "win-mcp-renamed-tools", "lin-up-pyextra-0.5.1-renames", "win-up-pyextra-0.5.1-renames"]
 "PostToolUse hook, Edit and Write" = ["lin-claude-hook-stub", "win-claude-hook-stub", "lin-hooks-sim"]
 "PostToolUse hook, Bash matcher" = ["lin-claude-hook-stub", "lin-up-bash-matcher-0.7.6"]
-"skills" = ["lin-onboard-skill", "lin-recover-skill", "lin-skills-copy"]
+"skills" = ["lin-onboard-skill", "lin-recover-skill", "lin-skills-copy", "docs-codex-skills", "lin-codex-onboard-explicit"]
 "Action verdict" = ["gha-action-consumer", "gha-act-delta", "gha-action-windows"]
 "Action comment" = ["gha-action-readonly-token", "gha-act-readonly"]
-"container guard" = ["lin-pip-start-py311", "lin-route4-ci", "lin-precommit", "lin-devcontainer", "lin-codex-cloud-sim", "gha-action-container-job"]
+"container guard" = ["lin-pip-start-py311", "lin-route4-ci", "lin-precommit", "lin-devcontainer", "lin-codex-cloud-sim", "gha-action-container-job", "lin-doctor-container-warn", "win-doctor-container-warn"]
 "upgrade guide" = ["lin-up-pip-0.7.6", "lin-up-pip-n1", "lin-up-chain"]
-"downgrade" = ["lin-downgrade-0.7.6"]
+"downgrade" = ["lin-downgrade-0.7.6", "docs-downgrade"]
 "uninstall" = ["lin-uninstall"]
 "secondary commands" = ["lin-pipx-agent-loop"]
 "portable baseline" = ["lin-route4-ci"]
-"crapkit root below the git top" = ["lin-monorepo"]
+"crapkit root below the git top" = ["lin-monorepo", "gha-act-monorepo-workdir"]
 "launcher lock on Windows" = ["win-launcher-lock", "win-pipx-uvx-uvtool"]
 "plugin and CLI drift" = ["lin-codex-autoupgrade", "lin-claude-plugin-ahead", "lin-main-between-releases"]
 "team version skew" = ["lin-skew-cli", "lin-skew-precommit", "lin-skew-baseline", "gha-act-skew"]
 "repeatability" = ["lin-repeat", "win-repeat", "lin-clock", "lock-drift"]
+"plugin manifest validation" = ["lin-plugin-validate-strict", "win-plugin-validate-strict"]
+"release check" = ["lin-release-check-candidate", "win-release-check-candidate"]
 
 # --- channel and consumer pairs ------------------------------------------------------
 # What finds crapkit when a consumer starts it: a git hook, the merge driver,
@@ -765,6 +823,11 @@ cells = ["lin-pip-start-py311", "lin-pip-start-py314", "lin-native-start", "win-
 page = "README.md"
 headings = ["Install"]
 cells = ["lin-sys-python-start", "lin-pip-old-python", "lin-pipgit-mirror", "lin-online-pipgit", "lin-online-pypi"]
+
+[[doc]]
+page = "README.md"
+headings = ["When pip refuses"]
+cells = ["docs-pip-refused", "docs-pip-fallback", "lin-sys-python-start"]
 
 [[doc]]
 page = "README.md"
@@ -991,8 +1054,23 @@ cells = ["lin-uninstall"]
 
 [[doc]]
 page = "docs/upgrading.md"
+headings = ["Downgrading"]
+cells = ["docs-downgrade", "lin-downgrade-0.7.6"]
+
+[[doc]]
+page = "docs/upgrading.md"
 headings = ["Plugin and MCP clients"]
 cells = ["lin-up-claude-plugin-0.7.6", "lin-up-codex-plugin-0.7.6", "lin-up-cursor-0.7.6", "win-up-plugins-0.7.6"]
+
+# Each section's block is the config the profile cells write; docs-harness-sections
+# starts a server from every block as the page prints it.
+[[doc]]
+page = "docs/harnesses.md"
+headings = ["Claude Code", "Claude Desktop", "Claude Agent SDK", "claude-code-action", "Codex", "Cursor",
+            "Windsurf", "VS Code with GitHub Copilot", "GitHub Copilot CLI", "Copilot cloud agent", "Kiro",
+            "Gemini CLI", "Qwen Code", "Amp", "Crush", "oh-my-pi", "Cline", "Roo Code", "Kilo Code", "Zed",
+            "JetBrains AI Assistant", "Junie", "Antigravity"]
+cells = ["docs-harness-sections", "lin-profiles-sim", "win-profiles-sim"]
 
 [[doc]]
 page = "docs/handbook.html"
