@@ -17,4 +17,8 @@ CHECKS = [
      "pytest": [_PACKET + "test_sarif_annotations.py"]},
     {"name": "every MCP tool answers what its CLI command prints", "seconds": 3,
      "pytest": [_PACKET + "test_mcp_equals_cli.py"]},
+    {"name": "the wheel diff's moved-row map and xplat rule", "seconds": 8,
+     "pytest": [_PACKET + "test_wheel_diff_tool.py"]},
+    {"name": "two runs normalize to one golden", "seconds": 15, "tiers": ["nightly"],
+     "pytest": [_PACKET + "test_normalized_twice.py"]},
 ]
