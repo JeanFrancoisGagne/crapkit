@@ -1,0 +1,53 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	equivalence.ps1	Straight	start	1	PowerShell about_Functions (Microsoft Learn): a function starts on its defining line	
+eq-straight	equivalence.ps1	Straight	end	4	PowerShell about_Functions (Microsoft Learn): a function ends on the last line of its body	
+eq-straight	equivalence.ps1	Straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	equivalence.ps1	Straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	equivalence.ps1	Straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	equivalence.ps1	Straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	equivalence.ps1	Straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	equivalence.ps1	Straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	equivalence.ps1	Straight	params	1	PowerShell about_Functions (Microsoft Learn): the parameters the function declares	
+eq-four-deep	equivalence.ps1	FourDeep	start	6	PowerShell about_Functions (Microsoft Learn): a function starts on its defining line	
+eq-four-deep	equivalence.ps1	FourDeep	end	17	PowerShell about_Functions (Microsoft Learn): a function ends on the last line of its body	
+eq-four-deep	equivalence.ps1	FourDeep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	equivalence.ps1	FourDeep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	equivalence.ps1	FourDeep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	equivalence.ps1	FourDeep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	equivalence.ps1	FourDeep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	equivalence.ps1	FourDeep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	equivalence.ps1	FourDeep	params	4	PowerShell about_Functions (Microsoft Learn): the parameters the function declares	
+eq-nested-loops	equivalence.ps1	NestedLoops	start	19	PowerShell about_Functions (Microsoft Learn): a function starts on its defining line	
+eq-nested-loops	equivalence.ps1	NestedLoops	end	29	PowerShell about_Functions (Microsoft Learn): a function ends on the last line of its body	
+eq-nested-loops	equivalence.ps1	NestedLoops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	equivalence.ps1	NestedLoops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	equivalence.ps1	NestedLoops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	equivalence.ps1	NestedLoops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	equivalence.ps1	NestedLoops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	
+eq-nested-loops	equivalence.ps1	NestedLoops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	equivalence.ps1	NestedLoops	params	1	PowerShell about_Functions (Microsoft Learn): the parameters the function declares	
+eq-flat-seven	equivalence.ps1	FlatSeven	start	31	PowerShell about_Functions (Microsoft Learn): a function starts on its defining line	
+eq-flat-seven	equivalence.ps1	FlatSeven	end	55	PowerShell about_Functions (Microsoft Learn): a function ends on the last line of its body	
+eq-flat-seven	equivalence.ps1	FlatSeven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	equivalence.ps1	FlatSeven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	equivalence.ps1	FlatSeven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	equivalence.ps1	FlatSeven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	equivalence.ps1	FlatSeven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	equivalence.ps1	FlatSeven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	equivalence.ps1	FlatSeven	params	1	PowerShell about_Functions (Microsoft Learn): the parameters the function declares	
+ps-kind	shapes.ps1	Get-Kind	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two case arms, default excluded	
+ps-kind	shapes.ps1	Get-Kind	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; the switch counts once	AO-PS-SWITCH-MOD
+ps-kind	shapes.ps1	Get-Kind	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a switch +1	
+ps-size	shapes.ps1	Get-Size	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two case arms whose tests are script blocks, default excluded	D3
+ps-size	shapes.ps1	Get-Size	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a switch +1	
+ps-param-block	shapes.ps1	Test-ParamBlock	params	2	PowerShell about_Functions_Advanced_Parameters: a param() block declares the function's parameters	D12
+ps-logic	shapes.ps1	Test-Logic	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the if, -and, -or	
+ps-logic	shapes.ps1	Test-Logic	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, -and sequence +1, -or sequence +1	
+ps-logic	shapes.ps1	Test-Logic	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; one if, and an operator opens no level	AO-PS-NEST-LOGICAL
+ps-loops	shapes.ps1	Test-Loops	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; foreach, while, do-until and catch	
+ps-loops	shapes.ps1	Test-Loops	cognitive	5	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; foreach +1, while +2 inside it, until +1, catch +1	
+ps-loops	shapes.ps1	Test-Loops	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; a while inside a foreach	
+ps-xor	shapes.ps1	Test-Xor	ccn_std	1	PowerShell about_Logical_Operators: -xor evaluates both operands, so it is no decision (NIST SP 500-235 sec. 4.1)	AO-PS-XOR
+ps-coalesce	shapes.ps1	Test-Coalesce	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; ?? evaluates its right side only for null (about_Operators): one decision	D2e
+ps-coalesce	shapes.ps1	Test-Coalesce	cognitive	0	Sonar Cognitive Complexity v1.7 Ignore shorthand: null-coalescing operators are ignored	D2f
+ps-upper-case	shapes.ps1	Test-UpperCase	ccn_std	2	PowerShell about_Language_Keywords: keywords are not case-sensitive, so IF is an if; NIST SP 500-235 sec. 4.1	AO-PS-KEYWORD-CASE

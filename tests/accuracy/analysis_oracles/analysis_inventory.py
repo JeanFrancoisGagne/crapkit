@@ -83,12 +83,14 @@ ANONYMOUS = "(anonymous)"
 
 
 def bare(long_name: str) -> str:
-    """The identifier a probe names: the text before the parameter list, last
-    component after `::` or `.`, surrounding space removed. A function lizard
-    could not name reads `(anonymous)`."""
+    """The identifier a probe names: the text before the parameter list (a
+    parenthesis, or the first space where the long name has no parenthesis, as
+    in Go, Rust, Swift, Zig and PowerShell), last component after `::` or `.`.
+    A function lizard could not name reads `(anonymous)`."""
     if long_name.startswith(ANONYMOUS):
         return ANONYMOUS
     head = long_name.split("(")[0].strip()
+    head = head.split()[0] if head else head
     return head.replace("::", ".").split(".")[-1].strip()
 
 

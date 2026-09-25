@@ -1,0 +1,37 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	Equivalence.swift	straight	start	1	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+eq-straight	Equivalence.swift	straight	end	4	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+eq-straight	Equivalence.swift	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	Equivalence.swift	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	Equivalence.swift	straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	Equivalence.swift	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	Equivalence.swift	straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	Equivalence.swift	straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	Equivalence.swift	straight	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+eq-four-deep	Equivalence.swift	fourDeep	start	6	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+eq-four-deep	Equivalence.swift	fourDeep	end	17	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+eq-four-deep	Equivalence.swift	fourDeep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	Equivalence.swift	fourDeep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	Equivalence.swift	fourDeep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	Equivalence.swift	fourDeep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	Equivalence.swift	fourDeep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	Equivalence.swift	fourDeep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	Equivalence.swift	fourDeep	params	4	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+eq-nested-loops	Equivalence.swift	nestedLoops	start	19	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+eq-nested-loops	Equivalence.swift	nestedLoops	end	29	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+eq-nested-loops	Equivalence.swift	nestedLoops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	Equivalence.swift	nestedLoops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	Equivalence.swift	nestedLoops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	Equivalence.swift	nestedLoops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	Equivalence.swift	nestedLoops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	
+eq-nested-loops	Equivalence.swift	nestedLoops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	Equivalence.swift	nestedLoops	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+eq-flat-seven	Equivalence.swift	flatSeven	start	31	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+eq-flat-seven	Equivalence.swift	flatSeven	end	55	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+eq-flat-seven	Equivalence.swift	flatSeven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	Equivalence.swift	flatSeven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	Equivalence.swift	flatSeven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	Equivalence.swift	flatSeven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	Equivalence.swift	flatSeven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	Equivalence.swift	flatSeven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	Equivalence.swift	flatSeven	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	

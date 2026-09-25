@@ -1,0 +1,37 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	equivalence.cpp	straight	start	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+eq-straight	equivalence.cpp	straight	end	4	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+eq-straight	equivalence.cpp	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	equivalence.cpp	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	equivalence.cpp	straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	equivalence.cpp	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	equivalence.cpp	straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	equivalence.cpp	straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	equivalence.cpp	straight	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+eq-four-deep	equivalence.cpp	four_deep	start	6	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+eq-four-deep	equivalence.cpp	four_deep	end	17	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+eq-four-deep	equivalence.cpp	four_deep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	equivalence.cpp	four_deep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	equivalence.cpp	four_deep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	equivalence.cpp	four_deep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	equivalence.cpp	four_deep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	equivalence.cpp	four_deep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	equivalence.cpp	four_deep	params	4	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+eq-nested-loops	equivalence.cpp	nested_loops	start	19	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+eq-nested-loops	equivalence.cpp	nested_loops	end	29	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+eq-nested-loops	equivalence.cpp	nested_loops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	equivalence.cpp	nested_loops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	equivalence.cpp	nested_loops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	equivalence.cpp	nested_loops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	equivalence.cpp	nested_loops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	AO-ND-LOOPS
+eq-nested-loops	equivalence.cpp	nested_loops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	equivalence.cpp	nested_loops	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+eq-flat-seven	equivalence.cpp	flat_seven	start	31	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+eq-flat-seven	equivalence.cpp	flat_seven	end	55	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+eq-flat-seven	equivalence.cpp	flat_seven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	equivalence.cpp	flat_seven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	equivalence.cpp	flat_seven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	equivalence.cpp	flat_seven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	equivalence.cpp	flat_seven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	equivalence.cpp	flat_seven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	equivalence.cpp	flat_seven	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
