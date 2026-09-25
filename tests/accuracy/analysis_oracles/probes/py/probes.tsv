@@ -368,3 +368,9 @@ eq-flat-seven	equivalence.py	flat_seven	cognitive	7	Sonar Cognitive Complexity v
 eq-flat-seven	equivalence.py	flat_seven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
 eq-flat-seven	equivalence.py	flat_seven	nloc	17	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
 eq-flat-seven	equivalence.py	flat_seven	params	1	Python 3 reference 8.7 Function definitions: the parameters the function declares	
+fstring-lines	lines.py	multi_line_fstring	nloc	5	lizard 1.24.0 README: NLOC counts lines of code without comments; a string literal is code on every line it spans; def, the assignment's three string lines, return	AO-PY-NLOC-FSTRING
+fstring-lines	lines.py	multi_line_fstring	start	1	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+triple-yield	lines.py	yielded_triple	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments; a string literal is code on every line it spans; def, the yielded string's two lines, return	AO-PY-NLOC-TRIPLE
+triple-yield	lines.py	yielded_triple	start	8	Python 3 reference 8.7 Function definitions: a function starts on its defining line	
+raw-triple	lines.py	raw_assigned	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments; a string literal is code on every line it spans; def, the assigned raw string's two lines, return	AO-PY-NLOC-PREFIX
+raw-triple	lines.py	raw_assigned	start	14	Python 3 reference 8.7 Function definitions: a function starts on its defining line	

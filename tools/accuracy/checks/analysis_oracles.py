@@ -23,4 +23,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_nesting_oracles.py"]},
     {"name": "JS and TS functions against the TypeScript compiler", "seconds": 5,
      "pytest": [_PACKET + "test_ts_compiler.py"]},
+    {"name": "nloc against tokenize, params against ast", "seconds": 4,
+     "pytest": [_PACKET + "test_nloc_params.py"]},
 ]
