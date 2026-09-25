@@ -153,14 +153,21 @@ def test_doctor_reads_a_plugin_manifest_the_way_claude_code_does(tmp_path, edit,
     assert (admin._manifest_version(root) == _plugin_version()) is loads
 
 
-@pytest.mark.skipif(CLAUDE is None, reason="Claude Code is not on PATH; MANIFESTS' loads column "
-                                          "is what `claude plugin validate` 2.1.238 answered")
+REQUIRE_CLAUDE = os.environ.get("CRAPKIT_REQUIRE_CLAUDE") == "1"
+
+
+@pytest.mark.skipif(CLAUDE is None and not REQUIRE_CLAUDE,
+                    reason="Claude Code is not on PATH; MANIFESTS' loads column is what `claude plugin "
+                           "validate` 2.1.238 answered, and CI's plugin job runs this beside Claude Code")
 @pytest.mark.parametrize("edit, loads", [row[1:] for row in MANIFESTS], ids=[row[0] for row in MANIFESTS])
 def test_claude_code_loads_the_manifests_doctor_reads(tmp_path, edit, loads):
-    """The oracle for MANIFESTS' loads column. No CI job runs pytest beside
-    Claude Code, so this runs where a developer has it installed, and
-    test_doctor_reads_a_plugin_manifest_the_way_claude_code_does holds the
-    recorded answers everywhere."""
+    """The oracle for MANIFESTS' loads column. CI's plugin job installs Claude
+    Code and runs this with CRAPKIT_REQUIRE_CLAUDE=1, so a Claude Code release
+    that reads a manifest another way fails there, and a job that lost the
+    binary fails instead of skipping. Elsewhere it runs where a developer has
+    Claude Code, and test_doctor_reads_a_plugin_manifest_the_way_claude_code_does
+    holds the recorded answers everywhere."""
+    assert CLAUDE, "CRAPKIT_REQUIRE_CLAUDE=1 and no `claude` on PATH: install @anthropic-ai/claude-code first"
     done = subprocess.run([CLAUDE, "plugin", "validate", str(_plugin_copy(tmp_path, edit))],
                           capture_output=True, timeout=HANG_SECONDS)
 

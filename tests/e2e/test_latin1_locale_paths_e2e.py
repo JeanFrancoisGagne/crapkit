@@ -31,6 +31,7 @@ import pytest
 
 import hang_guard
 from conftest import child_env, cli_runner
+from legacy_locale import missing
 
 pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"),
                                 reason="Linux only: Windows and macOS name files in UTF-8 whatever the locale")
@@ -122,7 +123,8 @@ LOCALES = [
 @pytest.fixture(scope="session")
 def locpath(tmp_path_factory) -> Path:
     """en_US.ISO-8859-1 and fr_FR.UTF-8, built where glibc finds them through
-    LOCPATH. A locale that does not build leaves its rows skipped, by name."""
+    LOCPATH. A locale that does not build leaves its rows skipped, by name, or
+    failed on a CI job that sets CRAPKIT_REQUIRE_LOCALES=1."""
     root = tmp_path_factory.mktemp("locales")
     for name, (source, charmap) in BUILT.items():
         if shutil.which("localedef"):
@@ -150,8 +152,8 @@ def _in_force(locpath: Path, locale: dict, expected: str) -> dict:
     env = _env(locpath, locale)
     found = _filesystem_encoding(env)
     if found != expected:
-        pytest.skip(f"{locale['LANG']} gives filesystem encoding {found!r} here, not {expected!r}: "
-                    "localedef could not build it")
+        missing(f"{locale['LANG']} gives filesystem encoding {found!r} here, not {expected!r}: "
+                "localedef could not build it")
     return env
 
 

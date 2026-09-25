@@ -17,6 +17,17 @@ import pytest
 import hang_guard
 
 LATIN1 = "en_US.ISO-8859-1"
+REQUIRE = "CRAPKIT_REQUIRE_LOCALES"
+
+
+def missing(reason: str) -> None:
+    """Skip a row whose locale this Linux host cannot build, or fail it where
+    CRAPKIT_REQUIRE_LOCALES=1. CI's Linux jobs set it: a runner image without
+    the /usr/share/i18n sources would otherwise skip every Latin-1 row and
+    leave them unguarded with a pass."""
+    if os.environ.get(REQUIRE) == "1":
+        pytest.fail(f"{reason}; {REQUIRE}=1 says this job must build it (apt-get install locales)")
+    pytest.skip(reason)
 
 
 def latin1_env(directory: Path) -> dict[str, str]:
@@ -27,12 +38,12 @@ def latin1_env(directory: Path) -> dict[str, str]:
         pytest.skip("a POSIX locale row: Windows takes a pipe's encoding from the ANSI code page")
     localedef = shutil.which("localedef")
     if localedef is None:
-        pytest.skip(f"no localedef on this host to build {LATIN1}")
+        missing(f"no localedef on this host to build {LATIN1}")
     # localedef exits 1 on a portability warning and still writes the locale.
     directory.mkdir(parents=True, exist_ok=True)
     hang_guard.run([localedef, "-i", "en_US", "-f", "ISO-8859-1", str(directory / LATIN1)])
     if not (directory / LATIN1).is_dir():
-        pytest.skip(f"localedef could not build {LATIN1}: the host lacks /usr/share/i18n sources")
+        missing(f"localedef could not build {LATIN1}: the host lacks /usr/share/i18n sources")
     env = {"LOCPATH": str(directory), "LANG": LATIN1, "LC_ALL": LATIN1}
     probe = hang_guard.run([sys.executable, "-c", "import locale; print(locale.getencoding())"],
                            env={**os.environ, **env, "PYTHONUTF8": "0"})
