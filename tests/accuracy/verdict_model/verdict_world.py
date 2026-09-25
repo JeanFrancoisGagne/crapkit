@@ -106,11 +106,22 @@ import sys
 
 {_WRITERS}
 
+def fail(plan, lane):
+    """Exit 1. With freeze_log, first set the lane log's mtime back to the value
+    the plan names, as a filesystem too coarse to tell the two writes apart would."""
+    import os
+    sys.stderr.write("lane %s failed on purpose\\n" % lane)
+    sys.stderr.flush()
+    if plan.get("freeze_log"):
+        os.utime(os.path.join(".crapkit", "lane-%s.log" % lane), ns=(plan["freeze_log"],) * 2)
+    os._exit(1)
+
+
 def main(plan_path, lane, mode="run"):
     with open(plan_path, encoding="utf-8") as handle:
         plan = json.load(handle)[lane]
     if plan["fail"]:
-        sys.exit("lane %s failed on purpose" % lane)
+        fail(plan, lane)
     (retest if mode == "retest" else write)(plan, lane)
 
 
@@ -119,6 +130,11 @@ main(*sys.argv[1:])
 
 _GEN: dict = {}
 exec(compile(_WRITERS, GEN, "exec"), _GEN)
+
+
+def report(files: dict) -> dict:
+    """A coverage.py 7.16 JSON report holding `files`: {path key: [region, ...]}."""
+    return _GEN["report"](files)
 
 
 @dataclass(frozen=True)
@@ -174,7 +190,9 @@ class World:
     """What a test sets: functions per scope, tests, lanes that fail, lanes
     that write no JUnit, a lane's JUnit text written verbatim (raw_junit, as
     (lane, text) pairs), the lanes that declare a retest_command and the test
-    ids that pass it, and extra [crapkit] lines."""
+    ids that pass it, extra [crapkit] lines, extra lines per lane table (as
+    (lane, text) pairs), the .gitignore text, and (lane, mtime_ns) pairs a
+    failing lane sets its log's mtime back to."""
     functions: dict = field(default_factory=lambda: {"app": (), "lib": ()})
     tests: tuple = ()
     failing_lanes: frozenset = frozenset()
@@ -183,6 +201,9 @@ class World:
     retest_lanes: frozenset = frozenset()
     retest_pass: frozenset = frozenset()
     config_extra: str = ""
+    lane_extra: tuple = ()
+    frozen_log: tuple = ()
+    gitignore: str = ".crapkit/\n.plan/\n__pycache__/\n"
 
     def with_fn(self, scope: str, fn: Fn) -> "World":
         """The world with `fn` replacing the function of its name, or appended."""
@@ -266,7 +287,8 @@ def _lane_plan(world: World, lane: str, scope: str) -> dict:
     return {"files": {FILES[scope]: regions} if regions else {}, "tests": _junit_tests(tests),
             "fail": lane in world.failing_lanes, "junit": lane not in world.no_junit,
             "raw": dict(world.raw_junit).get(lane),
-            "retest_pass": sorted(t.name for t in tests if t.id in world.retest_pass)}
+            "retest_pass": sorted(t.name for t in tests if t.id in world.retest_pass),
+            "freeze_log": dict(world.frozen_log).get(lane)}
 
 
 def plan(world: World) -> dict:
@@ -286,7 +308,7 @@ def _lane(name: str, scope: str, world: World) -> str:
     return (f'[[lane]]\nname = "{name}"\ncommand = "{command}"\n'
             f'artifact = ".crapkit/cov/{name}.json"\n{results}{_retest(name, world)}'
             f'parser = "coveragepy"\nscopes = ["{scope}"]\ncontainer_ok = true\n'
-            f"env = {repos.LANE_ENV}\n")
+            f"env = {repos.LANE_ENV}\n{dict(world.lane_extra).get(name, '')}")
 
 
 def config(world: World) -> str:
@@ -299,15 +321,18 @@ def config(world: World) -> str:
 
 def files(world: World) -> dict:
     """Every tracked file of the world, as a Commit's files."""
-    out = {".gitignore": ".crapkit/\n.plan/\n__pycache__/\n", GEN: GEN_SOURCE,
+    out = {".gitignore": world.gitignore, GEN: GEN_SOURCE,
            "crapkit.toml": config(world)}
     out.update({f"tests/test_{lane}.py": f"# the tests lane {lane} reports\n" for lane in LANES})
     out.update({path: source(world.functions[scope])[0] for scope, path in FILES.items()})
     return out
 
 
-def spec(world: World, date: int = repos.EPOCH) -> repos.Spec:
-    return repos.Spec(steps=(repos.Commit(files=files(world), message="seed", date=date),))
+def spec(world: World, date: int = repos.EPOCH, root: str = "") -> repos.Spec:
+    """The world committed once; under `root` (a crapkit root below the git top) when given."""
+    prefix = f"{root}/" if root else ""
+    tracked = {prefix + path: text for path, text in files(world).items()}
+    return repos.Spec(steps=(repos.Commit(files=tracked, message="seed", date=date),), root=root)
 
 
 class Scenario:
@@ -319,16 +344,17 @@ class Scenario:
         self.write_plan()
 
     @classmethod
-    def build(cls, make_repo, world: World, date: int = repos.EPOCH) -> "Scenario":
-        return cls(make_repo(spec(world, date)), world, date)
+    def build(cls, make_repo, world: World, date: int = repos.EPOCH, root: str = "") -> "Scenario":
+        return cls(make_repo(spec(world, date, root)), world, date)
 
     def copy(self, dest: Path) -> "Scenario":
         """A private copy, store and working tree included."""
         shutil.copytree(self.top, dest, symlinks=True)
-        return Scenario(repos.Built(dest, dest), self.world, self.date)
+        return Scenario(repos.Built(dest, dest / self.root.relative_to(self.top)), self.world,
+                        self.date)
 
     def write_plan(self) -> None:
-        target = self.top / PLAN
+        target = self.root / PLAN
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(plan(self.world), indent=1), encoding="utf-8")
 
@@ -336,8 +362,8 @@ class Scenario:
         """The world's sources, config and plan into the working tree, uncommitted."""
         self.world = world
         for path, text in files(world).items():
-            (self.top / path).parent.mkdir(parents=True, exist_ok=True)
-            (self.top / path).write_bytes(text.encode("utf-8"))
+            (self.root / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / path).write_bytes(text.encode("utf-8"))
         self.write_plan()
         return self
 

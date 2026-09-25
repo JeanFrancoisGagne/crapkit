@@ -26,6 +26,9 @@ doc: docs/lanes.md:1204-1239 sha256=54a0b640914153ce29428d4cd0cad50290962be3cb82
 doc: docs/lanes.md:1352-1365 sha256=16be62f9ef850d1a1a56d4146b97b184f327b4800e25ff968caf555aeef2c13f
 doc: docs/ratchet.md:832-836 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
 doc: docs/agent-json.md:492-512 sha256=64d6cb9b71322533826e0516f0eb3a3646b001c9636575730dc41313cfd76acf
+doc: docs/lanes.md:971-1064 sha256=3c57130ad9b165d9c7fe529e2a608886e4e96fbd3fcb72e04d3efc8e2a8ab234
+doc: docs/lanes.md:1066-1099 sha256=962c85888f0e3ea1c87c13cdedc39fabd7a99ddcd3a65bf18e3d1fd8d0e67ef0
+doc: docs/lanes.md:1503-1598 sha256=bc5c956cef7f1a51e1f067320a3f3625987d4696c141f55b46c1e6c843df3db4
 doc: docs/portable-records.md:9-24 sha256=e4e06a93b5a1fd4569a93b1673493be0fcdd6e7eb3b04c0d0bc507b5dd3867c9
 """
 from __future__ import annotations
@@ -444,6 +447,56 @@ def suite_dropped(before: int | None, now: int | None) -> bool:
     if before is None or now is None:
         return False
     return Fraction(before - now, 1) > Fraction(before, 10)
+
+
+# --- lane reuse (docs/lanes.md:971-1099) -------------------------------------------------------
+
+# `--reuse-unchanged` names the first condition that failed, in the order the
+# docs list them. A lane without `inputs` answers for the whole tree, the
+# config and the inherited environment; a lane with `inputs` answers for its
+# own paths, its own lane table and whether its artifact's commit is still
+# behind HEAD.
+REUSE_ORDER = ("no artifact", "wrote none", "no proof", "uncommitted", "head", "crapkit.toml",
+               "lane table", "environment", "inputs", "bytes")
+WITH_INPUTS = frozenset({"no artifact", "wrote none", "no proof", "head", "lane table", "inputs",
+                         "bytes"})
+WHOLE_TREE = frozenset(REUSE_ORDER) - {"inputs"}
+
+
+def rerun_condition(failed: set, with_inputs: bool = False) -> str | None:
+    """The condition a rerun names, or None when the lane is reused."""
+    counted = WITH_INPUTS if with_inputs else WHOLE_TREE
+    return next((name for name in REUSE_ORDER if name in failed and name in counted), None)
+
+
+def _under(path: str, prefix: str) -> bool:
+    prefix = prefix.rstrip("/")
+    return path == prefix or path.startswith(prefix + "/")
+
+
+def lines_stale(scope_paths: tuple, changed: set) -> bool:
+    """A lane's dark lines go null once a file under its scopes changed since
+    its artifact was written, uncommitted edits included; a change anywhere
+    else leaves them (docs/lanes.md:1062-1064, agent-json.md, uncovered_lines)."""
+    return any(_under(path, scope) for path in changed for scope in scope_paths)
+
+
+def reach_verdict(paths: list[str], root: str, scope_paths: tuple) -> str:
+    """What a lane whose artifact names `paths` gets (docs/lanes.md:1503-1598):
+    "ok" when any path reaches a scope (zero overlap is the whole test);
+    otherwise "other tree" when any path is outside the root or climbs out of
+    it, "absolute" when every such path is absolute under the root, and "warn"
+    for in-tree relative paths."""
+    if any(_under(path, scope) for path in paths for scope in scope_paths):
+        return "ok"
+    outside = [p for p in paths if p.startswith("../") or (_absolute(p) and not _under(p, root))]
+    if outside:
+        return "other tree"
+    return "absolute" if any(map(_absolute, paths)) else "warn"
+
+
+def _absolute(path: str) -> bool:
+    return path.startswith("/") or (len(path) > 2 and path[1] == ":" and path[2] == "/")
 
 
 # --- overrides (docs/ratchet.md:715-775, 812-814) --------------------------------------------

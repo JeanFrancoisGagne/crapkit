@@ -812,5 +812,5 @@ def test_override_records_canonical_key(make_repo):
     key = model.keys([first, second])[second]
     marks = model.parse_marks((built.root / "crapkit-ratchet.tsv").read_bytes().decode("utf-8"))
     assert marks.marks == {key: model.mark_value(3)} == {("py/twins.py", "dup( x )#2"): model.Decimal("3.0000")}
-    logged = driver.json("overrides", "--json")["overrides"]
+    logged = driver.json("overrides")["overrides"]
     assert [(row["path"], row["function"], row["crap"]) for row in logged] == [(*key, 3.0)]
