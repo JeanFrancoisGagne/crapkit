@@ -403,6 +403,12 @@ def assert_driver_merged(step, repo: Path, expected: dict[str, float]) -> None:
     assert marks(repo) == expected
 
 
+def committed_marks(box, repo: Path, ref: str = "HEAD") -> str:
+    """The marks file as `ref` holds it, one "path  long_name  crap" line per mark."""
+    text = box.run(["git", "show", f"{ref}:crapkit-ratchet.tsv"], cwd=repo, expect=0).stdout
+    return "\n".join("  ".join(line.split("\t")) for line in text.splitlines())
+
+
 def assert_driver_refused(step, ours: str, theirs: str) -> None:
     """docs/ratchet.md's refusal with this merge's two stamps in its brackets,
     then git's own conflict lines, as the page prints them."""
