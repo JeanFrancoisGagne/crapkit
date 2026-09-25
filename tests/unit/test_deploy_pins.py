@@ -265,6 +265,26 @@ def test_the_wheelhouse_lock_covers_every_pinned_release_on_every_row():
     assert lock.coverage_problems(PINS, lock.read()) == []
 
 
+def _image_arches():
+    return {"aarch64" if pinsfile.platform(PINS, image) == "linux/arm64" else "x86_64"
+            for image in pinsfile.IMAGE_CHAIN}
+
+
+def _image_rows():
+    """(arch, minor) for every CPython each image installs, the one below
+    requires-python left out: lin-pip-old-python needs pip to find nothing."""
+    minors = [".".join(v.split(".")[:2]) for v in [*PINS["python"]["versions"], PINS["python"]["prerelease"]]]
+    return {(arch, minor) for arch in _image_arches() for minor in minors}
+
+
+def test_every_cpython_an_image_holds_has_a_wheelhouse_row_for_the_images_arch():
+    """cells-arm64 held the 3.15 prerelease with no aarch64 row, so pip in it
+    reached for the network: "No matching distribution found for coverage"."""
+    rows = {(row["arch"], row["python"]) for row in PINS["wheelhouse"]["row"] if row["os"] == "linux"}
+
+    assert sorted(_image_rows() - rows) == []
+
+
 def test_the_image_toolchain_names_every_key_the_kit_reads():
     body = DOCKERFILE.split("/opt/deploy/toolchain.json\n", 1)[1].split("\nEOF\n", 1)[0]
 

@@ -9,7 +9,7 @@ project = "anyio"
 version = "4.15.1"
 url = "https://files.pythonhosted.org/packages/12/b8/4bd346e22b28902df4d651910f5242c28d84e4a5c2435ca5c3f797ed7e2e/anyio-4.15.1-py3-none-any.whl"
 sha256 = "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "anysqlite-0.0.5-py3-none-any.whl"
@@ -17,7 +17,7 @@ project = "anysqlite"
 version = "0.0.5"
 url = "https://files.pythonhosted.org/packages/0b/31/349eae2bc9d9331dd8951684cf94528d91efaa71129dc30822ac111dfc66/anysqlite-0.0.5-py3-none-any.whl"
 sha256 = "cb345dc4f76f6b37f768d7a0b3e9cf5c700dfcb7a6356af8ab46a11f666edbe7"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "argcomplete-3.7.2-py3-none-any.whl"
@@ -25,7 +25,7 @@ project = "argcomplete"
 version = "3.7.2"
 url = "https://files.pythonhosted.org/packages/46/bd/551ee6af426af84ca33e02622be722925c196608e9127d731ef17c47f06e/argcomplete-3.7.2-py3-none-any.whl"
 sha256 = "6029205678bdd9c1c728a155f5f9ecf5812393f969eef58807641a2bc2aa5b19"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "backports.tarfile-1.2.0-py3-none-any.whl"
@@ -137,7 +137,7 @@ project = "blinker"
 version = "1.9.0"
 url = "https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl"
 sha256 = "ba0efaa9080b619ff2f3459d1d500c57bddea4a6b424b60a91141db6fd2f08bc"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "build-1.6.1-py3-none-any.whl"
@@ -145,7 +145,7 @@ project = "build"
 version = "1.6.1"
 url = "https://files.pythonhosted.org/packages/ad/9b/9fb3585dabcd73a1b2a6267f63f62649347c9e6d072c9fde365b105abb2c/build-1.6.1-py3-none-any.whl"
 sha256 = "ecd351a4be9d35a9eaaba244a7687143c9c7d4aea6ac964e7e7ddab20cbcf4e7"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "cachecontrol-0.14.4-py3-none-any.whl"
@@ -153,7 +153,7 @@ project = "cachecontrol"
 version = "0.14.4"
 url = "https://files.pythonhosted.org/packages/ef/79/c45f2d53efe6ada1110cf6f9fca095e4ff47a0454444aefdde6ac4789179/cachecontrol-0.14.4-py3-none-any.whl"
 sha256 = "b7ac014ff72ee199b5f8af1de29d60239954f223e948196fa3d84adaffc71d2b"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "certifi-2026.7.22-py3-none-any.whl"
@@ -161,7 +161,7 @@ project = "certifi"
 version = "2026.7.22"
 url = "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl"
 sha256 = "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "cffi-2.1.1-cp311-cp311-macosx_11_0_arm64.whl"
@@ -260,6 +260,14 @@ sha256 = "b0431303acaea1089ad4b3e9ce4e6518193def1118d4073ca848635ee4ea2e96"
 rows = ["linux-x86_64-cp314"]
 
 [[file]]
+name = "cffi-2.1.1-cp315-cp315-manylinux2014_aarch64.manylinux_2_17_aarch64.whl"
+project = "cffi"
+version = "2.1.1"
+url = "https://files.pythonhosted.org/packages/e2/31/9e1313b0a6e30e91b3b3d3fff51ae99c857c07738e3afcce1f7334e1b7ab/cffi-2.1.1-cp315-cp315-manylinux2014_aarch64.manylinux_2_17_aarch64.whl"
+sha256 = "507a24c282e0f42f8ed737cf048572cbf580468da5555764a8331735e9c736b6"
+rows = ["linux-aarch64-cp315"]
+
+[[file]]
 name = "cffi-2.1.1-cp315-cp315-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
 project = "cffi"
 version = "2.1.1"
@@ -273,7 +281,7 @@ project = "cfgv"
 version = "3.5.0"
 url = "https://files.pythonhosted.org/packages/db/3c/33bac158f8ab7f89b2e59426d5fe2e4f63f7ed25df84c036890172b412b5/cfgv-3.5.0-py2.py3-none-any.whl"
 sha256 = "a8dc6b26ad22ff227d2634a65cb388215ce6cc96bbcc5cfde7641ae87e8dacc0"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "charset_normalizer-3.5.1-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl"
@@ -372,6 +380,14 @@ sha256 = "c658c50ac0c98cd755a2dd50b7977d3bca7df401dcc47fbdfa87db53ef7d4e8b"
 rows = ["windows-amd64-cp314"]
 
 [[file]]
+name = "charset_normalizer-3.5.1-cp315-cp315-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl"
+project = "charset-normalizer"
+version = "3.5.1"
+url = "https://files.pythonhosted.org/packages/7f/a6/e3b46852424246065355644f4fb6dbccc0239a42a2eee27ecfc8957f0bcd/charset_normalizer-3.5.1-cp315-cp315-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl"
+sha256 = "2679de311c7946dde5d3b6f44941844133ff5c7cb86099c0061ab1e8901c20a8"
+rows = ["linux-aarch64-cp315"]
+
+[[file]]
 name = "charset_normalizer-3.5.1-cp315-cp315-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"
 project = "charset-normalizer"
 version = "3.5.1"
@@ -393,7 +409,7 @@ project = "cleo"
 version = "2.1.0"
 url = "https://files.pythonhosted.org/packages/2d/f5/6bbead8b880620e5a99e0e4bb9e22e67cca16ff48d54105302a3e7821096/cleo-2.1.0-py3-none-any.whl"
 sha256 = "4a31bd4dd45695a64ee3c4758f583f134267c2bc518d8ae9a29cf237d009b07e"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "click-8.5.0-py3-none-any.whl"
@@ -401,7 +417,7 @@ project = "click"
 version = "8.5.0"
 url = "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl"
 sha256 = "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "colorama-0.4.6-py2.py3-none-any.whl"
@@ -409,7 +425,7 @@ project = "colorama"
 version = "0.4.6"
 url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl"
 sha256 = "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "coverage-7.16.1-cp311-cp311-macosx_11_0_arm64.whl"
@@ -548,6 +564,14 @@ sha256 = "fbbe8265736659a6be2e6042b6a35be13545d14b243cc1d7ecf65f90d788a370"
 rows = ["linux-x86_64-cp315"]
 
 [[file]]
+name = "coverage-7.16.1-cp315-cp315-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl"
+project = "coverage"
+version = "7.16.1"
+url = "https://files.pythonhosted.org/packages/3c/74/63f8f6a67c03b86455c726be273b2aa5b57fd1122f22350d141bbb142e91/coverage-7.16.1-cp315-cp315-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl"
+sha256 = "4b0359eb4c62f9993e176bc8f50450fc736a6b90dbcc05bb8584e948812699ae"
+rows = ["linux-aarch64-cp315"]
+
+[[file]]
 name = "coverage-7.4.4-cp311-cp311-macosx_11_0_arm64.whl"
 project = "coverage"
 version = "7.4.4"
@@ -617,7 +641,7 @@ project = "coverage"
 version = "7.4.4"
 url = "https://files.pythonhosted.org/packages/bf/d5/f809d8b630cf4c11fe490e20037a343d12a74ec2783c6cdb5aee725e7137/coverage-7.4.4.tar.gz"
 sha256 = "c901df83d097649e257e803be22592aedfd5182f07b3cc87d640bbb9afd50f49"
-rows = ["linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "crapkit-0.4.0-py3-none-any.whl"
@@ -625,7 +649,7 @@ project = "crapkit"
 version = "0.4.0"
 url = "https://files.pythonhosted.org/packages/04/91/667febd74220bb340f96c40cf567f68bbefd4ddc1f16a2d5ebb79ac17ebe/crapkit-0.4.0-py3-none-any.whl"
 sha256 = "0642b3e42558a04fbbf48c8044f7031dd9c643c96030865e6bb0ae7663b9938f"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "crapkit-0.4.15-py3-none-any.whl"
@@ -633,7 +657,7 @@ project = "crapkit"
 version = "0.4.15"
 url = "https://files.pythonhosted.org/packages/5a/c7/e5a3532bf8723dbfd421663d26261f6e08c677d3e253192ec47501c2b82a/crapkit-0.4.15-py3-none-any.whl"
 sha256 = "80362e60ca5be303e20e296dbe3f7ccaf63ff950d376e112f59e41301ded35b2"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "crapkit-0.4.2-py3-none-any.whl"
@@ -641,7 +665,7 @@ project = "crapkit"
 version = "0.4.2"
 url = "https://files.pythonhosted.org/packages/cb/48/6f2e38e3878d8b81eafac741d49e1bec7595700a3b7a4e03985851c9d516/crapkit-0.4.2-py3-none-any.whl"
 sha256 = "6aa7feafdb83a000bfef863fb4e4512b0c0b82cef214410ea279362c08bae515"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "crapkit-0.4.4-py3-none-any.whl"
@@ -649,7 +673,7 @@ project = "crapkit"
 version = "0.4.4"
 url = "https://files.pythonhosted.org/packages/1d/43/b333147601f11522be904c4476977b1552c27bc8e7ca0db0c012af8deefe/crapkit-0.4.4-py3-none-any.whl"
 sha256 = "f2740c5d584ebd8c859a8e4af6ab6dbc07a959799e6b9d5d5e168e7ac0a5139f"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "crapkit-0.4.5-py3-none-any.whl"
@@ -657,7 +681,7 @@ project = "crapkit"
 version = "0.4.5"
 url = "https://files.pythonhosted.org/packages/49/e1/e52b607fd3d012eb560790cefd83f8862b00d2eff00b2e7f7e81d12e60a4/crapkit-0.4.5-py3-none-any.whl"
 sha256 = "2970915a3ba4f89a03079b84d53b64869c2c9076ddf3c431bab6fd7298e413c8"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "crapkit-0.5.1-py3-none-any.whl"
@@ -665,7 +689,7 @@ project = "crapkit"
 version = "0.5.1"
 url = "https://files.pythonhosted.org/packages/57/cd/209954faf06c08b21fb038729c6ef6c978188fcae8650640da7e6627493e/crapkit-0.5.1-py3-none-any.whl"
 sha256 = "d046b96ca596fa031eee5b6c04e49460527a6ebd5186aa612ba6db757a91bd85"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "crapkit-0.6.0-py3-none-any.whl"
@@ -673,7 +697,7 @@ project = "crapkit"
 version = "0.6.0"
 url = "https://files.pythonhosted.org/packages/9b/41/21d7ba1451f6b22b3ed8e5286fc42d7d3e1362398c3bd01b99870a0feb73/crapkit-0.6.0-py3-none-any.whl"
 sha256 = "05d9628cc6bb79662b66f7be9a9018ce50fa30f88b4b41238781d55be711ec88"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "crapkit-0.7.6-py3-none-any.whl"
@@ -681,7 +705,7 @@ project = "crapkit"
 version = "0.7.6"
 url = "https://files.pythonhosted.org/packages/94/38/40fe2c7b436a8661c77970df738191bee20af40ad70d739f018921575dd1/crapkit-0.7.6-py3-none-any.whl"
 sha256 = "4bfaa90b3dc8253fb8d2f35f7ef9a17347a24a92f6adaf6128468d2aa3d3738b"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "crapkit-0.8.0-py3-none-any.whl"
@@ -689,7 +713,7 @@ project = "crapkit"
 version = "0.8.0"
 url = "https://files.pythonhosted.org/packages/85/84/60662fce50b3911ca3165251e9950daf4311f35cc9b4d42aa66fa59cb4f2/crapkit-0.8.0-py3-none-any.whl"
 sha256 = "548983a8c511a1340d828b9ac705ebd4e42dc1e6d073cd7525fcdfbc09bebb6f"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "crashtest-0.4.1-py3-none-any.whl"
@@ -697,7 +721,7 @@ project = "crashtest"
 version = "0.4.1"
 url = "https://files.pythonhosted.org/packages/b0/5c/3ba7d12e7a79566f97b8f954400926d7b6eb33bcdccc1315a857f200f1f1/crashtest-0.4.1-py3-none-any.whl"
 sha256 = "8d23eac5fa660409f57472e3851dab7ac18aba459a8d19cbbba86d3d5aecd2a5"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "cryptography-50.0.1-cp311-abi3-manylinux_2_34_aarch64.whl"
@@ -705,7 +729,7 @@ project = "cryptography"
 version = "50.0.1"
 url = "https://files.pythonhosted.org/packages/39/3b/e96c1ef71edef71057c7e3c3d982ce8fda554e0c52d0cc19c18845cde3eb/cryptography-50.0.1-cp311-abi3-manylinux_2_34_aarch64.whl"
 sha256 = "e2ca8fd1b6b4b82a1c4cb02841d0837e3c12336c2e24b520ab8ab3b969733d8f"
-rows = ["linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314"]
+rows = ["linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315"]
 
 [[file]]
 name = "cryptography-50.0.1-cp311-abi3-manylinux_2_34_x86_64.whl"
@@ -721,7 +745,7 @@ project = "dep-logic"
 version = "0.7.2"
 url = "https://files.pythonhosted.org/packages/d0/71/e6979663eb7feaab2a2fcd3a004c0fc33b2a5d0ebafc4c474000b2be6732/dep_logic-0.7.2-py3-none-any.whl"
 sha256 = "33640c4ba7fd45f2504442eb9e0c12e57dac253c748ca3925749548a5c556bae"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "distlib-0.4.3-py2.py3-none-any.whl"
@@ -729,7 +753,7 @@ project = "distlib"
 version = "0.4.3"
 url = "https://files.pythonhosted.org/packages/02/08/9c41fb51ab5b43eb21674aff13df270e8ba6c4b29c8624e328dc7a9482af/distlib-0.4.3-py2.py3-none-any.whl"
 sha256 = "4b0ce306c966eb73bc3a7b6abad017c556dadd92c44701562cd528ac7fde4d5b"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "dulwich-1.2.15-cp311-cp311-macosx_11_0_arm64.whl"
@@ -860,6 +884,14 @@ sha256 = "60e46a95cd866b01cbc1843541cf11033dd189c8b4767c05bd7b4ee0600cf6ab"
 rows = ["windows-amd64-cp314"]
 
 [[file]]
+name = "dulwich-1.2.15-cp315-cp315-manylinux_2_28_aarch64.whl"
+project = "dulwich"
+version = "1.2.15"
+url = "https://files.pythonhosted.org/packages/f9/0f/7401ecc53624bb0f4ee1e055d857402295bc673e0da564ebd4573e013cd2/dulwich-1.2.15-cp315-cp315-manylinux_2_28_aarch64.whl"
+sha256 = "f157812ce877d50a93336136a1b9dd2b368395801a96cd8484c257a4f4665c23"
+rows = ["linux-aarch64-cp315"]
+
+[[file]]
 name = "dulwich-1.2.15-cp315-cp315-manylinux_2_28_x86_64.whl"
 project = "dulwich"
 version = "1.2.15"
@@ -873,7 +905,7 @@ project = "execnet"
 version = "2.1.2"
 url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl"
 sha256 = "67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "fastjsonschema-2.22.2-py3-none-any.whl"
@@ -881,7 +913,7 @@ project = "fastjsonschema"
 version = "2.22.2"
 url = "https://files.pythonhosted.org/packages/49/82/2755c7c982086f00d4dab85bc120ec35045a9fc2191893a6ce79afe94443/fastjsonschema-2.22.2-py3-none-any.whl"
 sha256 = "0fb3915616adac85ccfdd737d26be1089845d2019819505b42d39888458f74d4"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "filelock-4.0.3-py3-none-any.whl"
@@ -889,7 +921,7 @@ project = "filelock"
 version = "4.0.3"
 url = "https://files.pythonhosted.org/packages/7a/6d/db8b86e168fef0cf904737e275bccb683558088ef971e92d3b41ce980699/filelock-4.0.3-py3-none-any.whl"
 sha256 = "30cd166e2aee2c7534ce2c33c6367c4cd051b8368e20e2c4eb0c34f699bacfab"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "findpython-0.8.0-py3-none-any.whl"
@@ -897,7 +929,7 @@ project = "findpython"
 version = "0.8.0"
 url = "https://files.pythonhosted.org/packages/bb/a5/fae2000239a1f0225c9f31ec5f790f465d3cf135e79937ad19c876303e21/findpython-0.8.0-py3-none-any.whl"
 sha256 = "4a61ee1618a8b55014f7d41f59345d322be93f6ce62395bdccccc651b3f7e28a"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "h11-0.16.0-py3-none-any.whl"
@@ -905,7 +937,7 @@ project = "h11"
 version = "0.16.0"
 url = "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl"
 sha256 = "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "hishel-1.4.0-py3-none-any.whl"
@@ -913,7 +945,7 @@ project = "hishel"
 version = "1.4.0"
 url = "https://files.pythonhosted.org/packages/da/c5/2cf7b80da9833de6ae5099111b64cf541830ccb4ef26605ae86f23ed5604/hishel-1.4.0-py3-none-any.whl"
 sha256 = "38cb62d7d38fb437dc086f789c26d0cab41310d12497ec3f56dcead4b08571f0"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "httpcore-1.0.9-py3-none-any.whl"
@@ -921,7 +953,7 @@ project = "httpcore"
 version = "1.0.9"
 url = "https://files.pythonhosted.org/packages/7e/f5/f66802a942d491edb555dd61e3a9961140fd64c90bce1eafd741609d334d/httpcore-1.0.9-py3-none-any.whl"
 sha256 = "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "httpx-0.28.1-py3-none-any.whl"
@@ -929,7 +961,7 @@ project = "httpx"
 version = "0.28.1"
 url = "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl"
 sha256 = "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "id-1.6.1-py3-none-any.whl"
@@ -937,7 +969,7 @@ project = "id"
 version = "1.6.1"
 url = "https://files.pythonhosted.org/packages/42/77/de194443bf38daed9452139e960c632b0ef9f9a5dd9ce605fdf18ca9f1b1/id-1.6.1-py3-none-any.whl"
 sha256 = "f5ec41ed2629a508f5d0988eda142e190c9c6da971100612c4de9ad9f9b237ca"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "identify-2.6.19-py2.py3-none-any.whl"
@@ -945,7 +977,7 @@ project = "identify"
 version = "2.6.19"
 url = "https://files.pythonhosted.org/packages/94/84/d9273cd09688070a6523c4aee4663a8538721b2b755c4962aafae0011e72/identify-2.6.19-py2.py3-none-any.whl"
 sha256 = "20e6a87f786f768c092a721ad107fc9df0eb89347be9396cadf3f4abbd1fb78a"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "idna-3.20-py3-none-any.whl"
@@ -953,7 +985,7 @@ project = "idna"
 version = "3.20"
 url = "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl"
 sha256 = "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "importlib_metadata-9.0.1-py3-none-any.whl"
@@ -969,7 +1001,7 @@ project = "iniconfig"
 version = "2.3.0"
 url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl"
 sha256 = "f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "installer-1.0.1-py3-none-any.whl"
@@ -977,7 +1009,7 @@ project = "installer"
 version = "1.0.1"
 url = "https://files.pythonhosted.org/packages/26/48/bedf3ba4163e7db392c9d4cbdfc8217423196c8fccbe5a404a0f094fde63/installer-1.0.1-py3-none-any.whl"
 sha256 = "011d045df8b954ced7dde3a7e42ae4418da40ecda7990f2d11d5ed7c146fd98b"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "jaraco.classes-3.4.0-py3-none-any.whl"
@@ -985,7 +1017,7 @@ project = "jaraco-classes"
 version = "3.4.0"
 url = "https://files.pythonhosted.org/packages/7f/66/b15ce62552d84bbfcec9a4873ab79d993a1dd4edb922cbfccae192bd5b5f/jaraco.classes-3.4.0-py3-none-any.whl"
 sha256 = "f662826b6bed8cace05e7ff873ce0f9283b5c924470fe664fff1c2f00f581790"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "jaraco_context-6.1.2-py3-none-any.whl"
@@ -993,7 +1025,7 @@ project = "jaraco-context"
 version = "6.1.2"
 url = "https://files.pythonhosted.org/packages/f2/58/bc8954bda5fcda97bd7c19be11b85f91973d67a706ed4a3aec33e7de22db/jaraco_context-6.1.2-py3-none-any.whl"
 sha256 = "bf8150b79a2d5d91ae48629d8b427a8f7ba0e1097dd6202a9059f29a36379535"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "jaraco_functools-4.6.0-py3-none-any.whl"
@@ -1001,7 +1033,7 @@ project = "jaraco-functools"
 version = "4.6.0"
 url = "https://files.pythonhosted.org/packages/02/36/ecc85bc96c273dc8a11273ed4782272975e6338d4a3e9228621175edf0e3/jaraco_functools-4.6.0-py3-none-any.whl"
 sha256 = "99e3dc0060c5cbe8fcd1cdb36258e2a65ca40f1566b2033b12abb1bb44dd3c30"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "jeepney-0.9.0-py3-none-any.whl"
@@ -1009,7 +1041,7 @@ project = "jeepney"
 version = "0.9.0"
 url = "https://files.pythonhosted.org/packages/b2/a3/e137168c9c44d18eff0376253da9f1e9234d0239e0ee230d2fee6cea8e55/jeepney-0.9.0-py3-none-any.whl"
 sha256 = "97e5714520c16fc0a45695e5365a2e11b81ea79bba796e26f9f1d178cb182683"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315"]
 
 [[file]]
 name = "keyring-25.7.0-py3-none-any.whl"
@@ -1017,7 +1049,7 @@ project = "keyring"
 version = "25.7.0"
 url = "https://files.pythonhosted.org/packages/81/db/e655086b7f3a705df045bf0933bdd9c2f79bb3c97bfef1384598bb79a217/keyring-25.7.0-py3-none-any.whl"
 sha256 = "be4a0b195f149690c166e850609a477c532ddbfbaed96a404d4e43f8d5e2689f"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "lizard-1.24.0-py2.py3-none-any.whl"
@@ -1025,7 +1057,7 @@ project = "lizard"
 version = "1.24.0"
 url = "https://files.pythonhosted.org/packages/60/c1/1da7937391a7e67edfb33bb3cd6d3426a7027cf3dd904ecb29c2b4416e78/lizard-1.24.0-py2.py3-none-any.whl"
 sha256 = "a688bc607a891ff4a7836826f25742dc9c1bf648da3075dbd495e199e8848602"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "markdown_it_py-4.2.0-py3-none-any.whl"
@@ -1033,7 +1065,7 @@ project = "markdown-it-py"
 version = "4.2.0"
 url = "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl"
 sha256 = "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "mdurl-0.1.2-py3-none-any.whl"
@@ -1041,7 +1073,7 @@ project = "mdurl"
 version = "0.1.2"
 url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl"
 sha256 = "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "more_itertools-11.1.0-py3-none-any.whl"
@@ -1049,7 +1081,7 @@ project = "more-itertools"
 version = "11.1.0"
 url = "https://files.pythonhosted.org/packages/e8/3d/1087453384dbde46a8c7f9356eead2c58be8a7bf156bca40243377c85715/more_itertools-11.1.0-py3-none-any.whl"
 sha256 = "4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd542125a192"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "msgpack-1.2.2-cp311-cp311-macosx_11_0_arm64.whl"
@@ -1180,6 +1212,14 @@ sha256 = "1510f24612d4b983dff6935d9273e02c320cfd525727fbcb58836a75f589fdbc"
 rows = ["windows-amd64-cp314"]
 
 [[file]]
+name = "msgpack-1.2.2-cp315-cp315-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl"
+project = "msgpack"
+version = "1.2.2"
+url = "https://files.pythonhosted.org/packages/d7/bf/7f53b9e6709a4df7f9b9b81dc65f9dfaa32caf65bee94986ec2cb8fa07f1/msgpack-1.2.2-cp315-cp315-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl"
+sha256 = "06d95f61de7afe4f4ff908a6feebfcb070d0582ac87c9cf3cedf8551cf634516"
+rows = ["linux-aarch64-cp315"]
+
+[[file]]
 name = "msgpack-1.2.2-cp315-cp315-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"
 project = "msgpack"
 version = "1.2.2"
@@ -1193,7 +1233,7 @@ project = "nodeenv"
 version = "1.10.0"
 url = "https://files.pythonhosted.org/packages/88/b2/d0896bdcdc8d28a7fc5717c305f1a861c26e18c05047949fb371034d98bd/nodeenv-1.10.0-py2.py3-none-any.whl"
 sha256 = "5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "packaging-26.3-py3-none-any.whl"
@@ -1201,7 +1241,7 @@ project = "packaging"
 version = "26.3"
 url = "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl"
 sha256 = "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pathspec-1.1.1-py3-none-any.whl"
@@ -1209,7 +1249,7 @@ project = "pathspec"
 version = "1.1.1"
 url = "https://files.pythonhosted.org/packages/f1/d9/7fb5aa316bc299258e68c73ba3bddbc499654a07f151cba08f6153988714/pathspec-1.1.1-py3-none-any.whl"
 sha256 = "a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pbs_installer-2026.9.24-py3-none-any.whl"
@@ -1217,7 +1257,7 @@ project = "pbs-installer"
 version = "2026.9.24"
 url = "https://files.pythonhosted.org/packages/15/9b/00e7ff2963e6d8eee85eaa9fc0839f160ebbd659535fa2acdc23bdfdb234/pbs_installer-2026.9.24-py3-none-any.whl"
 sha256 = "6786998f8b29899839b48e67fbc28deea29af346cc5108ba7b941dd2eeb4ec3c"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pdm-2.29.2-py3-none-any.whl"
@@ -1225,7 +1265,7 @@ project = "pdm"
 version = "2.29.2"
 url = "https://files.pythonhosted.org/packages/ef/7b/4fb8a503e932f8d200e3b2c5fb3496fe4cb028440032b3f07a8f9d2ba29d/pdm-2.29.2-py3-none-any.whl"
 sha256 = "b17dcc9b55b94694d63afc56053afb7d580e963bb038c753df2cd18fda71182d"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pillow-12.3.0-cp311-cp311-macosx_11_0_arm64.whl"
@@ -1356,6 +1396,14 @@ sha256 = "fdafc9cce40277e0f7a0feabce0ee50dd2fa1800f3b38015e51296b5e814048d"
 rows = ["windows-amd64-cp314"]
 
 [[file]]
+name = "pillow-12.3.0-cp315-cp315-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl"
+project = "pillow"
+version = "12.3.0"
+url = "https://files.pythonhosted.org/packages/0c/08/93fa2e70e30a2d81547e481b6ee2bb9522117221fb1e0ce4b5df70967677/pillow-12.3.0-cp315-cp315-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl"
+sha256 = "28ce87c5ab450a9dd970b52e5aca5fe63ed432d18a2eaddd1979a00a1ba24ace"
+rows = ["linux-aarch64-cp315"]
+
+[[file]]
 name = "pillow-12.3.0-cp315-cp315-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
 project = "pillow"
 version = "12.3.0"
@@ -1369,7 +1417,7 @@ project = "pip"
 version = "26.2.1"
 url = "https://files.pythonhosted.org/packages/f3/6e/1736e5b4ae2b778ef2f81c47d797de9f891d4d8acb047a24ca37a60294dd/pip-26.2.1-py3-none-any.whl"
 sha256 = "71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pipenv-2026.8.0-py3-none-any.whl"
@@ -1377,7 +1425,7 @@ project = "pipenv"
 version = "2026.8.0"
 url = "https://files.pythonhosted.org/packages/d5/e9/cfad9027f8fcda20d569b40e5e74b007e955c95a05ba80763e19572b5b23/pipenv-2026.8.0-py3-none-any.whl"
 sha256 = "8da889c636a8cab59a435c1366f30d252ecee465372341eb8cd4da43b055ad9d"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pipx-1.17.6-py3-none-any.whl"
@@ -1385,7 +1433,7 @@ project = "pipx"
 version = "1.17.6"
 url = "https://files.pythonhosted.org/packages/da/ed/f2a072f3798b5280dc741d45ec12df5fdcc1638f8bcead29f2e509100328/pipx-1.17.6-py3-none-any.whl"
 sha256 = "7d069f69e9deef702082a188fedfdc3868fc62d9348ea94fccebe36af5c9eaa0"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pkginfo-1.13-py3-none-any.whl"
@@ -1393,15 +1441,15 @@ project = "pkginfo"
 version = "1.13"
 url = "https://files.pythonhosted.org/packages/ed/ad/2e9e8a7bb014758af9453b3d818848d50852592296aceb8817f2a937fa71/pkginfo-1.13-py3-none-any.whl"
 sha256 = "37e1bfb7b5b149829e6f140a225b517c4c8808d8d164f68137b9492023874061"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
-name = "platformdirs-4.11.12-py3-none-any.whl"
+name = "platformdirs-4.11.14-py3-none-any.whl"
 project = "platformdirs"
-version = "4.11.12"
-url = "https://files.pythonhosted.org/packages/ec/2b/69de6317fbf48865bb12aa56c9cfcfff46b3add0cd45250725d96146dce0/platformdirs-4.11.12-py3-none-any.whl"
-sha256 = "b1ba966ac76153d9985a0787ffab951e7c18416189873d4e4ddb2c8a04a0a254"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+version = "4.11.14"
+url = "https://files.pythonhosted.org/packages/dc/40/03f2c094178624d155b8d27a9b0c5ab1e39efa6cc9074b599e8c671b9db1/platformdirs-4.11.14-py3-none-any.whl"
+sha256 = "c1b1a1eab4f4d1b0eb81754593f1c38de88e84ebe6f93bf6714706a6759074b1"
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pluggy-1.6.0-py3-none-any.whl"
@@ -1409,7 +1457,7 @@ project = "pluggy"
 version = "1.6.0"
 url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl"
 sha256 = "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "poetry-2.5.1-py3-none-any.whl"
@@ -1417,7 +1465,7 @@ project = "poetry"
 version = "2.5.1"
 url = "https://files.pythonhosted.org/packages/d6/7a/6b4fafb693200fc24fad8453ed200b902ab3fe56743cdcc756a6fae23ddf/poetry-2.5.1-py3-none-any.whl"
 sha256 = "3f7910abc667ce0c33a67e306baf017acdec1c8eeec4aa64d176e530d8338a61"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "poetry_core-2.5.0-py3-none-any.whl"
@@ -1425,7 +1473,7 @@ project = "poetry-core"
 version = "2.5.0"
 url = "https://files.pythonhosted.org/packages/b7/25/7ed0a2ea4fe12f7fd0394387b5debbcd6fdbd06e5ac9daab96ba11471da8/poetry_core-2.5.0-py3-none-any.whl"
 sha256 = "98ee465b66f7e14bb9fbe68fb5e00d0cff184f036993ec94610ae4b5612f3add"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pre_commit-4.6.2-py2.py3-none-any.whl"
@@ -1433,7 +1481,7 @@ project = "pre-commit"
 version = "4.6.2"
 url = "https://files.pythonhosted.org/packages/45/e2/bbb7129c9e7999a6b8ee9cca3b66486c25c423ab5a75f34071798b74ce94/pre_commit-4.6.2-py2.py3-none-any.whl"
 sha256 = "e2dde9a75d3bce11bd3831c26d134df00a2803c1d818be6a0383c3dcda25dc4e"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "prek-0.5.3-py3-none-macosx_11_0_arm64.whl"
@@ -1457,7 +1505,7 @@ project = "prek"
 version = "0.5.3"
 url = "https://files.pythonhosted.org/packages/42/9a/bfcd3c1fe1fdefee8dc144a92c4b0b93b59f31c7df60ee1720c49223a90a/prek-0.5.3-py3-none-manylinux_2_28_aarch64.whl"
 sha256 = "086d1b77557f0a089568dc5b93c22ccd793351524f3eeb29d36781421a350e72"
-rows = ["linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314"]
+rows = ["linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315"]
 
 [[file]]
 name = "prek-0.5.3-py3-none-win_amd64.whl"
@@ -1473,7 +1521,7 @@ project = "pycparser"
 version = "3.0"
 url = "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl"
 sha256 = "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pygments-2.21.0-py3-none-any.whl"
@@ -1481,7 +1529,7 @@ project = "pygments"
 version = "2.21.0"
 url = "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl"
 sha256 = "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pyproject_hooks-1.3.3-py3-none-any.whl"
@@ -1489,7 +1537,7 @@ project = "pyproject-hooks"
 version = "1.3.3"
 url = "https://files.pythonhosted.org/packages/85/11/044d1ae1b4ec0d7af88ee5bc91e081be1022533032b906a7bdabdbb60977/pyproject_hooks-1.3.3-py3-none-any.whl"
 sha256 = "5fc53fdac9f7bd63fbcdc868fb5f90b4784d78a53a3d3388cd738b807441a20b"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pytest-9.1.1-py3-none-any.whl"
@@ -1497,7 +1545,7 @@ project = "pytest"
 version = "9.1.1"
 url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl"
 sha256 = "37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pytest_cov-5.0.0-py3-none-any.whl"
@@ -1505,7 +1553,7 @@ project = "pytest-cov"
 version = "5.0.0"
 url = "https://files.pythonhosted.org/packages/78/3a/af5b4fa5961d9a1e6237b530eb87dd04aea6eb83da09d2a4073d81b54ccf/pytest_cov-5.0.0-py3-none-any.whl"
 sha256 = "4f0764a1219df53214206bf1feea4633c3b558a2925c8b59f144f682861ce652"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pytest_cov-6.3.0-py3-none-any.whl"
@@ -1513,7 +1561,7 @@ project = "pytest-cov"
 version = "6.3.0"
 url = "https://files.pythonhosted.org/packages/80/b4/bb7263e12aade3842b938bc5c6958cae79c5ee18992f9b9349019579da0f/pytest_cov-6.3.0-py3-none-any.whl"
 sha256 = "440db28156d2468cafc0415b4f8e50856a0d11faefa38f30906048fe490f1749"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pytest_cov-7.1.0-py3-none-any.whl"
@@ -1521,7 +1569,7 @@ project = "pytest-cov"
 version = "7.1.0"
 url = "https://files.pythonhosted.org/packages/9d/7a/d968e294073affff457b041c2be9868a40c1c71f4a35fcc1e45e5493067b/pytest_cov-7.1.0-py3-none-any.whl"
 sha256 = "a0461110b7865f9a271aa1b51e516c9a95de9d696734a2f71e3e78f46e1d4678"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pytest_xdist-3.8.0-py3-none-any.whl"
@@ -1529,7 +1577,7 @@ project = "pytest-xdist"
 version = "3.8.0"
 url = "https://files.pythonhosted.org/packages/ca/31/d4e37e9e550c2b92a9cbc2e4d0b7420a27224968580b5a447f420847c975/pytest_xdist-3.8.0-py3-none-any.whl"
 sha256 = "202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "python_discovery-1.6.1-py3-none-any.whl"
@@ -1537,7 +1585,7 @@ project = "python-discovery"
 version = "1.6.1"
 url = "https://files.pythonhosted.org/packages/16/7d/e9ffbadfbf89c93848412d04594135c4ae8c1d37d9e053b9c3ed718fabc4/python_discovery-1.6.1-py3-none-any.whl"
 sha256 = "d43fcdef879fe795352bd13ccf8d185ba5a9f86f36cfcd00529f596e737442b3"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "python_dotenv-1.2.3-py3-none-any.whl"
@@ -1545,7 +1593,7 @@ project = "python-dotenv"
 version = "1.2.3"
 url = "https://files.pythonhosted.org/packages/0d/17/c5c6b53ddc18f297992099b3d9ec16c855c0ccc83263a21fe4d1c625ec6c/python_dotenv-1.2.3-py3-none-any.whl"
 sha256 = "904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "pywin32_ctypes-0.2.3-py3-none-any.whl"
@@ -1689,7 +1737,7 @@ project = "pyyaml"
 version = "6.0.3"
 url = "https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz"
 sha256 = "d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f"
-rows = ["linux-x86_64-cp315"]
+rows = ["linux-x86_64-cp315", "linux-aarch64-cp315"]
 
 [[file]]
 name = "rapidfuzz-3.14.6-cp311-cp311-macosx_11_0_arm64.whl"
@@ -1820,6 +1868,14 @@ sha256 = "41ee893c4d7d0fb1844f6cad966540a833784b3bad2c239a0d80195d9231cef4"
 rows = ["windows-amd64-cp314"]
 
 [[file]]
+name = "rapidfuzz-3.14.6-cp315-cp315-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
+project = "rapidfuzz"
+version = "3.14.6"
+url = "https://files.pythonhosted.org/packages/a7/f3/444d939f4b6c3c86f67083cb792978f3f42c28f944e66e9152e910cd212a/rapidfuzz-3.14.6-cp315-cp315-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl"
+sha256 = "cbe6a62f71fcbca72acbf5a30e53380600369f257f951d664d81d30c0c598595"
+rows = ["linux-aarch64-cp315"]
+
+[[file]]
 name = "rapidfuzz-3.14.6-cp315-cp315-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
 project = "rapidfuzz"
 version = "3.14.6"
@@ -1833,7 +1889,7 @@ project = "requests"
 version = "2.34.2"
 url = "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl"
 sha256 = "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "requests_toolbelt-1.0.0-py2.py3-none-any.whl"
@@ -1841,7 +1897,7 @@ project = "requests-toolbelt"
 version = "1.0.0"
 url = "https://files.pythonhosted.org/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl"
 sha256 = "cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "resolvelib-1.2.1-py3-none-any.whl"
@@ -1849,7 +1905,7 @@ project = "resolvelib"
 version = "1.2.1"
 url = "https://files.pythonhosted.org/packages/e2/23/c941a0d0353681ca138489983c4309e0f5095dfd902e1357004f2357ddf2/resolvelib-1.2.1-py3-none-any.whl"
 sha256 = "fb06b66c8da04172d9e72a21d7d06186d8919e32ae5ab5cdf5b9d920be805ac2"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "rich-15.0.0-py3-none-any.whl"
@@ -1857,7 +1913,7 @@ project = "rich"
 version = "15.0.0"
 url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl"
 sha256 = "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "secretstorage-3.5.0-py3-none-any.whl"
@@ -1865,7 +1921,7 @@ project = "secretstorage"
 version = "3.5.0"
 url = "https://files.pythonhosted.org/packages/b7/46/f5af3402b579fd5e11573ce652019a67074317e18c1935cc0b4ba9b35552/secretstorage-3.5.0-py3-none-any.whl"
 sha256 = "0ce65888c0725fcb2c5bc0fdb8e5438eece02c523557ea40ce0703c266248137"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315"]
 
 [[file]]
 name = "setuptools-84.0.0-py3-none-any.whl"
@@ -1873,7 +1929,7 @@ project = "setuptools"
 version = "84.0.0"
 url = "https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl"
 sha256 = "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "shellingham-1.5.4-py2.py3-none-any.whl"
@@ -1881,7 +1937,7 @@ project = "shellingham"
 version = "1.5.4"
 url = "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl"
 sha256 = "7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "socksio-1.0.0-py3-none-any.whl"
@@ -1889,7 +1945,7 @@ project = "socksio"
 version = "1.0.0"
 url = "https://files.pythonhosted.org/packages/37/c3/6eeb6034408dac0fa653d126c9204ade96b819c936e136c5e8a6897eee9c/socksio-1.0.0-py3-none-any.whl"
 sha256 = "95dc1f15f9b34e8d7b16f06d74b8ccf48f609af32ab33c608d08761c5dcbb1f3"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "tomli-2.4.1-cp311-cp311-macosx_11_0_arm64.whl"
@@ -1929,7 +1985,7 @@ project = "tomlkit"
 version = "0.15.1"
 url = "https://files.pythonhosted.org/packages/13/bc/8c13eb66537dce1d2bd3a57132902f38d0e7f5bb46fa9f4daed9fe9d76ee/tomlkit-0.15.1-py3-none-any.whl"
 sha256 = "177a05aece5a8ca5266fd3c448abb47b8d352f09d477d3ca8332db4d89b24304"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "trove_classifiers-2026.9.21.13-py3-none-any.whl"
@@ -1937,7 +1993,7 @@ project = "trove-classifiers"
 version = "2026.9.21.13"
 url = "https://files.pythonhosted.org/packages/30/81/0da8afb52a71d0a4f2bd3152357b1a441e393b286374802b9d3addab4ab5/trove_classifiers-2026.9.21.13-py3-none-any.whl"
 sha256 = "8b1ff4f9c191b1040b71c37f1e445ab99732911e3cd91de52838453a854d7a17"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "truststore-0.10.4-py3-none-any.whl"
@@ -1945,7 +2001,7 @@ project = "truststore"
 version = "0.10.4"
 url = "https://files.pythonhosted.org/packages/19/97/56608b2249fe206a67cd573bc93cd9896e1efb9e98bce9c163bcdc704b88/truststore-0.10.4-py3-none-any.whl"
 sha256 = "adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "typing_extensions-4.16.0-py3-none-any.whl"
@@ -1953,7 +2009,7 @@ project = "typing-extensions"
 version = "4.16.0"
 url = "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl"
 sha256 = "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "unearth-0.18.3-py3-none-any.whl"
@@ -1961,7 +2017,7 @@ project = "unearth"
 version = "0.18.3"
 url = "https://files.pythonhosted.org/packages/1d/19/96eaf5da75a983b03cb5e2b8f345206c7fd26ee1ebb63fd25e7685c3e678/unearth-0.18.3-py3-none-any.whl"
 sha256 = "306773b7a792af7d44b3b2a3bea21ba63a0b947546ad8ee793194fd09a6ae020"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "urllib3-2.8.0-py3-none-any.whl"
@@ -1969,7 +2025,7 @@ project = "urllib3"
 version = "2.8.0"
 url = "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl"
 sha256 = "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "userpath-1.9.2-py3-none-any.whl"
@@ -1977,7 +2033,7 @@ project = "userpath"
 version = "1.9.2"
 url = "https://files.pythonhosted.org/packages/43/99/3ec6335ded5b88c2f7ed25c56ffd952546f7ed007ffb1e1539dc3b57015a/userpath-1.9.2-py3-none-any.whl"
 sha256 = "2cbf01a23d655a1ff8fc166dfb78da1b641d1ceabf0fe5f970767d380b14e89d"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "virtualenv-21.12.1-py3-none-any.whl"
@@ -1985,7 +2041,7 @@ project = "virtualenv"
 version = "21.12.1"
 url = "https://files.pythonhosted.org/packages/f5/8c/692cf235722ee45c612630d2b49b3d1765892f7e440055365ea1b59c659e/virtualenv-21.12.1-py3-none-any.whl"
 sha256 = "878db9e963d0ef0b38561a344a4f9b12dc5c7741b6245d7ed10e9291cfea28bc"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "wheel-0.48.0-py3-none-any.whl"
@@ -1993,7 +2049,7 @@ project = "wheel"
 version = "0.48.0"
 url = "https://files.pythonhosted.org/packages/2e/29/69cfbb602cd91690c55d38ba9fe53e6a7e76a6fa647bf38f19c138d25449/wheel-0.48.0-py3-none-any.whl"
 sha256 = "3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab"
-rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
 name = "xattr-1.3.0-cp311-cp311-macosx_11_0_arm64.whl"

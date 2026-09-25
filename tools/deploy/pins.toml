@@ -90,8 +90,9 @@ sets = [
 
 # One row per interpreter and platform a job installs on: every supported
 # CPython on Linux x86_64 (the images), Linux aarch64 (lin-arm64), Windows and
-# macOS (toolchain.py), plus the prerelease on Linux x86_64 for lin-py315-start.
-# A release with no wheel for a row locks its sdist.
+# macOS (toolchain.py), plus the prerelease on both Linux architectures, since
+# every image holds it (lin-py315-start runs it on x86_64). A release with no
+# wheel for a row locks its sdist.
 
 [[wheelhouse.row]]
 name = "linux-x86_64-cp311"
@@ -144,6 +145,12 @@ arch = "aarch64"
 [[wheelhouse.row]]
 name = "linux-aarch64-cp314"
 python = "3.14"
+os = "linux"
+arch = "aarch64"
+
+[[wheelhouse.row]]
+name = "linux-aarch64-cp315"
+python = "3.15"
 os = "linux"
 arch = "aarch64"
 
