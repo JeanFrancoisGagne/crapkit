@@ -10,7 +10,9 @@ what it must carry.
 Three definition rulings of the accuracy plan are pinned by name as well:
 - D9: every coverage definition names both fallbacks, statements and then
   invoked-or-not, and says Python's and/or give coverage.py no branch arc.
-- D10: est_uncovered_paths rounds half to even.
+- D10: est_uncovered_paths rounds half to even, and no page a reader learns
+  the field from (README, AGENTS.md, docs/, the plugin skills) says a bare
+  round() instead.
 - D11: doctor.parallel_seconds is an LPT estimate with Graham's bound, not an
   exact makespan.
 
@@ -27,7 +29,7 @@ import sys
 import pytest
 
 from accuracy.definitions import doc_places
-from accuracy.kit import drive, tiers
+from accuracy.kit import drive, rulings, tiers
 
 FIELDS = ("cov", "crap", "flag", "remedy", "nesting", "nloc", "params", "target")
 ROWS = {row["field"]: row for row in doc_places.rows()}
@@ -223,6 +225,42 @@ def test_d10_every_mcp_est_uncovered_paths_says_half_to_even(mcp_tools):
 
     assert found
     assert [text for _, text in found if doc_places.missing(text, ["half to even"])] == []
+
+
+# Every page a user or an agent reads a field's meaning from, beyond the five places.
+READER_PAGES = ("README.md", "AGENTS.md", "CONTEXT.md", "docs/*.md", "docs/*.html",
+                "plugin/skills/*/SKILL.md")
+
+
+def _says_bare_round(text: str) -> bool:
+    return any("est_uncovered_paths" in line and "round(" in line for line in text.splitlines())
+
+
+def bare_round_pages(repo: Path = doc_places.REPO) -> list[str]:
+    """The reader pages that give est_uncovered_paths as a bare round()."""
+    pages = sorted({page for pattern in READER_PAGES for page in repo.glob(pattern)})
+    return [page.relative_to(repo).as_posix() for page in pages
+            if _says_bare_round(page.read_bytes().decode("utf-8"))]
+
+
+@rulings.applies("definitions-2")
+def test_d10_no_reader_page_gives_est_uncovered_paths_as_a_bare_round():
+    """D10 asks every place to say half to even. A bare round() reads as half up
+    to anyone who does not know Python rounds ties to even."""
+    found = bare_round_pages()
+
+    rulings.pin_ruling("definitions-2", crapkit=", ".join(found) or "none", oracle="none")
+
+
+def test_the_bare_round_reader_names_each_page_once(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "AGENTS.md").write_text("| `est_uncovered_paths` | `round(x)` |\n", encoding="utf-8")
+    (tmp_path / "docs" / "a.md").write_text("`est_uncovered_paths`, half to even\n"
+                                            "round(x) elsewhere\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("est_uncovered_paths = round(a)\nround(b) "
+                                        "est_uncovered_paths\n", encoding="utf-8")
+
+    assert bare_round_pages(tmp_path) == ["AGENTS.md", "README.md"]
 
 
 def test_d10_the_worked_example_is_half_to_even():
