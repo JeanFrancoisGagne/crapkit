@@ -381,30 +381,33 @@ def test_an_untracked_name_reruns_a_whole_tree_lane_and_the_reason_names_it(tmp_
     assert "the working tree has 1 uncommitted change(s): caf\\xe9.log" in result.stderr, result.stderr
 
 
+def _untracked_input(repo: Path, name: bytes) -> None:
+    _on_disk(repo, name, b"x")
+
+
+def _committed_input(repo: Path, name: bytes) -> None:
+    _commit(repo, {name: b"x"}, "add an input")
+
+
 # Where a lane's input comes from: untracked on disk (POSIX), or committed since
 # the lane's stamp (every OS, through the index), each beside its controls.
 INPUT_CHANGES = [
-    ("untracked-latin1", "untracked", b"src/caf\xe9.txt"),
-    ("untracked-ascii", "untracked", b"src/cafe.txt"),
-    ("untracked-utf8", "untracked", "src/café.txt".encode()),
-    ("committed-latin1", "committed", b"src/caf\xe9.txt"),
-    ("committed-ascii", "committed", b"src/cafe.txt"),
-    ("committed-utf8", "committed", "src/café.txt".encode()),
+    pytest.param(_untracked_input, b"src/caf\xe9.txt", id="untracked-latin1", marks=POSIX_NAME),
+    pytest.param(_untracked_input, b"src/cafe.txt", id="untracked-ascii"),
+    pytest.param(_untracked_input, "src/café.txt".encode(), id="untracked-utf8"),
+    pytest.param(_committed_input, b"src/caf\xe9.txt", id="committed-latin1"),
+    pytest.param(_committed_input, b"src/cafe.txt", id="committed-ascii"),
+    pytest.param(_committed_input, "src/café.txt".encode(), id="committed-utf8"),
 ]
 
 
-@pytest.mark.parametrize("how, name", [row[1:] for row in INPUT_CHANGES], ids=[row[0] for row in INPUT_CHANGES])
-def test_a_new_file_under_a_lanes_inputs_reruns_the_lane(tmp_path, how, name):
+@pytest.mark.parametrize("add_input, name", INPUT_CHANGES)
+def test_a_new_file_under_a_lanes_inputs_reruns_the_lane(tmp_path, add_input, name):
     """PRD U6: the Latin-1 name read as no change, and the lane was reused
     with 'measurement inputs unchanged', where its ASCII and UTF-8 twins rerun."""
-    if how == "untracked" and sys.platform == "win32" and name == b"src/caf\xe9.txt":
-        pytest.skip("needs a POSIX file system that stores a name whose bytes are not UTF-8")
     repo = _repo(tmp_path, LANE_CONFIG)
     assert run_cli(repo, "coverage").returncode == 0
-    if how == "untracked":
-        _on_disk(repo, name, b"x")
-    else:
-        _commit(repo, {name: b"x"}, "add an input")
+    add_input(repo, name)
 
     result = run_cli(repo, "coverage", "--reuse-unchanged")
 
