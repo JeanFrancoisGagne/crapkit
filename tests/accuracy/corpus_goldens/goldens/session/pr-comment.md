@@ -6,10 +6,11 @@
 
 **verify failed, exit 6: complexity gate.**
 
+- gate: `src/py/fresh.py:4` `route( a , b , c , d )` ccn 9, cov 0%, crap 90.0 -> decompose
 - gate: `src/py/grades.py:8` `letter( score )` ccn 7, cov 50%, crap 13.1 -> decompose
-- uncovered lines in `src/py/grades.py`: 13, 14, 15, 22, 26, 30, 51
+- uncovered lines in `src/py/fresh.py`: 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
 
-Run 4 against baseline 3, 2 changed files: 1 gate violation, 0 ratchet regressions, 0 new test failures, 7 uncovered changed lines.
+Run 4 against baseline 3, 3 changed files: 2 gate violations, 0 ratchet regressions, 0 new test failures, 13 uncovered changed lines.
 
 ### Worklist: 2 changed files
 

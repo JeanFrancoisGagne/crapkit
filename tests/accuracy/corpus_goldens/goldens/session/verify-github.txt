@@ -1,11 +1,19 @@
+::error file=src/py/fresh.py,line=4,title=crapkit/gate::route( a , b , c , d ): CRAP 90.0 (ccn 9, cov 0%25) -> decompose
 ::error file=src/py/grades.py,line=8,title=crapkit/gate::letter( score ): CRAP 13.1 (ccn 7, cov 50%25) -> decompose
-::warning file=src/py/grades.py,line=13,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
-::warning file=src/py/grades.py,line=14,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
-::warning file=src/py/grades.py,line=15,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
-::warning file=src/py/grades.py,line=22,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
-::warning file=src/py/grades.py,line=26,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
-::warning file=src/py/grades.py,line=30,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
-::warning file=src/py/grades.py,line=51,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
-verify FAILED @ fd39664600a vs baseline fd39664600a (2 changed files)
+::warning file=src/py/fresh.py,line=4,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=5,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=6,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=7,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=8,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=9,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=10,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=11,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=12,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=13,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=14,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=15,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/fresh.py,line=16,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+verify FAILED @ fd39664600a vs baseline fd39664600a (3 changed files)
+  GATE  crap     90.0  ccn   9 cov 0%  src/py/fresh.py:4  route( a , b , c , d )  -> decompose  [dirty]
   GATE  crap     13.1  ccn   7 cov 50%  src/py/grades.py:8  letter( score )  -> decompose  [dirty]
-  findings: 0 committed / 1 dirty (uncommitted edits and untracked files)
+  findings: 0 committed / 2 dirty (uncommitted edits and untracked files)

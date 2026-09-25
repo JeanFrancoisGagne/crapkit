@@ -1,45 +1,80 @@
 {
  "baseline_commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
  "baseline_run": 3,
- "changed_files": 2,
+ "changed_files": 3,
  "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
  "committed_findings": 0,
  "diff_uncovered": [
   {
+   "line": 4,
+   "path": "src/py/fresh.py"
+  },
+  {
+   "line": 5,
+   "path": "src/py/fresh.py"
+  },
+  {
+   "line": 6,
+   "path": "src/py/fresh.py"
+  },
+  {
+   "line": 7,
+   "path": "src/py/fresh.py"
+  },
+  {
+   "line": 8,
+   "path": "src/py/fresh.py"
+  },
+  {
+   "line": 9,
+   "path": "src/py/fresh.py"
+  },
+  {
+   "line": 10,
+   "path": "src/py/fresh.py"
+  },
+  {
+   "line": 11,
+   "path": "src/py/fresh.py"
+  },
+  {
+   "line": 12,
+   "path": "src/py/fresh.py"
+  },
+  {
    "line": 13,
-   "path": "src/py/grades.py"
+   "path": "src/py/fresh.py"
   },
   {
    "line": 14,
-   "path": "src/py/grades.py"
+   "path": "src/py/fresh.py"
   },
   {
    "line": 15,
-   "path": "src/py/grades.py"
+   "path": "src/py/fresh.py"
   },
   {
-   "line": 22,
-   "path": "src/py/grades.py"
-  },
-  {
-   "line": 26,
-   "path": "src/py/grades.py"
-  },
-  {
-   "line": 30,
-   "path": "src/py/grades.py"
-  },
-  {
-   "line": 51,
-   "path": "src/py/grades.py"
+   "line": 16,
+   "path": "src/py/fresh.py"
   }
  ],
- "diff_uncovered_count": 7,
+ "diff_uncovered_count": 13,
  "diff_uncovered_max": null,
  "dirty_failures": [],
- "dirty_findings": 1,
+ "dirty_findings": 2,
  "forgiven_failures": [],
  "gate_violations": [
+  {
+   "ccn": 9,
+   "cov": 0.0,
+   "crap": 90.0,
+   "dirty": true,
+   "key_name": "route( a , b , c , d )",
+   "long_name": "route( a , b , c , d )",
+   "path": "src/py/fresh.py",
+   "remedy": "decompose",
+   "start": 4
+  },
   {
    "ccn": 7,
    "cov": 0.5,
@@ -66,5 +101,5 @@
   "crapkit": "<crapkit>",
   "lizard": "1.24.0"
  },
- "unmarked_over_target": 1
+ "unmarked_over_target": 2
 }

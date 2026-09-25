@@ -1,12 +1,18 @@
 crapkit: lane 'py' artifact was built at fd39664600a; 2 file(s) in its scopes changed since (their coverage is stale)
 crapkit: 2 source line span(s) hold more than one function; coverage cannot say whose is whose, so those functions score as uncovered, and splitting the definitions onto separate lines measures them; 1 of them hold a function over its target:
 crapkit:   src/web/arrows.js:7 (complexity 3)
-warning: 7 changed line(s) have no coverage
-  uncovered src/py/grades.py:13
-  uncovered src/py/grades.py:14
-  uncovered src/py/grades.py:15
-  uncovered src/py/grades.py:22
-  uncovered src/py/grades.py:26
-  uncovered src/py/grades.py:30
-  uncovered src/py/grades.py:51
-warning: 1 function(s) over the ceiling carry no ratchet mark, so a rise on them (coverage loss included) passes unseen; record them with `<python> -m crapkit ratchet seed`
+warning: 13 changed line(s) have no coverage
+  uncovered src/py/fresh.py:4
+  uncovered src/py/fresh.py:5
+  uncovered src/py/fresh.py:6
+  uncovered src/py/fresh.py:7
+  uncovered src/py/fresh.py:8
+  uncovered src/py/fresh.py:9
+  uncovered src/py/fresh.py:10
+  uncovered src/py/fresh.py:11
+  uncovered src/py/fresh.py:12
+  uncovered src/py/fresh.py:13
+  uncovered src/py/fresh.py:14
+  uncovered src/py/fresh.py:15
+  uncovered src/py/fresh.py:16
+warning: 2 function(s) over the ceiling carry no ratchet mark, so a rise on them (coverage loss included) passes unseen; record them with `<python> -m crapkit ratchet seed`

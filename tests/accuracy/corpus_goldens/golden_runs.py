@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -223,19 +224,27 @@ def _mcp(driver: drive.Driver, outputs: Path, raw: Path) -> dict:
 def _accept_legacy(root: Path) -> None:
     """Declare the legacy scope cc-only, as doctor's finding about it says to."""
     config = root / "crapkit.toml"
-    text = config.read_text(encoding="utf-8")
+    text = config.read_bytes().decode("utf-8")
     scope = 'name = "legacy"\npaths = ["src/legacy"]\nlanguages = ["python"]\n'
-    config.write_text(text.replace(scope, scope + "coverage_optional = true\n"),
-                      encoding="utf-8")
+    write_lf(config, text.replace(scope, scope + "coverage_optional = true\n"))
+
+
+def write_lf(path: Path, text: str) -> None:
+    """Write text with LF line ends on every OS: write_text turns each LF into
+    CRLF on Windows, and git then sees every line of the file change."""
+    path.write_bytes(text.encode("utf-8"))
 
 
 def _edit(root: Path) -> None:
-    """Replace letter() with a ccn 7 one and add an untested ccn 8 module."""
-    source = (root / EDITED).read_text(encoding="utf-8")
+    """Replace letter() with a ccn 7 one and stage an untested ccn 9 module."""
+    source = (root / EDITED).read_bytes().decode("utf-8")
     start = source.index("\n\ndef letter(")
     end = source.index("\n\ndef curve(")
-    (root / EDITED).write_text(source[:start] + EDIT_LETTER + source[end:], encoding="utf-8")
-    (root / FRESH).write_text(FRESH_SOURCE, encoding="utf-8")
+    write_lf(root / EDITED, source[:start] + EDIT_LETTER + source[end:])
+    write_lf(root / FRESH, FRESH_SOURCE)
+    # Staged, as a new module is before its commit: git ls-files names it, so
+    # it joins the file universe verify reads.
+    repos.git(root, "add", FRESH)
 
 
 def comment(outputs: Path, coverage: Path, worklist: Path, changed: list[str]) -> int:
@@ -316,12 +325,25 @@ def interpreter_spellings() -> tuple[str, ...]:
     return tuple(sorted(forms, key=len, reverse=True))
 
 
+# The report's drill-down cell holds a command quoted for the shell of the OS
+# that wrote the report: POSIX single quotes, cmd double quotes, or an encoded
+# PowerShell call. test_printed_commands runs each one in every shell and pins
+# the printed text per OS; the report's golden pins the rest.
+_COMMAND_CELL = re.compile(r'<td class="cmd">.*?</td>', re.S)
+COMMAND_CELL = '<td class="cmd"><printed command></td>'
+
+
+def _without_commands(name: str, text: str) -> str:
+    return _COMMAND_CELL.sub(COMMAND_CELL, text) if name.endswith(".html") else text
+
+
 def normalized(run) -> dict[str, str]:
-    """kit.goldens' normalized outputs, with the interpreter path replaced too."""
+    """kit.goldens' normalized outputs, with the interpreter path and the
+    report's shell-quoted commands replaced too."""
     texts = goldens.goldens_of(run)
     for spelling in interpreter_spellings():
         texts = {name: text.replace(spelling, "<python>") for name, text in texts.items()}
-    return texts
+    return {name: _without_commands(name, text) for name, text in texts.items()}
 
 
 RUNS = {"small": small, "session": lambda base: session(base),

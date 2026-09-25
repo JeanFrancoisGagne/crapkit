@@ -40,7 +40,7 @@
    "baseline": false,
    "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
    "created_at": "<created_at>",
-   "findings": 1,
+   "findings": 2,
    "id": 4,
    "kind": "verify",
    "lanes": [
@@ -53,7 +53,7 @@
    "baseline": false,
    "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
    "created_at": "<created_at>",
-   "findings": 1,
+   "findings": 2,
    "id": 5,
    "kind": "verify",
    "lanes": [
