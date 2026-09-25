@@ -37,4 +37,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_cache_identity.py"]},
     {"name": "stock lizard tripwire over the patch list", "seconds": 3,
      "pytest": [_PACKET + "test_lizard_tripwire.py"]},
+    {"name": "near-duplicate pairs against hand containment and jscpd", "seconds": 5,
+     "pytest": [_PACKET + "test_duplicates.py"]},
 ]
