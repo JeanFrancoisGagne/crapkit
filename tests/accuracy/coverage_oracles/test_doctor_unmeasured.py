@@ -25,12 +25,14 @@ contract does:
    equals a grouping of the run's own export (self-diff, not independent).
 """
 import json
+from pathlib import Path
 
+import coverage
 from hypothesis import given, strategies as st
 import pytest
 
 from accuracy.coverage_oracles import mini_repo, under_test
-from accuracy.kit import repos, surfaces
+from accuracy.kit import drive, reach, repos, surfaces
 from accuracy.kit.settings import pure
 
 DOCTOR = under_test.crapkit("doctor")
@@ -190,6 +192,32 @@ def test_rule_model_vs_production_path(doctored):
     _, payload, rows, tracked = doctored
 
     assert _unmeasured(payload["warnings"]) == _expected(rows, tracked)
+
+
+def _ran_lines(data_dir: Path, rc: Path) -> dict[Path, set[int]]:
+    """{source file: executed lines} over the coverage.py data files in data_dir."""
+    measured = coverage.Coverage(config_file=str(rc))
+    measured.combine([str(data_dir)], keep=True)
+    data = measured.get_data()
+    return {Path(name).resolve(): set(data.lines(name) or ()) for name in data.measured_files()}
+
+
+@pytest.mark.process
+def test_doctor_runs_the_rule_the_model_is_held_to(doctored, tmp_path):
+    """R109: doctor's warning comes out of doctor.unmeasured_directories, the rule
+    test_the_rule_equals_the_model holds to the model; a second copy of the rule
+    on the CLI path would leave that body unrun under `crapkit doctor`."""
+    rc = tmp_path / "coveragerc"
+    rc.write_text(reach.RC.format(data=(tmp_path / "data" / ".coverage").as_posix()),
+                  encoding="utf-8")
+    (tmp_path / "data").mkdir()
+    launch = ("-m", "coverage", "run", f"--rcfile={rc}", "-m")
+    measured = drive.Driver(doctored[0].root, date_now=repos.EPOCH + 86_400, launch=launch)
+
+    assert "all flagged untested" in measured.run("doctor", "--json").stdout
+    doctor_py = Path(DOCTOR.__file__).resolve()
+    body = reach.body_lines(doctor_py, "unmeasured_directories")
+    assert _ran_lines(tmp_path / "data", rc).get(doctor_py, set()) & set(body)
 
 
 @pytest.mark.process

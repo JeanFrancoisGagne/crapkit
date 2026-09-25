@@ -239,9 +239,10 @@ def test_a_function_with_no_arms_and_no_statements_reads_called_or_not():
 # R03: a callback's branch counts against the callback, not the function around it.
 # R07: a function with no branch reads its statement ratio, 2 of 4 lines.
 ONE_LANGUAGE = [
-    ("py", "py/shapes.py", "coveragepy-7.16.1", ("outer", "outer.inner", "branchless")),
-    ("js", "js/shapes.js", "vitest-istanbul-5.0.1", ("withCallback", "withCallback.callback")),
-    ("ts", "ts/shapes.ts", "vitest-istanbul-5.0.1", ("withCallback", "withCallback.callback")),
+    ("py-nested", "py/shapes.py", "coveragepy-7.16.1", ("outer", "outer.inner")),
+    ("py-branchless", "py/shapes.py", "coveragepy-7.16.1", ("branchless",)),
+    ("js-callback", "js/shapes.js", "vitest-istanbul-5.0.1", ("withCallback", "withCallback.callback")),
+    ("ts-callback", "ts/shapes.ts", "vitest-istanbul-5.0.1", ("withCallback", "withCallback.callback")),
 ]
 
 
