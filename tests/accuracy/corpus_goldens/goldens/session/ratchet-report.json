@@ -1,0 +1,11 @@
+{
+ "anchor_ts": 0,
+ "dropped_last_30d": 0,
+ "dropped_last_90d": 0,
+ "dropped_total": 0,
+ "oldest": [],
+ "open": 0,
+ "policy_violations": null,
+ "schema": 1,
+ "uncommitted": 0
+}

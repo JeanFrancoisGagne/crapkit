@@ -1,0 +1,819 @@
+{
+ "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+ "packets": [
+  {
+   "attempts": [],
+   "churn": {
+    "authors": 1,
+    "commits": 1,
+    "weight": 1.0
+   },
+   "commands": {
+    "gate": "crapkit rescore vendor/ky/merge.ts --gate",
+    "refresh": "crapkit coverage --reuse-unchanged",
+    "refresh_writes_run": true,
+    "scoped_tests": null,
+    "scoped_tests_note": "no [crapkit.scoped_tests] template for scope 'vendor'",
+    "verify": "crapkit verify"
+   },
+   "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+   "coupling": [],
+   "duplication_twins": [],
+   "est_splits": 3,
+   "est_uncovered_paths": 38,
+   "file_functions": [
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 18,
+     "function": "getReplaceState ( value T )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 18
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 52,
+     "function": "replaceOption ( value T )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 49
+    },
+    {
+     "ccn": 5,
+     "crap": 5.0,
+     "end": 62,
+     "function": "validateAndMerge ( sources Array )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 54
+    },
+    {
+     "ccn": 5,
+     "crap": 5.0,
+     "end": 78,
+     "function": "mergeHeaders ( source1 KyHeadersInit , source2 KyHeadersInit )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 64
+    },
+    {
+     "ccn": 4,
+     "crap": 4.0,
+     "end": 87,
+     "function": "isPlainObject ( value )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 80
+    },
+    {
+     "ccn": 7,
+     "crap": 7.0,
+     "end": 115,
+     "function": "cloneShallow ( value T )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 89
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 117,
+     "function": "normalizeHeaderObject ( headers Record )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 117
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 119,
+     "function": "(anonymous)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 119
+    },
+    {
+     "ccn": 3,
+     "crap": 3.0,
+     "end": 128,
+     "function": "mergeHeaderContainers ( source1 KyHeadersInit , source2 KyHeadersInit )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 122
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 144,
+     "function": "mergeHooks ( original Hooks , incoming Hooks )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 136
+    },
+    {
+     "ccn": 17,
+     "crap": 17.0,
+     "end": 204,
+     "function": "appendSearchParameters ( target , source )",
+     "occurrence": 1,
+     "remedy": "decompose",
+     "start": 148
+    },
+    {
+     "ccn": 38,
+     "crap": 38.0,
+     "end": 326,
+     "function": "deepMergeInternal ( isRoot , sources Array )",
+     "occurrence": 1,
+     "remedy": "decompose",
+     "start": 207
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 328,
+     "function": "deepMerge ( sources Array )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 328
+    }
+   ],
+   "file_totals": {
+    "crap_load": 85.0,
+    "functions": 13,
+    "over_target": 2
+   },
+   "function": "deepMergeInternal ( isRoot , sources Array )",
+   "gate_rule": {
+    "binds": "changed functions only; a ratchet mark pardons standing debt at or under it",
+    "ceiling": 15,
+    "diff_uncovered_max": null,
+    "mark_age_days": null,
+    "ratchet_mark": null
+   },
+   "handle": "deepMergeInternal",
+   "lane": null,
+   "notes": {
+    "repo": null,
+    "scope": null
+   },
+   "params": [
+    {
+     "name": "isRoot",
+     "type": null
+    },
+    {
+     "name": "sources",
+     "type": "Array"
+    }
+   ],
+   "path": "vendor/ky/merge.ts",
+   "ratchet_mark": null,
+   "regrowth": {
+    "history": [
+     [
+      1,
+      38
+     ],
+     [
+      2,
+      38
+     ]
+    ],
+    "regrown": false
+   },
+   "remedy": "decompose",
+   "run_id": 2,
+   "scored": {
+    "ccn": 38,
+    "ccn_mod": 38,
+    "ccn_std": 38,
+    "cognitive": 82,
+    "cov": 0.0,
+    "crap": 38.0,
+    "end": 326,
+    "flag": "cc-only",
+    "long_name": "deepMergeInternal ( isRoot , sources Array )",
+    "nesting": 7,
+    "nloc": 84,
+    "occurrence": 1,
+    "params": 2,
+    "path": "vendor/ky/merge.ts",
+    "remedy": "decompose",
+    "scope": "vendor",
+    "start": 207
+   },
+   "source": "const deepMergeInternal = <T>(isRoot: boolean, ...sources: Array<Partial<T> | undefined>): T => {\n\tlet returnValue: any = {};\n\tlet headers: KyHeadersInit = {};\n\tlet hooks = {};\n\tlet searchParameters: any;\n\tconst signals: AbortSignal[] = [];\n\n\tfor (const source of sources) {\n\t\tif (Array.isArray(source)) {\n\t\t\tif (!Array.isArray(returnValue)) {\n\t\t\t\treturnValue = [];\n\t\t\t}\n\n\t\t\treturnValue = [...returnValue, ...source];\n\t\t} else if (isObject(source)) {\n\t\t\tfor (let [key, value] of Object.entries(source)) {\n\t\t\t\tconst replaceState = getReplaceState(value);\n\t\t\t\tconst {isReplace} = replaceState;\n\t\t\t\tvalue = replaceState.value;\n\n\t\t\t\tconst isRootSignal = isRoot && key === 'signal';\n\t\t\t\tif (isRootSignal && (isReplace || value === undefined)) {\n\t\t\t\t\tsignals.length = 0;\n\t\t\t\t}\n\n\t\t\t\t// Special handling for AbortSignal instances at the root options level\n\t\t\t\tif (isRootSignal && value instanceof globalThis.AbortSignal) {\n\t\t\t\t\tsignals.push(value);\n\t\t\t\t\tcontinue;\n\t\t\t\t}\n\n\t\t\t\t// Special handling for context - shallow merge only\n\t\t\t\tif (key === 'context') {\n\t\t\t\t\tif (value !== undefined && value !== null && (!isObject(value) || Array.isArray(value))) {\n\t\t\t\t\t\tthrow new TypeError('The `context` option must be an object');\n\t\t\t\t\t}\n\n\t\t\t\t\t// Shallow merge: always create a new object to prevent mutation bugs\n\t\t\t\t\treturnValue = {\n\t\t\t\t\t\t...returnValue,\n\t\t\t\t\t\tcontext: (value === undefined || value === null)\n\t\t\t\t\t\t\t? {}\n\t\t\t\t\t\t\t: (isReplace\n\t\t\t\t\t\t\t\t? {...value}\n\t\t\t\t\t\t\t\t: {...returnValue.context, ...value}),\n\t\t\t\t\t};\n\t\t\t\t\tcontinue;\n\t\t\t\t}\n\n\t\t\t\t// Special handling for searchParams\n\t\t\t\tif (key === 'searchParams') {\n\t\t\t\t\tif (value === undefined || value === null) {\n\t\t\t\t\t\t// Explicit undefined or null removes searchParams\n\t\t\t\t\t\tsearchParameters = undefined;\n\t\t\t\t\t} else if (isReplace) {\n\t\t\t\t\t\tsearchParameters = value;\n\t\t\t\t\t} else {\n\t\t\t\t\t\t// First source: keep as-is to preserve type (string/object/URLSearchParams)\n\t\t\t\t\t\t// Subsequent sources: merge and convert to URLSearchParams\n\t\t\t\t\t\tsearchParameters = searchParameters === undefined ? value : appendSearchParameters(searchParameters, value);\n\t\t\t\t\t}\n\n\t\t\t\t\tcontinue;\n\t\t\t\t}\n\n\t\t\t\t// `retry` accepts a number as shorthand for `{limit: number}`. Expand it before\n\t\t\t\t// merging so extending a numeric `retry` with an object keeps the limit instead\n\t\t\t\t// of dropping it (e.g. `ky.create({retry: 3}).extend({retry: {methods: ['get']}})`).\n\t\t\t\t// Scoped to the root options level so it never rewrites nested user data that\n\t\t\t\t// happens to contain a `retry` key (e.g. a `json` request body).\n\t\t\t\tif (isRoot && key === 'retry' && isObject(value) && !isReplace && typeof returnValue[key] === 'number') {\n\t\t\t\t\treturnValue = {...returnValue, [key]: {limit: returnValue[key]}};\n\t\t\t\t}\n\n\t\t\t\tif (isObject(value) && !isReplace && key in returnValue) {\n\t\t\t\t\tvalue = deepMergeInternal(false, returnValue[key], value);\n\t\t\t\t}\n\n\t\t\t\treturnValue = {...returnValue, [key]: value};\n\t\t\t}\n\n\t\t\tif (isObject((source as any).hooks)) {\n\t\t\t\tconst {value: hookValue, isReplace} = getReplaceState((source as any).hooks);\n\t\t\t\thooks = isReplace\n\t\t\t\t\t? mergeHooks({}, hookValue)\n\t\t\t\t\t: mergeHooks(hooks, hookValue);\n\n\t\t\t\treturnValue.hooks = hooks;\n\t\t\t}\n\n\t\t\tif (isObject((source as any).headers)) {\n\t\t\t\tconst {value: headerValue, isReplace} = getReplaceState((source as any).headers);\n\t\t\t\theaders = isReplace\n\t\t\t\t\t? cloneShallow(headerValue as KyHeadersInit)\n\t\t\t\t\t: mergeHeaderContainers(headers, headerValue as KyHeadersInit);\n\n\t\t\t\treturnValue.headers = headers;\n\t\t\t}\n\t\t}\n\t}\n\n\tif (searchParameters !== undefined) {\n\t\treturnValue.searchParams = searchParameters;\n\t}\n\n\tif (signals.length > 0) {\n\t\tif (signals.length === 1) {\n\t\t\treturnValue.signal = signals[0];\n\t\t} else if (supportsAbortSignal) {\n\t\t\treturnValue.signal = AbortSignal.any(signals);\n\t\t} else {\n\t\t\t// When AbortSignal.any is not available, use the last signal\n\t\t\t// This maintains the previous behavior before signal merging was added\n\t\t\t// This can be removed when the `supportsAbortSignal` check is removed.\n\t\t\treturnValue.signal = signals.at(-1);\n\t\t}\n\t}\n\n\treturn returnValue;\n};",
+   "stale": false,
+   "target": 15,
+   "uncovered_lines": null,
+   "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/ky/merge.ts",
+   "versions": {
+    "analysis_version": 11,
+    "crapkit": "<crapkit>",
+    "lizard": "1.24.0",
+    "python": "<python>"
+   }
+  },
+  {
+   "attempts": [],
+   "churn": {
+    "authors": 1,
+    "commits": 1,
+    "weight": 1.0
+   },
+   "commands": {
+    "gate": "crapkit rescore vendor/cjson/cJSON_Utils.c --gate",
+    "refresh": "crapkit coverage --reuse-unchanged",
+    "refresh_writes_run": true,
+    "scoped_tests": null,
+    "scoped_tests_note": "no [crapkit.scoped_tests] template for scope 'vendor'",
+    "verify": "crapkit verify"
+   },
+   "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+   "coupling": [],
+   "duplication_twins": [],
+   "est_splits": 3,
+   "est_uncovered_paths": 37,
+   "file_functions": [
+    {
+     "ccn": 2,
+     "crap": 2.0,
+     "end": 80,
+     "function": "cJSONUtils_strdup( const unsigned char * const string)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 66
+    },
+    {
+     "ccn": 7,
+     "crap": 7.0,
+     "end": 109,
+     "function": "compare_strings( const unsigned char * string1 , const unsigned char * string2 , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 83
+    },
+    {
+     "ccn": 2,
+     "crap": 2.0,
+     "end": 116,
+     "function": "compare_double( double a , double b)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 112
+    },
+    {
+     "ccn": 17,
+     "crap": 17.0,
+     "end": 154,
+     "function": "compare_pointers( const unsigned char * name , const unsigned char * pointer , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "decompose",
+     "start": 120
+    },
+    {
+     "ccn": 4,
+     "crap": 4.0,
+     "end": 170,
+     "function": "pointer_encoded_length( const unsigned char * string)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 157
+    },
+    {
+     "ccn": 4,
+     "crap": 4.0,
+     "end": 196,
+     "function": "encode_string_as_pointer( unsigned char * destination , const unsigned char * source)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 173
+    },
+    {
+     "ccn": 9,
+     "crap": 9.0,
+     "end": 259,
+     "function": "cJSONUtils_FindPointerFromObjectTo( const cJSON * const object , const cJSON * const target)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 198
+    },
+    {
+     "ccn": 4,
+     "crap": 4.0,
+     "end": 272,
+     "function": "get_array_item( const cJSON * array , size_t item)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 262
+    },
+    {
+     "ccn": 8,
+     "crap": 8.0,
+     "end": 299,
+     "function": "decode_array_index_from_pointer( const unsigned char * const pointer , size_t * const index)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 274
+    },
+    {
+     "ccn": 11,
+     "crap": 11.0,
+     "end": 346,
+     "function": "get_item_from_pointer( cJSON * const object , const char * pointer , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 301
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 351,
+     "function": "cJSONUtils_GetPointer( cJSON * const object , const char * pointer)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 348
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 356,
+     "function": "cJSONUtils_GetPointerCaseSensitive( cJSON * const object , const char * pointer)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 353
+    },
+    {
+     "ccn": 6,
+     "crap": 6.0,
+     "end": 390,
+     "function": "decode_pointer_inplace( unsigned char * string)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 359
+    },
+    {
+     "ccn": 8,
+     "crap": 8.0,
+     "end": 427,
+     "function": "detach_item_from_array( cJSON * array , size_t which)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 393
+    },
+    {
+     "ccn": 7,
+     "crap": 7.0,
+     "end": 481,
+     "function": "detach_path( cJSON * object , const unsigned char * path , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 430
+    },
+    {
+     "ccn": 21,
+     "crap": 21.0,
+     "end": 593,
+     "function": "sort_list( cJSON * list , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "decompose",
+     "start": 484
+    },
+    {
+     "ccn": 2,
+     "crap": 2.0,
+     "end": 602,
+     "function": "sort_object( cJSON * const object , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 595
+    },
+    {
+     "ccn": 19,
+     "crap": 19.0,
+     "end": 690,
+     "function": "compare_json( cJSON * a , cJSON * b , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "decompose",
+     "start": 604
+    },
+    {
+     "ccn": 6,
+     "crap": 6.0,
+     "end": 728,
+     "function": "insert_item_in_array( cJSON * array , size_t which , cJSON * newitem)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 693
+    },
+    {
+     "ccn": 2,
+     "crap": 2.0,
+     "end": 738,
+     "function": "get_object_item( const cJSON * const object , const char * name , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 730
+    },
+    {
+     "ccn": 8,
+     "crap": 8.0,
+     "end": 781,
+     "function": "decode_patch_operation( const cJSON * const patch , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 742
+    },
+    {
+     "ccn": 5,
+     "crap": 5.0,
+     "end": 805,
+     "function": "overwrite_item( cJSON * const root , const cJSON replacement)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 784
+    },
+    {
+     "ccn": 37,
+     "crap": 37.0,
+     "end": 1036,
+     "function": "apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "decompose",
+     "start": 807
+    },
+    {
+     "ccn": 5,
+     "crap": 5.0,
+     "end": 1065,
+     "function": "cJSONUtils_ApplyPatches( cJSON * const object , const cJSON * const patches)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1038
+    },
+    {
+     "ccn": 5,
+     "crap": 5.0,
+     "end": 1094,
+     "function": "cJSONUtils_ApplyPatchesCaseSensitive( cJSON * const object , const cJSON * const patches)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1067
+    },
+    {
+     "ccn": 7,
+     "crap": 7.0,
+     "end": 1134,
+     "function": "compose_patch( cJSON * const patches , const unsigned char * const operation , const unsigned char * const path , const unsigned char * suffix , const cJSON * const value)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1096
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 1139,
+     "function": "cJSONUtils_AddPatchToArray( cJSON * const array , const char * const operation , const char * const path , const cJSON * const value)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1136
+    },
+    {
+     "ccn": 20,
+     "crap": 20.0,
+     "end": 1279,
+     "function": "create_patches( cJSON * const patches , const unsigned char * const path , cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "decompose",
+     "start": 1141
+    },
+    {
+     "ccn": 3,
+     "crap": 3.0,
+     "end": 1294,
+     "function": "cJSONUtils_GeneratePatches( cJSON * const from , cJSON * const to)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1281
+    },
+    {
+     "ccn": 3,
+     "crap": 3.0,
+     "end": 1309,
+     "function": "cJSONUtils_GeneratePatchesCaseSensitive( cJSON * const from , cJSON * const to)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1296
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 1314,
+     "function": "cJSONUtils_SortObject( cJSON * const object)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1311
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 1319,
+     "function": "cJSONUtils_SortObjectCaseSensitive( cJSON * const object)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1316
+    },
+    {
+     "ccn": 8,
+     "crap": 8.0,
+     "end": 1379,
+     "function": "merge_patch( cJSON * target , const cJSON * const patch , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1321
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 1384,
+     "function": "cJSONUtils_MergePatch( cJSON * target , const cJSON * const patch)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1381
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 1389,
+     "function": "cJSONUtils_MergePatchCaseSensitive( cJSON * target , const cJSON * const patch)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1386
+    },
+    {
+     "ccn": 13,
+     "crap": 13.0,
+     "end": 1471,
+     "function": "generate_merge_patch( cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1391
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 1476,
+     "function": "cJSONUtils_GenerateMergePatch( cJSON * const from , cJSON * const to)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1473
+    },
+    {
+     "ccn": 1,
+     "crap": 1.0,
+     "end": 1481,
+     "function": "cJSONUtils_GenerateMergePatchCaseSensitive( cJSON * const from , cJSON * const to)",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 1478
+    }
+   ],
+   "file_totals": {
+    "crap_load": 262.0,
+    "functions": 38,
+    "over_target": 5
+   },
+   "function": "apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)",
+   "gate_rule": {
+    "binds": "changed functions only; a ratchet mark pardons standing debt at or under it",
+    "ceiling": 15,
+    "diff_uncovered_max": null,
+    "mark_age_days": null,
+    "ratchet_mark": null
+   },
+   "handle": "apply_patch",
+   "lane": null,
+   "notes": {
+    "repo": null,
+    "scope": null
+   },
+   "params": [
+    {
+     "name": "cJSON",
+     "type": "* object"
+    },
+    {
+     "name": "const",
+     "type": "cJSON * patch"
+    },
+    {
+     "name": "const",
+     "type": "cJSON_bool case_sensitive"
+    }
+   ],
+   "path": "vendor/cjson/cJSON_Utils.c",
+   "ratchet_mark": null,
+   "regrowth": {
+    "history": [
+     [
+      1,
+      37
+     ],
+     [
+      2,
+      37
+     ]
+    ],
+    "regrown": false
+   },
+   "remedy": "decompose",
+   "run_id": 2,
+   "scored": {
+    "ccn": 37,
+    "ccn_mod": 37,
+    "ccn_std": 37,
+    "cognitive": 82,
+    "cov": 0.0,
+    "crap": 37.0,
+    "end": 1036,
+    "flag": "cc-only",
+    "long_name": "apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)",
+    "nesting": 2,
+    "nloc": 190,
+    "occurrence": 1,
+    "params": 3,
+    "path": "vendor/cjson/cJSON_Utils.c",
+    "remedy": "decompose",
+    "scope": "vendor",
+    "start": 807
+   },
+   "source": "static int apply_patch(cJSON *object, const cJSON *patch, const cJSON_bool case_sensitive)\n{\n    cJSON *path = NULL;\n    cJSON *value = NULL;\n    cJSON *parent = NULL;\n    enum patch_operation opcode = INVALID;\n    unsigned char *parent_pointer = NULL;\n    unsigned char *child_pointer = NULL;\n    int status = 0;\n\n    path = get_object_item(patch, \"path\", case_sensitive);\n    if (!cJSON_IsString(path))\n    {\n        /* malformed patch. */\n        status = 2;\n        goto cleanup;\n    }\n\n    opcode = decode_patch_operation(patch, case_sensitive);\n    if (opcode == INVALID)\n    {\n        status = 3;\n        goto cleanup;\n    }\n    else if (opcode == TEST)\n    {\n        /* compare value: {...} with the given path */\n        status = !compare_json(get_item_from_pointer(object, path->valuestring, case_sensitive), get_object_item(patch, \"value\", case_sensitive), case_sensitive);\n        goto cleanup;\n    }\n\n    /* special case for replacing the root */\n    if (path->valuestring[0] == '\\0')\n    {\n        if (opcode == REMOVE)\n        {\n            static const cJSON invalid = { NULL, NULL, NULL, cJSON_Invalid, NULL, 0, 0, NULL};\n\n            overwrite_item(object, invalid);\n\n            status = 0;\n            goto cleanup;\n        }\n\n        if ((opcode == REPLACE) || (opcode == ADD))\n        {\n            value = get_object_item(patch, \"value\", case_sensitive);\n            if (value == NULL)\n            {\n                /* missing \"value\" for add/replace. */\n                status = 7;\n                goto cleanup;\n            }\n\n            value = cJSON_Duplicate(value, 1);\n            if (value == NULL)\n            {\n                /* out of memory for add/replace. */\n                status = 8;\n                goto cleanup;\n            }\n\n            overwrite_item(object, *value);\n\n            /* delete the duplicated value */\n            cJSON_free(value);\n            value = NULL;\n\n            /* the string \"value\" isn't needed */\n            if (object->string != NULL)\n            {\n                cJSON_free(object->string);\n                object->string = NULL;\n            }\n\n            status = 0;\n            goto cleanup;\n        }\n    }\n\n    if ((opcode == REMOVE) || (opcode == REPLACE))\n    {\n        /* Get rid of old. */\n        cJSON *old_item = detach_path(object, (unsigned char*)path->valuestring, case_sensitive);\n        if (old_item == NULL)\n        {\n            status = 13;\n            goto cleanup;\n        }\n        cJSON_Delete(old_item);\n        if (opcode == REMOVE)\n        {\n            /* For Remove, this job is done. */\n            status = 0;\n            goto cleanup;\n        }\n    }\n\n    /* Copy/Move uses \"from\". */\n    if ((opcode == MOVE) || (opcode == COPY))\n    {\n        cJSON *from = get_object_item(patch, \"from\", case_sensitive);\n        if (from == NULL)\n        {\n            /* missing \"from\" for copy/move. */\n            status = 4;\n            goto cleanup;\n        }\n\n        if (opcode == MOVE)\n        {\n            value = detach_path(object, (unsigned char*)from->valuestring, case_sensitive);\n        }\n        if (opcode == COPY)\n        {\n            value = get_item_from_pointer(object, from->valuestring, case_sensitive);\n        }\n        if (value == NULL)\n        {\n            /* missing \"from\" for copy/move. */\n            status = 5;\n            goto cleanup;\n        }\n        if (opcode == COPY)\n        {\n            value = cJSON_Duplicate(value, 1);\n        }\n        if (value == NULL)\n        {\n            /* out of memory for copy/move. */\n            status = 6;\n            goto cleanup;\n        }\n    }\n    else /* Add/Replace uses \"value\". */\n    {\n        value = get_object_item(patch, \"value\", case_sensitive);\n        if (value == NULL)\n        {\n            /* missing \"value\" for add/replace. */\n            status = 7;\n            goto cleanup;\n        }\n        value = cJSON_Duplicate(value, 1);\n        if (value == NULL)\n        {\n            /* out of memory for add/replace. */\n            status = 8;\n            goto cleanup;\n        }\n    }\n\n    /* Now, just add \"value\" to \"path\". */\n\n    /* split pointer in parent and child */\n    parent_pointer = cJSONUtils_strdup((unsigned char*)path->valuestring);\n    if (parent_pointer) {\n        child_pointer = (unsigned char*)strrchr((char*)parent_pointer, '/');\n    }\n    if (child_pointer != NULL)\n    {\n        child_pointer[0] = '\\0';\n        child_pointer++;\n    }\n    parent = get_item_from_pointer(object, (char*)parent_pointer, case_sensitive);\n    decode_pointer_inplace(child_pointer);\n\n    /* add, remove, replace, move, copy, test. */\n    if ((parent == NULL) || (child_pointer == NULL))\n    {\n        /* Couldn't find object to add to. */\n        status = 9;\n        goto cleanup;\n    }\n    else if (cJSON_IsArray(parent))\n    {\n        if (strcmp((char*)child_pointer, \"-\") == 0)\n        {\n            cJSON_AddItemToArray(parent, value);\n            value = NULL;\n        }\n        else\n        {\n            size_t index = 0;\n            if (!decode_array_index_from_pointer(child_pointer, &index))\n            {\n                status = 11;\n                goto cleanup;\n            }\n\n            if (!insert_item_in_array(parent, index, value))\n            {\n                status = 10;\n                goto cleanup;\n            }\n            value = NULL;\n        }\n    }\n    else if (cJSON_IsObject(parent))\n    {\n        if (case_sensitive)\n        {\n            cJSON_DeleteItemFromObjectCaseSensitive(parent, (char*)child_pointer);\n        }\n        else\n        {\n            cJSON_DeleteItemFromObject(parent, (char*)child_pointer);\n        }\n        cJSON_AddItemToObject(parent, (char*)child_pointer, value);\n        value = NULL;\n    }\n    else /* parent is not an object */\n    {\n        /* Couldn't find object to add to. */\n        status = 9;\n        goto cleanup;\n    }\n\ncleanup:\n    if (value != NULL)\n    {\n        cJSON_Delete(value);\n    }\n    if (parent_pointer != NULL)\n    {\n        cJSON_free(parent_pointer);\n    }\n\n    return status;\n}",
+   "stale": false,
+   "target": 15,
+   "uncovered_lines": null,
+   "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/cjson/cJSON_Utils.c",
+   "versions": {
+    "analysis_version": 11,
+    "crapkit": "<crapkit>",
+    "lizard": "1.24.0",
+    "python": "<python>"
+   }
+  },
+  {
+   "attempts": [],
+   "churn": {
+    "authors": 1,
+    "commits": 1,
+    "weight": 1.0
+   },
+   "commands": {
+    "gate": "crapkit rescore src/py/nested.py --gate",
+    "refresh": "crapkit coverage --reuse-unchanged",
+    "refresh_writes_run": true,
+    "scoped_tests": "crapkit test-scoped src/py/nested.py",
+    "verify": "crapkit verify"
+   },
+   "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+   "coupling": [],
+   "duplication_twins": [],
+   "est_splits": 0,
+   "est_uncovered_paths": 5,
+   "file_functions": [
+    {
+     "ccn": 3,
+     "crap": 3.0,
+     "end": 20,
+     "function": "outer( rows , limit )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 4
+    },
+    {
+     "ccn": 3,
+     "crap": 4.125,
+     "end": 14,
+     "function": "outer.middle( row )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 5
+    },
+    {
+     "ccn": 3,
+     "crap": 3.0,
+     "end": 11,
+     "function": "outer.middle.inner( cell )",
+     "occurrence": 1,
+     "remedy": "ok",
+     "start": 6
+    },
+    {
+     "ccn": 5,
+     "crap": 30.0,
+     "end": 28,
+     "function": "unused_branchy( flag , other )",
+     "occurrence": 1,
+     "remedy": "add-tests",
+     "start": 23
+    }
+   ],
+   "file_totals": {
+    "crap_load": 40.12,
+    "functions": 4,
+    "over_target": 1
+   },
+   "function": "unused_branchy( flag , other )",
+   "gate_rule": {
+    "binds": "changed functions only; a ratchet mark pardons standing debt at or under it",
+    "ceiling": 6,
+    "diff_uncovered_max": null,
+    "mark_age_days": null,
+    "ratchet_mark": null
+   },
+   "handle": "unused_branchy",
+   "lane": {
+    "artifact": ".crapkit/cov/py.json",
+    "command": "python -c \"import os,shutil,sys,time;a=sys.argv[1:];p=list(zip(a[::2],a[1::2]));[os.makedirs(os.path.dirname(d) or '.',exist_ok=True) for s,d in p];[shutil.copyfile(s,d) for s,d in p];t=time.time_ns();[os.utime(d,ns=(t,t)) for s,d in p]\" recorded/py.json .crapkit/cov/py.json recorded/py-junit.xml .crapkit/cov/py-junit.xml",
+    "cwd": "",
+    "env": {
+     "COVERAGE_PROCESS_CONFIG": "",
+     "COV_CORE_DATAFILE": ""
+    },
+    "name": "py",
+    "parser": "coveragepy",
+    "timeout_seconds": "<timeout_seconds>"
+   },
+   "notes": {
+    "repo": null,
+    "scope": null
+   },
+   "params": [
+    {
+     "name": "flag",
+     "type": null
+    },
+    {
+     "name": "other",
+     "type": null
+    }
+   ],
+   "path": "src/py/nested.py",
+   "ratchet_mark": null,
+   "regrowth": {
+    "history": [
+     [
+      1,
+      5
+     ],
+     [
+      2,
+      5
+     ]
+    ],
+    "regrown": false
+   },
+   "remedy": "add-tests",
+   "run_id": 2,
+   "scored": {
+    "ccn": 5,
+    "ccn_mod": 5,
+    "ccn_std": 5,
+    "cognitive": 4,
+    "cov": 0.0,
+    "crap": 30.0,
+    "end": 28,
+    "flag": "measured",
+    "long_name": "unused_branchy( flag , other )",
+    "nesting": 1,
+    "nloc": 6,
+    "occurrence": 1,
+    "params": 2,
+    "path": "src/py/nested.py",
+    "remedy": "add-tests",
+    "scope": "py",
+    "start": 23
+   },
+   "source": "def unused_branchy(flag, other):\n    if flag and other:\n        return 2\n    if flag or other:\n        return 1\n    return 0",
+   "stale": false,
+   "target": 6,
+   "uncovered_lines": [
+    24,
+    25,
+    26,
+    27,
+    28
+   ],
+   "versions": {
+    "analysis_version": 11,
+    "crapkit": "<crapkit>",
+    "lizard": "1.24.0",
+    "python": "<python>"
+   }
+  }
+ ],
+ "run_id": 2,
+ "schema": 1,
+ "stale": false
+}

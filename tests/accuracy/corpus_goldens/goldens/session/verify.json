@@ -1,0 +1,70 @@
+{
+ "baseline_commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+ "baseline_run": 3,
+ "changed_files": 2,
+ "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+ "committed_findings": 0,
+ "diff_uncovered": [
+  {
+   "line": 13,
+   "path": "src/py/grades.py"
+  },
+  {
+   "line": 14,
+   "path": "src/py/grades.py"
+  },
+  {
+   "line": 15,
+   "path": "src/py/grades.py"
+  },
+  {
+   "line": 22,
+   "path": "src/py/grades.py"
+  },
+  {
+   "line": 26,
+   "path": "src/py/grades.py"
+  },
+  {
+   "line": 30,
+   "path": "src/py/grades.py"
+  },
+  {
+   "line": 51,
+   "path": "src/py/grades.py"
+  }
+ ],
+ "diff_uncovered_count": 7,
+ "diff_uncovered_max": null,
+ "dirty_failures": [],
+ "dirty_findings": 1,
+ "forgiven_failures": [],
+ "gate_violations": [
+  {
+   "ccn": 7,
+   "cov": 0.5,
+   "crap": 13.125,
+   "dirty": true,
+   "key_name": "letter( score )",
+   "long_name": "letter( score )",
+   "path": "src/py/grades.py",
+   "remedy": "decompose",
+   "start": 8
+  }
+ ],
+ "new_failures": [],
+ "ok": false,
+ "overridden": [],
+ "ratchet_changes": null,
+ "ratchet_regressions": [],
+ "ratchet_sha256": "bfd7e5577f7ff2316082e688d9bb234e8a58eca3af667537ce4ad475342aa348",
+ "retried_passes": [],
+ "run_id": 4,
+ "schema": 1,
+ "tool_versions": {
+  "analysis_version": "11",
+  "crapkit": "<crapkit>",
+  "lizard": "1.24.0"
+ },
+ "unmarked_over_target": 1
+}

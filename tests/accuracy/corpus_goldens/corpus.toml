@@ -1,0 +1,362 @@
+# The accuracy corpus: what every golden, cross-platform digest and wheel diff runs on.
+#
+# [small] is the small corpus under small/, committed in this repository. kit.corpus_run
+# commits it to a fresh repo at kit.repos.EPOCH (2025-06-15T15:06:40Z) and freezes git's
+# clock at git_test_date_now, one day later, so the 12-month churn window never moves with
+# the calendar. [history] is the synthetic 60-commit history in history/small.bundle,
+# whose last commit is the small corpus tree; its runs freeze the clock one day after it.
+#
+# [member.*] is the full corpus. tools/accuracy/corpus.py builds each member from a
+# partial shallow clone of `url` at `commit`, keeps only `paths` (plus `license`), and
+# refuses a path whose git object id at that commit is not the one in `trees`. A member
+# with `history_since` also keeps its real history from that date as a bundle.
+# `slice` names the files the small corpus copies under small/vendor/<member>/ with the
+# license. `pins` prints the trees and epoch lines when a commit moves:
+#   python tools/accuracy/corpus.py pins --member <name>
+# The full corpus is published once per `corpus.py digest` as the prerelease asset
+# corpus-<digest> on the crapkit repository.
+#
+# Kotlin has no member: crapkit declares no Kotlin suffix (LANGUAGE_EXTENSIONS).
+
+[small]
+git_test_date_now = 1750086400
+
+[history]
+bundle = "history/small.bundle"
+git_test_date_now = 1750086400
+
+[member.requests]
+url = "https://github.com/psf/requests"
+tag = "v2.34.2"
+commit = "6e83187b8feb273ed4c6cdab5efd8d54901dfab3"
+git_test_date_now = 1778872912
+trees = ["1ab5d536da5d36b176eba7e9225299f09da7750d"]
+license = "LICENSE"
+languages = ["python"]
+paths = ["src/requests"]
+history_since = "2025-01-01"
+slice = ["src/requests/cookies.py"]
+
+[member.click]
+url = "https://github.com/pallets/click"
+tag = "8.5.0"
+commit = "8b19813f2bfca99f1018a587a8cf54fc959f2e5d"
+git_test_date_now = 1787459485
+trees = ["2e5d5fefde63b9b358a9e619ad12bfd46f5fff22"]
+license = "LICENSE.txt"
+languages = ["python"]
+paths = ["src/click"]
+history_since = "2025-01-01"
+slice = ["src/click/parser.py"]
+
+[member."cpython-3.11"]
+url = "https://github.com/python/cpython"
+tag = "v3.11.16"
+commit = "41388c9cb160d0886d5ca00d2e6c8782608a4549"
+git_test_date_now = 1786662199
+trees = ["bb9556e312b124d47e99ef13803bcddf6c0e77a8",
+         "7de070956aee4f15788bf8f3d6d60e46a23d080f",
+         "e0cbd4af0a9ea91e464c86e4a1f47654a791458c",
+         "479d03c994821f3f79f45a56a93dad32820ff8fd",
+         "2f5ecda9239eb5ba006b3b3c91ca636fc34108cd",
+         "d84d75e1f3a8e1babe50174119de2c603d28a66c",
+         "014938b2686e87d6e936b01a8144e5859e2a8733",
+         "d8d735736b70bff5cf52d57eb1f66a79c7e312cb",
+         "ba0b256969ebff7cdc23ef2c51df29107ad2d867",
+         "4862d2488a490bba840032f06d273370c109b823",
+         "a7a7fea5caa4e4aad5df9d955b9bfb1e380dc5f8",
+         "4801a6c1d47bd9e0a8ada16089221c8237b777d5",
+         "3b3b43babb42e2f07d04b95c08d7a743d30dc920",
+         "98bedd27ea3a11995e2bf81a115df999767dc134",
+         "46d2224f5cc0833e4b38819d0255367bb3625ac4",
+         "c26d01f76ace55648e0385b6887feb9a9208b6bc"]
+license = "LICENSE"
+languages = ["python"]
+paths = ["Lib/json", "Lib/email", "Lib/importlib", "Lib/asyncio", "Lib/argparse.py",
+         "Lib/ast.py", "Lib/csv.py", "Lib/dataclasses.py", "Lib/difflib.py", "Lib/enum.py",
+         "Lib/fractions.py", "Lib/shlex.py", "Lib/statistics.py", "Lib/textwrap.py",
+         "Lib/tokenize.py", "Lib/typing.py"]
+
+[member."cpython-3.12"]
+url = "https://github.com/python/cpython"
+tag = "v3.12.14"
+commit = "2abcf904b8dac8c999d2b3aac76681abb333798a"
+git_test_date_now = 1786629474
+trees = ["b7da978613884aef78fa52bba923ef18bc09c6b3",
+         "bd30ded2c8a64d5bb66e9e9d68617695d6cf2e96",
+         "8f89dfd2c9de7db3c5f92a1f89acf37247f736c0",
+         "8ea0319a2efca8ff616d393e1762f594ddea47ab",
+         "2a8b501a44e8553bce8e0ef0d0112f1a589482d5",
+         "6d9785cc48e40cd307b87faaefa6c0ce106fcd21",
+         "6341d37e46d2f15629675f8325f93a94572f47f0",
+         "09a86bd236e1c4f4113ba936da252355fc27a5e6",
+         "33e7e6c165aa0c12c779331927c3a40f3b09d9e2",
+         "c87aeef715761a3058df6877c41264b2c4912f85",
+         "e3a8bbcfb3ea5e016b218a69487983b97250433d",
+         "f4821616b62a0fa82ef0354d4901761ab20f74cb",
+         "db108b3e2c8abe1c635a23e1b60e56d62170101b",
+         "98bedd27ea3a11995e2bf81a115df999767dc134",
+         "7cf92acb192deb298cafb6d0bb2f4bb6db328d91",
+         "d7f96b60f039c7345849f786312d75780cd92b69"]
+license = "LICENSE"
+languages = ["python"]
+paths = ["Lib/json", "Lib/email", "Lib/importlib", "Lib/asyncio", "Lib/argparse.py",
+         "Lib/ast.py", "Lib/csv.py", "Lib/dataclasses.py", "Lib/difflib.py", "Lib/enum.py",
+         "Lib/fractions.py", "Lib/shlex.py", "Lib/statistics.py", "Lib/textwrap.py",
+         "Lib/tokenize.py", "Lib/typing.py"]
+
+[member."cpython-3.13"]
+url = "https://github.com/python/cpython"
+tag = "v3.13.15"
+commit = "4061bc4c35f7c26f25264666d4ba083b93d2f6f9"
+git_test_date_now = 1786019143
+trees = ["b23cb2e851940c3511ac48dcb6f9a17ac4313222",
+         "970513d553f1a0f1afb93c8b10b98a3c2481f6d5",
+         "3c56d2e6d09757537519e3220e6a785cdda0458d",
+         "650bc969059c0b03390cdee5a9fce7aea28577ec",
+         "7d845175644b8f532624b17e50d8a88069a1f673",
+         "37b20206b8af4fda67c631fd010eda0008985511",
+         "f155ef259edfae8ac51a75a34809134d120a6052",
+         "9301ba2d9623a536fc6f6206cc7558de473afbaa",
+         "cc8f2064a19d8e21ba0205e3bf04857f9ad7a283",
+         "dbf7bd343ab180d6edb03c80a6e08a9b94803fb2",
+         "9d42e80987526edc302fbb06951c3b4b9e0a7400",
+         "f4821616b62a0fa82ef0354d4901761ab20f74cb",
+         "c71e83aa7887d3f3cba658447721309d29b45b70",
+         "686c9eb8d8d66b7c0eeea275862a93a44112f7f8",
+         "7ca552c4fc590edfe74ead58ca76be1aa9b9f06b",
+         "3be82699b54fb6339dde655e46b42e74a3c9b5cc"]
+license = "LICENSE"
+languages = ["python"]
+paths = ["Lib/json", "Lib/email", "Lib/importlib", "Lib/asyncio", "Lib/argparse.py",
+         "Lib/ast.py", "Lib/csv.py", "Lib/dataclasses.py", "Lib/difflib.py", "Lib/enum.py",
+         "Lib/fractions.py", "Lib/shlex.py", "Lib/statistics.py", "Lib/textwrap.py",
+         "Lib/tokenize.py", "Lib/typing.py"]
+
+[member."cpython-3.14"]
+url = "https://github.com/python/cpython"
+tag = "v3.14.7"
+commit = "823f0323ee6ec1402088b73bce1a38473cac36dc"
+git_test_date_now = 1786012189
+trees = ["ca92a2cc81b8f69b3107311a042a8c47ba249093",
+         "3704350e87cc937872d4e98c87da6fa910c1c4a7",
+         "1aab8a3c0734b37224b9b21e75b23944c4732a20",
+         "99912e28e4a15a2f5fe34739d42e0e24daf139d6",
+         "a106a718a995ba3174502a5d28bdc6a7a5e3e0da",
+         "2f11683ecf7c681d4c76cb0c234587370aea08d5",
+         "5d15344ea2495e139e616e0de4ca1554cd1687e4",
+         "242a6d2ffc23b29a9e710bb0f0a9dd3e38e2a5ce",
+         "aef2b6f0fd8a1bfcfee3c778d827e566f5ccd4c9",
+         "87b2f2ab7ebf0a6d9e27c9373ca622d2f5d20673",
+         "a497ee19935345cd22d1f778c094328bf0888ec2",
+         "5959f52dd12639de2afd6f2f1a6bc312ab794163",
+         "26cf925529ea60b9654569767c82a2d6c1658794",
+         "41366fbf443a4fc46768a6745d0b9e64c1d3b056",
+         "1f31258ce361c945f4e370a6b44efa3277911ecd",
+         "2b4389b2967d12885b8547fcaa79ae969ee25c47"]
+license = "LICENSE"
+languages = ["python"]
+paths = ["Lib/json", "Lib/email", "Lib/importlib", "Lib/asyncio", "Lib/argparse.py",
+         "Lib/ast.py", "Lib/csv.py", "Lib/dataclasses.py", "Lib/difflib.py", "Lib/enum.py",
+         "Lib/fractions.py", "Lib/shlex.py", "Lib/statistics.py", "Lib/textwrap.py",
+         "Lib/tokenize.py", "Lib/typing.py"]
+
+[member.zod]
+url = "https://github.com/colinhacks/zod"
+tag = "v4.6.5"
+commit = "59bbc03e10c636b9eb3c393dfeb552819774ec21"
+git_test_date_now = 1789411632
+trees = ["24a3c2bb28005e7289dd07f0478dadc36369e252"]
+license = "LICENSE"
+languages = ["typescript"]
+paths = ["packages/zod/src/v4/core"]
+slice = ["packages/zod/src/v4/core/regexes.ts"]
+
+[member.ky]
+url = "https://github.com/sindresorhus/ky"
+tag = "v2.1.0"
+commit = "d27ad21266d162ee218d4ea69dce192b84b6f967"
+git_test_date_now = 1788008955
+trees = ["3aadad7662053dbbc29afd9ce09182568d964778"]
+license = "license"
+languages = ["typescript"]
+paths = ["source"]
+slice = ["source/utils/merge.ts"]
+
+[member.express]
+url = "https://github.com/expressjs/express"
+tag = "v5.2.1"
+commit = "dbac741a49a5a64336b70c06e85c2e2706e36336"
+git_test_date_now = 1764707255
+trees = ["3eb0a91dc1e21c704728dffd8ec1845ba630056f"]
+license = "LICENSE"
+languages = ["javascript"]
+paths = ["lib"]
+slice = ["lib/utils.js"]
+
+[member.shadcn-ui]
+url = "https://github.com/shadcn-ui/ui"
+tag = "shadcn@4.21.0"
+commit = "7c9eaba1c0a6404c990c144a654792e3313c650d"
+git_test_date_now = 1788586286
+trees = ["66ef3584fef4049076ac1cba35e86d152f84a4cc"]
+license = "LICENSE.md"
+languages = ["tsx", "typescript"]
+paths = ["apps/v4/registry/new-york-v4/ui"]
+slice = ["apps/v4/registry/new-york-v4/ui/pagination.tsx"]
+
+[member.element-plus]
+url = "https://github.com/element-plus/element-plus"
+tag = "2.14.6"
+commit = "5ac2b162180d3922d77c50990bb40c2f02376796"
+git_test_date_now = 1789823214
+trees = ["c851a338145ab7da6d7a7af6dafb4069c4d8194b",
+         "a80bcb9f88ab00dd0a51b844a3b2449ea7c8a310"]
+license = "LICENSE"
+languages = ["vue", "typescript"]
+paths = ["packages/components/button", "packages/components/input"]
+slice = ["packages/components/button/src/button.vue"]
+
+[member.cobra]
+url = "https://github.com/spf13/cobra"
+tag = "v1.10.2"
+commit = "88b30ab89da2d0d0abb153818746c5a2d30eccec"
+git_test_date_now = 1764892275
+trees = ["ed1e70ceaa401063c81f9745721ef7c522e935e8",
+         "d9cd2414e237a6fc8a14729adb0737895a60db67",
+         "c05fed45aef0cfed0304728c2289aa18fb152dad",
+         "d3607c2d2fefdeb39244e7370925f0cbfd2b4460",
+         "560612fd338fd92a79db261df0e46f8c72630f39"]
+license = "LICENSE.txt"
+languages = ["go"]
+paths = ["args.go", "cobra.go", "command.go", "completions.go", "flag_groups.go"]
+history_since = "2025-01-01"
+slice = ["args.go"]
+
+[member.ripgrep]
+url = "https://github.com/BurntSushi/ripgrep"
+tag = "15.2.0"
+commit = "e89fff89ac9af12e8d4ce9d5fd07beb408ca730f"
+git_test_date_now = 1784217611
+trees = ["52ba1030657e7e414ee97695e8da9dd01985c4b5",
+         "c46466e62c3878f7573aca072244f339fdb1ceb3"]
+license = "LICENSE-MIT"
+languages = ["rust"]
+paths = ["crates/globset/src", "crates/ignore/src"]
+slice = ["crates/globset/src/pathutil.rs"]
+
+[member.gson]
+url = "https://github.com/google/gson"
+tag = "gson-parent-2.14.0"
+commit = "3ff35d6269894901ab8006258395aafc4b9765cd"
+git_test_date_now = 1777057231
+trees = ["120cd76ca08abbf6cdf9a25799f351cb0533afee"]
+license = "LICENSE"
+languages = ["java"]
+paths = ["gson/src/main/java/com/google/gson"]
+slice = ["gson/src/main/java/com/google/gson/internal/bind/util/ISO8601Utils.java"]
+
+[member.cjson]
+url = "https://github.com/DaveGamble/cJSON"
+tag = "v1.7.19"
+commit = "c859b25da02955fef659d658b8f324b5cde87be3"
+git_test_date_now = 1757512570
+trees = ["6e4fb0dd369cd905923da515be87ab06db6c1ee0",
+         "cab5feb427725f8e5c82287f7fe59481b609b9b5",
+         "8fa24f8e9bf452cf1ba49d1325c85423ce742c74",
+         "a970c65046740dbea82d694ba0f5cd0a5e3ab074"]
+license = "LICENSE"
+languages = ["cpp"]
+paths = ["cJSON.c", "cJSON.h", "cJSON_Utils.c", "cJSON_Utils.h"]
+slice = ["cJSON_Utils.c"]
+
+[member.fmt]
+url = "https://github.com/fmtlib/fmt"
+tag = "12.2.0"
+commit = "1be298e1bd68957e4cd352e1f676f00e07dcfb57"
+git_test_date_now = 1781672735
+trees = ["0093b0066808a037677acb390095d2c3741fe47e",
+         "31028b401ea935831b27376ca8b50ece39160285"]
+license = "LICENSE"
+languages = ["cpp"]
+paths = ["include/fmt", "src"]
+slice = ["src/os.cc"]
+
+[member.afnetworking]
+url = "https://github.com/AFNetworking/AFNetworking"
+tag = "4.0.1"
+commit = "ffae2391ab0c29dc88eb0a58d2f5b2c2c27cadbf"
+git_test_date_now = 1587435681
+trees = ["191c4b697d4404af5c71ce4490283f5576ea3e19"]
+license = "LICENSE"
+languages = ["objectivec"]
+paths = ["AFNetworking"]
+slice = ["AFNetworking/AFNetworkReachabilityManager.m"]
+
+[member.alamofire]
+url = "https://github.com/Alamofire/Alamofire"
+tag = "5.12.2"
+commit = "bda9ed57d72988a3a2ada33d824583541f86eac6"
+git_test_date_now = 1789089889
+trees = ["73219b3eed57f62e3a26472c5a6800ac63f6f370"]
+license = "LICENSE"
+languages = ["swift"]
+paths = ["Source"]
+slice = ["Source/Features/Validation.swift"]
+
+[member.zig-std]
+url = "https://github.com/ziglang/zig"
+tag = "0.15.2"
+commit = "e4cbd752c8c05f131051f8c873cff7823177d7d3"
+git_test_date_now = 1760240747
+trees = ["79f6d8a296eecc7d48fb14558f9cf8ca5ffbf1a6",
+         "8705d240173071e652adc82729be143b6bd0b4c0",
+         "b6ac7655313b3349af4c91cc2d49e4821e858008",
+         "15e48b5c517fb372005cb7340321edda6172978a"]
+license = "LICENSE"
+languages = ["zig"]
+paths = ["lib/std/ascii.zig", "lib/std/sort.zig", "lib/std/sort", "lib/std/base64.zig"]
+slice = ["lib/std/ascii.zig"]
+
+[member.nvm]
+url = "https://github.com/nvm-sh/nvm"
+tag = "v0.40.8"
+commit = "a885b885fef16fac4bc544188fb25e9e37ae83e8"
+git_test_date_now = 1790043827
+trees = ["d771dbe43718082b16111fefbfee7dc904ed0b4c",
+         "2cae3a2e91755bd31c52291662ac9600baab5aea"]
+license = "LICENSE.md"
+languages = ["shell"]
+paths = ["nvm.sh", "install.sh"]
+slice = ["install.sh"]
+
+[member.posh-git]
+url = "https://github.com/dahlbyk/posh-git"
+tag = "v1.1.0"
+commit = "d8b126decc29193a78e71cca6f59598017703a85"
+git_test_date_now = 1648826003
+trees = ["f3baa1f917dd127615c00849ba2845c616b4a40f"]
+license = "LICENSE.txt"
+languages = ["powershell"]
+paths = ["src"]
+slice = ["src/Utils.ps1"]
+
+[member.powershell-build]
+url = "https://github.com/PowerShell/PowerShell"
+tag = "v7.6.6"
+commit = "f260eb9c31ec72c5282f98e5ea24d9be4f8d7536"
+git_test_date_now = 1788972781
+trees = ["e561f1950b8f5e38c2fce619fd2c81fc7a071f1e"]
+license = "LICENSE.txt"
+languages = ["powershell"]
+paths = ["build.psm1"]
+
+[member.crapkit]
+url = "https://github.com/JeanFrancoisGagne/crapkit"
+tag = "v0.8.0"
+commit = "fe0de4c8acbfe87ff72bccb2160e0a961b12b1b2"
+git_test_date_now = 1790279447
+trees = ["7fea5df3b0f79a01d7e390b6eb5f63d0b71bea5a"]
+license = "LICENSE"
+languages = ["python"]
+paths = ["src/crapkit"]

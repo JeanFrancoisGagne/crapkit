@@ -1,0 +1,11 @@
+::error file=src/py/grades.py,line=8,title=crapkit/gate::letter( score ): CRAP 13.1 (ccn 7, cov 50%25) -> decompose
+::warning file=src/py/grades.py,line=13,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/grades.py,line=14,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/grades.py,line=15,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/grades.py,line=22,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/grades.py,line=26,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/grades.py,line=30,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+::warning file=src/py/grades.py,line=51,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
+verify FAILED @ fd39664600a vs baseline fd39664600a (2 changed files)
+  GATE  crap     13.1  ccn   7 cov 50%  src/py/grades.py:8  letter( score )  -> decompose  [dirty]
+  findings: 0 committed / 1 dirty (uncommitted edits and untracked files)

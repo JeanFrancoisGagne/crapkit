@@ -1,0 +1,160 @@
+{
+ "attempts": [],
+ "churn": {
+  "authors": 2,
+  "commits": 13,
+  "weight": 0.5011
+ },
+ "commands": {
+  "gate": "crapkit rescore src/web/arrows.js --gate",
+  "refresh": "crapkit coverage --reuse-unchanged",
+  "refresh_writes_run": true,
+  "scoped_tests": "crapkit test-scoped src/web/arrows.js",
+  "verify": "crapkit verify"
+ },
+ "commit": "901b727247a28c5d34a593db89a0b9065772919e",
+ "coupling": [
+  {
+   "confidence": 0.9231,
+   "is_test": false,
+   "path": "src/web/templates.ts",
+   "support": 12
+  }
+ ],
+ "duplication_twins": [],
+ "est_splits": 0,
+ "est_uncovered_paths": 2,
+ "file_functions": [
+  {
+   "ccn": 2,
+   "crap": 2.5,
+   "end": 3,
+   "function": "(anonymous)",
+   "occurrence": 1,
+   "remedy": "ok",
+   "start": 3
+  },
+  {
+   "ccn": 2,
+   "crap": 6.0,
+   "end": 4,
+   "function": "(anonymous)",
+   "occurrence": 1,
+   "remedy": "ok",
+   "start": 4
+  },
+  {
+   "ccn": 3,
+   "crap": 12.0,
+   "end": 7,
+   "function": "up ( x )",
+   "occurrence": 1,
+   "remedy": "split-lines",
+   "start": 7
+  },
+  {
+   "ccn": 3,
+   "crap": 12.0,
+   "end": 7,
+   "function": "down ( x )",
+   "occurrence": 2,
+   "remedy": "split-lines",
+   "start": 7
+  },
+  {
+   "ccn": 5,
+   "crap": 8.125,
+   "end": 17,
+   "function": "dispatch ( event )",
+   "occurrence": 1,
+   "remedy": "add-tests",
+   "start": 9
+  }
+ ],
+ "file_totals": {
+  "crap_load": 40.62,
+  "functions": 5,
+  "over_target": 3
+ },
+ "function": "dispatch ( event )",
+ "gate_rule": {
+  "binds": "changed functions only; a ratchet mark pardons standing debt at or under it",
+  "ceiling": 6,
+  "diff_uncovered_max": null,
+  "mark_age_days": null,
+  "ratchet_mark": null
+ },
+ "handle": "dispatch",
+ "lane": {
+  "artifact": ".crapkit/cov/js.json",
+  "command": "python -c \"import os,shutil,sys,time;a=sys.argv[1:];p=list(zip(a[::2],a[1::2]));[os.makedirs(os.path.dirname(d) or '.',exist_ok=True) for s,d in p];[shutil.copyfile(s,d) for s,d in p];t=time.time_ns();[os.utime(d,ns=(t,t)) for s,d in p]\" recorded/js.json .crapkit/cov/js.json recorded/js-junit.xml .crapkit/cov/js-junit.xml",
+  "cwd": "",
+  "env": {
+   "COVERAGE_PROCESS_CONFIG": "",
+   "COV_CORE_DATAFILE": ""
+  },
+  "name": "js",
+  "parser": "istanbul",
+  "timeout_seconds": "<timeout_seconds>"
+ },
+ "notes": {
+  "repo": null,
+  "scope": null
+ },
+ "params": [
+  {
+   "name": "event",
+   "type": null
+  }
+ ],
+ "path": "src/web/arrows.js",
+ "ratchet_mark": null,
+ "regrowth": {
+  "history": [
+   [
+    1,
+    5
+   ],
+   [
+    2,
+    5
+   ]
+  ],
+  "regrown": false
+ },
+ "remedy": "add-tests",
+ "run_id": 2,
+ "schema": 1,
+ "scored": {
+  "ccn": 5,
+  "ccn_mod": 5,
+  "ccn_std": 5,
+  "cognitive": 4,
+  "cov": 0.5,
+  "crap": 8.125,
+  "end": 17,
+  "flag": "measured",
+  "long_name": "dispatch ( event )",
+  "nesting": 2,
+  "nloc": 9,
+  "occurrence": 1,
+  "params": 1,
+  "path": "src/web/arrows.js",
+  "remedy": "add-tests",
+  "scope": "web",
+  "start": 9
+ },
+ "source": "export function dispatch(event) {\n  if (!event) {\n    return \"none\";\n  }\n  if (event.ctrl && event.shift) {\n    return \"both\";\n  }\n  return handlers[event.ctrl ? 0 : 1](event);\n}",
+ "stale": false,
+ "target": 6,
+ "uncovered_lines": [
+  11,
+  16
+ ],
+ "versions": {
+  "analysis_version": 11,
+  "crapkit": "<crapkit>",
+  "lizard": "1.24.0",
+  "python": "<python>"
+ }
+}

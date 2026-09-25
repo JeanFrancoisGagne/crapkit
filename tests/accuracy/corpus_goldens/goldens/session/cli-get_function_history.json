@@ -1,0 +1,39 @@
+{
+ "functions": [
+  {
+   "history": [
+    {
+     "ccn": 4,
+     "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+     "cov": null,
+     "crap": null,
+     "created_at": "<created_at>",
+     "flag": null,
+     "kind": "inventory",
+     "run_id": 1
+    },
+    {
+     "ccn": 4,
+     "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+     "cov": 0.5,
+     "crap": 6.0,
+     "created_at": "<created_at>",
+     "flag": "measured",
+     "kind": "coverage",
+     "run_id": 2
+    }
+   ],
+   "long_name": "letter( score )",
+   "ratchet_mark": null,
+   "ratchet_mark_note": "no ratchet file",
+   "uncovered_lines": [
+    13,
+    14,
+    15
+   ]
+  }
+ ],
+ "name": "letter",
+ "path": "src/py/grades.py",
+ "schema": 1
+}

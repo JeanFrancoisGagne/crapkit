@@ -1,0 +1,670 @@
+{
+ "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+ "runs": [
+  {
+   "results": [
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/legacy/old.py"
+        },
+        "region": {
+         "startLine": 4
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "migrate( rows , version ): CRAP 30.0 over ceiling 6 (ccn 5, cov 0%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/native/matcher.rs"
+        },
+        "region": {
+         "startLine": 2
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "weight kind : & str: CRAP 7.0 over ceiling 6 (ccn 7, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/bom.py"
+        },
+        "region": {
+         "startLine": 12
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "count_words( text ): CRAP 12.0 over ceiling 6 (ccn 3, cov 0%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/cr_only.py"
+        },
+        "region": {
+         "startLine": 4
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "normalize( text , strip ): CRAP 12.0 over ceiling 6 (ccn 3, cov 0%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/crlf.py"
+        },
+        "region": {
+         "startLine": 12
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "count_words( text ): CRAP 12.0 over ceiling 6 (ccn 3, cov 0%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/grades.py"
+        },
+        "region": {
+         "startLine": 18
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "curve( scores , mode , floor , ceiling , skip_none ): CRAP 10.4 over ceiling 6 (ccn 8, cov 67%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/grades.py"
+        },
+        "region": {
+         "startLine": 46
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "pick( a , b ): CRAP 12.0 over ceiling 6 (ccn 3, cov 0%) -> split-lines"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/nested.py"
+        },
+        "region": {
+         "startLine": 23
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "unused_branchy( flag , other ): CRAP 30.0 over ceiling 6 (ccn 5, cov 0%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/oneline.py"
+        },
+        "region": {
+         "startLine": 7
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "clamp( value , low , high ): CRAP 12.0 over ceiling 6 (ccn 3, cov 0%) -> split-lines"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/signatures.py"
+        },
+        "region": {
+         "startLine": 18
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "make( name , * , bases = ( ): CRAP 8.1 over ceiling 6 (ccn 5, cov 50%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/signatures.py"
+        },
+        "region": {
+         "startLine": 34
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "__init__( self , args , bufsize = - 1 , executable = None , stdin = None , stdout = None , stderr = None , preexec_fn = None , close_fds = True , shell = False , cwd = None , env = None , universal_newlines = None , startupinfo = None , creationflags = 0 , restore_signals = True , start_new_session = False , pass_fds = ( ): CRAP 19.1 over ceiling 6 (ccn 9, cov 50%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/twins.py"
+        },
+        "region": {
+         "startLine": 10
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "run( self , mode = \"fast\" ): CRAP 6.8 over ceiling 6 (ccn 3, cov 25%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/twins.py"
+        },
+        "region": {
+         "startLine": 23
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "helper( values ): CRAP 12.0 over ceiling 6 (ccn 3, cov 0%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/untested.py"
+        },
+        "region": {
+         "startLine": 4
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "orphan( a , b , c ): CRAP 20.0 over ceiling 6 (ccn 4, cov 0%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/cjson/cJSON_Utils.c"
+        },
+        "region": {
+         "startLine": 120
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "compare_pointers( const unsigned char * name , const unsigned char * pointer , const cJSON_bool case_sensitive): CRAP 17.0 over ceiling 15 (ccn 17, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/cjson/cJSON_Utils.c"
+        },
+        "region": {
+         "startLine": 484
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "sort_list( cJSON * list , const cJSON_bool case_sensitive): CRAP 21.0 over ceiling 15 (ccn 21, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/cjson/cJSON_Utils.c"
+        },
+        "region": {
+         "startLine": 604
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "compare_json( cJSON * a , cJSON * b , const cJSON_bool case_sensitive): CRAP 19.0 over ceiling 15 (ccn 19, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/cjson/cJSON_Utils.c"
+        },
+        "region": {
+         "startLine": 807
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive): CRAP 37.0 over ceiling 15 (ccn 37, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/cjson/cJSON_Utils.c"
+        },
+        "region": {
+         "startLine": 1141
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "create_patches( cJSON * const patches , const unsigned char * const path , cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive): CRAP 20.0 over ceiling 15 (ccn 20, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/gson/ISO8601Utils.java"
+        },
+        "region": {
+         "startLine": 147
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "ISO8601Utils::parse( String date , ParsePosition pos): CRAP 29.0 over ceiling 15 (ccn 29, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/ky/merge.ts"
+        },
+        "region": {
+         "startLine": 148
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "appendSearchParameters ( target , source ): CRAP 17.0 over ceiling 15 (ccn 17, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/ky/merge.ts"
+        },
+        "region": {
+         "startLine": 207
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "deepMergeInternal ( isRoot , sources Array ): CRAP 38.0 over ceiling 15 (ccn 38, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/nvm/install.sh"
+        },
+        "region": {
+         "startLine": 152
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "install_nvm_from_git(): CRAP 18.0 over ceiling 15 (ccn 18, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/nvm/install.sh"
+        },
+        "region": {
+         "startLine": 401
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "nvm_do_install(): CRAP 29.0 over ceiling 15 (ccn 29, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/posh-git/Utils.ps1"
+        },
+        "region": {
+         "startLine": 99
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "Add-PoshGitToProfile: CRAP 29.0 over ceiling 15 (ccn 29, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "vendor/posh-git/Utils.ps1"
+        },
+        "region": {
+         "startLine": 249
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "Remove-PoshGitFromProfile: CRAP 18.0 over ceiling 15 (ccn 18, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/web/Counter.vue"
+        },
+        "region": {
+         "startLine": 2
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "tone ( count ): CRAP 6.8 over ceiling 6 (ccn 3, cov 25%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/web/arrows.js"
+        },
+        "region": {
+         "startLine": 7
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "up ( x ): CRAP 12.0 over ceiling 6 (ccn 3, cov 0%) -> split-lines"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/web/arrows.js"
+        },
+        "region": {
+         "startLine": 7
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "down ( x ): CRAP 12.0 over ceiling 6 (ccn 3, cov 0%) -> split-lines"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/web/arrows.js"
+        },
+        "region": {
+         "startLine": 9
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "dispatch ( event ): CRAP 8.1 over ceiling 6 (ccn 5, cov 50%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/web/esm.mjs"
+        },
+        "region": {
+         "startLine": 14
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "retry ( fn , times ): CRAP 12.0 over ceiling 6 (ccn 3, cov 0%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/web/nullish.ts"
+        },
+        "region": {
+         "startLine": 2
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "withDefaults ( options port host null ): CRAP 8.1 over ceiling 6 (ccn 5, cov 50%) -> add-tests"
+     },
+     "ruleId": "crapkit/over-target"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/web/nullish.ts"
+        },
+        "region": {
+         "startLine": 8
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "firstSet ( a , b , c ): CRAP 13.1 over ceiling 6 (ccn 7, cov 50%) -> decompose"
+     },
+     "ruleId": "crapkit/over-target"
+    }
+   ],
+   "tool": {
+    "driver": {
+     "informationUri": "https://github.com/JeanFrancoisGagne/crapkit",
+     "name": "crapkit",
+     "rules": [
+      {
+       "id": "crapkit/over-target",
+       "shortDescription": {
+        "text": "CRAP score above the scope ceiling"
+       }
+      },
+      {
+       "id": "crapkit/gate",
+       "shortDescription": {
+        "text": "touched function over the complexity gate"
+       }
+      },
+      {
+       "id": "crapkit/ratchet-regression",
+       "shortDescription": {
+        "text": "a recorded CRAP mark got worse"
+       }
+      },
+      {
+       "id": "crapkit/diff-uncovered",
+       "shortDescription": {
+        "text": "a changed line no lane ever ran"
+       }
+      }
+     ],
+     "version": "<crapkit>"
+    }
+   }
+  }
+ ],
+ "version": "2.1.0"
+}

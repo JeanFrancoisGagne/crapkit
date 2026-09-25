@@ -1,0 +1,2 @@
+CRAP load 1711.21 -> 1685.21; over ceiling 33 -> 32; functions 414 -> 414
+improved -25.0: src/legacy/old.py migrate( rows , version ) (crap 5.0)

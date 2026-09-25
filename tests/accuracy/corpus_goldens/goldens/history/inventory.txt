@@ -1,0 +1,1 @@
+run 1 @ 901b727247a: 414 functions in 64 files (0 cached) -> <root>/repo/.crapkit/crap.sqlite

@@ -1,0 +1,2 @@
+# The history bundle is git's own binary format.
+history/*.bundle binary
