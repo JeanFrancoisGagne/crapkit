@@ -218,20 +218,31 @@ def test_the_plan_orders_the_chain_the_way_the_contracts_require():
     assert names.index("github release") < names.index("registry")
 
 
-def test_the_accuracy_stage_follows_verify_and_publishes_no_release_ref():
+def _accuracy_step():
+    (accuracy,) = [s for s in release.plan("0.5.2") if s.name == "accuracy"]
+    return accuracy
+
+
+def test_the_accuracy_stage_follows_verify():
     """The accuracy suite runs on the tree verify passed, before the tag or main
-    leaves the machine: the remote run reaches its commit through a scratch branch."""
-    steps = release.plan("0.5.2")
-    names = [s.name for s in steps]
-    (accuracy,) = [s for s in steps if s.name == "accuracy"]
-    pushes = [command for command in accuracy.commands if command[:2] == ("git", "push")]
+    leaves the machine."""
+    names = [s.name for s in release.plan("0.5.2")]
+    accuracy = _accuracy_step()
 
     assert names.index("ratchet") < names.index("accuracy") < names.index("artifacts")
-    assert accuracy.stage == "accuracy" and accuracy.background
+    assert accuracy.stage == "accuracy"
+    assert accuracy.background
+
+
+def test_the_accuracy_stage_publishes_no_release_ref():
+    """The remote run reaches the tagged commit through a scratch branch, never
+    through the tag or main."""
+    accuracy = _accuracy_step()
+    pushed = [command[-1] for command in accuracy.commands if command[:2] == ("git", "push")]
+
     assert accuracy.commands[0][1:] == ("tools/accuracy/run.py", "--tier", "release", "--receipt",
                                         ".crapkit/release-accuracy-0.5.2.json")
-    assert [command[-1] for command in pushes] == [
-        "v0.5.2^{commit}:refs/heads/accuracy-release/0.5.2", "accuracy-release/0.5.2"]
+    assert pushed == ["v0.5.2^{commit}:refs/heads/accuracy-release/0.5.2", "accuracy-release/0.5.2"]
     assert accuracy.commands[2][-4:] == ("-f", "mode=release", "-f", "release_key=0.5.2")
 
 
