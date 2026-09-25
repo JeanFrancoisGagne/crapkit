@@ -924,10 +924,40 @@ def test_a_venv_already_built_is_reused(tmp_path, monkeypatch):
     venv = tmp_path / "abc-venv-3.12-wheel"
     retro.venv_python(venv).parent.mkdir(parents=True)
     retro.venv_python(venv).write_bytes(b"")
-    (venv / retro.BUILT).write_bytes(b"")
+    (venv / retro.BUILT).write_bytes("".join(f"{package}\n" for package in retro.Site().packages).encode())
     monkeypatch.setattr(retro, "_create_venv", lambda *args: pytest.fail("built again"))
 
     assert retro.build_venv(tmp_path / "abc", "3.12", retro.Site(work=tmp_path)) == retro.venv_python(venv)
+
+
+def _pinned(name: str) -> str:
+    """name==version as tools/accuracy/requirements-push.txt pins it."""
+    text = (REPO / "tools" / "accuracy" / "requirements-push.txt").read_bytes().decode()
+    (line,) = [line for line in text.splitlines() if line.startswith(f"{name}==")]
+    return line.split()[0]
+
+
+def test_a_replay_venv_holds_the_test_runner_the_accuracy_suite_pins():
+    """Checks run crapkit in-process in the dev venv, where doctor's coverage probe and
+    test-scoped's pytest find their runner; a replay venv must hold the same runner, or
+    those checks fail on both commits for a reason no bug explains."""
+    assert retro.Site().packages == (f"lizard=={retro.LIZARD}", _pinned("pytest"), _pinned("pytest-cov"),
+                                      _pinned("coverage"))
+
+
+def test_a_venv_built_with_other_packages_is_built_again(tmp_path, monkeypatch):
+    built = []
+    monkeypatch.setattr(retro, "_create_venv", lambda venv, python: built.append(venv) or
+                        venv.mkdir(parents=True, exist_ok=True))
+    monkeypatch.setattr(retro, "_install", lambda interpreter, tree, how: None)
+    monkeypatch.setattr(retro, "_packages", lambda interpreter, packages: None)
+    old, new = retro.Site(work=tmp_path, packages=("lizard==1",)), retro.Site(work=tmp_path)
+
+    retro.build_venv(tmp_path / "abc", "3.12", old)
+    retro.build_venv(tmp_path / "abc", "3.12", old)
+    retro.build_venv(tmp_path / "abc", "3.12", new)
+
+    assert len(built) == 2
 
 
 def test_a_venv_whose_install_failed_is_built_again(tmp_path, monkeypatch):

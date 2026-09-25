@@ -14,7 +14,8 @@ the last replay saw.
 
 A replay adds a worktree at each commit, builds a venv there with uv (the
 commit's crapkit, no dependencies, plus the lizard release it was built
-against), and runs the check from this tree with CRAPKIT_ACCURACY_PYTHON
+against and the test runner the accuracy suite pins, which crapkit's own
+children start), and runs the check from this tree with CRAPKIT_ACCURACY_PYTHON
 pointing at that venv, so kit.drive spawns the old crapkit, and with the
 directory that venv imports crapkit from first on the check's PYTHONPATH, so a
 check that calls crapkit in its own process reads the old crapkit too. A probe runs with
@@ -74,6 +75,9 @@ LEDGER_COLUMNS = ("id", "test", "before_commit", "fix_commit", "lizard", "before
                   "failure_class", "before_evidence", "fix", "fix_evidence", "digest",
                   "replayed", "note")
 LIZARD = "1.24.0"  # every commit on main was built against it (pyproject's comment)
+# The test runner requirements-push.txt pins: crapkit's own children start it (doctor's
+# coverage probe, test-scoped's pytest), and in-process checks find it in the dev venv.
+RUNNER = ("pytest==9.1.1", "pytest-cov==7.1.0", "coverage==7.16.1")
 OUTCOMES_ENV = "CRAPKIT_RETRO_OUTCOMES"
 BUNDLE_ENV = "CRAPKIT_RETRO_BUNDLE"
 PYTHON_ENV = "CRAPKIT_ACCURACY_PYTHON"
@@ -307,7 +311,7 @@ class Site:
     repo: Path = REPO
     work: Path = WORK
     install: str = "wheel"
-    packages: tuple = (f"lizard=={LIZARD}",)
+    packages: tuple = (f"lizard=={LIZARD}", *RUNNER)
 
 
 def _run(argv: list, cwd: Path = REPO, env: dict | None = None) -> subprocess.CompletedProcess:
@@ -383,21 +387,29 @@ def _packages(interpreter: Path, packages: list[str]) -> None:
         _checked(["uv", "pip", "install", "-q", "--python", interpreter, *packages])
 
 
-BUILT = "retro-built"  # written last, so a venv without it never finished its installs
+BUILT = "retro-built"  # written last: the packages a venv finished installing, one per line
+
+
+def _built(venv: Path, manifest: str) -> bool:
+    marker = venv / BUILT
+    return marker.is_file() and _read(marker) == manifest
 
 
 def build_venv(tree: Path, python: str, site: Site = Site(), extra: tuple = ()) -> Path:
     """A venv beside the worktree holding its crapkit, the site's packages and `extra`.
-    A venv left without BUILT by a failed or killed install is removed and built again."""
+    A venv whose BUILT marker is missing (a failed or killed install) or names other
+    packages is removed and built again."""
     venv = tree.parent / f"{tree.name}-venv-{python}-{site.install}"
     interpreter = venv_python(venv)
-    if not (venv / BUILT).is_file():
+    packages = [*site.packages, *extra]
+    manifest = "".join(f"{package}\n" for package in packages)
+    if not _built(venv, manifest):
         shutil.rmtree(venv, ignore_errors=True)
         _create_venv(venv, python)
         _install(interpreter, tree, site.install)
-        _packages(interpreter, [*site.packages, *extra])
+        _packages(interpreter, packages)
         venv.mkdir(parents=True, exist_ok=True)
-        _write(venv / BUILT, "")
+        _write(venv / BUILT, manifest)
     return interpreter
 
 
