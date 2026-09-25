@@ -1491,7 +1491,9 @@ declares `required` from each tool's positionals (`get_function_brief` and
 `list_worklist does not take 'bogus'; accepted: repo, top, scope`, and a wrong type answers
 `top must be an integer (got "three")`. Arguments that are not an object, by-position ones
 included, answer with the JSON type they came as,
-`arguments must be an object (got a number)`: MCP takes them by name. The refusal names the
+`arguments must be an object (got a number)`: MCP takes them by name. Only null or absent
+`arguments` read as none given; an empty string, `0`, `false` and `[]` get the same
+refusal, such as `arguments must be an object (got a boolean)`. The refusal names the
 MCP tool and the argument as the schema spells them, never the CLI command behind the tool. Each is a tool result with
 `isError: true` in the tool's own vocabulary, not the protocol's `-32602` error, following
 the precedent the missing-config answer set; the reason is recorded in
@@ -1505,7 +1507,9 @@ on `tools/call` and `initialize` they answer `-32602` with no result:
 `params` sent as null or left out read as an empty object: `tools/call` answers
 `unknown tool ''` and `initialize` the newest revision the server speaks.
 `ping` and `tools/list` read no `params`, and answer whatever they are.
-`ping` answers an empty result, so a client's keepalive never reads as an error.
+`ping` answers an empty result, so a client's keepalive never reads as an error. A frame
+that is not one JSON object, such as a line that is not JSON or an array, gets no reply,
+and the server reads the next line.
 
 ## Docker
 

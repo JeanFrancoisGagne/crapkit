@@ -43,7 +43,8 @@ def _probes() -> list[tuple[str, dict]]:
                if "name" in tool["positional"]]
     return missing + unnamed + [("list_worklist", {"bogus": 1}),
                                 ("list_worklist", {"top": "three"}),
-                                ("list_runs", 3), ("list_runs", [1])]
+                                ("list_runs", 3), ("list_runs", [1]), ("list_runs", ""),
+                                ("list_runs", 0), ("list_runs", False), ("list_runs", [])]
 
 
 def _invalid_params(root: Path, method: str, params) -> str:
@@ -77,3 +78,31 @@ def test_the_tools_named_as_requiring_path_and_name_are_the_ones_that_do():
 
     assert named, "the page no longer says which tools require path and name"
     assert set(re.findall(r"`([a-z_]+)`", named.group(1))) == requiring
+
+
+# ADR 0001 listed "an unparsable frame" among the protocol errors, but the
+# server answers such a frame with nothing and reads the next line. A client
+# that waits on an error for a junk line waits forever, so each page says what
+# the server does, and the 0.8.1 amendment corrects the ADR's own list.
+_FRAME_SENTENCE = re.compile(r"[^.]*\bframe\b[^.]*\.")
+
+
+def _frame_sentences(text: str) -> list[str]:
+    return _FRAME_SENTENCE.findall(" ".join(text.split()))
+
+
+@pytest.mark.parametrize("frame", ["junk", "[1, 2]", '"ping"', "{", "null"])
+def test_a_frame_that_is_not_one_json_object_gets_no_reply(frame):
+    assert mcp_server._parse(frame) is None
+
+
+@pytest.mark.parametrize("page", sorted(PAGES))
+def test_every_page_says_a_frame_that_is_not_one_json_object_gets_no_reply(page):
+    text = _section(page)
+    if page.startswith("docs/adr/"):
+        text = text.split("Amended in 0.8.1.", 1)[1]
+
+    sentences = _frame_sentences(text)
+
+    assert sentences, f"{page} says nothing about a frame that is not JSON"
+    assert [s for s in sentences if "no reply" not in s] == []

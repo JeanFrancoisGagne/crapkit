@@ -1733,7 +1733,13 @@ _METHODS = {"initialize": _initialize_result,
 
 
 def _tools_call(root: Path, params: dict, run_cli=None) -> dict:
-    return _call_tool(root, params.get("name", ""), params.get("arguments") or {}, run_cli)
+    """Null or absent arguments read as none given, the rule `_params` keeps
+    for params. An empty string, 0, false and [] are values of the wrong type,
+    so they reach `_argument_error`: read as none given, a tool with no
+    required argument ran its CLI on them."""
+    arguments = params.get("arguments")
+    return _call_tool(root, params.get("name", ""), {} if arguments is None else arguments,
+                      run_cli)
 
 
 def _method_handler(method):

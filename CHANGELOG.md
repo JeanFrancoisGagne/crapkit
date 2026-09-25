@@ -113,7 +113,9 @@
   arguments included, answers a tool result with `isError: true` that names the JSON type
   it got: `arguments must be an object (got a number)`. It answered `-32603` carrying a
   Python `AttributeError`, and a string was read one character at a time, so the refusal
-  named `'t'` as an undeclared key. An empty list still reads as no arguments.
+  named `'t'` as an undeclared key. An empty string, `0`, `false` and an empty list get
+  the same refusal, where the server ran the tool as if no arguments were sent; only
+  null or absent `arguments` read as none given.
 - `tools/call` and `initialize` whose `params` are an array, a string, a number or a
   boolean answer JSON-RPC error `-32602`, with a message naming `params` and the type it
   got, and the session answers the next request. Both answered `-32603` carrying a
@@ -121,6 +123,9 @@
   too, where 0.8.0 read them as no params. Null or absent `params` answer as before.
 - A `method` that is not a string answers `-32601 unknown method`, where it answered
   `-32603`.
+- ADR 0001 said an unparsable frame gets a protocol error. The server sends no reply to a
+  frame that is not one JSON object and reads the next line, and the ADR, the agent JSON
+  page and AGENTS.md now say so.
 
 ### The coverage readers stop reading an absent field as a value
 

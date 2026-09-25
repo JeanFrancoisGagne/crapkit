@@ -466,8 +466,12 @@ def test_a_repo_naming_no_directory_gets_the_no_config_answer_and_spawns_nothing
     ("list_worklist", True, "arguments must be an object (got a boolean)"),
     ("list_runs", [1], "arguments must be an object (got an array)"),
     ("get_function_brief", ["a.py", "f"], "arguments must be an object (got an array)"),
+    ("list_runs", "", "arguments must be an object (got a string)"),
+    ("list_runs", 0, "arguments must be an object (got a number)"),
+    ("list_runs", False, "arguments must be an object (got a boolean)"),
+    ("list_runs", [], "arguments must be an object (got an array)"),
 ], ids=["a-number", "a-float", "a-string", "true", "a-list-on-a-tool-without-positionals",
-        "positionals-by-position"])
+        "positionals-by-position", "an-empty-string", "zero", "false", "an-empty-list"])
 def test_arguments_that_are_not_an_object_are_refused_in_the_tools_words(
         monkeypatch, tmp_path, tool, arguments, sentence):
     _no_cli(monkeypatch)
@@ -479,8 +483,11 @@ def test_arguments_that_are_not_an_object_are_refused_in_the_tools_words(
     assert replies[2]["result"] == {}
 
 
-@pytest.mark.parametrize("arguments", ["omitted", None, [], {}],
-                         ids=["absent", "null", "an-empty-list", "an-empty-object"])
+# Only absent, null and {} mean no arguments. An empty string, 0, false and []
+# are values of the wrong type, refused above: read as none given, list_runs
+# ran its CLI on them.
+@pytest.mark.parametrize("arguments", ["omitted", None, {}],
+                         ids=["absent", "null", "an-empty-object"])
 def test_no_arguments_in_any_empty_shape_reads_as_none_given(monkeypatch, tmp_path, arguments):
     _no_cli(monkeypatch)
     replies = _serve(monkeypatch, tmp_path, [_call(1, "get_function_brief", arguments)])
