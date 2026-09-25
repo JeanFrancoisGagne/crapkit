@@ -144,7 +144,10 @@ double.add_argument("--json", action="store_true")
 args = parser.parse_args()
 print(json.dumps({{"value": args.n * {factor}}}))
 """
+CALC = "def double(n):\n    return n * {factor}\n"
 CHECK = """\
+import importlib
+
 from accuracy.kit import drive
 
 
@@ -154,6 +157,10 @@ def test_double_doubles(tmp_path):
 
 def test_an_unknown_command(tmp_path):
     drive.Driver(tmp_path, spawn=True).run("halve", "4")
+
+
+def test_double_doubles_in_process():
+    assert importlib.import_module("crapkit.calc").double(4) == 8
 """
 
 
@@ -164,8 +171,10 @@ def planted(repo_templates, tmp_path_factory):
     base = tmp_path_factory.mktemp("planted")
     spec = repos.Spec(steps=(
         repos.Commit(files={"src/crapkit/__init__.py": "", "src/crapkit/__main__.py":
-                            MAIN.format(factor=3)}, message="plant"),
-        repos.Commit(files={"src/crapkit/__main__.py": MAIN.format(factor=2)}, message="fix")))
+                            MAIN.format(factor=3), "src/crapkit/calc.py": CALC.format(factor=3)},
+                     message="plant"),
+        repos.Commit(files={"src/crapkit/__main__.py": MAIN.format(factor=2),
+                            "src/crapkit/calc.py": CALC.format(factor=2)}, message="fix")))
     top = repo_templates.copy(spec, base / "repo").top
     shas = repos.git(top, "rev-list", "--reverse", "HEAD").split()
     (base / "checks").mkdir()
@@ -194,6 +203,58 @@ def test_a_usage_error_reads_not_replayable(planted):
     before, _ = retro.replay(_bug(planted, "test_an_unknown_command"), retro.CURRENT, planted.site)
 
     assert (before.verdict, before.failure_class) == ("not replayable", "DriveUnsupported")
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_a_check_that_imports_crapkit_in_process_reads_the_commit_s(planted):
+    """A check may call crapkit in its own process (the score-model packet's production
+    seam does): the replay hands it the commit's crapkit, not the one beside pytest."""
+    bug = _bug(planted, "test_double_doubles_in_process")
+
+    before, fix = retro.replay(bug, retro.CURRENT, planted.site)
+
+    assert (before.verdict, before.failure_class, fix.verdict) == ("red", "AssertionError", "pass")
+
+
+def _answering(monkeypatch, returncode: int, stdout: str = "", stderr: str = "") -> dict:
+    seen = {}
+
+    def run(argv, cwd=retro.REPO, env=None):
+        seen.update(argv=argv, env=env)
+        return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+    monkeypatch.setattr(retro, "_run", run)
+    return seen
+
+
+def test_the_commit_s_crapkit_root_is_asked_without_this_tree_s(tmp_path, monkeypatch):
+    (tmp_path / "src" / "crapkit").mkdir(parents=True)
+    (tmp_path / "src" / "crapkit" / "__init__.py").write_text("", encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", retro.os.pathsep.join([str(tmp_path / "src"), "lib"]))
+    seen = _answering(monkeypatch, 0, "/old/src\n")
+
+    assert retro.crapkit_root(Path("py")) == "/old/src"
+    assert seen["argv"] == [Path("py"), "-c", retro.ROOT_CODE]
+    assert seen["env"]["PYTHONPATH"] == "lib"
+    assert seen["env"]["PATH"] == retro.os.environ["PATH"]
+
+
+def test_a_venv_that_cannot_import_crapkit_is_refused(monkeypatch):
+    _answering(monkeypatch, 1, stderr="ModuleNotFoundError: crapkit\n")
+
+    with pytest.raises(retro.RetroError, match="py cannot import crapkit: ModuleNotFoundError"):
+        retro.crapkit_root(Path("py"))
+
+
+def test_the_commit_s_crapkit_leads_the_check_s_pythonpath(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "lib"))
+
+    env = retro._pytest_env(Path("py"), tmp_path / "o", "/old/src")
+
+    assert env["PYTHONPATH"].split(retro.os.pathsep) == [
+        "/old/src", str(retro.REPO / "tests"), str(retro.REPO / "tools" / "accuracy"),
+        str(tmp_path / "lib")]
 
 
 def test_the_replayed_check_never_sees_this_tree_s_crapkit_on_pythonpath(tmp_path, monkeypatch):
@@ -905,6 +966,7 @@ def _child(monkeypatch, written: bytes) -> dict:
         return SimpleNamespace(returncode=1)
 
     monkeypatch.setattr(retro, "_run", run)
+    monkeypatch.setattr(retro, "crapkit_root", lambda interpreter: f"root-of-{interpreter}")
     return seen
 
 
@@ -917,6 +979,7 @@ def test_a_replayed_node_runs_pytest_with_the_plugin_and_reads_what_it_wrote(mon
     assert seen["argv"] == [sys.executable, "-m", "pytest", NODE, "-q", "-p", "no:cacheprovider",
                             "-p", "no:randomly", "-p", "retro", "--rootdir", str(REPO)]
     assert (seen["cwd"], seen["env"][retro.PYTHON_ENV]) == (None, "venv-python")
+    assert seen["env"]["PYTHONPATH"].split(retro.os.pathsep)[0] == "root-of-venv-python"
     assert seen["outcomes"].name == "outcomes.jsonl" and seen["touched"]
     assert seen["outcomes"].parent.name.startswith("crapkit-retro-")
     assert not seen["outcomes"].exists()

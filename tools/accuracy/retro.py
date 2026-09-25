@@ -15,7 +15,9 @@ the last replay saw.
 A replay adds a worktree at each commit, builds a venv there with uv (the
 commit's crapkit, no dependencies, plus the lizard release it was built
 against), and runs the check from this tree with CRAPKIT_ACCURACY_PYTHON
-pointing at that venv, so kit.drive spawns the old crapkit. A probe runs with
+pointing at that venv, so kit.drive spawns the old crapkit, and with the
+directory that venv imports crapkit from first on the check's PYTHONPATH, so a
+check that calls crapkit in its own process reads the old crapkit too. A probe runs with
 the venv's interpreter directly, with the worktree as its argument.
 
 The verdict is strict. Before counts as red only when the check fails on an
@@ -402,8 +404,20 @@ def _inherited_paths() -> list[str]:
     return [entry for entry in entries if entry and not _holds_crapkit(entry)]
 
 
-def _pytest_env(interpreter: Path, outcomes: Path) -> dict:
-    paths = [str(REPO / "tests"), str(REPO / "tools" / "accuracy"), *_inherited_paths()]
+ROOT_CODE = "import crapkit, pathlib; print(pathlib.Path(crapkit.__file__).resolve().parents[1])"
+
+
+def crapkit_root(interpreter: Path) -> str:
+    """The directory `interpreter` imports crapkit from, asked without this tree's src/."""
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(_inherited_paths())}
+    done = _run([interpreter, "-c", ROOT_CODE], env=env)
+    if done.returncode != 0:
+        raise RetroError(f"{interpreter} cannot import crapkit: {done.stderr.strip()[-400:]}")
+    return done.stdout.strip()
+
+
+def _pytest_env(interpreter: Path, outcomes: Path, root: str = "") -> dict:
+    paths = [root, str(REPO / "tests"), str(REPO / "tools" / "accuracy"), *_inherited_paths()]
     return {**os.environ, PYTHON_ENV: str(interpreter), OUTCOMES_ENV: str(outcomes),
             COLLECT_ALL_ENV: "1", "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONPATH": os.pathsep.join(filter(None, paths))}
@@ -423,7 +437,7 @@ def replay_node(test: str, interpreter: Path) -> list[dict]:
         outcomes.touch()
         argv = [sys.executable, "-m", "pytest", test, "-q", "-p", "no:cacheprovider",
                 "-p", "no:randomly", "-p", "retro", "--rootdir", _rootdir(test)]
-        _run(argv, env=_pytest_env(interpreter, outcomes))
+        _run(argv, env=_pytest_env(interpreter, outcomes, crapkit_root(interpreter)))
         return item_outcomes(_read(outcomes).splitlines())
 
 
