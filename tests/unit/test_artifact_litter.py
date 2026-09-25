@@ -5,7 +5,7 @@ seven junit files at its root, one per lane. Every lane ran, every score was
 right, and nothing in the tree said which lane owned which file. Doctor warns
 and never fails: a consumer whose lanes already write there must keep gating.
 """
-from crapkit.config import Lane, Scope
+from crapkit.config import Lane, Scope, load_config_text
 from crapkit.doctor import artifact_litter, scope_top_dirs
 
 
@@ -79,7 +79,14 @@ def test_findings_keep_lane_declaration_order():
 
 
 def test_a_windows_spelled_path_is_read_as_the_same_path():
-    assert artifact_litter([_lane("py", ".crapkit\\cov\\py.json")], SRC_TOPS) == ()
+    r"""The loader reads `.crapkit\cov\py.json` as `.crapkit/cov/py.json`
+    (repopath's declared entry), and the litter check reads the loaded value."""
+    lanes = load_config_text(
+        "[[scope]]\nname = 'src'\npaths = ['src']\nlanguages = ['python']\n"
+        "[[lane]]\nname = 'py'\ncommand = 'run'\nparser = 'coveragepy'\nscopes = ['src']\n"
+        "full_suite = false\nartifact = '.crapkit\\cov\\py.json'\n").lanes
+
+    assert artifact_litter(lanes, SRC_TOPS) == ()
 
 
 def test_scope_top_dirs_collapses_every_declared_path_to_its_first_component():
