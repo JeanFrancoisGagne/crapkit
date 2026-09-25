@@ -1007,3 +1007,40 @@ def test_an_unreadable_stamp_file_refuses_the_artifact_and_says_why(tmp_path):
     assert (refusal.kind, refusal.why) == ("unknown", "it does not parse as JSON")
     assert ("reuse refuses the artifact while the record that would hold its refusal cannot be "
             "read, and says why") in _prose(_release())
+
+
+# -- what the lane-freshness change hands library callers and git --------------------
+
+@landed(_ONE_VERDICT and hasattr(lanes, "lane_sources_unchanged"), "Freshness.lines beside the shim")
+def test_the_replacement_the_pages_name_for_the_shim_gives_the_shim_s_answer(tmp_path):
+    from crapkit.config import Lane
+
+    lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("calc",))
+    _one_commit_repo(tmp_path)
+
+    with _FRESHNESS.Freshness(tmp_path, [lane], {"calc": ("calc",)}) as fresh:
+        reason = fresh.lines(lane)
+    with pytest.warns(DeprecationWarning):
+        shim = lanes.lane_sources_unchanged(tmp_path, lane, {"calc": ("calc",)})
+
+    call = "`lane_freshness.Freshness(root, lanes, scope_paths).lines(lane)`"
+    assert isinstance(reason, str) and shim is (reason == "")
+    assert call in _prose(_release()) and call in _upgrading_freshness()
+
+
+def _git_environment() -> dict:
+    return getattr(_module("gitio"), "_environment", dict)()
+
+
+@landed(_git_environment().get("GIT_OPTIONAL_LOCKS") == "0", "git spawned without optional locks")
+def test_the_changelog_says_every_git_process_takes_no_optional_lock():
+    assert _git_environment()["GIT_OPTIONAL_LOCKS"] == "0"
+    assert "Every git process crapkit starts sets `GIT_OPTIONAL_LOCKS=0`" in _prose(_release())
+
+
+def test_the_upgrade_notes_say_a_0_8_0_stamp_is_judged_by_its_commit_until_the_lane_runs():
+    notes = _upgrading_freshness()
+
+    assert "A stamp 0.8.0 wrote records only its commit" in notes
+    assert "`lanes.staleness_reads` is gone, with no shim" in notes

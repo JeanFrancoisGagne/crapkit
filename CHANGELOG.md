@@ -46,7 +46,9 @@
   the commit was not behind HEAD.
 - Library API: `lanes.lane_sources_unchanged` keeps its 0.8.0 arguments and its bool
   answer through 0.8.x, and warns with a `DeprecationWarning` when called; 0.9.0 removes
-  it. `lanes.staleness_reads`, which 0.8.0 exported, is gone: `lane_freshness.Freshness`
+  it. Read `lane_freshness.Freshness(root, lanes, scope_paths).lines(lane)` instead: an
+  empty string means the lane's lines are fresh, any other string is the reason they are
+  not. `lanes.staleness_reads`, which 0.8.0 exported, is gone: `lane_freshness.Freshness`
   answers each lane from one read of the stamp file. `MissingLines` takes an optional
   third field, `drift`, and `uncovered.lane_views` returns each lane's note with
   `blackout`, whether it withholds every file's lines.
@@ -100,6 +102,10 @@
   open failed: Permission denied`, which read as a changed file: 7 to 12 of 300 touches
   on git's default config. The staged diff and the untracked listing now start after
   the worktree diff, which can rewrite the index, has finished.
+- Every git process crapkit starts sets `GIT_OPTIONAL_LOCKS=0`, so `git status` and the
+  other reads that honor it compare a file whose stat data moved without writing the
+  refreshed entry back to `.git/index`, and crapkit's reads leave the index alone while
+  another git runs in the same checkout.
 - A partial run's `-> rerun changed lanes` line says when git cannot tell whether the
   tree is clean, and quotes git's error. It printed nothing, as for a clean tree.
 - Library API: `lanes.uncommitted_changes` raises `GitError` when git cannot say,
@@ -113,7 +119,9 @@
   new commit. A lane's declared outputs now move under `.crapkit/aside/` before its
   attempts start, so a file at a declared path afterwards is one an attempt wrote, and a
   leftover goes back only where nothing was written. The flake retest runs the same way,
-  and a retest that rewrote its junit inside the old file's time tick is read.
+  and a retest that rewrote its junit inside the old file's time tick is read. A lane
+  command that reads its previous report back finds no file at the declared path while it
+  runs.
 - A failed attempt's leftover stays refused while it holds the same bytes. The refusal was
   keyed on the leftover's modification time, so a `touch`, a copy of the checkout that
   drops times, or a same-bytes rewrite handed the dead lane's numbers back to
@@ -136,7 +144,9 @@
   files: an uncommitted rewrite of a scored function left it `false` while `next-item`
   handed out the pre-edit ccn and span, a run measured on an edit that was later reverted
   read fresh, and an amend, an empty commit or a README-only commit set it `true` over an
-  identical tree. 0.9.0's schema 2 redefines `stale` as a content difference.
+  identical tree. 0.9.0's schema 2 redefines `stale` as a content difference. Each
+  coverage run now records the blob id of every file it scored in the store; a store 0.8.0
+  wrote opens as before, and its runs read `null`.
 - Every payload that carries `stale` carries `commands.refresh`, the one call that answers
   both fields.
 - The stop rule in AGENTS.md, `docs/agent-json.md` and the crapkit skill gains a fourth

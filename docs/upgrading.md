@@ -177,9 +177,17 @@ fourth clause, `scored_changes == 0`: anything but `0`, `null` included, means r
 the three-clause rule in [AGENTS.md](../AGENTS.md#the-termination-rule) or
 [docs/agent-json.md](agent-json.md#reasons-and-the-stop-condition) needs the fourth.
 
+**Lane stamps hold blob ids.** A lane's stamp in `.crapkit/artifacts.json` now records
+the git blob id of each file under its scopes (`blobs`). A stamp 0.8.0 wrote records
+only its commit, and crapkit judges it by that commit, as 0.8.0 did, until the lane runs
+again. Run `crapkit coverage` once after the upgrade to write stamps in the new form.
+
 **Library callers.** `lanes.lane_sources_unchanged` keeps its 0.8.0 arguments and
 its bool answer through 0.8.x and warns with a `DeprecationWarning` when called;
-0.9.0 removes it.
+0.9.0 removes it. Read `lane_freshness.Freshness(root, lanes, scope_paths).lines(lane)`
+instead: an empty string means fresh, any other string is the reason.
+`lanes.staleness_reads` is gone, with no shim; `lane_freshness.Freshness` answers what
+it did.
 
 **A failed lane's leftover stays refused until new bytes replace it.** When a lane's
 attempt fails and leaves the previous run's artifact in place, `--reuse-artifacts` and
