@@ -86,8 +86,11 @@ ENVS = {
 
 def _environment(row: str) -> dict:
     """The suite's interpreter first on PATH, so the lane's bare `python`
-    finds it, and only the encoding settings the row names."""
-    env = {key: value for key, value in os.environ.items() if key not in KNOBS}
+    finds it, and only the encoding settings the row names. pytest's own
+    variables stay out: PYTEST_CURRENT_TEST names each test, and a lane's
+    stamp records the environment, so no stamp would read as unchanged."""
+    env = {key: value for key, value in os.environ.items()
+           if key not in KNOBS and not key.startswith("PYTEST_")}
     env["PATH"] = os.pathsep.join(filter(None, (str(Path(sys.executable).parent), env.get("PATH"))))
     env.update(ENVS[row])
     return env
@@ -155,6 +158,55 @@ def test_the_mcp_server_reads_and_answers_a_non_ascii_path(cafe_repo, row):
     assert "error" not in replies[2], replies[2]
     assert replies[2]["result"]["isError"] is False, replies[2]
     assert FILE in json.dumps(replies[2]["result"]["structuredContent"], ensure_ascii=False)
+
+
+# --- the line ends a text-mode stream writes -----------------------------------
+#
+# crapkit's stdout is a text stream, so on Windows each "\n" leaves as "\r\n".
+# The readers take that: a JSON parser skips the CR as whitespace, and an MCP
+# client splits frames on "\n" and parses each piece with its CR. The stamp
+# file crapkit writes under .crapkit/ ends its lines the same way, and a
+# checkout shared by Windows and WSL hands one OS the other's file.
+
+def _cr_only_before_lf(data: bytes) -> bool:
+    return b"\r" not in data.replace(b"\r\n", b"")
+
+
+def test_worklist_json_parses_from_the_raw_bytes_whatever_the_line_end(cafe_repo):
+    result = _crapkit(cafe_repo, "no-env", "worklist", "--json")
+
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+    assert _cr_only_before_lf(result.stdout), result.stdout
+    assert json.loads(result.stdout)["active"][0]["path"] == FILE
+
+
+def test_mcp_frames_split_on_lf_parse_whatever_the_line_end(cafe_repo):
+    frames = [{"jsonrpc": "2.0", "id": 1, "method": "initialize",
+               "params": {"protocolVersion": "2025-06-18", "capabilities": {}}},
+              {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}]
+    sent = "".join(json.dumps(frame) + "\n" for frame in frames).encode("utf-8")
+
+    result = _crapkit(cafe_repo, "no-env", "mcp", "--repo", str(cafe_repo), stdin=sent)
+
+    pieces = [piece for piece in result.stdout.split(b"\n") if piece.strip()]
+    assert _cr_only_before_lf(result.stdout), result.stdout
+    assert [json.loads(piece)["id"] for piece in pieces] == [1, 2], result.stdout
+
+
+@pytest.mark.parametrize("line_end", [b"\n", b"\r\n"], ids=["LF", "CRLF"])
+def test_the_stamp_file_reads_back_with_either_line_end(cafe_repo, line_end):
+    """A stamp file read back proves the lane unchanged: coverage reuses it
+    rather than rerunning it. The first run stamps this environment, since an
+    earlier row may have stamped another."""
+    assert _crapkit(cafe_repo, "no-env", "coverage").returncode == 0
+    stamps = cafe_repo / ".crapkit" / "artifacts.json"
+    stamps.write_bytes(stamps.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", line_end))
+
+    result = _crapkit(cafe_repo, "no-env", "coverage", "--reuse-unchanged")
+
+    said = result.stderr.decode("utf-8", "replace")
+    assert result.returncode == 0, said
+    assert "lane 'py': measurement inputs unchanged; reusing without rerun" in said, said
 
 
 @pytest.mark.parametrize("row", list(ENVS))
