@@ -95,7 +95,9 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   function: one that claims no file (a renamed directory, a path typo, the wrong language)
   or one whose every file no reader could read. Such a run reported `0 over ceiling 6,
   CRAP load 0, grade A+` at exit 0, and only `doctor` said the scope was empty. The run
-  summary's `empty_scopes` carries them, and the Action's scored line names each one.
+  summary's `empty_scopes` carries them, and the Action's scored line names each one. A
+  scope whose files a reader read and found no function in, such as one of constants, is
+  measured and not named.
 - The run's CRAP load counts the scopes its over-ceiling count and grade count. A partial
   run summed a failed or skipped lane's functions at the cov-0 stand-in, so one line read
   `0 over ceiling 6, CRAP load 32.0, grade A+` where the measured scopes held 2.0.

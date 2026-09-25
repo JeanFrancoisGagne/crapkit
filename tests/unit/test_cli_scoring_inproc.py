@@ -337,6 +337,47 @@ def test_a_run_whose_every_scope_scored_something_names_no_empty_scope(repo, cap
     assert "scored no function" not in err and "claims no file" not in err, err
 
 
+def _add_constants_scope(repo) -> None:
+    """A declared scope whose one readable file holds no function."""
+    with open(repo / "crapkit.toml", "a", encoding="utf-8", newline="\n") as fh:
+        fh.write('\n[[scope]]\nname = "consts"\npaths = ["consts"]\nlanguages = ["typescript"]\n')
+    (repo / "consts").mkdir()
+    (repo / "consts" / "limits.ts").write_text("export const LIMIT = 1;\n", encoding="utf-8",
+                                               newline="\n")
+    commit_all(repo, "constants")
+
+
+@pytest.mark.parametrize("command", ["inventory", "coverage"])
+def test_a_scope_whose_readable_files_hold_no_function_is_not_named_empty(repo, capsys, command):
+    """A package of constants was read and holds no debt. Naming it on every run
+    is a warning a user learns to skip, next to the one that means a typo."""
+    _add_constants_scope(repo)
+    seed_artifacts(repo)
+    argv = [command, "--json"] + (["--reuse-artifacts"] if command == "coverage" else [])
+
+    code, out, err = run(argv, repo, capsys)
+
+    assert code == 0, err
+    assert json.loads(out)["empty_scopes"] == {}
+    assert "'consts'" not in err, err
+
+
+def test_the_pages_say_which_scopes_empty_scopes_leaves_out():
+    from pathlib import Path
+
+    from crapkit.agent_fields import ADDED
+
+    page = (Path(__file__).resolve().parents[2] / "docs" / "agent-json.md").read_text(
+        encoding="utf-8")
+    (row,) = [line for line in page.splitlines() if line.startswith("| `empty_scopes` |")]
+    declared = [field.description for field in ADDED if field.key == "empty_scopes"]
+
+    assert len(declared) == 2
+    for text in (row, *declared):
+        assert "a scope whose readable files hold no function is not listed" in text.lower(), text
+        assert "claims no file" in text and "no reader could read" in text, text
+
+
 def test_the_summary_labels_every_ceiling_in_force(repo, capsys):
     toml = (repo / "crapkit.toml").read_text(encoding="utf-8")
     (repo / "crapkit.toml").write_text(

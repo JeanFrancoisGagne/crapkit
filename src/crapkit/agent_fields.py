@@ -19,6 +19,11 @@ MCP_TOOLS = {"worklist --json": "list_worklist", "next-item": "get_next_item",
              "rescore --gate --json": "check_gate"}
 
 
+_EMPTY_SCOPES = ("each declared scope that claims no file, or whose every file no reader could "
+                 "read, and how many files it claims (0 when it claims none); a scope whose "
+                 "readable files hold no function is not listed")
+
+
 class AddedField(NamedTuple):
     payload: str
     key: str
@@ -89,11 +94,9 @@ ADDED = (
     AddedField("verify --json", "ratchet_source_sha256", ("string", "null"),
                "digest of the marks verify judged against; null when there were no marks"),
     AddedField("coverage --json", "empty_scopes", ("object",),
-               "each declared scope that scored no function, and how many files it claims "
-               "(0 when it claims none)"),
+               _EMPTY_SCOPES),
     AddedField("inventory --json", "empty_scopes", ("object",),
-               "each declared scope that scored no function, and how many files it claims "
-               "(0 when it claims none)"),
+               _EMPTY_SCOPES),
     AddedField("mutate --json", "timed_out", ("integer",),
                "mutants whose suite ran past mutation_timeout_seconds, a count inside killed"),
     AddedField("mutate --json", "no_verdict", ("integer",),
