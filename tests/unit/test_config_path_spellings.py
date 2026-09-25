@@ -379,11 +379,13 @@ def _absolute_spelling(root: Path, which: str) -> str:
     output with the drive cut off does."""
     web = (root / "web").resolve().as_posix()
     tail = web[2:] if web[1:2] == ":" else web
-    return {"posix": tail, "msys": f"/c{tail}", "wsl": f"/mnt/c{tail}",
+    return {"posix": tail, "msys": f"/c{tail}", "wsl": f"/mnt/c{tail}", "drive": f"C:{tail}",
+            "drive-backslash": "C:" + tail.replace("/", "\\"),
             "unc": r"\\server\share\web", "unc-forward": "//server/share/web"}[which]
 
 
-@pytest.mark.parametrize("which", ["posix", "msys", "wsl", "unc", "unc-forward"])
+@pytest.mark.parametrize("which", ["posix", "msys", "wsl", "drive", "drive-backslash", "unc",
+                                   "unc-forward"])
 def test_an_absolute_scope_path_is_refused_by_name(tmp_path, which):
     """Folded into a relative prefix, `/tmp/x/repo/web` became `tmp/x/repo/web`,
     which names nothing, and the scope scored zero files; the docstring had

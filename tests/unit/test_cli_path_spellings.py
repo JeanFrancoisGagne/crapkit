@@ -91,8 +91,8 @@ MARKS = ("# crapkit-analysis=11 lizard=1.24.0\n# crapkit-keys=1\npath\tlong_name
          "src/app.ts\tdispatch( kind : string )\t40.0000\n")
 
 
-@pytest.mark.parametrize("new", ["src/moved.ts", "./src/moved.ts", "SRC/moved.ts", "src/Moved.ts",
-                                 "SRC\\moved.ts", "src\\MOVED.ts"])
+@pytest.mark.parametrize("new", ["src/moved.ts", "./src/moved.ts", "src\\moved.ts", "SRC/moved.ts",
+                                 "src/Moved.ts", "SRC\\moved.ts", "src\\MOVED.ts"])
 def test_ratchet_move_files_the_mark_under_the_moved_file_git_names(repo, capsys, new):  # noqa: F811
     """After `git mv src/app.ts src/moved.ts`, NEW in another case opened the
     moved file and wrote `SRC/moved.ts` into the committed marks: no row
@@ -107,7 +107,7 @@ def test_ratchet_move_files_the_mark_under_the_moved_file_git_names(repo, capsys
     assert _marks(repo)[3:] == ["src/moved.ts\tdispatch( kind : string )\t40.0000"]
 
 
-@pytest.mark.parametrize("new", ["lib/", "./lib/", "LIB/", "Lib\\", "LIB\\"])
+@pytest.mark.parametrize("new", ["lib/", "./lib/", "lib\\", "LIB/", "Lib\\", "LIB\\"])
 def test_ratchet_move_files_a_directory_mark_under_the_directory_git_names(repo, capsys,  # noqa: F811
                                                                            new):
     """`ratchet move src/ LIB/` into an existing lib/ wrote `LIB/app.ts` into
