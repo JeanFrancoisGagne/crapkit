@@ -211,17 +211,17 @@ def route2(box, repo: Path, *, shell: str = "sh", expect: int | None = 0):
                       expect=expect)
 
 
-def breach(repo: Path, where: str = "calc") -> str:
-    """Write route( a , b , c , d ) at ccn 8 under `where`; the repo-relative path."""
-    path = repo / where / "route.py"
+def breach(repo: Path, where: str = "calc", name: str = "route.py") -> str:
+    """Write route( a , b , c , d ) at ccn 8 to `where`/`name`; the repo-relative path."""
+    path = repo / where / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(BREACH, encoding="utf-8", newline="\n")
     return path.relative_to(repo).as_posix()
 
 
-def decompose(repo: Path, where: str = "calc") -> None:
+def decompose(repo: Path, where: str = "calc", name: str = "route.py") -> None:
     """The same behaviour split under the ceiling, as the refusal asks."""
-    (repo / where / "route.py").write_text(DECOMPOSED, encoding="utf-8", newline="\n")
+    (repo / where / name).write_text(DECOMPOSED, encoding="utf-8", newline="\n")
 
 
 def commit(box, repo: Path, *, env: dict | None = None, stage: str = "."):
@@ -244,9 +244,46 @@ def assert_accepted(step) -> None:
     assert step.exit == 0, f"git refused a commit under the ceiling:\n{step.stdout}{step.stderr}"
 
 
+def refused_then_accepted(box, repo: Path, where: str = "calc", name: str = "route.py") -> None:
+    """A breach refused with the README's block, then its split accepted. A
+    second round in one repo names a new file: the first split is committed."""
+    path = breach(repo, where, name)
+    assert_refused(commit(box, repo), path)
+    decompose(repo, where, name)
+    assert_accepted(commit(box, repo))
+
+
 def head_mode(box, repo: Path, path: str) -> str:
     """The mode `git ls-tree HEAD` records for `path`."""
     return box.run(["git", "ls-tree", "HEAD", path], cwd=repo, expect=0).stdout.split()[0]
+
+
+# --- the pre-commit framework ------------------------------------------------------------
+
+def precommit_config(box, repo: Path, *, base: Path | None = None) -> str:
+    """README Route 3's .pre-commit-config.yaml, written and committed as
+    printed; `base` reads an older README. The rev it names."""
+    text = docsnip.fence(README, ROUTE3, index=0, base=base).text
+    (repo / ".pre-commit-config.yaml").write_text(text + "\n", encoding="utf-8", newline="\n")
+    box.run(["git", "add", ".pre-commit-config.yaml"], cwd=repo, expect=0)
+    box.run(["git", "commit", "-q", "-m", "add the crapkit gate to pre-commit"], cwd=repo, env=box.commit_env(),
+            expect=0)
+    return re.search(r"rev: (\S+)", text)[1]
+
+
+def precommit_install(box, repo: Path, *, base: Path | None = None) -> None:
+    """README Route 3's second block: install the framework, arm the hook."""
+    for line in docsnip.commands(docsnip.fence(README, ROUTE3, index=1, base=base)):
+        box.script(line, cwd=repo, expect=0)
+
+
+def hook_env_version(box) -> str:
+    """`crapkit --version` from the environment pre-commit built last for the hook."""
+    launcher = "Scripts/crapkit.exe" if WINDOWS else "bin/crapkit"
+    found = list((box.home / ".cache" / "pre-commit").glob(f"repo*/py_env-*/{launcher}"))
+    assert found, f"pre-commit built no crapkit environment under {box.home / '.cache' / 'pre-commit'}"
+    newest = max(found, key=lambda path: path.stat().st_mtime)
+    return box.run([str(newest), "--version"], expect=0).stdout.strip()
 
 
 # --- doctor ---------------------------------------------------------------------
@@ -302,6 +339,61 @@ def _mark_rows(repo: Path) -> list[list[str]]:
 def marks(repo: Path) -> dict[str, float]:
     """crapkit-ratchet.tsv as {"path  long_name": crap}."""
     return {f"{row[0]}  {row[1]}": float(row[2]) for row in _mark_rows(repo)}
+
+
+LEGACY_TEST = '''from calc.legacy_1 import grade_1
+
+
+def test_legacy_one_gives_an_early_high_score_an_a():
+    assert grade_1(95, 1, False, False) == "A"
+'''
+LATE_TEST = '''from calc.grade import grade
+
+
+def test_a_late_high_score_is_a_b():
+    assert grade(85, 1, True, False) == "B"
+'''
+
+
+def tighten(box, repo: Path, test: str, text: str) -> None:
+    """Burn down one mark the way the docs say it falls: a test that covers
+    more of the function, a passing verify that tightens its mark, a commit."""
+    (repo / "tests" / test).write_text(text, encoding="utf-8", newline="\n")
+    verdict = box.run(["crapkit", "verify"], cwd=repo, expect=0)
+    assert "1 tightened" in verdict.stdout, verdict.stdout
+    box.run(["git", "add", "-A"], cwd=repo, expect=0)
+    box.run(["git", "commit", "-q", "-m", f"cover more: {test}"], cwd=repo, env=box.commit_env(), expect=0)
+
+
+def diverge(box, repo: Path) -> dict[str, float]:
+    """Two branches that both burn down debt in the brownfield template:
+    `feature` tightens legacy_1, main tightens grade, on adjacent lines of the
+    marks file. The marks a correct merge holds: the lower value per key."""
+    box.run(["git", "checkout", "-q", "-b", "feature"], cwd=repo, expect=0)
+    tighten(box, repo, "test_legacy_one.py", LEGACY_TEST)
+    feature = marks(repo)
+    box.run(["git", "checkout", "-q", "main"], cwd=repo, expect=0)
+    tighten(box, repo, "test_grade_late.py", LATE_TEST)
+    return {key: min(value, feature[key]) for key, value in marks(repo).items()}
+
+
+def assert_driver_merged(step, repo: Path, expected: dict[str, float]) -> None:
+    """The driver's line, git's clean merge, and the lower mark per key."""
+    said = step.stdout + step.stderr
+    assert step.exit == 0 and f"ratchet merge: {len(expected)} mark(s)" in said, said
+    assert marks(repo) == expected
+
+
+def assert_driver_refused(step, ours: str, theirs: str) -> None:
+    """docs/ratchet.md's refusal with this merge's two stamps in its brackets,
+    then git's own conflict lines, as the page prints them."""
+    fence = docsnip.fence(RATCHET_DOC, DRIVER, contains="ratchet merge refused")
+    lines = docsnip.outputs(fence)[0][1].splitlines()
+    first = re.sub(r"ours is \[[^]]*\] and theirs is \[[^]]*\]",
+                   lambda _: f"ours is {ours} and theirs is {theirs}", lines[0])
+    said = step.stdout + step.stderr
+    assert step.exit == 1, said
+    assert [line for line in [first, *lines[1:]] if line not in said] == [], said
 
 
 def stamp(repo: Path) -> str:

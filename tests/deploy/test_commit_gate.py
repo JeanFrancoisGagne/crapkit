@@ -33,13 +33,6 @@ def adopted(box, templates, name: str = "py-pytest") -> Path:
     return repo
 
 
-def refused_then_accepted(box, repo: Path) -> None:
-    gitsurf.breach(repo)
-    gitsurf.assert_refused(gitsurf.commit(box, repo))
-    gitsurf.decompose(repo)
-    gitsurf.assert_accepted(gitsurf.commit(box, repo))
-
-
 def gate_or_doctor(box, repo: Path, *words: str) -> None:
     """The user learns the gate is off: git refuses the breach, or doctor names it."""
     gitsurf.breach(repo)
@@ -59,7 +52,7 @@ def test_route1_heredoc_refuses_a_breach_then_accepts_its_split(box, templates):
     repo = adopted(box, templates)
     gitsurf.route1(box, repo)
 
-    refused_then_accepted(box, repo)
+    gitsurf.refused_then_accepted(box, repo)
 
 
 @cell("lin-gate-route2", channel="Route 2", harness="git 2.47",
@@ -71,7 +64,7 @@ def test_route2_commits_an_executable_hook_that_refuses_then_accepts(box, templa
 
     assert gitsurf.head_mode(box, repo, "githooks/pre-commit") == "100755"
     assert not gitsurf.names(gitsurf.doctor(box, repo), "githooks")
-    refused_then_accepted(box, repo)
+    gitsurf.refused_then_accepted(box, repo)
 
 
 @pytest.mark.xfail(strict=True, reason=SILENT_GATE)
@@ -92,7 +85,7 @@ def test_route2_a_clone_that_skipped_the_hooks_path_hears_it_from_doctor(box, te
 def powershell_route1(box, templates, shell: str) -> None:
     repo = adopted(box, templates)
     gitsurf.route1(box, repo, shell=shell)
-    refused_then_accepted(box, repo)
+    gitsurf.refused_then_accepted(box, repo)
     out_file_variant(box, repo, shell)
 
 
@@ -215,4 +208,4 @@ def test_hooks_written_under_0_4_0_gate_with_the_candidate_after_upgrade(box, te
     for repo, hook in routes:
         hooks = box.run(["git", "rev-parse", "--git-path", "hooks/pre-commit"], cwd=repo, expect=0).stdout.strip()
         assert (repo / hooks).read_bytes() == hook
-        refused_then_accepted(box, repo)
+        gitsurf.refused_then_accepted(box, repo)
