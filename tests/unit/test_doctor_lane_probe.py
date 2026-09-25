@@ -107,24 +107,33 @@ def test_a_healthy_lane_prints_the_interpreter_and_plugin_versions_it_resolves_t
                                 "(pytest 8.3.3, pytest-cov 7.1.0, coverage 7.16.0)")
 
 
+_FLOOR_INSTALL = {False: '{python} -m pip install "coverage>=7.6"',
+                  True: 'uv pip install --python {python} "coverage>=7.6"'}
+
+
+@pytest.mark.parametrize("uv_made", [False, True], ids=["pip-venv", "uv-venv"])
 @pytest.mark.parametrize("version", ["7.4.4", "7.5.4", "6.5.0"])
 def test_a_lane_whose_coverage_writes_no_function_regions_fails_naming_the_floor(monkeypatch,
-                                                                                version):
+                                                                                version, uv_made):
     """A repo that pins coverage 7.4 in its dev requirements passed doctor, and
     then `crapkit coverage` refused the lane's report with exit 5 and "needs
     coverage >= 7.6". The probe already starts that interpreter, so it asks
-    coverage's version on the same start and FAILs below the floor."""
+    coverage's version on the same start and FAILs below the floor. The venv
+    kind is pinned: the install line differs in a venv uv made, and this test
+    failed from a contributor's uv-made venv while it pinned the pip form."""
+    from crapkit import launchers
+    monkeypatch.setattr(launchers, "_uv_made", lambda python: uv_made)
     monkeypatch.setattr(admin, "_runner_report",
                         lambda word, spec: (sys.executable, "8.3.3", "5.0.0", version))
 
     findings = admin._doctor_lane_probes(Path.cwd(), [_lane()])
 
     assert [f.level for f in findings] == ["ok", "FAIL"]
+    install = _FLOOR_INSTALL[uv_made].format(python=admin._shell_quote(sys.executable))
     assert findings[1].text == (
         f"lane 'py' runs coverage {version} ({sys.executable}), which writes no function "
         "regions, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.6); "
-        f'install 7.6 or later there with `{admin._shell_quote(sys.executable)} -m pip install '
-        '"coverage>=7.6"` and raise any pin that holds it lower')
+        f"install 7.6 or later there with `{install}` and raise any pin that holds it lower")
 
 
 @pytest.mark.parametrize("version", ["7.6.0", "7.10.6", "7.16.0", "8.0.0b1", "unknown"])

@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import functools
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -121,6 +122,23 @@ def repo_warns(stdout: str) -> list[str]:
     """doctor's WARN lines, less the one about the launchers on PATH."""
     return [line for line in stdout.splitlines()
             if line.startswith("WARN") and not line.startswith("WARN " + _LAUNCHER_WARNING)]
+
+
+# The pytest_cov note names the lane's word and the interpreter it resolves to,
+# then an install bound to that interpreter. The suite runs from a venv pip made
+# (CI) or one uv made, which holds no pip, and the install differs between them.
+_PYTEST_COV_NOTE = re.compile(r"names `([^`]+)`, which resolves here to (.+?) and cannot import pytest_cov")
+
+
+def install_for_pytest_cov(note: str) -> str:
+    """The install line, in backticks, a pytest_cov note must carry for the
+    interpreter it names: `uv pip install --python WORD pytest-cov` when uv
+    made that interpreter's venv, `WORD -m pip install pytest-cov` otherwise."""
+    word, resolved = _PYTEST_COV_NOTE.search(note).groups()
+    cfg = Path(resolved).parent.parent / "pyvenv.cfg"
+    uv_made = cfg.is_file() and re.search(r"(?m)^uv\s*=", cfg.read_text(encoding="utf-8"))
+    return (f"`uv pip install --python {word} pytest-cov`" if uv_made
+            else f"`{word} -m pip install pytest-cov`")
 
 
 def git(repo: Path, *args: str) -> None:

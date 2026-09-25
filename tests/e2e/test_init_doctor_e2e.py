@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import cli_runner, repo_warns
+from conftest import cli_runner, install_for_pytest_cov, repo_warns
 
 # PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
 run_cli = cli_runner(spawn=True)
@@ -131,7 +131,8 @@ def test_init_warns_when_the_lanes_python_lacks_pytest_cov(pytest_repo: Path, tm
     dependency on crapkit itself could never guarantee."""
     res = run_cli(pytest_repo, "init", env_extra=_without_pytest_cov(tmp_path))
     assert res.returncode == 0, res.stderr
-    assert "pytest_cov" in res.stderr and "pip install pytest-cov" in res.stderr
+    (note,) = [line for line in res.stderr.splitlines() if "pytest_cov" in line]
+    assert install_for_pytest_cov(note) in note, note
     assert '"crapkit[py]"' in res.stderr, (
         "the extra is the same-venv shortcut, and double quotes are the one form "
         "cmd.exe, PowerShell, bash and zsh all read the same way")

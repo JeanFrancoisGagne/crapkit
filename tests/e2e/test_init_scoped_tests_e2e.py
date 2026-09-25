@@ -15,7 +15,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from conftest import cli_runner
+from conftest import cli_runner, install_for_pytest_cov
 
 # PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
 run_cli = cli_runner(spawn=True)
@@ -168,7 +168,7 @@ def test_doctor_fails_with_inits_own_sentence_when_pytest_cov_cannot_import(tmp_
     assert res.returncode == 1, res.stdout + res.stderr
     (line,) = [ln for ln in res.stdout.splitlines() if "pytest_cov" in ln]
     assert line.startswith("FAIL lane 'py' names"), line
-    assert "pip install pytest-cov" in line
+    assert install_for_pytest_cov(line) in line, line
     assert "no problems found" not in res.stdout
 
 
