@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.repopath import (disk_spelling, entries, file_separators, inside, is_unc,
-                              native, reported)
+from crapkit.repopath import (Reported, disk_spelling, entries, file_separators, inside,
+                              is_unc, native)
 
 from path_spellings import (admin_share, link_directory, lower_drive, need_case_insensitive,
                             need_case_sensitive, only_posix, only_windows)
@@ -135,20 +135,20 @@ def test_a_reported_path_reads_as_git_spells_the_file(tmp_path, which):
     spell, expected = REPORTED[which]
     root = _tree(tmp_path).resolve()
 
-    assert reported(spell(root), root) == expected
+    assert Reported(root)(spell(root)) == expected
 
 
 def test_a_reported_path_in_another_case_takes_the_listed_case(tmp_path):
     need_case_insensitive(tmp_path)
 
-    assert reported("SRC\\Pkg\\mod.py", _tree(tmp_path)) == "src/pkg/mod.py"
+    assert Reported(_tree(tmp_path))("SRC\\Pkg\\mod.py") == "src/pkg/mod.py"
 
 
 def test_a_reported_path_elsewhere_comes_back_folded(tmp_path):
     root = _tree(tmp_path / "repo").resolve()
     other = (tmp_path / "other" / "mod.py").resolve()
 
-    assert reported(str(other), root) == str(other).replace("\\", "/")
+    assert Reported(root)(str(other)) == str(other).replace("\\", "/")
 
 
 def test_an_absolute_path_through_a_linked_directory_lands_in_the_checkout(tmp_path):

@@ -29,6 +29,7 @@ Stdlib only: the advisory hook imports this on every edit.
 """
 from __future__ import annotations
 
+import functools
 import os
 import posixpath
 import re
@@ -97,17 +98,41 @@ def file_separators(raw: str) -> str:
     return raw.replace("\\", "/")
 
 
-def reported(raw: str, root: str | os.PathLike) -> str:
-    """A path a runner wrote into its report, as git spells the file it names:
-    root-relative, `/` between directories, no leading `./`, and in the letter
-    case the directories list. A runner names a file the way it was started, so
-    a JUnit classname reads `./web/app.test.ts`, `C:\\repo\\web\\app.test.ts` or
-    `WEB/app.test.ts` for git's `web/app.test.ts`. A path that names nothing
-    under `root` comes back folded."""
-    path = file_separators(raw).removeprefix("./")
-    if os.path.isabs(path):
-        return inside(path, root) or path
-    return disk_spelling(root, path)
+class Reported:
+    r"""The reported entry: a path a runner wrote into its report (a coverage
+    key, a JUnit file attribute or classname), as git spells the file it names.
+
+    A runner names a file the way it was started, so git's `web/app.test.ts`
+    arrives as `./web/app.test.ts`, `WEB\app.test.ts` or
+    `C:\repo\web\app.test.ts`. The report travels between OSes, so `\`
+    separates directories; a leading `./` goes; a key that starts with the root
+    as crapkit spells it loses the root as text, the common case and the cheap
+    one; any other absolute key is placed by the one placing rule; and a
+    root-relative key takes the letter case its directories list. A key that
+    names nothing under the root comes back folded. A report names thousands of
+    files in a few hundred folders, so each folder is listed and placed once."""
+
+    def __init__(self, root: str | os.PathLike) -> None:
+        self._root = Path(root)
+        self._prefix = file_separators(str(root)).rstrip("/") + "/"
+        self._placing = Placing(root)
+        self._listing = functools.cache(entries)
+
+    def __call__(self, raw: str) -> str:
+        key = file_separators(raw)
+        if key.startswith(self._prefix):
+            return self.relative(key[len(self._prefix):])
+        return self._placed(key) if os.path.isabs(key) else self.relative(key)
+
+    def relative(self, key: str) -> str:
+        """`key`, a root-relative key with `/` between directories, with no
+        leading `./` and in the letter case its directories list. A reader that
+        refuses absolute keys (coverage.py's) asks this step alone."""
+        return disk_spelling(self._root, key.removeprefix("./"), self._listing)
+
+    def _placed(self, key: str) -> str:
+        rel = self._placing(key)
+        return key if rel is None else self.relative(rel)
 
 
 def disk_spelling(root: str | os.PathLike, rel: str,

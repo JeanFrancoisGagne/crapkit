@@ -14,13 +14,16 @@ for the wrong-tree check, and owns the runner advice a refusal gives.
 """
 from __future__ import annotations
 
+import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import covstream
 from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
+from .repopath import Reported
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -236,29 +239,36 @@ def parse_coveragepy_missing_file(path: Path | str, *, path_prefix: str,
     return missing
 
 
-def _coveragepy_contexts(w, prefix: str, source_path: str) -> dict:
+def _coveragepy_contexts(w, prefix: str, source_path: str, spell: Callable[[str], str]) -> dict:
     selected = {}
     for key, value, kind in covstream.walk_report(w, "files"):
-        if kind == "sub" and measured_key(prefix, key) == source_path:
+        if kind == "sub" and spell(measured_key(prefix, key)) == source_path:
             selected = _line_contexts(value.get("contexts", {}))
     return selected
 
 
+def _as_written(key: str) -> str:
+    return key
+
+
 def parse_coveragepy_contexts_file(path: Path | str, *, path_prefix: str,
-                                   source_path: str, chunk: int = covstream.CHUNK
+                                   source_path: str, chunk: int = covstream.CHUNK,
+                                   spell: Callable[[str], str] = _as_written
                                    ) -> dict[int, list[str]]:
-    """One repository path's line contexts, after validating the whole report."""
+    """One repository path's line contexts, after validating the whole report.
+    `spell` turns a measured key into git's spelling before the compare."""
     prefix = lane_prefix(path_prefix)
     selected, _ = covstream.read_walk(
-        path, lambda w: _coveragepy_contexts(w, prefix, source_path), _BAD_REPORT, chunk)
+        path, lambda w: _coveragepy_contexts(w, prefix, source_path, spell), _BAD_REPORT, chunk)
     return selected
 
 
 # --- the adapter a lane reads through ------------------------------------------
 #
-# The reader takes path_prefix and takes no repo root, so a refusal is about the
+# The walk takes path_prefix and takes no repo root, so a refusal is about the
 # environment the lane binds to, and the prefix is a real knob. A path this tree
-# spelled absolutely is the runner's own switch: path_prefix only prepends.
+# spelled absolutely is the runner's own switch: path_prefix only prepends. The
+# adapter then spells each root-relative key as git does (_speller).
 
 WRONG_TREE_FIX = ("Point the lane at this checkout's own environment (a bare "
                   "`python -m pytest` binds to whichever venv the shell has active — run "
@@ -270,18 +280,35 @@ ABSOLUTE_FIX = ("Make the runner write relative paths: `relative_files = true` "
 UNMEASURED_READING = "or the runner reports paths this lane needs path_prefix to rebase"
 
 
+def _speller(root: Path) -> Callable[[str], str]:
+    """A measured key as git spells the file. A root-relative key takes the
+    letter case its directories list (repopath's reported entry): coverage.py on
+    macOS keys a file in the case the import system handed it, and `PKG/mod.py`
+    named no tracked file. An absolute key stays as written, because
+    relative_files is the runner's own switch and the wrong-tree check names it."""
+    relative = Reported(root).relative
+    return lambda key: key if os.path.isabs(key) else relative(key)
+
+
+def _respelled(per_key: dict, spell: Callable[[str], str]) -> dict:
+    return {spell(key): value for key, value in per_key.items()}
+
+
 def read(lane: Lane, root: Path, artifact: Path) -> tuple[dict, dict, str]:
     """The lane's function coverage, dead lines and artifact digest, one walk."""
-    return parse_coveragepy_both_file(artifact, path_prefix=lane.path_prefix,
-                                      label=f"lane {lane.name!r}")
+    per_file, dead, digest = parse_coveragepy_both_file(
+        artifact, path_prefix=lane.path_prefix, label=f"lane {lane.name!r}")
+    spell = _speller(root)
+    return _respelled(per_file, spell), _respelled(dead, spell), digest
 
 
 def missing(lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]:
     """The lines coverage.py reports as never run, per measured file."""
-    return parse_coveragepy_missing_file(artifact, path_prefix=lane.path_prefix)
+    return _respelled(parse_coveragepy_missing_file(artifact, path_prefix=lane.path_prefix),
+                      _speller(root))
 
 
 def contexts(lane: Lane, root: Path, artifact: Path, source_path: str) -> dict[int, list[str]]:
     """line -> test ids for one repository path."""
     return parse_coveragepy_contexts_file(artifact, path_prefix=lane.path_prefix,
-                                          source_path=source_path)
+                                          source_path=source_path, spell=_speller(root))

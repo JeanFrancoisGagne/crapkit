@@ -26,7 +26,7 @@ from crapkit.errors import ConfigError
 from crapkit.lane_command import launch_spec
 from crapkit.universe import scan_files
 
-from path_spellings import need_case_insensitive, only_posix, only_windows
+from path_spellings import need_case_insensitive, need_case_sensitive, only_posix, only_windows
 
 SCOPES = """
 [[scope]]
@@ -117,6 +117,63 @@ def test_a_path_prefix_takes_a_backslash_key_too(tmp_path):
     per_file, _, _ = coverage_py.read(cfg.lanes[0], root, artifact)
 
     assert list(per_file) == ["backend/pkg/mod.py"]
+
+
+# A key in another letter case than the directories list. coverage.py on
+# Windows corrects a key's case itself; on macOS it keeps the case the import
+# system handed it, and `PKG/mod.py` named no file git tracks, so the tested
+# function scored untested.
+CASED_KEYS = [("backend", "PKG/mod.py"), ("backend", "pkg/MOD.py"), ("backend", "PKG\\MOD.py"),
+              ("", "BACKEND/pkg/mod.py"), ("", "Backend\\Pkg\\mod.py"),
+              ("", "./BACKEND/pkg/mod.py")]
+
+
+def _cased_report(root: Path, prefix: str, key: str):
+    cfg = _load(root, _lane(path_prefix=prefix) if prefix else _lane())
+    body = {**REPORT["files"]["pkg/mod.py"], "missing_lines": [3],
+            "contexts": {"1": ["tests/test_mod.py::test_f|run"]}}
+    artifact = root / ".crapkit" / "cov.json"
+    artifact.write_text(json.dumps({**REPORT, "files": {key: body}}), encoding="utf-8")
+    return cfg.lanes[0], artifact
+
+
+@pytest.mark.parametrize("prefix, key", CASED_KEYS)
+def test_a_coveragepy_key_in_another_case_reads_as_git_spells_the_file(tmp_path, prefix, key):
+    need_case_insensitive(tmp_path)
+    root = _tree(tmp_path)
+    lane, artifact = _cased_report(root, prefix, key)
+
+    per_file, dead, _ = coverage_py.read(lane, root, artifact)
+
+    assert list(per_file) == list(dead) == ["backend/pkg/mod.py"]
+    assert list(coverage_py.missing(lane, root, artifact)) == ["backend/pkg/mod.py"]
+    assert coverage_py.contexts(lane, root, artifact, "backend/pkg/mod.py") == {
+        1: ["tests/test_mod.py::test_f"]}
+
+
+@pytest.mark.parametrize("prefix, key", [("backend", "PKG/mod.py"), ("", "BACKEND/pkg/mod.py")])
+def test_a_coveragepy_key_in_another_case_stays_as_written_on_a_case_sensitive_disk(
+        tmp_path, prefix, key):
+    """On ext4 `PKG` is another directory, one the runner never opened."""
+    need_case_sensitive(tmp_path)
+    root = _tree(tmp_path)
+    lane, artifact = _cased_report(root, prefix, key)
+
+    per_file, _, _ = coverage_py.read(lane, root, artifact)
+
+    assert list(per_file) == [f"{prefix}/{key}".lstrip("/")]
+
+
+def test_an_absolute_coveragepy_key_stays_absolute_for_the_wrong_tree_check(tmp_path):
+    """coverage.py's own switch, relative_files, is the fix the lane names; the
+    reader does not rebase an absolute key as istanbul's reader does."""
+    root = _tree(tmp_path).resolve()
+    key = str(root / "backend" / "pkg" / "mod.py")
+    lane, artifact = _cased_report(root, "", key)
+
+    per_file, _, _ = coverage_py.read(lane, root, artifact)
+
+    assert list(per_file) == [key.replace("\\", "/")]
 
 
 def _judged(capsys, root: Path, prefix: str) -> str:

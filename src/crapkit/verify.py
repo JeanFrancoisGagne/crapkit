@@ -181,7 +181,7 @@ def _id_file(test_id: str, test_files: Mapping[str, str] | None) -> str:
     `src\\deep\\keep.test.ts`, a runner handed `./web/...` keeps the dot, and
     jest-junit's `{filepath}` is absolute. Compared as text with git's path,
     each one read a failure in the file under edit as committed. `test_files`
-    holds the file part as the disk placed it (repopath.reported); a part it
+    holds the file part as the disk placed it (repopath.Reported); a part it
     lacks is read as text."""
     part = file_part(test_id)
     placed = test_files.get(part) if test_files else None

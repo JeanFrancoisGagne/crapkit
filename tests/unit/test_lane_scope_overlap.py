@@ -362,7 +362,7 @@ def test_a_js_lane_is_told_about_its_own_reporter_not_about_coveragepy(tmp_path)
 
 import os  # noqa: E402
 
-from crapkit.coverage_istanbul import _Keys  # noqa: E402
+from crapkit.repopath import Reported  # noqa: E402
 from crapkit.lanes import _split_escaped  # noqa: E402
 
 from path_spellings import (admin_share, lower_drive, link_directory,  # noqa: E402
@@ -405,7 +405,7 @@ def test_the_wrong_tree_check_places_a_key_where_the_istanbul_reader_does(tmp_pa
     root = _placed_tree(tmp_path)
     key = spell(root, tmp_path)
 
-    assert _Keys(str(root)).rel(key) == "src/app.ts"
+    assert Reported(root)(key) == "src/app.ts"
     assert _split_escaped(root, [key.replace("\\", "/")]) == ([], [key.replace("\\", "/")])
 
 

@@ -91,7 +91,13 @@
   lane FAILED with advice to point the reporter at the checkout it had measured. On a
   case-insensitive disk a key whose directories below the checkout, or a relative key,
   are in another letter case (`SRC/app.ts` for git's `src/app.ts`) now keys git's file,
-  where that file scored untested.
+  where that file scored untested. A relative key written `./src/app.ts` keys git's file
+  too.
+- The coverage.py reader keys a file in the letter case its directories list, on a
+  case-insensitive disk, whether the lane sets `path_prefix` or not: `PKG/mod.py` under
+  `path_prefix = "backend"`, or `BACKEND/pkg/mod.py`, is git's `backend/pkg/mod.py`.
+  coverage.py on macOS keeps the case the import system handed it, and the file scored
+  untested. An absolute key still fails the lane with the advice to set `relative_files`.
 - `verify` tags a new failure dirty when bun on Windows names its test file with
   backslashes; it read as committed before. The same holds for a JUnit id whose file part
   starts with `./` or is an absolute path inside the checkout, as jest-junit's

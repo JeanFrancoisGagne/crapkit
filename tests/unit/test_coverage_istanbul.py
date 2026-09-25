@@ -101,6 +101,7 @@ import pytest as _pytest
 
 from crapkit import coverage_istanbul as _adapter
 from crapkit.config import Lane as _Lane
+from crapkit import repopath as _repopath
 from crapkit.repopath import entries as _entries
 
 from path_spellings import (link_directory as _link, lower_drive as _lower,
@@ -131,6 +132,8 @@ KEY_SPELLINGS = {
     "forward-slashes": ("", lambda root, tmp: (root / "src" / "app.ts").as_posix()),
     "relative": ("", lambda root, tmp: "src/app.ts"),
     "relative-backslash": ("", lambda root, tmp: "src\\app.ts"),
+    "dot-slash": ("", lambda root, tmp: "./src/app.ts"),
+    "dot-backslash": ("", lambda root, tmp: ".\\src\\app.ts"),
     "dot-dot-sibling": ("", lambda root, tmp: str(root.parent / (root.name + "-build") / ".."
                                                    / root.name / "src" / "app.ts")),
     "linked-checkout": ("", lambda root, tmp: str(tmp / "alias" / "src" / "app.ts")),
@@ -172,9 +175,9 @@ def test_a_report_of_many_files_lists_each_folder_once(tmp_path, monkeypatch):
         asked.append(folder)
         return _entries(folder)
 
-    monkeypatch.setattr(_adapter, "entries", counted)
-    keys = _adapter._Keys(str(root))
-    names = [keys.rel(str(root / "src" / f"m{i}.ts")) for i in range(40)]
+    monkeypatch.setattr(_repopath, "entries", counted)
+    keys = _repopath.Reported(str(root))
+    names = [keys(str(root / "src" / f"m{i}.ts")) for i in range(40)]
 
     assert names == [f"src/m{i}.ts" for i in range(40)]
     assert sorted(asked) == [root, root / "src"]

@@ -501,10 +501,11 @@ def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
 def _test_files(root: Path, failures: set[str]) -> dict[str, str]:
     """Each failing test's file part as git spells the file, read off the disk
     here so the verdict stays a pure function of its inputs."""
-    from ..repopath import reported
+    from ..repopath import Reported
     from ..verify import file_part
 
-    return {part: reported(part, root) for part in {file_part(f) for f in failures}}
+    reported = Reported(root)
+    return {part: reported(part) for part in {file_part(f) for f in failures}}
 
 
 def _baseline_failures(baseline: dict) -> set:
