@@ -35,8 +35,9 @@ installed copy, `crapkit doctor --plugin-root ~/.codex/plugins/cache/crapkit/cra
 "crapkit doctor: FAIL no `crapkit` on PATH" means the plugin is installed but the bare name
 its hooks and `.mcp.json` spawn resolves nowhere, so every PostToolUse edit fires a command
 that cannot start and the MCP server never comes up. A `pip install` into a project `.venv`
-is the usual way to land there: `pipx install crapkit`, or point the plugin at the
-environment holding it. `crapkit claude-hook` and
+or `pip install --user` is the usual way to land there: `pipx install crapkit`, or point the
+plugin at the environment holding it. When the line ends `This crapkit's launcher is in
+DIR`, add DIR to PATH and restart the agent. `crapkit claude-hook` and
 `crapkit doctor --plugin-root` are both specified in
 [README: subcommands](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#subcommands).
 

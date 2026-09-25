@@ -1813,12 +1813,32 @@ def _spawned_cli() -> tuple[str, str | None] | None:
     return (found[0], _probed_cli_version(found[0])) if found else None
 
 
+def _launcher_dirs() -> list[Path]:
+    """Where this interpreter puts a console script: its own scheme's scripts
+    directory (a venv's bin or Scripts), then the user scheme's, which is where
+    `pip install --user` writes (~/.local/bin, %APPDATA%\\Python\\PythonXY\\Scripts)."""
+    import sysconfig
+
+    user = sysconfig.get_preferred_scheme("user")
+    return [Path(sysconfig.get_path("scripts")), Path(sysconfig.get_path("scripts", user))]
+
+
+def _unlisted_launcher() -> Path | None:
+    """The directory holding this crapkit's own launcher. Asked only once PATH
+    answered no `crapkit`, so PATH does not list it."""
+    name = "crapkit.exe" if os.name == "nt" else "crapkit"
+    return next((directory for directory in _launcher_dirs() if (directory / name).is_file()), None)
+
+
 def _no_crapkit_on_path() -> str:
     """The FAIL for a machine where nothing the plugin declares can start. It
     names both files that spawn the bare name, because the reader is about to
     look for a plugin problem and the problem is an install location. Under a
     one-command runner it names the environment that runner's tool built, the
-    one crapkit this process did find, and the install that stays."""
+    one crapkit this process did find, and the install that stays. Otherwise it
+    names the directory this crapkit's launcher sits in when there is one; under
+    a runner that directory is the runner's own environment, which the tool
+    deletes or rebuilds, so it is never named there."""
     from ..launchers import ephemeral_runner, install_line
 
     builder = ephemeral_runner(sys.prefix)
@@ -1829,11 +1849,14 @@ def _no_crapkit_on_path() -> str:
                 "so every PostToolUse edit fires a command that cannot start and the MCP server "
                 "never comes up. Install crapkit where the hook's PATH can see it "
                 f"({install_line(builder)}), then run this check again.")
+    found = _unlisted_launcher()
+    where = (f" This crapkit's launcher is in {found}, which PATH does not list: add that "
+             "directory to PATH, then restart the agent.") if found else ""
     return ("crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and "
             ".mcp.json both spawn that bare name, so every PostToolUse edit fires a command "
             "that cannot start and the MCP server never comes up. Install it where the "
             "PATH the hook inherits can see it (`pipx install crapkit`), or point the "
-            "plugin at the environment holding it.")
+            "plugin at the environment holding it." + where)
 
 
 _INSTALL_PLUGIN = (

@@ -546,6 +546,11 @@ nothing. Each of these now gets a line naming the object and the next step:
   `~/Library/Python/3.12/bin`, `%APPDATA%\Python\Python312\Scripts`) and quote pip's
   `which is not on PATH` warning. Until PATH names that directory, the Claude Code plugin
   lists its server as `Failed to connect`.
+- `crapkit doctor --plugin-root` run on a machine with no `crapkit` on PATH ends its FAIL
+  with the directory that holds the launcher of the crapkit running it, when there is
+  one: `This crapkit's launcher is in DIR, which PATH does not list: add that directory
+  to PATH, then restart the agent.` That is where `pip install --user` and a venv leave
+  it, and the line named only `pipx install crapkit`.
 - The upgrade table has rows for pip --user, pipx (`pipx upgrade crapkit`), uvx
   (`uvx crapkit@latest --version`) and an install from the git URL (`python -m pip install
   --force-reinstall --no-deps git+https://github.com/JeanFrancoisGagne/crapkit.git`). A

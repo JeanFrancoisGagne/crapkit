@@ -471,6 +471,49 @@ def test_no_crapkit_on_path_is_a_fail_naming_what_cannot_start(tmp_path, capsys,
     assert "PATH" in lines[0], lines[0]
 
 
+def _launcher(directory: Path) -> Path:
+    directory.mkdir(parents=True)
+    launcher = directory / ("crapkit.exe" if os.name == "nt" else "crapkit")
+    launcher.write_bytes(b"")
+    return launcher
+
+
+def test_no_crapkit_on_path_names_the_directory_that_holds_this_crapkits_launcher(tmp_path, capsys,
+                                                                                 monkeypatch):
+    """pip --user puts the launcher in ~/.local/bin or %APPDATA%\\Python\\PythonXY\\Scripts,
+    which most PATHs lack, and the plugin then shows `Failed to connect`. The
+    doctor a user runs by its full path, or as `python -m crapkit`, knows which
+    directory its own launcher sits in, so the FAIL names it."""
+    scripts = _launcher(tmp_path / "user" / "bin").parent
+    monkeypatch.setattr(admin, "_spawned_cli", lambda: None)
+    monkeypatch.setattr(admin, "_launcher_dirs", lambda: [tmp_path / "venv" / "bin", scripts])
+
+    code, lines, _ = check(plugin(tmp_path / "p"), capsys)
+
+    assert code == 1 and len(lines) == 1, lines
+    assert lines[0].endswith(f"This crapkit's launcher is in {scripts}, which PATH does not list: add that "
+                             "directory to PATH, then restart the agent."), lines[0]
+    assert "(`pipx install crapkit`)" in lines[0], "the other way out stays on the line"
+
+
+def test_no_launcher_beside_this_crapkit_leaves_the_fail_as_it_was(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(admin, "_spawned_cli", lambda: None)
+    monkeypatch.setattr(admin, "_launcher_dirs", lambda: [tmp_path / "nothing-here"])
+
+    code, lines, _ = check(plugin(tmp_path / "p"), capsys)
+
+    assert code == 1 and lines[0].endswith("or point the plugin at the environment holding it."), lines[0]
+
+
+def test_the_launcher_dirs_are_this_interpreters_scripts_then_the_user_schemes():
+    import sysconfig
+
+    user = sysconfig.get_preferred_scheme("user")
+
+    assert admin._launcher_dirs() == [Path(sysconfig.get_path("scripts")),
+                                      Path(sysconfig.get_path("scripts", user))]
+
+
 def test_the_probe_reads_the_version_off_the_executable_it_found(tmp_path, monkeypatch):
     """The resolution itself, against a real shim: which() picks it up and the
     number comes back off its own `--version`, not out of this process."""

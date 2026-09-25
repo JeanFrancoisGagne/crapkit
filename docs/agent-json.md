@@ -1163,15 +1163,26 @@ crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and 
 ```
 
 Exit 1. A `pip install` into a project `.venv` is the usual way to land here: the console
-script goes into that venv's `Scripts` and nothing else on the machine sees it. Under
-`uvx crapkit doctor --plugin-root`, `uv run --with crapkit crapkit doctor --plugin-root`
-or `pipx run` the PATH doctor inherits starts with the environments built for that one
-command, which the plugin's hooks never inherit, so the lookup leaves out every
-environment in uv's cache (any bucket under the root uv tags with `CACHEDIR.TAG`) or in
-pipx's, and the FAIL names the one doctor runs in. An environment in uv's cache gets `uv
-tool install crapkit`, or `pipx install crapkit` for a `pipx run`: pipx 1.17 on its uv
+script goes into that venv's `Scripts` and nothing else on the machine sees it.
+`pip install --user` is the other: the script goes into `~/.local/bin` or
+`%APPDATA%\Python\Python312\Scripts`, which most PATHs lack. When the crapkit running
+doctor has its own launcher in such a directory, run by that launcher's full path or as
+`python -m crapkit`, the line ends by naming it:
+
+```
+This crapkit's launcher is in /home/dev/.local/bin, which PATH does not list: add that directory to PATH, then restart the agent.
+```
+
+Under `uvx crapkit doctor --plugin-root`, `uv run --with crapkit crapkit doctor
+--plugin-root` or `pipx run` the PATH doctor inherits starts with the environments built
+for that one command, which the plugin's hooks never inherit, so the lookup leaves out
+every environment in uv's cache (any bucket under the root uv tags with `CACHEDIR.TAG`) or
+in pipx's, and the FAIL names the one doctor runs in. An environment in uv's cache gets
+`uv tool install crapkit`, or `pipx install crapkit` for a `pipx run`: pipx 1.17 on its uv
 backend hands the command to `uv tool run`, so nothing in that environment says pipx
-started it. One in pipx's own cache (its pip backend) gets `pipx install crapkit`.
+started it. One in pipx's own cache (its pip backend) gets `pipx install crapkit`. That
+FAIL names no launcher directory to add to PATH, since the tool deletes or rebuilds the
+environment that holds it.
 
 A `crapkit` that answers no `--version` is a launcher the plugin starts and cannot use,
 most often one whose environment lost its python. Each installer's upgrade leaves it
