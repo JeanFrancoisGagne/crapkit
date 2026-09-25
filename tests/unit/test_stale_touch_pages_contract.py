@@ -400,7 +400,7 @@ def test_the_doctor_row_documents_the_refusal_each_json_lane_carries(tmp_path):
 
     lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
                 parser="coveragepy", scopes=("calc",))
-    report = _admin()._lane_report(tmp_path, lane, {})
+    report = _admin()._lane_report(tmp_path, lane, _module("lane_stamps").read(tmp_path))
     row = next(line for line in _page("README.md").splitlines() if line.startswith("| `doctor "))
 
     assert report["refusal"] is None, "no artifact on disk, so nothing to refuse"

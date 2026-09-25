@@ -274,9 +274,38 @@ def test_doctor_names_a_stamps_file_it_cannot_read(measured_repo: Path, content,
     (warning,) = [w for w in payload["warnings"] if w.startswith(".crapkit/artifacts.json")]
     assert why in warning
     assert warning.endswith("so crapkit reads it as no stamps: --reuse-unchanged reruns every "
-                            "lane and --reuse-artifacts cannot see a failed attempt's leftover; "
-                            "the next lane run writes the file again, or delete it")
+                            "lane and --reuse-artifacts refuses every lane's artifact, since it "
+                            "cannot tell a failed attempt's leftover; the next lane run writes "
+                            "the file again, or delete it")
     assert payload["lanes"][0]["commit"] is None
+
+
+UNKNOWN = (".crapkit/artifacts.json cannot be read (it does not parse as JSON), so crapkit "
+           f"cannot tell whether the {ARTIFACT} on disk is the file a failed attempt left; "
+           "--reuse-artifacts will not score it until a run of the lane writes it again")
+LEFTOVER = (f"its last attempt wrote no artifact, and the {ARTIFACT} on disk predates it; "
+            "--reuse-artifacts will not score it until a run of the lane writes it again")
+
+
+def _good_run(repo: Path) -> Path:
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    return repo
+
+
+@pytest.mark.parametrize("before, sentence", [(_good_run, UNKNOWN), (refused, LEFTOVER)],
+                         ids=["good-run", "refused-leftover"])
+def test_doctor_gives_the_refusal_reuse_gives_when_the_stamps_file_is_torn(
+        measured_repo: Path, before, sentence):
+    """Reuse refuses an artifact whose record it cannot read, unless the
+    store's copy of a refusal answers. doctor asks the same question."""
+    repo = before(measured_repo)
+    (repo / ".crapkit" / "artifacts.json").write_text("{ not json", encoding="utf-8")
+
+    (lane,) = json.loads(run_cli(repo, "doctor", "--json").stdout)["lanes"]
+    reuse = run_cli(repo, "coverage", "--reuse-artifacts", "--json")
+
+    assert lane["refusal"] == sentence
+    assert reuse.returncode == 5, reuse.stdout + reuse.stderr
 
 
 def test_doctor_json_and_text_report_the_same_problems_and_exit_code(measured_repo: Path):

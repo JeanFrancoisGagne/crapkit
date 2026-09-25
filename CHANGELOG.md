@@ -133,6 +133,11 @@
 - A `.crapkit/artifacts.json` that does not parse, or an entry in it that is not an
   object, no longer reads as "nothing refused": reuse refuses the artifact while the
   record that would hold its refusal cannot be read, and says why.
+- `doctor --json` gives each lane a `refusal`: the sentence `--reuse-artifacts` refuses the
+  lane's artifact with, or `null`, from the same question reuse asks. A leftover a failed
+  attempt left behind showed as `artifact_present: true` beside "no problems found".
+  doctor now WARNs on it, and on a `.crapkit/artifacts.json` it cannot read, where reuse
+  refuses every lane's artifact because it cannot tell a leftover from the lane's output.
 
 ### `scored_changes` says whether the run still describes the files
 
@@ -212,11 +217,6 @@
   `fetch-depth: 0`. A push logs `no base commit on this event: the comment ranks the whole
   repository`. The step's count names up to three files, and so does the comment's verdict
   line, from verify's `changed_paths`: ``1 changed file (`app/calc.py`)``.
-- `doctor --json` gives each lane a `refusal`: the sentence `--reuse-artifacts` refuses the
-  lane's artifact with, or `null`. A leftover a failed attempt left behind showed as
-  `artifact_present: true` beside "no problems found". doctor now WARNs on it, and on a
-  `.crapkit/artifacts.json` it cannot read, which every reader takes as no stamps at all,
-  refusals included.
 
 ### claude-hook remembers what it judged, and says what it could not judge
 

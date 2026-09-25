@@ -1171,34 +1171,39 @@ def _newest_run_report(store: SnapshotStore | None) -> dict | None:
             "verdict_ok": runs[-1]["verdict_ok"]}
 
 
-def _lane_report(root: Path, lane, stamp: dict) -> dict:
+def _lane_report(root: Path, lane, stamps) -> dict:
+    stamp = stamps.entry(lane.artifact)
     return {"artifact": lane.artifact,
             "artifact_present": (root / lane.artifact).is_file(),
             "commit": stamp.get("commit"),
             "name": lane.name,
-            "refusal": _lane_refusal(root, lane, stamp),
+            "refusal": _lane_refusal(lane, stamps),
             "seconds": stamp.get("seconds")}
 
 
 def _lane_reports(root: Path, cfg) -> list[dict]:
-    from ..lanes import read_stamps, stamp_for
+    from ..lane_stamps import read
 
-    stamps = read_stamps(root)
-    return [_lane_report(root, lane, stamp_for(stamps, lane.artifact)) for lane in cfg.lanes]
+    stamps = read(root)
+    return [_lane_report(root, lane, stamps) for lane in cfg.lanes]
 
 
-def _lane_refusal(root: Path, lane, stamp: dict) -> str | None:
+def _lane_refusal(lane, stamps) -> str | None:
     """Why --reuse-artifacts refuses the lane's artifact, or None when it would
-    score it. It is the question reuse itself asks (lanes._refused_on_disk), so
-    both give one answer for a leftover. An artifact on disk used to read as
-    the lane's healthy output even when its last attempt wrote nothing."""
-    from ..lanes import _refused_on_disk
+    score it. It is the question reuse itself asks (lane_stamps.Stamps.refusal),
+    so both give one answer for a leftover, touched or not, and for an artifact
+    whose record crapkit cannot read. An artifact on disk used to read as the
+    lane's healthy output even when its last attempt wrote nothing."""
+    from ..lane_stamps import STAMPS_FILE
 
-    path = root / lane.artifact
-    if not (path.is_file() and _refused_on_disk(stamp, path)):
+    refusal = stamps.refusal(lane.artifact)
+    if not refusal.kind:
         return None
-    return (f"its last attempt wrote no artifact, and the {lane.artifact} on disk predates it; "
-            "--reuse-artifacts will not score it until a run of the lane writes it again")
+    cause = (f"its last attempt wrote no artifact, and the {lane.artifact} on disk predates it"
+             if refusal.kind == "leftover" else
+             f"{STAMPS_FILE} cannot be read ({refusal.why}), so crapkit cannot tell whether "
+             f"the {lane.artifact} on disk is the file a failed attempt left")
+    return f"{cause}; --reuse-artifacts will not score it until a run of the lane writes it again"
 
 
 def _unreadable_stamp_note(key: str, writers: dict[str, str]) -> str:
@@ -1217,28 +1222,22 @@ def _doctor_stamps(root: Path, lanes) -> list[Finding]:
     it cannot read, as no stamp. Named anyway, because the file is hand-edited
     and the reader has to find the line doctor skipped. A refused leftover is a
     WARN too: the lane's next run clears it."""
-    from ..lanes import read_stamps, unreadable_stamps
+    from ..lane_stamps import read
 
     fault = _stamps_file_fault(root)
     if fault:
         return [Finding("WARN", _unreadable_stamps_file_note(fault))]
-    stamps = read_stamps(root)
+    stamps = read(root)
     writers = {lane.artifact: lane.name for lane in lanes}
-    mangled = [Finding("WARN", _unreadable_stamp_note(key, writers))
-               for key in unreadable_stamps(stamps)]
-    return mangled + _refusal_findings(root, lanes, stamps)
+    mangled = [Finding("WARN", _unreadable_stamp_note(key, writers)) for key in stamps.mangled()]
+    return mangled + _refusal_findings(lanes, stamps)
 
 
-def _refusal_findings(root: Path, lanes, stamps: dict) -> list[Finding]:
+def _refusal_findings(lanes, stamps) -> list[Finding]:
     """One WARN per lane whose artifact --reuse-artifacts refuses."""
-    from ..lanes import stamp_for
-
-    found = []
-    for lane in lanes:
-        refusal = _lane_refusal(root, lane, stamp_for(stamps, lane.artifact))
-        if refusal:
-            found.append(Finding("WARN", f"lane {lane.name!r}: {refusal}"))
-    return found
+    refusals = ((lane, _lane_refusal(lane, stamps)) for lane in lanes)
+    return [Finding("WARN", f"lane {lane.name!r}: {refusal}") for lane, refusal in refusals
+            if refusal]
 
 
 _STAMPS_FILE = ".crapkit/artifacts.json"
@@ -1260,8 +1259,9 @@ def _stamps_file_fault(root: Path) -> str:
 
 def _unreadable_stamps_file_note(fault: str) -> str:
     return (f"{_STAMPS_FILE} cannot be read ({fault}), so crapkit reads it as no stamps: "
-            "--reuse-unchanged reruns every lane and --reuse-artifacts cannot see a failed "
-            "attempt's leftover; the next lane run writes the file again, or delete it")
+            "--reuse-unchanged reruns every lane and --reuse-artifacts refuses every lane's "
+            "artifact, since it cannot tell a failed attempt's leftover; the next lane run "
+            "writes the file again, or delete it")
 
 
 def _doctor_report(root: Path, cfg, findings: list[Finding]) -> dict:
