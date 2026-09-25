@@ -124,10 +124,12 @@ exec(compile(_WRITERS, GEN, "exec"), _GEN)
 @dataclass(frozen=True)
 class Fn:
     """One function: `decisions` ifs, `covered` branch arms ran (or, with no
-    decision, whether its one statement ran)."""
+    decision, whether its one statement ran). A `tag` is a comment on the def
+    line: changing it touches the function and moves no number."""
     name: str
     decisions: int = 0
     covered: int = 0
+    tag: str = ""
 
     @property
     def ccn(self) -> int:
@@ -207,7 +209,7 @@ def fn_lines(fn: Fn) -> list[str]:
     return line its decision count, so no two lines of a file are equal and any
     edit to a function rewrites a line inside it: whichever diff algorithm reads
     two versions, the changed lines are the edited functions' own."""
-    lines = [f"def {fn.name}(x):"]
+    lines = [f"def {fn.name}(x):" + (f"  # {fn.tag}" if fn.tag else "")]
     for number in range(fn.decisions):
         lines += [f"    if x > {number}:  # {fn.name} {number}",
                   f"        x += {number + 1}  # {fn.name} {number}"]
