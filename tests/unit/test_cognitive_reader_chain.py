@@ -134,3 +134,42 @@ def test_analysis_version_invalidates_caches_written_before_the_fix():
     """Cached cognitive values for .swift/.kt/.kts are wrong at version 3, and a
     cache keys on content plus this fingerprint, so 3 must not be reusable."""
     assert ANALYSIS_VERSION > 3
+
+
+# --- every reader measures cognitive and nesting --------------------------------
+#
+# A reader that never computes cognitive complexity or nesting leaves the
+# attribute unset, and the record reads that absence as 0: a measurement of a
+# function with no nesting. Swift and Kotlin once did. Three nested ifs are
+# cognitive 1 + 2 + 3 = 6 in every language; nesting is the reader's own count,
+# and it is never 0 for them.
+
+import pytest  # noqa: E402
+
+NESTED_IFS = {
+    "python": ("a.py", "def f(a, b, c):\n    if a:\n        if b:\n            if c:\n                return 1\n    return 0\n"),
+    "typescript": ("a.ts", "function f(a: number, b: number, c: number): number {\n  if (a) {\n    if (b) {\n      if (c) {\n        return 1;\n      }\n    }\n  }\n  return 0;\n}\n"),
+    "javascript": ("a.js", "function f(a, b, c) {\n  if (a) {\n    if (b) {\n      if (c) {\n        return 1;\n      }\n    }\n  }\n  return 0;\n}\n"),
+    "tsx": ("a.tsx", "function f(a: number, b: number, c: number): number {\n  if (a) {\n    if (b) {\n      if (c) {\n        return 1;\n      }\n    }\n  }\n  return 0;\n}\n"),
+    "java": ("A.java", "class A {\n  int f(int a, int b, int c) {\n    if (a > 0) {\n      if (b > 0) {\n        if (c > 0) {\n          return 1;\n        }\n      }\n    }\n    return 0;\n  }\n}\n"),
+    "cpp": ("a.cpp", "int f(int a, int b, int c) {\n  if (a) {\n    if (b) {\n      if (c) {\n        return 1;\n      }\n    }\n  }\n  return 0;\n}\n"),
+    "objectivec": ("a.m", "int f(int a, int b, int c) {\n  if (a) {\n    if (b) {\n      if (c) {\n        return 1;\n      }\n    }\n  }\n  return 0;\n}\n"),
+    "go": ("a.go", "package a\n\nfunc f(a, b, c int) int {\n\tif a > 0 {\n\t\tif b > 0 {\n\t\t\tif c > 0 {\n\t\t\t\treturn 1\n\t\t\t}\n\t\t}\n\t}\n\treturn 0\n}\n"),
+    "rust": ("a.rs", "fn f(a: i32, b: i32, c: i32) -> i32 {\n    if a > 0 {\n        if b > 0 {\n            if c > 0 {\n                return 1;\n            }\n        }\n    }\n    0\n}\n"),
+    "swift": ("a.swift", "func f(a: Int, b: Int, c: Int) -> Int {\n    if a > 0 {\n        if b > 0 {\n            if c > 0 {\n                return 1\n            }\n        }\n    }\n    return 0\n}\n"),
+    "kotlin": ("a.kt", "fun f(a: Int, b: Int, c: Int): Int {\n    if (a > 0) {\n        if (b > 0) {\n            if (c > 0) {\n                return 1\n            }\n        }\n    }\n    return 0\n}\n"),
+    "zig": ("a.zig", "fn f(a: i32, b: i32, c: i32) i32 {\n    if (a > 0) {\n        if (b > 0) {\n            if (c > 0) {\n                return 1;\n            }\n        }\n    }\n    return 0;\n}\n"),
+    "shell": ("a.sh", "f() {\n  if [ \"$1\" ]; then\n    if [ \"$2\" ]; then\n      if [ \"$3\" ]; then\n        echo 1\n      fi\n    fi\n  fi\n}\n"),
+    "powershell": ("a.ps1", "function F($a, $b, $c) {\n  if ($a) {\n    if ($b) {\n      if ($c) {\n        return 1\n      }\n    }\n  }\n  return 0\n}\n"),
+    "vue": ("a.vue", "<script>\nexport default {\n  methods: {\n    f(a, b, c) {\n      if (a) {\n        if (b) {\n          if (c) {\n            return 1;\n          }\n        }\n      }\n      return 0;\n    }\n  }\n}\n</script>\n"),
+}
+
+
+@pytest.mark.parametrize("language", sorted(NESTED_IFS))
+def test_three_nested_ifs_read_a_measured_cognitive_and_nesting_in_every_reader(language):
+    rel, code = NESTED_IFS[language]
+
+    (row,) = analyze_source(rel, code, note=False)
+
+    assert (row.ccn, row.cognitive) == (4, 6), row
+    assert row.nesting > 0, row

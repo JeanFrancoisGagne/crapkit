@@ -199,6 +199,21 @@ def test_a_lane_no_run_ever_counted_says_nothing(repo, capsys):
     assert code == 0 and "tests" not in err, err
 
 
+def test_a_first_count_after_runs_that_counted_nothing_compares_nothing(repo, capsys):
+    """The runs before declared no results_artifact, so no run holds a count
+    for the lane: this run's 12 has nothing to fall from."""
+    seed_artifacts(repo)
+    assert run(["coverage", "--reuse-artifacts"], repo, capsys)[0] == 0
+    declare_results(repo)
+    junit(repo, 12)
+
+    code, _, err = run(["coverage", "--reuse-artifacts"], repo, capsys)
+
+    assert code == 0, err
+    assert "fewer" not in err, err
+    assert runs(repo)[-1]["lanes"]["unit"]["tests_total"] == 12
+
+
 def test_a_lane_left_out_of_a_subset_run_cannot_drop(counted, capsys):
     code, _, err = run(["coverage", "--reuse-artifacts", "--lane", "ui"], counted, capsys)
 
