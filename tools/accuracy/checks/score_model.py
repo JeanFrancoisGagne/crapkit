@@ -23,3 +23,11 @@ CHECKS += [
     {"name": "queue admission, worklist ranking, next-item", "seconds": 7,
      "pytest": [_SM + "test_queue.py"]},
 ]
+CHECKS += [
+    {"name": "batch split", "seconds": 3, "pytest": [_SM + "test_batch_split.py"]},
+    {"name": "doctor --tune knobs and lane cost", "seconds": 3, "pytest": [_SM + "test_tune.py"]},
+    {"name": "totals, trend, digest and the coverage summary", "seconds": 5,
+     "pytest": [_SM + "test_rollups.py"]},
+    {"name": "brief: today's ceiling, file totals, regrowth", "seconds": 2,
+     "pytest": [_SM + "test_rejudge.py"]},
+]

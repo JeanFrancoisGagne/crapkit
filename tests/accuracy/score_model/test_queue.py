@@ -337,3 +337,14 @@ def test_worklist_and_next_item_read_the_same_run(make_repo):
 
     assert cli.json("worklist")["run_id"] == 1
     assert cli.run("next-item").json()["run_id"] == 1
+
+
+def test_worklist_twin_equals_brief_twin():
+    """R95: two functions a file gives one name each keep their own CRAP and
+    cov on their worklist rows, the numbers the run scored for that row."""
+    fns = [Fn("src/a.py", "h( x )", 1, 6, 0, "measured"), Fn("src/a.py", "h( x )", 21, 6, 12, "measured")]
+    churn = {"src/a.py": production.file_churn(2, 1, 0.5)}
+    rows = {r.start: (r.crap, r.cov) for r in scored_rows(fns)}
+    listed = {e.start: (e.crap, e.cov) for e in crapkit_worklist(churn, fns, floor=1).active}
+
+    assert listed == rows == {1: (42.0, 0.0), 21: (6.0, 1.0)}

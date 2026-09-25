@@ -19,6 +19,7 @@ doc: docs/agent-json.md:920-929 sha256=7a6a4826dc919d5470141b0675da95ca3c02a442d
 doc: docs/configuration.md:72-72 sha256=34f7afec831b09edb7bd1c92940727005cd92d1d398e9a416999c6965598c567
 doc: docs/configuration.md:147-147 sha256=f4f4b349d64468b5ce2fe66c8f4f3b9a5fcaff4baaa2afc81c11cbfe38597e3c
 doc: docs/configuration.md:386-408 sha256=14f21583464d1e2351e295daff1fcdf9779e6570fec05b47c5d0cdbecae56d58
+doc: docs/lanes.md:1242-1286 sha256=71044d8cbf5845d64e26953f33c97c4dd7f992776a78865c1831100099dfc470
 doc: docs/lanes.md:222-238 sha256=6cedd1513e73cb392304f96d40a511cecb365168a505079857d13ac8e3aa21f0
 """
 from __future__ import annotations
@@ -104,7 +105,7 @@ def _same_lines(row: Fresh, other: Fresh) -> bool:
             and (other.name, other.occurrence) != (row.name, row.occurrence))
 
 
-def _shared_span(row: Fresh, rows: list[Fresh]) -> bool:
+def shared_span(row: Fresh, rows: list[Fresh]) -> bool:
     """Another function on the same lines, or a Python def whose body is its
     def line (README.md:835)."""
     one_line_def = row.path.endswith(".py") and row.start == row.end
@@ -120,7 +121,7 @@ def overlay(row: Fresh, rows: list[Fresh], baseline: dict[tuple[str, str], list[
     if row.scope not in lane_scopes:
         return 0.0, "no-lane"
     named = baseline.get((row.path, row.name))
-    if _shared_span(row, rows) or not named:
+    if shared_span(row, rows) or not named:
         return 0.0, "untested"
     return min(named, key=lambda pair: abs(pair[0] - row.start))[1], "measured"
 
@@ -297,6 +298,23 @@ def comparable_pair(lane_sets: list[frozenset[str]]) -> tuple[int, int] | None:
 
 
 # --- doctor --tune (configuration.md:386-405) ------------------------------------------------
+
+def coverage_data_file(cwd: str, env: dict) -> str:
+    """lanes.md:1265-1275: a coveragepy lane writes COVERAGE_FILE, else .coverage,
+    in the directory it starts in."""
+    return "/".join(part for part in (cwd.strip("/"), env.get("COVERAGE_FILE") or ".coverage")
+                    if part and part != ".")
+
+
+def data_files_collide(a: str, b: str) -> bool:
+    """One file, or one lane on BASE beside another on BASE.suffix, which the
+    first deletes and combines (lanes.md:1267-1270)."""
+    return a == b or _combines(a, b) or _combines(b, a)
+
+
+def _combines(base: str, other: str) -> bool:
+    return other.startswith(base + ".") and "/" not in other[len(base) + 1:]
+
 
 def lane_slots_ok(slots: int, lanes: int, shared: bool) -> bool:
     """Never more slots than lanes, at least one, and one while lanes share data."""
