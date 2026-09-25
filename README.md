@@ -340,7 +340,7 @@ lists each piece, in a repo and on the machine.
 ## The Claude Code plugin
 
 ```
-claude plugin marketplace add JeanFrancoisGagne/crapkit
+claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin
 claude plugin install crapkit@crapkit
 ```
 
@@ -362,6 +362,12 @@ deny, a message for the user alone, or a blocking error, so there the hook exits
 hands the model the same lines as added context
 ([other harnesses](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#other-harnesses)).
 
+`--sparse .claude-plugin plugin` checks out the two directories the plugin ships from,
+0.8 MB. Without it Claude Code clones the whole repository, 61 MB, under a 120-second
+clone timeout that one measured add ran out of. A marketplace added without `--sparse`
+keeps that full clone; `claude plugin marketplace remove crapkit` drops it and uninstalls
+the plugin, and the two lines above put both back.
+
 A repo with no `crapkit.toml` costs a silent no-op per edit: 68 ms on Windows through the
 `crapkit.exe` launcher, where a bare `python -c pass` took 32 ms on the same machine. Every
 edit starts it, whatever the file type; an edit to a type crapkit does not measure stops at
@@ -375,11 +381,13 @@ claude plugin update crapkit@crapkit --scope user
 crapkit doctor --plugin-root
 ```
 
-Restart existing Claude Code sessions to apply the plugin update. The check above
-compares installed files with the CLI on PATH; it does not reload a running session. When
-they disagree it prints the commands for the side that is behind, and when `claude plugin
-update` answered "already at the latest version" over files main has moved past, it prints
-the uninstall and install lines that replace them. The update above is for a user-scope
+The installed plugin moves only at a release. `claude plugin update` compares version
+strings, and main carries the last release's version until the next one, so between
+releases it reports the plugin up to date. Restart existing Claude Code sessions to apply
+the plugin update. The check above compares installed files with the CLI on PATH; it does
+not reload a running session. When they disagree it prints the commands for the side that
+is behind, and when `claude plugin update` answered "already at the latest version" over
+files main has moved past, it prints the uninstall and install lines that replace them. The update above is for a user-scope
 install. For one made with `--scope project` or `--scope local`, doctor names that scope and
 the project directory to run it in; for a plugin installed from a marketplace you added as a
 local directory, which Claude Code loads in place, it names `git -C <that directory> pull`.
@@ -413,11 +421,11 @@ edit is. Python only, so a TypeScript or Go repo pays the two spawns and hears n
 
 ### Codex
 
-Codex 0.131.0 or later can install the same marketplace's plugin through its own manager;
-0.130.0 and earlier have no `codex plugin add`:
+Codex 0.131.0 or newer installs the same marketplace's plugin through its own manager;
+0.130.0 has no `codex plugin add`:
 
 ```
-codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 ```
 
@@ -429,15 +437,28 @@ by itself; `crapkit-onboard` stays out of the model's list until you type
 from 0.8.0 or earlier ships no Codex manifest: Codex 0.156.1 lists its hooks as untrusted
 PostToolUse hooks that run a bare `crapkit`, and they should stay untrusted.
 
-Codex upgrades each configured git marketplace when it starts, and refreshes the
-installed plugin from it, so the plugin can reach a release before your CLI does.
-Upgrade the CLI first. To refresh an existing Codex installation by hand:
+`--ref` pins the marketplace to this release's tag, and crapkit's release step rewrites
+it to the tag it cuts. Codex 0.156.1 checks every Git marketplace each time it starts
+and reinstalls the marketplace's plugins when it moved. Added without a ref, the marketplace
+follows main, and a push to main moves the plugin past the CLI you installed from PyPI
+with no command from you. `--sparse` keeps the clone at 1.9 MB, where the whole
+repository is 69 MB.
+
+A marketplace added at a tag stays there: `codex plugin marketplace upgrade` keeps it
+at that tag. After upgrading the CLI, remove the marketplace, add it at the new tag,
+and install the plugin again. The listing's `--json` needs Codex 0.137.0; drop it on an
+older Codex.
 
 ```
-codex plugin marketplace upgrade crapkit
+codex plugin marketplace remove crapkit
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 codex plugin list --marketplace crapkit --json
 ```
+
+The installed plugin moves only at a release. Removing the marketplace keeps it, and it
+stays at the old version until `codex plugin add` installs the new one. The same four
+lines move a marketplace added without `--ref` onto the tag.
 
 Check the installed Codex plugin with `crapkit doctor --plugin-root`: with no PATH it
 reads Codex's plugin cache when Claude Code has no install, and PATH names one install

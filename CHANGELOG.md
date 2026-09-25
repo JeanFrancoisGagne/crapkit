@@ -587,6 +587,32 @@ nothing. Each of these now gets a line naming the object and the next step:
 
 ### Plugin installs
 
+- The marketplace lines cloned the whole repository tip for a plugin that lives in
+  `.claude-plugin/` and `plugin/`: 61 MB for Claude Code and 69 MB for Codex, and one
+  Claude Code add ran into its 120-second clone timeout. Every page now prints them with
+  `--sparse`, which checks out 0.8 MB for Claude Code
+  (`claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin`)
+  and 1.9 MB for Codex. A Claude Code marketplace added without `--sparse` keeps its full
+  clone; docs/upgrading.md has the three lines that replace it.
+- Codex reinstalled the plugin from main at its next start whenever main moved, so a push
+  between releases took a Codex user's plugin past their PyPI CLI with no command from
+  them, and `crapkit doctor --plugin-root` then exited 1. The Codex line pins the release
+  tag with `--ref`, and the release step rewrites that tag with the other version
+  surfaces. A marketplace added from an earlier page follows main; the refresh in the
+  next entry moves it onto the tag.
+- A marketplace added at a tag stays there, so the Codex refresh is now
+  `codex plugin marketplace remove crapkit`, the add line at the new tag,
+  `codex plugin add crapkit@crapkit` and `codex plugin list --marketplace crapkit --json`.
+  The old refresh ran `codex plugin add` after `codex plugin marketplace upgrade` had
+  already installed the plugin, and on Windows that repeat exited 1 with
+  `failed to back up plugin cache entry: Access is denied. (os error 5)` while a file of
+  the old copy was open, so a reader saw a failed upgrade that had landed.
+- The Codex section names the Codex its lines need: 0.131.0 or newer, since 0.130.0
+  answers `codex plugin add` with `unrecognized subcommand 'add'`, and 0.137.0 for the
+  listing's `--json`.
+- README and docs/upgrading.md say the installed plugin moves only at a release:
+  `claude plugin update` compares version strings, and main carries the last release's
+  version until the next one.
 - On Windows, `claude plugin marketplace add JeanFrancoisGagne/crapkit` failed with
   `Filename too long` for any `CLAUDE_CONFIG_DIR` of 66 characters or more, which the
   default `~\.claude` reaches under a user profile path of about 58, and against

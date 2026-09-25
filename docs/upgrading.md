@@ -253,8 +253,8 @@ the older release gets `verify`'s exit 3 on them until they upgrade too.
 
 ## Plugin and MCP clients
 
-After upgrading the intended CLI, refresh Claude Code's marketplace before updating
-its user-scope plugin:
+The installed plugin moves only at a release. After upgrading the intended CLI,
+refresh Claude Code's marketplace before updating its user-scope plugin:
 
 ```sh
 claude plugin marketplace update crapkit
@@ -262,6 +262,8 @@ claude plugin update crapkit@crapkit --scope user
 crapkit doctor --plugin-root
 ```
 
+`claude plugin update` compares version strings, and main carries the last release's
+version until the next one, so between releases it reports the plugin up to date.
 Restart existing Claude Code sessions to apply the plugin update. The doctor check
 compares the installed plugin with the `crapkit` launcher on PATH. It does not reload
 an existing session. A failed, malformed or undecodable launcher probe is a failure,
@@ -282,14 +284,41 @@ there are two or more: a WARN when their versions differ, a note while they agre
 shell, a git hook, the plugin's hooks and an MCP client each run the first their own PATH
 lists, so an upgrade has to reach each of them.
 
-For an installed Codex plugin, refresh its marketplace and install the current copy:
+A Claude Code marketplace added without `--sparse` is a clone of the whole repository,
+61 MB, where the plugin needs 0.8 MB. Removing it also uninstalls the plugin, so add
+it back sparse and install again:
 
 ```sh
-codex plugin marketplace upgrade crapkit
+claude plugin marketplace remove crapkit
+claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin
+claude plugin install crapkit@crapkit
+```
+
+A marketplace added at a tag stays there: `codex plugin marketplace upgrade` keeps it
+at that tag, and Codex refuses to add it at another tag while it is configured. For an
+installed Codex plugin, remove the marketplace, add it at the tag of the CLI you
+upgraded to (`v` and the version `crapkit --version` prints), and install the plugin
+from it:
+
+```sh
+codex plugin marketplace remove crapkit
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 codex plugin list --marketplace crapkit --json
 crapkit doctor --plugin-root PATH
 ```
+
+These lines need Codex 0.131.0 or newer, and the listing's `--json` needs 0.137.0.
+Removing the marketplace keeps the installed plugin at its old version until
+`codex plugin add` installs the new one. The same lines move a marketplace added
+without `--ref` onto the tag. Unpinned, it follows main: Codex 0.156.1 checks it each
+time it starts and reinstalls the plugin once main moved, which takes the plugin past
+the CLI with no command from you.
+
+On Windows, `codex plugin add` at the version already installed exits 1 with
+`failed to back up plugin cache entry: Access is denied. (os error 5)` while a program
+holds a file of that copy open. That copy is already the one you asked for, and the
+listing shows its version.
 
 Use the installed Codex plugin directory for `PATH`, not the marketplace's source
 checkout. In the default cache this is

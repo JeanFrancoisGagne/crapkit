@@ -859,9 +859,9 @@ python -m pip install --upgrade crapkit   # in the environment holding a pip ins
 <p>Then restart the agent so its MCP server runs the updated package. A partially completed upgrade can already report the new package version while its launcher remains locked; the successful installer run is the check that the upgrade finished. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#windows-launcher-locks">launcher-lock table</a> lists what each installer printed, pipx included.</p>
 
 <h3>Claude Code: two commands, once per user, zero files per repo</h3>
-<pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit
+<pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin
 claude plugin install crapkit@crapkit</code></pre>
-<p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a user-scope install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit.</p>
+<p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a user-scope install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit. <code>--sparse</code> checks out the two directories the plugin ships from, 0.8 MB, where a clone of the whole repository is 61 MB and one measured add ran out of Claude Code's 120-second clone timeout.</p>
 <p>A CLI installed from a clone wants its plugin from that same clone. <code>claude plugin marketplace add</code> takes a path as well as a GitHub slug, and the clone root already carries the <code>.claude-plugin/marketplace.json</code> that names <code>./plugin</code> as its source, so the same pair of commands installs the plugin sitting beside the CLI:</p>
 <pre><code>claude plugin marketplace add /path/to/your/crapkit-clone
 claude plugin install crapkit@crapkit</code></pre>
@@ -870,18 +870,19 @@ claude plugin install crapkit@crapkit</code></pre>
 <p>Since 0.4.5 you do not have to know the path. Pass the plugin root, or any directory above it, <code>~/.claude</code> included, and the newest crapkit install under it wins; pass no path at all and it checks every install Claude Code recorded, one per scope and version, checks a clone added as a marketplace in the clone itself, where Claude Code loads it, and falls back to Codex's plugin cache. A root it picked for you is named first, as <code>crapkit doctor: checking PATH</code>, so a wrong guess is visible rather than silent. A root you typed exactly is checked in silence.</p>
 
 <h3>Codex: install the three skills and MCP server</h3>
-<pre><code>codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
+<pre><code>codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit</code></pre>
-<p>Codex uses its own plugin manager with the same repository marketplace. Use its three skills and MCP server in Codex. The advisory hook instructions here configure Claude Code's PostToolUse event.</p>
+<p>Codex uses its own plugin manager with the same repository marketplace, and the two lines need Codex 0.131.0 or newer. Use its three skills and MCP server in Codex. The advisory hook instructions here configure Claude Code's PostToolUse event. <code>--ref</code> pins the marketplace to the release's tag, and the release step rewrites it. Without it the marketplace follows main: Codex 0.156.1 checks it at every start and reinstalls the plugin once main moved, which takes the plugin past the CLI with no command from you.</p>
 
 <h3>Update installed plugins after the CLI</h3>
 <pre><code>claude plugin marketplace update crapkit
 claude plugin update crapkit@crapkit --scope user
 
-codex plugin marketplace upgrade crapkit
+codex plugin marketplace remove crapkit
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 codex plugin list --marketplace crapkit --json</code></pre>
-<p>Refresh the marketplace before updating the installed copy. Restart existing Claude Code sessions to apply its plugin update, and start fresh MCP sessions after a CLI upgrade. <code>crapkit doctor --plugin-root PATH</code> checks installed files against the CLI on PATH; it does not reload a running session. With no PATH it checks the installs Claude Code recorded and looks in Codex's cache only when Claude Code has none, so pass the installed Codex plugin directory to check that one. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#plugin-and-mcp-clients">plugin upgrade guide</a> explains the installed path and Windows launcher locks.</p>
+<p>The installed plugin moves only at a release. Refresh Claude Code's marketplace before updating the installed copy; between releases <code>claude plugin update</code> reports it up to date, because main keeps the last release's version. A Codex marketplace added at a tag stays there, so remove it, add it at the new tag, and install the plugin again; the listing's <code>--json</code> needs Codex 0.137.0. Restart existing Claude Code sessions to apply its plugin update, and start fresh MCP sessions after a CLI upgrade. <code>crapkit doctor --plugin-root PATH</code> checks installed files against the CLI on PATH; it does not reload a running session. With no PATH it checks the installs Claude Code recorded and looks in Codex's cache only when Claude Code has none, so pass the installed Codex plugin directory to check that one. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#plugin-and-mcp-clients">plugin upgrade guide</a> explains the installed path and Windows launcher locks.</p>
 
 <h3>Enforcement: seed the ratchet, then arm the hook</h3>
 <pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv

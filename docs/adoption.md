@@ -223,9 +223,12 @@ points at a store with no run in it.
 **Claude Code users install the plugin.** One artifact, versioned against the CLI:
 
 ```
-claude plugin marketplace add JeanFrancoisGagne/crapkit
+claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin
 claude plugin install crapkit@crapkit
 ```
+
+`--sparse` checks out the two directories the plugin ships from, 0.8 MB of a 61 MB
+repository.
 
 It carries three skills, the read-side MCP server, and one advisory PostToolUse hook that
 names functions an edit pushed over their ceiling. The hook never blocks; the commit gate
@@ -242,20 +245,24 @@ does not cover that entry: it reads the plugin's own `hooks/hooks.json` and noth
 a protocol bump shows up for the shipped matcher and stays silent for the one you wrote.
 Re-check it by hand after a CLI upgrade.
 
-Codex users can install the three skills and MCP server through its own plugin manager:
+Codex users can install the three skills and MCP server through its own plugin manager,
+Codex 0.131.0 or newer:
 
 ```
-codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 ```
 
 Codex loads the skills and the MCP server and no hook: the plugin's Codex manifest leaves
 hooks out, because Codex reports an edit as `apply_patch` patch text
-([README: Codex](../README.md#codex)). After a CLI upgrade, follow
-[plugin and MCP client updates](upgrading.md#plugin-and-mcp-clients): refresh the
-marketplace first, update the installed plugin, then check its version and start a
-fresh client session. Codex refreshes git marketplaces on its own when it starts, so
-upgrade the CLI before the next Codex start.
+([README: Codex](../README.md#codex)). `--ref` pins the marketplace to the release's tag.
+Without it the marketplace follows main, and Codex reinstalls the plugin from main at its
+next start once main moves, ahead of the CLI. After a CLI upgrade, follow
+[plugin and MCP client updates](upgrading.md#plugin-and-mcp-clients): Claude Code
+refreshes its marketplace and updates the plugin; a Codex marketplace added at a tag
+stays there, so it is removed and added at the new tag before the plugin is installed
+again. The listing that checks it takes `--json` from Codex 0.137.0. Then start a fresh
+client session.
 
 Every other agent takes the MCP server from its own config file, and
 [Wiring crapkit into your agent](harnesses.md) has the block to paste for each one:

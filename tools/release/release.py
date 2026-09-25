@@ -93,6 +93,12 @@ SURFACES = (
     Surface("plugin/.claude-plugin/plugin.json", '"version": "{v}"', 1),
     Surface("plugin/.codex-plugin/plugin.json", '"version": "{v}"', 1),
     Surface("server.json", '"version": "{v}"', 2),
+    # The Codex marketplace lines pin the release tag: Codex reinstalls an
+    # unpinned marketplace's plugins from main at every start.
+    Surface("README.md", "--ref v{v}", 2),
+    Surface("docs/adoption.md", "--ref v{v}", 1),
+    Surface("docs/upgrading.md", "--ref v{v}", 1),
+    Surface("docs/handbook.html", "--ref v{v}", 2),
 )
 
 # The deploy suite (.github/workflows/deploy.yml) installs the candidate the way
@@ -113,7 +119,7 @@ CONTRACT_FILES = (
     "tests/unit/test_precommit_contract.py", "tests/unit/test_schema_contract.py",
     "tests/unit/test_json_schema_version.py", "tests/unit/test_action_contract.py",
     "tests/unit/test_demo_docs_contract.py", "tests/unit/test_registry_manifest.py",
-    "tests/unit/test_generated_guidance.py",
+    "tests/unit/test_generated_guidance.py", "tests/unit/test_plugin_install_lines.py",
 )
 
 
@@ -508,11 +514,11 @@ def _registry_rows(version: str, fetch: Callable) -> list:
 def _file_rows(root: Path, version: str) -> list:
     plugin = json.loads(_read(root, "plugin/.claude-plugin/plugin.json"))["version"]
     manifest = _read(root, "server.json").count(f'"version": "{version}"')
-    readme = sum(_read(root, "README.md").count(s.pattern.format(v=version)) == s.count
-                 for s in SURFACES if s.path == "README.md")
+    readme = [s for s in SURFACES if s.path == "README.md"]
+    held = sum(_read(root, "README.md").count(s.pattern.format(v=version)) == s.count for s in readme)
     return [_row("plugin.json", version, plugin),
             _row("server.json", "2 version fields", f"{manifest} version fields"),
-            _row("README", "3 of 3 mentions", f"{readme} of 3 mentions")]
+            _row("README", f"{len(readme)} of {len(readme)} mentions", f"{held} of {len(readme)} mentions")]
 
 
 def _tag_commit(root: Path, version: str) -> str:

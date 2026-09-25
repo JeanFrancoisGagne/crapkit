@@ -14,7 +14,7 @@ skills. Run them in that order, CLI first.
 Install it with the plugin manager of the agent you run. In Claude Code:
 
 ```
-claude plugin marketplace add JeanFrancoisGagne/crapkit
+claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin
 claude plugin install crapkit@crapkit
 ```
 
