@@ -181,7 +181,10 @@ runs:
 
 A repo with no `[[lane]]` at all answers `no [[lane]] declared, so no artifact can say
 which lines are dark`, and an artifact that will not parse answers `unreadable lane
-artifact: ...`. The key is opt-in, so a repo whose artifacts answer never emits it at all.
+artifact: ...`. When git cannot say whether the file changed since the lane measured it,
+the lines are withheld too and the note quotes git's error: `lane 'py': git cannot say
+whether calc/grade.py changed since .crapkit/cov/py.json measured it (...), so its line
+numbers there are withheld`, then the rerun once git answers. The key is opt-in, so a repo whose artifacts answer never emits it at all.
 
 The move differs per flag. On `measured` a lane did speak about the file and the file's
 bytes have changed since, so the lines the artifact holds point at code that moved. Rerun
