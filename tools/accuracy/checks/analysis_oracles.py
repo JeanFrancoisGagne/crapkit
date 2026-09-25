@@ -13,4 +13,10 @@ CHECKS = [
      "pytest": [_PACKET + "test_python_ast.py"]},
     {"name": "metamorphic source edits", "seconds": 6,
      "pytest": [_PACKET + "test_metamorphic_source.py"]},
+    {"name": "ccn against radon, mccabe and the gate rule", "seconds": 6,
+     "pytest": [_PACKET + "test_complexity_oracles.py"]},
+    {"name": "cognitive against the Sonar counter and complexipy", "seconds": 5,
+     "pytest": [_PACKET + "test_cognitive_oracles.py"]},
+    {"name": "nesting against the depth model and pylint", "seconds": 3,
+     "pytest": [_PACKET + "test_nesting_oracles.py"]},
 ]

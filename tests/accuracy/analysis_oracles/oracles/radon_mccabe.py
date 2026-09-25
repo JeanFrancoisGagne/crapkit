@@ -5,7 +5,8 @@ Both tools count McCabe's decisions from the ast, and each departs from
 crapkit's documented count (README "crapkit": standard cyclomatic complexity
 read off lizard's Python reader) in a few named places. Every transform below
 is one rulings.tsv row, and test_complexity_oracles pins each with a hand case
-that states the tool's raw value and the transformed one.
+that states the tool's raw value and the transformed one. A def holding a
+shape crapkit misreads (py_defect_shapes.CCN) is left out and counted.
 
 The transforms count ast nodes; none reads crapkit. A decision here is what
 NIST SP 500-235 sec. 4.1 calls one: an `if`, `elif`, loop, `except` clause,
@@ -15,6 +16,7 @@ or `case` arm.
 from __future__ import annotations
 
 import ast
+from functools import lru_cache
 import re
 
 import mccabe
@@ -38,12 +40,14 @@ def _radon_blocks(blocks, out: dict) -> dict:
     return out
 
 
+@lru_cache(maxsize=64)
 def radon_values(source: str) -> dict[tuple[int, int], int]:
     """{(def line, def column): radon's complexity} for every function radon lists."""
     visitor = ComplexityVisitor.from_code(source)
     return _radon_blocks(visitor.functions + visitor.classes, {})
 
 
+@lru_cache(maxsize=64)
 def mccabe_values(source: str) -> dict[tuple[int, int], int]:
     """{(def line, def column): mccabe's complexity} for each function and method
     mccabe graphs; a nested def is folded into its parent's graph."""
@@ -93,13 +97,14 @@ def _expression_decisions(node) -> int:
 
 
 def _statement_decisions(node) -> int:
-    """if/elif, loops, except clauses, finally, case arms and case guards."""
+    """if/elif, loops, except clauses, finally, case arms and case guards. An
+    unguarded `case _` is the default, which NIST sec. 4.1 leaves out."""
     if isinstance(node, (ast.If, *LOOPS)):
         return 1
     if isinstance(node, TRIES):
         return len(node.handlers) + bool(node.finalbody)
     if isinstance(node, ast.Match):
-        return sum(1 + (case.guard is not None) for case in node.cases)
+        return sum(1 + (case.guard is not None) - _is_wildcard(case) for case in node.cases)
     return 0
 
 
@@ -109,6 +114,15 @@ def decisions(node, stop: tuple = FUNCTIONS) -> int:
     return sum(_expression_decisions(item) + _statement_decisions(item) for item in nodes)
 
 
+def modified(fn) -> int:
+    """ccn_mod: 1 + every decision, with each match's case arms read as one
+    decision (lizard README, option -m: "count a switch/case with multiple
+    cases as one CCN"). Guards stay, as `if`s."""
+    matches = _count(fn, ast.Match)
+    arms = sum(1 - _is_wildcard(case) for match in matches for case in match.cases)
+    return 1 + decisions(fn) - arms + len(matches)
+
+
 def _count(fn, kind, stop: tuple = FUNCTIONS) -> list:
     return [node for node in own_nodes(fn, stop) if isinstance(node, kind)]
 
@@ -116,10 +130,6 @@ def _count(fn, kind, stop: tuple = FUNCTIONS) -> list:
 def _is_wildcard(case) -> bool:
     pattern = case.pattern
     return isinstance(pattern, ast.MatchAs) and pattern.pattern is None and case.guard is None
-
-
-def _wildcards(fn, stop: tuple = FUNCTIONS) -> int:
-    return sum(_is_wildcard(case) for match in _count(fn, ast.Match, stop) for case in match.cases)
 
 
 # --- radon -> crapkit ----------------------------------------------------------------------
@@ -151,11 +161,6 @@ def _radon_guard(fn) -> int:
     return sum(case.guard is not None for match in matches for case in match.cases)
 
 
-def _radon_wildcard(fn) -> int:
-    """radon leaves out an unguarded `case _`; crapkit counts it (defect AO-BUG-1)."""
-    return _wildcards(fn, RADON_STOP)
-
-
 def _radon_class_body(fn) -> int:
     """radon scores a class body nested in a function as the class's; lizard
     charges its decisions to the enclosing function."""
@@ -174,7 +179,6 @@ RADON = {
     "AO-RADON-FINALLY": _radon_finally,
     "AO-RADON-ELSE": _radon_else,
     "AO-RADON-GUARD": _radon_guard,
-    "AO-RADON-WILDCARD": _radon_wildcard,
     "AO-RADON-CLASS-BODY": _radon_class_body,
 }
 
@@ -242,8 +246,7 @@ def _mccabe_expressions(regions: _Regions, source: str) -> int:
 
 def _mccabe_skipped(regions: _Regions, source: str) -> int:
     """Everything in a finally body or a match statement, which mccabe never
-    walks: case arms and guards (wildcards included, defect AO-BUG-1) and
-    every decision in those statements."""
+    walks: case arms and guards and every decision in those statements."""
     walked_matches = [node for node in regions.walked if isinstance(node, ast.Match)]
     nodes = walked_matches + regions.skipped
     return sum(_expression_decisions(node) + _statement_decisions(node) for node in nodes)

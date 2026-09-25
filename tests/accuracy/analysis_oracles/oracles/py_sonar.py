@@ -52,6 +52,9 @@ class Choices:
     iter_nests: bool = False       # a generator's iterable is evaluated before its own loop starts
     condition_nests: bool = False  # a condition is read at its structure's own level
     else_nests: bool = True        # B2 lists else
+    loop_else_counts: bool = True  # B1 lists else; a loop's or a try's else is one
+    for_nests: bool = True         # B2 lists loops: a comprehension's for raises the level
+    filter_increment: bool = True  # B3 lists if: a comprehension's if adds its nesting level
 
 
 PAPER = Choices()
@@ -92,15 +95,17 @@ class _Counter:
         self.add(1 + level)
         self.condition(node.test, level)
         self.body(node.body, level + 1)
-        self.else_branch(node.orelse, level)
+        self.else_branch(node.orelse, level, node.col_offset)
 
-    def else_branch(self, orelse: list, level: int) -> None:
-        """elif and else: +1 each, no nesting increment (hybrid)."""
-        if len(orelse) == 1 and isinstance(orelse[0], ast.If):
+    def else_branch(self, orelse: list, level: int, column: int) -> None:
+        """elif and else: +1 each, no nesting increment (hybrid). ast gives an
+        `elif` and an `else:` holding an `if` one shape; an elif's node starts
+        at its chain's column, the nested if deeper."""
+        if _is_elif(orelse, column):
             self.add(1)
             self.condition(orelse[0].test, level)
             self.body(orelse[0].body, level + 1)
-            self.else_branch(orelse[0].orelse, level)
+            self.else_branch(orelse[0].orelse, level, column)
         elif orelse:
             self.add(1)
             self.body(orelse, level + (1 if self.choices.else_nests else 0))
@@ -114,7 +119,7 @@ class _Counter:
     def plain_else(self, orelse: list, level: int) -> None:
         """A loop's or a try's else: B1 lists else, a hybrid increment."""
         if orelse:
-            self.add(1)
+            self.add(int(self.choices.loop_else_counts))
             self.body(orelse, level + 1)
 
     def try_statement(self, node, level: int) -> None:
@@ -202,18 +207,19 @@ class _Counter:
         for generator in node.generators:
             depth = self.generator(generator, depth)
         elements = [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
+        inner = max(depth, level + 1) if self.choices.element_nests else level
         for element in elements:
-            self.expression(element, depth if self.choices.element_nests else level)
+            self.expression(element, inner)
 
     def generator(self, generator, depth: int) -> int:
         """One `for ... in ... if ...` clause: foreach +1, each if +1, each at
         the level it sits at. Returns the level the next clause sits at."""
         self.add(1 + depth)
         self.expression(generator.iter, depth + int(self.choices.iter_nests))
-        depth += 1
+        depth += int(self.choices.for_nests)
         self.count.depth = max(self.count.depth, depth)
         for condition in generator.ifs:
-            self.add(1 + depth)
+            self.add(1 + depth * int(self.choices.filter_increment))
             self.expression(condition, depth)
             depth += int(self.choices.filter_nests)
         return depth
@@ -242,6 +248,10 @@ class _Counter:
         self.body(self.fn.body, 0)
         self.add(int(self.recursed))
         return self.count
+
+
+def _is_elif(orelse: list, column: int) -> bool:
+    return len(orelse) == 1 and isinstance(orelse[0], ast.If) and orelse[0].col_offset == column
 
 
 def _chain(node) -> list:

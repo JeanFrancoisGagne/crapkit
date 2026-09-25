@@ -34,6 +34,17 @@ def floor_division(fn) -> bool:
     return any(isinstance(node, ast.FloorDiv) for node in own_nodes(fn))
 
 
+def _wildcard(case) -> bool:
+    pattern = case.pattern
+    return isinstance(pattern, ast.MatchAs) and pattern.pattern is None and case.guard is None
+
+
+def wildcard_case(fn) -> bool:
+    """AO-PY-CCN-WILDCARD: an unguarded `case _` counts as a decision."""
+    return any(_wildcard(case) for node in own_nodes(fn) if isinstance(node, ast.Match)
+               for case in node.cases)
+
+
 # --- names ------------------------------------------------------------------------------
 
 def _self_call(node, name: str) -> bool:
@@ -202,6 +213,7 @@ def match_statement(fn) -> bool:
     return any(isinstance(node, ast.Match) for node in own_nodes(fn))
 
 
+CCN = {"AO-PY-FLOORDIV": floor_division, "AO-PY-CCN-WILDCARD": wildcard_case}
 COGNITIVE = {
     "AO-PY-FLOORDIV-COG": floor_division,
     "AO-PY-COG-RECURSION": name_as_recursion,
