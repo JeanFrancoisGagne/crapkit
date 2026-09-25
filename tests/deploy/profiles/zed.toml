@@ -29,14 +29,16 @@ config = '''
 [spawn]
 cwd = "workspace"
 env = "inherit"
-resolve = "execvp"
+resolve = "shell"
+# PATH comes from the login shell in the project directory, wherever Zed was launched from.
+path = "login-shell"
 windows = "powershell-c"
 
 # What it sends first, and the client a sim cell drives crapkit with.
 [initialize]
 client = "python"
 sdk = ""
-protocol = "2025-03-26"
+protocol = "2025-11-25"
 discover_first = false
 client_name = "Zed"
 
@@ -44,7 +46,7 @@ client_name = "Zed"
 [limits]
 output_tokens = 0
 tool_prefix = ""
-startup_seconds = 0
+startup_seconds = 60
 
 # What it does with the plugin's hooks/hooks.json.
 [hooks]
@@ -72,22 +74,23 @@ autoupgrade = true
 
 # One tag per field above: observed, source, docs or inferred.
 [evidence]
-"spawn.cwd" = "inferred"
+"spawn.cwd" = "observed"
 "spawn.env" = "inferred"
-"spawn.resolve" = "inferred"
+"spawn.resolve" = "observed"
+"spawn.path" = "observed"
 "spawn.windows" = "inferred"
 "initialize.client" = "source"
 "initialize.sdk" = "source"
-"initialize.protocol" = "inferred"
-"initialize.discover_first" = "inferred"
-"initialize.client_name" = "inferred"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
 "limits.output_tokens" = "inferred"
 "limits.tool_prefix" = "inferred"
-"limits.startup_seconds" = "inferred"
+"limits.startup_seconds" = "observed"
 "hooks.loads" = "docs"
 "hooks.manifest" = "docs"
 "hooks.fields" = "docs"
 "hooks.events" = "docs"
 "hooks.matcher" = "docs"
 "hooks.exit2" = "docs"
-sources = ["https://zed.dev/docs/ai/mcp (context_servers, source custom)", "on Windows a context server starts through `powershell -C` without -NoProfile, so a profile that prints reaches the server's stdout"]
+sources = ["https://zed.dev/docs/ai/mcp (context_servers, source custom)", "on Windows a context server starts through `powershell -C` without -NoProfile, so a profile that prints reaches the server's stdout", "lin-zed-xvfb (Zed 1.21.0, Zed.log at RUST_LOG=context_server=trace): the server starts in the project directory through `sh -c` with the login shell's PATH, so a crapkit on the launching PATH only fails with '/bin/sh: 1: crapkit: not found' and 'crapkit context server failed to start: Context server request timeout' after 60 s; with crapkit in ~/.local/bin and the Debian ~/.profile it offers 2025-11-25 as 'Zed' and lists 12 tools"]

@@ -1,0 +1,11 @@
+{
+  "name": "crapkit-deploy-probe",
+  "displayName": "crapkit deploy probe",
+  "description": "Test-only: records which language-model tools VS Code offers, then quits. Loaded with --extensionDevelopmentPath by tests/deploy/test_gui_harnesses.py.",
+  "publisher": "crapkit-deploy",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {"vscode": "^1.100.0"},
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"]
+}

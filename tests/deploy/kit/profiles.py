@@ -123,7 +123,10 @@ def _heading_problem(profile: Profile) -> list[str]:
 # env_allow_windows on Windows). resolve / windows: execvp and cross-spawn
 # (PATH, with PATHEXT on Windows), createprocess (PATH, .exe only), cwd-first
 # (the working directory before PATH), shell (sh -c, or cmd /c), powershell-c
-# (powershell -Command without -NoProfile), none (no build for this OS).
+# (powershell -Command without -NoProfile), none (no build for this OS). path,
+# where set: login-shell, for a harness that takes PATH from the user's login
+# shell rather than its own environment (Zed; VS Code started from the desktop),
+# so a crapkit only a venv holds is not found; the GUI cells act on it.
 
 SDK_DEFAULT = {"posix": ["HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"],
                "nt": ["APPDATA", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "PATH", "PROCESSOR_ARCHITECTURE",
@@ -335,10 +338,29 @@ def real_cli_box(box, cache: Path) -> Path:
     repo = measured_repo(box, cache)
     real = session_crapkit(box, cache)
     box.prepend_path(shim.install(box, str(real)))
+    add_harnesses(box)
+    return repo
+
+
+def last_start(box) -> dict:
+    """The shim's record of the newest crapkit the harness started."""
+    starts = shim.starts(box)
+    assert starts, "the harness never started crapkit"
+    return starts[-1]
+
+
+def initialize_params(start: dict) -> dict:
+    """The params of the initialize the harness sent (after any server/discover)."""
+    first = json.loads(start["first_line"])
+    return first.get("params", {}) if first.get("method") == "initialize" else {}
+
+
+def add_harnesses(box) -> None:
+    """The pinned harness CLIs after everything on the sandbox PATH, and the
+    switches that keep them offline and inside the sandbox."""
     extra = [directory for directory in box.toolchain.get("harness_bin", []) if Path(directory).is_dir()]
     box.env["PATH"] = os.pathsep.join([*box.path_dirs(), *extra])
     box.env.update(REAL_CLI_ENV, JUNIE_HOME=str(box.home / ".junie"))
-    return repo
 
 
 def doc_server(box, repo: Path, key: str) -> writers.Server:
@@ -360,12 +382,15 @@ class ToolCall:
     call in `calls` (a tool-name suffix and its arguments); once they are all
     out, a request gets text, which ends the turn."""
 
-    def __init__(self, kind: str, calls: list[tuple[str, dict]]):
+    def __init__(self, kind: str, calls: list[tuple[str, dict]], watch=None):
         self.kind, self.pending = kind, list(calls)
         self.offered: list[str] = []
         self.called: list[str] = []
+        self.watch = watch
 
     def __call__(self, body: dict, turn: int) -> dict:
+        if self.watch is not None:
+            self.watch(body)
         names = offered_tools(body)
         self.offered = self.offered or names
         name = self._target(names)
@@ -378,7 +403,7 @@ class ToolCall:
         """The offered tool the next pending call names, if any is pending."""
         if not self.pending:
             return None
-        return next((name for name in names if name.endswith(self.pending[0][0])), None)
+        return next((name for name in names if crapkit_tool(name) == self.pending[0][0]), None)
 
     def _call(self, name: str, arguments: dict) -> dict:
         if self.kind == "openai":
@@ -386,12 +411,21 @@ class ToolCall:
         return {"tool_use": {"name": name, "input": arguments}}
 
     def crapkit_tools(self) -> list[str]:
-        return [name for name in self.offered if TOOL_NAME.search(name)]
+        return [name for name in self.offered if crapkit_tool(name)]
 
 
-TOOL_NAME = re.compile(r"(get_next_item|list_worklist|list_runs|get_trend|get_function_brief|get_function_history|"
-                       r"check_config|list_coupled_files|list_duplicate_functions|get_ratchet_report|check_gate|"
-                       r"list_claims)$")
+# A crapkit tool as a harness names it: the bare name, or the name after a
+# prefix that names the server (mcp__crapkit__, crapkit__, crapkit-). Cline's
+# own team_list_runs ends like list_runs and is not one.
+TOOL_NAME = re.compile(r"(?:^|crapkit[_-]+)(get_next_item|list_worklist|list_runs|get_trend|get_function_brief|"
+                       r"get_function_history|check_config|list_coupled_files|list_duplicate_functions|"
+                       r"get_ratchet_report|check_gate|list_claims)$")
+
+
+def crapkit_tool(name: str) -> str | None:
+    """The crapkit tool a harness's tool name stands for, or None."""
+    match = TOOL_NAME.search(name)
+    return match[1] if match else None
 
 
 def _texts(content) -> list[str]:
@@ -526,13 +560,46 @@ SESSIONS = {"claude-code": ("anthropic", session_claude), "opencode": ("openai",
             "crush": ("openai", session_crush), "junie": ("openai", session_junie)}
 
 
-def stub_session(box, repo: Path, key: str, calls: list[tuple[str, dict]]):
-    """One headless run of the harness against a stub that makes `calls`.
+def stub_session(box, repo: Path, key: str, calls: list[tuple[str, dict]], watch=None):
+    """One headless run of the harness against a stub that makes `calls`;
+    `watch` sees each request body as the model would, before the stub answers.
     Returns the script (what was offered and called), every request body and the run's step."""
     kind, configure = SESSIONS[key]
-    script = ToolCall(kind, calls)
+    script = ToolCall(kind, calls, watch)
     serve = stub_openai.serve if kind == "openai" else stub_anthropic.serve
     with serve(script) as stub:
         argv, env = configure(box, repo, stub.url)
         step = box.run(argv, cwd=repo, env=env, note=f"{key} against the {kind} stub")
     return script, stub.bodies(), step
+
+
+# --- reading crapkit's answer back out of what a harness sent its model -----------------
+
+def _decoded(text: str):
+    """The JSON value that starts at the text's first bracket or brace."""
+    start = min(position for position in (text.find("{"), text.find("[")) if position >= 0)
+    return json.JSONDecoder().raw_decode(text[start:])[0]
+
+
+def _wrapped(value):
+    """The content list a harness wrapped crapkit's text in, or None."""
+    if isinstance(value, list):
+        return value
+    return None if "schema" in value else value.get("content")
+
+
+def _first_json(text: str):
+    """The first JSON value in a tool result, with any wrapper a harness adds
+    around crapkit's text unwrapped: a content list, or {"content": [...]}."""
+    value = _decoded(text)
+    wrapped = _wrapped(value)
+    return _first_json(wrapped[0]["text"]) if isinstance(wrapped, list) else value
+
+
+def result_json(text: str):
+    """crapkit's JSON answer inside one tool result a harness sent its model, or
+    None when the text holds none (a truncated or reworded result)."""
+    try:
+        return _first_json(text)
+    except (ValueError, KeyError, TypeError, IndexError):
+        return None

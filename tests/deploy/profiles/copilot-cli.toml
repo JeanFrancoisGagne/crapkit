@@ -54,8 +54,8 @@ loads = "plugin"
 manifest = ""
 fields = ["type", "command", "timeout", "matcher"]
 events = ["PostToolUse"]
-matcher = "kept"
-exit2 = "block"
+matcher = "mapped"
+exit2 = "feedback"
 
 # The pinned CLI a real cell runs; pins_key "" means no headless check exists.
 [real_cli]
@@ -83,14 +83,13 @@ autoupgrade = true
 "initialize.protocol" = "observed"
 "initialize.discover_first" = "observed"
 "initialize.client_name" = "observed"
-"limits.output_tokens" = "inferred"
+"limits.output_tokens" = "observed"
 "limits.tool_prefix" = "observed"
 "limits.startup_seconds" = "inferred"
-"hooks.loads" = "inferred"
-"hooks.manifest" = "inferred"
-"hooks.fields" = "inferred"
-"hooks.events" = "inferred"
-"hooks.matcher" = "inferred"
-"hooks.exit2" = "inferred"
-sources = ["calibrate.py: shim record of `copilot -p` on the OpenAI stub (server/discover 2026-07-28, then initialize 2025-11-25)", "`copilot help providers` (BYOK needs no GitHub login)"]
-manual = ["lin-copilot-plugin-hooks counts shim spawns per edit after `copilot plugin install`"]
+"hooks.loads" = "observed"
+"hooks.manifest" = "observed"
+"hooks.fields" = "observed"
+"hooks.events" = "observed"
+"hooks.matcher" = "observed"
+"hooks.exit2" = "observed"
+sources = ["calibrate.py: shim record of `copilot -p` on the OpenAI stub (server/discover 2026-07-28, then initialize 2025-11-25)", "`copilot help providers` (BYOK needs no GitHub login)", "lin-copilot-plugin-hooks: after `copilot plugin install crapkit@crapkit`, one `edit` of a Python file spawned 50 bare `crapkit` processes, each exiting 2 with its usage printed to the user; the edit landed after 29 s", "lin-call-copilot: a 28 KB tool result reaches the model as 'Output too large to read at once (28.0 KB). Saved to: $TMP/<n>-copilot-tool-output-<id>.txt' with a 500-character preview; the file holds the whole result"]

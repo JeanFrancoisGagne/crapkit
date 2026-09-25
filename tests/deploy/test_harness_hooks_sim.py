@@ -33,8 +33,8 @@ BUGS: dict[str, str] = {
               "edit spawns 50 bare `crapkit` handlers and Cursor reads their exit 2 as deny",
     "vscode-copilot": "deploy-bug deploy-harnesses-3: VS Code reads the plugin's hooks.json without args, if or "
                       "matcher, so every tool call spawns 50 bare `crapkit` handlers whose exit 2 blocks",
-    "copilot-cli": "deploy-bug deploy-harnesses-4: Copilot CLI's plugin hooks keep command and matcher only (inferred "
-                   "until lin-copilot-plugin-hooks counts spawns), so an edit spawns bare `crapkit` handlers",
+    "copilot-cli": "deploy-bug deploy-harnesses-4: Copilot CLI runs the plugin's 50 hook handlers without their args, "
+                   "so one edit spawns 50 bare `crapkit`, each printing its usage and exiting 2",
 }
 
 

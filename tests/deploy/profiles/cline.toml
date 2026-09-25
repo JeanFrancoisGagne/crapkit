@@ -40,7 +40,8 @@ client_name = "@cline/core"
 
 # What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
 [limits]
-output_tokens = 0
+# 8,000 characters of the whole CallToolResult JSON (text and structuredContent), the middle cut out.
+output_tokens = 2000
 tool_prefix = "crapkit__"
 startup_seconds = 0
 
@@ -79,7 +80,7 @@ autoupgrade = true
 "initialize.protocol" = "observed"
 "initialize.discover_first" = "observed"
 "initialize.client_name" = "observed"
-"limits.output_tokens" = "inferred"
+"limits.output_tokens" = "source"
 "limits.tool_prefix" = "observed"
 "limits.startup_seconds" = "inferred"
 "hooks.loads" = "docs"
@@ -88,4 +89,4 @@ autoupgrade = true
 "hooks.events" = "docs"
 "hooks.matcher" = "docs"
 "hooks.exit2" = "docs"
-sources = ["calibrate.py: shim record of a `cline` task on the OpenAI stub (2024-11-05, @cline/core)", "the VS Code extension spawns from the extension host with the SDK's default environment; the CLI starts in the task cwd", "Cline hooks live in ~/.cline/hooks, not in a Claude plugin"]
+sources = ["calibrate.py: shim record of a `cline` task on the OpenAI stub (2024-11-05, @cline/core)", "the VS Code extension spawns from the extension host with the SDK's default environment; the CLI starts in the task cwd", "Cline hooks live in ~/.cline/hooks, not in a Claude plugin", "@cline/core session/services/message-builder: DEFAULT_MAX_TOOL_RESULT_CHARS = 8000, raised by CLINE_MESSAGE_BUILDER_MAX_TOOL_RESULT_CHARS in the Cline process; lin-call-cline saw a 27 KB get_function_brief arrive as '...[truncated 21226 chars]...'"]

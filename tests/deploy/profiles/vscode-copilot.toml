@@ -30,6 +30,8 @@ config = '''
 cwd = "config"
 env = "inherit"
 resolve = "execvp"
+# Launched from the desktop, VS Code takes PATH from the login shell; `code` from a terminal inherits it.
+path = "login-shell"
 windows = "cross-spawn"
 
 # What it sends first, and the client a sim cell drives crapkit with.
@@ -43,7 +45,7 @@ client_name = "Visual Studio Code"
 # What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
 [limits]
 output_tokens = 0
-tool_prefix = ""
+tool_prefix = "mcp_crapkit_"
 startup_seconds = 0
 
 # What it does with the plugin's hooks/hooks.json.
@@ -72,17 +74,18 @@ autoupgrade = true
 
 # One tag per field above: observed, source, docs or inferred.
 [evidence]
-"spawn.cwd" = "docs"
+"spawn.cwd" = "observed"
 "spawn.env" = "inferred"
 "spawn.resolve" = "inferred"
+"spawn.path" = "observed"
 "spawn.windows" = "inferred"
 "initialize.client" = "inferred"
 "initialize.sdk" = "inferred"
-"initialize.protocol" = "inferred"
-"initialize.discover_first" = "inferred"
-"initialize.client_name" = "inferred"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
 "limits.output_tokens" = "inferred"
-"limits.tool_prefix" = "inferred"
+"limits.tool_prefix" = "observed"
 "limits.startup_seconds" = "inferred"
 "hooks.loads" = "source"
 "hooks.manifest" = "source"
@@ -90,4 +93,4 @@ autoupgrade = true
 "hooks.events" = "source"
 "hooks.matcher" = "source"
 "hooks.exit2" = "docs"
-sources = ["VS Code 1.139.0 workbench.desktop.main.js: Claude plugin format 1 reads hooks/hooks.json; the converter keeps command, windows/linux/osx, env, timeout and cwd, and runs every handler of a matcher group", "https://code.visualstudio.com/docs/copilot/customization/hooks (exit 2 is a blocking error)", "https://code.visualstudio.com/docs/copilot/customization/mcp-servers (servers, cwd, ${workspaceFolder})"]
+sources = ["VS Code 1.139.0 workbench.desktop.main.js: Claude plugin format 1 reads hooks/hooks.json; the converter keeps command, windows/linux/osx, env, timeout and cwd, and runs every handler of a matcher group", "https://code.visualstudio.com/docs/copilot/customization/hooks (exit 2 is a blocking error)", "https://code.visualstudio.com/docs/copilot/customization/mcp-servers (servers, cwd, ${workspaceFolder})", "lin-vscode-electron (VS Code 1.139.0, --password-store=basic): the workspace server with cwd ${workspaceFolder} starts in the repo and a user-profile server with no cwd starts in $HOME; it offers 2025-11-25 as 'Visual Studio Code' and names the tools mcp_crapkit_*; launched from the desktop, a crapkit only a venv holds fails with 'spawn crapkit ENOENT', one in ~/.local/bin starts"]
