@@ -226,10 +226,18 @@ Your runner writes `coverage-final.json` and you never open it. Read this sectio
 you are building one by hand, converting another format into it, or staring at a lane that
 scores nothing.
 
+Both coverage readers take the artifact as UTF-8 JSON and read past a UTF-8 byte-order
+mark, which a copy saved with PowerShell's `Out-File -Encoding utf8` carries. An artifact
+in UTF-16, what PowerShell 5.1's `>` and `Out-File` write, or one holding a byte that is
+not UTF-8, fails its lane naming the bytes and saying to save it as UTF-8. An artifact
+with no JSON in it fails saying it is empty, so rerun the lane.
+
 Both coverage readers reject invalid numeric counts before scoring. Counts must
 be nonnegative integers, including integral JSON numbers such as `1.0`; strings,
 booleans, fractions and non-finite values are refused. A coverage.py summary also
-cannot report more covered lines or branches than its declared total. A bad
+cannot report more covered lines or branches than its declared total. A field the
+format writes as an object or a list that holds something else, such as an istanbul `s`
+of `null`, is refused naming the file, the field and the type it holds. A bad
 artifact fails its lane with the input named in the error.
 
 A count that is missing is refused the same way, never read as a zero. In istanbul every
@@ -282,10 +290,12 @@ Both exit 0. That is the [wrong `path_prefix`](#running-from-a-subdirectory) fai
 other side: the lane ran, the artifact parsed, and the score is wrong. `0 measured` on a lane
 that ran is the number to read.
 
-Three shapes do fail loudly. An `fnMap` entry with no `decl` exits 5:
+Three shapes do fail loudly. An `fnMap` entry with no `decl.start.line` exits 5 naming the
+file and the entry, as istanbul 0.x wrote no `decl`. Before 0.8.1 the line held only
+`'decl'`:
 
 ```
-crapkit: lane 'js' FAILED: unparseable istanbul artifact /repo/.crapkit/cov/js/coverage-final.json: 'decl'
+crapkit: lane 'js' FAILED: unparseable istanbul artifact /repo/.crapkit/cov/js/coverage-final.json: src/a.ts: fnMap['0'] has no decl.start.line (every istanbul reporter writes one; regenerate the artifact with the runner's reporter)
 ```
 
 So does an entry with no `loc.end.line`. Read as the declaration line, as it was before

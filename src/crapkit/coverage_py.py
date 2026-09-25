@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 from . import covstream
 from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
+from .repotext import json_kind
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -101,10 +102,10 @@ def _region_start(name: str, fn: dict) -> int:
     return start
 
 
-def _fn_coverage(name: str, fn: dict) -> FnCoverage:
-    summary = _admit_summary(name, fn.get("summary"))
+def _fn_coverage(name: str, fn: object) -> FnCoverage:
+    summary = _admit_summary(name, fn.get("summary") if isinstance(fn, dict) else None)
     start = _region_start(name, fn)
-    lines = list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
+    lines = _line_list(name, fn, "executed_lines") + _line_list(name, fn, "missing_lines")
     end = max(lines) if lines else start
     return FnCoverage(name=name, start=start, end=end,
                       invoked=summary.get("covered_lines", 0) > 0,
@@ -112,6 +113,16 @@ def _fn_coverage(name: str, fn: dict) -> FnCoverage:
                       branches_covered=summary.get("covered_branches", 0),
                       statements_total=summary.get("num_statements", 0),
                       statements_covered=summary.get("covered_lines", 0))
+
+
+def _line_list(name: str, fn: dict, key: str) -> list[int]:
+    """A region's executed or missing lines: a list of line numbers when the
+    key is there, as coverage.py writes it."""
+    lines = fn.get(key, [])
+    if not isinstance(lines, list) or not all(type(line) is int for line in lines):
+        raise ValueError(f"{name}: {key} holds {json_kind(lines)}, not a list of line numbers; "
+                         f"{_REGENERATE}")
+    return lines
 
 
 def has_regions(data: object) -> bool:
@@ -266,10 +277,10 @@ class _Files:
         self.branch_counted = 0
         self.branchless: list[str] = []
 
-    def add(self, prefix: str, raw_path: str, data: dict) -> None:
+    def add(self, prefix: str, raw_path: str, data: object) -> None:
         self.total += 1
         path = measured_key(prefix, raw_path)
-        self.dead[path] = set(data.get("missing_lines", ()))
+        self.dead[path] = set(_file_entry(path, data).get("missing_lines", ()))
         if not has_regions(data):
             self.regionless.append(raw_path)
             return
@@ -277,6 +288,15 @@ class _Files:
         branchless = _branchless(path, data)
         self.branchless += branchless
         self.branch_counted += len(self.per_file[path]) - len(branchless)
+
+
+def _file_entry(path: str, data: object) -> dict:
+    """One file's entry under "files", which coverage.py always writes as an
+    object."""
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: the file entry holds {json_kind(data)}, not an object; "
+                         f"{_REGENERATE}")
+    return data
 
 
 def _read_functions(path: str, data: dict) -> list[FnCoverage]:

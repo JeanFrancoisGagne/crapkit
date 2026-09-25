@@ -152,6 +152,24 @@
   counts, which scored from its statements. A report with no `meta` is judged by the
   counts its functions carry, where it said its term was statement-based while scoring
   on branches. Each refusal says to regenerate the report.
+- A coverage artifact that starts with a UTF-8 byte-order mark reads past it, as a copy
+  saved with PowerShell's `Out-File -Encoding utf8` has one. Both readers refused it at
+  exit 5 as `istanbul artifact is not a JSON object` or `coverage.py report is not a JSON
+  object`. The digest a run records is still the file's own bytes, mark included.
+- An artifact in UTF-16 or holding a byte that is not UTF-8 exits 5 naming the bytes:
+  `cov.json is not UTF-8 (first bytes ff fe = UTF-16, the PowerShell 5.1 Out-File
+  default); save it as UTF-8`, or `(byte e9 at offset 125)`. It printed Python's `'utf-8'
+  codec can't decode byte`. An artifact with no JSON in it, zero bytes or a mark alone,
+  says it is empty and to rerun the lane, where it said the file was not a JSON object.
+- A field the format writes as an object or a list that holds something else exits 5
+  naming the file, the field and the JSON type it holds, and says to regenerate the
+  artifact: ``src/app.ts: `s` holds null, not an object``. That covers an istanbul file
+  entry, `fnMap`, `f`, `s`, `b` or a `statementMap` entry, and a coverage.py file entry,
+  `executed_lines` or `missing_lines`. Each printed a Python error such as `argument of
+  type 'NoneType' is not iterable`. An istanbul `fnMap` entry with no `decl.start.line`,
+  as istanbul 0.x wrote, names the file and the entry where the line held only `'decl'`.
+- A non-finite count such as `NaN` in either format names the artifact and says to
+  regenerate it, where the line said `unparseable coverage artifact` and named no file.
 
 ### Text that is not UTF-8
 

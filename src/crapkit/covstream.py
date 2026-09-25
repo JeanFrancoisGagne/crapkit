@@ -14,7 +14,6 @@ in "files", so the walk descends into that member and hands the rest back whole.
 """
 from __future__ import annotations
 
-import codecs
 import hashlib
 import json
 import math
@@ -23,6 +22,11 @@ from pathlib import Path
 from typing import IO, Iterator
 
 from .errors import ToolError
+from .repotext import JsonStream
+
+# What a refusal of the artifact's own bytes tells the user to do: the file was
+# cut off, merged or rewritten after the coverage tool wrote it.
+REGENERATE = "regenerate the artifact with the coverage tool that wrote it"
 
 # Sized so most file members fit inside one window. A member that straddles
 # the window's end is still framed token by token in Python (_ValueFrame)
@@ -34,6 +38,7 @@ from .errors import ToolError
 CHUNK = 4 << 20
 
 _WS = r"[ \t\r\n]*"
+_JSON_SPACE = " \t\r\n"
 _MEMBER = r'("(?:[^"\\]|\\.)*")' + _WS + ':' + _WS
 _FIRST_MEMBER = re.compile(_WS + _MEMBER, re.DOTALL)
 _NEXT_MEMBER = re.compile(_WS + ',' + _WS + _MEMBER, re.DOTALL)
@@ -44,7 +49,7 @@ _CLOSE_RE = re.compile(_WS + r"\}" + _WS + r"\Z")
 def _finite_number(token: str) -> float:
     number = float(token)
     if not math.isfinite(number):
-        raise ToolError(f"unparseable coverage artifact: non-finite JSON number {token}")
+        raise ValueError(f"non-finite JSON number {token}; {REGENERATE}")
     return number
 
 
@@ -61,10 +66,10 @@ class _Window:
     that went past. Offsets stay valid across a refill because refilling only
     appends; only drop() ever moves them, and it says so."""
 
-    def __init__(self, handle: IO[bytes], chunk: int = CHUNK):
+    def __init__(self, handle: IO[bytes], chunk: int = CHUNK, what: str = "the artifact"):
         self._handle = handle
         self._chunk = max(chunk, 1)
-        self._decoder = codecs.getincrementaldecoder("utf-8")()
+        self._decoder = JsonStream(what)
         self.hasher = hashlib.sha256()
         self.buf = ""
         self.pos = 0
@@ -181,10 +186,12 @@ def _value_ended(w: _Window, end: int) -> bool:
 
 
 def _available_value(w: _Window, start: int):
-    """Keep the C decoder fast path when the current window holds the value."""
+    """Keep the C decoder fast path when the current window holds the value.
+    Only a grammar error can mean the value runs past the window; a non-finite
+    number is refused where it stands."""
     try:
         value, end = _DECODER.raw_decode(w.buf, start)
-    except ValueError:
+    except json.JSONDecodeError:
         return None
     return (value, end) if _value_ended(w, end) else None
 
@@ -205,15 +212,24 @@ def _enter_object(w: _Window, what: str) -> None:
         pass
     opening = _OPEN_RE.match(w.buf, w.pos)
     if opening is None:
-        raise ValueError(f"{what} is not a JSON object")
+        raise ValueError(_not_an_object(w, what))
     w.drop(opening.end())
+
+
+def _not_an_object(w: _Window, what: str) -> str:
+    """A file that ends before any JSON is empty, not malformed: the coverage
+    tool never wrote it, or was stopped before it did."""
+    if w.eof and not w.buf[w.pos:].strip(_JSON_SPACE):
+        return (f"{what} is empty: the file holds no JSON; rerun the lane so its coverage "
+                "tool writes it")
+    return f"{what} is not a JSON object; {REGENERATE}"
 
 
 def _expect_document_end(w: _Window) -> None:
     while w.refill():
         pass
     if _CLOSE_RE.match(w.buf, w.pos) is None:
-        raise ValueError(f"unexpected content at {w.buf[w.pos:w.pos + 80]!r}")
+        raise ValueError(f"unexpected content at {w.buf[w.pos:w.pos + 80]!r}; {REGENERATE}")
 
 
 def _take_member(w: _Window, member) -> tuple[str, object]:
@@ -243,7 +259,7 @@ def split_window(w: _Window) -> Iterator[tuple[str, object]]:
 def _leave_object(w: _Window, what: str) -> None:
     close = _CLOSE_INNER.match(w.buf, w.pos)
     if close is None:
-        raise ValueError(f"unterminated {what}")
+        raise ValueError(f"unterminated {what}; {REGENERATE}")
     w.drop(close.end())
 
 
@@ -288,11 +304,14 @@ def walk_report(w: _Window, target: str) -> Iterator[tuple[str, object, str]]:
 def _guarded(work, message: str):
     """Run a walk, reporting any parse failure the way the whole-document
     parsers do. A ToolError the walk raised itself is already the right error
-    and keeps its own wording."""
+    and keeps its own wording. The JSON decoder's own error names a line and a
+    column but not what to do, so the fix is added to it."""
     try:
         return work()
     except ToolError:
         raise
+    except json.JSONDecodeError as exc:
+        raise ToolError(f"{message}: {exc}; {REGENERATE}") from exc
     except Exception as exc:
         raise ToolError(f"{message}: {exc}") from exc
 
@@ -304,6 +323,6 @@ def read_walk(path: Path | str, walk, message: str, chunk: int = CHUNK):
     projects its members, and gets back what the walk built and the digest of
     the artifact's own bytes, which costs no second read."""
     with open(path, "rb") as handle:
-        w = _Window(handle, chunk)
+        w = _Window(handle, chunk, Path(path).name)
         result = _guarded(lambda: walk(w), message)
     return result, w.hasher.hexdigest()

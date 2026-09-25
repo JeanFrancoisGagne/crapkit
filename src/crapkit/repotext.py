@@ -13,7 +13,9 @@ UTF-16 file was a traceback instead of a sentence.
   refused with a sentence naming the bytes: `repo_text`.
 - JSON a repository or an installer wrote (package.json, a plugin's manifest and
   hooks file, Claude Code's installed_plugins.json) reads by the same rule and
-  must hold one JSON object, or is refused naming the file: `repo_json`.
+  must hold one JSON object, or is refused naming the file: `repo_json`. A
+  coverage artifact, read a chunk at a time, takes the same rule through
+  `JsonStream`, and `json_kind` names the type a value arrived as.
 - Text crapkit only reads, ranks or passes along (git's free text such as an
   author name or a commit message, a runner's output, an MCP frame) goes
   through `lenient`: a UTF-8 BOM is dropped and each byte that is not UTF-8
@@ -71,16 +73,56 @@ def repo_bytes_text(data: bytes, what: str) -> str:
 
 
 def _not_utf8(what: str, data: bytes, exc: UnicodeDecodeError) -> str:
+    """The refusal for a whole file. The decoder strips a BOM before it reads,
+    so the offset it reports is moved back onto the file's own bytes."""
+    offset = exc.start + (len(data) - len(exc.object))
+    return _not_utf8_at(what, data[:2], offset, data[offset])
+
+
+def _not_utf8_at(what: str, head: bytes, offset: int, byte: int) -> str:
     """The refusal, blaming UTF-16 when the first bytes are its mark and the
-    offending byte otherwise. The decoder strips a BOM before it reads, so the
-    offset it reports is moved back onto the file's own bytes."""
-    head = data[:2]
+    offending byte otherwise."""
     if head in (b"\xff\xfe", b"\xfe\xff"):
         reason = f"first bytes {head.hex(' ')} = UTF-16, the PowerShell 5.1 Out-File default"
     else:
-        offset = exc.start + (len(data) - len(exc.object))
-        reason = f"byte {data[offset]:02x} at offset {offset}"
+        reason = f"byte {byte:02x} at offset {offset}"
     return f"{what} is not UTF-8 ({reason}); save it as UTF-8"
+
+
+class JsonStream:
+    """JSON bytes crapkit did not write, decoded as they arrive by `repo_json`'s
+    rule: a UTF-8 BOM read past, UTF-16 and a byte that is not UTF-8 refused
+    naming `what` and the byte. A coverage artifact runs to hundreds of MB, so
+    covstream feeds it a chunk at a time rather than decoding the whole file.
+
+    The offset a refusal names is counted in the file's own bytes: the decoder
+    reports it inside the bytes it still holds, which always end at the last
+    byte fed."""
+
+    def __init__(self, what: str) -> None:
+        self._what = what
+        self._decoder = codecs.getincrementaldecoder("utf-8-sig")()
+        self._fed = 0
+        self._head = b""
+
+    def decode(self, data: bytes, final: bool = False) -> str:
+        self._fed += len(data)
+        self._head = (self._head + data)[:2]
+        try:
+            return self._decoder.decode(data, final)
+        except UnicodeDecodeError as exc:
+            offset = self._fed - len(exc.object) + exc.start
+            raise ConfigError(_not_utf8_at(self._what, self._head, offset,
+                                           exc.object[exc.start])) from None
+
+
+def json_kind(value: object) -> str:
+    """The JSON type a value arrived as, in the words a refusal prints: the
+    type, not the value, since a long string or a list echoed back tells the
+    reader less than the name of what it holds."""
+    if isinstance(value, dict):
+        return "an object"
+    return _JSON_KINDS.get(type(value), "a number")
 
 
 def repo_json(path: Path, what: str) -> dict:
@@ -100,8 +142,8 @@ def repo_json(path: Path, what: str) -> dict:
         raise ConfigError(f"{what} is not valid JSON ({exc.msg} at line {exc.lineno} "
                           f"column {exc.colno}); fix that line") from None
     if not isinstance(value, dict):
-        kind = _JSON_KINDS.get(type(value), "a number")
-        raise ConfigError(f"{what} holds {kind}, not a JSON object; save one object there")
+        raise ConfigError(f"{what} holds {json_kind(value)}, not a JSON object; "
+                          "save one object there")
     return value
 
 

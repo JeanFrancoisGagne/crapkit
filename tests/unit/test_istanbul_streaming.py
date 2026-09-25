@@ -12,6 +12,7 @@ what they replaced rather than against fixtures:
   of that file's 735 queried lines; resolving it the other way moves 30 line
   owners and 14 of the 200 FnCoverage rows, which is what these tests catch.
 """
+import codecs
 import hashlib
 import json
 import random
@@ -199,12 +200,21 @@ def test_lane_provenance_hashes_the_artifact_bytes(tmp_path, ensure_ascii, inden
     assert prov["artifact_sha256"] == hashlib.sha256(round_trip).hexdigest()
 
 
-def test_a_bom_prefixed_artifact_is_still_a_loud_error(tmp_path):
-    # json.loads rejected a leading BOM before this change and the splitter
-    # rejects it now, so the BOM case never reaches the digest at all.
-    (tmp_path / "cov.json").write_bytes("\ufeff{\"C:/x/a.ts\": {}}".encode("utf-8"))
-    with pytest.raises(ToolError, match="istanbul"):
-        run_lane(tmp_path, _istanbul_lane(), reuse_artifact=True)
+def test_a_bom_prefixed_artifact_reads_past_the_mark_and_hashes_the_mark_too(tmp_path):
+    """A JSON artifact is read past its UTF-8 BOM, as every other JSON file an
+    outside tool writes is. The digest stays the file's own bytes, mark and all,
+    so a copy saved with and without the mark reads the same and hashes apart."""
+    artifact = tmp_path / "cov.json"
+    body = json.dumps(COMPOSITE).encode("utf-8")
+    artifact.write_bytes(body)
+    plain = run_lane(tmp_path, _istanbul_lane(), reuse_artifact=True)
+    artifact.write_bytes(codecs.BOM_UTF8 + body)
+
+    marked = run_lane(tmp_path, _istanbul_lane(), reuse_artifact=True)
+
+    assert marked.coverage == plain.coverage
+    assert marked.provenance["artifact_sha256"] == hashlib.sha256(
+        codecs.BOM_UTF8 + body).hexdigest()
 
 
 def test_lane_digest_is_stable_across_two_reads_of_the_same_file(tmp_path):
