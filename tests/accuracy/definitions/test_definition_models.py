@@ -7,7 +7,8 @@ reaches, the ceiling its scope sets. coverage.py (the pinned oracle) measures
 the Python probes for real; the TypeScript lane replays a hand-written istanbul
 file with two empty functions, one called, one not, because only a function
 with no statements reaches the invoked-or-not clause. crapkit then scores the
-repo once, and each test reads the exported rows and two briefs.
+repo once, and each test reads the exported rows, the SARIF document and five
+briefs.
 
 The coverage.py counts are checked against the hand counts as well, so a
 change in coverage.py shows up as the oracle moving, not as crapkit moving.
@@ -219,7 +220,7 @@ ISTANBUL = {"src/ts/empty.ts": {
 class Want:
     ccn: int
     cov: Fraction
-    flag: str | None
+    flag: str
     ceiling: int
     shared: bool = False
 
@@ -231,7 +232,8 @@ class Want:
 # - untaken, split_up: never called; branches 0 of 2 and 0 of 6.
 # - five: each of four `if`s takes its true arc only: 4 of 8.
 # - one_line: its body shares the def line, which runs at import, so no call
-#   can show; the definition floors it at 0 and asks for split-lines.
+#   can show; the definition floors it at 0, flags it untested (agent-json.md,
+#   the coverage summary's shared-span paragraph) and asks for split-lines.
 # - both_wrapped: an `and` split over two lines is still one statement with no
 #   arc: 1/1. wrapped_sig: the body on a wrapped signature's last line is
 #   one_line's case again: 0 and split-lines.
@@ -245,9 +247,9 @@ EXPECTED = {
     ("src/core/shapes.py", "untaken"): Want(2, Fraction(0), "measured", 3),
     ("src/core/shapes.py", "split_up"): Want(4, Fraction(0), "measured", 3),
     ("src/core/shapes.py", "five"): Want(5, Fraction(1, 2), "measured", 3),
-    ("src/core/shapes.py", "one_line"): Want(2, Fraction(0), None, 3, shared=True),
+    ("src/core/shapes.py", "one_line"): Want(2, Fraction(0), "untested", 3, shared=True),
     ("src/core/shapes.py", "both_wrapped"): Want(2, Fraction(1), "measured", 3),
-    ("src/core/shapes.py", "wrapped_sig"): Want(2, Fraction(0), None, 3, shared=True),
+    ("src/core/shapes.py", "wrapped_sig"): Want(2, Fraction(0), "untested", 3, shared=True),
     ("src/wide/unimported.py", "lonely"): Want(2, Fraction(0), "untested", 6),
     ("src/bare/plain.py", "plain"): Want(2, Fraction(0), "no-lane", 6),
     ("src/gen/gen.py", "generated"): Want(3, Fraction(0), "cc-only", 6),
@@ -302,7 +304,8 @@ def _scored(root, out) -> tuple[dict, dict]:
 def _briefs(root) -> dict:
     driver = drive.Driver(root, date_now=repos.EPOCH + 86_400)
     asks = {"five": ("src/core/shapes.py", "five"), "deep": ("src/wide/nest.py", "deep"),
-            "three": ("src/wide/params.py", "three")}
+            "three": ("src/wide/params.py", "three"), "one_line": ("src/core/shapes.py", "one_line"),
+            "lonely": ("src/wide/unimported.py", "lonely")}
     return {key: driver.json("brief", path, name) for key, (path, name) in asks.items()}
 
 
@@ -366,7 +369,11 @@ def test_coverage_py_gives_and_or_no_branch_arc(measured):
 
 # --- one test per definition ------------------------------------------------------------
 
-@pytest.mark.parametrize("key", sorted(EXPECTED))
+def _name(key: tuple) -> str:
+    return key[1]
+
+
+@pytest.mark.parametrize("key", sorted(EXPECTED), ids=_name)
 def test_cov_follows_its_definition(measured, key):
     row = _row(measured, key)
 
@@ -374,19 +381,19 @@ def test_cov_follows_its_definition(measured, key):
                                                     pytest.approx(float(EXPECTED[key].cov)))
 
 
-@pytest.mark.parametrize("key", sorted(EXPECTED))
+@pytest.mark.parametrize("key", sorted(EXPECTED), ids=_name)
 def test_crap_follows_its_definition(measured, key):
     got = float(_row(measured, key)["crap"])
 
     assert math.isclose(got, _crap(EXPECTED[key]), rel_tol=1e-12)
 
 
-@pytest.mark.parametrize("key", sorted(key for key, want in EXPECTED.items() if want.flag))
+@pytest.mark.parametrize("key", sorted(EXPECTED), ids=_name)
 def test_flag_follows_its_definition(measured, key):
     assert _row(measured, key)["flag"] == EXPECTED[key].flag
 
 
-@pytest.mark.parametrize("key", sorted(EXPECTED))
+@pytest.mark.parametrize("key", sorted(EXPECTED), ids=_name)
 def test_remedy_follows_its_definition(measured, key):
     want = REMEDIES[key[1]]
 
@@ -399,6 +406,18 @@ def test_nesting_follows_its_definition(measured, name, depth):
     """agent-json.md's own examples: seven flat ifs read 1, three-deep reads 3,
     an if inside a with inside an if reads 2 (with adds no level)."""
     assert int(_row(measured, ("src/wide/nest.py", name))["nesting"]) == depth
+
+
+def test_untested_uncovered_lines_follow_their_definition(measured):
+    """lonely: no artifact names its file, so no artifact can name its lines:
+    null, with a note (README's flags table). one_line: the artifact did see
+    its line run, it only cannot tell whose it is, so the lines it names stand:
+    nothing dark, []. The flag and the 0 come from the floor, not from silence."""
+    lonely, one_line = measured.briefs["lonely"], measured.briefs["one_line"]
+
+    assert (lonely["scored"]["flag"], lonely["uncovered_lines"]) == ("untested", None)
+    assert lonely["uncovered_lines_note"]
+    assert (one_line["scored"]["flag"], one_line["uncovered_lines"]) == ("untested", [])
 
 
 def test_nloc_follows_its_definition(measured):
