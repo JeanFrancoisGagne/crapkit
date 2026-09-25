@@ -31,7 +31,7 @@ from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .lane_command import launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
-from .repotext import os_bytes
+from .repotext import lenient, os_bytes
 from .universe import ScopeMatch, owning_scope, path_matchers
 
 
@@ -72,7 +72,7 @@ _ATTEMPT_BANNER = re.compile(r"--- attempt \d+ ---")
 def _log_lines(log_path: Path) -> list[str]:
     if not log_path.is_file():
         return []
-    return log_path.read_text(encoding="utf-8", errors="replace").strip().splitlines()
+    return lenient(log_path.read_bytes()).strip().splitlines()
 
 
 def _tail_lines(lines: list[str], budget: int) -> list[str]:

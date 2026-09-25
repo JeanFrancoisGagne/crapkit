@@ -1,7 +1,6 @@
 """Git shell layer: the tracked-file universe and the current commit."""
 from __future__ import annotations
 
-import io
 import os
 import re
 import shutil
@@ -14,7 +13,7 @@ from pathlib import Path
 
 from .errors import GitError, ToolError
 from .gitpaths import nul_paths, nul_records, split_record
-from .repotext import lenient
+from .repotext import exact_text, lenient, lenient_lines
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
@@ -91,7 +90,7 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subpro
     if binary:
         return res
     return subprocess.CompletedProcess(res.args, res.returncode,
-                                       res.stdout.decode("utf-8", "surrogateescape"), lenient(res.stderr))
+                                       exact_text(res.stdout), lenient(res.stderr))
 
 
 def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False):
@@ -145,7 +144,7 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     with proc:
-        yield from io.TextIOWrapper(proc.stdout, encoding="utf-8", errors="replace", newline="\n")
+        yield from lenient_lines(proc.stdout)
         stderr = lenient(proc.stderr.read())
     if proc.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed in {root}: {stderr.strip()}")
@@ -348,7 +347,7 @@ def _batch_stream(root: Path, requests: bytes) -> bytes:
         raise GitError("git executable not found") from exc
     if res.returncode != 0:
         raise GitError(f"git cat-file --batch failed in {root}: "
-                       f"{res.stderr.decode('utf-8', 'replace').strip()}")
+                       f"{lenient(res.stderr).strip()}")
     return res.stdout
 
 
@@ -360,7 +359,7 @@ def _framed_blob(stream: bytes, pos: int) -> tuple[bytes, int]:
     zero exit, so the absent case is detected here, not from a return code.
     """
     end = stream.index(b"\n", pos)
-    header = stream[pos:end].decode("utf-8", "replace")
+    header = lenient(stream[pos:end])
     if header.endswith(" missing"):
         raise GitError(f"git cat-file --batch: {header[:-len(' missing')]} is not in the index")
     body_at = end + 1
@@ -490,7 +489,7 @@ class SourcePatch:
         self._read = _Started(root, _source_diff_args(basis, paths), stdin=False)
 
     def result(self) -> str:
-        patch = self._read.result().decode("utf-8", "surrogateescape")
+        patch = exact_text(self._read.result())
         if "\nBinary files " not in patch:
             return patch
         paths = _binary_source_paths(self._root, self._basis, self._paths)
@@ -498,7 +497,7 @@ class SourcePatch:
             return patch
         forced = _Started(self._root, _source_diff_args(self._basis, paths, force_text=True), stdin=False)
         try:
-            return patch + forced.result().decode("utf-8", "surrogateescape")
+            return patch + exact_text(forced.result())
         finally:
             forced.close()
 

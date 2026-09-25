@@ -21,7 +21,16 @@ UTF-16 file was a traceback instead of a sentence.
   through `lenient`: a UTF-8 BOM is dropped and each byte that is not UTF-8
   reads as U+FFFD. git, Node and a browser read such bytes the same way, and
   one of them in an author name inside the churn window used to stop every
-  command that reads churn.
+  command that reads churn. `lenient_lines` and `lenient_decoder` apply the
+  same rule to a stream and to text inflated a chunk at a time.
+- Output crapkit hands back whole (a directory git names, which must still
+  open; a patch whose body bytes a mutant keeps; a .gitignore it appends to)
+  goes through `exact_text`, which keeps each byte that is not UTF-8 as the
+  lone surrogate Python gives a POSIX path. Text crapkit writes to a child's
+  stdin goes through `child_input`.
+- A pytest configuration file (pytest.ini, pyproject.toml, tox.ini, setup.cfg)
+  reads through `pytest_config_text`, as pytest reads it: a BOM stays, so a
+  file pytest refuses gives crapkit no testpaths either.
 - A source file the scorer reads goes through `source_chars`, and one crapkit
   rewrites (a mutant) through `source_text` and back through `source_bytes`,
   which return every byte it held. Both take the same order of encodings;
@@ -31,14 +40,19 @@ UTF-16 file was a traceback instead of a sentence.
   POSIX. `os_bytes` turns it back into the bytes the OS meant, for a hash or a
   lock key. `os_text` makes it text a store or a file can hold.
 
-A path git names is another kind, and `gitpaths` owns it.
+A path git names is another kind, and `gitpaths` owns it. Any other module
+that spells an errors policy is named, with the seam that moves it, in
+test_repo_text's guard, and a new one fails it.
 """
 from __future__ import annotations
 
 import codecs
+import io
 import json
 import os
+from collections.abc import Iterator
 from pathlib import Path
+from typing import IO
 
 from .errors import ConfigError
 
@@ -150,6 +164,43 @@ def repo_json(path: Path, what: str) -> dict:
 def lenient(data: bytes) -> str:
     """UTF-8 with a leading BOM dropped and each undecodable byte as U+FFFD."""
     return data.decode("utf-8-sig", "replace")
+
+
+def lenient_lines(stream: IO[bytes]) -> Iterator[str]:
+    """`lenient` a line at a time, for output too long to hold: a BOM at the
+    start dropped, each byte that is not UTF-8 as U+FFFD. A line ends at LF
+    alone, so a CR inside an author name stays inside its line."""
+    return io.TextIOWrapper(stream, encoding="utf-8-sig", errors="replace", newline="\n")
+
+
+def lenient_decoder() -> codecs.IncrementalDecoder:
+    """`lenient` for text that arrives a chunk at a time, such as inflated
+    deflate, where a chunk can end inside a multi-byte character."""
+    return codecs.getincrementaldecoder("utf-8-sig")("replace")
+
+
+def exact_text(data: bytes) -> str:
+    """Bytes as text that keeps every byte: UTF-8, each byte that is not UTF-8
+    as the lone surrogate Python gives a POSIX path, so encoding it back with
+    surrogateescape gives the same bytes."""
+    return data.decode("utf-8", "surrogateescape")
+
+
+def pytest_config_text(data: bytes) -> str:
+    """A pytest configuration file as pytest reads it: UTF-8 with a leading BOM
+    kept as U+FEFF. pytest refuses such a file (`unexpected line:
+    '\\ufeff[pytest]'`), and configparser and tomllib refuse the same text, so
+    crapkit takes no testpaths from a file pytest cannot run with. A byte that
+    is not UTF-8 reads as U+FFFD."""
+    return data.decode("utf-8", "replace")
+
+
+def child_input(text: str) -> bytes:
+    """Text crapkit writes to a child's stdin, as UTF-8 with each LF written as
+    the OS line ending, as a text-mode pipe writes it. A lone surrogate an OS
+    string carried in, a path or a reason in bytes that are not UTF-8, reads
+    as U+FFFD instead of ending the command."""
+    return os_text(text).replace("\n", os.linesep).encode("utf-8")
 
 
 def utf16_marked(data: bytes) -> bool:

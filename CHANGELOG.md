@@ -102,6 +102,9 @@
   a byte-order mark stay byte for byte, and the new entries take the file's own line
   ending, where a CRLF `.gitignore` came back all LF and a cp1252 comment ended `init` after
   `crapkit.toml` was written. A UTF-16 `.gitignore` is named with the fix and left as it was.
+- `init` reads each `.gitignore` line past a UTF-8 byte-order mark, as git does. A
+  `.crapkit/` first line behind the mark already ignores the store, in the repo's own
+  `.gitignore` or in one above a nested init, and `init` no longer appends a second one.
 - `init` writes `.gitignore` before `crapkit.toml`. Run over a `crapkit.toml` an earlier run
   left behind, it adds the missing `.gitignore` entries, says so and exits 0, leaving
   `crapkit.toml` byte for byte; 0.8.0 refused with `crapkit.toml already exists`, so

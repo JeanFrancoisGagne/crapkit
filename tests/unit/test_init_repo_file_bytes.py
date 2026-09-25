@@ -319,3 +319,21 @@ def test_a_second_init_adds_the_entries_of_the_lanes_the_config_declares(tmp_pat
     assert code == 0, out.err
     assert (root / ".gitignore").read_bytes() == b"# crapkit\n.crapkit/\ncoverage/\n"
     assert out.out.endswith("added to .gitignore: .crapkit/, coverage/\n")
+
+
+@pytest.mark.parametrize("before", [codecs.BOM_UTF8 + b"# crapkit\n.crapkit/\n",
+                                    codecs.BOM_UTF8 + b".crapkit/\r\nbuild/\r\n"],
+                         ids=["bom-lf", "bom-crlf-entry-first"])
+def test_init_adds_nothing_to_a_bom_gitignore_that_already_ignores_the_store(
+        tmp_path, capsys, before):
+    """git reads a .gitignore past its BOM, so a `.crapkit/` first line behind
+    one already ignores the store. init read the mark as part of that line and
+    appended a second `.crapkit/`."""
+    root = _repo(tmp_path, {b".gitignore": before})
+
+    code, out = _init(root, capsys)
+
+    assert code == 0, out.err
+    assert (root / ".gitignore").read_bytes() == before
+    assert "added to .gitignore" not in out.out
+    assert git(root, "check-ignore", ".crapkit/x").strip() == b".crapkit/x"

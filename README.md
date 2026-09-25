@@ -1032,8 +1032,9 @@ that does not parse and one that holds an array or another value, as in
 nested one, a test fixture say, is skipped with one warning line naming it.
 
 `init` writes `.gitignore` before `crapkit.toml`, and appends in that file's own line ending
-without touching a byte already there. A UTF-16 `.gitignore`, which git cannot read either, is
-named on stderr with the fix and left as it was. Run `init` again over an existing
+without touching a byte already there. It reads the lines past a UTF-8 byte-order mark, as git
+does, so an entry already there is not added twice. A UTF-16 `.gitignore`, which git cannot
+read either, is named on stderr with the fix and left as it was. Run `init` again over an existing
 `crapkit.toml` and it adds the `.gitignore` entries its lanes need, says what it finished,
 exits 0 and leaves `crapkit.toml` byte for byte; with nothing missing it refuses with
 `already exists`.

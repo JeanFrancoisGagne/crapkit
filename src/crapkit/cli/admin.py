@@ -157,9 +157,10 @@ def _present_markers(root: Path) -> frozenset[str]:
 def _marker_texts(root: Path) -> dict[str, str]:
     """The pytest config files this repo carries, by name. Presence of one picks
     the lane; `testpaths` inside it says whether one lane can measure them all."""
+    from ..repotext import pytest_config_text
     from ..scaffold import PYTEST_MARKERS
 
-    return {name: (root / name).read_text(encoding="utf-8", errors="replace")
+    return {name: pytest_config_text((root / name).read_bytes())
             for name in PYTEST_MARKERS if (root / name).is_file()}
 
 
@@ -503,8 +504,9 @@ def _store_ignored_above(root: Path) -> bool:
 def _ignores_store(gitignore: Path) -> bool:
     if not gitignore.is_file():
         return False
-    lines = {line.strip() for line in
-             gitignore.read_text(encoding="utf-8", errors="replace").splitlines()}
+    from ..repotext import lenient
+
+    lines = {line.strip() for line in lenient(gitignore.read_bytes()).splitlines()}
     return bool(lines & {".crapkit/", ".crapkit"})
 
 
@@ -539,10 +541,13 @@ def _print_gitignore_added(added: list[str]) -> None:
 
 
 def _extended_gitignore(raw: bytes, lanes: tuple) -> tuple[bytes, list[str]]:
-    """`raw` with crapkit's entries appended in the line ending it already uses."""
+    """`raw` with crapkit's entries appended in the line ending it already uses.
+    The lines are compared as git reads them, past a UTF-8 BOM; the file's own
+    bytes are kept, and only the appended tail is new."""
+    from ..repotext import lenient
     from ..scaffold import gitignore_update
 
-    current = raw.decode("utf-8", "surrogateescape")
+    current = lenient(raw)
     text, added = gitignore_update(current, lanes)
     newline = "\r\n" if b"\r\n" in raw else "\n"
     return raw + text[len(current):].replace("\n", newline).encode("utf-8"), added
@@ -838,6 +843,7 @@ def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str] | None:
     versions are split off the right."""
     from tempfile import TemporaryFile
     from ..procs import run_bounded
+    from ..repotext import lenient
 
     try:
         with TemporaryFile() as output:
@@ -845,7 +851,7 @@ def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str] | None:
                                _PROBE_TIMEOUT_SECONDS, stream=output,
                                **spec.popen_kwargs({"PYTHONIOENCODING": "utf-8"}))
             output.seek(0)
-            report = output.read().decode("utf-8", errors="replace")
+            report = lenient(output.read())
     except OSError:
         return None
     return _runner_versions(report) if code == 0 else None

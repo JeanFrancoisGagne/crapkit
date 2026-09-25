@@ -443,7 +443,7 @@ def _raise_launch_error(errors):
     try:
         arguments = json.loads(payload)
     except (ValueError, UnicodeDecodeError) as error:
-        raise ToolError("command launcher failed: " + payload.decode("utf-8", "replace")) from error
+        raise ToolError("command launcher failed: " + lenient(payload)) from error
     raise OSError(*arguments)
 
 
