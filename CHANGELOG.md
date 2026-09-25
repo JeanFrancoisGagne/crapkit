@@ -115,6 +115,13 @@ version stays 11, so no repo re-seeds.
   refresh lines, the ones the README runs after an upgrade. Its old line, `claude plugin
   install crapkit@crapkit`, only answers that the plugin is already installed, and the
   old version stays in place.
+- The README, the adoption page, the handbook and `crapkit-onboard` name where a copy of
+  `plugin/skills/*` goes: `~/.claude/skills` for Claude Code, `$CODEX_HOME/skills`
+  (`~/.codex/skills` by default) for Codex, `~/.gemini/skills` for Gemini CLI. They said
+  "that runtime's equivalent" or "its own skills directory". Gemini CLI 0.61.0 reads a
+  skill's name and description alone, so it lists `crapkit-onboard` to its model;
+  `gemini skills disable crapkit-onboard --scope user` takes it out once the repo is
+  adopted.
 
 ## 0.8.0 — 2026-09-23
 

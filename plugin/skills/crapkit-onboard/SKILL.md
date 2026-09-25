@@ -60,9 +60,15 @@ a path that does not exist both get it.
 Install it after the repo scores, not before. Earlier, `crapkit-onboard` points at a config
 that does not exist yet and `crapkit` points at a store with no run in it.
 
-Fallback for a runtime with no plugin marketplace: copy `plugin/skills/*` from a clone into
-`~/.claude/skills`, or that runtime's equivalent. A copy gets the skills alone, never the
-hook or the MCP server, and carries no version to compare against the CLI.
+Fallback for a runtime with no plugin marketplace: copy `plugin/skills/*` from a clone,
+each skill's whole directory, into the one that runtime reads: `~/.claude/skills` for
+Claude Code, `$CODEX_HOME/skills` (`~/.codex/skills` by default) for Codex,
+`~/.gemini/skills` for Gemini CLI. A copy gets the skills alone, never the hook or the MCP
+server, and carries no version to compare against the CLI. Codex keeps `crapkit-onboard`
+out of the model's list through the skill's `agents/openai.yaml`, which the whole-directory
+copy carries. Gemini CLI reads no such file and lists all three skills to its model; once
+the repo is adopted, `gemini skills disable crapkit-onboard --scope user` takes the
+onboarding skill out.
 
 ### Optional, Claude Code: advise Bash writes too
 

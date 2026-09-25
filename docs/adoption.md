@@ -272,4 +272,8 @@ Every other agent takes the MCP server from its own config file, and
 | anything else | the pre-commit hook and CI, which are git and shell and need no harness at all |
 
 A runtime with a skills directory but no marketplace can copy `plugin/skills/*` into it and
-get the skills alone. The MCP contract is in [agent-json.md](agent-json.md#mcp-server).
+get the skills alone: `~/.claude/skills` for Claude Code, `$CODEX_HOME/skills`
+(`~/.codex/skills` by default) for Codex, `~/.gemini/skills` for Gemini CLI. Codex and
+Claude Code keep `crapkit-onboard` out of the model's list, Gemini CLI does not;
+`gemini skills disable crapkit-onboard --scope user` takes it out once the repo is
+adopted. MCP wiring is in [agent-json.md](agent-json.md#mcp-server).
