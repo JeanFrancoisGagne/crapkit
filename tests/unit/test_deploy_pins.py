@@ -958,3 +958,44 @@ def test_the_runner_venv_is_made_again_when_its_requirements_change(tmp_path, mo
     toolchain.install_runner(Path("uv"), "py", tmp_path)
 
     assert made == ["venv", "pip", "venv", "pip"]
+
+
+# A failed build ended in a CalledProcessError that spelled out every build arg
+# and named no log, and an arm64 build whose QEMU handler went away mid-build
+# said only `cut: Exec format error` in a log nobody was pointed at.
+
+def _failing_build(monkeypatch, tmp_path, printed):
+    monkeypatch.setattr(run, "unchanged", lambda *a: False)
+    monkeypatch.setattr(run, "choose_builder", lambda *a: "b")
+    monkeypatch.setattr(run, "disk_usage", lambda: "")
+
+    def build(argv, stdout=None, **kwargs):
+        stdout.write(printed)
+        return subprocess.CompletedProcess(argv, 1)
+    monkeypatch.setattr(run.subprocess, "run", build)
+
+
+def test_a_failed_build_names_its_log_and_the_last_lines_it_printed(monkeypatch, tmp_path):
+    lines = "".join(f"#{n} step {n}\n" for n in range(40)) + "ERROR: failed to solve: npm ci exited 1\n"
+    _failing_build(monkeypatch, tmp_path, lines)
+    monkeypatch.setattr(run, "emulation_problem", lambda pins, image: None)
+
+    with pytest.raises(SystemExit) as stopped:
+        run.build(PINS, "gui", "local", False, tmp_path)
+    said = str(stopped.value)
+
+    assert said.startswith(f"run: building gui exited 1; the whole log is {tmp_path / 'build-gui.log'}")
+    assert said.endswith("ERROR: failed to solve: npm ci exited 1") and "#20 step 20" in said
+    assert "#10 step 10" not in said and "--build-arg" not in said
+
+
+def test_an_arm64_build_that_lost_its_qemu_handler_says_so(monkeypatch, tmp_path):
+    _failing_build(monkeypatch, tmp_path, "#16 676.9 /bin/sh: 1: cut: Exec format error\n")
+    checks = iter([None, "run: this Docker host cannot run linux/arm64 containers (exec format error)"])
+    monkeypatch.setattr(run, "emulation_problem", lambda pins, image: next(checks))
+
+    with pytest.raises(SystemExit) as stopped:
+        run.build(PINS, "cells-arm64", "local", False, tmp_path)
+
+    assert str(stopped.value).endswith("the QEMU handler went away during the build: run: this Docker host "
+                                       "cannot run linux/arm64 containers (exec format error)")

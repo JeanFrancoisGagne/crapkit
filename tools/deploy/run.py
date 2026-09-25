@@ -275,6 +275,20 @@ def emulation_problem(pins: dict, image: str, runner=subprocess.run) -> str | No
             f"`{QEMU_FIX}`, or build {image} on an arm64 host")
 
 
+BUILD_TAIL = 30
+
+
+def build_failure(pins: dict, image: str, log: Path, code: int) -> str:
+    """What a failed build tells its user: where the whole log is, its last
+    lines, and, when an emulated platform can no longer run, that the QEMU
+    handler went away during the build (its log says only 'Exec format error')."""
+    tail = log.read_text(encoding="utf-8", errors="replace").splitlines()[-BUILD_TAIL:]
+    said = [f"run: building {image} exited {code}; the whole log is {log}", *tail]
+    problem = emulation_problem(pins, image)
+    lost = [f"run: the QEMU handler went away during the build: {problem}"] if problem else []
+    return "\n".join(said + lost)
+
+
 def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, requested: str | None = None) -> dict:
     """Build one target and record its time, its size, the builder and
     `docker system df` before and after in <out>/build.json. An image already
@@ -290,8 +304,10 @@ def build(pins: dict, image: str, cache: str, no_cache: bool, out: Path, request
     builder = choose_builder(pins, requested, cache)
     before = disk_usage()
     with (out / f"build-{image}.log").open("w", encoding="utf-8") as stream:
-        subprocess.run(build_command(pins, image, cache, no_cache, builder, inputs), check=True, stdout=stream,
-                       stderr=subprocess.STDOUT)
+        done = subprocess.run(build_command(pins, image, cache, no_cache, builder, inputs), stdout=stream,
+                              stderr=subprocess.STDOUT)
+    if done.returncode != 0:
+        raise SystemExit(build_failure(pins, image, out / f"build-{image}.log", done.returncode))
     return _record(out, {"image": image, "builder": builder, "seconds": round(time.monotonic() - started, 1),
                          "size_bytes": image_size(tag), "no_cache": no_cache, "df_before": before,
                          "df_after": disk_usage()})
