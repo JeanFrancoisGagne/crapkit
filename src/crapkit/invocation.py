@@ -4,8 +4,8 @@ Every next-step and every refusal names the command the reader runs next, and
 they all used to spell it `crapkit`. That is the console script, and two
 documented ways of running crapkit put no such name on PATH: `python -m crapkit`
 from a source checkout (README), and `exec python -m crapkit hook-precommit`,
-the line README's git hook falls back to when the hook's PATH holds no
-`crapkit`. In both, `init` finished by telling the reader to run `crapkit
+the line README's git hook falls back to when the hook's PATH holds neither
+`crapkit` nor `uvx`. In both, `init` finished by telling the reader to run `crapkit
 coverage` and the shell answered 127.
 
 The process already knows. `sys.argv[0]` is the console script when that is what
