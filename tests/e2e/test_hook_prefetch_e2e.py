@@ -95,7 +95,8 @@ def test_an_unstaged_tree_still_closes_the_reads_it_started(staged, capsys):
 def test_a_failing_git_read_still_reaches_the_caller_as_a_git_error(tmp_path, capsys):
     """A started process reports its own failure: outside a repo the staged diff
     exits nonzero, and that has to surface as GitError (exit 4), not as an empty
-    diff that reads like a commit with nothing in it."""
+    diff that reads like a commit with nothing in it. The refusal names the
+    missing repository, not the diff's 129 lines of --no-index usage."""
     loose = tmp_path / "loose"
     (loose / "src").mkdir(parents=True)
     (loose / "crapkit.toml").write_text(CONFIG, encoding="utf-8")
@@ -104,15 +105,14 @@ def test_a_failing_git_read_still_reaches_the_caller_as_a_git_error(tmp_path, ca
         cmd_hook_precommit(hook_args(loose))
 
     assert exc.value.exit_code == 4
-    assert "diff --cached" in str(exc.value)
-    assert f"failed in {loose}" in str(exc.value)
+    assert str(exc.value).startswith(f"{loose} is not a git repository")
     assert "gate:" not in capsys.readouterr().out
 
     res = run_cli(loose, "hook-precommit")
 
     assert res.returncode == 4, res.stdout + res.stderr
-    assert "diff --cached" in res.stderr
-    assert f"failed in {loose}" in res.stderr
+    assert res.stderr.startswith(f"crapkit: {loose} is not a git repository")
+    assert "usage:" not in res.stderr
     assert "gate:" not in res.stdout
 
 

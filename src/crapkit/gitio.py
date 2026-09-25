@@ -77,8 +77,53 @@ def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: b
     res = _spawn(root, argv, binary=binary)
     if res.returncode != 0:
         error = res.stderr.decode("utf-8", "replace") if binary else res.stderr
-        raise GitError(f"git {' '.join(named)} failed in {root}: {error.strip()}")
+        raise _failure(root, named, res.returncode, error)
     return res.stdout.decode("utf-8") if binary else res.stdout
+
+
+_NOT_A_REPOSITORY = ("{root} is not a git repository, and no directory above it is one: crapkit "
+                     "reads the files it scores and the commit it measures from git, so run it "
+                     "inside a checkout, or run git init, git add and git commit here first")
+_NO_COMMIT = ("the git repository at {root} has no commit yet: crapkit measures a commit, so "
+              "make the first one (git add, then git commit) and run it again")
+
+
+def _failure(root: Path, named: tuple[str, ...], returncode: int, reason: str) -> GitError:
+    """What a failed git command tells the user: what the repository lacks when
+    that is why it failed, else the command and git's own reason."""
+    return GitError(_gap_behind(root, returncode)
+                    or f"git {' '.join(named)} failed in {root}: {reason.strip()}")
+
+
+def _gap_behind(root: Path, returncode: int) -> str | None:
+    """The repository state behind a git exit, asked only when git died.
+
+    128 is git's fatal exit and 129 its usage error, and a repository git cannot
+    use ends every command in one of them: outside a repository `git diff`
+    falls back to `--no-index` and prints 129 lines of usage for `--cached`.
+    Exit 1 is an answer, such as `config --get` on an unset key or
+    `--is-ancestor` saying no, so it costs no probe.
+    """
+    return _repository_gap(root) if returncode >= 128 else None
+
+
+def _repository_gap(root: Path) -> str | None:
+    """What stops git from answering anything in `root`, or None when nothing does.
+
+    One `rev-parse --verify --quiet HEAD` tells the states apart: 0 is a
+    repository with a commit, 1 a repository with no commit yet, and 128 a
+    directory git opens no repository in. There a `.git` on the walk up means
+    git found one and refused it, the `safe.directory` ownership check among
+    others, and git's own message names the fix.
+    """
+    probe = _spawn(root, ("rev-parse", "--verify", "--quiet", "HEAD"))
+    if probe.returncode == 0:
+        return None
+    if probe.returncode == 1:
+        return _NO_COMMIT.format(root=root)
+    if _git_dir(root) is None:
+        return _NOT_A_REPOSITORY.format(root=root)
+    return f"git cannot open the repository at {root}: {probe.stderr.strip()}"
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
@@ -102,7 +147,7 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
         yield from proc.stdout
         stderr = proc.stderr.read()
     if proc.returncode != 0:
-        raise GitError(f"git {' '.join(args)} failed in {root}: {stderr.strip()}")
+        raise _failure(root, args, proc.returncode, stderr)
 
 
 def stage_path(root: Path, rel_path: str) -> None:
@@ -271,7 +316,8 @@ def merge_base(root: Path, ref: str) -> str:
     """
     res = _spawn(root, (*_RELATIVE, "merge-base", ref, "HEAD"))
     if res.returncode != 0:
-        raise GitError(_merge_base_refusal(root, ref, res) + _shallow_fix(root))
+        raise GitError(_gap_behind(root, res.returncode)
+                       or _merge_base_refusal(root, ref, res) + _shallow_fix(root))
     return res.stdout.strip()
 
 
@@ -294,20 +340,23 @@ def _shallow_fix(root: Path) -> str:
 
 def ancestry(root: Path, commit: str, other: str = "HEAD") -> bool | None:
     """True when `commit` is at or behind `other`, False when git says it is
-    not, None when git cannot tell (no repository, or a commit it does not
-    hold). git counts a commit as its own ancestor, which is what "at or
-    behind" needs; `merge-base --is-ancestor` exits 1 for "not", and any other
-    failure is an error."""
-    try:
-        res = subprocess.run(["git", "merge-base", "--is-ancestor", commit, other],
-                             cwd=root, capture_output=True)
-    except FileNotFoundError as exc:
-        raise GitError("git executable not found") from exc
+    not, None when git cannot tell (a commit this clone does not hold). git
+    counts a commit as its own ancestor, which is what "at or behind" needs.
+
+    git exits 1 for no and 128 when it cannot read a commit. A repository with
+    no commit at all is not a no: it raises what the repository lacks, where
+    verify used to blame a rebase for it."""
+    res = _spawn(root, ("merge-base", "--is-ancestor", commit, other))
+    gap = _gap_behind(root, res.returncode)
+    if gap:
+        raise GitError(gap)
     return {0: True, 1: False}.get(res.returncode)
 
 
 def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
-    """True only when git proves `commit` is at or behind `other`."""
+    """True only when git proves `commit` is at or behind `other`. A commit
+    this clone does not hold is a no, which verify then blames on a shallow
+    clone or a rebase."""
     return ancestry(root, commit, other) is True
 
 
@@ -334,8 +383,8 @@ def _batch_stream(root: Path, requests: bytes) -> bytes:
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     if res.returncode != 0:
-        raise GitError(f"git cat-file --batch failed in {root}: "
-                       f"{res.stderr.decode('utf-8', 'replace').strip()}")
+        raise _failure(root, ("cat-file", "--batch"), res.returncode,
+                       res.stderr.decode("utf-8", "replace"))
     return res.stdout
 
 
@@ -420,7 +469,7 @@ class _Started:
         out, err = self._proc.communicate(payload)
         if self._proc.returncode != 0:
             text = err if self._text else err.decode("utf-8", "replace")
-            raise GitError(f"git {' '.join(self._args)} failed in {self._root}: {text.strip()}")
+            raise _failure(self._root, self._args, self._proc.returncode, text)
         return out
 
     def close(self) -> None:
@@ -624,7 +673,7 @@ def _worktree_git(root: Path, *args: str, owner=None) -> str:
     except FileNotFoundError as error:
         raise GitError("git executable not found") from error
     if result.returncode != 0:
-        raise GitError(f"git {' '.join(args)} failed in {root}: {result.stderr.strip()}")
+        raise _failure(root, args, result.returncode, result.stderr)
     return result.stdout
 
 
