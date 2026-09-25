@@ -180,16 +180,8 @@ class RunFreshness(NamedTuple):
 def run_freshness(root: Path, store, latest: dict, head: str) -> RunFreshness:
     """`stale` and the scored files that moved since the run, for every payload
     that carries them, so no two payloads can disagree about one run."""
-    changed, unread = _moved_since(root, _run_record(store, latest["id"]))
+    changed, unread = _moved_since(root, store.run_sources(latest["id"]))
     return RunFreshness(latest["commit"] != head, changed, unread)
-
-
-def _run_record(store, run_id: int) -> dict | None:
-    """What each file RUN_ID scored held when the run scored it, or None when
-    the run recorded nothing: a run an older crapkit wrote, or a store that
-    keeps no such record (`SnapshotStore.run_sources` is the record)."""
-    read = getattr(store, "run_sources", None)
-    return None if read is None else read(run_id)
 
 
 def _moved_since(root: Path, recorded: dict | None) -> tuple[list[str] | None, str]:

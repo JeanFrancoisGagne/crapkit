@@ -33,18 +33,11 @@ def _tree(tmp_path: Path, files: dict[str, str]) -> Path:
     return make_repo(tmp_path / "repo", files=files)
 
 
-def digests(root: Path, paths: list[str]) -> dict:
-    """The content record as the store keeps it: `lane_sources.record` where
-    the content-record module has it, `digests` in a tree from before it."""
-    take = getattr(lane_sources, "record", None) or lane_sources.digests
-    return take(root, paths)
-
-
 # --- the verdict ---------------------------------------------------------------
 
 def test_the_commit_and_the_content_are_two_answers(tmp_path):
     root = _tree(tmp_path, {"src/a.py": "a = 1\n", "src/b.py": "b = 1\n"})
-    record = digests(root, ["src/a.py", "src/b.py"])
+    record = lane_sources.record(root, ["src/a.py", "src/b.py"])
     (root / "src" / "b.py").write_text("b = 2\n", encoding="utf-8")
 
     fresh = run_freshness(root, _store(record), LATEST, LATEST["commit"])
@@ -55,7 +48,7 @@ def test_the_commit_and_the_content_are_two_answers(tmp_path):
 
 def test_a_moved_head_over_unmoved_content_is_stale_with_nothing_changed(tmp_path):
     root = _tree(tmp_path, {"src/a.py": "a = 1\n"})
-    record = digests(root, ["src/a.py"])
+    record = lane_sources.record(root, ["src/a.py"])
 
     fresh = run_freshness(root, _store(record), LATEST, "f" * 40)
 
@@ -64,7 +57,7 @@ def test_a_moved_head_over_unmoved_content_is_stale_with_nothing_changed(tmp_pat
 
 def test_a_deleted_scored_file_counts_as_changed(tmp_path):
     root = _tree(tmp_path, {"src/a.py": "a = 1\n"})
-    record = digests(root, ["src/a.py"])
+    record = lane_sources.record(root, ["src/a.py"])
     (root / "src" / "a.py").unlink()
 
     assert run_freshness(root, _store(record), LATEST, LATEST["commit"]).changed == ["src/a.py"]
@@ -75,15 +68,11 @@ def test_a_run_that_recorded_no_content_reads_null(tmp_path):
         "stale": False, "scored_changes": None}
 
 
-def test_a_store_that_keeps_no_record_reads_null(tmp_path):
-    assert run_freshness(tmp_path, SimpleNamespace(), LATEST, LATEST["commit"]).changed is None
-
-
 def test_a_git_failure_reads_null_and_carries_git_s_error(tmp_path, monkeypatch):
     """A failed read is neither "changed" nor "unchanged": the count is null,
     as for a run that recorded nothing, and the error rides with it."""
     root = _tree(tmp_path, {"src/a.py": "a = 1\n"})
-    record = digests(root, ["src/a.py"])
+    record = lane_sources.record(root, ["src/a.py"])
 
     def refuse(*args, **kwargs):
         raise GitError("git diff failed: fatal: index file corrupt")

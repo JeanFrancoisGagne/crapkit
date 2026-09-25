@@ -300,7 +300,8 @@ def _packet_keys(monkeypatch) -> set[str]:
                             read_scored_file=lambda *a, **k: [row],
                             function_history=lambda *a, **k: [],
                             attempts_for=lambda keys: {key: [] for key in keys},
-                            twin_index=lambda run_id, build: build())
+                            twin_index=lambda run_id, build: build(),
+                            run_sources=lambda run_id: None)
     loader = queue._BriefLoader(Path("/repo"), cfg, store, {"id": 7, "commit": "abc123def4567"})
     # `schema` is stamped on the way out by _print_json, not by the builder
     return set(queue._brief_packet(loader, row)) | {"schema"}

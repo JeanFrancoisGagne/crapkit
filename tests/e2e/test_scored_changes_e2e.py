@@ -26,38 +26,8 @@ import pytest
 
 from conftest import cli_runner, git_commit_all, git_init_repo
 
-from crapkit.store import SnapshotStore
 
 run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
-
-
-@pytest.fixture(autouse=True)
-def run_record(monkeypatch):
-    """Each scored file's content as the run wrote its rows.
-
-    The store keeps this record through `SnapshotStore.run_sources`. In a tree
-    whose store does not keep it yet, a stand-in keeps the same record beside
-    the store, so the readers below are proved against the record's contract
-    now and against the store's own record once it exists.
-    """
-    if hasattr(SnapshotStore, "run_sources"):
-        return
-    from crapkit import lane_sources
-
-    digests = getattr(lane_sources, "record", None) or lane_sources.digests
-    kept: dict = {}
-    real = SnapshotStore.write_run
-
-    def write_run(self, **run):
-        run_id = real(self, **run)
-        root = self._path.resolve().parent.parent
-        kept[(self._path.resolve(), run_id)] = digests(root, {row.path for row in run["rows"]})
-        return run_id
-
-    monkeypatch.setattr(SnapshotStore, "write_run", write_run)
-    monkeypatch.setattr(SnapshotStore, "run_sources",
-                        lambda self, run_id: kept.get((self._path.resolve(), run_id)),
-                        raising=False)
 
 
 def _git(repo: Path, *args: str) -> str:
