@@ -68,10 +68,12 @@ def test_opencode_takes_the_command_and_its_arguments_as_one_array():
     assert entry["command"][:2] == ["crapkit", "mcp"] and "args" not in entry
 
 
-def test_gemini_trusts_the_server_so_a_headless_run_offers_its_tools():
+@pytest.mark.parametrize("harness", ["Gemini CLI", "Qwen Code"])
+def test_the_gemini_family_trusts_the_server_so_a_headless_run_can_call_it(harness):
     """`gemini -p` in the default approval mode drops each tool that would ask
-    for a confirmation: 0 of 12 reached the model without `trust`, 12 with it."""
-    assert first_block("Gemini CLI")["mcpServers"]["crapkit"]["trust"] is True
+    for a confirmation (0 of 12 reached the model without `trust`, 12 with it),
+    and `qwen -p` declines each call it cannot prompt for."""
+    assert first_block(harness)["mcpServers"]["crapkit"]["trust"] is True
 
 
 def test_cline_gives_the_server_a_minute_to_answer_initialize():
@@ -92,6 +94,7 @@ MEASURED = [
     ("Goose", "No supported plugin format found"),
     ("Cline", "cline.log"),
     ("Qwen Code", "Pending approval"),
+    ("Qwen Code", "non-interactive mode cannot prompt for confirmation"),
     ("Zed", "crapkit: not found"),  # PATH comes from the login shell
     ("Junie", ".output.txt"),
     ("Kiro", "sign in"),

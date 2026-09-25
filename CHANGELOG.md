@@ -33,10 +33,11 @@ version stays 11, so no repo re-seeds.
   them to one `mcpServers` block, which OpenCode 1.18.32 and Amp ignore, printing
   `No MCP servers configured` and exiting 0, and which VS Code 1.139.0 ignores in
   `.vscode/mcp.json` with no log and no error.
-- Gemini CLI's block carries `"trust": true`. With the old block `gemini mcp list` showed
-  crapkit connected, and a headless `gemini -p` still handed the model none of the twelve
-  tools, because it drops every tool that would ask for a confirmation. Its section also
-  says that an untrusted folder disables every server and that a project
+- Gemini CLI's and Qwen Code's blocks carry `"trust": true`. With the old block `gemini mcp
+  list` showed crapkit connected, and a headless `gemini -p` still handed the model none of
+  the twelve tools, because it drops every tool that would ask for a confirmation; a
+  headless `qwen -p` offered them and declined every call. The Gemini section also says
+  that an untrusted folder disables every server and that a project
   `.gemini/settings.json` is read only when Gemini starts in that directory.
 - The Claude Agent SDK example passes `allowedTools: ["mcp__crapkit"]`, and the Claude
   Code section and the README's plugin section say that a headless `claude -p` needs

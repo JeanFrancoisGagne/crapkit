@@ -581,7 +581,8 @@ form Claude Code and Cursor read:
     }
 
 Other agents take other keys and fields: OpenCode, Amp and VS Code ignore this block
-without an error, and a headless Gemini CLI offers none of the tools without `"trust": true`.
+without an error, and a headless Gemini CLI or Qwen Code calls none of the tools without
+`"trust": true`.
 [docs/harnesses.md](docs/harnesses.md) gives the block for each agent.
 
 `--repo` names an exact root, as on every subcommand; without it the server walks up from

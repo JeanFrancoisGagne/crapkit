@@ -407,18 +407,25 @@ run no tests; calls can write crapkit's own caches ([the MCP contract](agent-jso
   "mcpServers": {
     "crapkit": {
       "command": "crapkit",
-      "args": ["mcp", "--repo", "/absolute/path/to/your/repo"]
+      "args": ["mcp", "--repo", "/absolute/path/to/your/repo"],
+      "trust": true
     }
   }
 }
 ```
+
+`"trust": true` does here what it does in Gemini CLI. Without it a headless `qwen -p` lists
+crapkit's tools and declines every call, handing the model
+`Qwen Code requires permission to use "mcp__crapkit__list_runs", but that permission was declined
+(non-interactive mode cannot prompt for confirmation).` (measured, 0.24.5).
+`--approval-mode yolo` also lets the calls through, and every other tool's too.
 
 | | Qwen Code |
 |---|---|
 | Config file | `~/.qwen/settings.json`. A server in a project's `.qwen/settings.json` is listed as `Pending approval` and never starts (measured, 0.24.5), so put crapkit in the user file. Qwen Code is a fork of Gemini CLI and reads the same `mcpServers` block. |
 | Starts in | The folder Qwen Code runs in (measured, 0.24.5). |
 | Environment | Qwen Code's own environment (measured, 0.24.5). `env` adds variables. |
-| Versions | No floor measured. |
+| Versions | No floor measured; 0.24.5 is the release measured here. |
 | Plugin hooks | None. |
 | After an upgrade | Start a new session. |
 

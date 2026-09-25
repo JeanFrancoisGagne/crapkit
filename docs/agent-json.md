@@ -1631,8 +1631,8 @@ starts the server and what environment it passes. This is the `mcpServers` form:
 ```
 
 It pastes as it is into Claude Code's `.mcp.json`, Cursor, Kiro, Junie and oh-my-pi; Cline
-takes it with `"timeout": 60` added, and Gemini CLI with `"trust": true`, without which a
-headless `gemini -p` offers the model none of the tools. OpenCode, Amp and VS Code's
+takes it with `"timeout": 60` added, and Gemini CLI and Qwen Code with `"trust": true`,
+without which a headless `gemini -p` or `qwen -p` cannot call the tools. OpenCode, Amp and VS Code's
 `.vscode/mcp.json` read other keys and ignore this block without an error, so take theirs
 from the page above.
 
