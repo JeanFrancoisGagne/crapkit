@@ -30,8 +30,11 @@ ARG SNAPSHOT
 ARG PYTHONS
 ARG PYTHON_OLD
 ARG PYTHON_PRERELEASE
+ARG TARGETARCH
 ARG PREK_LINUX_X64_URL
 ARG PREK_LINUX_X64_SHA256
+ARG PREK_LINUX_ARM64_URL
+ARG PREK_LINUX_ARM64_SHA256
 ARG PIPX_PYZ_URL
 ARG PIPX_PYZ_SHA256
 ENV TZ=UTC LANG=C.UTF-8 LC_ALL=C.UTF-8 DEBIAN_FRONTEND=noninteractive \
@@ -67,7 +70,10 @@ RUN ln -s /opt/node/bin/node /opt/toolchain/bin/node; \
     ln -s /opt/node/lib/node_modules/npm/bin/npm-cli.js /opt/toolchain/bin/npm; \
     ln -s /opt/node/lib/node_modules/npm/bin/npx-cli.js /opt/toolchain/bin/npx
 RUN fetch "$PIPX_PYZ_URL" "$PIPX_PYZ_SHA256" /opt/toolchain/bin/pipx; chmod 755 /opt/toolchain/bin/pipx; \
-    fetch "$PREK_LINUX_X64_URL" "$PREK_LINUX_X64_SHA256" /tmp/prek.tar.gz; \
+    case "$TARGETARCH" in \
+      arm64) fetch "$PREK_LINUX_ARM64_URL" "$PREK_LINUX_ARM64_SHA256" /tmp/prek.tar.gz ;; \
+      *) fetch "$PREK_LINUX_X64_URL" "$PREK_LINUX_X64_SHA256" /tmp/prek.tar.gz ;; \
+    esac; \
     tar -xzf /tmp/prek.tar.gz -C /tmp; install -m 755 /tmp/prek-*/prek /opt/toolchain/bin/prek; rm -rf /tmp/prek*
 RUN useradd --create-home --uid 1000 --shell /bin/sh tester; \
     install -d -o 1000 -g 1000 /work /out /opt/npm-cache; install -d -m 755 /opt/deploy

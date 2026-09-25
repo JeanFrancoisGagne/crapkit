@@ -251,8 +251,10 @@ image = "full"
 # --- downloaded binaries ---------------------------------------------------
 # Every file fetched outside npm and PyPI, postinstall payloads included. The
 # Dockerfile and toolchain.py check the sha256 before anything unpacks it.
-# `image` names the Linux stage that fetches it; `os` = windows / macos rows
-# are what toolchain.py installs natively.
+# `image` names the image that holds it: on a linux row the stage that fetches
+# it, on a windows or macos row the `toolchain.py --harness` level that
+# installs it natively. A windows or macos row with no `image` is a base tool
+# toolchain.py always installs.
 
 [binary.cursor-agent-linux-x64]
 url = "https://downloads.cursor.com/lab/2026.09.23-86fc751/linux/x64/agent-cli-package.tar.gz"
@@ -266,6 +268,14 @@ url = "https://downloads.cursor.com/lab/2026.09.23-86fc751/windows/x64/agent-cli
 sha256 = "9c7232600ca77e7a6327dc9a0036277bd57b66923c6b65fc7abe9d957eb728e2"
 os = "windows"
 arch = "x86_64"
+image = "core"
+
+[binary.cursor-agent-macos-arm64]
+url = "https://downloads.cursor.com/lab/2026.09.23-86fc751/darwin/arm64/agent-cli-package.tar.gz"
+sha256 = "fa3fe13d5589c586ff132a24c16eea96fb8efde88afdefddcd11d80fa199f3a5"
+os = "macos"
+arch = "aarch64"
+image = "core"
 
 [binary.junie-linux-x64]
 url = "https://github.com/JetBrains/junie/releases/download/1468.30/junie-release-1468.30-linux-amd64.zip"
@@ -293,6 +303,14 @@ url = "https://github.com/j178/prek/releases/download/v0.5.3/prek-x86_64-unknown
 sha256 = "c1475ddc56df0003c780557d9b52273d9eb19c9ef8d91143f3ce03511182a36e"
 os = "linux"
 arch = "x86_64"
+image = "cells"
+
+# The weekly lin-arm64 job builds the cells image for linux/arm64.
+[binary.prek-linux-arm64]
+url = "https://github.com/j178/prek/releases/download/v0.5.3/prek-aarch64-unknown-linux-gnu.tar.gz"
+sha256 = "4cfc936895e8b4e1e2f92daca61bb7c8eb123bac14585ba9f706b599776cdcc8"
+os = "linux"
+arch = "aarch64"
 image = "cells"
 
 [binary.pipx-pyz]
@@ -373,14 +391,9 @@ sha256 = "c15a5636bf93a3937507d8da2302b074b0946b3d35882471b002ea93586728d8"
 os = "windows"
 arch = "x86_64"
 
-[binary.act-windows-x64]
-url = "https://github.com/nektos/act/releases/download/v0.2.89/act_Windows_x86_64.zip"
-sha256 = "0f8cf866ad7e32421a219fc551a0a0ea5d12ead464de12ebfeafd334a5973b50"
-os = "windows"
-arch = "x86_64"
-
 [binary.goose-windows-x64]
 url = "https://github.com/block/goose/releases/download/v1.52.0/goose-x86_64-pc-windows-msvc.zip"
 sha256 = "13f51e2294a8c92ce440988beb1873ed688e33d8fc72c0f75755b2ed5b3d54bc"
 os = "windows"
 arch = "x86_64"
+image = "full"

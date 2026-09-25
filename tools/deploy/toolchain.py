@@ -7,9 +7,11 @@ kit reads:
     python tools/deploy/toolchain.py [--root DIR] [--harness core|full|none]
 
   uv, and every CPython in pins.toml, under <root>/python (uv checks hashes)
-  Node, PortableGit (first on the sandbox PATH; its system gitconfig applies,
-  as it does for a user) and pwsh on Windows
-  pipx (the pinned zipapp) and prek
+  Node and pwsh; on Windows also PortableGit (first on the sandbox PATH; its
+  system gitconfig applies, as it does for a user) and prek
+  pipx (the pinned zipapp)
+  each pinned harness binary for this OS whose image the --harness level
+  holds (the Cursor agent at core, Goose at full on Windows)
   the wheelhouse rows for this OS, fetched from wheelhouse.lock by sha256
   the runner venv from runner-requirements.txt
   `npm ci` of the npm fixtures and the harness locks, into <root>/npm-cache
@@ -41,6 +43,10 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 DOCKER = ROOT / "tests" / "deploy" / "docker"
 WINDOWS = os.name == "nt"
+# The pinned downloads every native toolchain installs, by pins.toml stem; the
+# harness binaries come on top, chosen by their `image`.
+BASE_TOOLS = {"windows": ("uv", "node", "portable-git", "pwsh", "prek"), "macos": ("uv", "node", "pwsh")}
+HARNESS_LEVELS = {"core": ["core"], "full": ["core", "full"], "none": []}
 SYSTEM_DIRS = ["System32", "", r"System32\Wbem", r"System32\WindowsPowerShell\v1.0"]
 
 
@@ -212,15 +218,28 @@ def describe(root: Path, tools: dict, pythons: dict, harness: list[str]) -> dict
             "pythons": pythons, "python_install_dir": str(root / "python"), "system_python": runner_python,
             "wheelhouse": str(root / "wheelhouse"), "npm_cache": str(root / "npm-cache"),
             "npm_fixtures": str(root / "npm-fixtures"), "runner_python": tools["runner"],
-            "harness_bin": [str(root / f"harness-{name}" / "node_modules" / ".bin") for name in harness]}
+            "harness_bin": [*(str(root / f"harness-{name}" / "node_modules" / ".bin") for name in harness),
+                            *tools.get("harness_dirs", [])]}
+
+
+def base_tools(pins: dict, os_name: str, root: Path) -> dict[str, Path]:
+    """stem -> the unpacked directory of each base tool this OS installs."""
+    return {stem: install_archive(pins, f"{stem}-{os_name}", os_name, root) for stem in BASE_TOOLS[os_name]}
+
+
+def harness_downloads(pins: dict, os_name: str, harness: list[str]) -> list[str]:
+    """The pinned harness binaries for this OS that the chosen images hold."""
+    return sorted(key for key, spec in pinsfile.binaries(pins, os_name).items() if spec.get("image") in harness)
+
+
+def install_harness_binaries(pins: dict, os_name: str, root: Path, harness: list[str]) -> list[str]:
+    """Each harness binary unpacked once; the directories that go on harness_bin."""
+    return [str(install_archive(pins, key, os_name, root)) for key in harness_downloads(pins, os_name, harness)]
 
 
 def _windows_tools(pins: dict, root: Path) -> dict:
-    uv = install_archive(pins, "uv-windows", "windows", root)
-    node = install_archive(pins, "node-windows", "windows", root)
-    git = install_archive(pins, "portable-git-windows", "windows", root)
-    pwsh = install_archive(pins, "pwsh-windows", "windows", root)
-    prek = install_archive(pins, "prek-windows", "windows", root)
+    found = base_tools(pins, "windows", root)
+    uv, node, git, pwsh, prek = (found[stem] for stem in BASE_TOOLS["windows"])
     return {"uv": str(uv / "uv.exe"), "uvx": str(uv / "uvx.exe"), "node": str(node / "node.exe"),
             "npm": str(node / "npm.cmd"), "git": str(git / "cmd" / "git.exe"), "prek": str(prek / "prek.exe"),
             "bash": str(git / "bin" / "bash.exe"),
@@ -228,11 +247,11 @@ def _windows_tools(pins: dict, root: Path) -> dict:
 
 
 def _posix_tools(pins: dict, root: Path, os_name: str) -> dict:
-    uv = install_archive(pins, f"uv-{os_name}", os_name, root)
-    node = install_archive(pins, f"node-{os_name}", os_name, root) / "bin"
+    found = base_tools(pins, os_name, root)
+    uv, node, pwsh = found["uv"], found["node"] / "bin", found["pwsh"]
     return {"uv": str(uv / "uv"), "uvx": str(uv / "uvx"), "node": str(node / "node"), "npm": str(node / "npm"),
             "git": shutil.which("git") or "/usr/bin/git", "prek": "", "bash": "/bin/bash",
-            "path": [str(root / "bin"), str(uv), str(node)]}
+            "path": [str(root / "bin"), str(uv), str(node), str(pwsh)]}
 
 
 def install(pins: dict, root: Path, harness: list[str]) -> dict:
@@ -242,6 +261,7 @@ def install(pins: dict, root: Path, harness: list[str]) -> dict:
     pythons = install_pythons(pins, Path(tools["uv"]), root)
     tools["pipx"] = str(install_pipx(pins, pythons["3.12"], root))
     tools["runner"] = install_runner(Path(tools["uv"]), pythons["3.12"], root)
+    tools["harness_dirs"] = install_harness_binaries(pins, os_name, root, harness)
     lock.fetch(lock.read(), lock.row_names(pins, os_name, arch), root / "wheelhouse")
     env = dict(os.environ, PATH=os.pathsep.join([str(Path(tools["node"]).parent), os.environ["PATH"]]))
     fixtures = root / "npm-fixtures" / "node_modules"
@@ -262,11 +282,10 @@ def read(root: Path) -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=None)
-    parser.add_argument("--harness", default="core", choices=["core", "full", "none"])
+    parser.add_argument("--harness", default="core", choices=sorted(HARNESS_LEVELS))
     args = parser.parse_args(argv)
     root = (args.root or default_root()).resolve()
-    harness = {"core": ["core"], "full": ["core", "full"], "none": []}[args.harness]
-    install(pinsfile.load(), root, harness)
+    install(pinsfile.load(), root, HARNESS_LEVELS[args.harness])
     print(root / "toolchain.json")
     return 0
 

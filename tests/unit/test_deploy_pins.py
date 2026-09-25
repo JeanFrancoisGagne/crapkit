@@ -23,6 +23,7 @@ sys.path.append(str(ROOT / "tools" / "deploy"))
 import lock  # noqa: E402
 import pins as pinsfile  # noqa: E402
 import run  # noqa: E402
+import toolchain  # noqa: E402
 
 DOCKER = ROOT / "tests" / "deploy" / "docker"
 DOCKERFILE = (DOCKER / "Dockerfile").read_text(encoding="utf-8")
@@ -113,6 +114,57 @@ def test_every_binary_has_an_https_url_and_a_sha256(key):
     assert spec["url"].startswith("https://")
     assert re.fullmatch(r"[0-9a-f]{64}", spec["sha256"])
     assert spec["os"] in ("linux", "windows", "macos", "any")
+
+
+def _requested(monkeypatch, tmp_path, os_name, harness):
+    """The pins toolchain.py downloads for one OS and harness level, recorded
+    instead of fetched."""
+    asked = []
+    monkeypatch.setattr(toolchain, "install_archive",
+                        lambda pins, stem, os, root: asked.append(toolchain.binary(pins, stem, os)["url"]) or root)
+    toolchain.base_tools(PINS, os_name, tmp_path)
+    toolchain.install_harness_binaries(PINS, os_name, tmp_path, harness)
+    return {key for key, spec in PINS["binary"].items() if spec["url"] in asked}
+
+
+@pytest.mark.parametrize("os_name", ["windows", "macos"])
+def test_toolchain_installs_every_pin_for_its_os_and_no_other(monkeypatch, tmp_path, os_name):
+    """A native job gets the same tools the images hold: a windows or macos pin
+    nothing installs is dead, and a download for another OS would not run."""
+    installed = _requested(monkeypatch, tmp_path, os_name, toolchain.HARNESS_LEVELS["full"])
+    pinned = {key for key, spec in PINS["binary"].items() if spec["os"] == os_name}
+
+    assert installed == pinned
+
+
+@pytest.mark.parametrize("os_name, level, keys", [
+    ("windows", "none", set()),
+    ("windows", "core", {"cursor-agent-windows-x64"}),
+    ("windows", "full", {"cursor-agent-windows-x64", "goose-windows-x64"}),
+    ("macos", "core", {"cursor-agent-macos-arm64"}),
+])
+def test_a_harness_level_installs_the_binaries_its_images_hold(os_name, level, keys):
+    assert set(toolchain.harness_downloads(PINS, os_name, toolchain.HARNESS_LEVELS[level])) == keys
+
+
+def test_a_native_harness_binary_goes_on_harness_bin(tmp_path):
+    tools = {name: f"/t/{name}" for name in ("uv", "uvx", "node", "npm", "git", "prek", "pipx", "runner", "bash")}
+    tools.update(path=["/t/bin"], harness_dirs=["/t/cursor-agent-windows-x64/dist-package"])
+    described = toolchain.describe(tmp_path, tools, {"3.12": "/t/python3.12"}, ["core"])
+
+    assert described["harness_bin"][-1] == "/t/cursor-agent-windows-x64/dist-package"
+    assert described["harness_bin"][0].endswith(".bin")
+
+
+def test_the_cells_image_fetches_each_of_its_binaries_for_both_architectures():
+    """lin-arm64 builds the cells image for linux/arm64, so every
+    architecture-specific download in it has an aarch64 pin beside the x86_64 one."""
+    arches = {}
+    for key, spec in pinsfile.binaries(PINS, "linux").items():
+        arches.setdefault((spec.get("image"), key.rsplit("-", 2)[0]), set()).add(spec["arch"])
+
+    assert {stem: found for (image, stem), found in arches.items() if image == "cells"} == {
+        "prek": {"x86_64", "aarch64"}, "pipx": {"any"}}
 
 
 def _deploy_jobs():
