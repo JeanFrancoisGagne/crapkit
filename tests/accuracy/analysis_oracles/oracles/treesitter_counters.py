@@ -264,19 +264,30 @@ def params(fn, spec: Spec, data: bytes) -> int:
 # --- nloc --------------------------------------------------------------------------------------
 
 def _code_leaf(node, spec: Spec) -> bool:
-    return node.child_count == 0 and node.type not in spec.comments
+    return node.type not in spec.comments
 
 
 def _lines(node) -> range:
     return range(node.start_point[0], node.end_point[0] + 1)
 
 
+# A string literal is one token: code on every line it spans.
+STRINGS = frozenset({"string", "raw_string", "string_literal", "raw_string_literal",
+                     "interpreted_string_literal", "line_string_literal",
+                     "multi_line_string_literal", "text_block"})
+
+
+def _opaque(node, spec: Spec) -> bool:
+    return node.child_count == 0 or node.type in STRINGS
+
+
 def _code_leaves(fn, spec: Spec):
-    """fn's own leaf tokens, a comment's inner tokens (Rust's // and doc markers) left out."""
+    """fn's own tokens (a string literal whole), a comment's inner tokens (Rust's // and
+    doc markers) left out."""
     stack = list(reversed(fn.children))
     while stack:
         node = stack.pop()
-        if node.child_count == 0:
+        if _opaque(node, spec):
             yield node
         elif node.type not in spec.functions and node.type not in spec.comments:
             stack.extend(reversed(node.children))

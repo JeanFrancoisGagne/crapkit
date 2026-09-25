@@ -105,14 +105,20 @@ def calls_itself(fn, context: Context) -> bool:
     return any(used == wanted for used in _uses(fn, name, context))
 
 
-def _previous_sibling_up(node):
-    while node is not None and node.prev_sibling is None:
+def _previous_sibling_up(node, comments):
+    """The nearest earlier node that is not a comment, climbing out of blocks."""
+    while node is not None:
+        before = node.prev_sibling
+        while before is not None and before.type in comments:
+            before = before.prev_sibling
+        if before is not None:
+            return before
         node = node.parent
-    return None if node is None else node.prev_sibling
+    return None
 
 
-def _previous_leaf(node):
-    node = _previous_sibling_up(node)
+def _previous_leaf(node, comments):
+    node = _previous_sibling_up(node, comments)
     while node is not None and node.child_count:
         node = node.children[-1]
     return node
@@ -126,7 +132,8 @@ def _while_loop(node, context: Context) -> bool:
 def while_after_brace(fn, context: Context) -> bool:
     """A while loop whose previous token is a closing brace."""
     whiles = (node for node in own(fn, context) if _while_loop(node, context))
-    return any((_previous_leaf(node) or node).type == "}" for node in whiles)
+    comments = context.spec.comments
+    return any((_previous_leaf(node, comments) or node).type == "}" for node in whiles)
 
 
 def default_prong(fn, context: Context) -> bool:
@@ -369,12 +376,28 @@ def _nested_after_statement(fn, context: Context) -> list:
             and any(kind in kinds for kind in _ancestor_types(node, fn))]
 
 
+def _holds_structure(node, kinds) -> bool:
+    return any(inner.type in kinds for inner in _walk(node) if inner != node)
+
+
+def _semicolon_header(node, kinds) -> bool:
+    return any(child.type == ";" for child in node.children) and _holds_structure(node, kinds)
+
+
+def _semicolon_headers(fn, context: Context) -> list:
+    """Structures with a `;` in their header (a C for, a Go if with an initializer)
+    that hold another structure."""
+    kinds = _structures(context)
+    return [node for node in own(fn, context)
+            if node.type in kinds and _semicolon_header(node, kinds)]
+
+
 def statement_then_structure(fn, context: Context) -> bool:
     """AO-ND-SIBLING: an if ends before a structure that follows a statement inside
-    another structure."""
+    another structure, or before a structure with a `;` in its header."""
     ifs = [node.end_byte for node in own(fn, context) if node.type in context.spec.ifs]
-    return any(end <= node.start_byte for node in _nested_after_statement(fn, context)
-               for end in ifs)
+    later = _nested_after_statement(fn, context) + _semicolon_headers(fn, context)
+    return any(end <= node.start_byte for node in later for end in ifs)
 
 
 def arm_jump(fn, context: Context) -> bool:
@@ -382,6 +405,76 @@ def arm_jump(fn, context: Context) -> bool:
     jumps = ("break_expression", "continue_expression")
     return any(node.type == "match_arm" and any(kid.type in jumps for kid in node.named_children)
                for node in own(fn, context))
+
+
+BODY_BLOCKS = frozenset({"compound_statement", "block", "block_expression", "statements",
+                         "labeled_statement"})
+PREPROCESSOR = frozenset({"preproc_if", "preproc_ifdef", "preproc_elif", "preproc_else",
+                          "preproc_elifdef"})
+
+
+def _quoted_substitution(node, context: Context) -> bool:
+    return node.type == "string" and any(
+        inner.type == "command_substitution" and (b"&&" in context.text(inner)
+                                                  or b"||" in context.text(inner))
+        for inner in _walk(node))
+
+
+def quoted_substitution(fn, context: Context) -> bool:
+    """A && or || inside a double-quoted command substitution."""
+    return any(_quoted_substitution(node, context) for node in own(fn, context))
+
+
+def optional_mark(fn, context: Context) -> bool:
+    """A Zig optional type (`?T`) or unwrap (`x.?`) anywhere in fn, its signature too."""
+    return any(not node.is_named and node.type in ("?", ".?") for node in _walk(fn))
+
+
+def payload_else_if(fn, context: Context) -> bool:
+    """A Zig `else |err| if ...`."""
+    return any(node.type == "else_clause" and any(kid.type == "payload" for kid in node.children)
+               for node in own(fn, context))
+
+
+def _braceless(node, context: Context) -> bool:
+    body = [kid for kid in node.named_children if kid.type in BODY_BLOCKS]
+    return node.type in context.spec.ifs and not body
+
+
+def _holders(fn, context: Context) -> list:
+    kinds = _structures(context)
+    return [node.start_byte for node in own(fn, context)
+            if node.type in kinds and _holds_structure(node, kinds)]
+
+
+def braceless_then_structure(fn, context: Context) -> bool:
+    """AO-ND-BRACELESS: a braceless if ends before a structure that holds another."""
+    ends = [node.end_byte for node in own(fn, context) if _braceless(node, context)]
+    return any(end <= start for end in ends for start in _holders(fn, context))
+
+
+def _valued_break(node) -> bool:
+    """A Zig `break value` with no label."""
+    kids = [kid.type for kid in node.named_children]
+    return node.type == "break_expression" and bool(kids) and "break_label" not in kids
+
+
+JUMPS = frozenset({"break_expression", "continue_expression"})
+
+
+def _jump_prong(node) -> bool:
+    return node.type == "switch_case" and any(kid.type in JUMPS for kid in node.named_children)
+
+
+def prong_jump(fn, context: Context) -> bool:
+    """A Zig switch prong whose value is an unlabeled break or continue, or a break
+    with a value and no label."""
+    return any(_jump_prong(node) or _valued_break(node) for node in own(fn, context))
+
+
+def struct_return(fn, context: Context) -> bool:
+    """A Zig function whose return type is an anonymous struct."""
+    return any(child.type == "struct_declaration" for child in fn.children)
 
 
 def _all(*languages: str) -> frozenset:
@@ -401,6 +494,7 @@ SHAPES = [
     Shape("AO-N-SH-CASE", _all("shell"), NESTING, has_switch),
     Shape("AO-ND-LOOPS", ND_LANGUAGES, NESTING, nested_loop),
     Shape("AO-ND-SIBLING", ND_LANGUAGES, NESTING, statement_then_structure),
+    Shape("AO-ND-BRACELESS", ND_LANGUAGES, NESTING, braceless_then_structure),
     Shape("AO-SH-NESTING-DEEP", _all("shell"), NESTING,
           lambda fn, c: has_type(fn, c, c.spec.ifs | c.spec.loops)),
     # cognitive
@@ -430,6 +524,24 @@ SHAPES = [
     Shape("AO-LOOP-NO-CONDITION", _all("go", "c", "cpp", "objc", "java"), CCN,
           lambda fn, c: any(counters._conditionless_for(node) for node in own(fn, c))),
     # params
+    Shape("AO-C-PREPROC", _all("c", "cpp", "objc"), CCN,
+          lambda fn, c: has_type(fn, c, PREPROCESSOR)),
+    Shape("AO-C-PREPROC-COG", _all("c", "cpp", "objc"), COGNITIVE + NESTING,
+          lambda fn, c: has_type(fn, c, PREPROCESSOR)),
+    Shape("AO-C-PREPROC-NLOC", _all("c", "cpp", "objc"), NLOC,
+          lambda fn, c: has_type(fn, c, PREPROCESSOR)),
+    Shape("AO-SH-QUOTED-SUBST", _all("shell"), CCN + COGNITIVE, quoted_substitution),
+    Shape("AO-SH-HEREDOC-NLOC", _all("shell"), NLOC,
+          lambda fn, c: has_type(fn, c, {"heredoc_body", "heredoc_redirect"})),
+    Shape("AO-ZIG-STRUCT-RETURN", _all("zig"), EVERY, struct_return),
+    Shape("AO-ZIG-FN-PARAM", _all("zig"), PARAMS,
+          parameter_holds({"function_signature", "function_type"})),
+    Shape("AO-ZIG-TRY-ND", _all("zig"), NESTING,
+          lambda fn, c: has_type(fn, c, {"try_expression", "catch_expression"})),
+    Shape("AO-ZIG-OPTIONAL", _all("zig"), COGNITIVE + NESTING, optional_mark),
+    Shape("AO-ZIG-PAYLOAD-ELSE", _all("zig"), COGNITIVE, payload_else_if),
+    Shape("AO-ZIG-ARM-JUMP", _all("zig"), COGNITIVE, prong_jump),
+    Shape("AO-ZIG-SWITCH-MOD", _all("zig"), MOD, has_switch),
     Shape("AO-C-VOID-FNPTR-PARAM", _all("c", "cpp", "objc"), PARAMS, void_function_pointer_param),
     # Go
     Shape("AO-GO-FUNC-TYPE", _all("go"), EVERY, near_loose_function_type),

@@ -87,3 +87,9 @@ c-fact	constructs.c	fact	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definiti
 c-sibling	shapes.c	sibling_ifs	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the inner if body is two levels deep	AO-ND-SIBLING
 c-sibling	shapes.c	sibling_ifs	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, if +1, the inner if +2	
 c-sibling	shapes.c	sibling_ifs	start	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+c-decimal-point	shapes.c	decimal_point	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a preprocessor branch is no run-time decision	AO-C-PREPROC
+c-decimal-point	shapes.c	decimal_point	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no run-time structure	AO-C-PREPROC-COG
+c-decimal-point	shapes.c	decimal_point	nloc	9	lizard 1.24.0 README: NLOC counts lines of code without comments; every line of the function holds code or a directive	AO-C-PREPROC-NLOC
+c-for-then-ifs	shapes.c	for_then_ifs	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: for, if, if	
+c-braceless	shapes.c	braceless_then_loop	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if inside the for is two levels deep	AO-ND-BRACELESS
+c-braceless	shapes.c	braceless_then_loop	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, for +1, the if inside +2	

@@ -28,7 +28,9 @@ from accuracy.analysis_oracles.oracles import treesitter_counters as counters
 BLOCKS = frozenset({"block", "compound_statement", "statements", "block_expression", "do_group",
                     "switch_block", "match_block", "function_body", "labeled_statement"})
 ELSE_HOLDERS = frozenset({"else_clause"})
-PARENS = frozenset({"parenthesized_expression", "condition_clause"})
+# Nodes a logical sequence runs through: parentheses, and bash's redirect, which the
+# grammar hangs on the list before it (`a 2>/dev/null || b`).
+PARENS = frozenset({"parenthesized_expression", "condition_clause", "redirected_statement"})
 
 
 @dataclass
@@ -145,9 +147,19 @@ def _recursion(node, count: Count) -> int:
 
 # --- if, else if, else ---------------------------------------------------------------------------
 
-def _else_target(node):
-    """What an else introduces: the else-if node, or None for a plain else."""
-    kids = [child for child in node.children if child.type != "else"]
+def _else_kids(node, spec) -> list:
+    """What follows an else, its payload left out; nothing where else-if is elif."""
+    if "elif_clause" in spec.ifs:
+        return []
+    return [child for child in node.children if child.type not in ("else", "payload")]
+
+
+def _else_target(node, spec):
+    """What an else introduces: the else-if node, or None for a plain else. A Zig
+    else's payload (`else |err| if ...`) sits between the else and its if. A language
+    that spells else-if as elif (shell) has none: its else holding an if is a plain
+    else."""
+    kids = _else_kids(node, spec)
     return kids[0] if len(kids) == 1 and kids[0].type in ("if_statement", "if_expression") else None
 
 
@@ -185,7 +197,7 @@ def _else_parts(child) -> list:
 
 
 def _else_branch(child, level: int, count: Count) -> None:
-    target = child if child.type in count.spec.ifs else _else_target(child)
+    target = child if child.type in count.spec.ifs else _else_target(child, count.spec)
     if target is not None:
         _walk_if(target, level, count, chained=True)
         return

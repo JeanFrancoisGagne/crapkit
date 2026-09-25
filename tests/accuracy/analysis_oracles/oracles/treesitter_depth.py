@@ -14,20 +14,25 @@ from __future__ import annotations
 from accuracy.analysis_oracles.oracles import treesitter_counters as counters
 
 
-def _else_if(node) -> bool:
-    """An if that continues an else: it shares the level of the if it follows."""
-    if node.type == "elif_clause":
-        return True
+def _follows_else(node) -> bool:
     parent, before = node.parent, node.prev_sibling
     if parent is not None and parent.type == "else_clause":
         return True
     return before is not None and before.type == "else"
 
 
+def _else_if(node, spec) -> bool:
+    """An if that continues an else: it shares the level of the if it follows. Where
+    else-if is spelled elif (shell), an if inside an else is a nested if."""
+    if "elif_clause" in spec.ifs:
+        return node.type == "elif_clause"
+    return _follows_else(node)
+
+
 def opens(node, spec) -> bool:
     """Whether node opens a nesting level for what it holds."""
     if node.type in spec.ifs:
-        return not _else_if(node)
+        return not _else_if(node, spec)
     kinds = (spec.loops | spec.switches | spec.catches | spec.ternaries | spec.guards
              | spec.lambdas)
     return node.type in kinds or counters.let_else(node)

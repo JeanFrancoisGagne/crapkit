@@ -70,3 +70,5 @@ c-fact	constructs.sh	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch wit
 c-fact	constructs.sh	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
 c-fact	constructs.sh	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
 c-fact	constructs.sh	fact	params	0	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a shell function declares no parameters	
+s-quoted-subst	shapes.sh	quoted_subst	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the && inside the substitution	AO-SH-QUOTED-SUBST
+s-heredoc	shapes.sh	heredoc_msg	nloc	6	lizard 1.24.0 README: NLOC counts lines of code without comments; the function's six lines, the heredoc body's two among them	AO-SH-HEREDOC-NLOC
