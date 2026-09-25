@@ -403,17 +403,16 @@ def clean_tree(tmp_path):
     """A detached checkout of HEAD, as crapkit mutate builds for its workers."""
     tree = tmp_path / "clean"
     added = hang_guard.run(["git", "-C", str(REPO), "worktree", "add", "--detach", str(tree), "HEAD"],
-                           text=True, capture_output=True)
+                           text=True)
     assert added.returncode == 0, added.stderr
     yield tree
-    hang_guard.run(["git", "-C", str(REPO), "worktree", "remove", "--force", str(tree)],
-                   capture_output=True)
+    hang_guard.run(["git", "-C", str(REPO), "worktree", "remove", "--force", str(tree)])
 
 
 def _in_tree(argv: list[str], tree: Path, timeout: float, extra: dict | None = None):
     env = drive.child_env({"PYTHONDONTWRITEBYTECODE": "1", **(extra or {})})
     return hang_guard.run(argv, cwd=tree, env=env, timeout=timeout, text=True,
-                          encoding="utf-8", errors="replace", capture_output=True)
+                          encoding="utf-8", errors="replace")
 
 
 @rulings.applies("SS3")
