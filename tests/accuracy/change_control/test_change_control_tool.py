@@ -280,9 +280,11 @@ def test_the_first_lock_covers_every_lockable_file_and_its_commit_passes(make_re
 @pytest.mark.nightly
 @pytest.mark.process
 def test_counts_says_which_packet_moved_and_write_records_it(make_repo, capsys):
-    top = seeds.seeded(make_repo, BASE)
+    """The seeded conftest hides a nightly test unless the collect-all switch is set,
+    as the kit's does: counts include every tier."""
+    top = seeds.seeded(make_repo, {**BASE, "tests/conftest.py": TIERED_CONFTEST})
     test_file = top / seeds.SEED_TEST
-    test_file.write_text(test_file.read_text() + "\n\ndef test_more():\n    assert 2 == 2\n")
+    test_file.write_text(test_file.read_text() + NIGHTLY_TEST)
 
     stale = cc.main(["counts", "--repo", str(top)])
     written = cc.main(["counts", "--write", "--repo", str(top)])
@@ -328,6 +330,14 @@ def _push_line(top: Path) -> str:
 
 
 IN_TREE_SOURCE = "def test_in_tree():\n    assert True\n"
+TIERED_CONFTEST = """import os
+
+
+def pytest_collection_modifyitems(config, items):
+    if os.environ.get("CRAPKIT_ACCURACY_COLLECT_ALL") != "1":
+        items[:] = [item for item in items if item.get_closest_marker("nightly") is None]
+"""
+NIGHTLY_TEST = "\n\nimport pytest\n\n\n@pytest.mark.nightly\ndef test_more():\n    assert 2 == 2\n"
 DIRTY_ANALYZE = ("import lizard  # an edit nobody committed\n\n"
                  "ANALYSIS_VERSION = 11  # the reader's version\n")
 
@@ -873,12 +883,14 @@ def test_a_table_row_appends_under_one_header_on_its_own_line(tmp_path):
 
 def test_the_small_corpus_is_read_in_place_or_written_out_once(tmp_path, monkeypatch):
     nested = f"{cc.SMALL_CORPUS}/src/pkg/b.py"
-    tree = seeds.tool().DictTree({nested: b"def b():\n    return 1\n"})
+    tree = seeds.tool().DictTree({nested: b"def b():\n    return 1\n",
+                                  f"{cc.SMALL_CORPUS}/src/pkg/c.py": b"c = 1\n"})
     monkeypatch.delenv(cc.CORPUS_ENV, raising=False)
 
     written = cc.corpus_dir(tree, "small")
 
     assert (written / "src" / "pkg" / "b.py").read_bytes() == b"def b():\n    return 1\n"
+    assert (written / "src" / "pkg" / "c.py").read_bytes() == b"c = 1\n"
     assert cc.corpus_dir(tree, "small") == written
     assert cc.corpus_dir(cc.DirTree(tmp_path), "small") == tmp_path / cc.SMALL_CORPUS
     assert cc.corpus_dir(tree, "requests") is None
@@ -926,6 +938,7 @@ def _plan(*judged, kind="fix", digest=None):
 
 F1_CRAP = cc.Cell(seeds.SCORED, "src/a.py", "f1", "crap", "1.5", "1.0")
 F1_NESTING = cc.Cell(seeds.SCORED, "src/a.py", "f1", "nesting", "0", "1")
+F1_NLOC = cc.Cell(seeds.SCORED, "src/a.py", "f1", "nloc", "2", "3")
 
 
 def test_moved_tsv_is_written_under_a_new_directory_and_rewritten(tmp_path):
@@ -941,14 +954,15 @@ def test_moved_tsv_is_written_under_a_new_directory_and_rewritten(tmp_path):
 
 def test_the_declare_summary_counts_cells_oracles_rulings_and_the_digest_row():
     plan = _plan((cc.Judgement(F1_CRAP, "kit.exact", "1.0"), "R-D5"),
-                 (cc.Judgement(F1_NESTING, "", ""), ""), digest={"digest": "x"})
+                 (cc.Judgement(F1_NESTING, "", ""), ""), (cc.Judgement(F1_NLOC, "", ""), ""),
+                 digest={"digest": "x"})
 
     text = cc.summary(plan, cc.Running("12", "1.24.0"))
 
     assert text.splitlines() == [
-        "declared C3 (fix: CRAP score): 2 locked files relocked, 2 golden cells moved, 1 judged "
+        "declared C3 (fix: CRAP score): 2 locked files relocked, 3 golden cells moved, 1 judged "
         "by an oracle, ruling(s) R-D5 cover a difference",
-        "1 moved cells have no oracle here; their packet's oracle checks judge them",
+        "2 moved cells have no oracle here; their packet's oracle checks judge them",
         "metric-digests: new row for analysis 12, lizard 1.24.0 (ANALYSIS_VERSION was 11 at the "
         "base)",
         "add to CHANGELOG.md under ## Unreleased:",
@@ -956,3 +970,84 @@ def test_the_declare_summary_counts_cells_oracles_rulings_and_the_digest_row():
     assert cc.summary(_plan(kind="none"), cc.Running("11", "1.24.0")) == (
         "declared C3 (none: no calc): 2 locked files relocked, 0 golden cells moved, 0 judged "
         "by an oracle")
+
+
+def test_a_table_written_from_nothing_gets_its_header(tmp_path):
+    request = cc.Request("C3", "fix", ("CRAP score",), "f1 fixed.", (), "2026-09-25")
+    digest = {"analysis_version": "12", "lizard_version": "1.24.0", "corpus": "c",
+              "digest": "d", "change": "C3"}
+    plan = cc.Plan(request, [], {"x.tsv": ("ab", "C3")}, ["x.tsv"], digest, "11")
+
+    cc.write_plan(tmp_path, plan, cc.Running("12", "1.24.0"))
+
+    assert (tmp_path / cc.CHANGES).read_text() == (
+        "id\tdate\tkind\tcalcs\tanalysis_version\tlizard_version\tchangelog\treason\n"
+        "C3\t2026-09-25\tfix\tCRAP score\t12\t1.24.0\t#unreleased\tf1 fixed.\n")
+    assert (tmp_path / cc.LOCK).read_text() == "path\tsha256\tchange\nx.tsv\tab\tC3\n"
+    assert (tmp_path / cc.DIGESTS).read_text() == (
+        "analysis_version\tlizard_version\tcorpus\tdigest\tchange\n12\t1.24.0\tc\td\tC3\n")
+
+
+def test_a_calc_list_keeps_an_unknown_name_after_a_known_one():
+    known = {"CRAP score", seeds.CCN}
+
+    assert cc.parse_calcs("CRAP score, No such calc", known) == ["CRAP score", "No such calc"]
+    assert cc.parse_calcs(f"{seeds.CCN}, CRAP score", known) == ["CRAP score", seeds.CCN]
+
+
+def test_a_none_change_counts_moved_cells_and_files_together():
+    assert cc._none_moves([F1_CRAP], ["tests/accuracy/corpus_goldens/goldens/small/x.json"]) == [
+        "2 golden cells or files moved; kind none declares a change that moves nothing"]
+
+
+def test_sonarjs_leaves_out_a_zero_only_for_a_function_it_found():
+    """sonarjs reports no value for a function whose cognitive complexity is 0; a
+    start line where ESLint found no function has no value for any rule."""
+    found = {"functions": [(5, 6)], "values": [{"rule": "classic", "line": 5, "value": 2}]}
+
+    assert [cc._rule_value(found, 5, rule) for rule in ("classic", "cognitive")] == ["2", "0"]
+    assert [cc._rule_value(found, 9, rule) for rule in ("classic", "cognitive")] == [None, None]
+
+
+def test_an_oracle_with_no_source_answers_nothing():
+    row = {"start": "1", "long_name": "f( )"}
+
+    assert (cc.ast_row(row, None), cc.complexipy_cognitive(row, None)) == (None, None)
+
+
+def test_eslint_not_installed_names_the_install_command(tmp_path, monkeypatch):
+    monkeypatch.setattr(cc.oracles, "node_modules", lambda tier: tmp_path)
+
+    with pytest.raises(cc.ChangeControlError, match="^oracle eslint is not installed; run: npm ci "
+                                                    "--prefix tools/accuracy/node/push$"):
+        cc.eslint_values("function f() {}\n", ".js")
+
+
+def test_the_moved_block_shows_no_file_list_when_no_file_moved_alone():
+    block = cc.moved_block(seeds.tool().DictTree({}), [F1_CRAP], [])
+
+    assert block == ["moved calcs: CRAP score (1 cells)", "moved rows (first 1 of 1):",
+                     "  golden\tpath\thandle\tcolumn\told\tnew\toracle",
+                     f"  {seeds.SCORED}\tsrc/a.py\tf1\tcrap\t1.5\t1.0\t-"]
+
+
+LOCKED_SCORED = {**BASE, "tests/accuracy/corpus_goldens/goldens/history/scored.tsv":
+                 BASE[seeds.SCORED]}
+
+
+def test_a_moved_golden_belongs_to_a_fresh_change_only_while_its_lock_row_matches():
+    """f1's CRAP moves. Relocked under the fresh C3 it is that change's; relocked
+    under the old C2, or in a history table the lock does not hold, it is still
+    to declare."""
+    history = "tests/accuracy/corpus_goldens/goldens/history/scored.tsv"
+    moved = seeds.scored(seeds.scored_rows(f_crap={1: "1.0"}))
+    head = seeds.change({**LOCKED_SCORED, seeds.SCORED: moved, history: moved}, "C3", "fix",
+                        "CRAP score")
+    fresh, old = seeds.relock(head, "C3", seeds.SCORED), seeds.relock(head, "C2", seeds.SCORED)
+
+    def goldens(tree):
+        return sorted({cell.golden for cell in cc.moves_of(
+            seeds._tree_bytes(LOCKED_SCORED), seeds._tree_bytes(tree), frozenset()).cells})
+
+    assert goldens(fresh) == [history]
+    assert goldens(old) == [history, seeds.SCORED]

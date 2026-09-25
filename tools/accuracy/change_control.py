@@ -2231,7 +2231,7 @@ def _counts_main(argv: list[str]) -> int:
     counts = collect_counts(args.repo)
     if args.write:
         (args.repo / COUNTS).write_bytes(counts_bytes(counts))
-    problems = [] if args.write else count_problems(DirTree(args.repo).read(COUNTS), counts)
+    problems = count_problems(DirTree(args.repo).read(COUNTS), counts)
     print(report(problems, [], "test counts"))
     return 1 if problems else 0
 

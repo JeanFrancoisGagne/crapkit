@@ -634,6 +634,10 @@ def test_before_the_first_lock_only_the_in_tree_rules_hold():
 
     assert pure_rules(no_goldens, seeds.module_changed(no_goldens)) == set()
     assert pure_rules(bare, seeds.module_changed(bare)) == {"T2"}
+    assert [(problem.text, problem.fix) for problem in cc.in_tree(
+        _tree(bare), cc.running(_tree(bare), LIZARD))] == [(
+            f"5 locked files wait for the first lock, the first being {seeds.INVENTORY}",
+            "python tools/accuracy/change_control.py lock --initial")]
     assert {"B2"} <= pure_rules(BASE, emptied)
 
 
@@ -685,6 +689,7 @@ def test_a_session_file_moves_with_a_small_corpus_row_and_needs_nothing_more():
     (CLAIMS, ("Claim ownership and closing",)),
     (f"{SESSION}/verify.json.stderr", ("verify gate violations",
                                        "Verdict exit code and dirty split")),
+    (f"{SESSION}/coverage.json.stderr", ("Coverage run summary",)),
     (f"{SESSION}/worklist-batches.json", ("Batch split",)),
     (f"{SESSION}/mcp-get_trend.json", ("MCP tool results",)),
     (f"{SESSION}/something-new.bin", ("Inventory rows and TSV exports",)),
@@ -792,7 +797,7 @@ def test_the_kit_s_seed_lock_follows_the_same_lock_rule(edit, text):
 
 class _CountsTable:
     """A stand-in for the coverage packet's counts table: f1 (start 14) with one
-    row, f2 (start 18) measured by two lanes; every ratio 1/2."""
+    row, f2 (start 18) measured by two lanes. Each row is its own ratio, 1/2."""
 
     def __init__(self):
         self.read = []
@@ -800,11 +805,12 @@ class _CountsTable:
     def table(self, directory: Path) -> dict:
         self.read.append(sorted(path.relative_to(directory).as_posix()
                                 for path in directory.rglob("*") if path.is_file()))
-        return {("src/a.py", 14): ["f1"], ("src/a.py", 18): ["f2 py", "f2 js"]}
+        half = Fraction(1, 2)
+        return {("src/a.py", 14): [half], ("src/a.py", 18): [half, half]}
 
     @staticmethod
-    def ratio(counts) -> Fraction:
-        return Fraction(1, 2)
+    def ratio(counts: Fraction) -> Fraction:
+        return counts
 
 
 def test_a_cov_cell_is_judged_by_the_counts_table_on_the_written_out_corpus(monkeypatch):
