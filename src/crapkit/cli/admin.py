@@ -1211,6 +1211,26 @@ def _doctor_silent_gates(root: Path) -> list[Finding]:
             + list(ci_precommit_passes(precommit, _ci_files(top))))
 
 
+def _merge_attribute(root: Path, path: str) -> str:
+    """The value of the merge attribute git gives `path`, "unspecified" when
+    none. Raises GitError outside a repository."""
+    answer = _git(root, "check-attr", "merge", "--", path)
+    return answer.strip().rpartition(": ")[2] or "unspecified"
+
+
+def _doctor_merge_driver(root: Path, cfg) -> list[Finding]:
+    """The marks file routed to a merge driver this clone never defined (WARN)."""
+    from ..doctor import undefined_merge_driver
+    from ..gitio import config_value
+
+    try:
+        driver = _merge_attribute(root, cfg.ratchet_file)
+    except GitError:
+        return []
+    return list(undefined_merge_driver(cfg.ratchet_file, driver,
+                                       config_value(root, f"merge.{driver}.driver")))
+
+
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
                      show_files: bool) -> list[Finding]:
     return (_doctor_keys(raw)
@@ -1225,6 +1245,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_commit_graph(root)
             + _doctor_container(cfg)
             + _doctor_silent_gates(root)
+            + _doctor_merge_driver(root, cfg)
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, files)
             + _doctor_unmeasured(root, cfg, files))

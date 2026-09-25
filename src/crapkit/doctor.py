@@ -676,6 +676,33 @@ def ci_precommit_passes(precommit_config: str, ci_files: dict[str, str]) -> tupl
                  for path, text in sorted(ci_files.items()) if _RUNS_PRECOMMIT.search(text))
 
 
+# --- the marks file's merge driver ------------------------------------------------
+#
+# docs/ratchet.md installs the driver in two steps: a committed attribute and a
+# `git config` line every clone runs, because git takes no driver command from a
+# committed file. A clone that skipped the config line merges the marks file as
+# text: git falls back when no driver by that name is defined, and says nothing.
+
+# `git check-attr merge` answers these for a path no custom driver claims:
+# no attribute, -merge, merge, and git's three built-in drivers.
+_NO_CUSTOM_DRIVER = frozenset({"unspecified", "unset", "set", "text", "binary", "union"})
+_UNDEFINED_DRIVER = (
+    "{path} has merge={driver} in its git attributes, but merge.{driver}.driver is not set in "
+    "this clone, so git merges the marks file as text and leaves its conflicts to be resolved "
+    "by hand; run `git config merge.{driver}.driver \"crapkit ratchet merge %O %A %B\"` "
+    "(docs/ratchet.md#the-git-merge-driver)"
+)
+
+
+def undefined_merge_driver(path: str, driver: str, command: str) -> tuple[Finding, ...]:
+    """One WARN when the marks file's merge attribute names a driver this
+    clone's git config does not define. `command` is that driver's
+    configured command, "" when unset."""
+    if driver in _NO_CUSTOM_DRIVER or command:
+        return ()
+    return (Finding("WARN", _UNDEFINED_DRIVER.format(path=path, driver=driver)),)
+
+
 # --- the harness floor ------------------------------------------------------------
 #
 # Claude Code passes a hook handler's `args` from 2.1.139 on. An older release
