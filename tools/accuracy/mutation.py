@@ -27,10 +27,13 @@ removed with --update); an equivalent row that matches no mutant of a module
 the run mutated fails, because its evidence then names nothing.
 
 Every weekly shard also mutates score.crap, the canary: every one of its
-mutants must die, or the shard's results are void. floors.tsv gives each module
-group its kill-rate floor after equivalents, computed on the independent-only
-suite (golden, change_control and cross_surface tests deselected); timeouts get
-one serial rerun and never count as kills.
+mutants must die, or the shard's results are void. So is a run holding a mutant
+mutmut never judged (`not checked` when its stats run failed, `suspicious`).
+A mutant no test reaches (`no tests`) counts as a survivor. floors.tsv gives
+each module group its kill-rate floor after equivalents, computed on the
+independent-only suite (golden, change_control and cross_surface tests
+deselected); a group below its floor fails the run as a new survivor does.
+Timeouts get one serial rerun and never count as kills.
 
 `tools` is the second config: tests/accuracy/kit/exact.py (floor 100 percent)
 and the tools under tools/accuracy (floor 90 percent), each run against the
@@ -70,7 +73,13 @@ FLOOR_COLUMNS = ("group", "paths", "floor", "source")
 CANARY = ("src/crapkit/score.py", "crap")
 KILLED = frozenset({"killed", "caught by type check"})
 SURVIVED = "survived"
+NO_TESTS = "no tests"
 TIMEOUT = "timeout"
+# A mutant no test reaches lives as surely as one the tests run and miss.
+ALIVE = frozenset({SURVIVED, NO_TESTS})
+# Every status that is a verdict on the mutant. Anything else ("not checked",
+# "suspicious", a crash) means mutmut never judged it, and the run proves nothing.
+JUDGED = KILLED | ALIVE | {TIMEOUT, "skipped"}
 STATUS_BY_EXIT = {1: "killed", 3: "killed", 0: SURVIVED, 5: "no tests", 33: "no tests",
                   34: "skipped", 36: TIMEOUT, 37: "caught by type check", -24: TIMEOUT,
                   24: TIMEOUT, 152: TIMEOUT, 255: TIMEOUT, -11: "segfault", -9: "segfault",
@@ -265,7 +274,26 @@ def _in_run(rows: list[dict], modules: set[str]) -> list[dict]:
 
 
 def _survived(results: list[Result]) -> set[tuple]:
-    return {row.ident for row in results if row.status == SURVIVED}
+    return {row.ident for row in results if row.status in ALIVE}
+
+
+def _named(rows: list[Result], shown: int = 5) -> str:
+    more = ", ..." if len(rows) > shown else ""
+    return ", ".join(row.name for row in rows[:shown]) + more
+
+
+def _counted(number: int) -> str:
+    return "1 mutant was" if number == 1 else f"{number} mutants were"
+
+
+def unjudged_problem(results: list[Result]) -> str:
+    """Why the run proves nothing, or "": mutants mutmut never judged, as when
+    its stats run failed and every mutant stayed `not checked`."""
+    rows = [row for row in results if row.status not in JUDGED]
+    if not rows:
+        return ""
+    said = ", ".join(sorted({row.status for row in rows}))
+    return f"{_counted(len(rows))} never judged (mutmut says {said}): {_named(rows)}"
 
 
 def _idents(rows: list[dict]) -> set[tuple]:
@@ -290,7 +318,7 @@ def gate(results: list[Result], survivors: list[dict], equivalents: list[dict],
                    gone=_gone(_idents(_in_run(survivors, modules)), alive),
                    killed_equivalents=_killed(mine, every, alive),
                    orphan_equivalents=tuple(sorted(mine - every)),
-                   void=canary_problem(results) if canary else "")
+                   void=unjudged_problem(results) or (canary_problem(results) if canary else ""))
 
 
 def updated_survivors(survivors: list[dict], verdict: Verdict) -> list[dict]:
@@ -555,7 +583,7 @@ def _wanted(name: str, globs: list[str] | None) -> bool:
 
 def _keyed(repo: Path, name: str, status: str, mutmut: tuple) -> Result:
     """Survivors and timeouts carry their key; a kill needs none."""
-    keyed = status in (SURVIVED, TIMEOUT)
+    keyed = status in ALIVE | {TIMEOUT}
     return result(name, status, _diff(repo, name, mutmut) if keyed else "", repo)
 
 
@@ -671,21 +699,29 @@ def present(targets: dict, repo: Path = REPO) -> dict:
     return {path: tests for path, tests in targets.items() if (repo / path).is_file()}
 
 
-def _mutmut_table(targets: dict) -> str:
+def _mutmut_table(targets: dict, copies: list[str]) -> str:
     tests = sorted({test for listed in targets.values() for test in listed})
     return "\n".join((
         "[tool.mutmut]",
         f"source_paths = {json.dumps(sorted(targets))}",
         f"pytest_add_cli_args_test_selection = {json.dumps(tests)}",
         f"pytest_add_cli_args = {json.dumps(['-p', 'no:cacheprovider', '-m', FLOOR_SUITE])}",
-        'also_copy = ["tests/", "tools/"]')) + "\n"
+        f"also_copy = {json.dumps(copies)}")) + "\n"
 
 
-def stage_config(text: str, targets: dict) -> str:
-    """The repo's pyproject.toml with a [tool.mutmut] table for `targets` in place of its own."""
+def stage_config(text: str, targets: dict, copies: list[str]) -> str:
+    """The repo's pyproject.toml with a [tool.mutmut] table for `targets` in place of
+    its own, copying `copies` beside the mutants."""
     head, _, rest = text.partition("[tool.mutmut]")
     tail = rest[rest.index("\n["):] if "\n[" in rest else ""
-    return f"{head.rstrip()}\n\n{tail.strip()}\n\n{_mutmut_table(targets)}"
+    return f"{head.rstrip()}\n\n{tail.strip()}\n\n{_mutmut_table(targets, copies)}"
+
+
+def stage_copies(stage: Path) -> list[str]:
+    """Every top-level entry HEAD tracks: the tools' tests read README.md, docs/
+    and the kit's data as well as tests/ and tools/."""
+    tracked = _git(stage, "ls-tree", "--name-only", "HEAD").splitlines()
+    return sorted(set(tracked) - {"mutants"})
 
 
 def _stage(repo: Path, stage: Path) -> Path:
@@ -708,8 +744,8 @@ def tools_env(environ: dict) -> dict:
 def _prepare_stage(targets: dict) -> Path:
     stage = _stage(REPO, REPO / TOOLS_STAGE)
     pyproject = stage / "pyproject.toml"
-    pyproject.write_text(stage_config(pyproject.read_text(encoding="utf-8"), targets),
-                         encoding="utf-8")
+    pyproject.write_text(stage_config(pyproject.read_text(encoding="utf-8"), targets,
+                                      stage_copies(stage)), encoding="utf-8")
     (stage / LAUNCHER_FILE).write_text(LAUNCHER, encoding="utf-8")
     return stage
 
@@ -733,18 +769,28 @@ def _tables() -> tuple[list, list, list]:
             read_table(TABLES / "floors.tsv", FLOOR_COLUMNS))
 
 
+def _floors_hold(results: list[Result], equivalents: list[dict], groups: list[dict]) -> bool:
+    checked = floors(results, equivalents, groups)
+    for floor in checked:
+        _print_floor(floor)
+    return all(floor.ok for floor in checked)
+
+
+def _update(survivors: list[dict], equivalents: list[dict], verdict: Verdict) -> None:
+    write_table(TABLES / "survivors.tsv", SURVIVOR_COLUMNS, updated_survivors(survivors, verdict))
+    write_table(TABLES / "equivalent.tsv", EQUIVALENT_COLUMNS,
+                updated_equivalents(equivalents, verdict))
+
+
 def _judge(results: list[Result], update: bool, canary: bool = True) -> int:
     survivors, equivalents, groups = _tables()
     verdict = gate(results, survivors, equivalents, canary=canary)
     for line in verdict_lines(verdict):
         print(f"mutation: {line}")
-    for floor in floors(results, equivalents, groups):
-        _print_floor(floor)
+    held = _floors_hold(results, equivalents, groups)
     if update:
-        write_table(TABLES / "survivors.tsv", SURVIVOR_COLUMNS, updated_survivors(survivors, verdict))
-        write_table(TABLES / "equivalent.tsv", EQUIVALENT_COLUMNS,
-                    updated_equivalents(equivalents, verdict))
-    return 0 if verdict.passed else 1
+        _update(survivors, equivalents, verdict)
+    return 0 if verdict.passed and held else 1
 
 
 def _print_floor(floor: Floor) -> None:

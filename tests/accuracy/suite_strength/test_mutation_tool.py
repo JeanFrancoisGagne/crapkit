@@ -113,7 +113,7 @@ def test_a_function_s_glob_is_the_name_mutmut_gives_its_mutants(path, qualname, 
 MODULES = ("src/crapkit/score.py", "src/crapkit/digest.py")
 FUNCTIONS = ("crap", "totals")
 KEYS = tuple(hashlib.sha256(bytes([n])).hexdigest() for n in range(4))
-STATUSES = ("killed", "survived", "timeout")
+STATUSES = ("killed", "survived", "timeout", "no tests")
 
 
 def _row(module, function, key):
@@ -132,7 +132,9 @@ listed = st.lists(st.tuples(st.sampled_from(MODULES), st.sampled_from(FUNCTIONS)
 
 
 def _alive(results):
-    return {(r.module, r.function, r.key) for r in results if r.status == "survived"}
+    """A mutant no test reaches (mutmut: `no tests`) lives as surely as one that survives."""
+    return {(r.module, r.function, r.key) for r in results
+            if r.status in ("survived", "no tests")}
 
 
 def _in_run(rows, mutated):
@@ -179,6 +181,24 @@ def test_the_canary_voids_a_run_where_a_score_crap_mutant_survives():
     assert mutation.gate([_crap(KEYS[0], "killed")], [], []).void == ""
     assert "survived" in mutation.gate([_crap(KEYS[0], "timeout")], [], []).void
     assert "not mutated" in mutation.gate([], [], []).void
+
+
+@pytest.mark.parametrize("status", ["not checked", "suspicious"])
+def test_a_mutant_mutmut_never_judged_voids_the_run(status):
+    """mutmut leaves every mutant `not checked` when its stats run fails: no test
+    ran, so the run is no evidence, never a pass with nothing new."""
+    verdict = mutation.gate([_crap(KEYS[0], "killed"), _crap(KEYS[1], status)], [], [],
+                            canary=False)
+
+    assert not verdict.passed
+    assert verdict.void == f"1 mutant was never judged (mutmut says {status}): " + (
+        f"src/crapkit/score.py:crap:{KEYS[1][:6]}")
+
+
+def test_a_mutant_no_test_reaches_is_a_survivor():
+    verdict = mutation.gate([_crap(KEYS[0], "no tests")], [], [], canary=False)
+
+    assert verdict.new == (("src/crapkit/score.py", "crap", KEYS[0]),)
 
 
 def test_update_removes_gone_survivors_and_killed_equivalents():
@@ -447,6 +467,27 @@ def test_gate_command_exits_one_on_a_new_survivor(tmp_path, monkeypatch, capsys)
     assert f"new survivor src/crapkit/score.py crap {KEYS[0]}" in capsys.readouterr().out
 
 
+def _tables(directory: Path, survivors=(), floors=()) -> None:
+    for name, columns, rows in (("survivors.tsv", mutation.SURVIVOR_COLUMNS, list(survivors)),
+                                ("equivalent.tsv", mutation.EQUIVALENT_COLUMNS, []),
+                                ("floors.tsv", mutation.FLOOR_COLUMNS, list(floors))):
+        mutation.write_table(directory / name, columns, rows)
+
+
+def test_a_run_below_a_floor_fails_though_every_survivor_is_listed(tmp_path, monkeypatch, capsys):
+    """One kill in two mutants is 50 percent against score.py's 95 percent floor."""
+    listed = {**_row("src/crapkit/score.py", "crap", KEYS[1]), "reason": "why",
+              "added": "2026-09-25"}
+    _tables(tmp_path, [listed], [{**GROUPS[0], "paths": "src/crapkit/score.py"}])
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
+    receipt = tmp_path / "weekly.json"
+    rows = [_crap(KEYS[0], "killed").__dict__, _crap(KEYS[1], "survived").__dict__]
+    receipt.write_text(json.dumps({"results": rows}), encoding="utf-8")
+
+    assert mutation.main(["gate", str(receipt), "--no-canary"]) == 1
+    assert "floor core: 50.0% (1/2), floor 95.0% BELOW" in capsys.readouterr().out
+
+
 # --- the second config: the accuracy tools and kit.exact ---------------------------------------------
 
 PYPROJECT = """\
@@ -464,7 +505,7 @@ patch = ["subprocess"]
 
 def test_the_stage_config_replaces_only_the_mutmut_table():
     targets = {"tools/accuracy/retro.py": ("tests/accuracy/suite_strength/test_retro_tool.py",)}
-    text = mutation.stage_config(PYPROJECT, targets)
+    text = mutation.stage_config(PYPROJECT, targets, ["README.md", "docs", "tests", "tools"])
     parsed = mutation.tomllib.loads(text)
 
     assert parsed["project"] == {"name": "crapkit"}
@@ -473,6 +514,22 @@ def test_the_stage_config_replaces_only_the_mutmut_table():
     assert parsed["tool"]["mutmut"]["pytest_add_cli_args_test_selection"] == [
         "tests/accuracy/suite_strength/test_retro_tool.py"]
     assert parsed["tool"]["mutmut"]["pytest_add_cli_args"][-2:] == ["-m", mutation.FLOOR_SUITE]
+    assert parsed["tool"]["mutmut"]["also_copy"] == ["README.md", "docs", "tests", "tools"]
+
+
+def test_the_stage_copies_every_top_level_entry_its_tests_may_read(tmp_path):
+    """A tools test that reads README.md failed mutmut's stats run in a stage that
+    copied only tests/ and tools/, and every mutant stayed `not checked`."""
+    for args in (["init", "-q"], ["config", "user.name", "t"], ["config", "user.email", "t@t"]):
+        mutation._git(tmp_path, *args)
+    for name in ("README.md", "docs/a.md", "tools/x.py", ".gitignore"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("x\n", encoding="utf-8")
+    mutation._git(tmp_path, "add", "-A")
+    mutation._git(tmp_path, "commit", "-qm", "c")
+    (tmp_path / "mutants").mkdir()
+
+    assert mutation.stage_copies(tmp_path) == [".gitignore", "README.md", "docs", "tools"]
 
 
 def test_the_floor_suite_leaves_out_only_the_dependent_methods():
