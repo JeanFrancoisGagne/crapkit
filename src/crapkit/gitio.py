@@ -343,10 +343,13 @@ def _show_prefix(root: Path) -> str:
 
 
 def _hashed(root: Path, prefix: str, paths: list[str]) -> dict[str, str]:
+    """Each name goes out as its own bytes: a name that is not UTF-8 arrives in
+    its surrogateescape spelling, which strict UTF-8 refuses to encode, as a
+    file argument's encoding does not."""
     if not paths:
         return {}
     read = _Started(root, ("hash-object", "--stdin-paths"), stdin=True)
-    out = read.result("".join(f"{prefix}{path}\n" for path in paths).encode("utf-8"))
+    out = read.result("".join(f"{prefix}{path}\n" for path in paths).encode("utf-8", "surrogateescape"))
     return dict(zip(paths, out.decode("utf-8").split()))
 
 

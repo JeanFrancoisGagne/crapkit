@@ -83,6 +83,24 @@ def test_the_index_blob_reader_keys_each_name_as_the_mode_reader_does(repository
     assert blobs == gitio.worktree_blobs(root, [name])
 
 
+@pytest.mark.skipif(os.name == "nt", reason="needs a file name that is not UTF-8, which only a "
+                    "POSIX filesystem holds; runs on the ubuntu CI jobs")
+@pytest.mark.parametrize("nested", [False, True])
+def test_a_name_that_is_not_utf8_is_hashed_by_its_own_bytes(repository, nested):
+    """A name that is not UTF-8 reaches the content record in its surrogateescape
+    spelling once git's records decode that way. The hash-object request encoded
+    each name as strict UTF-8 and raised UnicodeEncodeError, a crash where a
+    lane read should have answered; the request now carries the name's own bytes."""
+    root = repository / "app" if nested else repository
+    root.mkdir(exist_ok=True)
+    name = os.fsdecode(b"caf\xe9.py")
+    (root / name).write_bytes(b"x = 1\n")
+
+    wanted = git(root, "hash-object", "--", name).decode("ascii").strip()
+
+    assert gitio.worktree_blobs(root, [name]) == {name: wanted}
+
+
 @pytest.mark.parametrize("workers", [1, 2])
 def test_mutation_workers_receive_dirty_leading_space_dependency(repository, workers):
     source = "def enabled():\n    return True\n"
