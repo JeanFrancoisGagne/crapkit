@@ -1711,9 +1711,14 @@ def _same_directory(a: Path, b: Path) -> bool:
     return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
 
 
-def _pull(marketplace: Path) -> str | None:
-    """The command that updates a marketplace directory that is a git checkout."""
-    return f"git -C {_shell_quote(str(marketplace))} pull" if (marketplace / ".git").exists() else None
+def _git_commands(marketplace: Path, root: Path) -> tuple[str | None, str | None]:
+    """The commands that update a marketplace directory that is a git checkout
+    and restore a file of the plugin at `root` inside it; none for a directory
+    that is no checkout."""
+    if not (marketplace / ".git").exists():
+        return None, None
+    return (f"git -C {_shell_quote(str(marketplace))} pull",
+            f"git -C {_shell_quote(str(root))} checkout --")
 
 
 def _in_place(root: Path):
@@ -1724,7 +1729,7 @@ def _in_place(root: Path):
     for marketplace in _directory_marketplaces():
         source = _listed_source(marketplace, "crapkit")
         if source and _same_directory(marketplace / source, root):
-            return InPlace(str(marketplace), _pull(marketplace))
+            return InPlace(str(marketplace), *_git_commands(marketplace, root))
     return None
 
 
@@ -1913,8 +1918,11 @@ def _spawn_failure() -> list[str]:
         return [_no_crapkit_on_path()]
     executable, cli_version = spawned
     if cli_version is None:
-        return [f"crapkit doctor: FAIL {executable} did not answer `crapkit --version`. "
-                "Repair this launcher or install crapkit on the PATH the plugin inherits."]
+        from ..launchers import reinstall_command
+
+        return [f"crapkit doctor: FAIL {executable} did not answer `crapkit --version`. Reinstall "
+                f"the crapkit it belongs to with `{reinstall_command(executable, _shell_quote)}`, "
+                "then run this check again."]
     return []
 
 
@@ -1934,7 +1942,8 @@ def _plugin_lines(root: Path) -> list[str]:
                                  protocols=_hook_protocols(root), supported=PROTOCOL,
                                  harness=plugin_harness(str(root), os.environ.get("CODEX_HOME")),
                                  cli_upgrade=upgrade_command(executable, _shell_quote),
-                                 scopes=_install_scopes(root), in_place=_in_place(root))
+                                 scopes=_install_scopes(root), in_place=_in_place(root),
+                                 manifest_on_disk=(root / ".claude-plugin" / "plugin.json").is_file())
     return handshake + _stale_copy(root) + _claude_code_floor(root)
 
 

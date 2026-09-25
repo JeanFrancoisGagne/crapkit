@@ -530,23 +530,44 @@ def _for_each_scope(commands: tuple[str, ...], scopes: tuple[InstallScope, ...])
 
 class InPlace(NamedTuple):
     """A local directory marketplace Claude Code loads the plugin from in
-    place, and the command that updates it: `git -C DIR pull` for a git
-    checkout, None for a directory that is no checkout. `claude plugin update`
-    only refreshes the cache copy, which is not the one that runs."""
+    place, and the commands that update it and restore one of its files:
+    `git -C DIR pull` and `git -C ROOT checkout --` for a git checkout, None
+    for a directory that is no checkout. `claude plugin update` only refreshes
+    the cache copy, which is not the one that runs."""
     marketplace: str
     pull: str | None = None
+    checkout: str | None = None
 
 
 _LOADS_IN_PLACE = ("(Claude Code loads it in place from the local directory marketplace at {at}, "
                    "and `claude plugin update` does not change it)")
 
+# The commands that put an install's files back, per harness. `claude plugin
+# update` keeps an install whose version did not move, so a file it holds wrong
+# comes back only through a reinstall, run once per scope that holds it.
+_REINSTALL = {"claude": ("claude plugin uninstall crapkit@crapkit --scope {scope}",
+                         "claude plugin install crapkit@crapkit --scope {scope}"),
+              "codex": ("codex plugin remove crapkit@crapkit", "codex plugin add crapkit@crapkit")}
+
+
+class _Install(NamedTuple):
+    """The install a line is about: where it is, the harness that installed
+    it, the scopes that hold it, and the directory Claude Code loads it from
+    in place, if any."""
+    where: str
+    harness: str
+    scopes: tuple[InstallScope, ...]
+    in_place: InPlace | None
+
 
 class _Repairs(NamedTuple):
     """How each side moves: the plugin's commands after "update it", what
-    makes a running client load it, and the CLI's upgrade."""
+    makes a running client load it, the CLI's upgrade, and the clause that
+    brings back a hooks file doctor cannot read."""
     plugin: str
     reload: str
     cli: str
+    hooks: str
 
 
 def _in_place_fix(where: str, cli_version: str, in_place: InPlace) -> str:
@@ -555,14 +576,25 @@ def _in_place_fix(where: str, cli_version: str, in_place: InPlace) -> str:
     return f"{how} " + _LOADS_IN_PLACE.format(at=in_place.marketplace)
 
 
-def _plugin_fix(harness: str, scopes: tuple[InstallScope, ...], in_place: InPlace | None,
-                where: str, cli_version: str) -> str:
+def _plugin_fix(install: _Install, cli_version: str) -> str:
     """How the plugin moves: its local directory, when Claude Code loads it
     in place, else its harness's update, once per scope that holds it."""
-    if in_place:
-        return _in_place_fix(where, cli_version, in_place)
-    fetch, update, _ = _PLUGIN_UPDATE[harness]
-    return f"with `{fetch}`, then {_for_each_scope(update, scopes)}"
+    if install.in_place:
+        return _in_place_fix(install.where, cli_version, install.in_place)
+    fetch, update, _ = _PLUGIN_UPDATE[install.harness]
+    return f"with `{fetch}`, then {_for_each_scope(update, install.scopes)}"
+
+
+def _restore(install: _Install, cli_version: str, file: str) -> str:
+    """The clause that brings back one of the plugin's files: from git or
+    crapkit's own copy in the directory Claude Code loads in place, else the
+    harness's reinstall, once per scope that holds the install."""
+    in_place = install.in_place
+    if in_place is None:
+        return f"reinstall it with {_for_each_scope(_REINSTALL[install.harness], install.scopes)}"
+    how = (f"with `{in_place.checkout} {file}`" if in_place.checkout
+           else f"by copying crapkit {cli_version}'s plugin/{file} to {file} under {install.where}")
+    return f"restore it {how} " + _LOADS_IN_PLACE.format(at=in_place.marketplace)
 
 
 def plugin_harness(where: str, codex_home: str | None) -> str:
@@ -624,21 +656,50 @@ def _version_gap(where: str, version: str, cli_version: str, cli_where: str,
             + _repair(_behind(version, cli_version), repairs))
 
 
-def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str) -> str | None:
-    """One line when the hook asks for a protocol this CLI does not answer.
+def _protocol_behind(odd: list[str], supported: str) -> str | None:
+    """"plugin" when every protocol the hooks ask for is older than the one
+    this CLI answers, "cli" when every one is newer, else None."""
+    sides = {_behind(protocol, supported) for protocol in odd}
+    return sides.pop() if len(sides) == 1 else None
+
+
+def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str,
+                  repairs: _Repairs) -> str | None:
+    """One line when the hook asks for a protocol this CLI does not answer,
+    naming the side that is behind and the commands that move it.
 
     A handler naming no `--protocol` at all is not a gap: argparse defaults it,
     and the default is the supported one. `None` is the other thing entirely, a
-    plugin whose hooks file is missing or unreadable.
+    plugin whose hooks file is missing or unreadable, and its line names how
+    the file comes back.
     """
     if protocols is None:
         return (f"crapkit doctor: the plugin at {where} has no readable hooks/hooks.json; "
-                f"reinstall the plugin or repair that file before relying on its advisory hook.")
+                f"{repairs.hooks}, and {repairs.reload} before relying on its advisory hook.")
     odd = sorted(set(protocols) - {supported})
     if not odd:
         return None
     return (f"crapkit doctor: the plugin at {where} asks for hook protocol {', '.join(odd)}; "
-            f"this crapkit answers {supported}, so `claude-hook` exits 0 silent on every edit.")
+            f"this crapkit answers {supported}, so `claude-hook` exits 0 silent on every edit. "
+            + _repair(_protocol_behind(odd, supported), repairs))
+
+
+_NOT_A_ROOT = ("crapkit doctor: the plugin at {where} has no .claude-plugin/plugin.json, so it is "
+               "no plugin root; name the plugin root or a directory above it, or run `crapkit "
+               "doctor --plugin-root` with no PATH to check the installs Claude Code and Codex "
+               "recorded.")
+
+
+def _no_manifest(install: _Install, cli_version: str, on_disk: bool) -> str:
+    """The line for a root with no version to read: no manifest at all, which
+    is a directory that is no plugin root, or one doctor cannot read, which is
+    an install to put back."""
+    if not on_disk:
+        return _NOT_A_ROOT.format(where=install.where)
+    return (f"crapkit doctor: the plugin at {install.where} has no readable "
+            ".claude-plugin/plugin.json, so it has no version to compare; "
+            f"{_restore(install, cli_version, '.claude-plugin/plugin.json')}, and "
+            f"{_PLUGIN_UPDATE[install.harness][2]}.")
 
 
 _STALE_COPY = (
@@ -647,8 +708,6 @@ _STALE_COPY = (
     "whose version did not move, so reinstall it with {reinstall}, and restart Claude Code's "
     "sessions."
 )
-_REINSTALL = ("claude plugin uninstall crapkit@crapkit --scope {scope}",
-              "claude plugin install crapkit@crapkit --scope {scope}")
 _NAMED_FILES = 2
 
 
@@ -672,7 +731,7 @@ def stale_copy(*, where: str, version: str | None, source: str, source_version: 
     if not differing or version != source_version:
         return None
     return _STALE_COPY.format(where=where, version=version, source=source,
-                              reinstall=_for_each_scope(_REINSTALL, scopes),
+                              reinstall=_for_each_scope(_REINSTALL["claude"], scopes),
                               count=_files_differ(len(differing)), named=_first_files(differing))
 
 
@@ -680,21 +739,26 @@ def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_w
                      protocols: tuple[str, ...] | None, supported: str, harness: str = "claude",
                      cli_upgrade: str = "python -m pip install --upgrade crapkit",
                      scopes: tuple[InstallScope, ...] = USER_SCOPE,
-                     in_place: InPlace | None = None) -> list[str]:
-    """Every disagreement between an installed plugin and this CLI, one per line.
+                     in_place: InPlace | None = None,
+                     manifest_on_disk: bool = False) -> list[str]:
+    """Every disagreement between an installed plugin and this CLI, one per
+    line, each naming the command that closes it.
 
     Empty is the answer that matters: the two agree, and a check that prints on
     success is a check people stop reading.
 
     A missing manifest ends it. There is no version to compare, and a protocol
     line printed underneath would bury the one fact that explains both.
+    `manifest_on_disk` tells a manifest doctor cannot read, an install to put
+    back, from none at all, a directory that is no plugin root.
     """
+    install = _Install(where, harness, scopes, in_place)
     if version is None:
-        return [f"crapkit doctor: the plugin at {where} has no .claude-plugin/plugin.json"]
-    repairs = _Repairs(_plugin_fix(harness, scopes, in_place, where, cli_version),
-                       _PLUGIN_UPDATE[harness][2], cli_upgrade)
+        return [_no_manifest(install, cli_version, manifest_on_disk)]
+    repairs = _Repairs(_plugin_fix(install, cli_version), _PLUGIN_UPDATE[harness][2], cli_upgrade,
+                       _restore(install, cli_version, "hooks/hooks.json"))
     return [line for line in (_version_gap(where, version, cli_version, cli_where, repairs),
-                              _protocol_gap(where, protocols, supported)) if line]
+                              _protocol_gap(where, protocols, supported, repairs)) if line]
 
 
 # --- where a check passes without judging anything ------------------------------

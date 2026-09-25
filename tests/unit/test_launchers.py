@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.launchers import ephemeral_runner, install_line, path_launchers, upgrade_command
+from crapkit.launchers import (ephemeral_runner, install_line, path_launchers, reinstall_command,
+                                upgrade_command)
 
 WINDOWS = os.name == "nt"
 BIN = "Scripts" if WINDOWS else "bin"
@@ -218,3 +219,44 @@ def test_a_shebang_naming_a_shell_is_not_the_interpreter(tmp_path):
 def test_a_launcher_that_cannot_be_read_falls_back_to_plain_pip(tmp_path):
     assert upgrade_command(str(tmp_path / "gone" / "crapkit"), quote) == (
         "python -m pip install --upgrade crapkit")
+
+
+# --- the reinstall that repairs a launcher that cannot answer ----------------------
+#
+# A launcher whose environment lost its python answers nothing. Each installer's
+# upgrade leaves it broken (`pipx upgrade` says to reinstall, `uv tool upgrade`
+# and `pip install --upgrade` see crapkit current); these reinstalls brought a
+# broken launcher back in the deploy image.
+
+def test_a_uv_tool_launcher_is_reinstalled_with_force(tmp_path):
+    launcher = shim(tmp_path / "uv" / "tools" / "crapkit" / "bin")
+
+    assert reinstall_command(str(launcher), quote) == "uv tool install --force crapkit"
+
+
+def test_a_pipx_launcher_is_reinstalled_by_pipx(tmp_path):
+    launcher = shim(tmp_path / "pipx" / "venvs" / "crapkit" / "bin")
+
+    assert reinstall_command(str(launcher), quote) == "pipx reinstall crapkit"
+
+
+@pytest.mark.parametrize("uv_made", [False, True], ids=["pip-venv", "uv-venv"])
+def test_a_venv_launcher_is_reinstalled_through_the_python_beside_it(tmp_path, uv_made):
+    scripts = tmp_path / "venv" / BIN
+    launcher = shim(scripts)
+    python = scripts / ("python.exe" if WINDOWS else "python3")
+    python.write_bytes(b"")
+    if uv_made:
+        (tmp_path / "venv" / "pyvenv.cfg").write_text("uv = 0.9.2\n", encoding="utf-8")
+
+    expected = (f"uv pip install --python <{python}> --force-reinstall crapkit" if uv_made
+                else f"<{python}> -m pip install --force-reinstall crapkit")
+    assert reinstall_command(str(launcher), quote) == expected
+
+
+def test_a_launcher_with_no_python_found_is_reinstalled_through_python(tmp_path):
+    launcher = tmp_path / "bin" / "crapkit"
+    launcher.parent.mkdir()
+    launcher.write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+
+    assert reinstall_command(str(launcher), quote) == "python -m pip install --force-reinstall crapkit"

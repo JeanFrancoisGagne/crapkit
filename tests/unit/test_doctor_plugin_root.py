@@ -151,7 +151,9 @@ def test_a_root_with_no_manifest_names_the_file_it_wanted(tmp_path, capsys):
 
     assert code == 1
     assert lines == [f"crapkit doctor: the plugin at {tmp_path / 'p'} has no "
-                     ".claude-plugin/plugin.json"], lines
+                     ".claude-plugin/plugin.json, so it is no plugin root; name the plugin root or a "
+                     "directory above it, or run `crapkit doctor --plugin-root` with no PATH to "
+                     "check the installs Claude Code and Codex recorded."], lines
 
 
 def test_a_plugin_with_no_hooks_file_registers_no_advisory_and_says_so(tmp_path, capsys):
@@ -397,7 +399,9 @@ def test_a_path_with_no_manifest_anywhere_under_it_still_names_the_file(tmp_path
 
     assert code == 1
     assert lines == [f"crapkit doctor: the plugin at {tmp_path / 'empty'} has no "
-                     ".claude-plugin/plugin.json"], lines
+                     ".claude-plugin/plugin.json, so it is no plugin root; name the plugin root or a "
+                     "directory above it, or run `crapkit doctor --plugin-root` with no PATH to "
+                     "check the installs Claude Code and Codex recorded."], lines
 
 
 # --- the CLI the hook will spawn, not the one this check runs in ---------------

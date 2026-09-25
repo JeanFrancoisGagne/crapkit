@@ -24,11 +24,16 @@ from pathlib import PurePath
 
 NAME = "crapkit"
 
-# How each installer upgrades the install it owns, keyed on the directory it
-# keeps crapkit's environment in, as it appears in the launcher's resolved path
-# or in the interpreter path a Windows launcher embeds.
-_OWNERS = (("/uv/tools/crapkit/", "uv tool upgrade crapkit"),
-           ("/pipx/venvs/crapkit/", "pipx upgrade crapkit"))
+# How each installer upgrades and reinstalls the install it owns, keyed on the
+# directory it keeps crapkit's environment in, as it appears in the launcher's
+# resolved path or in the interpreter path a Windows launcher embeds. An upgrade
+# leaves a launcher whose environment lost its python broken (`pipx upgrade`
+# says to reinstall; uv and pip see crapkit current); the reinstall repairs it.
+_OWNERS = (("/uv/tools/crapkit/", {"upgrade": "uv tool upgrade crapkit",
+                                   "reinstall": "uv tool install --force crapkit"}),
+           ("/pipx/venvs/crapkit/", {"upgrade": "pipx upgrade crapkit",
+                                     "reinstall": "pipx reinstall crapkit"}))
+_PIP_FLAG = {"upgrade": "--upgrade", "reinstall": "--force-reinstall"}
 _READ_LIMIT = 1 << 20  # a Windows launcher embeds its interpreter path near its end
 _PYTHONS = ("python.exe",) if os.name == "nt" else ("python3", "python")
 _INSTALL = {"uv": "`uv tool install crapkit`, or `pipx install crapkit` if you ran doctor "
@@ -149,18 +154,30 @@ def pip_install(python: str, requirement: str, spelled: str | None = None) -> st
     return f"{word} -m pip install {requirement}"
 
 
-def _pip_line(python: str | None, quote) -> str:
+def _pip_line(python: str | None, quote, action: str) -> str:
+    requirement = f"{_PIP_FLAG[action]} crapkit"
     if python is None:
-        return "python -m pip install --upgrade crapkit"
-    return pip_install(python, "--upgrade crapkit", quote(python))
+        return f"python -m pip install {requirement}"
+    return pip_install(python, requirement, quote(python))
+
+
+def _owner_command(launcher: str, quote, action: str) -> str:
+    resolved = os.path.realpath(launcher)
+    head = _head(resolved)
+    text = (resolved + "\n" + head.decode("latin-1")).replace("\\", "/").lower()
+    owner = next((commands[action] for marker, commands in _OWNERS if marker in text), None)
+    return owner or _pip_line(_interpreter(resolved, head), quote, action)
 
 
 def upgrade_command(launcher: str, quote) -> str:
     """The command that upgrades the install owning this launcher: uv tool's,
     pipx's, or pip (uv's, in a venv uv made) for the interpreter the launcher
     starts. `quote` spells one word for the reader's shell."""
-    resolved = os.path.realpath(launcher)
-    head = _head(resolved)
-    text = (resolved + "\n" + head.decode("latin-1")).replace("\\", "/").lower()
-    owner = next((command for marker, command in _OWNERS if marker in text), None)
-    return owner or _pip_line(_interpreter(resolved, head), quote)
+    return _owner_command(launcher, quote, "upgrade")
+
+
+def reinstall_command(launcher: str, quote) -> str:
+    """The command that reinstalls the install owning this launcher, the
+    repair for one that answers no version: `uv tool install --force`, `pipx
+    reinstall`, or pip's `--force-reinstall` for the interpreter it starts."""
+    return _owner_command(launcher, quote, "reinstall")
