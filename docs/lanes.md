@@ -1496,7 +1496,8 @@ A lane passes when its command finishes AND writes every file the lane declares 
 already on disk. crapkit moves those files aside under `.crapkit/aside/` before each
 attempt, so a file at the declared path afterwards is one the attempt wrote, whatever its
 modification time or bytes. When the attempt writes nothing there, the file goes back and
-the lane is refused. A file that was never there is not part of that check: it is the
+the lane is refused. A command that reads its previous report finds no file at that path
+while it runs. A file that was never there is not part of that check: it is the
 missing-artifact refusal crapkit already had, and a `results_artifact` that never
 appeared gets its own sentence from the provenance reader.
 Existence used to be the whole test, so a lane failed loud exactly once — on the first run,

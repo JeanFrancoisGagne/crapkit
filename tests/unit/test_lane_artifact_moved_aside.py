@@ -37,6 +37,8 @@ SCRIPTS = {
     "nothing": "pass",
     "same-bytes": f"open('cov.json', 'w', encoding='utf-8').write({ISTANBUL!r})",
     "new-bytes": f"open('cov.json', 'w', encoding='utf-8').write({ISTANBUL + ' '!r})",
+    # boundary-11's same-bytes lane: it reads the old report to write it back
+    "reads-its-old-report": "data = open('cov.json').read(); open('cov.json', 'w').write(data)",
 }
 
 
@@ -64,6 +66,7 @@ ATTEMPTS = {
     "nothing": "wrote no artifact this run",
     "same-bytes": "",
     "new-bytes": "",
+    "reads-its-old-report": "wrote no artifact this run",
 }
 
 
