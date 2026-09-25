@@ -357,12 +357,13 @@ for _key in CONNECT:
 
 # --- Windows ---------------------------------------------------------------------------------
 
-def cursor_windows(box) -> Path:
-    """The pinned Windows Cursor agent, unpacked beside the toolchain."""
-    home = Path(box.toolchain.source).parent / "cursor-agent-windows" / "dist-package"
-    assert (home / "cursor-agent.cmd").is_file(), \
-        f"kit: toolchain.py does not install cursor-agent-windows-x64 from pins.toml into {home.parent}"
-    return home
+def assert_cursor_on_path(box) -> None:
+    """The pinned Windows Cursor agent, which the sandbox PATH finds through
+    toolchain.json's harness_bin, as it finds every other harness."""
+    assert box.which("cursor-agent"), (
+        f"kit: no cursor-agent on the sandbox PATH; {box.toolchain.source} lists harness_bin "
+        f"{box.toolchain.get('harness_bin', [])}. Run `python tools/deploy/toolchain.py --harness core`, which "
+        "unpacks [binary.cursor-agent-windows-x64] and adds its dist-package directory to harness_bin.")
 
 
 def assert_exe_start(box, repo: Path) -> None:
@@ -377,7 +378,7 @@ def assert_exe_start(box, repo: Path) -> None:
       cadence="nightly")
 def test_win_cursor_cli(box, templates):
     repo = repo_box(box, templates)
-    box.env["PATH"] += os.pathsep + str(cursor_windows(box))
+    assert_cursor_on_path(box)
     profiles.doc_server(box, repo, "cursor")
     assert len(cursor_tools(box, repo)) == TOOLS
     assert_exe_start(box, repo)
