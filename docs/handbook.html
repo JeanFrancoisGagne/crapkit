@@ -886,10 +886,10 @@ codex plugin list --marketplace crapkit --json</code></pre>
 <pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv
 git add crapkit-ratchet.tsv &amp;&amp; git commit -m "seed the crapkit ratchet"
 
-printf '#!/bin/sh\nexec python -m crapkit hook-precommit\n' &gt; .git/hooks/pre-commit
+printf '#!/bin/sh\nif command -v crapkit &gt;/dev/null 2&gt;&amp;1; then exec crapkit hook-precommit; fi\nif command -v uvx &gt;/dev/null 2&gt;&amp;1; then exec uvx crapkit hook-precommit; fi\nexec python -m crapkit hook-precommit\n' &gt; .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit</code></pre>
 <p>From here every commit is judged, new debt only. Seed <em>before</em> arming, or the first commit on a brownfield repo refuses everything. The plugin is optional and the hook is not: the advisory annotates, this blocks.</p>
-<div class="callout info"><p>Two things bite here. Git runs hooks outside your shell's activated venv, so bare <code>python</code> must resolve to an interpreter that has crapkit installed, or write the absolute path. And a hook in <code>.git/hooks/</code> is not committed, so teammates get nothing. The README's gate section has the committed-hooks-directory route, the pre-commit-framework route, and CI.</p></div>
+<div class="callout info"><p>Two things bite here. The hook reaches crapkit through the <code>crapkit</code> command on git's PATH, then <code>uvx crapkit</code>, then <code>python -m crapkit</code>. Git runs hooks outside your shell's activated venv, so crapkit installed only in a venv needs its launcher's absolute path in the hook. And a hook in <code>.git/hooks/</code> is not committed, so teammates get nothing. The README's gate section has the committed-hooks-directory route, the pre-commit-framework route, and CI.</p></div>
 
 <h3>Then, whenever</h3>
 <pre><code>crapkit worklist            # the risk map: what is worst, and how hot it runs

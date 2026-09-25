@@ -424,15 +424,20 @@ that package's staged files as project-relative paths such as `app/m.py`.
 [Path and root rules](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery)
 also cover absolute arguments, literal filenames and Git diff settings.
 
-Git runs hooks outside your shell's activated venv. Bare `python` must resolve to an
-interpreter that has crapkit installed, or spell it out
-(`exec /path/to/venv/Scripts/python -m crapkit hook-precommit`).
+The hook runs the first of three that git's PATH offers: the `crapkit` command (pipx, uv
+tool, or a venv whose `bin` is on PATH), then `uvx crapkit`, then `python -m crapkit`. Git
+runs hooks outside your shell's activated venv, so crapkit installed only in a venv needs
+its launcher spelled out instead: `exec /path/to/venv/bin/crapkit hook-precommit`
+(`Scripts/crapkit.exe` on Windows). With none of the three, every commit stops on the
+shell's `not found` or python's `No module named crapkit`; install crapkit, then commit.
 
 ### Route 1: `.git/hooks/pre-commit` (local, not committed)
 
 ```sh
 cat > .git/hooks/pre-commit <<'EOF'
 #!/bin/sh
+if command -v crapkit >/dev/null 2>&1; then exec crapkit hook-precommit; fi
+if command -v uvx >/dev/null 2>&1; then exec uvx crapkit hook-precommit; fi
 exec python -m crapkit hook-precommit
 EOF
 chmod +x .git/hooks/pre-commit
@@ -442,13 +447,18 @@ The same file from PowerShell. `Out-File` and `>` write a byte-order mark (UTF-1
 5.1) in front of the shebang, and git then refuses every commit with `error: cannot spawn
 .git/hooks/pre-commit: No such file or directory` (measured on git 2.43 for Windows)
 without ever running the gate; `Set-Content -Encoding ascii` writes no mark. Git
-runs the hook with its own `sh`, so the interpreter is spelled with forward slashes and
-quoted, and no `chmod` is needed on Windows:
+runs the hook with its own `sh`, so the launcher is spelled with forward slashes and
+quoted, and no `chmod` is needed on Windows. The line bakes in the `crapkit.exe` your
+PowerShell finds, so a git client started with another PATH still reaches it:
 
 ```powershell
-$python = (Get-Command python).Source -replace '\\', '/'
-Set-Content -Path .git/hooks/pre-commit -Encoding ascii -NoNewline -Value "#!/bin/sh`nexec '$python' -m crapkit hook-precommit`n"
+$crapkit = (Get-Command crapkit -ErrorAction Stop).Source -replace '\\', '/'
+Set-Content -Path .git/hooks/pre-commit -Encoding ascii -NoNewline -Value "#!/bin/sh`nexec '$crapkit' hook-precommit`n"
 ```
+
+`Get-Command` stops the block when no `crapkit` is on PATH (a uvx-only machine): install
+one with `uv tool install crapkit` or `pipx install crapkit`, or write the `sh` form above
+from Git Bash.
 
 `crapkit doctor` warns when the hook file git would spawn starts with a byte-order mark.
 
@@ -460,6 +470,8 @@ The whole route, from a repo that has no `githooks/` yet:
 mkdir -p githooks
 cat > githooks/pre-commit <<'EOF'
 #!/bin/sh
+if command -v crapkit >/dev/null 2>&1; then exec crapkit hook-precommit; fi
+if command -v uvx >/dev/null 2>&1; then exec uvx crapkit hook-precommit; fi
 exec python -m crapkit hook-precommit
 EOF
 chmod +x githooks/pre-commit

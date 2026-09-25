@@ -296,16 +296,26 @@ def _route_one() -> str:
 def test_route_one_carries_a_powershell_form_that_writes_no_byte_order_mark():
     """`Out-File` under PowerShell 5.1 writes UTF-16, and git answers `cannot spawn
     .git/hooks/pre-commit`. The form the page prints has to be the one that
-    writes plain bytes, with the interpreter quoted and forward-slashed so git's
+    writes plain bytes, with the launcher quoted and forward-slashed so git's
     sh can exec it."""
     block = _route_one()
     powershell = block[block.index("```powershell"):]
 
     assert "Set-Content" in powershell and "-Encoding ascii" in powershell, block
     assert "Out-File" not in powershell, "the form that writes the mark must not be the recipe"
-    assert "-replace '\\\\', '/'" in powershell, "the interpreter path is forward-slashed"
-    assert "exec '$python' -m crapkit hook-precommit" in powershell, "quoted, as sh reads it"
+    assert "-replace '\\\\', '/'" in powershell, "the launcher path is forward-slashed"
+    assert "exec '$crapkit' hook-precommit" in powershell, "quoted, as sh reads it"
     assert "cannot spawn" in block, "the failure the form avoids is named"
+
+
+def test_route_one_powershell_stops_when_no_crapkit_is_on_path():
+    """Without -ErrorAction Stop, Get-Command only writes an error: the block
+    goes on and writes `exec '' hook-precommit`, and every commit then fails on
+    a hook that names nothing."""
+    block = _route_one()
+    powershell = block[block.index("```powershell"):]
+
+    assert "(Get-Command crapkit -ErrorAction Stop).Source" in powershell
 
 
 def test_route_one_says_git_refuses_the_commit_a_marked_hook_cannot_spawn():
@@ -347,7 +357,54 @@ def test_route_two_creates_the_directory_it_writes_into():
     block = _route_two()
     assert "mkdir -p githooks" in block
     assert block.index("mkdir -p githooks") < block.index("githooks/pre-commit <<")
-    assert "exec python -m crapkit hook-precommit" in block, "no script body to write"
+    assert HOOK_BODY in block, "no script body to write"
+
+
+# --- one hook body on every page that writes one ------------------------------
+
+# Decision (f): the crapkit launcher first, so a pipx, uv tool or uvx install
+# reaches the gate. `exec python -m crapkit` alone refused every commit on a
+# machine whose PATH has no `python` (Debian, Ubuntu) and on every pipx or uv
+# tool install, whose interpreter is not the one on PATH.
+HOOK_BODY = ("if command -v crapkit >/dev/null 2>&1; then exec crapkit hook-precommit; fi\n"
+             "if command -v uvx >/dev/null 2>&1; then exec uvx crapkit hook-precommit; fi\n"
+             "exec python -m crapkit hook-precommit\n")
+
+
+def _handbook_hook() -> str:
+    """The script the handbook's printf writes, with printf's \\n expanded."""
+    import html
+
+    page = html.unescape(_doc("docs/handbook.html"))
+    (line,) = [ln for ln in page.splitlines() if ln.startswith("printf '#!/bin/sh")]
+    return line.split("'")[1].replace("\\n", "\n")
+
+
+@pytest.mark.parametrize("written", [
+    pytest.param(_route_one, id="route-1"),
+    pytest.param(_route_two, id="route-2"),
+    pytest.param(_handbook_hook, id="handbook"),
+])
+def test_every_printed_sh_hook_calls_the_crapkit_launcher_first(written):
+    assert "#!/bin/sh\n" + HOOK_BODY in written()
+
+
+def test_the_gate_section_names_the_order_the_hook_tries():
+    gate = " ".join(_section(_doc("README.md"), "## The gate").split())
+
+    assert "the `crapkit` command" in gate
+    assert "then `uvx crapkit`, then `python -m crapkit`" in gate
+
+
+def test_the_install_section_says_what_to_run_when_pip_refuses():
+    """PEP 668 Pythons (Debian 12, Ubuntu 23.04+, Homebrew, uv) refuse the
+    Install line with externally-managed-environment. The section names the
+    refusal and routes that need no --break-system-packages."""
+    refuses = _section(_doc("README.md"), "### When pip refuses")
+
+    assert "error: externally-managed-environment" in refuses
+    for line in ("pipx install crapkit", "uv tool install crapkit", "pipx ensurepath", "uv tool update-shell"):
+        assert line in refuses, line
 
 
 # --- the full-suite rule -----------------------------------------------------
