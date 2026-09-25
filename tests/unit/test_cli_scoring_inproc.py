@@ -362,20 +362,26 @@ def test_a_scope_whose_readable_files_hold_no_function_is_not_named_empty(repo, 
     assert "'consts'" not in err, err
 
 
-def test_the_pages_say_which_scopes_empty_scopes_leaves_out():
+def _empty_scopes_row() -> str:
+    """The `empty_scopes` row of the agent page's field table."""
     from pathlib import Path
-
-    from crapkit.agent_fields import ADDED
 
     page = (Path(__file__).resolve().parents[2] / "docs" / "agent-json.md").read_text(
         encoding="utf-8")
     (row,) = [line for line in page.splitlines() if line.startswith("| `empty_scopes` |")]
+    return row
+
+
+def test_the_pages_say_which_scopes_empty_scopes_leaves_out():
+    from crapkit.agent_fields import ADDED
+
     declared = [field.description for field in ADDED if field.key == "empty_scopes"]
 
     assert len(declared) == 2
-    for text in (row, *declared):
+    for text in (_empty_scopes_row(), *declared):
         assert "a scope whose readable files hold no function is not listed" in text.lower(), text
-        assert "claims no file" in text and "no reader could read" in text, text
+        assert "claims no file" in text, text
+        assert "no reader could read" in text, text
 
 
 def test_the_summary_labels_every_ceiling_in_force(repo, capsys):

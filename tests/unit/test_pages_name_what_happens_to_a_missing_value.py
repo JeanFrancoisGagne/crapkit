@@ -116,10 +116,14 @@ EXIT_MOVES = {
 }
 
 
+def _is_body_row(line: str) -> bool:
+    """A table line other than the header row."""
+    return line.startswith("| ") and not line.startswith("| What")
+
+
 def _table_rows(text: str) -> list[list[str]]:
-    rows = [line.strip().strip("|").split("|") for line in text.splitlines()
-            if line.startswith("| ") and not line.startswith("| What")]
-    return [[cell.strip() for cell in row] for row in rows]
+    return [[cell.strip() for cell in line.strip().strip("|").split("|")]
+            for line in filter(_is_body_row, text.splitlines())]
 
 
 @pytest.mark.parametrize("move", sorted(EXIT_MOVES))
