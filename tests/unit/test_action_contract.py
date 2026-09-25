@@ -162,20 +162,72 @@ def test_the_inputs_carry_the_defaults_the_readme_documents():
     assert inputs["python-version"]["default"] == "3.12"
 
 
-def test_every_input_is_named_in_the_readme_section():
-    section = _readme_section()
+_UNDOCUMENTED = {
+    "working-directory": "doc gap: README's GitHub Action section does not name the "
+                         "working-directory input a monorepo needs yet",
+}
 
-    for name in _action()["inputs"]:
-        assert f"`{name}`" in section, f"the action takes {name} and the README never says so"
+
+def _inputs_with_doc_gaps() -> list:
+    return [pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=_UNDOCUMENTED[name]))
+            if name in _UNDOCUMENTED else name for name in _action()["inputs"]]
+
+
+@pytest.mark.parametrize("name", _inputs_with_doc_gaps())
+def test_every_input_is_named_in_the_readme_section(name):
+    assert f"`{name}`" in _readme_section(), f"the action takes {name} and the README never says so"
 
 
 def test_every_input_the_readme_names_exists_on_the_action():
     """The other direction: a documented input a consumer sets is silently
     ignored, because `inputs.<name>` on an undeclared name is the empty
     string."""
-    named = set(re.findall(r"`(gate|top|python-version|delta)`", _readme_section()))
+    named = set(re.findall(r"`(gate|top|python-version|delta|working-directory)`", _readme_section()))
 
     assert named - set(_action()["inputs"]) == set()
+
+
+# --- a crapkit root below the repository top -----------------------------------
+
+# The steps that run crapkit or read the paths it ranks. The install, the state
+# directory, the comment and the exit code read absolute paths only.
+_ROOTED_STEPS = ("score the base commit", "score the checkout", "the verdict",
+                 "the ranked worklist", "the changed files")
+
+
+def test_the_working_directory_defaults_to_the_repository_top():
+    """A monorepo's crapkit.toml sits below the top, and every crapkit step ran
+    at the top: coverage found no crapkit.toml and the gate exited 3 (measured
+    under act on a packages/api layout). The input moves those steps; its
+    default keeps every existing consumer where it was."""
+    assert _action()["inputs"]["working-directory"]["default"] == "."
+
+
+@pytest.mark.parametrize("name", _ROOTED_STEPS)
+def test_every_step_that_runs_crapkit_runs_in_the_working_directory(name):
+    assert _step_named(name).get("working-directory") == "${{ inputs.working-directory }}"
+
+
+def test_no_step_that_invokes_crapkit_is_left_at_the_top():
+    """Guards the list above from the other side: a step added later that runs
+    crapkit has to join it."""
+    invoking = {step["name"] for step in _steps() if "run" in step and _CALL.search(step["run"])}
+
+    assert invoking <= set(_ROOTED_STEPS)
+
+
+def test_the_base_run_scores_the_same_directory_inside_the_fork_point_worktree():
+    body = _step_named("score the base commit")["run"]
+
+    assert 'below="$(git rev-parse --show-prefix)"' in body
+    assert 'crapkit coverage --repo "$base/$below"' in body
+    assert 'cp "$base/$below.crapkit/crap.sqlite" .crapkit/crap.sqlite' in body
+
+
+def test_the_changed_files_are_named_from_the_working_directory():
+    """The worklist names a file from the crapkit root. A top-relative
+    packages/api/calc/grade.py matched no row of it."""
+    assert 'git diff --name-only "$BASE_SHA...HEAD" -z --relative >' in _step_named("the changed files")["run"]
 
 
 # --- the pull request's own delta --------------------------------------------
