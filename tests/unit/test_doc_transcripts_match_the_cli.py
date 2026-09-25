@@ -6,6 +6,7 @@ gained the ratchet tail those exact steps write, `rescore --gate` a closing
 verdict line, and none of the pages followed. Each check here takes the line
 from the code that prints it, then looks for it on the page.
 """
+import html
 import json
 import re
 from pathlib import Path
@@ -183,8 +184,10 @@ def test_the_lanes_page_quotes_the_held_line_tune_prints_for_its_testpath_lanes(
 
 # --- the next step worklist and seed end with -----------------------------------
 
-TRANSCRIPT_PAGES = ("README.md", *sorted(str(p.relative_to(ROOT)).replace("\\", "/")
-                                         for p in (ROOT / "docs").glob("*.md")))
+HANDBOOK = "docs/handbook.html"
+TRANSCRIPT_PAGES = ("README.md", HANDBOOK,
+                    *sorted(str(p.relative_to(ROOT)).replace("\\", "/")
+                            for p in (ROOT / "docs").glob("*.md")))
 
 
 def _as_typed(lines: list[str]) -> list[str]:
@@ -194,8 +197,18 @@ def _as_typed(lines: list[str]) -> list[str]:
     return [line.replace(_self(), "crapkit") for line in lines]
 
 
+def _page_text(rel: str) -> str:
+    """The page as a reader sees it. The handbook is HTML: each <pre> block
+    becomes a fence, tags go, and `&gt;` reads as `>` again."""
+    text = _page(rel)
+    if rel.endswith(".html"):
+        text = re.sub(r"</?pre\b[^>]*>", "\n```\n", text)
+        text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return text
+
+
 def _outputs(page: str, prefix: str) -> list[tuple[str, list[str]]]:
-    lines = _page(page).splitlines()
+    lines = _page_text(page).splitlines()
     return [(page, _output_under(lines[i + 1:])) for i, line in enumerate(lines)
             if line.startswith(f"$ {prefix}")]
 
@@ -210,27 +223,38 @@ def _opens_with(block: list[str], opening: str) -> bool:
     return bool(block) and block[0].startswith(opening)
 
 
-def _worklist_endings(root: Path) -> list[list[str]]:
-    """What worklist prints last over a trusted run, before and after the seed."""
+def _worklist_endings(root: Path, header: str) -> list[list[str]]:
+    """What worklist prints last for the run its header names: over an
+    inventory run, and over a trusted run before and after the seed."""
     from types import SimpleNamespace
 
     from crapkit.cli.queue import _worklist_next
 
-    cfg, run = SimpleNamespace(ratchet_file=MARKS), {"id": 1, "kind": "coverage"}
-    unseeded = _as_typed(_worklist_next(root, cfg, run))
-    (root / MARKS).write_text("", encoding="utf-8")
-    return [unseeded, _as_typed(_worklist_next(root, cfg, run))]
+    run_id = int(re.search(r"\(run (\d+),", header).group(1))
+    cfg, marks = SimpleNamespace(ratchet_file=MARKS), root / MARKS
+    marks.unlink(missing_ok=True)
+    endings = [_worklist_next(root, cfg, {"id": run_id, "kind": kind})
+               for kind in ("inventory", "coverage")]
+    marks.write_text("", encoding="utf-8")
+    endings.append(_worklist_next(root, cfg, {"id": run_id, "kind": "coverage"}))
+    return [_as_typed(end) for end in endings]
+
+
+def _ends_as_printed(root: Path, block: list[str]) -> bool:
+    return any(block[-len(end):] == end for end in _worklist_endings(root, block[0]))
 
 
 def test_every_worklist_transcript_ends_with_the_step_worklist_prints(tmp_path):
     """worklist printed no next step, and the pages showed it that way; a page
-    that stops at the rows now shows a run the CLI no longer prints."""
-    endings = _worklist_endings(tmp_path)
+    that stops at the rows now shows a run the CLI no longer prints. The
+    handbook is one of those pages: its day-one story runs worklist after
+    `inventory`, where the step is `coverage`."""
     blocks = _printed_blocks("crapkit worklist", "worklist @")
 
-    assert len(blocks) >= 5, blocks
+    assert len(blocks) >= 6, blocks
+    assert HANDBOOK in {page for page, _ in blocks}, "the handbook's worklist was not read"
     assert [(page, block[-2:]) for page, block in blocks
-            if not any(block[-len(end):] == end for end in endings)] == []
+            if not _ends_as_printed(tmp_path, block)] == []
 
 
 def test_every_seed_transcript_under_the_running_metric_ends_with_commit_then_verify(capsys):

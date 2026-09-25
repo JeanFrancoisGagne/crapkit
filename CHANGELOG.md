@@ -484,6 +484,11 @@ nothing. Each of these now gets a line naming the object and the next step:
   verify` ``. A seed from a run another crapkit version measured adds no such line,
   because its own line already says verify refuses those marks and names the run that
   restamps them.
+- Every `worklist` and `seed` transcript in the README, the pages under docs/ and the
+  handbook ends with these lines. The handbook's day-one story runs `worklist` after
+  `inventory`, so its block ends with `run 1 is an inventory run (no coverage was
+  measured) and cannot serve as a baseline for next-item, ratchet seed or verify` and
+  `-> next: crapkit coverage`.
 
 ## 0.8.0 — 2026-09-23
 

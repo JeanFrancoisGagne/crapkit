@@ -947,8 +947,11 @@ worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) - 4 of 4 active (wor
   risk      7.0  ccn   7  crap       -  cov    -    1c/1a  api/grade.py:1  grade( n , total )
   risk      6.0  ccn   6  crap       -  cov    -    1c/1a  ui/panel.ts:1  label ( kind , hot )
   risk      5.0  ccn   5  crap       -  cov    -    1c/1a  infra/main.rs:1  route kind : u8
-  risk      5.0  ccn   5  crap       -  cov    -    1c/1a  ops/deploy.sh:1  release()</code></pre>
+  risk      5.0  ccn   5  crap       -  cov    -    1c/1a  ops/deploy.sh:1  release()
+run 1 is an inventory run (no coverage was measured) and cannot serve as a baseline for next-item, ratchet seed or verify
+-&gt; next: crapkit coverage</code></pre>
 <p><code>init</code> took one side of a fork for <code>infra</code> and <code>ops</code>: it wrote <code>coverage_optional = true</code> on both, so they score cc-only and <code>doctor</code> passes. The other side stays open: when a scope gets a test runner, declare a lane for it and drop the line, and its <code>remedy</code> can say <code>add-tests</code> again. What <code>doctor</code> fails is a scope with neither, because <code>no-lane</code> debt is unreachable debt.</p>
+<p>The worklist's last two lines are the handoff. An inventory run ranks by complexity alone, so <code>next-item</code>, <code>ratchet seed</code> and <code>verify</code> will not measure against it, and worklist names <code>coverage</code> as the next step. After a coverage run the same line names <code>ratchet seed</code>, and once <code>crapkit-ratchet.tsv</code> exists, <code>next-item</code>.</p>
 <p class="xanno">Note the Rust row. Stock lizard scores that five-arm <code>match</code> ccn 2, which is under the ceiling and invisible. crapkit's corrected reader scores it 5 (<a href="#languages">§03</a>).</p>
 
 <h3>4 · CI on a pull request</h3>
