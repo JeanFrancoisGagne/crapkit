@@ -342,8 +342,9 @@ nothing. Each of these now gets a line naming the object and the next step:
 - A call whose `arguments` is not a JSON object answers a tool result that says to send
   one. 0.8.0 answered `get_function_brief` with `["f"]` as JSON-RPC `-32603
   AttributeError: 'list' object has no attribute 'get'`, and `list_runs` with `"x"` as
-  `list_runs does not take 'x'`, one refusal per character. `params` that is not an object
-  answers `-32602`, the code JSON-RPC gives invalid params, instead of `-32603`.
+  `list_runs does not take 'x'`, the string's characters read as argument names.
+  `params` that is not an object answers `-32602`, the code JSON-RPC gives invalid
+  params, instead of `-32603`.
 - `crapkit mcp --repo ${workspaceFolder}` from a client that does not expand the variable
   serves where the client started it. Cursor's docs wire a server that way and the Cursor
   agent CLI passes `${workspaceFolder}` through, so the server read it as a directory
