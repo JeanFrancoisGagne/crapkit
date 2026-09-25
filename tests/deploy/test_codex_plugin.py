@@ -235,9 +235,20 @@ def test_codex_skills_name_no_claude_command(box, candidate):
       os="windows", image=None, cadence="push")
 def test_codex_plugin_windows(box, candidate, templates):
     seen = served(box, candidate, templates, candidate.staged)
+    shim_bin = box.root / "shim-bin"
 
     assert_served(seen)
-    assert all(start["argv"][0].lower().endswith("crapkit.exe") for start in seen["server_starts"])
+    # shim-bin holds crapkit.exe alone, so a server that ran as shim-bin\crapkit
+    # is the bare name `crapkit` resolved to the .exe.
+    assert [path.name for path in shim_bin.iterdir()] == ["crapkit.exe"]
+    assert {ran_as(start) for start in seen["server_starts"]} == {(shim_bin, "crapkit")}
+
+
+def ran_as(start: dict) -> tuple[Path, str]:
+    """The directory and extensionless name of the program a start ran as.
+    argv[0] carries `.exe` only when the spawning process wrote it there."""
+    program = Path(start["argv"][0])
+    return program.parent, program.stem.lower()
 
 
 # --- upgrades ------------------------------------------------------------------------------

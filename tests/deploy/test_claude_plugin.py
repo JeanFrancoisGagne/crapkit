@@ -65,9 +65,18 @@ def launcher(directory: Path) -> Path:
     return directory / ("crapkit.exe" if WINDOWS else "crapkit")
 
 
+SANDBOX_DEPTH = ("the sandbox HOME sits about 50 characters deeper than C:\\Users\\<name>, and a marketplace clone "
+                 "of the whole repository writes a 139-character docs path (deploy-plugins-10); core.longpaths in the "
+                 "sandbox gitconfig gives back the depth the sandbox took")
+
+
 def harness_on_path(box) -> None:
-    """The pinned harness CLIs, behind the toolchain on the sandbox PATH."""
+    """The pinned harness CLIs, behind the toolchain on the sandbox PATH. On
+    Windows, git may write paths past MAX_PATH, for the reason SANDBOX_DEPTH gives."""
     box.env["PATH"] = os.pathsep.join([*box.path_dirs(), *box.toolchain["harness_bin"]])
+    if WINDOWS:
+        box.transcript.note(SANDBOX_DEPTH)
+        box.run(["git", "config", "--global", "core.longpaths", "true"], expect=0)
 
 
 def page_lines(heading: str, index: int = 0, page: str = "README.md", base: Path | None = None) -> list[str]:

@@ -9,7 +9,8 @@ what `crapkit doctor --plugin-root` tells them.
     lin-marketplace-pinned-tag   a marketplace added at @v0.7.6 stays there through the update
                                  lines; re-adding it at the new tag is what moves it
     win-up-plugins-0.7.6         Claude Code and Codex upgrade their 0.7.6 copies on Windows while
-                                 a session still holds a file of the old copy open
+                                 a file of the old copy is open: both land on the candidate, and
+                                 Codex's second documented line fails with os error 5
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ import pytest
 
 from kit.cells import cell
 from test_claude_plugin import (CLAUDE, cli_venv, doctor_plugin, github, harness_on_path, install_old_plugin,
-                                installed, old_lines, page_lines, plain_repo, run_lines, upgrade_both, upgrade_cli)
+                                installed, page_lines, plain_repo, run_lines, upgrade_both, upgrade_cli)
 from test_codex_plugin import codex_root, codex_version, gap_repairs, install_old, run_guide
 
 PACKET = "deploy-plugins"
@@ -163,10 +164,12 @@ def test_codex_marketplace_pinned_to_a_tag(box, candidate):
     assert doctor_plugin(box, str(root), cwd=repo).exit == 0
 
 
-# --- Windows, a session holding the old copy ------------------------------------------------
+# --- Windows, a file of the old copy held open ----------------------------------------------
 
 def held(root: Path):
-    """A handle on a file of an installed copy, as a running session holds one."""
+    """A handle on a file of an installed copy. Windows refuses to move a directory
+    while any handle under it is open: a file a program keeps open, or a shell
+    whose working directory is inside the copy."""
     return (root / SKILL).open("rb")
 
 
@@ -174,20 +177,54 @@ def leftovers(*roots: Path) -> list[Path]:
     return [root for root in roots if root.exists()]
 
 
-@cell("win-up-plugins-0.7.6", channel="Claude + Codex", harness="Claude Code, Codex",
-      scenario="upgrade: CLI first, then each harness's documented update lines while a session holds a file of "
-      "the 0.7.6 copy; both land on the candidate", use_cases="plugin upgrade", os="windows", image=None,
+@cell("win-up-plugins-0.7.6", channel="Claude marketplace", harness="Claude Code",
+      scenario="upgrade: CLI first, then the README update lines while a file of the 0.7.6 copy is open; every "
+      "line exits 0 and the candidate lands", use_cases="plugin upgrade", os="windows", image=None,
       cadence="nightly")
-def test_windows_plugin_upgrades_with_the_old_copy_open(box, candidate):
+def test_windows_claude_upgrade_with_the_old_copy_open(box, candidate):
+    repo = plain_repo(box)
+    mirror = install_old_plugin(box, OLD, repo)
+    old = Path(installed(box)["installPath"])
+    with held(old):
+        _, steps = upgrade_both(box, mirror, candidate, repo)
+    box.transcript.note(f"left behind: {leftovers(old)}")
+
+    assert [step.exit for step in steps] == [0, 0, 0]
+    assert installed(box)["version"] == candidate.version
+
+
+def codex_upgrade_held(box, candidate) -> list:
+    """Codex's 0.7.6 plugin, a file of it held open, the release, the CLI upgrade,
+    then docs/upgrading.md's Codex lines. Returns their steps."""
     repo = plain_repo(box)
     mirror = install_old(box, OLD, repo)
-    run_lines(box, old_lines(box, mirror, OLD, "claude plugin install"), cwd=repo)
-    claude_old = Path(installed(box)["installPath"])
-    with held(claude_old), held(codex_root(box, OLD)):
-        upgrade_both(box, mirror, candidate, repo)
-        codex_steps = run_guide(box, repo, expect=None)
-    box.transcript.note(f"left behind: {leftovers(claude_old, codex_root(box, OLD))}")
+    old = codex_root(box, OLD)
+    with held(old):
+        mirror.publish(candidate.staged, candidate.version)
+        upgrade_cli(box)
+        steps = run_guide(box, repo, expect=None)
+    box.transcript.note(f"left behind: {leftovers(old)}")
+    return steps
 
-    assert installed(box)["version"] == candidate.version
-    assert [step.exit for step in codex_steps] == [0, 0, 0, 0]
+
+@cell("win-up-plugins-0.7.6", channel="Codex marketplace", harness="Codex",
+      scenario="upgrade: CLI first, then docs/upgrading.md's Codex lines while a file of the 0.7.6 copy is open; "
+      "Codex ends on the candidate", use_cases="plugin upgrade", os="windows", image=None, cadence="nightly")
+def test_windows_codex_upgrade_with_the_old_copy_open_lands(box, candidate):
+    codex_upgrade_held(box, candidate)
+
     assert codex_version(box) == candidate.version
+    assert doctor_plugin(box, str(codex_root(box, candidate.version))).exit == 0
+
+
+@cell("win-up-plugins-0.7.6", channel="Codex marketplace", harness="Codex",
+      scenario="upgrade: every docs/upgrading.md Codex line exits 0 while a file of the 0.7.6 copy is open",
+      use_cases="plugin upgrade", os="windows", image=None, cadence="nightly")
+@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-plugins-11: on Windows the docs' `codex plugin add "
+                   "crapkit@crapkit` exits 1, 'failed to back up plugin cache entry: Access is denied. (os error 5)', "
+                   "while a handle is open under the old copy; the `marketplace upgrade` line before it has already "
+                   "installed the new version")
+def test_windows_codex_upgrade_lines_exit_0_with_the_old_copy_open(box, candidate):
+    steps = codex_upgrade_held(box, candidate)
+
+    assert [step.exit for step in steps] == [0, 0, 0, 0]
