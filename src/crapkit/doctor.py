@@ -528,6 +528,43 @@ def _for_each_scope(commands: tuple[str, ...], scopes: tuple[InstallScope, ...])
     return "; ".join(_for_scope(commands, at) for at in scopes or USER_SCOPE)
 
 
+class InPlace(NamedTuple):
+    """A local directory marketplace Claude Code loads the plugin from in
+    place, and the command that updates it: `git -C DIR pull` for a git
+    checkout, None for a directory that is no checkout. `claude plugin update`
+    only refreshes the cache copy, which is not the one that runs."""
+    marketplace: str
+    pull: str | None = None
+
+
+_LOADS_IN_PLACE = ("(Claude Code loads it in place from the local directory marketplace at {at}, "
+                   "and `claude plugin update` does not change it)")
+
+
+class _Repairs(NamedTuple):
+    """How each side moves: the plugin's commands after "update it", what
+    makes a running client load it, and the CLI's upgrade."""
+    plugin: str
+    reload: str
+    cli: str
+
+
+def _in_place_fix(where: str, cli_version: str, in_place: InPlace) -> str:
+    how = (f"with `{in_place.pull}`" if in_place.pull
+           else f"by copying crapkit {cli_version}'s plugin/ directory over {where}")
+    return f"{how} " + _LOADS_IN_PLACE.format(at=in_place.marketplace)
+
+
+def _plugin_fix(harness: str, scopes: tuple[InstallScope, ...], in_place: InPlace | None,
+                where: str, cli_version: str) -> str:
+    """How the plugin moves: its local directory, when Claude Code loads it
+    in place, else its harness's update, once per scope that holds it."""
+    if in_place:
+        return _in_place_fix(where, cli_version, in_place)
+    fetch, update, _ = _PLUGIN_UPDATE[harness]
+    return f"with `{fetch}`, then {_for_each_scope(update, scopes)}"
+
+
 def plugin_harness(where: str, codex_home: str | None) -> str:
     """"codex" for a plugin Codex installed (under CODEX_HOME, or a .codex
     directory), else "claude"."""
@@ -550,28 +587,25 @@ def _behind(version: str, cli_version: str) -> str | None:
     return "plugin" if plugin < cli else "cli"
 
 
-def _repair(behind: str | None, harness: str, cli_upgrade: str,
-            scopes: tuple[InstallScope, ...]) -> str:
-    fetch, update, reload = _PLUGIN_UPDATE[harness]
-    updates = _for_each_scope(update, scopes)
+def _repair(behind: str | None, repairs: _Repairs) -> str:
     if behind == "plugin":
-        return f"The plugin is behind; update it with `{fetch}`, then {updates}, and {reload}."
+        return f"The plugin is behind; update it {repairs.plugin}, and {repairs.reload}."
     if behind == "cli":
-        return f"The CLI is behind; upgrade it with `{cli_upgrade}`."
-    return (f"Update whichever is behind: the plugin with `{fetch}`, then {updates}; the CLI "
-            f"with `{cli_upgrade}`.")
+        return f"The CLI is behind; upgrade it with `{repairs.cli}`."
+    return (f"Update whichever is behind: the plugin {repairs.plugin}; the CLI "
+            f"with `{repairs.cli}`.")
 
 
-def _version_gap(where: str, version: str, cli_version: str, cli_where: str, harness: str,
-                 cli_upgrade: str, scopes: tuple[InstallScope, ...]) -> str | None:
+def _version_gap(where: str, version: str, cli_version: str, cli_where: str,
+                 repairs: _Repairs) -> str | None:
     """One line naming both numbers, the executable the second one came from,
     which side is behind, and the commands that move it.
 
-    The plugin's repair is its harness's: Claude Code's update lines, one per
-    scope that holds the install (`scopes`), or Codex's refresh for a plugin
-    Codex installed. The CLI's is the upgrade of the installer that owns the
-    launcher (`cli_upgrade`). Both are named when the versions do not order
-    plainly.
+    The plugin's repair (`repairs.plugin`) is its harness's: Claude Code's
+    update lines, one per scope that holds the install, Codex's refresh for a
+    plugin Codex installed, or an update of the local directory Claude Code
+    loads it from in place. The CLI's is the upgrade of the installer that owns
+    the launcher. Both are named when the versions do not order plainly.
 
     `cli_where` is the console script the plugin will spawn, which on a machine
     with a venv crapkit and a pipx crapkit is not the module answering this
@@ -587,7 +621,7 @@ def _version_gap(where: str, version: str, cli_version: str, cli_where: str, har
         return None
     return (f"crapkit doctor: the plugin at {where} is version {version}, and the crapkit "
             f"its hooks spawn ({cli_where}) is {cli_version}. "
-            + _repair(_behind(version, cli_version), harness, cli_upgrade, scopes))
+            + _repair(_behind(version, cli_version), repairs))
 
 
 def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str) -> str | None:
@@ -645,7 +679,8 @@ def stale_copy(*, where: str, version: str | None, source: str, source_version: 
 def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,
                      protocols: tuple[str, ...] | None, supported: str, harness: str = "claude",
                      cli_upgrade: str = "python -m pip install --upgrade crapkit",
-                     scopes: tuple[InstallScope, ...] = USER_SCOPE) -> list[str]:
+                     scopes: tuple[InstallScope, ...] = USER_SCOPE,
+                     in_place: InPlace | None = None) -> list[str]:
     """Every disagreement between an installed plugin and this CLI, one per line.
 
     Empty is the answer that matters: the two agree, and a check that prints on
@@ -656,8 +691,9 @@ def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_w
     """
     if version is None:
         return [f"crapkit doctor: the plugin at {where} has no .claude-plugin/plugin.json"]
-    return [line for line in (_version_gap(where, version, cli_version, cli_where, harness,
-                                           cli_upgrade, scopes),
+    repairs = _Repairs(_plugin_fix(harness, scopes, in_place, where, cli_version),
+                       _PLUGIN_UPDATE[harness][2], cli_upgrade)
+    return [line for line in (_version_gap(where, version, cli_version, cli_where, repairs),
                               _protocol_gap(where, protocols, supported)) if line]
 
 

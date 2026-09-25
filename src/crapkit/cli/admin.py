@@ -1665,6 +1665,39 @@ def _marketplace_copy(root: Path) -> tuple[str, Path] | None:
     return (kind, Path(clone) / source) if source else None
 
 
+def _directory_entry(entry) -> bool:
+    source = entry.get("source") if isinstance(entry, dict) else None
+    return isinstance(source, dict) and source.get("source") == "directory"         and isinstance(entry.get("installLocation"), str)
+
+
+def _directory_marketplaces() -> list[Path]:
+    """Every marketplace known_marketplaces.json records as a local directory."""
+    known = _plugin_json(_plugins_dir() / "known_marketplaces.json")
+    entries = known.values() if isinstance(known, dict) else ()
+    return [Path(entry["installLocation"]) for entry in entries if _directory_entry(entry)]
+
+
+def _same_directory(a: Path, b: Path) -> bool:
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def _pull(marketplace: Path) -> str | None:
+    """The command that updates a marketplace directory that is a git checkout."""
+    return f"git -C {_shell_quote(str(marketplace))} pull" if (marketplace / ".git").exists() else None
+
+
+def _in_place(root: Path):
+    """The local directory marketplace whose crapkit plugin is `root`, which
+    Claude Code loads in place, or None."""
+    from ..doctor import InPlace
+
+    for marketplace in _directory_marketplaces():
+        source = _listed_source(marketplace, "crapkit")
+        if source and _same_directory(marketplace / source, root):
+            return InPlace(str(marketplace), _pull(marketplace))
+    return None
+
+
 def _probed_cli_version(executable: str) -> str | None:
     """The launcher's declared version, or None when it cannot answer."""
     import subprocess
@@ -1868,7 +1901,7 @@ def _plugin_lines(root: Path) -> list[str]:
                                  protocols=_hook_protocols(root), supported=PROTOCOL,
                                  harness=plugin_harness(str(root), os.environ.get("CODEX_HOME")),
                                  cli_upgrade=upgrade_command(executable, _shell_quote),
-                                 scopes=_install_scopes(root))
+                                 scopes=_install_scopes(root), in_place=_in_place(root))
     return handshake + _stale_copy(root) + _claude_code_floor(root)
 
 

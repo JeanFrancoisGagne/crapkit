@@ -167,3 +167,69 @@ def test_a_local_directory_s_cache_copy_is_not_called_stale(tmp_path, monkeypatc
     code, lines = run(capsys, str(root))
 
     assert (code, lines) == (0, [])
+
+
+# --- a local directory marketplace behind the CLI ------------------------------------------
+#
+# Claude Code loads that plugin in place, so `claude plugin marketplace update`
+# and `claude plugin update` leave its files alone: over a 0.8.0 directory and a
+# 0.8.1 CLI the update answered "already at the latest version (0.8.0)" and
+# doctor exited 1 again. The repair is to update the directory.
+
+def _behind_in_place(tmp_path, monkeypatch, *, git: bool) -> tuple[Path, Path]:
+    _, shipped = claude_home(tmp_path, monkeypatch, LOCAL)
+    _write(shipped / ".claude-plugin" / "plugin.json", {"name": "crapkit", "version": "0.0.1"})
+    if git:
+        (tmp_path / "clone" / ".git").mkdir()
+    return shipped, tmp_path / "clone"
+
+
+_LOADS_IN_PLACE = ("(Claude Code loads it in place from the local directory marketplace at {at}, "
+                   "and `claude plugin update` does not change it)")
+
+
+def test_a_directory_checkout_behind_the_cli_is_updated_with_git_pull(tmp_path, monkeypatch,
+                                                                      capsys):
+    shipped, clone = _behind_in_place(tmp_path, monkeypatch, git=True)
+
+    code, lines = run(capsys)
+
+    assert code == 1
+    assert lines[1].endswith(
+        f"The plugin is behind; update it with `git -C {admin._shell_quote(str(clone))} pull` "
+        + _LOADS_IN_PLACE.format(at=clone) + ", and restart Claude Code's sessions."), lines[1]
+    assert "claude plugin update crapkit@crapkit" not in lines[1]
+
+
+def test_a_directory_that_is_no_checkout_is_updated_by_copying_the_release_s_plugin(
+        tmp_path, monkeypatch, capsys):
+    shipped, clone = _behind_in_place(tmp_path, monkeypatch, git=False)
+
+    code, lines = run(capsys)
+
+    assert code == 1
+    assert lines[1].endswith(
+        f"The plugin is behind; update it by copying crapkit {CLI}'s plugin/ directory over "
+        f"{shipped} " + _LOADS_IN_PLACE.format(at=clone)
+        + ", and restart Claude Code's sessions."), lines[1]
+
+
+def test_the_directory_named_as_plugin_root_gets_the_same_repair(tmp_path, monkeypatch, capsys):
+    shipped, clone = _behind_in_place(tmp_path, monkeypatch, git=True)
+
+    code, lines = run(capsys, str(shipped))
+
+    assert code == 1
+    assert f"`git -C {admin._shell_quote(str(clone))} pull`" in lines[0], lines
+
+
+def test_the_pure_rule_names_the_directory_for_versions_that_do_not_order_plainly():
+    from crapkit.doctor import InPlace, plugin_handshake
+
+    (line,) = plugin_handshake(where="/m/plugin", version="0.9.0rc1", cli_version="0.8.1",
+                               cli_where="/bin/crapkit", protocols=(), supported="1",
+                               in_place=InPlace("/m", "git -C /m pull"))
+
+    assert ("Update whichever is behind: the plugin with `git -C /m pull` (Claude Code loads it in "
+            "place from the local directory marketplace at /m, and `claude plugin update` does not "
+            "change it); the CLI with") in line, line
