@@ -1684,7 +1684,9 @@ declares `required` from each tool's positionals (`get_function_brief` and
 `get_function_history` require `path` and `name`). A missing positional answers
 `get_function_brief needs name (see inputSchema.required)`, an undeclared key answers
 `list_worklist does not take 'bogus'; accepted: repo, top, scope`, and a wrong type answers
-`top must be an integer (got "three")`. The refusal names the MCP tool and the argument
+`top must be an integer (got "three")`. `arguments` that is not a JSON object answers
+`list_runs takes its arguments as a JSON object of argument name to value, got an array
+(["x"]); see inputSchema`. The refusal names the MCP tool and the argument
 as the schema spells them, never the CLI command behind the tool. One undeclared key is
 not refused: `wait_for_previous`, which Gemini CLI adds to every tool's schema for its
 own scheduler and forwards with the call. The server drops it and runs the call as it
@@ -1692,8 +1694,10 @@ would without it. Each is a tool result with
 `isError: true` in the tool's own vocabulary, not the protocol's `-32602` error, following
 the precedent the missing-config answer set; the reason is recorded in
 [ADR 0001](adr/0001-mcp-invalid-arguments-are-tool-results.md). Protocol errors stay
-reserved for the protocol: an unknown method answers `-32601`, and an exception escaping
-the server answers `-32603` and the loop reads on, so no single call ends the session.
+reserved for the protocol: an unknown method answers `-32601`, `params` that is not a JSON
+object answers `-32602` (`tools/call takes params as a JSON object, got an array`), and an
+exception escaping the server answers `-32603` and the loop reads on, so no single call
+ends the session.
 `ping` answers an empty result, so a client's keepalive never reads as an error.
 
 ## Docker

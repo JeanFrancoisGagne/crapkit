@@ -113,3 +113,13 @@ def test_no_request_a_client_can_shape_answers_an_internal_error(tmp_path):
               .get("error", {}).get("code") == -32603]
 
     assert faults == []
+
+
+def test_the_mcp_page_quotes_both_answers_as_the_server_gives_them(tmp_path):
+    page = Path(__file__).resolve().parents[2] / "docs" / "agent-json.md"
+    text = " ".join(page.read_text(encoding="utf-8").split())
+    refused = _call(tmp_path, {"name": "list_runs", "arguments": ["x"]})
+    invalid = _call(tmp_path, ["x"])
+
+    assert refused["result"]["content"][0]["text"] in text
+    assert invalid["error"]["message"] in text
