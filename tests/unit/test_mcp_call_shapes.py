@@ -82,13 +82,13 @@ _STRINGS = ["", "x", "list_runs", "a.py", "worklist", "${x}", "~", "2025-06-18"]
 
 def _json_value(rng, depth: int = 0):
     """One JSON value of any type, nested up to three levels."""
-    kind = rng.choice("nbisla" if depth < 3 else "nbis")
-    scalars = {"n": None, "b": rng.random() < .5, "i": rng.randint(-3, 3), "s": rng.choice(_STRINGS)}
-    if kind in scalars:
-        return scalars[kind]
-    if kind == "l":
-        return [_json_value(rng, depth + 1) for _ in range(rng.randint(0, 2))]
-    return {rng.choice(_KEYS): _json_value(rng, depth + 1) for _ in range(rng.randint(0, 3))}
+    makers = {
+        "n": lambda: None, "b": lambda: rng.random() < .5, "i": lambda: rng.randint(-3, 3),
+        "s": lambda: rng.choice(_STRINGS),
+        "l": lambda: [_json_value(rng, depth + 1) for _ in range(rng.randint(0, 2))],
+        "o": lambda: {rng.choice(_KEYS): _json_value(rng, depth + 1)
+                      for _ in range(rng.randint(0, 3))}}
+    return makers[rng.choice("nbislo" if depth < 3 else "nbis")]()
 
 
 def _message(rng, msg_id: int) -> dict:
