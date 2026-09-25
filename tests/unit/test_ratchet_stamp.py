@@ -72,3 +72,20 @@ def test_a_differing_stamp_names_both_versions_and_the_fix():
 def test_a_lizard_bump_alone_conflicts():
     assert stamp_conflict("crapkit-analysis=3 lizard=1.17.10",
                           "crapkit-analysis=3 lizard=1.24.0") is not None
+
+
+def test_marks_stamped_by_0_8_0_are_refused_until_one_reseed():
+    """Q9: a change that can move an existing function's coverage on the same
+    tree bumps the analysis version. 0.8.1's coverage.py reader refuses a report
+    without start_line and scores a nested function on its own region, so a
+    marks file stamped under 0.8.0's version 11 is not comparable and re-seeds
+    once. Kept at 11, verify compared the new scores against the old numbers."""
+    import lizard
+
+    from crapkit.analyze import ANALYSIS_VERSION
+    from crapkit.ratchet import metric_version
+
+    refusal = stamp_conflict(stamp_text(11, lizard.version), metric_version())
+
+    assert ANALYSIS_VERSION == 12
+    assert refusal is not None and "ratchet seed" in refusal, refusal

@@ -16,9 +16,10 @@ MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-l
 
 ## Measure before changing marks
 
-0.8.0 moves the reader to analysis version 11, so a marks file stamped under 10
-needs one re-seed; [analysis version 11](#analysis-version-11) says what moved.
-The package upgrade rebuilds the versioned analysis cache automatically, and the
+0.8.1 moves the reader to analysis version 12, so a marks file stamped under 11
+needs one re-seed; [analysis version 12](#analysis-version-12) says what moved.
+0.8.0 moved it from 10 to 11, and [analysis version 11](#analysis-version-11) says
+what that moved. The package upgrade rebuilds the versioned analysis cache automatically, and the
 first `inventory` or `coverage` after it analyzes every file again. That run's
 [twin-key note](ratchet.md#twins-one-name-several-functions) names the first five
 files that give one name to several functions and ends with `... and N more file(s)
@@ -54,11 +55,39 @@ suite's venv. 0.8.1 reads a function's span from the `start_line` coverage.py wr
 it did in 0.8.0.
 
 On the older coverage a nested function took its encloser's coverage. On the new one it
-scores its own region, so its CRAP can rise once, and `verify` reports the rise as a
-`RATCHET` line at exit 7 on a function the diff never touched. The new number is the
-measured one. Compare the export above with the marks, then raise each such mark by hand to
-the new number and commit it where a reviewer sees it, as [the ratchet page](ratchet.md)
-says for any rise you accept.
+scores its own region, which is the version 12 change below: re-seed once as that section
+says. A mark such a function already carried can sit under its new score, and `ratchet
+seed` never raises a mark, so `verify` names it in a `RATCHET` line at exit 7 on a function
+the diff never touched. Compare the export above with the marks before you seed, so each
+such function is on your list; the ratchet page says how a rise is
+[accepted where a reviewer sees it](ratchet.md#overrides-and-the-audit-trail).
+
+### Analysis version 12
+
+0.8.1 reads a coverage.py function region from the `start_line` coverage.py writes on
+every function from 7.13.1, and refuses a report without it at exit 5. Coverage 7.6 to
+7.13.0 write none, and 0.8.0 took a region's start from its body: a nested function's
+`def` line sits in its encloser's region, so a nested function that never ran joined its
+encloser and scored as half covered. A report that carries `start_line` scores as it did
+in 0.8.0, so a repo already on coverage 7.13.1 or newer sees no score move. The stamp
+records the rules either way, so every marks file re-seeds once. The first `inventory` or
+`coverage` after the upgrade analyzes every file again.
+
+After upgrading coverage.py where a lane needs it, in each repo:
+
+```sh
+crapkit coverage
+crapkit ratchet prune
+crapkit ratchet seed
+```
+
+`coverage` measures under version 12, and `ratchet seed` stamps the marks with the metric
+of the run it reads, so a seed from a run 0.8.0 measured keeps the old stamp and `verify`
+keeps refusing. `ratchet prune` goes first, as it did for version 11, and changes nothing
+while every marked function is still in the run. When a failed verify pins the baseline, seed and prune both
+read the pinned run: pass the new run's id to each, `crapkit ratchet prune --baseline N`
+then `crapkit ratchet seed --baseline N`; their lines and verify's refusal name it. Review
+the diff and commit it before the next `crapkit verify`.
 
 ### Analysis version 11
 

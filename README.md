@@ -196,9 +196,11 @@ where the flag goes.
 
 Keep the CLI and plugin versions aligned, measure fresh coverage after upgrading,
 and review any ratchet identity refusal before reseeding. The current reader is
-analysis version 11. It renames once each Python def with a PEP 695 type parameter
-list and each def nested three or more deep, and it lists a def whose body sits on
-its colon line; `crapkit ratchet prune` drops the marks left under the old names.
+analysis version 12. It reads a coverage.py function's span from the `start_line`
+coverage.py 7.13.1 and newer write, and refuses a report without one, so every marks
+file re-seeds once. Version 11, in 0.8.0, renamed once each Python def with a PEP 695
+type parameter list and each def nested three or more deep, and listed a def whose body
+sits on its colon line; `crapkit ratchet prune` drops the marks left under the old names.
 Older JavaScript and TypeScript callback marks can require a reviewed mapping.
 Follow the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
 for saved state, portable records and Windows launcher locks.

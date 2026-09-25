@@ -58,7 +58,11 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 11  # A Python def is named by its name token and names each enclosing def once.
+ANALYSIS_VERSION = 12  # A coverage.py function region starts at the start_line the
+#                       report writes, and a report without one is refused: coverage
+#                       7.6 to 7.13.0 write none, and the start read off the body gave a
+#                       nested function its encloser's coverage.
+# 11: a Python def is named by its name token and names each enclosing def once.
 #                       A Python def whose body sits on its colon line is listed and ends
 #                       with that logical line, so the lines after it go back to its
 #                       parent and a later def no longer carries its name. A file that

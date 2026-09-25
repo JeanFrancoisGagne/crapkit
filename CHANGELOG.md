@@ -4,20 +4,26 @@
 
 ### Upgrading from 0.8.0
 
+- The coverage.py reader moves to analysis version 12, so every repo re-seeds its marks
+  once: `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`.
+  When a failed verify pins the baseline, pass the new run to both, `crapkit ratchet prune
+  --baseline N` and then `crapkit ratchet seed --baseline N`. Until then `verify` refuses
+  the marks as recorded under another metric version. The first `inventory` or `coverage`
+  analyzes every file again. See the [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-12).
 - The `py` and `dev` extras require coverage.py 7.13.1 or newer. Coverage 7.6 to 7.13.0
   write a function's region with no `start_line`, and `crapkit coverage` now refuses
   such an artifact at exit 5 (see the coverage readers below). Upgrade coverage where
   each Python lane runs, with `pip install -U "coverage>=7.13.1"`, or with `pip install
   -U "crapkit[py]"` where crapkit shares that environment, then rerun `crapkit
-  coverage`. An artifact that carries `start_line` scores as it did in 0.8.0 and the
-  analysis version stays 11, so no repo re-seeds.
+  coverage`. An artifact that carries `start_line` scores as it did in 0.8.0.
 - Where marks were measured on coverage 7.6 to 7.13.0, 0.8.0 gave a nested function its
   encloser's coverage. On the new coverage that function scores its own region, so its
-  CRAP can rise once, and `verify` reports the rise as a `RATCHET` line at exit 7 on a
-  function the diff never touched. The new number is the measured one: raise that mark
-  in `crapkit-ratchet.tsv` by hand and commit it where a reviewer sees it. The [upgrade
+  CRAP can rise once. `ratchet seed` never raises a mark, so after the re-seed `verify`
+  reports the rise as a `RATCHET` line at exit 7 on a function the diff never touched. The
+  [upgrade
   guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#081-on-coverage-76-to-7130)
-  says how to find each such function.
+  says how to find each such function before you seed.
 
 ### The Action finds its own comment on every thread
 
