@@ -11,11 +11,15 @@ they run nightly; the verdict, digest and slicing rules run on every push.
 """
 from __future__ import annotations
 
+from dataclasses import replace
+import datetime
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import shutil
 import sys
+import sysconfig
 from types import SimpleNamespace
 
 from hypothesis import given, strategies as st
@@ -625,3 +629,649 @@ def test_the_closure_reaches_through_both_tool_roots(small_tree, edited, moves):
         handle.write("# edited\n")
 
     assert (retro.digest(test, repo=small_tree) != before) == moves
+
+
+# --- the replay's plumbing, in-process ----------------------------------------------------------------
+#
+# The planted repo above drives worktrees, venvs and the pytest child end to
+# end, nightly. These tests pin each piece on its own, with the commands it
+# hands git and uv recorded, so the push tier and the mutation killer see
+# every branch.
+
+def _commands(monkeypatch) -> list[tuple[list[str], Path | None]]:
+    """Stand in for _checked: record each (argv, cwd) and answer with no output."""
+    seen = []
+
+    def checked(argv, cwd=None):
+        seen.append(([str(part) for part in argv], cwd))
+        return ""
+
+    monkeypatch.setattr(retro, "_checked", checked)
+    return seen
+
+
+def test_a_run_passes_each_argument_as_text_and_decodes_what_the_child_wrote(tmp_path):
+    code = ("import sys; sys.stdout.buffer.write(repr(sys.argv[1:]).encode() + b'\\xff');"
+            " sys.stderr.buffer.write(b'e\\xff'); sys.exit(4)")
+
+    done = retro._run([Path(sys.executable), "-c", code, Path("a")], cwd=tmp_path)
+
+    assert (done.returncode, done.stdout, done.stderr) == (4, "['a']�", "e�")
+
+
+def test_a_run_runs_in_its_folder_with_its_environment(tmp_path):
+    code = "import os, sys; sys.stdout.write(os.getcwd() + '|' + os.environ['RETRO_PROBE'])"
+
+    done = retro._run([sys.executable, "-c", code], cwd=tmp_path,
+                      env={**retro.os.environ, "RETRO_PROBE": "kept"})
+
+    assert done.stdout == f"{tmp_path}|kept"
+
+
+def test_a_checked_command_answers_its_output(tmp_path):
+    assert retro._checked([sys.executable, "-c", "import sys; sys.stdout.write('ok')"], tmp_path) == "ok"
+
+
+def test_a_failed_command_names_its_argv_and_the_last_400_characters_it_said(tmp_path):
+    argv = [Path(sys.executable), "-c", "import sys; sys.stderr.write('d' + 'e' * 500 + '  '); sys.exit(2)"]
+
+    with pytest.raises(retro.RetroError) as refused:
+        retro._checked(argv, tmp_path)
+
+    assert str(refused.value) == f"{' '.join(map(str, argv))}: " + "e" * 400
+
+
+@pytest.mark.parametrize("code, held", [(0, True), (128, False)])
+def test_a_commit_is_here_when_git_finds_a_commit_object_by_it(tmp_path, monkeypatch, code, held):
+    asked = []
+    monkeypatch.setattr(retro, "_run", lambda argv, cwd=None, env=None: asked.append((argv, cwd))
+                        or SimpleNamespace(returncode=code))
+
+    assert retro.have_commit("abc", tmp_path) is held
+    assert asked == [(["git", "cat-file", "-e", "abc^{commit}"], tmp_path)]
+
+
+def test_a_missing_commit_is_fetched_from_the_bundle_into_refs_of_its_own(tmp_path, monkeypatch):
+    seen = _commands(monkeypatch)
+    asked = []
+    monkeypatch.setattr(retro, "have_commit", lambda sha, repo: asked.append((sha, repo)) or True)
+    monkeypatch.setenv(retro.BUNDLE_ENV, "history.bundle")
+
+    assert retro.fetch_bundle("abc", tmp_path) is None
+
+    assert seen == [(["git", "fetch", "-q", "history.bundle", "+refs/*:refs/retro-bundle/*"], tmp_path)]
+    assert asked == [("abc", tmp_path)]
+
+
+def test_a_commit_the_bundle_does_not_hold_either_is_refused(tmp_path, monkeypatch):
+    _commands(monkeypatch)
+    monkeypatch.setattr(retro, "have_commit", lambda sha, repo: False)
+    monkeypatch.setenv(retro.BUNDLE_ENV, "history.bundle")
+
+    with pytest.raises(retro.RetroError) as refused:
+        retro.fetch_bundle("abc", tmp_path)
+
+    assert str(refused.value) == "abc is in neither this clone nor history.bundle"
+
+
+@pytest.mark.parametrize("bundle", [None, ""])
+def test_a_missing_commit_with_no_bundle_names_the_variable_to_set(tmp_path, monkeypatch, bundle):
+    seen = _commands(monkeypatch)
+    monkeypatch.delenv(retro.BUNDLE_ENV, raising=False)
+    if bundle is not None:
+        monkeypatch.setenv(retro.BUNDLE_ENV, bundle)
+
+    with pytest.raises(retro.RetroError) as refused:
+        retro.fetch_bundle("abc", tmp_path)
+
+    assert str(refused.value) == f"abc is not in this clone; set {retro.BUNDLE_ENV} to the history bundle"
+    assert seen == []
+
+
+SHA = "0123456789abcdef" * 2 + "01234567"
+
+
+def test_a_worktree_is_added_detached_at_the_commit_under_its_short_sha(tmp_path, monkeypatch):
+    seen = _commands(monkeypatch)
+    monkeypatch.setattr(retro, "have_commit", lambda sha, repo: True)
+    monkeypatch.setattr(retro, "fetch_bundle", lambda sha, repo: pytest.fail("fetched"))
+    site = retro.Site(repo=tmp_path / "repo", work=tmp_path / "a" / "work")
+
+    tree = retro.worktree(SHA, site)
+
+    assert tree == tmp_path / "a" / "work" / "0123456789ab"
+    assert site.work.is_dir()
+    assert seen == [(["git", "worktree", "add", "-f", "--detach", str(tree), SHA], tmp_path / "repo")]
+
+
+def test_a_commit_missing_from_the_clone_is_fetched_before_its_worktree_is_added(tmp_path, monkeypatch):
+    _commands(monkeypatch)
+    monkeypatch.setattr(retro, "have_commit", lambda sha, repo: False)
+    fetched = []
+    monkeypatch.setattr(retro, "fetch_bundle", lambda sha, repo: fetched.append((sha, repo)))
+
+    retro.worktree(SHA, retro.Site(repo=tmp_path / "repo", work=tmp_path / "work"))
+
+    assert fetched == [(SHA, tmp_path / "repo")]
+
+
+def test_a_worktree_already_there_is_reused(tmp_path, monkeypatch):
+    seen = _commands(monkeypatch)
+    (tmp_path / "0123456789ab").mkdir()
+    (tmp_path / "0123456789ab" / ".git").write_bytes(b"gitdir: elsewhere\n")
+
+    assert retro.worktree(SHA, retro.Site(repo=tmp_path, work=tmp_path)) == tmp_path / "0123456789ab"
+    assert seen == []
+
+
+@pytest.mark.parametrize("windows, expected", [(True, "Scripts/python.exe"), (False, "bin/python")])
+def test_a_venv_s_interpreter_sits_where_the_os_puts_it(tmp_path, monkeypatch, windows, expected):
+    monkeypatch.setattr(retro, "WINDOWS", windows)
+
+    assert retro.venv_python(tmp_path) == tmp_path / expected
+
+
+def test_another_python_s_venv_is_made_by_uv(tmp_path, monkeypatch):
+    seen = _commands(monkeypatch)
+
+    retro._create_venv(tmp_path / "v", "3.99")
+
+    assert seen == [(["uv", "venv", "-q", "--python", "3.99", str(tmp_path / "v")], None)]
+
+
+def test_this_python_s_venv_is_made_by_the_standard_library_with_no_pip(tmp_path, monkeypatch):
+    seen = _commands(monkeypatch)
+
+    retro._create_venv(tmp_path / "v", retro.CURRENT)
+
+    interpreter = retro.venv_python(tmp_path / "v")
+    assert seen == []
+    assert interpreter.is_file() and interpreter.is_symlink() is not retro.WINDOWS
+    assert not list((tmp_path / "v").rglob("pip"))
+
+
+@pytest.mark.parametrize("how, tail", [("editable", ["-e", "TREE"]), ("wheel", ["TREE"])])
+def test_a_commit_goes_in_editable_or_as_a_wheel_without_its_dependencies(tmp_path, monkeypatch, how, tail):
+    seen = _commands(monkeypatch)
+
+    retro._install(Path("py"), tmp_path, how)
+
+    assert seen == [(["uv", "pip", "install", "-q", "--python", "py", "--no-deps",
+                      *[str(tmp_path) if part == "TREE" else part for part in tail]], None)]
+
+
+def test_a_linked_commit_is_one_pth_line_naming_its_src(tmp_path, monkeypatch):
+    seen = _commands(monkeypatch)
+    monkeypatch.setattr(retro, "_purelib", lambda interpreter: tmp_path)
+
+    retro._install(Path("py"), tmp_path / "tree", "link")
+
+    assert (tmp_path / "retro-src.pth").read_bytes() == (str(tmp_path / "tree" / "src") + "\n").encode()
+    assert seen == []
+
+
+def test_a_venv_s_purelib_is_what_its_interpreter_says():
+    assert retro._purelib(Path(sys.executable)) == Path(sysconfig.get_path("purelib"))
+
+
+def test_packages_go_in_by_uv_and_no_packages_start_nothing(monkeypatch):
+    seen = _commands(monkeypatch)
+
+    retro._packages(Path("py"), [])
+    retro._packages(Path("py"), ["pytest==9.1.1", "coverage==7.16.1"])
+
+    assert seen == [(["uv", "pip", "install", "-q", "--python", "py", "pytest==9.1.1",
+                      "coverage==7.16.1"], None)]
+
+
+def test_a_venv_is_built_beside_its_tree_with_the_site_s_packages_and_the_extras(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(retro, "_create_venv", lambda venv, python: calls.append(("venv", venv, python)))
+    monkeypatch.setattr(retro, "_install", lambda interpreter, tree, how: calls.append(
+        ("install", interpreter, tree, how)))
+    monkeypatch.setattr(retro, "_packages", lambda interpreter, packages: calls.append(
+        ("packages", interpreter, packages)))
+    site = retro.Site(repo=tmp_path, work=tmp_path, install="editable", packages=("a==1",))
+
+    interpreter = retro.build_venv(tmp_path / "abc", "3.12", site, ("b==2",))
+
+    venv = tmp_path / "abc-venv-3.12-editable"
+    assert interpreter == retro.venv_python(venv)
+    assert calls == [("venv", venv, "3.12"), ("install", interpreter, tmp_path / "abc", "editable"),
+                     ("packages", interpreter, ["a==1", "b==2"])]
+
+
+def test_a_venv_already_built_is_reused(tmp_path, monkeypatch):
+    venv = tmp_path / "abc-venv-3.12-wheel"
+    retro.venv_python(venv).parent.mkdir(parents=True)
+    retro.venv_python(venv).write_bytes(b"")
+    monkeypatch.setattr(retro, "_create_venv", lambda *args: pytest.fail("built again"))
+
+    assert retro.build_venv(tmp_path / "abc", "3.12", retro.Site(work=tmp_path)) == retro.venv_python(venv)
+
+
+# --- the pytest child ------------------------------------------------------------------------------
+
+def test_the_child_s_environment_names_the_venv_the_outcomes_and_this_tree(monkeypatch):
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.setenv("RETRO_PROBE", "kept")
+
+    env = retro._pytest_env(Path("venv-python"), Path("out.jsonl"))
+
+    assert {key: env[key] for key in (retro.PYTHON_ENV, retro.OUTCOMES_ENV, retro.COLLECT_ALL_ENV,
+                                      "PYTHONDONTWRITEBYTECODE", "PYTHONPATH", "RETRO_PROBE")} == {
+        retro.PYTHON_ENV: "venv-python", retro.OUTCOMES_ENV: "out.jsonl",
+        retro.COLLECT_ALL_ENV: "1", "PYTHONDONTWRITEBYTECODE": "1", "RETRO_PROBE": "kept",
+        "PYTHONPATH": retro.os.pathsep.join([str(REPO / "tests"), str(REPO / "tools" / "accuracy")])}
+
+
+def test_a_check_in_this_tree_runs_from_its_root_and_one_elsewhere_from_its_folder(tmp_path):
+    outside = tmp_path / "checks" / "test_c.py"
+
+    assert retro._rootdir("tests/accuracy/suite_strength/test_retro_tool.py::t[a/b]") == REPO
+    assert retro._rootdir(".") == REPO
+    assert retro._rootdir(f"{outside.as_posix()}::t[a/b]") == outside.parent.resolve()
+
+
+def _child(monkeypatch, written: bytes) -> dict:
+    """Stand in for the pytest child: record what it was handed, write `written` as its outcomes."""
+    seen = {}
+
+    def run(argv, cwd=None, env=None):
+        outcomes = Path(env[retro.OUTCOMES_ENV])
+        seen.update(argv=[str(part) for part in argv], cwd=cwd, env=env, outcomes=outcomes,
+                    touched=outcomes.is_file())
+        with open(outcomes, "ab") as handle:
+            handle.write(written)
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(retro, "_run", run)
+    return seen
+
+
+def test_a_replayed_node_runs_pytest_with_the_plugin_and_reads_what_it_wrote(monkeypatch):
+    seen = _child(monkeypatch, b'{"nodeid": "t::a", "outcome": "failed", "exc_type": "KeyError", '
+                               b'"assertion": false, "message": "k \xc3\xa9"}\r\n')
+
+    records = retro.replay_node(NODE, Path("venv-python"))
+
+    assert seen["argv"] == [sys.executable, "-m", "pytest", NODE, "-q", "-p", "no:cacheprovider",
+                            "-p", "no:randomly", "-p", "retro", "--rootdir", str(REPO)]
+    assert (seen["cwd"], seen["env"][retro.PYTHON_ENV]) == (None, "venv-python")
+    assert seen["outcomes"].name == "outcomes.jsonl" and seen["touched"]
+    assert seen["outcomes"].parent.name.startswith("crapkit-retro-")
+    assert not seen["outcomes"].exists()
+    assert records == [{"nodeid": "t::a", "outcome": "failed", "exc_type": "KeyError",
+                        "assertion": False, "message": "k é"}]
+
+
+def test_a_child_that_recorded_nothing_leaves_no_record(monkeypatch):
+    _child(monkeypatch, b"")
+
+    assert retro.replay_node(NODE, Path("venv-python")) == []
+
+
+class _Report:
+    def __init__(self, nodeid):
+        self.nodeid = nodeid
+
+
+def test_the_plugin_appends_each_call_and_each_failing_phase(tmp_path, monkeypatch):
+    out = tmp_path / "out.jsonl"
+    out.write_bytes(b"kept\n")
+    monkeypatch.setenv(retro.OUTCOMES_ENV, str(out))
+
+    assert retro.pytest_runtest_makereport(_Report("t::a"), _call(None, "setup")) is None
+    assert retro.pytest_runtest_makereport(_Report("t::a"), _call(None)) is None
+    assert retro.pytest_runtest_makereport(_Report("t::é"), _call(OSError("lock"), "teardown")) is None
+
+    kept, *lines = out.read_bytes().decode().split("\n")
+    assert kept == "kept" and lines[-1] == ""
+    assert [json.loads(line) for line in lines[:-1]] == [
+        retro._record("t::a", _call(None)), retro._record("t::é", _call(OSError("lock")))]
+
+
+def test_the_plugin_writes_nothing_outside_a_replay(tmp_path, monkeypatch):
+    monkeypatch.delenv(retro.OUTCOMES_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    assert retro.pytest_runtest_makereport(_Report("t::a"), _call(None)) is None
+    assert list(tmp_path.iterdir()) == []
+
+
+# --- the probe ---------------------------------------------------------------------------------------
+
+def _file(tmp_path: Path, body: str, name: str = "RX.py") -> Path:
+    path = tmp_path / name
+    path.write_bytes(body.encode())
+    return path
+
+
+def test_a_probe_s_header_names_its_packages_and_its_install(tmp_path):
+    header = _file(tmp_path, "# requires: a==1 b==2\n# install: editable \n# requires: c==3\nx = 1\n")
+    late = _file(tmp_path, "x = 1\n" * 20 + "# requires: late==1\n# install: editable\n", "late.py")
+    wheel = _file(tmp_path, "#  requires: no==1\n# install: wheel\n", "wheel.py")
+
+    assert retro.probe_header(header) == (["a==1", "b==2", "c==3"], True)
+    assert retro.probe_header(late) == ([], False)
+    assert retro.probe_header(wheel) == ([], False)
+
+
+LONG = "x" * 400
+
+
+@pytest.mark.parametrize("body, record", [
+    ("import sys\nassert sys.argv[1]\n",
+     {"outcome": "passed", "exc_type": "", "assertion": False, "message": ""}),
+    ("assert 1 == 2, 'wrong:  value'\n",
+     {"outcome": "failed", "exc_type": "AssertionError", "assertion": True,
+      "message": "AssertionError: wrong: value"}),
+    (f"assert False, '{LONG}'\n",
+     {"outcome": "failed", "exc_type": "AssertionError", "assertion": True,
+      "message": ("AssertionError: " + LONG)[:300]}),
+    ("import http.client\nraise http.client.InvalidURL('a.b: c')\n",
+     {"outcome": "failed", "exc_type": "InvalidURL", "assertion": False,
+      "message": "http.client.InvalidURL: a.b: c"}),
+    ("import sys\nsys.stderr.write('one\\ntwo\\n')\nsys.exit(3)\n",
+     {"outcome": "failed", "exc_type": "two", "assertion": False, "message": "two"}),
+    ("import sys\nsys.exit(3)\n",
+     {"outcome": "failed", "exc_type": "(no output)", "assertion": False, "message": "(no output)"}),
+])
+def test_a_probe_passes_on_exit_zero_and_fails_on_its_last_stderr_line(tmp_path, body, record):
+    probe = _file(tmp_path, body)
+
+    assert retro.replay_probe(probe, Path(sys.executable), tmp_path) == [{"nodeid": "RX.py", **record}]
+
+
+def test_a_probe_runs_in_the_tree_without_this_tree_s_pythonpath(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYTHONPATH", "elsewhere")
+    monkeypatch.setenv("RETRO_PROBE", "kept")
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    probe = _file(tmp_path, "import os, sys\nfrom pathlib import Path\n"
+                            "assert 'PYTHONPATH' not in os.environ\n"
+                            "assert os.environ['RETRO_PROBE'] == 'kept'\n"
+                            "assert Path.cwd().resolve() == Path(sys.argv[1]).resolve()\n")
+
+    assert retro.replay_probe(probe, Path(sys.executable), tree)[0]["outcome"] == "passed"
+
+
+@pytest.mark.parametrize("header, install, extra", [
+    (b"# requires: a==1 b==2\n# install: editable\n", "editable", ("a==1", "b==2")),
+    (b"# requires: a==1\n", "link", ("a==1",)),
+])
+def test_a_probe_s_venv_takes_the_packages_and_install_its_header_names(tmp_path, monkeypatch, header,
+                                                                         install, extra):
+    probe = tmp_path / "R5.py"
+    probe.write_bytes(header)
+    built = []
+    monkeypatch.setattr(retro, "build_venv", lambda tree, python, site, extra=(): built.append(
+        (tree, python, site, extra)) or Path("venv-python"))
+    monkeypatch.setattr(retro, "replay_probe", lambda probe, interpreter, tree: [(probe, interpreter, tree)])
+    site = retro.Site(repo=tmp_path, work=tmp_path, install="link")
+
+    records = retro._probe_records(probe, tmp_path / "tree", "3.12", site)
+
+    assert records == [(probe, Path("venv-python"), tmp_path / "tree")]
+    assert built == [(tmp_path / "tree", "3.12", replace(site, install=install), extra)]
+
+
+def test_a_probe_bug_replays_its_probe_file_in_the_commit_s_tree(tmp_path, monkeypatch):
+    monkeypatch.setattr(retro, "worktree", lambda sha, site: tmp_path / sha)
+    monkeypatch.setattr(retro, "_probe_records", lambda probe, tree, python, site: [
+        (probe, tree, python, site)])
+    site = retro.Site(work=tmp_path)
+
+    got = retro._records(retro.Bug("R5", NODE, "a", "b", "R97.py"), "abc", "3.12", site)
+
+    assert got == [(retro.RETRO / "probes" / "R97.py", tmp_path / "abc", "3.12", site)]
+
+
+def test_a_node_bug_replays_its_check_against_the_commit_s_venv(tmp_path, monkeypatch):
+    monkeypatch.setattr(retro, "worktree", lambda sha, site: tmp_path / sha)
+    monkeypatch.setattr(retro, "build_venv", lambda tree, python, site, extra=(): (tree, python, site, extra))
+    monkeypatch.setattr(retro, "replay_node", lambda test, interpreter: [(test, interpreter)])
+    site = retro.Site(work=tmp_path)
+
+    got = retro._records(retro.Bug("R6", NODE, "a", "b"), "abc", "3.12", site)
+
+    assert got == [(NODE, (tmp_path / "abc", "3.12", site, ()))]
+
+
+# --- tables, rows and the ledger ----------------------------------------------------------------------
+
+def test_a_table_with_an_empty_file_or_a_stray_tab_in_its_header_is_refused(tmp_path):
+    empty = _file(tmp_path, "", "empty.tsv")
+    stray = _file(tmp_path, "id\ttest\t\nR1\tt\t\n", "stray.tsv")
+
+    for path in (empty, stray):
+        with pytest.raises(retro.RetroError) as refused:
+            retro.read_table(path, ("id", "test"))
+        assert str(refused.value) == f"{path}: the header must be id test (tab-separated)"
+
+
+def test_a_table_reads_its_rows_past_blank_lines_and_a_short_row_names_its_line(tmp_path):
+    good = _file(tmp_path, "id\ttest\n\nR1\tt[a b]\n", "good.tsv")
+    short = _file(tmp_path, "id\ttest\nR1\tt\nR2\n", "short.tsv")
+
+    assert retro.read_table(good, ("id", "test")) == [{"id": "R1", "test": "t[a b]"}]
+    assert retro.read_table(tmp_path / "missing.tsv", ("id",)) == []
+    with pytest.raises(retro.RetroError) as refused:
+        retro.read_table(short, ("id", "test"))
+    assert str(refused.value) == f"{short}:3: 1 cells, the header has 2"
+
+
+def test_a_written_table_is_lf_utf8_and_flattens_tabs_and_runs_of_space(tmp_path):
+    path = tmp_path / "t.tsv"
+
+    retro.write_table(path, ("id", "note"), [{"id": "R1", "note": "a\tb   c\nd é"}])
+
+    assert path.read_bytes() == "id\tnote\nR1\ta b c d é\n".encode()
+
+
+def test_a_landed_table_keeps_a_test_id_that_holds_a_space(tmp_path):
+    table = "id\ttest\tplatform\nR1\ttests/x.py::t[a b]\tany\n"
+
+    assert retro.landed(_landed(tmp_path, table)) == {
+        "p1": [{"id": "R1", "test": "tests/x.py::t[a b]", "platform": "any"}]}
+
+
+def test_the_waiting_rows_say_open_or_pending_and_nothing_else():
+    common = {"test": NODE, "before_commit": "a" * 12, "fix_commit": "b" * 12, "lizard": "",
+              "failure_class": "", "before_evidence": "", "fix_evidence": "", "digest": "",
+              "replayed": ""}
+
+    assert retro._waiting(_bug_row("R1", replay="open")) == {
+        "id": "R1", **common, "before": "open", "fix": "open",
+        "note": "branch not merged: strict xfail until it lands"}
+    assert retro._waiting(_bug_row("R2")) == {
+        "id": "R2", **common, "before": "pending", "fix": "pending", "note": retro.PENDING_NOTE}
+
+
+# A check outside this packet: its digest does not already hold the probe as packet data.
+OTHER = "tests/accuracy/kit/test_kit_docrange.py::t"
+
+
+def test_a_probe_moves_the_digest_of_a_check_outside_its_packet():
+    assert retro.digest(OTHER, "R97.py") != retro.digest(OTHER)
+
+
+def test_a_ledger_row_records_today_the_verdicts_and_the_probe_s_digest():
+    bug = retro.Bug("R1", OTHER, "a" * 12, "b" * 12, "R97.py")
+
+    row = retro.ledger_row(bug, retro.Outcome("red", "AssertionError", "wrong"),
+                           retro.Outcome("pass", "", "1 item(s) passed"))
+
+    assert row == {"id": "R1", "test": OTHER, "before_commit": "a" * 12, "fix_commit": "b" * 12,
+                   "lizard": retro.LIZARD, "before": "red", "failure_class": "AssertionError",
+                   "before_evidence": "wrong", "fix": "pass", "fix_evidence": "1 item(s) passed",
+                   "digest": retro.digest(OTHER, "R97.py"),
+                   "replayed": datetime.date.today().isoformat(), "note": ""}
+
+
+def test_a_probe_row_is_stale_until_its_digest_covers_the_probe():
+    row = {**_bug_row("R1"), "test": OTHER, "probe": "R97.py"}
+    recorded = {**_ledger_row("R1"), "test": OTHER, "digest": retro.digest(OTHER)}
+
+    assert retro._is_stale(row, {retro.row_key(row): recorded})
+    assert not retro._is_stale(row, {retro.row_key(row): {**recorded, "digest": retro.digest(OTHER, "R97.py")}})
+
+
+def test_a_row_whose_platform_is_a_raw_name_runs_only_there():
+    row = {**_bug_row("R1"), "platform": "darwin"}
+
+    assert (retro.replayable_here(row, "linux"), retro.replayable_here(row, "darwin23")) == (False, True)
+
+
+def test_the_public_rows_leave_out_the_open_and_the_bundle_ones():
+    rows = [_bug_row("R1", replay="open"), _bug_row("R2", replay="bundle"), _bug_row("R3")]
+
+    assert retro._public(rows) == [rows[2]]
+
+
+def test_rows_keep_the_order_bugs_tsv_gave_them_within_a_bug():
+    bugs = [{**_bug_row("R1"), "test": "t2"}, {**_bug_row("R1"), "test": "t1"},
+            {**_bug_row("R2"), "test": "t0"}]
+    new = {**_bug_row("R1"), "test": "t0"}
+
+    assert sorted([bugs[2], new, *bugs[1::-1]], key=retro._placed(bugs)) == [*bugs[:2], new, bugs[2]]
+
+
+def test_a_bug_new_to_a_packet_s_test_carries_no_probe_from_another_test():
+    bugs = [{**_bug_row("R1"), "packet": "p1", "test": "t_old", "probe": "R1.py"}]
+
+    fresh = retro._bug_for(bugs, "p1", {"id": "R1", "test": "t_new"})
+
+    assert (fresh["test"], fresh["probe"], fresh["platform"]) == ("t_new", "", "any")
+
+
+def test_sync_names_the_packet_and_the_bug_bugs_tsv_does_not_know():
+    with pytest.raises(retro.RetroError) as refused:
+        retro._template([], "p1", "R9")
+
+    assert str(refused.value) == ("p1/retro.tsv names R9, which bugs.tsv has no row for: "
+                                  "triage the commit that fixed it first")
+
+
+# --- the commands hand their python on and only `run --record` writes -----------------------------
+
+def _replays(monkeypatch, before: str = "red") -> list[str]:
+    pythons = []
+
+    def replay(bug, python, site=None):
+        pythons.append(python)
+        return retro.Outcome(before, "AssertionError", "wrong"), retro.Outcome("pass", "", "ok")
+
+    monkeypatch.setattr(retro, "replay", replay)
+    return pythons
+
+
+@pytest.mark.parametrize("argv", [["run", "R1"], ["nightly", "--day", "0"], ["release"]])
+def test_every_replaying_command_hands_on_its_python_and_leaves_the_ledger(tables, monkeypatch, argv):
+    tables.write([_bug_row("R1")], [_ledger_row("R1", digest="stale")])
+    before = tables.ledger.read_bytes()
+    pythons = _replays(monkeypatch)
+
+    assert retro.main(["--python", "3.99", *argv]) == 0
+
+    assert pythons == ["3.99"]
+    assert tables.ledger.read_bytes() == before
+
+
+def test_a_replay_prints_its_verdicts_and_records_why_it_contradicts_nothing_recorded(monkeypatch, capsys):
+    _replays(monkeypatch, before="green")
+
+    problem, row = retro._replay_one(_bug_row("R1"), {}, "3.99")
+
+    assert problem == "R1: the check passes on its before commit, so it catches nothing"
+    assert row["note"] == problem
+    assert capsys.readouterr().out == f"retro: R1 {NODE}: before green, fix pass\n"
+
+
+@pytest.mark.parametrize("day, expected", [(None, "today"), (4, 4)])
+def test_the_nightly_slice_is_today_s_unless_a_day_is_named(tables, monkeypatch, day, expected):
+    tables.write([_bug_row("R1")], [_ledger_row("R1")])
+    days = []
+    monkeypatch.setattr(retro, "weekly_slice", lambda rows, of, day: days.append((of, day)) or [])
+
+    retro._nightly(SimpleNamespace(day=day, slice_of=3, python=retro.CURRENT))
+
+    assert days == [(3, datetime.date.today().toordinal() if expected == "today" else expected)]
+
+
+def test_digest_with_a_probe_prints_the_digest_that_covers_it(capsys):
+    assert retro.main(["digest", OTHER, "--probe", "R97.py"]) == 0
+
+    assert capsys.readouterr().out == retro.digest(OTHER, "R97.py") + "\n"
+
+
+@pytest.mark.parametrize("argv, expected", [
+    (["run", "R1", "R2", "--record"],
+     {"python": retro.CURRENT, "command": "run", "ids": ["R1", "R2"], "record": True}),
+    (["--python", "3.13", "run", "R1"],
+     {"python": "3.13", "command": "run", "ids": ["R1"], "record": False}),
+    (["nightly"], {"python": retro.CURRENT, "command": "nightly", "slice_of": 7, "day": None}),
+    (["nightly", "--slice-of", "3", "--day", "4"],
+     {"python": retro.CURRENT, "command": "nightly", "slice_of": 3, "day": 4}),
+    (["release"], {"python": retro.CURRENT, "command": "release"}),
+    (["digest", "t::x", "--probe", "R1.py"],
+     {"python": retro.CURRENT, "command": "digest", "test": "t::x", "probe": "R1.py"}),
+    (["digest", "t::x"], {"python": retro.CURRENT, "command": "digest", "test": "t::x", "probe": ""}),
+    (["stale"], {"python": retro.CURRENT, "command": "stale"}),
+    (["sync"], {"python": retro.CURRENT, "command": "sync"}),
+])
+def test_every_retro_command_parses_to_what_its_code_reads(argv, expected):
+    parsed = vars(retro._parser().parse_args(argv))
+
+    assert parsed == expected
+    assert {key: type(value) for key, value in parsed.items()} == {
+        key: type(value) for key, value in expected.items()}
+
+
+@pytest.mark.parametrize("argv", [[], ["run"], ["digest"], ["nope"]])
+def test_a_retro_command_missing_what_it_needs_is_a_usage_error(argv, capsys):
+    with pytest.raises(SystemExit) as stopped:
+        retro._parser().parse_args(argv)
+
+    assert stopped.value.code == 2
+    assert capsys.readouterr().err.startswith("usage: retro.py ")
+
+
+def test_the_retro_parser_says_what_the_tool_and_record_do(capsys):
+    parser = retro._parser()
+
+    assert (parser.prog, parser.description) == (
+        "retro.py", "Replay every past calculation bug's check on the commit before its fix and on the fix.")
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "-h"])
+    assert "rewrite the replayed ledger rows" in " ".join(capsys.readouterr().out.split())
+
+
+# --- git, for real ------------------------------------------------------------------------------------
+
+def _git_repo(tmp_path: Path, name: str) -> tuple[Path, str]:
+    """A repo with one commit whose content is its own name, so two repos never share a sha."""
+    repo = tmp_path / name
+    repo.mkdir()
+    for args in (["init", "-q"], ["config", "user.name", "t"], ["config", "user.email", "t@t"],
+                 ["config", "commit.gpgsign", "false"]):
+        retro._checked(["git", *args], repo)
+    (repo / "f.txt").write_bytes(name.encode())
+    retro._checked(["git", "add", "f.txt"], repo)
+    retro._checked(["git", "commit", "-qm", name], repo)
+    return repo, retro._checked(["git", "rev-parse", "HEAD"], repo).strip()
+
+
+@pytest.mark.process
+def test_a_commit_only_the_bundle_holds_gets_a_worktree_at_it(tmp_path, monkeypatch):
+    source, sha = _git_repo(tmp_path, "source")
+    retro._checked(["git", "bundle", "create", "-q", str(tmp_path / "h.bundle"), "--all"], source)
+    clone, _ = _git_repo(tmp_path, "clone")
+    monkeypatch.setenv(retro.BUNDLE_ENV, str(tmp_path / "h.bundle"))
+
+    assert not retro.have_commit(sha, clone)
+    tree = retro.worktree(sha, retro.Site(repo=clone, work=tmp_path / "work"))
+
+    assert retro.have_commit(sha, clone)
+    assert retro._checked(["git", "rev-parse", "HEAD"], tree).strip() == sha
+    assert (tree / "f.txt").read_bytes() == b"source"

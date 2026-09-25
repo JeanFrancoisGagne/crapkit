@@ -1039,7 +1039,8 @@ def test_captured_output_reads_a_byte_that_is_not_utf8_as_a_replacement(tmp_path
     argv = [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'a\\xffb')"]
 
     assert mutation.captured(argv, tmp_path).stdout == "a\ufffdb"
-    assert mutation.captured([sys.executable, "-c", "print(input())"], tmp_path, "fed").stdout == "fed\n"
+    echo = [sys.executable, "-c", "import sys; sys.stdout.write(input())"]
+    assert mutation.captured(echo, tmp_path, "fed").stdout == "fed"
 
 
 @pytest.mark.process

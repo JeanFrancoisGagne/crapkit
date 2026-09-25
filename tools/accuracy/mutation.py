@@ -115,6 +115,11 @@ def _write(path: Path, text: str) -> None:
     path.write_bytes(text.encode())
 
 
+def _text(raw: bytes) -> str:
+    """A child's output; a byte that is not UTF-8 reads as U+FFFD, never an error."""
+    return raw.decode(errors="replace")
+
+
 # accuracy.yml uploads each weekly shard's and each nightly diff run's receipt
 # under this artifact name pattern; the release row reads them from RECEIPTS.
 RECEIPT_ARTIFACTS = "mutation-receipt-*"
@@ -421,8 +426,10 @@ def last_weekly(now: datetime.datetime) -> datetime.datetime:
 
 def captured(argv: list, cwd: Path, stdin: str | None = None) -> subprocess.CompletedProcess:
     """argv's output as text; a byte that is not UTF-8 reads as U+FFFD, never an error."""
-    return subprocess.run(argv, cwd=cwd, input=stdin, capture_output=True, encoding="utf-8",
-                          errors="replace")
+    fed = stdin.encode() if stdin is not None else None
+    done = subprocess.run(argv, cwd=cwd, input=fed, capture_output=True)
+    done.stdout, done.stderr = _text(done.stdout), _text(done.stderr)
+    return done
 
 
 def _git(repo: Path, *args: str) -> str:

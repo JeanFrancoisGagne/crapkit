@@ -75,6 +75,7 @@ PYTHON_ENV = "CRAPKIT_ACCURACY_PYTHON"
 COLLECT_ALL_ENV = "CRAPKIT_ACCURACY_COLLECT_ALL"
 DATA_DIRS = ("fixtures", "probes", "recorded", "small", "goldens", "known_kill")
 PLATFORMS = {"any": "", "windows": "win32", "linux": "linux", "macos": "darwin"}
+WINDOWS = os.name == "nt"
 
 
 class RetroError(ValueError):
@@ -89,6 +90,16 @@ def _read(path: Path) -> str:
 def _write(path: Path, text: str) -> None:
     """Write UTF-8 text with the newlines as given, on every OS."""
     path.write_bytes(text.encode())
+
+
+def _text(raw: bytes) -> str:
+    """A child's output; a byte that is not UTF-8 reads as U+FFFD, never an error."""
+    return raw.decode(errors="replace")
+
+
+def _tabbed(line: str) -> list[str]:
+    """A table line's cells: tabs separate them, and a cell may hold spaces."""
+    return line.split("\t")
 
 
 # --- tables -------------------------------------------------------------------------------
@@ -107,12 +118,12 @@ def _lines(path: Path) -> list[str]:
 
 
 def _check_header(path: Path, lines: list[str], columns: tuple[str, ...]) -> None:
-    if not lines or tuple(lines[0].split("\t")) != columns:
+    if not lines or tuple(_tabbed(lines[0])) != columns:
         raise RetroError(f"{path}: the header must be {' '.join(columns)} (tab-separated)")
 
 
 def _cells(path: Path, number: int, line: str, columns: tuple) -> dict:
-    cells = line.split("\t")
+    cells = _tabbed(line)
     if len(cells) != len(columns):
         raise RetroError(f"{path}:{number}: {len(cells)} cells, the header has {len(columns)}")
     return dict(zip(columns, cells))
@@ -194,8 +205,8 @@ def pytest_runtest_makereport(item, call):
     if not target or (call.when != "call" and call.excinfo is None):
         return None
     record = _record(item.nodeid, call)
-    with open(target, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record) + "\n")
+    with open(target, "ab") as handle:
+        handle.write((json.dumps(record) + "\n").encode())
     return None
 
 
@@ -295,8 +306,10 @@ class Site:
 
 
 def _run(argv: list, cwd: Path = REPO, env: dict | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run([str(part) for part in argv], cwd=cwd, env=env, capture_output=True,
-                          encoding="utf-8", errors="replace")
+    """argv run to the end, its output decoded as UTF-8 with the newlines it wrote."""
+    done = subprocess.run([str(part) for part in argv], cwd=cwd, env=env, capture_output=True)
+    done.stdout, done.stderr = _text(done.stdout), _text(done.stderr)
+    return done
 
 
 def _checked(argv: list, cwd: Path = REPO) -> str:
@@ -332,7 +345,7 @@ def worktree(sha: str, site: Site = Site()) -> Path:
 
 
 def venv_python(venv: Path) -> Path:
-    return venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    return venv / ("Scripts/python.exe" if WINDOWS else "bin/python")
 
 
 CURRENT = f"{sys.version_info.major}.{sys.version_info.minor}"
@@ -341,7 +354,7 @@ CURRENT = f"{sys.version_info.major}.{sys.version_info.minor}"
 def _create_venv(venv: Path, python: str) -> None:
     """The standard library's venv for this interpreter's version; uv for another."""
     if python == CURRENT:
-        venv_module.EnvBuilder(with_pip=False, symlinks=os.name != "nt").create(venv)
+        venv_module.EnvBuilder(with_pip=False, symlinks=not WINDOWS).create(venv)
     else:
         _checked(["uv", "venv", "-q", "--python", python, venv])
 
@@ -432,7 +445,7 @@ def replay_probe(probe: Path, interpreter: Path, tree: Path) -> list[dict]:
         return [{"nodeid": probe.name, "outcome": "passed", "exc_type": "", "assertion": False,
                  "message": ""}]
     tail = done.stderr.strip().splitlines()[-1:] or ["(no output)"]
-    kind = tail[0].split(":", 1)[0].rsplit(".", 1)[-1]
+    kind = tail[0].partition(":")[0].rpartition(".")[2]
     return [{"nodeid": probe.name, "outcome": "failed", "exc_type": kind,
              "assertion": kind == "AssertionError", "message": _cell(tail[0])[:300]}]
 
@@ -529,8 +542,8 @@ def landed(accuracy: Path = ACCURACY) -> dict[str, list[dict]]:
     tables = {}
     for path in sorted(accuracy.glob("*/retro.tsv")):
         lines = _lines(path)
-        header = lines[0].split("\t")
-        tables[path.parent.name] = [dict(zip(header, line.split("\t"))) for line in lines[1:]]
+        header = _tabbed(lines[0])
+        tables[path.parent.name] = [dict(zip(header, _tabbed(line))) for line in lines[1:]]
     return tables
 
 
@@ -601,7 +614,9 @@ def _replay_one(row: dict, ledger: dict, python: str) -> tuple[str, dict]:
     return problem, ledger_row(bug, before, fix, note=problem)
 
 
-def _replay_rows(rows: list[dict], ledger: dict, python: str, record: bool) -> int:
+def _replay_rows(rows: list[dict], ledger: dict, python: str, record: bool = False) -> int:
+    """Replay each row, print what contradicts the ledger, and rewrite the ledger
+    only when asked: nightly and release judge, `run --record` records."""
     fresh = dict(ledger)
     problems = []
     for row in rows:
@@ -649,14 +664,14 @@ def _nightly(args) -> int:
     public = _public(bugs)
     day = datetime.date.today().toordinal() if args.day is None else args.day
     chosen = _union(stale(public, ledger), weekly_slice(public, args.slice_of, day))
-    return _replay_rows(chosen, ledger, args.python, record=False)
+    return _replay_rows(chosen, ledger, args.python)
 
 
 def _release(args) -> int:
     bugs, ledger = _load()
     rows = [row for row in bugs if replayable_here(row)]
     chosen = _union(stale(rows, ledger), [row for row in rows if _bundle(row)])
-    return _replay_rows(chosen, ledger, args.python, record=False)
+    return _replay_rows(chosen, ledger, args.python)
 
 
 def _digest_cmd(args) -> int:
