@@ -21,14 +21,10 @@ import zipfile
 from hypothesis import given, strategies as st
 import pytest
 
-from accuracy.corpus_goldens import releases
+from accuracy.corpus_goldens import releases, wheels
 from accuracy.kit import repos
 from accuracy.kit.settings import pure
 
-REPO = Path(__file__).resolve().parents[3]
-SOURCE = REPO / "src" / "crapkit"
-CRAP_LINE = "    return ccn * ccn * (1.0 - cov) ** 3 + ccn\n"
-PLANTED = "    return ccn * ccn * (1.0 - cov) ** 3 + ccn + (0.5 if ccn == 3 else 0.0)\n"
 # A two-scope repo: src has no lane, so its rows read no-lane and score
 # crap(ccn, 0); lib's lane copies a hand-written coverage.py artifact.
 _SUMMARY = {"covered_lines": 2, "num_statements": 2, "missing_lines": 0, "excluded_lines": 0,
@@ -156,15 +152,7 @@ def test_the_declared_calcs_must_equal_the_moved_ones():
 # --- sides ------------------------------------------------------------------------------
 
 def _wheel(dest: Path, planted: bool) -> Path:
-    """This checkout's crapkit package zipped as a wheel, optionally with the plant."""
-    with zipfile.ZipFile(dest, "w") as archive:
-        for path in sorted(SOURCE.rglob("*.py")):
-            text = path.read_bytes().decode("utf-8")
-            if planted and path.name == "score.py":
-                assert CRAP_LINE in text
-                text = text.replace(CRAP_LINE, PLANTED)
-            archive.writestr("crapkit/" + path.relative_to(SOURCE).as_posix(), text)
-    return dest
+    return wheels.zipped(dest, wheels.CRAP_PLANT if planted else None)
 
 
 def _tiny(tmp_path: Path) -> Path:

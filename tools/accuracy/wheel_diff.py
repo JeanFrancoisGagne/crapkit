@@ -2,7 +2,7 @@
 
     python tools/accuracy/wheel_diff.py diff --base-wheel SIDE --candidate-wheel SIDE
         [--corpus small|full] [--corpus-dir DIR] [--out DIR] [--wheelhouse DIR]
-        [--expect-calcs "CALC,..."]
+        [--expect-calcs "CALC,..."] [--declared-since REF]
     python tools/accuracy/wheel_diff.py xplat RECEIPT RECEIPT [RECEIPT ...]
 
 A SIDE is a wheel file, a CI hand-off directory (.crapkit/ci-measure/<side>:
@@ -28,7 +28,9 @@ whose start line moves is one row with a moved `start`. Each moved column
 names the calculation it belongs to (CALCS); a row only one side lists moves
 "Function discovery and spans". `--out` receives moved.tsv, both sides'
 exports and summary.json; `--expect-calcs` states the calcs a declared change
-moved (empty: none), and any other set exits 1.
+moved (empty: none), and any other set exits 1. `--declared-since REF` (the
+previous release tag) asks that every moved calc be named by a CHANGES.tsv row
+added since REF, and exits 1 naming the ones that are not.
 
 `xplat` compares the exports the cross-platform receipts noted (a
 `corpus_goldens` export note, see test_xplat_digest): ints and labels exactly,
@@ -162,6 +164,40 @@ def _names(text: str) -> set[str]:
     return {name.strip() for name in text.split(",") if name.strip()}
 
 
+CHANGES = "tests/accuracy/change_control/CHANGES.tsv"
+
+
+def _row_calcs(cells: list[str]) -> set[str]:
+    return {calc.strip() for calc in cells[3].split(";") if calc.strip()}
+
+
+def changes_calcs(text: str) -> dict[str, set[str]]:
+    """{id: calcs} from a CHANGES.tsv (header first; calcs in column 4, `;`-separated)."""
+    rows = [line.split("	") for line in text.splitlines()[1:] if line.strip()]
+    return {cells[0]: _row_calcs(cells) for cells in rows if len(cells) > 3}
+
+
+def changes_text(repo: Path, ref: str | None) -> str:
+    """CHANGES.tsv in the working tree (ref None) or at a git ref; empty when absent."""
+    if ref is None:
+        path = repo / CHANGES
+        return path.read_bytes().decode("utf-8") if path.is_file() else ""
+    done = subprocess.run(["git", "show", f"{ref}:{CHANGES}"], cwd=repo, capture_output=True)
+    return done.stdout.decode("utf-8") if done.returncode == 0 else ""
+
+
+def declared_since(ref: str, repo: Path = REPO) -> set[str]:
+    """Every calc a CHANGES.tsv row added since `ref` names: the rows `ref` lacks."""
+    now, then = changes_calcs(changes_text(repo, None)), changes_calcs(changes_text(repo, ref))
+    return set().union(*(calcs for change, calcs in now.items() if change not in then))
+
+
+def undeclared_problem(rows: list[Moved], declared: set[str] | None) -> str | None:
+    """None when every moved calc is declared (or nothing was asked)."""
+    missing = sorted(set(moved_calcs(rows)) - declared) if declared is not None else []
+    return f"no CHANGES row since the previous tag names {missing}" if missing else None
+
+
 def expectation_problem(rows: list[Moved], expected: str | None) -> str | None:
     """None when the moved calcs are exactly the declared ones (or none were declared)."""
     if expected is None:
@@ -276,7 +312,7 @@ def unpack(wheel: Path, dest: Path) -> Path:
 
 # --- measuring one side -------------------------------------------------------------------
 
-def _run(root: Path, site: Path, out: Path, commands, date_now: int) -> dict[str, str]:
+def run_commands(root: Path, site: Path, out: Path, commands, date_now: int) -> dict[str, str]:
     driver = drive.Driver(root, date_now=date_now, spawn=True, env={"PYTHONPATH": str(site)})
     exports = {}
     for name, argv in commands:
@@ -293,7 +329,7 @@ def measure_tree(tree: Path, site: Path, work: Path, commands, date_now: int) ->
     built = repos.build(repos.tree_spec(tree), work / "repo")
     out = work / "out"
     out.mkdir(parents=True)
-    return _run(built.root, site, out, commands, date_now)
+    return run_commands(built.root, site, out, commands, date_now)
 
 
 def _member_dirs(corpus_dir: Path) -> list[Path]:
@@ -398,6 +434,7 @@ def _parser() -> argparse.ArgumentParser:
     diff.add_argument("--out", type=Path)
     diff.add_argument("--wheelhouse", type=Path, default=default_wheelhouse())
     diff.add_argument("--expect-calcs")
+    diff.add_argument("--declared-since")
     receipts = sub.add_parser("xplat")
     receipts.add_argument("receipts", nargs="+", type=Path)
     return parser
@@ -420,7 +457,7 @@ def _sides(args) -> tuple:
                                                            args.candidate_wheel))
 
 
-def _write_out(out: Path, exports: tuple, rows: list[Moved]) -> None:
+def write_out(out: Path, exports: tuple, rows: list[Moved]) -> None:
     for side, found in zip(("base", "candidate"), exports):
         for name, text in found.items():
             target = out / side / name
@@ -456,17 +493,23 @@ def _diff(args) -> tuple[int, list[str]]:
     exports = _measure_sides(sides, args)
     rows = diff_exports(*exports)
     if args.out:
-        _write_out(args.out, exports, rows)
-    return _verdict(rows, args.expect_calcs)
+        write_out(args.out, exports, rows)
+    declared = declared_since(args.declared_since) if args.declared_since else None
+    return verdict(rows, [expectation_problem(rows, args.expect_calcs),
+                          undeclared_problem(rows, declared)])
 
 
-def _verdict(rows: list[Moved], expected: str | None) -> tuple[int, list[str]]:
-    lines = [f"{len(rows)} value(s) moved"] + [f"  {calc}: {count}"
-                                              for calc, count in moved_calcs(rows).items()]
-    lines += [f"  {row.path} {row.long_name} {row.column}: {row.old} -> {row.new}"
-              for row in rows[:10]]
-    problem = expectation_problem(rows, expected)
-    return (EXIT_MOVED, lines + [problem]) if problem else (0, lines)
+def summary_lines(rows: list[Moved], where: str = "") -> list[str]:
+    """The move count, the count per calc and the first 10 moved cells."""
+    lines = [f"{len(rows)} value(s) moved{where}"]
+    lines += [f"  {calc}: {count}" for calc, count in moved_calcs(rows).items()]
+    return lines + [f"  {row.path} {row.long_name} {row.column}: {row.old} -> {row.new}"
+                    for row in rows[:10]]
+
+
+def verdict(rows: list[Moved], problems: list[str | None], where: str = "") -> tuple[int, list[str]]:
+    found = [problem for problem in problems if problem]
+    return (EXIT_MOVED if found else 0), summary_lines(rows, where) + found
 
 
 def _xplat(args) -> tuple[int, list[str]]:

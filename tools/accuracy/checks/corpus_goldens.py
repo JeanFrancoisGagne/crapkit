@@ -27,6 +27,8 @@ CHECKS = [
      "pytest": [_PACKET + "test_action_scenarios.py"]},
     {"name": "the store-upgrade rules on hand inputs", "seconds": 1,
      "pytest": [_PACKET + "test_upgrade_diff.py"]},
+    {"name": "the consumer replay's lane rewrite and declared calcs", "seconds": 2,
+     "pytest": [_PACKET + "test_consumer_replay.py"]},
     {"name": "two runs normalize to one golden", "seconds": 15, "tiers": ["nightly"],
      "pytest": [_PACKET + "test_normalized_twice.py"]},
     {"name": "the last five releases' stores read by this crapkit", "seconds": 420,
