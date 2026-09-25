@@ -1570,7 +1570,16 @@ def _uncovered(diff: Diff, old: dict, new: dict) -> bool:
     return old.get("calc") != new.get("calc") or not _covers(diff, new.get("calc", ""))
 
 
+def _ruling_recast(key: str, old: dict, new: dict) -> Problem:
+    return Problem("B9", f"rulings row {key} moved from {old.get('calc')} to {new.get('calc')}; "
+                         "a ruling keeps its calc",
+                   f"put {key} back under {old.get('calc')} and add a new rulings row for "
+                   f"{new.get('calc')}")
+
+
 def _ruling_moved(diff: Diff, key: str, old: dict, new: dict) -> Problem:
+    if old.get("calc") != new.get("calc"):
+        return _ruling_recast(key, old, new)
     what = (f"{old.get('ruling')} to {new.get('ruling')}, crapkit {old.get('crapkit_value')} to "
             f"{new.get('crapkit_value')}")
     calc = new.get("calc", "")
@@ -1948,8 +1957,10 @@ def _changed_rulings(base, head) -> dict:
             if before[key][2] != after[key][2]}
 
 
-def _nothing_moved(request: Request, moves: Moves, relocked: list[str]) -> list[str]:
-    if request.kind == "none" or moves.cells or relocked or set(request.calcs) & moves.more:
+def _nothing_moved(request: Request, moves: Moves) -> list[str]:
+    """A change of a kind other than none must move a golden or name a calc whose
+    rulings row or module changed; a relocked hand table alone is kind none."""
+    if request.kind == "none" or moves.cells or moves.surfaces or set(request.calcs) & moves.more:
         return []
     return ["nothing moved since the lock; a change that moves nothing is kind none"]
 
@@ -1995,7 +2006,7 @@ def plan_declare(base, head, request: Request, now: Running,
     lock, relocked = _relock(head, request.id)
     digest, stale = _digest_row(head, now, request.id)
     refusals += (bad + _declaration_problems(request, head, moves)
-                 + _nothing_moved(request, moves, relocked) + stale)
+                 + _nothing_moved(request, moves) + stale)
     if refusals:
         raise ChangeControlError("declare refused:\n" + "\n".join(f"  {text}" for text in refusals)
                                  + "\n" + "\n".join(moved_block(head, moves.cells, moves.surfaces,

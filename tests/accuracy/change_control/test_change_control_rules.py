@@ -85,6 +85,25 @@ def _declared_definition(tree):
     return seeds.replace(head, "README.md", "+ ccn.", "+ ccn; full coverage leaves ccn.")
 
 
+def _lock_names_an_undeclared_change(tree):
+    return seeds.relock(seeds.replace(tree, seeds.WORKLIST, "12", "13"), "C9", seeds.WORKLIST)
+
+
+def _ruling_under_a_fix(tree, calc="Cognitive complexity"):
+    """R-D2 from defect to fixed (crapkit 2 to 1), or into another calc, under a
+    fix that names Cognitive complexity."""
+    head = (seeds.replace(tree, seeds.RULINGS, "\t2\t1\tdefect\t", "\t1\t1\tfixed\t")
+            if calc == "Cognitive complexity" else seeds.replace(
+                tree, seeds.RULINGS, "R-D2\tCognitive complexity\t", f"R-D2\t{calc}\t"))
+    head = seeds.change(head, "C3", "fix", "Cognitive complexity")
+    return seeds.with_bug(seeds.changelog(seeds.relock(head, "C3", seeds.RULINGS), "C3"))
+
+
+def _golden_gone_from_the_lock(tree):
+    head = {path: text for path, text in tree.items() if path != seeds.WORKLIST}
+    return seeds.relock(head, "C2")
+
+
 FAILING = {
     "an edited metric-digests row": (BASE, _edited_metric_row, {"B1"}),
     "a golden relocked under an old change": (BASE, _golden_relocked_under_an_old_change,
@@ -123,6 +142,7 @@ CLEAN = {
     "a none change next to a fix": (BASE_CCN8, lambda tree: seeds.change(
         seeds.module_changed(seeds.fixed_ccn(tree)), "C4", "none", "",
         reason="a comment in score.py")),
+    "a ruling fixed under a fix naming its calc": (BASE, _ruling_under_a_fix),
 }
 
 
@@ -332,6 +352,13 @@ MORE_FAILING = {
     "moved.tsv misquotes the oracle": (_misquoted_oracle, {"B11"}),
     "a disagreement under a ruling of another calc": (
         _disagreement_under_a_ruling_of_another_calc, {"B11"}),
+    "a lock row naming an undeclared change": (_lock_names_an_undeclared_change,
+                                               {"T3", "B5", "B10"}),
+    "a ruling moved to another calc": (lambda tree: _ruling_under_a_fix(tree, "Nesting depth"),
+                                       {"B9", "B10"}),
+    "a golden gone from the lock with no change": (_golden_gone_from_the_lock, {"B5"}),
+    "a packet gone from the test counts": (lambda tree: seeds.replace(
+        tree, seeds.COUNTS, "score_model\t3\n", ""), {"B4"}),
 }
 
 
@@ -480,6 +507,25 @@ def _facts(name: str, head: dict) -> list[tuple]:
             "B11", "changes/C3.moved.tsv: src/a.py:f1 crap 1.25 disagrees with kit.exact 1.0 and "
                    "ruling R-CCN does not cover that calc and oracle",
             "fix the code, or name the covering ruling with --against-oracle")],
+        "a lock row naming an undeclared change": [
+            ("T3", f"{seeds.WORKLIST} names change C9, which no CHANGES row declares",
+             ANY_DECLARE),
+            # the kit's wording for a relock under a change the head lacks too
+            ("B5", f"{seeds.WORKLIST} was relocked under C9, a change the base already had",
+             ANY_DECLARE), WORKLIST_B10],
+        "a ruling moved to another calc": [
+            ("B9", "rulings row R-D2 moved from Cognitive complexity to Nesting depth; a ruling "
+                   "keeps its calc", "put R-D2 back under Cognitive complexity and add a new "
+                                     "rulings row for Nesting depth"),
+            ("B10", "declared calc did not move: Cognitive complexity",
+             "drop Cognitive complexity from the change's calcs column; a fix the goldens can "
+             "show moves a golden row, so add the fixed shape to the small corpus if it is "
+             "missing")],
+        "a golden gone from the lock with no change": [(
+            "B5", f"{seeds.WORKLIST} left the lock with no new change", ANY_DECLARE)],
+        "a packet gone from the test counts": [(
+            "B4", "packet score_model collects 0 tests, the base 3",
+            "restore the tests; a check is replaced, never dropped")],
     }[name]
 
 
@@ -607,6 +653,61 @@ def test_an_oracle_that_finds_no_function_at_the_start_line_answers_nothing(orac
     assert cc.complexipy_cognitive({"start": "1"}, "def parse(:\n") is None
     assert cc.judge(tree, cell).value == "7"
     assert cc.judge(tree, moved).value == "0"
+
+
+BOX = '''class Box:
+    def put(self, x):
+        if x and self:
+            return x
+        return None
+
+
+def outer(x):
+    def inner(y):
+        if y:
+            return y
+        return 0
+    return inner(x)
+'''
+
+
+def test_radon_answers_for_a_method_and_a_nested_function(oracle):
+    """McCabe by hand: put is 1 + if + `and` = 3 (line 2); inner is 1 + if = 2 (line 9)."""
+    oracle("radon")
+
+    assert [cc.radon_ccn({"start": str(line)}, BOX) for line in (2, 9)] == ["3", "2"]
+
+
+def test_a_stopped_measurement_with_no_phase_or_error_says_so(tmp_path):
+    (tmp_path / "base").mkdir()
+    (tmp_path / "base" / "failure.json").write_text("{}", encoding="utf-8")
+
+    assert cc.measurement_stopped(tmp_path) == ("change control: skipped, the base measurement "
+                                                "stopped in ?: ?")
+
+
+SEED_HEADER = "id\tdate\tkind\tcalcs\tanalysis_version\tlizard_version\tchangelog\treason\n"
+SEED_BASE = {**BASE, cc.SEED_LOCK: "path\tsha256\tchange\nseed/a.json\taaa\tK1\n"
+                                   "seed/b.json\tccc\tK1\n",
+             cc.SEED_CHANGES: SEED_HEADER + "K1\t2026-09-24\tnone\t\t\t\t\tthe seed goldens\n"}
+
+
+@pytest.mark.parametrize("edit, text", [
+    (lambda lock: lock.replace("aaa", "bbb"),
+     "seed/a.json was relocked under K1, a change the base already had"),
+    (lambda lock: lock.replace("seed/b.json\tccc\tK1\n", ""),
+     "seed/b.json left the lock with no new change"),
+])
+def test_the_kit_s_seed_lock_follows_the_same_lock_rule(edit, text):
+    head = {**SEED_BASE, cc.SEED_LOCK: edit(SEED_BASE[cc.SEED_LOCK])}
+    declared = {**head, cc.SEED_CHANGES: head[cc.SEED_CHANGES]
+                + "K2\t2026-09-25\tnone\t\t\t\t\tthe seed goldens moved\n"}
+    declared = {**declared, cc.SEED_LOCK: declared[cc.SEED_LOCK].replace("bbb\tK1", "bbb\tK2")}
+
+    problems, _ = cc.verdict(_tree(SEED_BASE), _tree(head), cc.running(_tree(head), LIZARD))
+
+    assert [(problem.rule, problem.text) for problem in problems] == [("B5", text)]
+    assert pure_rules(SEED_BASE, declared) == set()
 
 
 class _CountsTable:
@@ -921,8 +1022,38 @@ def test_a_declared_and_committed_move_passes_the_check(make_repo, oracle):
 
     code, verdict = cc.check(top, "HEAD~1", "HEAD", lizard=LIZARD)
     assert "7 golden cells moved, 7 judged by an oracle" in text
+    assert ("metric-digests: new row for analysis 12, lizard 1.24.0 (ANALYSIS_VERSION was 11 at "
+            "the base)") in text
     assert "- parse's ccn moved. (accuracy change C3)" in text
     assert code == 0, verdict
+
+
+@pytest.mark.process
+def test_a_second_declare_in_the_same_diff_answers_only_for_what_is_left(make_repo, oracle):
+    """C3 declares parse's ccn fix; a comment in score.py then goes under a kind none
+    C4, which does not see the seven cells C3 already relocked."""
+    oracle("radon")
+    head = seeds.module_changed(seeds.bump(
+        {**BASE_CCN8, **{path: BASE[path] for path in (seeds.SCORED, seeds.INVENTORY)}}, "12"))
+    top = _working(make_repo, BASE_CCN8, head)
+
+    _declare(top, _request())
+    text = _declare(top, _request(kind="none", calcs=(), key="C4"))
+
+    assert text.startswith("declared C4 (none: no calc): 0 locked files relocked, 0 golden "
+                           "cells moved, 0 judged by an oracle")
+
+
+@pytest.mark.process
+def test_an_edited_metric_row_is_restored_from_the_base_commit(make_repo):
+    top = seeds.seeded(make_repo, BASE, _edited_metric_row(BASE))
+    base = repos.git(top, "rev-parse", "HEAD~1").strip()
+
+    code, text = cc.check(top, "HEAD~1", "HEAD", lizard=LIZARD)
+
+    assert code == 1
+    assert (f"  fix: git checkout {base} -- {seeds.DIGESTS}, then declare the move as a new "
+            "row") in text
 
 
 @pytest.mark.process
