@@ -154,9 +154,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   hooks and an MCP client each run the first one their own PATH lists, so the hook can
   judge a commit with one version while the shell records marks with another.
 - In a venv uv made, which holds no pip, the install lines `init` and `doctor` print for a
-  missing pytest-cov or an old coverage.py read `uv pip install --python <that python>
-  ...`. The `<python> -m pip install` they printed failed there with "No module named
-  pip".
+  missing pytest-cov or an old coverage.py, and the one `coverage` prints when pytest
+  rejects `--cov`, read `uv pip install --python <that python> ...`. The `<python> -m
+  pip install` they printed failed there with "No module named pip".
 
 `crapkit doctor --plugin-root`:
 

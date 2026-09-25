@@ -42,3 +42,19 @@ def test_a_manager_after_the_chain_still_gets_no_install_line(tmp_path):
 
     assert "-m pip install" not in message
     assert "the environment the lane's suite runs in" in message
+
+
+def test_in_a_venv_uv_made_the_hint_names_uv_pip(tmp_path):
+    """uv installs no pip into a venv it makes, so the `.venv/bin/python -m pip
+    install pytest-cov` this hint printed failed with "No module named pip" and
+    the next `crapkit coverage` failed the same way. doctor's own note already
+    names `uv pip install --python` there; the lane's refusal now agrees."""
+    from test_doctor_uv_venv_remedy import PYTHON, venv
+
+    venv(tmp_path, uv=True)
+    word = PYTHON.as_posix()
+
+    message = _hint(tmp_path, f"{word} -m pytest --cov=src")
+
+    assert (f"the environment `{word}` runs in (`uv pip install --python {word} pytest-cov`)"
+            in message), message
