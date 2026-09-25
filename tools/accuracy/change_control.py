@@ -114,7 +114,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import fnmatch
 from fractions import Fraction
-from functools import lru_cache, partial
+from functools import partial
 import hashlib
 import importlib.metadata
 import json
@@ -252,12 +252,27 @@ class ChangeControlError(ValueError):
 # --- patterns ------------------------------------------------------------------------
 
 _TOKENS = {"**/": "(?:[^/]+/)*", "**": ".*", "*": "[^/]*", "?": "[^/]"}
+# The process's caches: compiled globs, corpus.toml members, ESLint answers per file.
+_COMPILED: dict[str, re.Pattern] = {}
+_MEMBERS: dict[bytes, frozenset[str]] = {}
+_ESLINT: dict[tuple[str, str], dict] = {}
 
 
-@lru_cache(maxsize=None)
-def _regex(pattern: str) -> re.Pattern:
+def clear_caches() -> None:
+    """Empty the process's caches, so the next call computes afresh."""
+    for cache in (_COMPILED, _MEMBERS, _ESLINT):
+        cache.clear()
+
+
+def _translated(pattern: str) -> str:
     parts = re.split(r"(\*\*/|\*\*|\*|\?)", pattern)
-    return re.compile("".join(_TOKENS.get(part, re.escape(part)) for part in parts) + r"\Z")
+    return "".join(_TOKENS.get(part, re.escape(part)) for part in parts) + r"\Z"
+
+
+def _regex(pattern: str) -> re.Pattern:
+    if pattern not in _COMPILED:
+        _COMPILED[pattern] = re.compile(_translated(pattern))
+    return _COMPILED[pattern]
 
 
 def matches(path: str, patterns) -> bool:
@@ -630,9 +645,13 @@ def golden_set(path: str) -> str:
     return after[0] if len(after) > 1 else ""
 
 
-@lru_cache(maxsize=16)
 def _members(data: bytes | None) -> frozenset[str]:
-    return frozenset(tomllib.loads(data.decode("utf-8")).get("member", {})) if data else frozenset()
+    """The [member.*] names of a corpus.toml, none when the tree has no corpus.toml."""
+    if not data:
+        return frozenset()
+    if data not in _MEMBERS:
+        _MEMBERS[data] = frozenset(tomllib.loads(data.decode("utf-8")).get("member", {}))
+    return _MEMBERS[data]
 
 
 def corpus_name(tree, golden: str) -> str:
@@ -761,10 +780,16 @@ def _node(script: Path, *args: str) -> str:
     return done.stdout
 
 
-@lru_cache(maxsize=32)
 def eslint_values(source: str, suffix: str) -> dict:
     """ESLint's complexity (classic and modified) and sonarjs's cognitive complexity
-    for every function of one JS, TS or Vue file (oracles/eslint_values.cjs)."""
+    for every function of one JS, TS or Vue file (oracles/eslint_values.cjs), one
+    node run per file."""
+    if (source, suffix) not in _ESLINT:
+        _ESLINT[source, suffix] = _eslint_run(source, suffix)
+    return _ESLINT[source, suffix]
+
+
+def _eslint_run(source: str, suffix: str) -> dict:
     modules = oracles.node_modules("push")
     if not (modules / "eslint").is_dir():
         raise ChangeControlError("oracle eslint is not installed; run: npm ci --prefix "
@@ -1283,8 +1308,8 @@ def _floor_fell(row: dict, after: dict) -> bool:
 
 def _floor_problem(path: str, row: dict, after: dict) -> Problem:
     now = after.get(_floor_key(row)) or "nothing"
-    return Problem("B3", f"{path}: floor {dict(_floor_key(row))} fell from {row.get('floor')} "
-                         f"to {now}", "restore the floor; a floor only rises")
+    return Problem("B3", f"{path}: floor {_first(row)} fell from {row.get('floor')} to {now}",
+                   "restore the floor; a floor only rises")
 
 
 def _floor_problems(path: str, old: list[dict], new: list[dict]) -> list[Problem]:
@@ -1351,7 +1376,7 @@ def _relock_problem(diff: Diff, path: str, change_id: str) -> Problem | None:
     if _exempt(path, change, wanted) or split_calcs(change.get("calcs", "")) & wanted:
         return None
     return Problem("B5", f"{path} moved under {change_id}, which names no calc of packet "
-                         f"{packet_of(path)} ({', '.join(sorted(wanted))})",
+                         f"{packet_of(path)} ({'; '.join(sorted(wanted))})",
                    f"name the calc in {change_id}'s calcs column")
 
 
@@ -1440,7 +1465,7 @@ def _unnamed(diff: Diff) -> list[str]:
 def _module_problem(diff: Diff, module: str) -> Problem:
     fix = (f"name one of them in the change's calcs, or declare the edit as a change that moves "
            f"nothing: {declare_command(next_id(diff.head_changes), 'none', ())}")
-    return Problem("B6", f"{module} holds {', '.join(diff.touched[module])} and changed with no "
+    return Problem("B6", f"{module} holds {'; '.join(diff.touched[module])} and changed with no "
                          "declared change naming one of them", fix)
 
 

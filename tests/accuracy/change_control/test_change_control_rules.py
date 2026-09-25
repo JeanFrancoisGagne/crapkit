@@ -342,6 +342,164 @@ def test_each_further_break_fails_its_rule_in_memory(name):
     assert pure_rules(BASE, edit(BASE)) == expected
 
 
+# --- what each failure says: the facts a reader acts on, and the command that fixes it ------------
+# The wording is the tool's; every fact inside it (the path, the row, the count, the
+# calc, the change id the fix should use) is worked out here from the scenario.
+
+DECLARE = "python tools/accuracy/change_control.py declare"
+ANY_DECLARE = f'{DECLARE} <id> --kind <kind> --calcs "<calc>" --reason "<why>"'
+T5_FIX = (f"declare the move with `{ANY_DECLARE}` after bumping ANALYSIS_VERSION in "
+          "src/crapkit/analyze.py; never edit an old row")
+NAME_ONE = ("name one of them in the change's calcs, or declare the edit as a change that "
+            "moves nothing: ")
+WORKLIST_B10 = ("B10", "moved calc not declared: Queue admission and floors or Worklist ranking "
+                       "and dormant list",
+                f'{DECLARE} C3 --kind fix --calcs "Worklist ranking and dormant list" '
+                '--reason "<why>"')
+FIX_BUGS = ("add a row per fixed bug to tests/accuracy/suite_strength/retro/bugs.tsv with its "
+            "before and fix commits")
+SCORE_CALCS = "CRAP score; Cognitive complexity; Pre-commit gate; ccn_std, ccn_mod and gated ccn"
+
+
+def _sha12(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _last_digest(tree: dict) -> str:
+    return tree[seeds.DIGESTS].splitlines()[-1].split("\t")[3]
+
+
+def _t5(head: dict, *found: tuple[str, str, str]) -> list[tuple]:
+    return [("T5", f"metric-digests.tsv: {text}", T5_FIX) for text in found]
+
+
+def _facts(name: str, head: dict) -> list[tuple]:
+    worklist = BASE[seeds.WORKLIST]
+    digest = cc.metric_digest(_tree(head))
+    return {
+        "an edited metric-digests row": [(
+            "B1", f"{seeds.DIGESTS} changed a row the base had; rows only append",
+            f"git checkout BASE -- {seeds.DIGESTS}, then declare the move as a new row")],
+        "a golden relocked under an old change": [(
+            "B5", f"{seeds.WORKLIST} was relocked under C2, a change the base already had",
+            ANY_DECLARE), WORKLIST_B10],
+        "a golden changed with the lock untouched": [(
+            "T2", f"{seeds.WORKLIST} changed with no declared change (lock {_sha12(worklist)}, "
+                  f"now {_sha12(worklist.replace('12', '13'))})", ANY_DECLARE), WORKLIST_B10],
+        "a fix row with no bugs row": [("B7", "1 fix change(s) (C3) and 0 new bugs.tsv row(s)",
+                                        FIX_BUGS)],
+        "defect to fixed with no fix row": [(
+            "B9", "rulings row R-D2 changed (defect to fixed, crapkit 2 to 1) with no fresh fix "
+                  "or definition change naming Cognitive complexity",
+            f'{DECLARE} C4 --kind fix --calcs "Cognitive complexity" --reason "<why>"')],
+        "a moved calc not declared": [(
+            "B10", "moved calc not declared: Python reader: spans, names, inline_body, "
+                   "unread-def net or ccn_std, ccn_mod and gated ccn",
+            f'{DECLARE} C4 --kind fix --calcs "ccn_std, ccn_mod and gated ccn" --reason "<why>"')],
+        "over-declared calcs": [(
+            "B10", "declared calc did not move: Cognitive complexity",
+            "drop Cognitive complexity from the change's calcs column; a fix the goldens can "
+            "show moves a golden row, so add the fixed shape to the small corpus if it is "
+            "missing")],
+        "a definition with no docs or rulings change": [
+            ("B8", "definition C3 edits no docs file (README.md, CONTEXT.md, docs/agent-json.md, "
+                   "docs/accuracy.md)", "state the definition where users read it, in the same "
+                                        "diff"),
+            ("B8", "definition C3: moved rows cite ruling <none>, which this diff neither adds "
+                   "nor changes", "add or change the rulings row whose construct covers them"),
+            ("B8", "definition C3: no hand or probe row with an outside source exercises CRAP "
+                   "score", "add one to that calc's packet, citing its source")],
+        "a deleted rulings row": [(
+            "B2", f"rulings row R-D5 ({seeds.RULINGS}) is gone",
+            "restore it; a ruling that no longer applies moves to `fixed`")],
+        "a lowered floor": [(
+            "B3", f"{seeds.FLOORS}: floor src/crapkit/score.py fell from 95 to 90",
+            "restore the floor; a floor only rises")],
+        "a dropped test count": [(
+            "B4", "packet score_model collects 2 tests, the base 3",
+            "restore the tests; a check is replaced, never dropped")],
+        "a calc-module diff with no change row": [(
+            "B6", "src/crapkit/score.py holds CRAP score and changed with no declared change "
+                  "naming one of them", f'{NAME_ONE}{DECLARE} C3 --kind none --reason "<why>"')],
+        "a calc-module diff under a change naming another module's calc": [(
+            "B6", "src/crapkit/score.py holds CRAP score and changed with no declared change "
+                  "naming one of them", f'{NAME_ONE}{DECLARE} C4 --kind none --reason "<why>"')],
+        "an analyze.py edit beyond the version bump under a CRAP fix": [(
+            "B6", "src/crapkit/analyze.py holds Cognitive complexity; ccn_std, ccn_mod and gated "
+                  "ccn and changed with no declared change naming one of them",
+            f'{NAME_ONE}{DECLARE} C4 --kind none --reason "<why>"')],
+        "an unknown change kind": [(
+            "T3", "CHANGES.tsv: C3 has kind 'tweak', not one of fix, definition, feature, none",
+            f"edit the new row in {seeds.CHANGES}")],
+        "a repeated change id": [("T3", "CHANGES.tsv: C2 appears 2 times",
+                                  f"edit the new row in {seeds.CHANGES}")],
+        "a fix missing from the changelog": [(
+            "T4", "CHANGELOG.md never names change C3",
+            "add a line under ## Unreleased that ends `(accuracy change C3)`")],
+        "a stale last metric row": _t5(
+            head, "the last row has analysis_version 11, the tree gives 12",
+            f"the last row has digest {_last_digest(head)}, the tree gives {digest}"),
+        "metric rows out of order": _t5(
+            head, "rows are not in ascending version order",
+            "the last row has analysis_version 10, the tree gives 11",
+            f"the last row has digest 0123456789abcdef, the tree gives {digest}") + [(
+                "B1", f"{seeds.DIGESTS} changed a row the base had; rows only append",
+                f"git checkout BASE -- {seeds.DIGESTS}, then declare the move as a new row")],
+        "a renamed column in bugs.tsv": [(
+            "B2", f"{seeds.BUGS} lost or changed 1 row(s) the base had, the first being header id",
+            f"restore them from the base (git checkout <base> -- {seeds.BUGS}) and add new rows "
+            "below them")],
+        "a survivor added with no evidence": [(
+            "B3", f"{seeds.SURVIVORS}: src/crapkit/score.py/crap/{'ab' * 32} is added with no "
+                  "evidence", "fill its evidence column from `python tools/accuracy/mutation.py` "
+                              "(10,000 examples showing equal outputs)")],
+        "a hand row relocked under another packet's calc": [
+            ("B5", f"{seeds.HAND} moved under C3, which names no calc of packet score_model "
+                   f"({SCORE_CALCS})", "name the calc in C3's calcs column"),
+            ("B7", "1 fix change(s) (C3) and 0 new bugs.tsv row(s)", FIX_BUGS),
+            ("B10", "declared calc did not move: Churn counts and recency weight",
+             "drop Churn counts and recency weight from the change's calcs column, or change "
+             "the module that holds it")],
+        "a bug with no retro row": [("B7", "bug R02 has no retro.tsv row naming its test",
+                                     "add `<id>\\t<test node id>` to the owning packet's "
+                                     "retro.tsv")],
+        "a none change with no reason": [("B6", "change C3 is kind none with no reason",
+                                          "give C3 a reason")],
+        "golden cells moved under a none change": [
+            ("B6", "every fresh change is kind none, yet 1 golden cells moved",
+             f'{DECLARE} C4 --kind fix --calcs "CRAP score" --reason "<why>"'),
+            ("B10", "moved calc not declared: CRAP score",
+             f'{DECLARE} C4 --kind fix --calcs "CRAP score" --reason "<why>"')],
+        "moved.tsv misses its cell": [(
+            "B11", "changes/C3.moved.tsv lists 0 cells that did not move and misses 1 that did",
+            f"rerun the declare: {DECLARE} C3 ... writes it")],
+        "moved.tsv misquotes the oracle": [(
+            "B11", "changes/C3.moved.tsv records kit.exact 2.0 at src/a.py:f1 crap; kit.exact "
+                   "says 1.0", "rerun the declare of C3")],
+        "a disagreement under a ruling of another calc": [(
+            "B11", "changes/C3.moved.tsv: src/a.py:f1 crap 1.25 disagrees with kit.exact 1.0 and "
+                   "ruling R-CCN does not cover that calc and oracle",
+            "fix the code, or name the covering ruling with --against-oracle")],
+    }[name]
+
+
+def _scenario(name: str) -> tuple[dict, dict]:
+    if name in FAILING:
+        base, edit, _ = FAILING[name]
+        return base, edit(base)
+    return BASE, MORE_FAILING[name][0](BASE)
+
+
+@pytest.mark.parametrize("name", sorted({*FAILING, *MORE_FAILING}))
+def test_each_break_names_its_facts_and_the_command_that_fixes_it(name):
+    base, head = _scenario(name)
+
+    problems, _ = cc.verdict(_tree(base), _tree(head), cc.running(_tree(head), LIZARD))
+
+    assert [(problem.rule, problem.text, problem.fix) for problem in problems] == \
+        _facts(name, head)
+
+
 def test_before_the_first_lock_only_the_in_tree_rules_hold():
     """Neither side locked: a calc-module diff passes, a lockable file waits for
     the lock (T2); an emptied CHANGES.tsv on a locked base still fails B2."""
