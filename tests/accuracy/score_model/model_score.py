@@ -86,6 +86,45 @@ def ceiling(scope: str, repo_target: int, scope_targets: dict[str, int | None]) 
     return repo_target if own is None else own
 
 
+# --- the rescore overlay (README.md:800) ----------------------------------------------------
+
+@dataclass(frozen=True)
+class Fresh:
+    scope: str
+    path: str
+    name: str
+    start: int
+    end: int
+    occurrence: int = 1
+
+
+def _same_lines(row: Fresh, other: Fresh) -> bool:
+    """Another function (not the same one) declared on exactly these lines."""
+    return ((other.path, other.start, other.end) == (row.path, row.start, row.end)
+            and (other.name, other.occurrence) != (row.name, row.occurrence))
+
+
+def _shared_span(row: Fresh, rows: list[Fresh]) -> bool:
+    """Another function on the same lines, or a Python def whose body is its
+    def line (README.md:835)."""
+    one_line_def = row.path.endswith(".py") and row.start == row.end
+    return one_line_def or any(_same_lines(row, other) for other in rows)
+
+
+def overlay(row: Fresh, rows: list[Fresh], baseline: dict[tuple[str, str], list[tuple[int, float]]],
+            lane_scopes: set[str]) -> tuple[float, str]:
+    """Fresh complexity over the baseline's coverage, joined by name: no lane is
+    no-lane; a shared span is untested at 0; a name the baseline never measured
+    is untested at 0; else the baseline's cov, from the same-name row nearest
+    the fresh start (ASSUMED; rulings SM-OVERLAY-TWIN)."""
+    if row.scope not in lane_scopes:
+        return 0.0, "no-lane"
+    named = baseline.get((row.path, row.name))
+    if _shared_span(row, rows) or not named:
+        return 0.0, "untested"
+    return min(named, key=lambda pair: abs(pair[0] - row.start))[1], "measured"
+
+
 # --- totals, grade per run, coverage summary (README.md:839-844, agent-json.md:905-918) ---
 
 @dataclass(frozen=True)

@@ -15,3 +15,7 @@ CHECKS = [
     {"name": "remedy, grade and budget", "seconds": 3,
      "pytest": [_SM + "test_remedy_grade_budget.py"]},
 ]
+CHECKS += [
+    {"name": "ceiling per row", "seconds": 3, "pytest": [_SM + "test_ceiling.py"]},
+    {"name": "rescore overlay", "seconds": 2, "pytest": [_SM + "test_overlay.py"]},
+]

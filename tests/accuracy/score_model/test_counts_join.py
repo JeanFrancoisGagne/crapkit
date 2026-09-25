@@ -92,7 +92,9 @@ def _exact_cov(row: dict, counts) -> Fraction:
 
 
 def _crap_problem(row: dict, counts) -> str | None:
-    want = model_score.crap(int(row["ccn"]), _exact_cov(row, counts), row["flag"])
+    """Within ULPS of the exact CRAP of the cov double crapkit stored; the
+    4 dp test below judges it against the counts' exact ratio."""
+    want = model_score.crap(int(row["ccn"]), Fraction(float(row["cov"])), row["flag"])
     return None if _close(float(row["crap"]), want) else f"crap {row['crap']}, exact {want}"
 
 

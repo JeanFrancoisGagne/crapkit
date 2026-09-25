@@ -220,10 +220,13 @@ def test_phpunit_prints_ccn_from_95_percent():
 @given(strategies.crap_case())
 @pure
 def test_crap_bounds_and_ends(case):
+    """crap() is judged on the double it is handed: covered/total rounds once
+    before crapkit sees it, and near cov 1 that rounding alone moves a ccn-5000
+    CRAP by tens of ulps. The grid tests judge the end-to-end value."""
     value = crapkit_crap(case.ccn, case.covered, case.total)
 
     assert case.ccn <= value <= case.ccn * case.ccn + case.ccn
-    assert within_ulps(value, case.crap)
+    assert within_ulps(value, exact.crap(case.ccn, Fraction(case.covered / case.total)))
     assert crapkit_crap(case.ccn, 1, 1) == case.ccn
     assert crapkit_crap(case.ccn, 0, 1) == case.ccn * case.ccn + case.ccn
 
