@@ -299,6 +299,27 @@ nothing. Each of these now gets a line naming the object and the next step:
   committing marks seeded under a newer analysis, and to move the Action's `uses:` pin in
   the same commit as the re-seed.
 
+### A repository git cannot use is named, not quoted
+
+- Outside a git repository, `verify` and `hook-precommit` printed 129 lines of `git diff
+  --no-index` usage and never said the directory was not a repository, because git reads
+  `diff --cached` there as a diff of two paths. Every command that reads git now exits 4
+  with one line that names the directory and the fix: `<dir> is not a git repository, and
+  no directory above it is one`, then run it inside a checkout, or `git init`, `git add`
+  and `git commit` first.
+- In a fresh `git init` repo, `coverage` and `inventory` exited 4 with git's "ambiguous
+  argument 'HEAD': unknown revision" right after `init` passed. They now say `the git
+  repository at <dir> has no commit yet` and ask for the first commit. The commit gate
+  still runs on that first commit, since it reads only the index.
+- A repository git refuses to open, such as one another user owns under git's
+  `safe.directory` check, got the same usage from `verify` and the commit gate. The
+  refusal now quotes git's own message, which carries the `git config --global --add
+  safe.directory` line to run.
+- `verify` on a `.crapkit/` store copied into a fresh `git init` said a rebase or amend had
+  rewritten its baseline. It now names the missing commit.
+- Exit codes do not change. A failure in a repository git can use keeps git's own reason,
+  and a git answer given as exit 1, such as an unset config key, starts no extra process.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

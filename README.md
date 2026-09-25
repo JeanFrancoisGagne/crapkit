@@ -74,6 +74,14 @@ Not a Python repo? `uvx crapkit init` runs the same commands and adds nothing to
 manifest: see [A repo that is not Python](#a-repo-that-is-not-python). pip stops with
 `externally-managed-environment`? See [When pip refuses](#when-pip-refuses).
 
+`coverage` measures a commit, so a fresh `git init` repo needs its first commit before
+it. Until then it exits 4 and says so:
+
+```
+$ crapkit coverage
+crapkit: the git repository at /repo has no commit yet: crapkit measures a commit, so make the first one (git add, then git commit) and run it again
+```
+
 `init` detects pytest, Vitest and Jest from the repository's own files. Review the
 generated config before running its commands. When detection leaves a commented
 lane, fill it in using the [lane recipes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md).
@@ -1074,7 +1082,7 @@ crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve a
 | 1 | **Overloaded.** Three unrelated things, listed below the table. |
 | 2 | Usage error from argparse: unknown flag, missing positional. Raised before crapkit's own error handling. |
 | 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a lane command the shell that runs it reads as a narrowed suite, a ratchet metric-stamp mismatch ([Upgrading from 0.4.4](#upgrading-from-044)), a `test-scoped` file under no scope or under a scope with no template. |
-| 4 | Git error: not a repository, a baseline commit rewritten out of the history or made on a branch HEAD does not contain. |
+| 4 | Git error: not a repository, a repository with no commit yet, one git refuses to open (the refusal quotes git's own fix, such as a `safe.directory` exception), a baseline commit rewritten out of the history or made on a branch HEAD does not contain. |
 | 5 | Tool error: lizard not importable, a lane that produced no artifact, one that measured a different tree, one that measured this tree and reported it in absolute paths (the join is root-relative, so those match nothing either; the refusal names the runner's own switch, `relative_files = true` under `[tool.coverage.run]` for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one), a lane that timed out past its retries, an override alert command that failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
 | 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. |
 | 7 | Ratchet regression the diff never touched. A marked function scores worse than its recorded high-water mark; a touched one past its mark reports 6. |

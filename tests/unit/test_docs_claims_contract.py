@@ -478,6 +478,16 @@ def test_the_readme_prints_the_taint_warning_the_code_produces():
     assert f"warning: {_taint_note(pick)}" in _doc("README.md")
 
 
+def test_the_60_second_start_prints_the_first_commit_refusal_git_reads_raise():
+    """The start quotes what `coverage` says in a repo with no commit; before
+    this it said git's own "ambiguous argument 'HEAD'"."""
+    from crapkit.gitio import _NO_COMMIT
+
+    start = _section(_doc("README.md"), "## The 60-second start")
+
+    assert f"crapkit: {_NO_COMMIT.format(root='/repo')}\n" in start
+
+
 def test_the_ratchet_page_prints_the_refusal_seed_raises_on_an_untrusted_store(tmp_path,
                                                                               monkeypatch):
     """docs/ratchet.md quotes the refusal a store with no trusted run produces.
