@@ -105,6 +105,16 @@ class MissingReceipts(MutationError):
     """The receipts a release row reads are not on this machine: an infra miss, exit 3."""
 
 
+def _read(path: Path) -> str:
+    """A file's text; every file this tool reads is UTF-8."""
+    return path.read_bytes().decode()
+
+
+def _write(path: Path, text: str) -> None:
+    """Write UTF-8 text with the newlines as given, on every OS."""
+    path.write_bytes(text.encode())
+
+
 # accuracy.yml uploads each weekly shard's and each nightly diff run's receipt
 # under this artifact name pattern; the release row reads them from RECEIPTS.
 RECEIPT_ARTIFACTS = "mutation-receipt-*"
@@ -198,7 +208,7 @@ def result(name: str, status: str, diff_text: str = "", repo: Path = REPO) -> Re
 def load_results(paths: list[Path]) -> list[Result]:
     rows = []
     for path in paths:
-        rows += [Result(**row) for row in json.loads(Path(path).read_text("utf-8"))["results"]]
+        rows += [Result(**row) for row in json.loads(_read(Path(path)))["results"]]
     return rows
 
 
@@ -214,7 +224,7 @@ def read_table(path: Path, columns: tuple[str, ...]) -> list[dict]:
 
 
 def _lines(path: Path) -> list[str]:
-    return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [line for line in _read(path).splitlines() if line.strip()]
 
 
 def _check_header(path: Path, lines: list[str], columns: tuple[str, ...]) -> None:
@@ -231,7 +241,7 @@ def _cells(path: Path, number: int, line: str, columns: tuple) -> dict:
 
 def write_table(path: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
     body = ["\t".join(columns)] + ["\t".join(row[column] for column in columns) for row in rows]
-    path.write_text("\n".join(body) + "\n", encoding="utf-8", newline="\n")
+    _write(path, "\n".join(body) + "\n")
 
 
 def _ident(row: dict) -> tuple[str, str, str]:
@@ -467,7 +477,7 @@ def changed_functions(repo: Path, base: str, modules: list[str]) -> list[tuple[s
         if not (repo / module).is_file():
             continue
         lines = changed_lines(_git(repo, "diff", "-U0", base, "--", module))
-        source = (repo / module).read_text(encoding="utf-8")
+        source = _read(repo / module)
         out += [(module, name) for name in touched_functions(source, lines)]
     return out
 
@@ -492,7 +502,7 @@ def _of_kind(receipts: list[dict], kind: str) -> list[dict]:
 
 def receipts_in(directory: Path) -> tuple[list[dict], list[dict]]:
     """(weekly shard receipts, nightly diff receipts) saved under `directory`."""
-    loaded = [json.loads(path.read_text(encoding="utf-8"))
+    loaded = [json.loads(_read(path))
               for path in sorted(Path(directory).glob("*.json"))]
     return _of_kind(loaded, "weekly"), _of_kind(loaded, "diff")
 
@@ -576,7 +586,7 @@ def _run_mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple
 def _meta_statuses(repo: Path) -> dict[str, str]:
     statuses: dict[str, str] = {}
     for meta in sorted((repo / "mutants").rglob("*.meta")):
-        codes = json.loads(meta.read_text(encoding="utf-8"))["exit_code_by_key"]
+        codes = json.loads(_read(meta))["exit_code_by_key"]
         statuses.update({name: STATUS_BY_EXIT.get(code, "suspicious")
                          for name, code in codes.items()})
     return statuses
@@ -638,7 +648,7 @@ def _receipt(kind: str, **fields) -> dict:
 def _write_receipt(receipt: dict, name: str) -> Path:
     path = REPO / RECEIPTS / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(receipt, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    _write(path, json.dumps(receipt, indent=1, sort_keys=True) + "\n")
     return path
 
 
@@ -807,9 +817,8 @@ def calc_env(environ: dict) -> dict:
 def _prepare_stage(targets: dict, where: Path = TOOLS_STAGE) -> Path:
     stage = _stage(REPO, REPO / where)
     pyproject = stage / "pyproject.toml"
-    pyproject.write_text(stage_config(pyproject.read_text(encoding="utf-8"), targets,
-                                      stage_copies(stage)), encoding="utf-8")
-    (stage / LAUNCHER_FILE).write_text(LAUNCHER, encoding="utf-8")
+    _write(pyproject, stage_config(_read(pyproject), targets, stage_copies(stage)))
+    _write(stage / LAUNCHER_FILE, LAUNCHER)
     return stage
 
 

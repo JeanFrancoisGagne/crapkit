@@ -81,6 +81,16 @@ class RetroError(ValueError):
     """A table, commit or argument this tool cannot use."""
 
 
+def _read(path: Path) -> str:
+    """A file's text; every file this tool reads is UTF-8."""
+    return path.read_bytes().decode()
+
+
+def _write(path: Path, text: str) -> None:
+    """Write UTF-8 text with the newlines as given, on every OS."""
+    path.write_bytes(text.encode())
+
+
 # --- tables -------------------------------------------------------------------------------
 
 def read_table(path: Path, columns: tuple[str, ...]) -> list[dict]:
@@ -93,7 +103,7 @@ def read_table(path: Path, columns: tuple[str, ...]) -> list[dict]:
 
 
 def _lines(path: Path) -> list[str]:
-    return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [line for line in _read(path).splitlines() if line.strip()]
 
 
 def _check_header(path: Path, lines: list[str], columns: tuple[str, ...]) -> None:
@@ -110,7 +120,7 @@ def _cells(path: Path, number: int, line: str, columns: tuple) -> dict:
 
 def write_table(path: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
     body = ["\t".join(columns)] + ["\t".join(_cell(row[c]) for c in columns) for row in rows]
-    path.write_text("\n".join(body) + "\n", encoding="utf-8", newline="\n")
+    _write(path, "\n".join(body) + "\n")
 
 
 def _cell(value: str) -> str:
@@ -286,7 +296,7 @@ class Site:
 
 def _run(argv: list, cwd: Path = REPO, env: dict | None = None) -> subprocess.CompletedProcess:
     return subprocess.run([str(part) for part in argv], cwd=cwd, env=env, capture_output=True,
-                          text=True, encoding="utf-8", errors="replace")
+                          encoding="utf-8", errors="replace")
 
 
 def _checked(argv: list, cwd: Path = REPO) -> str:
@@ -344,7 +354,7 @@ def _purelib(interpreter: Path) -> Path:
 def _install(interpreter: Path, tree: Path, how: str) -> None:
     if how == "link":
         link = _purelib(interpreter) / "retro-src.pth"
-        link.write_text(str(tree / "src") + "\n", encoding="utf-8")
+        _write(link, str(tree / "src") + "\n")
         return
     target = ["-e", tree] if how == "editable" else [tree]
     _checked(["uv", "pip", "install", "-q", "--python", interpreter, "--no-deps", *target])
@@ -401,13 +411,13 @@ def replay_node(test: str, interpreter: Path) -> list[dict]:
         argv = [sys.executable, "-m", "pytest", test, "-q", "-p", "no:cacheprovider",
                 "-p", "no:randomly", "-p", "retro", "--rootdir", _rootdir(test)]
         _run(argv, env=_pytest_env(interpreter, outcomes))
-        return item_outcomes(outcomes.read_text(encoding="utf-8").splitlines())
+        return item_outcomes(_read(outcomes).splitlines())
 
 
 def probe_header(path: Path) -> tuple[list[str], bool]:
     """A probe's `# requires:` packages and whether it wants `# install: editable`."""
     requires, editable = [], False
-    for line in path.read_text(encoding="utf-8").splitlines()[:20]:
+    for line in _read(path).splitlines()[:20]:
         if line.startswith("# requires:"):
             requires += line.split(":", 1)[1].split()
         editable = editable or line.strip() == "# install: editable"
