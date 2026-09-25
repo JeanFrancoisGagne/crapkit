@@ -490,6 +490,19 @@ nothing. Each of these now gets a line naming the object and the next step:
   measured) and cannot serve as a baseline for next-item, ratchet seed or verify` and
   `-> next: crapkit coverage`.
 
+### A process started without USERPROFILE finds its home
+
+- check_config, `doctor`, `doctor --json`, `doctor --plugin-root` with no PATH, `coverage`
+  and an `inventory` large enough to open the analysis pool answered `RuntimeError: Could
+  not determine home directory.` on Windows when the environment held no `USERPROFILE`,
+  `HOMEDRIVE` or `HOMEPATH`. An MCP client that builds the server's environment from an
+  allowlist, a service or a scheduled task starts crapkit that way, and every other MCP
+  tool kept working. crapkit now reads the profile folder Windows reports for the
+  process's user, the folder `USERPROFILE` names in that user's other processes, so
+  worker slots, measurement locks and the plugin cache land where they always did.
+  Setting `HOME` never helped, because Python ignores it on Windows. When nothing names
+  a home, the command exits 5 with `no home directory` and names the variable to set.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

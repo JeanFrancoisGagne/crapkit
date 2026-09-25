@@ -1061,7 +1061,9 @@ paths shared by different checkouts. A conflicting command refuses before it
 runs. Independent output paths can run in parallel. Coordination files live under
 `~/.cache/crapkit/measurements/<host-id>`, outside report directories that runners
 may delete and recreate. The key uses the full resolved artifact path. `TEMP`,
-`TMP` and `CRAPKIT_RESOURCE_DIR` do not select another measurement domain.
+`TMP` and `CRAPKIT_RESOURCE_DIR` do not select another measurement domain. A process
+started without `USERPROFILE` (Windows) or `HOME` (POSIX) still finds the same `~`
+through the operating system; [resources.md](resources.md#analysis-workers) says how.
 If the CLI dies, its helper stops registered test processes before releasing
 ownership. Small stable lease files remain as coordination state; do not delete
 them as idle evidence.

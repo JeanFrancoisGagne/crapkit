@@ -733,7 +733,7 @@ clears tempfile's cached directory for the call. These files do:
 | File | What needs the process |
 |---|---|
 | `test_encoding_e2e.py` | the child's stdio encoding under a legacy code page |
-| `test_mcp_e2e.py`, `test_mcp_no_config.py` | the MCP server as a stdio process; any `mcp` call spawns, since the server reads a real stdin descriptor |
+| `test_mcp_e2e.py`, `test_mcp_no_config.py`, `test_mcp_without_home_e2e.py` | the MCP server as a stdio process; any `mcp` call spawns, since the server reads a real stdin descriptor |
 | `test_claude_hook_e2e.py` | the hook as Claude Code starts it: stdin payload, start time, PYTHONPATH shims |
 | `test_inventory_e2e.py`, `test_hook_prefetch_e2e.py`, `test_init_doctor_e2e.py`, `test_init_scoped_tests_e2e.py`, `test_ratchet_stamp_e2e.py`, `test_advisory_gate_coherence_e2e.py` | PYTHONPATH set through `env_extra` |
 | `test_claim_competition_e2e.py` | sessions racing for claims, three at once |
@@ -782,6 +782,7 @@ Shared rules belong to these modules:
 | `_process_owner.py` | who holds registered command trees. `own_processes` yields the in-process or guardian owner; `prepare` names a command's registration before spawn and `register_then` takes it back unread |
 | `_package.py` | whether the package on disk is still the one this process imported. `upgraded_to` names the version an upgrade left there; the MCP server and `watch` import it at start and ask before loading anything else |
 | `resources.py` | how cold analysis pools share a nonblocking worker budget; cached and small calls skip pool coordination |
+| `userhome.py` | where the user's home is. `user_home` reads the environment, then the profile folder Windows reports; every cache, lock or plugin path under the home starts from it |
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
 | `lane_command.py` | how a lane starts and how its command reads. `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike |
