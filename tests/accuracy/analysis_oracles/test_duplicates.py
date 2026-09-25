@@ -92,7 +92,9 @@ def pair_names(payload: dict) -> dict:
 
 @pytest.fixture(scope="module")
 def hand(tmp_path_factory):
-    tree = {"crapkit.toml": analysis_inventory.config(), **hand_files()}
+    files = hand_files()
+    tree = {"crapkit.toml": analysis_inventory.config(analysis_inventory.languages_of(files)),
+            **files}
     root = analysis_inventory.build(tree, tmp_path_factory.mktemp("dup") / "repo")
     driver = drive.Driver(root, spawn=True)
     done = driver.run("coverage")

@@ -32,6 +32,26 @@ INTS = ("start", "end", "ccn_std", "ccn_mod", "ccn", "nloc", "params", "nesting"
 GIT_CONFIG = "[core]\n\tautocrlf = false\n\teol = lf\n\tquotePath = true\n"
 
 
+# The README "Languages" table: each file suffix and the language key that claims it.
+SUFFIX_LANGUAGE = {
+    ".py": "python", ".ts": "typescript", ".tsx": "tsx", ".js": "javascript",
+    ".jsx": "javascript", ".mjs": "javascript", ".cjs": "javascript", ".vue": "vue",
+    ".swift": "swift", ".go": "go", ".rs": "rust", ".sh": "shell", ".bash": "shell",
+    ".ps1": "powershell", ".psm1": "powershell", ".c": "cpp", ".cc": "cpp", ".cpp": "cpp",
+    ".cxx": "cpp", ".h": "cpp", ".hpp": "cpp", ".m": "objectivec", ".mm": "objectivec",
+    ".java": "java", ".zig": "zig",
+}
+
+
+def languages_of(paths) -> tuple:
+    """The language keys the README table gives the suffixes of `paths`, in
+    LANGUAGES order; every language when no path has a listed suffix. A set
+    names only its own languages, so an older crapkit that knows fewer of them
+    still accepts the config (a retro replay at a before commit)."""
+    found = {SUFFIX_LANGUAGE.get(Path(path).suffix.lower()) for path in paths}
+    return tuple(language for language in LANGUAGES if language in found) or LANGUAGES
+
+
 def config(languages=LANGUAGES, extra: str = "") -> str:
     """A crapkit.toml whose one root scope claims every file of `languages`."""
     return ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "all"\npaths = ["."]\n'
@@ -155,7 +175,7 @@ def measure(files: dict, work: Path, spawn: bool = False, launch: tuple = PLAIN,
             env: dict | None = None) -> Measured:
     """crapkit's inventory of `files` plus a crapkit.toml, unless `files` brings one.
     `env` adds to the child's environment."""
-    tree = {"crapkit.toml": config(), **files}
+    tree = {"crapkit.toml": config(languages_of(files)), **files}
     return run_inventory(build(tree, work / "repo"), work / "inventory.tsv", spawn, launch, env)
 
 

@@ -370,3 +370,13 @@ def test_one_owner_across_packet_lane_and_ceiling(path, targeted):
     ceiling = TARGETS[owner(path, *RICH)]
     assert (row["scope"], brief["target"], brief["gate_rule"]["ceiling"]) == (
         owner(path, *RICH), ceiling, ceiling)
+
+
+@pytest.mark.parametrize(("paths", "languages"), [
+    # Hand rows from the README "Languages" table.
+    (["a.py", "b/c.PY"], ("python",)),
+    (["x.h", "y.mm", "z.jsx", "w.psm1"], ("javascript", "cpp", "objectivec", "powershell")),
+    (["notes.md", "Makefile"], analysis_inventory.LANGUAGES),
+])
+def test_a_measured_set_names_only_its_own_languages(paths, languages):
+    assert analysis_inventory.languages_of(paths) == languages

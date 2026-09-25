@@ -26,7 +26,7 @@ POOL_THRESHOLD = 16
 def _files(serial: bool) -> dict:
     files = {path: data for path, data in analysis_tables.probe_files().items()
              if "equivalence" in path or "shapes" in path.lower()}
-    toml = analysis_inventory.config()
+    toml = analysis_inventory.config(analysis_inventory.languages_of(files))
     if serial:
         toml = toml.replace("[crapkit]\n", "[crapkit]\nanalysis_workers = 1\n", 1)
     return {**files, "crapkit.toml": toml}
