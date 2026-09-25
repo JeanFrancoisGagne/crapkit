@@ -9,4 +9,8 @@ _HISTORY = "tests/accuracy/history_oracles/"
 CHECKS = [
     {"name": "churn against the numstat walk", "seconds": 8,
      "pytest": [_HISTORY + "test_churn_oracle.py"]},
+    {"name": "churn at the parser", "seconds": 2,
+     "pytest": [_HISTORY + "test_churn_properties.py"]},
+    {"name": "churn on git's clock and mid-walk", "seconds": 4,
+     "pytest": [_HISTORY + "test_churn_clock.py", _HISTORY + "test_churn_concurrency.py"]},
 ]

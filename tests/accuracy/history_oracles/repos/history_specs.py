@@ -198,3 +198,33 @@ def _coupled_steps() -> tuple:
 
 COUPLED = Spec(steps=_coupled_steps())
 COUPLED_NOW = EPOCH + 60 * DAY
+
+
+# --- a month end: 6 months before Aug 31 is Mar 3, before Sep 1 it is Mar 1 (R59) ---------
+AUG_31 = 1_756_641_600  # 2025-08-31T12:00:00Z
+SEP_1 = AUG_31 + DAY
+MARCH_2 = 1_740_916_800  # 2025-03-02T12:00:00Z: out of the window on Aug 31, in on Sep 1
+
+MONTH_END = Spec(steps=(
+    Commit(files={"crapkit.toml": config(months=6), "src/a.py": functions("f"),
+                  "src/b.py": functions("g")}, date=1_736_510_400, message="january"),
+    Commit(files={"src/a.py": functions("f", branches=2)}, date=MARCH_2, message="march 2",
+           author=BEA),
+    Commit(files={"src/a.py": functions("f", branches=3), "src/b.py": functions("g", "h")},
+           date=1_748_779_200, message="june"),
+    Commit(files={"src/b.py": functions("g", "h", branches=2)}, date=AUG_31 - DAY,
+           message="august 30", author=CHEN),
+    Commit(files={"src/c.py": functions("k")}, date=SEP_1 - 6 * 3_600, message="september 1"),
+))
+
+
+# --- a commit that lands while crapkit reads the window (R58) -----------------------------
+
+INJECT = Spec(steps=(
+    Commit(files={"crapkit.toml": config(), "src/a.py": functions("f")}, date=EPOCH,
+           message="first"),
+    Commit(files={"src/a.py": functions("f", branches=2), "src/b.py": functions("g")},
+           date=EPOCH + 3 * DAY, message="second", author=BEA),
+))
+INJECT_LANDS = EPOCH + 4 * DAY
+INJECT_NOW = EPOCH + 10 * DAY
