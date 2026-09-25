@@ -970,7 +970,8 @@ def _freshness_warnings(fresh: RunFreshness, latest: dict) -> list[str]:
                      f"scored them: {first_few(fresh.changed)} — rerun `{_self()} coverage`")
     if fresh.unread:
         lines.append(f"warning: cannot tell which files changed since run {latest['id']} "
-                     f"scored them, because git failed: {fresh.unread}")
+                     f"scored them, because git failed: {fresh.unread} — fix what git "
+                     f"reports, then rerun `{_self()} coverage`")
     return lines
 
 

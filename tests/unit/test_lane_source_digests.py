@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 import stale_tree
+from crapkit.invocation import _self
 from stale_tree import DARK, EVENTS, REL
 
 MOVED = sorted(name for name, event in EVENTS.items() if event.moved)
@@ -305,13 +306,14 @@ def test_the_reuse_warning_names_exactly_the_files_whose_bytes_moved(name, tmp_p
     if not truth:
         assert warning == "", warning
         return
+    assert warning.endswith("so its coverage may be stale; rerun the lane "
+                            f"(`{_self()} coverage --lane unit`) to measure the tree as it is"), warning
     if EVENTS[name].unknown:
         assert "git cannot say which files in its scopes changed since it measured them" in warning
-        assert "git executable not found" in warning and "coverage may be stale" in warning
+        assert "git executable not found" in warning
         return
     assert f"{len(truth)} file(s) in its scopes changed since it measured them" in warning
     assert all(path in warning for path in truth), warning
-    assert "coverage may be stale" in warning
 
 
 @pytest.mark.parametrize("name", sorted(EVENTS))

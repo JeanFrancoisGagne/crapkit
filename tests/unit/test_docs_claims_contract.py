@@ -580,11 +580,12 @@ def _stale_lane(root: Path, moved: tuple) -> tuple:
     return lane, {"calc": ("calc",)}, git, recorded
 
 
-def test_the_lanes_page_prints_the_reuse_warning_the_lane_writes(tmp_path, capsys):
+def test_the_lanes_page_prints_the_reuse_warning_the_lane_writes(tmp_path, capsys, monkeypatch):
     """The `--reuse-artifacts` transcript is the lane's own warning. The page
     quoted one that counted the changed files and named none of them."""
     from crapkit.lanes import _warn_stale_artifact
 
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
     lane, scopes, git, _ = _stale_lane(tmp_path, ("calc/grade.py", "calc/hot.py"))
     _warn_stale_artifact(git, lane, scopes)
 
@@ -1061,3 +1062,17 @@ def test_each_doc_page_is_read_from_disk_once(monkeypatch):
 
     assert reads == ["README.md", "AGENTS.md"]
     _doc.cache_clear()
+
+
+def test_the_agent_json_page_prints_the_worklist_warnings_the_queue_writes(monkeypatch):
+    """The plain worklist's two content warnings, as the page quotes them, with
+    git's own words standing in for the error git gives."""
+    from crapkit.cli.queue import RunFreshness, _freshness_warnings
+
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
+    latest = {"id": 4, "commit": "c" * 40}
+    changed = _freshness_warnings(RunFreshness(False, ["calc/grade.py", "calc/report.py"]), latest)
+    unread = _freshness_warnings(RunFreshness(False, None, "<git's error>"), latest)
+
+    for line in changed + unread:
+        assert f"\n{line}\n" in _doc("docs/agent-json.md"), line

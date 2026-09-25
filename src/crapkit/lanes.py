@@ -514,12 +514,16 @@ def lane_order(root: Path, lanes: list[Lane], stamps: Stamps | None = None) -> l
 def _warn_stale_artifact(git, lane: Lane, scope_paths: dict | None,
                          fresh: Freshness | None = None) -> None:
     """On reuse: say which files under this lane's scopes moved since the
-    artifact measured them, or that git could not say."""
+    artifact measured them, or that git could not say, and the rerun that
+    measures them."""
+    from .invocation import _self
+
     fresh = fresh if fresh is not None else Freshness(git.root, (lane,), scope_paths, git=git)
     drift = fresh.warning(lane)
     if drift:
-        print(f"crapkit: lane {lane.name!r} reuses {lane.artifact}; {drift}, "
-              "so its coverage may be stale", file=sys.stderr)
+        print(f"crapkit: lane {lane.name!r} reuses {lane.artifact}; {drift}, so its coverage "
+              f"may be stale; rerun the lane (`{_self()} coverage --lane {lane.name}`) to "
+              "measure the tree as it is", file=sys.stderr)
 
 
 def _facts(root: Path, git: GitFacts | None) -> GitFacts:

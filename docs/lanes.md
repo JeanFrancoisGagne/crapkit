@@ -1080,7 +1080,7 @@ never prints. Live, on a tree with an edited source file:
 
 ```
 $ crapkit coverage --reuse-artifacts --reuse-unchanged
-crapkit: lane 'py' reuses .crapkit/cov/py.json; 2 file(s) in its scopes changed since it measured them (calc/grade.py, calc/hot.py), so its coverage may be stale
+crapkit: lane 'py' reuses .crapkit/cov/py.json; 2 file(s) in its scopes changed since it measured them (calc/grade.py, calc/hot.py), so its coverage may be stale; rerun the lane (`crapkit coverage --lane py`) to measure the tree as it is
 run 9 @ 525a3276065: 5 functions scored: 4 measured / 1 untested, ...
 
 $ crapkit coverage --reuse-unchanged

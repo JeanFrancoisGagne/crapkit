@@ -32,6 +32,8 @@
   rerun `crapkit coverage`, since committing changes nothing.
 - The `--reuse-artifacts` warning and the report banner name up to three of the files
   that moved. The warning counted the files and named none, and the note named neither.
+  The warning now ends with the rerun that measures them: ``rerun the lane (`crapkit
+  coverage --lane unit`) to measure the tree as it is``.
 - A stamp written by 0.8.0 or older holds no blob ids and is judged by its commit until
   the next `crapkit coverage` replaces it. When git cannot answer, for an old stamp or a
   new one, the warning and the note say so and quote git's error. The note said "files in
@@ -168,8 +170,9 @@
 - The plain `worklist` warns on stderr when files the run scored changed since, and names
   up to three: `2 file(s) changed since run 4 scored them: calc/grade.py, calc/report.py`.
   When git cannot read the tree it says that instead, `cannot tell which files changed
-  since run 4 scored them, because git failed:` and git's error, and `scored_changes` is
-  `null`: a failed read is neither "changed" nor "unchanged".
+  since run 4 scored them, because git failed:` then git's error and ``fix what git
+  reports, then rerun `crapkit coverage` ``, and `scored_changes` is `null`: a failed
+  read is neither "changed" nor "unchanged".
 - The `report` page's banner counts them too: `2 file(s) the run scored changed since`.
   An uncommitted edit in a `coverage_optional` scope left `stale` false and no lane note
   to speak for it, so the page showed the numbers from before the edit with no banner.

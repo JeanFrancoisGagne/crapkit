@@ -238,7 +238,7 @@ The plain `worklist` prints each case on stderr, and names up to three changed f
 
 ```
 warning: 2 file(s) changed since run 4 scored them: calc/grade.py, calc/report.py — rerun `crapkit coverage`
-warning: cannot tell which files changed since run 4 scored them, because git failed: <git's error>
+warning: cannot tell which files changed since run 4 scored them, because git failed: <git's error> — fix what git reports, then rerun `crapkit coverage`
 ```
 
 `commands.refresh` answers both. Schema 2, planned for crapkit 0.9.0, redefines `stale`
