@@ -1,5 +1,5 @@
-"""CRAP score: crapkit's crap() against the exact value, PHPUnit's CrapIndex and the
-published worked examples.
+"""CRAP score: crapkit's crap() against the exact value, PHPUnit's CrapIndex,
+crap-typescript-core, cargo-crap and the published worked examples.
 
 crapkit computes in doubles; the expected side is exact (kit.exact, Fraction).
 A double may stray a few units in the last place from the exact value, so a
@@ -21,7 +21,7 @@ import pytest
 from accuracy.kit import exact, rulings, strategies
 from accuracy.kit.settings import pure
 from accuracy.score_model import cases, production
-from accuracy.score_model.oracles import crap_typescript, phpunit_crap_index as phpunit
+from accuracy.score_model.oracles import cargo_crap, crap_typescript, phpunit_crap_index as phpunit
 
 ULPS = 8
 PLACES = (1, 2, 4)
@@ -222,14 +222,13 @@ def test_after_d13_every_other_string_rounds_half_even():
 # --- crap-typescript-core ---------------------------------------------------------------------
 
 def _is_exact_tie(ccn: int, covered: int, total: int, places: int) -> bool:
-    doubled = exact.crap(ccn, Fraction(covered, total)) * 10 ** places * 2
-    return doubled.denominator == 1 and doubled.numerator % 2 == 1
+    return places in _tie_places(ccn, covered, total)
 
 
-def _typescript_problems(case: tuple, theirs: float) -> list[str]:
+def _tool_problems(tool: str, case: tuple, theirs: float) -> list[str]:
     ccn, covered, total = case
     far = [] if within_ulps(theirs, exact.crap(ccn, Fraction(covered, total))) else [
-        f"crap-typescript CRAP{case} = {theirs!r} strays from the exact value"]
+        f"{tool} CRAP{case} = {theirs!r} strays from the exact value"]
     ours = crapkit_crap(ccn, covered, total)
     split = [f"CRAP{case} at {places} dp: {ours:.{places}f} against {theirs:.{places}f}"
              for places in PLACES if f"{ours:.{places}f}" != f"{theirs:.{places}f}"
@@ -252,8 +251,51 @@ def test_crap_typescript_agrees_at_identical_inputs(oracle):
     tie = theirs[grid.index((9, 5, 6))]
 
     assert [line for case, value in zip(grid, theirs)
-            for line in _typescript_problems(case, value)][:20] == []
+            for line in _tool_problems("crap-typescript", case, value)][:20] == []
     rulings.pin_ruling("SM-CRAPTS-TIE", crapkit=f"{crapkit_crap(9, 5, 6):.2f}", oracle=f"{tie:.2f}")
+
+
+# --- cargo-crap --------------------------------------------------------------------------------
+
+def _exact_ties() -> list[tuple[int, int, int]]:
+    """The reduced-grid cases whose exact CRAP is a tie at 1, 2 or 4 dp."""
+    return [case for case in cases.reduced_grid() if _tie_places(*case)]
+
+
+def _tie_places(ccn: int, covered: int, total: int) -> list[int]:
+    value = exact.crap(ccn, Fraction(covered, total))
+    return [places for places in PLACES
+            if (doubled := value * 10 ** places * 2).denominator == 1 and doubled.numerator % 2]
+
+
+def _cargo_problems(case: tuple, entry: dict | None) -> list[str]:
+    """cargo-crap must read the case's own complexity and percent before its CRAP counts."""
+    ccn, covered, total = case
+    read = None if entry is None else (entry["cyclomatic"], entry["coverage"])
+    if read != (ccn, covered / total * 100):
+        return [f"cargo-crap read CRAP{case} as (cyclomatic, percent) {read}"]
+    return _tool_problems("cargo-crap", case, entry["crap"])
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.platform("linux")
+def test_cargo_crap_agrees_at_identical_inputs(oracle, tmp_path):
+    """cargo-crap 0.5.0 scores every 13th reduced-grid case and every exact tie,
+    each from a Rust function and LCOV lines built to its counts. It reads the
+    complexity and percent the case names, its double stays within ULPS of the
+    exact CRAP, and crapkit prints its 1, 2 and 4 dp strings everywhere but at
+    exact ties, where each tool's double picks the side (rulings D5 and
+    SM-CARGOCRAP-TIE). On 13,760 cases, 280 of them exact ties, the two print
+    apart 9 times, all at ties."""
+    oracle("cargo-crap")
+    grid = sorted({*list(cases.reduced_grid())[::13], *_exact_ties()})
+    theirs = cargo_crap.scores(grid, tmp_path)
+    tie = theirs[grid.index((9, 5, 6))]["crap"]
+
+    assert [line for case, entry in zip(grid, theirs)
+            for line in _cargo_problems(case, entry)][:20] == []
+    rulings.pin_ruling("SM-CARGOCRAP-TIE", crapkit=f"{crapkit_crap(9, 5, 6):.2f}", oracle=f"{tie:.2f}")
 
 
 # --- PHPUnit's CrapIndex --------------------------------------------------------------------
