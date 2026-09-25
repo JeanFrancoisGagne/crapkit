@@ -542,3 +542,14 @@ def test_a_manifest_records_under_the_images_own_name_whatever_its_repository(tm
     assert lock.main(["manifest", "--image", "crapkit-deploy-next:cells-arm64", "--manifest", str(path)]) == 0
     assert lock.manifest_blocks(path.read_text(encoding="utf-8")) == {"crapkit-deploy:cells-arm64": "uv 1\n"}
     assert lock.main(["manifest", "--check", "--image", "other:cells-arm64", "--manifest", str(path)]) == 0
+
+
+def test_every_pinned_download_names_a_user_agent_the_cursor_cdn_serves(monkeypatch):
+    """downloads.cursor.com answers Python's own User-Agent with 403, so a native
+    toolchain could not install the Cursor agent the Linux images curl."""
+    seen = []
+    monkeypatch.setattr(lock.urllib.request, "urlopen", seen.append)
+    lock.urlopen("https://downloads.cursor.com/lab/x/windows/x64/agent-cli-package.zip")
+
+    assert seen[0].get_header("User-agent") == lock.USER_AGENT
+    assert toolchain.download.__defaults__ == (lock.urlopen,) and lock.fetch.__defaults__ == (lock.urlopen,)

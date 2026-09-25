@@ -70,8 +70,18 @@ def compile_set(row: dict, requirements: list[str]) -> list[tuple[str, str]]:
     return [tuple(line.split("==", 1)) for line in out.splitlines() if "==" in line]
 
 
+# Python's own User-Agent gets a 403 from the Cursor agent's CDN; curl and any
+# named client get the file.
+USER_AGENT = "crapkit-deploy (tools/deploy)"
+
+
+def urlopen(url: str):
+    """urllib's urlopen under a User-Agent every pinned download host serves."""
+    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}))
+
+
 def _json(url: str) -> dict:
-    with urllib.request.urlopen(url) as response:
+    with urlopen(url) as response:
         return json.load(response)
 
 
@@ -211,7 +221,7 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def fetch_one(entry: dict, dest: Path, opener=urllib.request.urlopen) -> Path:
+def fetch_one(entry: dict, dest: Path, opener=urlopen) -> Path:
     """Download one lock entry into dest, or keep a file already holding its bytes."""
     target = dest / entry["name"]
     if target.exists() and sha256(target) == entry["sha256"]:
@@ -226,7 +236,7 @@ def fetch_one(entry: dict, dest: Path, opener=urllib.request.urlopen) -> Path:
     return partial.replace(target)
 
 
-def fetch(lock: dict, rows: set[str], dest: Path, opener=urllib.request.urlopen) -> list[Path]:
+def fetch(lock: dict, rows: set[str], dest: Path, opener=urlopen) -> list[Path]:
     """dest holds exactly the rows' files: a wheel an older lock named is
     removed, or pip would still find it."""
     dest.mkdir(parents=True, exist_ok=True)

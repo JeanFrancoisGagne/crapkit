@@ -33,7 +33,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -96,7 +95,7 @@ def basetemp() -> Path:
 
 # --- downloads -------------------------------------------------------------------
 
-def download(spec: dict, dest: Path, opener=urllib.request.urlopen) -> Path:
+def download(spec: dict, dest: Path, opener=lock.urlopen) -> Path:
     """One pinned binary, kept when its bytes already match, refused when they do not."""
     entry = {"name": spec["url"].rsplit("/", 1)[-1], "url": spec["url"], "sha256": spec["sha256"]}
     return lock.fetch_one(entry, dest, opener)
