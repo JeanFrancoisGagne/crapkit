@@ -409,6 +409,15 @@ def test_declared_push_seconds_fit_the_budget():
         f"{PUSH_BUDGET_SECONDS}: " + ", ".join(f"{c.key}: {c.name} {c.seconds}" for c in push))
 
 
+def _check_targets() -> list[Path]:
+    checks = _run_tool().load_checks()
+    return [(REPO / target).resolve() for check in checks for target in check.pytest]
+
+
+def _test_modules() -> list[Path]:
+    return [path.resolve() for path in _python_files(ACCURACY) if path.name.startswith("test_")]
+
+
 def _named_by(path: Path, targets: list[Path]) -> bool:
     return any(path == target or target in path.parents for target in targets)
 
@@ -416,8 +425,8 @@ def _named_by(path: Path, targets: list[Path]) -> bool:
 def test_every_accuracy_test_module_is_named_by_a_check():
     """run.py runs only what a check names: a test module no check names never
     runs in CI, and its failures go unseen."""
-    targets = [(REPO / target).resolve() for check in _run_tool().load_checks()
-               for target in check.pytest]
-    modules = [path for path in _python_files(ACCURACY) if path.name.startswith("test_")]
+    targets = _check_targets()
 
-    assert [_rel(path) for path in modules if not _named_by(path.resolve(), targets)] == []
+    unnamed = [path for path in _test_modules() if not _named_by(path, targets)]
+
+    assert list(map(_rel, unnamed)) == []

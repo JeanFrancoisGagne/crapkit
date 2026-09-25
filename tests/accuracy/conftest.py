@@ -109,15 +109,26 @@ def make_repo(repo_templates, tmp_path):
     return lambda spec: repo_templates.copy(spec, tmp_path / f"repo{next(numbers)}")
 
 
-def pytest_sessionfinish(session, exitstatus):
-    """Hand run.py the shape events the strategies emitted this session, and
-    fail the session when a test wrote under tests/accuracy."""
+def _note_events() -> None:
+    """Hand run.py the shape events the strategies emitted this session."""
     drawn = sys.modules.get("accuracy.kit.strategies")
     if drawn is not None and drawn.EVENTS:
         runlog.note("events", counts=dict(drawn.EVENTS))
-    before = session.config.stash.get(_SNAPSHOT, None)
-    now = guards.snapshot(guards.guarded_root(HERE)) if before is not None else {}
-    written = guards.changed(before, now) if before is not None else []
+
+
+def _written(config) -> list[str]:
+    """What changed under tests/accuracy since the controller's snapshot. An
+    xdist worker took no snapshot, so it reports nothing."""
+    before = config.stash.get(_SNAPSHOT, None)
+    if before is None:
+        return []
+    return guards.changed(before, guards.snapshot(guards.guarded_root(HERE)))
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Note the events, and fail the session when a test wrote under tests/accuracy."""
+    _note_events()
+    written = _written(session.config)
     if written:
         session.config.get_terminal_writer().line(
             f"tests/accuracy changed during the session: {', '.join(written)}; a test writes "
