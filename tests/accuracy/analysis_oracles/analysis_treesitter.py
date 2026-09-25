@@ -137,16 +137,17 @@ def _unreadable(fn, context) -> bool:
     return fn.has_error or _artifact(fn, context)
 
 
-def _reasons(fn, context, columns) -> list:
+def reasons(fn, context, columns) -> list:
+    """The rulings ids (or PARSE_ERROR) that set fn aside for `columns`; empty to compare."""
     if _unreadable(fn, context):
         return [PARSE_ERROR]
     return ts_defect_shapes.reasons(fn, context, columns)
 
 
 def _compare_function(outcome, where, fn, spec, context, row, columns) -> None:
-    reasons = _reasons(fn, context, columns)
-    if reasons:
-        outcome.set_aside["+".join(reasons)] += 1
+    held = reasons(fn, context, columns)
+    if held:
+        outcome.set_aside["+".join(held)] += 1
         return
     expected = values(fn, spec, context.data)
     if row is None:

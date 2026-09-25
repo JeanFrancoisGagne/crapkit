@@ -83,3 +83,14 @@ func Spin(n int) int {
 	}
 	return i
 }
+
+func Pick(c, d chan int) int {
+	select {
+	case x := <-c:
+		return x
+	case y := <-d:
+		return y
+	default:
+		return 0
+	}
+}

@@ -51,4 +51,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_inventory_rows.py"]},
     {"name": "brief's parameter lists against ast and the TypeScript compiler", "seconds": 1,
      "pytest": [_PACKET + "test_packet_params.py"]},
+    {"name": "Go ccn, cognitive and nesting against gocyclo, gocognit and revive", "seconds": 40,
+     "pytest": [_PACKET + "test_go_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
 ]

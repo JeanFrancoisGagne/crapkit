@@ -94,3 +94,6 @@ g-do-call	shapes.go	DoCall	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-
 g-long-run	shapes.go	LongRun	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, one && sequence over two lines +1	AO-COG-RUNS-LINES
 g-spin	shapes.go	Spin	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the if; a for with no condition decides nothing	AO-LOOP-NO-CONDITION
 g-spin	shapes.go	Spin	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, the if inside it +2	
+g-select	shapes.go	Pick	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a select adds one per case-labeled clause, default excluded	
+g-select	shapes.go	Pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a select is the Go spec's switch over channel operations (Select statements), and a switch adds +1	AO-GO-COG-SELECT
+g-select	shapes.go	Pick	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; a select is the Go spec's switch over channel operations	AO-GO-SELECT-MOD

@@ -41,9 +41,9 @@ POISON = 100
 class Warm:
     """One repo kept across runs, so its cache and stat stamps stay warm."""
 
-    def __init__(self, files: dict, work: Path):
+    def __init__(self, files: dict, work: Path, spawn: bool = False):
         self.files = {"crapkit.toml": analysis_inventory.config(), **files}
-        self.work = work
+        self.work, self.spawn = work, spawn
         self.root = analysis_inventory.build(self.files, work / "repo")
         self.runs = 0
 
@@ -60,7 +60,8 @@ class Warm:
     def run(self):
         repos.git(self.root, "add", "-A")
         self.runs += 1
-        measured = analysis_inventory.run_inventory(self.root, self.work / f"run{self.runs}.tsv")
+        measured = analysis_inventory.run_inventory(self.root, self.work / f"run{self.runs}.tsv",
+                                                  spawn=self.spawn)
         assert measured.code == 0, measured.stderr
         return measured
 
@@ -68,14 +69,14 @@ class Warm:
         return json.loads(drive.Driver(self.root).run("inventory", "--json").stdout)["cache_hits"]
 
 
-def cold(files: dict, work: Path):
-    measured = analysis_inventory.measure(files, work)
+def cold(files: dict, work: Path, spawn: bool = False):
+    measured = analysis_inventory.measure(files, work, spawn=spawn)
     assert measured.code == 0, measured.stderr
     return measured
 
 
 def _cold_of(warm: Warm, work: Path):
-    return cold({path: data for path, data in warm.files.items()}, work)
+    return cold({path: data for path, data in warm.files.items()}, work, warm.spawn)
 
 
 def _rewrite_cache(root: Path, change) -> None:
@@ -100,7 +101,9 @@ def probe_files():
 
 
 def test_warm_equals_cold_on_every_probe_file(probe_files, tmp_path):
-    warm = Warm(probe_files, tmp_path / "warm")
+    # More files than the pool threshold, so each run is spawned: the in-process
+    # runner refuses a call that starts the analysis pool.
+    warm = Warm(probe_files, tmp_path / "warm", spawn=True)
     first = warm.run()
     second = warm.run()
     assert warm.cache_hits() == len({row["path"] for row in second.rows})
