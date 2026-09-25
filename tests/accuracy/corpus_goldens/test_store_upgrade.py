@@ -17,13 +17,16 @@ crapkit's code:
   cache file's bytes as they were.
 - self-diff: the release's answers and the candidate's on one .crapkit/
   differ only in calcs a CHANGES row declared on or after the release's date.
+- CG5 (strict xfail): 0.6.0, the last release of the path format 0.7.0
+  retired without renaming the cache files, and this crapkit rewrite each
+  other's churn and coupling caches on every command.
 """
 from pathlib import Path
 
 import pytest
 
 from accuracy.corpus_goldens import model_baseline, releases, upgrade_diff, upgrade_runs
-from accuracy.kit import drive, surfaces
+from accuracy.kit import drive, rulings, surfaces
 
 pytestmark = [pytest.mark.nightly, pytest.mark.release, pytest.mark.process]
 RELEASES = 5
@@ -104,6 +107,34 @@ def test_two_installs_never_rewrite_each_others_caches(history, tmp_path):
     _rewrites(root, {}, [("candidate", new)])
 
     assert _rewrites(root, upgrade_runs.caches(root), [("release", old), ("candidate", new)]) == []
+
+
+# The last release of each retired cache format that shares a file name with
+# this crapkit's: 0.6.0 keys churn-cache-v2.json and coupling-cache-v1.json with
+# the path format "root-relative", which 0.7.0 changed without renaming them.
+SHARED_NAME_RELEASES = ("0.6.0",)
+
+
+@pytest.fixture(scope="module", params=SHARED_NAME_RELEASES)
+def retired(request, tmp_path_factory):
+    return upgrade_runs.write_history(request.param,
+                                      tmp_path_factory.mktemp(f"retired-{request.param}"))
+
+
+def _rewritten(lines: list[str]) -> str:
+    return ", ".join(sorted({line.split(" rewrote ")[1] for line in lines})) or "none"
+
+
+@rulings.applies("CG5")
+def test_a_retired_format_under_a_shared_name_is_never_rewritten(retired, tmp_path):
+    """R100's class: README names each cache by its format (coupling-cache-v1.json),
+    so an older install on the same tree keeps its own file warm."""
+    root = retired.copy(tmp_path / "repo")
+    old, new = retired.driver(root, retired.site), retired.driver(root)
+    _rewrites(root, {}, [("candidate", new)])
+    found = _rewrites(root, upgrade_runs.caches(root), [("release", old), ("candidate", new)])
+
+    rulings.pin_ruling("CG5", crapkit=_rewritten(found), oracle="none")
 
 
 def test_the_release_and_the_candidate_answer_alike_or_declare_it(history, tmp_path):

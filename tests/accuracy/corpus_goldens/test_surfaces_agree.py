@@ -181,11 +181,17 @@ def _read_views(run, roster) -> list[tuple[str, dict, dict]]:
              "next-item-top.json", "worklist-batches.json"]
     names += [f"cli-{tool}.json" for tool in ("get_next_item", "list_worklist",
                                              "get_function_brief", "check_gate")]
-    views = [(name, surfaces.from_json(_startless_unrowed(_json(run, name)), roster), EXACT_ROWS)
-             for name in names]
-    views += [(f"mcp {tool}", surfaces.mcp_result(_mcp(run, tool), roster), EXACT_ROWS)
-              for tool in ("get_next_item", "list_worklist", "get_function_brief", "check_gate")]
-    return views
+    return [(name, surfaces.from_json(_startless_unrowed(_json(run, name)), roster), EXACT_ROWS)
+            for name in names]
+
+
+MCP_ROW_TOOLS = ("get_next_item", "list_worklist", "get_function_brief", "check_gate")
+
+
+def _mcp_views(run, roster) -> list[tuple[str, dict, dict]]:
+    """The MCP tools whose results carry function rows, read as parsed JSON."""
+    return [(f"mcp {tool}", surfaces.mcp_result(_mcp(run, tool), roster), EXACT_ROWS)
+            for tool in MCP_ROW_TOOLS]
 
 
 def _unrowed_dict(node: dict) -> dict:
@@ -216,16 +222,33 @@ def _mcp(run, tool: str) -> dict:
     return json.loads((run.raw / f"mcp-{tool}.json").read_text(encoding="utf-8"))
 
 
+def _session_roster(tmp_path_factory):
+    base = golden_runs.shared_base(tmp_path_factory)
+    roster = surfaces.Roster(surfaces.read_tsv(golden_runs.small(base).output("scored.tsv"))[1])
+    return golden_runs.session(base), roster
+
+
 def test_every_session_read_prints_the_counts(small, tmp_path_factory):
     _, _, expected = small
-    run = golden_runs.session(golden_runs.shared_base(tmp_path_factory))
-    roster = surfaces.Roster(surfaces.read_tsv(
-        golden_runs.small(golden_runs.shared_base(tmp_path_factory)).output("scored.tsv"))[1])
+    run, roster = _session_roster(tmp_path_factory)
 
     problems, counts = _checked(_read_views(run, roster), _without_vue(expected))
 
     assert [str(problem) for problem in problems] == []
     assert [name for name, count in counts.items() if count == 0] == []
+
+
+def test_every_mcp_tool_prints_the_counts(small, tmp_path_factory):
+    """structuredContent of every row-bearing MCP tool, against the model, not
+    against the CLI (test_mcp_equals_cli does that)."""
+    _, _, expected = small
+    run, roster = _session_roster(tmp_path_factory)
+
+    problems, counts = _checked(_mcp_views(run, roster), _without_vue(expected))
+
+    assert [str(problem) for problem in problems] == []
+    assert sorted(name for name, count in counts.items() if count > 0) == sorted(
+        f"mcp {tool}" for tool in MCP_ROW_TOOLS)
 
 
 def _history_rows(run, expected: dict) -> list:

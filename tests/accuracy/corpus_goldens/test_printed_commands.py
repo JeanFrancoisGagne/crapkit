@@ -132,7 +132,7 @@ def test_every_printed_command_hands_crapkit_its_arguments(pasted, shell):
     wrong = [(item.source, item.text, list(item.argv), _argv(result)) for item, result in pairs
              if printed_runs.meaning(_argv(result)) != printed_runs.meaning(item.argv)]
 
-    assert len(pairs) >= 25
+    assert {item.source for item, _ in pairs} == set(ARGV_SOURCES)
     assert wrong == []
 
 
@@ -162,7 +162,7 @@ def _argvs(run) -> list[tuple]:
 
 def test_every_printed_argv_exits_0_and_names_its_function(run):
     driver = drive.Driver(run.root, date_now=repos.EPOCH + 86_400)
-    names = {(row["path"], row["handle"]): row["function"] for row in run.rows}
+    names = {(row["path"], printed_runs.handle(row)): row["function"] for row in run.rows}
     problems = [_problem(driver, argv, names) for argv in _argvs(run)]
 
     assert list(filter(None, problems)) == []

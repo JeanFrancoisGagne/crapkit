@@ -22,8 +22,9 @@ import json
 from pathlib import Path
 import shutil
 
+import hang_guard
 from accuracy.corpus_goldens import releases
-from accuracy.kit import drive, repos
+from accuracy.kit import drive, repos, tiers
 
 DAY = 86_400
 FIRST = repos.EPOCH
@@ -145,5 +146,10 @@ def drop_caches(root: Path) -> None:
 
 
 def version_of(driver: drive.Driver) -> str:
-    """The version `crapkit --version` prints: its last word."""
-    return driver.run("--version").stdout.split()[-1]
+    """`crapkit.__version__` as the driver's interpreter imports it. `crapkit
+    --version` would name the installed distribution's metadata, which is not
+    the source a replay puts first on PYTHONPATH."""
+    tiers.require_process("the interpreter crapkit runs under")
+    done = hang_guard.run([driver.python, "-c", "import crapkit; print(crapkit.__version__)"],
+                          env=driver.env, text=True, encoding="utf-8")
+    return done.stdout.strip()

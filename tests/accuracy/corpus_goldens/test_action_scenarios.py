@@ -107,12 +107,17 @@ def _verdict_line(comment: str) -> str:
 
 
 def test_two_commit_pr_judges_the_new_function(full):
-    """R90."""
+    """R90: verify judges the pull request's diff from A, so it fails on late()
+    with the gate's exit 6 instead of passing over an empty diff."""
+    assert _verdict_line(full.comment).startswith("**verify failed, exit 6")
+    assert full.exit == 6
+
+
+def test_the_verdict_names_the_readme_rule_and_the_function(full):
     comment = full.comment
 
     assert _verdict_line(comment) == "**verify failed, exit 6: complexity gate.**"
     assert "- gate: `src/late.py:1` `late( v )` ccn 7, cov 0%, crap 7.0 -> decompose" in comment
-    assert full.exit == 6
 
 
 def test_shallow_clone_matches_full_depth(full, tmp_path):
@@ -128,13 +133,21 @@ def test_shallow_clone_matches_full_depth(full, tmp_path):
     assert shallow.exit == 1
 
 
-def test_failed_coverage_stops_verify(tmp_path):
-    """R92: a lane the pull request broke, beside an artifact an earlier run left."""
-    broken = _run(tmp_path, broken_lane=True, stale=True)
+@pytest.fixture(scope="module")
+def broken(tmp_path_factory):
+    """A lane the pull request broke, beside an artifact an earlier run left."""
+    return _run(tmp_path_factory.mktemp("broken"), broken_lane=True, stale=True)
 
-    assert _verdict_line(broken.comment) == EVERY_LANE_FAILED
+
+def test_failed_coverage_stops_verify(broken):
+    """R92: coverage exits 5, verify does not run, and the comment gives no verdict."""
+    assert _verdict_line(broken.comment).startswith("**no verdict: `crapkit coverage` exited 5")
     assert broken.file("crapkit-verify.json") == ""
     assert broken.exit == 5
+
+
+def test_the_no_verdict_line_is_the_readme_s(broken):
+    assert _verdict_line(broken.comment) == EVERY_LANE_FAILED
 
 
 # --- the comment's numbers against kit.exact ---------------------------------------------

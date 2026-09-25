@@ -37,7 +37,7 @@ import sys
 
 from filelock import FileLock
 
-from accuracy.kit import drive, repos
+from accuracy.kit import drive, repos, surfaces
 
 BODY = ("    if v == 1:\n        return 1\n    if v == 2:\n        return 2\n"
         "    if v == 3:\n        return 3\n    if v == 4:\n        return 4\n"
@@ -97,8 +97,14 @@ def _report(driver: drive.Driver, rows: list[dict]) -> list[Printed]:
     """Each report row's command; the page lists the rows in worklist order."""
     driver.run("report", "--out", "report.html")
     page = (driver.root / "report.html").read_bytes().decode("utf-8")
-    return [Printed("report", text, runnable("explain", (), (row["path"], row["handle"])))
+    return [Printed("report", text, runnable("explain", (), (row["path"], handle(row))))
             for text, row in zip(_cells(page), rows)]
+
+
+def handle(row: dict) -> str:
+    """The row's `handle`; a crapkit older than the field names a function by
+    its bare identifier, the first form docs/agent-json.md gives a handle."""
+    return row.get("handle") or surfaces.bare_name(row["function"])
 
 
 def meaning(argv) -> tuple:
@@ -124,7 +130,7 @@ def runnable(command: str, options: tuple, positionals: tuple) -> tuple[str, ...
 
 
 def _brief(driver: drive.Driver, row: dict) -> list[Printed]:
-    argv = runnable("brief", ("--json",), (row["path"], row["handle"]))
+    argv = runnable("brief", ("--json",), (row["path"], handle(row)))
     commands = driver.run(*argv).json()["commands"]
     return [Printed("gate", commands["gate"], runnable("rescore", ("--gate",), (row["path"],))),
             Printed("scoped", commands["scoped_tests"], runnable("test-scoped", (),

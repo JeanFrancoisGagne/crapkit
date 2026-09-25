@@ -74,8 +74,10 @@ class ActionRun:
         return built[0] if built else ""
 
     def file(self, name: str) -> str:
-        path = self.state / name
-        return path.read_text(encoding="utf-8") if path.is_file() else ""
+        """A file the steps left in the state directory, or in RUNNER_TEMP (its
+        parent), where action.yml kept them before the state directory existed."""
+        found = [path for path in (self.state / name, self.state.parent / name) if path.is_file()]
+        return found[0].read_text(encoding="utf-8") if found else ""
 
 
 def action_path() -> Path:
