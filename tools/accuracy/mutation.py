@@ -763,14 +763,24 @@ def present(targets: dict, repo: Path = REPO) -> dict:
     return {path: tests for path, tests in targets.items() if (repo / path).is_file()}
 
 
-def _stage_table(targets: dict, copies: list[str]) -> str:
+def _stage_keys(targets: dict, copies: list[str]) -> dict:
+    """The [tool.mutmut] keys the stage sets: what mutmut mutates, runs and copies."""
     tests = sorted({test for listed in targets.values() for test in listed})
-    return "\n".join((
-        "[tool.mutmut]",
-        f"source_paths = {json.dumps(sorted(targets))}",
-        f"pytest_add_cli_args_test_selection = {json.dumps(tests)}",
-        f"pytest_add_cli_args = {json.dumps(['-p', 'no:cacheprovider', '-m', FLOOR_SUITE])}",
-        f"also_copy = {json.dumps(copies)}")) + "\n"
+    return {"source_paths": sorted(targets), "pytest_add_cli_args_test_selection": tests,
+            "pytest_add_cli_args": ["-p", "no:cacheprovider", "-m", FLOOR_SUITE],
+            "also_copy": copies}
+
+
+def _stage_rows(ours: dict, kept: dict) -> dict:
+    """The repo table's other keys first, as its tests read them (mutmut takes
+    source_paths over paths_to_mutate), then the stage's own."""
+    return {key: value for key, value in kept.items() if key not in ours} | ours
+
+
+def _stage_table(targets: dict, copies: list[str], kept: dict | None = None) -> str:
+    rows = _stage_rows(_stage_keys(targets, copies), kept or {})
+    return "\n".join(["[tool.mutmut]", *(f"{key} = {json.dumps(value)}"
+                                          for key, value in rows.items())]) + "\n"
 
 
 def stage_config(text: str, targets: dict, copies: list[str]) -> str:
@@ -778,7 +788,8 @@ def stage_config(text: str, targets: dict, copies: list[str]) -> str:
     its own, copying `copies` beside the mutants."""
     head, _, rest = text.partition("[tool.mutmut]")
     tail = rest[rest.index("\n["):] if "\n[" in rest else ""
-    return f"{head.rstrip()}\n\n{tail.strip()}\n\n{_stage_table(targets, copies)}"
+    kept = tomllib.loads(text).get("tool", {}).get("mutmut", {})
+    return f"{head.rstrip()}\n\n{tail.strip()}\n\n{_stage_table(targets, copies, kept)}"
 
 
 def stage_copies(stage: Path) -> list[str]:

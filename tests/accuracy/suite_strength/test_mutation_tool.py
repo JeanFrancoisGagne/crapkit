@@ -1667,3 +1667,40 @@ def test_staged_run_hands_its_environment_to_each_mutmut_run_and_keeps_to_its_gl
 
     assert complete and (stage / "env.log").read_bytes().split() == [b"kept", b"kept"]
     assert {row.module for row in rows} == {"src/crapkit/score.py"}
+
+
+# --- the stage keeps what the repo's own tests read of its table -------------------------------------
+#
+# tests/accuracy/kit/test_kit_contract.py reads [tool.mutmut].paths_to_mutate
+# from pyproject.toml, and in the calc stage it reads the stage's copy. A stage
+# table without that key failed mutmut's stats run in the accuracy image with a
+# KeyError, and every mutant of the diff run stayed `not checked`. mutmut 3.8.0
+# takes source_paths over paths_to_mutate, so the kept key changes nothing it
+# mutates.
+
+def test_the_stage_keeps_every_key_of_the_repo_s_table_it_does_not_set():
+    targets = {"tools/accuracy/retro.py": ("t",)}
+
+    parsed = mutation.tomllib.loads(mutation.stage_config(PYPROJECT, targets, ["src"]))
+
+    assert parsed["tool"]["mutmut"] == {
+        "paths_to_mutate": ["src/crapkit/score.py"], "source_paths": ["tools/accuracy/retro.py"],
+        "pytest_add_cli_args_test_selection": ["t"],
+        "pytest_add_cli_args": ["-p", "no:cacheprovider", "-m", mutation.FLOOR_SUITE],
+        "also_copy": ["src"]}
+
+
+def test_kept_keys_come_first_and_the_stage_s_own_keys_win():
+    kept = {"also_copy": ["old"], "paths_to_mutate": ["p.py"], "debug": True}
+
+    table = mutation._stage_table({"a.py": ("t",)}, ["src"], kept)
+
+    assert table.splitlines()[:3] == ["[tool.mutmut]", 'paths_to_mutate = ["p.py"]', "debug = true"]
+    assert table.splitlines()[-1] == 'also_copy = ["src"]'
+
+
+def test_a_pyproject_with_no_mutmut_table_gets_the_stage_s_alone():
+    targets = {"a.py": ("t",)}
+
+    assert mutation.stage_config("[project]\nname = 'x'\n", targets, ["src"]) == (
+        "[project]\nname = 'x'\n\n\n\n" + mutation._stage_table(targets, ["src"]))
