@@ -249,8 +249,19 @@ def _cells(path: Path, number: int, line: str, columns: tuple) -> dict:
 
 
 def write_table(path: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
+    """A cell holding a tab or line break would read back as a different row, so it
+    is refused before anything is written."""
+    for row in rows:
+        _check_cells(path, row, columns)
     body = ["\t".join(columns)] + ["\t".join(row[column] for column in columns) for row in rows]
     _write(path, "\n".join(body) + "\n")
+
+
+def _check_cells(path: Path, row: dict, columns: tuple[str, ...]) -> None:
+    for column in columns:
+        if set(row[column]) & {"\t", "\n", "\r"}:
+            raise MutationError(f"{path}: the {column} cell of {' '.join(_ident(row))} "
+                                "holds a tab or line break")
 
 
 def _ident(row: dict) -> tuple[str, str, str]:

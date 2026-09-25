@@ -1422,6 +1422,30 @@ def test_a_table_it_cannot_read_is_refused_by_file_and_line(tmp_path, body, says
     assert str(refused.value) == says.format(path=path)
 
 
+@pytest.mark.parametrize("name, columns", [("survivors.tsv", "SURVIVOR_COLUMNS"),
+                                           ("equivalent.tsv", "EQUIVALENT_COLUMNS"),
+                                           ("floors.tsv", "FLOOR_COLUMNS")])
+def test_the_committed_tables_read_with_the_gate_s_own_reader(name, columns):
+    """The gate reads these files at the end of every run; a row it cannot read
+    voids a weekly run after its mutants ran (a reason holding a raw newline
+    split one row into three)."""
+    rows = mutation.read_table(mutation.TABLES / name, getattr(mutation, columns))
+
+    assert all(set(row) == set(getattr(mutation, columns)) for row in rows)
+
+
+@pytest.mark.parametrize("cell", ["a\nb", "a\tb", "a\rb"])
+def test_a_cell_holding_a_tab_or_line_break_is_refused_before_writing(tmp_path, cell):
+    path = tmp_path / "survivors.tsv"
+    row = {"module": "m", "function": "f", "diff_sha256": "k", "reason": cell, "added": "d"}
+
+    with pytest.raises(mutation.MutationError) as refused:
+        mutation.write_table(path, mutation.SURVIVOR_COLUMNS, [row])
+
+    assert str(refused.value) == f"{path}: the reason cell of m f k holds a tab or line break"
+    assert not path.exists()
+
+
 def test_the_equivalents_come_from_their_own_table(tmp_path, monkeypatch):
     proven = {**_row("src/crapkit/score.py", "crap", KEYS[0]), "evidence": "e", "strategy": "s",
               "checked": "d"}
