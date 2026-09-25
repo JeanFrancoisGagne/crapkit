@@ -36,8 +36,10 @@ WINDOWS = os.name == "nt"
 LANE = "py"
 COV = "--cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json"
 SUB = Path("calc") / "sub"
-# The suite's own subprocess coverage must not measure a lane child (kit/repos.py).
-QUIET = {"COVERAGE_PROCESS_CONFIG": "", "COV_CORE_DATAFILE": ""}
+# The suite's own subprocess coverage must not measure a lane child (kit/repos.py),
+# and a PYTHONPATH the suite runs under must not hand a lane's python the packages
+# its own environment lacks.
+QUIET = {"COVERAGE_PROCESS_CONFIG": "", "COV_CORE_DATAFILE": "", "PYTHONPATH": ""}
 MARKER = "runcov 1.0"
 FILES = {
     ".gitignore": ".venv/\n.crapkit/\n__pycache__/\n.coverage\ncoverage.json\n.pytest_cache/\n",
