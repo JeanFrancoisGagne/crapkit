@@ -100,6 +100,8 @@ def test_declare_on_the_command_line_reads_a_calc_name_that_holds_commas(make_re
 
 # --- the first lock and the test counts ----------------------------------------------------------
 
+@pytest.mark.nightly
+@pytest.mark.release
 @pytest.mark.process
 def test_the_first_lock_covers_every_lockable_file_and_its_commit_passes(make_repo, capsys):
     """kit-close's commit: `lock --initial` on a tree whose tables hold headers only."""
@@ -122,6 +124,7 @@ def test_the_first_lock_covers_every_lockable_file_and_its_commit_passes(make_re
     assert "the lock is already initialized" in capsys.readouterr().err
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_counts_says_which_packet_moved_and_write_records_it(make_repo, capsys):
     top = seeds.seeded(make_repo, BASE)
@@ -138,6 +141,7 @@ def test_counts_says_which_packet_moved_and_write_records_it(make_repo, capsys):
     assert (top / cc.COUNTS).read_text() == "packet\ttests\nscore_model\t4\n"
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_collection_error_stops_the_count(make_repo):
     top = seeds.seeded(make_repo, {**BASE, seeds.SEED_TEST: "def broken(:\n"})
@@ -183,6 +187,7 @@ def test_pre_push_refuses_an_undeclared_module_change_and_runs_its_calc_checks(m
     assert "1 passed" in out
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_pre_push_passes_a_declared_fix_and_runs_the_checks_of_the_bumped_module(make_repo,
                                                                                  capfd):
@@ -215,6 +220,7 @@ def test_pre_push_needs_a_fetched_main(make_repo):
         cc.remote_main(top, "upstream")
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_the_pre_push_command_reads_the_refs_git_hands_it(make_repo, monkeypatch, capfd):
     top = _pushed(make_repo, seeds.module_changed(BASE))
@@ -237,6 +243,8 @@ def _push(top: Path, remote: Path) -> tuple:
     return done, time.monotonic() - started
 
 
+@pytest.mark.nightly
+@pytest.mark.release
 @pytest.mark.process
 def test_the_hook_script_stops_a_real_push_within_a_minute(make_repo, tmp_path):
     """git runs git-hooks/pre-push itself: an undeclared module change is refused,
@@ -473,7 +481,7 @@ def _ts_tree(suffix: str = ".ts") -> cc.DictTree:
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("suffix", [".ts", ".js"])
+@pytest.mark.parametrize("suffix", [".ts", pytest.param(".js", marks=pytest.mark.nightly)])
 def test_eslint_and_sonarjs_answer_each_js_and_ts_column(oracle, suffix):
     list(map(oracle, ("eslint", "eslint-plugin-sonarjs", "@typescript-eslint/parser")))
 
@@ -494,6 +502,7 @@ def _oracle_of(column: str) -> str:
 
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_ts_file_eslint_cannot_parse_answers_nothing(oracle):
     oracle("eslint")

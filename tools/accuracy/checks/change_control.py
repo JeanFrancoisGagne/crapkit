@@ -8,10 +8,10 @@ runner a git call costs a few milliseconds.
 SHARD = "corpus"
 _HOME = "tests/accuracy/change_control/"
 CHECKS = [
-    {"name": "the rules on seeded repos", "seconds": 9,
+    {"name": "the rules on seeded repos", "seconds": 7,
      "pytest": [_HOME + "test_change_control_rules.py"]},
     {"name": "the command line, the first lock, counts and the pre-push hook", "seconds": 7,
      "pytest": [_HOME + "test_change_control_tool.py"]},
-    {"name": "this tree's lock, digests, goldens and counts", "seconds": 4,
+    {"name": "this tree's lock, digests, goldens and counts", "seconds": 5,
      "pytest": [_HOME + "test_change_control.py"]},
 ]
