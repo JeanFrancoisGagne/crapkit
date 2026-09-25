@@ -138,8 +138,14 @@ def _windows_encoded(arguments: list[str]) -> str:
 _INTERPRETED = frozenset('"%!$`\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029')
 
 
+# A long flag such as `--gate` or `--top`, which cmd.exe and PowerShell both
+# hand to a native command as written, or a word with nothing either shell
+# reads. PowerShell's stop-parsing token `--%` is neither.
+_WINDOWS_PLAIN = re.compile(r"--[a-z][-a-z]*|[\w./:\\][-\w./:\\]*", re.ASCII)
+
+
 def _windows_argument(argument: str) -> str:
-    if argument in ("--", "--gate") or re.fullmatch(r"[\w./:\\][-\w./:\\]*", argument, re.ASCII):
+    if argument == "--" or _WINDOWS_PLAIN.fullmatch(argument):
         return argument
     return '"' + argument + '"'
 

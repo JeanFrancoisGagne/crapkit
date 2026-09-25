@@ -1622,7 +1622,24 @@ can serve several checkouts.
 
 Results arrive as MCP text content, and every tool's text is the payload of the CLI's
 `--json` form: parse it, or read `structuredContent`, which carries the same object parsed
-whenever the call exited 0. `isError` is true whenever the underlying CLI call exited
+whenever the call exited 0 and the client negotiated `2025-06-18`, the revision that defines
+the field. A client on `2024-11-05` or `2025-03-26` gets the text alone.
+
+One answer is 7,500 characters or shorter, counted as the text takes them inside a client's
+JSON of the result. Cline keeps 8,000 characters of that JSON and cuts the middle out, and a
+brief on a 300-line function ran to 15 KB and more. A longer answer loses the end of its
+list fields, largest first, then of its string fields, such as a brief's `source`; each
+keeps its start, and the text and `structuredContent` stay the same object. It then carries
+`truncated`: `fields` gives each cut field what it `kept` and what it had (`of`), elements
+for a list and characters for a string, and `full` is the CLI command that prints the
+whole answer:
+
+```json
+"truncated": {"fields": {"active": {"kept": 19, "of": 50}}, "full": "crapkit worklist --top 50 --json --repo /home/me/app"}
+```
+
+A field shorter than 500 characters, such as a path or a commit, is never cut.
+`isError` is true whenever the underlying CLI call exited
 non-zero, and then the text is what the CLI printed: for `doctor` that is still the JSON
 report (it exits 1 on any FAIL, so a failing `doctor` answers JSON text with `isError: true`
 and no `structuredContent`); for the other `--json` tools it is the [error object](#errors)

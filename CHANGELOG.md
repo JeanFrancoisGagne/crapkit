@@ -370,6 +370,23 @@ nothing. Each of these now gets a line naming the object and the next step:
 - The MCP page drops the claim that a globally registered server serves the workspace it
   starts in, and says where each client starts it.
 
+### An MCP answer fits in one tool result
+
+- Every tool answer is 7,500 characters or shorter, counted as its text takes them inside a
+  client's JSON of the result. Cline keeps 8,000 characters of that JSON and cuts the
+  middle out, and a brief on a 300-line function ran to 15 KB and more, so its model got
+  `get_function_brief` and `list_worklist` top 50 as JSON it could not parse. A longer
+  answer now loses the end of its list fields, largest first, then of its string fields,
+  such as a brief's `source`, and carries `truncated`: what each cut field kept of what it
+  had, and the CLI command that prints the whole answer. A worklist of 50 keeps its top
+  rows; a brief keeps its source ahead of the file's other functions. Every output schema
+  declares the field.
+- `structuredContent` goes only to a client that negotiated `2025-06-18`, the revision
+  that defines it. A `2024-11-05` client such as Cline got the answer twice, which
+  doubled what it cut.
+- A Windows command line printed by crapkit writes a long flag such as `--top` bare, as
+  cmd.exe and PowerShell both pass it on.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

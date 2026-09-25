@@ -1485,6 +1485,38 @@ TOOLS: tuple[dict, ...] = (
     },
 )
 
+# The longest answer a tool gives, counted as the characters its text takes in
+# a client's JSON of the result. Cline keeps 8,000 characters of that JSON and
+# cuts the middle out; a brief on a 300-line function was 15 to 27 KB, so its
+# model got JSON it could not parse. The other clients measured keep much
+# longer results whole, and they get the same answer, so every client reads
+# one payload.
+ANSWER_CHARS = 7_500
+
+# A field shorter than this is never cut: a path, a sha or a name is worth
+# more whole than the characters it frees.
+_CUTTABLE_CHARS = 500
+
+
+# What every answer carries when it was cut to fit one tool result.
+_TRUNCATED = {
+    "type": "object",
+    "description": ("present only when the whole answer was longer than one tool result the "
+                    f"server sends ({ANSWER_CHARS:,} characters): each list or string field it cut "
+                    "keeps its start, and full is the CLI command that prints the whole answer"),
+    "properties": {
+        "fields": {"type": "object",
+                   "description": ("each cut field -> kept and of: elements for a list, "
+                                   "characters for a string"),
+                   "additionalProperties": {
+                       "type": "object",
+                       "properties": {
+                           "kept": {"type": "integer", "description": "how many the answer keeps"},
+                           "of": {"type": "integer", "description": "how many the whole answer has"}}}},
+        "full": {"type": "string",
+                 "description": "the crapkit command that prints the whole answer, spelled for "
+                                "the server's shell"}}}
+
 # These annotations describe score and source inspection. Cache, store migration
 # and rollup writes are documented in the initialization response.
 _ANNOTATIONS = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True,
@@ -1516,7 +1548,8 @@ def _listing_entry(tool: dict) -> dict:
     if tool.get("title"):
         entry["title"] = tool["title"]
     if tool.get("output"):
-        entry["outputSchema"] = {"type": "object", "properties": dict(tool["output"])}
+        entry["outputSchema"] = {"type": "object",
+                                 "properties": {**tool["output"], "truncated": _TRUNCATED}}
     return entry
 
 
@@ -1576,14 +1609,61 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     `verdict_exits` is an answer, not a failure: `gate` exits 6 on a breach
     and its payload says so in `gate.ok`. A call that came before the client
     named its workspace folders waits for them here, in the worker."""
-    if isinstance(repo, _Workspace):
+    if isinstance(repo, _Session):
         return repo.run(tool, arguments, owner)
     argv = build_argv(tool, arguments) + ["--repo", repo]
     proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
     text = proc.stdout if proc.stdout.strip() else proc.stderr
     failed = proc.returncode != 0 and proc.returncode not in tool.get("verdict_exits", ())
-    return _structured(_result(text, is_error=failed))
+    return _structured(_result(text, is_error=failed), lambda: _full_command(tool, arguments, repo))
+
+
+def _full_command(tool: dict, arguments: dict, repo: str) -> str:
+    """The CLI command that prints a call's whole answer, spelled for the
+    host's shell as the packet's own commands are."""
+    from .packet import console_command
+    return console_command([*build_argv(tool, arguments), "--repo", repo])
+
+
+def _text_chars(payload: dict) -> int:
+    return len(json.dumps(json.dumps(payload, sort_keys=True) + "\n"))
+
+
+def _cuttable(payload: dict) -> list[str]:
+    """The list and string fields worth cutting, in the order they are cut:
+    lists before strings, since a list's first rows still answer while a
+    brief's `source` is what the edit is made from, and the largest first."""
+    sizes = {key: len(json.dumps(value)) for key, value in payload.items()
+             if isinstance(value, (list, str))}
+    return sorted((key for key, size in sizes.items() if size >= _CUTTABLE_CHARS),
+                  key=lambda key: (isinstance(payload[key], str), -sizes[key], key))
+
+
+def _fitting(payload: dict, field: str) -> int:
+    """The longest start of `field` with which `payload` fits, 0 when none does."""
+    whole, low, high = payload[field], 0, len(payload[field])
+    while low < high:
+        middle = (low + high + 1) // 2
+        fits = _text_chars({**payload, field: whole[:middle]}) <= ANSWER_CHARS
+        low, high = (middle, high) if fits else (low, middle - 1)
+    return low
+
+
+def _budgeted(payload: dict, full) -> dict:
+    """`payload` cut to ANSWER_CHARS: the largest cuttable field first, each
+    keeping its start, then the next. `truncated` says what each kept of what
+    it had, and names the command that prints everything; the worst case of it
+    is counted while cutting, so the answer that carries it still fits."""
+    fields = _cuttable(payload)
+    kept = {"fields": {key: {"kept": len(payload[key]), "of": len(payload[key])} for key in fields},
+            "full": full()}
+    cut = {**payload, "truncated": kept}
+    for field in fields:
+        cut[field] = payload[field][:_fitting(cut, field)]
+    kept["fields"] = {key: {"kept": len(cut[key]), "of": len(payload[key])}
+                      for key in fields if len(cut[key]) < len(payload[key])}
+    return cut
 
 
 # JSON Schema type names to the Python shapes json.loads produces for them. A
@@ -1672,6 +1752,9 @@ def _config_root(repo: str) -> Path | None:
     return find_root(start) if start.is_dir() else None
 
 
+# The revisions that define a result's structuredContent.
+_STRUCTURED_REVISIONS = ("2025-06-18",)
+
 # How long a call waits for the client to answer roots/list before it is
 # answered as if the client named no folder, and how often the wait looks at a
 # cancellation meanwhile.
@@ -1720,10 +1803,12 @@ def _cancelled(owner) -> None:
         raise CommandCancelled("request was cancelled while it waited for the client's roots")
 
 
-class _Workspace:
-    """Where a call without a `repo` argument is served, for one session.
+class _Session:
+    """One client's session: where a call without a `repo` argument is served,
+    and what the negotiated protocol revision can carry.
 
-    A crapkit.toml at or above the directory the server started in settles it
+    A crapkit.toml at or above the directory the server started in settles the
+    root
     (ADR 0002). Clients do not all start the server in the workspace: VS Code
     starts a user-level server in the home directory and a plugin's server in
     the plugin directory, and every call there answered `no crapkit.toml`
@@ -1739,10 +1824,22 @@ class _Workspace:
         self.capable = self.timed_out = False
         self.asked, self.pending, self.folders = 0, None, None
         self.answered = threading.Event()
+        self.revision = SUPPORTED_PROTOCOLS[0]
 
     def greet(self, params: dict) -> None:
         capabilities = params.get("capabilities")
         self.capable = isinstance(capabilities, dict) and "roots" in capabilities
+        self.revision = _negotiated(params)
+
+    def run_cli(self, tool: dict, arguments: dict, repo, *, owner=None) -> dict:
+        """A call's answer in the shape this session's revision defines:
+        structuredContent is a 2025-06-18 field, and a client on an older one
+        that serializes the whole result (Cline speaks 2024-11-05) carried the
+        answer twice."""
+        result = _run_cli(tool, arguments, repo, owner=owner)
+        if self.revision in _STRUCTURED_REVISIONS:
+            return result
+        return {key: value for key, value in result.items() if key != "structuredContent"}
 
     def hint(self) -> str:
         """What the instructions add when nothing on the wire can name the
@@ -1820,17 +1917,16 @@ class _Workspace:
         return f"{self.start} or in the workspace folders the client named ({named})"
 
 
-def _workspace(root) -> _Workspace:
-    return root if isinstance(root, _Workspace) else _Workspace(root)
+def _session(root) -> _Session:
+    return root if isinstance(root, _Session) else _Session(root)
 
 
-def _call_root(workspace: _Workspace, arguments: dict):
+def _call_root(session: _Session, arguments: dict):
     """The root a call runs at, or None. A call's own `repo` argument is walked
-    up to the nearest crapkit.toml; without one the session's workspace
-    answers."""
+    up to the nearest crapkit.toml; without one the session answers."""
     repo = arguments.get("repo")
     if not repo:
-        return workspace.served()
+        return session.served()
     found = _config_root(repo)
     return str(found) if found else None
 
@@ -1889,23 +1985,22 @@ def _table_refusal(tool: dict | None, name: str, arguments: dict) -> str | None:
     return _argument_error(tool, arguments)
 
 
-def _missing(workspace: _Workspace, repo: str | None) -> dict:
-    return _no_config_result(repo) if repo else workspace.missing()
+def _missing(session: _Session, repo: str | None) -> dict:
+    return _no_config_result(repo) if repo else session.missing()
 
 
 def _call_tool(root, name: str, arguments: dict, run_cli=None) -> dict:
     """The package on disk, then name lookup, then the arguments against the
     table, then the repo the call names, then the run. Every refusal is decided
-    before a CLI spawns. `root` is the session's workspace, or a plain start
-    directory."""
+    before a CLI spawns. `root` is the session, or a plain start directory."""
     tool, arguments = _tool_named(name), _own_arguments(arguments)
     refusal = _upgraded_under_us(name) or _table_refusal(tool, name, arguments)
     if refusal:
         return _result(refusal, is_error=True)
-    workspace = _workspace(root)
-    served = _call_root(workspace, arguments)
+    session = _session(root)
+    served = _call_root(session, arguments)
     if served is None:
-        return _missing(workspace, arguments.get("repo"))
+        return _missing(session, arguments.get("repo"))
     return (run_cli or _run_cli)(tool, arguments, served)
 
 
@@ -1931,8 +2026,9 @@ def _negotiated(params: dict) -> str:
     return offered if offered in SUPPORTED_PROTOCOLS else SUPPORTED_PROTOCOLS[0]
 
 
-def _structured(result: dict) -> dict:
-    """Attach the parsed object beside the text when the text is a JSON object.
+def _structured(result: dict, full=lambda: "") -> dict:
+    """Attach the parsed object beside the text when the text is a JSON object,
+    both cut to ANSWER_CHARS when the object is longer.
 
     The --json commands print for machines; a client on the 2025-06-18 revision
     reads structuredContent directly. Prose, JSON arrays and error text stay
@@ -1944,9 +2040,16 @@ def _structured(result: dict) -> dict:
         parsed = json.loads(result["content"][0]["text"])
     except ValueError:
         return result
-    if isinstance(parsed, dict):
+    if not isinstance(parsed, dict):
+        return result
+    return _fitted(result, parsed, full)
+
+
+def _fitted(result: dict, parsed: dict, full) -> dict:
+    if _text_chars(parsed) <= ANSWER_CHARS:
         return {**result, "structuredContent": parsed}
-    return result
+    cut = _budgeted(parsed, full)
+    return {**_result(json.dumps(cut, sort_keys=True) + "\n", is_error=False), "structuredContent": cut}
 
 
 def _respond(msg_id, result=None, error=None) -> dict:
@@ -1955,19 +2058,19 @@ def _respond(msg_id, result=None, error=None) -> dict:
     return resp
 
 
-def _initialize_result(params: dict, workspace: _Workspace) -> dict:
-    workspace.greet(params)
+def _initialize_result(params: dict, session: _Session) -> dict:
+    session.greet(params)
     return {"protocolVersion": _negotiated(params),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "crapkit", "version": _version()},
-            "instructions": _INSTRUCTIONS + workspace.hint()}
+            "instructions": _INSTRUCTIONS + session.hint()}
 
 
 # The methods that need no repo, keyed as the wire spells them. ping answers
 # the empty object the spec asks for, so a client's keepalive is not -32601.
 _METHODS = {"initialize": _initialize_result,
-            "tools/list": lambda params, workspace: {"tools": tool_listing()},
-            "ping": lambda params, workspace: {}}
+            "tools/list": lambda params, session: {"tools": tool_listing()},
+            "ping": lambda params, session: {}}
 
 # The notifications on which a server whose start directory serves nothing
 # asks the client for its workspace folders.
@@ -1978,33 +2081,33 @@ def _tools_call(root, params: dict, run_cli=None) -> dict:
     return _call_tool(root, params.get("name", ""), params.get("arguments") or {}, run_cli)
 
 
-def _notified(workspace: _Workspace, method) -> dict | None:
+def _notified(session: _Session, method) -> dict | None:
     """A notification gets no reply. Two of them are when the server asks the
     client for its roots, and that request is what goes out instead."""
-    return workspace.ask() if method in _ASK_ROOTS_ON else None
+    return session.ask() if method in _ASK_ROOTS_ON else None
 
 
-def _request(workspace: _Workspace, msg: dict, run_cli=None) -> dict:
+def _request(session: _Session, msg: dict, run_cli=None) -> dict:
     method, params = msg["method"], msg.get("params") or {}
     if method == "tools/call":
-        return _respond(msg["id"], _tools_call(workspace, params, run_cli))
+        return _respond(msg["id"], _tools_call(session, params, run_cli))
     handler = _METHODS.get(method) if isinstance(method, str) else None
     if handler is None:
         return _respond(msg["id"], error={"code": -32601,
                                           "message": f"unknown method {method!r}"})
-    return _respond(msg["id"], handler(params, workspace))
+    return _respond(msg["id"], handler(params, session))
 
 
 def _handle(root, msg: dict, run_cli=None) -> dict | None:
     """A response to the server's own request, a notification, or a request.
-    Only a request gets a reply; `root` is the session's workspace, or a plain
-    start directory."""
-    workspace = _workspace(root)
+    Only a request gets a reply; `root` is the session, or a plain start
+    directory."""
+    session = _session(root)
     if "method" not in msg:
-        return workspace.take(msg)
+        return session.take(msg)
     if "id" not in msg:
-        return _notified(workspace, msg["method"])
-    return _request(workspace, msg, run_cli)
+        return _notified(session, msg["method"])
+    return _request(session, msg, run_cli)
 
 
 def _version() -> str:
@@ -2040,5 +2143,5 @@ def serve(root: Path, *, plugin: bool = False) -> int:
     `plugin` says the client started the server in its plugin's install
     directory, which serves nothing whatever lies above it."""
     from ._mcp_stdio import serve as stdio
-    workspace = _Workspace(root, plugin=plugin)
-    return stdio(sys.stdin, sys.stdout, lambda msg, run: _reply(workspace, msg, run), _run_cli)
+    session = _Session(root, plugin=plugin)
+    return stdio(sys.stdin, sys.stdout, lambda msg, run: _reply(session, msg, run), session.run_cli)

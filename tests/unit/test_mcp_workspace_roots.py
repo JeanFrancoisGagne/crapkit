@@ -260,7 +260,7 @@ def test_a_folder_that_is_not_a_local_file_is_skipped(uri):
 
 def test_a_client_that_never_answers_gets_the_missing_config_answer(monkeypatch, tmp_path):
     monkeypatch.setattr(mcp_server, "ROOTS_SECONDS", 0)
-    workspace = mcp_server._Workspace(_plain(tmp_path / "home"))
+    workspace = mcp_server._Session(_plain(tmp_path / "home"))
     workspace.greet({"capabilities": _ROOTS})
     assert workspace.ask()["method"] == "roots/list"
 

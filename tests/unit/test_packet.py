@@ -155,6 +155,17 @@ def test_windows_commands_quote_shell_operators_and_hide_expansion_text(monkeypa
                       "$LASTEXITCODE = 1; & $command.Source 'test-scoped' 'src/a''%VAR%.py'; exit $LASTEXITCODE")
 
 
+def test_windows_commands_print_a_long_flag_bare_and_quote_the_stop_parsing_token(monkeypatch):
+    """The MCP server's `truncated.full` spells a tool's argv, flags included:
+    `--top 50` reads as written in both shells, and `--%` would stop
+    PowerShell from parsing the rest."""
+    monkeypatch.setattr(packet, "os", SimpleNamespace(name="nt"))
+    assert (packet.console_command(["worklist", "--top", "50", "--json", "--repo", "C:\\r"])
+            == "crapkit worklist --top 50 --json --repo C:\\r")
+    assert packet.console_command(["worklist", "--%"]).startswith(
+        "powershell -NoProfile -NonInteractive -EncodedCommand ")
+
+
 def test_windows_commands_escape_a_double_quote_for_powershell_to_pass_on(monkeypatch):
     """Windows PowerShell 5.1 escapes no quote inside a native argument, so the
     script carries the C runtime's escapes: a backslash before the quote, and
