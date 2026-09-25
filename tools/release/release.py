@@ -242,9 +242,19 @@ def preflight(*, locate: Callable | None = None,
 
 # --- the deploy gate ---------------------------------------------------------------
 
+def _gh() -> str:
+    """gh's path. A bare "gh" that is missing fails on Windows with a WinError
+    that names no program, so the gate names it first."""
+    found = shutil.which("gh")
+    if found is None:
+        raise ReleaseError("gh is not on PATH, so no run of deploy.yml can be read; install the "
+                           "GitHub CLI and run gh auth login")
+    return found
+
+
 def _deploy_runs(root: Path, head: str) -> list:
     """deploy.yml's runs at `head`, as gh lists them."""
-    done = subprocess.run(["gh", "run", "list", "--repo", GITHUB_REPO, "--workflow", DEPLOY_WORKFLOW,
+    done = subprocess.run([_gh(), "run", "list", "--repo", GITHUB_REPO, "--workflow", DEPLOY_WORKFLOW,
                            "--commit", head, "--json", "conclusion,displayTitle,event,url",
                            "--limit", "100"], cwd=root, capture_output=True, text=True,
                           timeout=READ_TIMEOUT)

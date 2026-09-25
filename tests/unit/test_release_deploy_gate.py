@@ -101,10 +101,11 @@ def test_gh_is_asked_for_deploy_yml_at_the_commit(repo, monkeypatch):
         seen.append(argv)
         return subprocess.CompletedProcess(argv, 0, json.dumps([GREEN]), "")
     monkeypatch.setattr(release.subprocess, "run", fake_run)
+    monkeypatch.setattr(release.shutil, "which", lambda name: f"/usr/bin/{name}")
 
     assert release._deploy_runs(repo, "abc123") == [GREEN]
     (argv,) = seen
-    assert argv[:3] == ["gh", "run", "list"]
+    assert argv[:3] == ["/usr/bin/gh", "run", "list"]
     assert argv[argv.index("--workflow") + 1] == "deploy.yml"
     assert argv[argv.index("--commit") + 1] == "abc123"
     assert set(argv[argv.index("--json") + 1].split(",")) >= {"conclusion", "event", "displayTitle"}
@@ -114,9 +115,21 @@ def test_a_failing_gh_names_its_first_error_line(repo, monkeypatch):
     def fake_run(argv, **kwargs):
         return subprocess.CompletedProcess(argv, 4, "", "HTTP 401: Bad credentials\nmore\n")
     monkeypatch.setattr(release.subprocess, "run", fake_run)
+    monkeypatch.setattr(release.shutil, "which", lambda name: f"/usr/bin/{name}")
 
     with pytest.raises(release.ReleaseError, match="^gh run list failed: HTTP 401: Bad credentials$"):
         release._deploy_runs(repo, "abc123")
+
+
+def test_a_machine_without_gh_is_told_to_install_it(repo, monkeypatch):
+    """A bare "gh" that Windows cannot find fails with `[WinError 2] The system
+    cannot find the file specified`, which names no program (a deploy cell on
+    Windows printed exactly that)."""
+    monkeypatch.setattr(release.shutil, "which", lambda name: None)
+
+    assert release.deploy_gate(repo) == [
+        "deploy gate: gh is not on PATH, so no run of deploy.yml can be read; install the "
+        "GitHub CLI and run gh auth login"]
 
 
 def test_the_cli_check_refuses_until_the_deploy_suite_passed(repo, monkeypatch, capsys):
