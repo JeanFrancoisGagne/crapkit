@@ -7,6 +7,7 @@ command that fixes the refusal.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import hashlib
 import io
 import os
@@ -93,6 +94,118 @@ def test_declare_on_the_command_line_reads_a_calc_name_that_holds_commas(make_re
     assert capsys.readouterr().out.startswith(
         "declared C3 (fix: ccn_std, ccn_mod and gated ccn): 2 locked files relocked")
     assert cc.changes_of(cc.DirTree(top))["C3"]["calcs"] == "ccn_std, ccn_mod and gated ccn"
+
+
+@pytest.mark.process
+def test_declare_on_the_command_line_names_rulings_regenerates_and_dates_the_change(
+        make_repo, oracle, capsys):
+    """parse at ccn 9 where radon says 7, covered by the second --against-oracle, R-CCN;
+    a definition cites the first named ruling of each cell's calc, so the CRAP cell
+    cites R-D5. With no --no-regenerate the tool looks for the regenerator, which
+    this tree lacks."""
+    oracle("radon")
+    top = seeds.seeded(make_repo, BASE)
+    seeds.write(top, BASE, seeds.ccn9(BASE))
+    before = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    code = cc.main(["declare", "C3", "--kind", "definition", "--calcs", seeds.CCN,
+                    "--reason", "parse reads 9", "--against-oracle", "R-D5",
+                    "--against-oracle", "R-CCN", "--repo", str(top)])
+
+    after = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert out.startswith(f"{cc.REGENERATE} is not in this tree; the goldens are judged as "
+                          "they are\ndeclared C3 (definition: ")
+    assert "7 judged by an oracle, ruling(s) R-CCN, R-D5 cover a difference" in out
+    assert cc.changes_of(cc.DirTree(top))["C3"]["date"] in {before, after}
+
+
+# --- the command line's contract -------------------------------------------------------------
+
+def _help(parser) -> str:
+    return " ".join(parser.format_help().split())
+
+
+# Each command's usage line and every help text it shows, as the module docstring
+# and CONTRIBUTING state the commands.
+HELP = {
+    "check": (lambda: cc._check_parser(), "usage: change_control.py [-h] --base BASE", (
+        "Judge a diff.", "--base BASE the ref to compare with (merge base)", "--head HEAD",
+        "--repo REPO", "--measured MEASURED the CI hand-off directory",
+        "--moved MOVED a moved-row map in moved.tsv's columns")),
+    "declare": (lambda: cc._declare_parser(), "usage: change_control.py declare [-h] --kind", (
+        "Judge and record a change that moves goldens.",
+        "--kind {fix,definition,feature,none}",
+        "--calcs CALCS the moved calcs, `;` or `,` separated", "--reason REASON",
+        "--against-oracle RULING", "--base BASE where the old goldens are (default HEAD)",
+        "--no-regenerate judge the goldens as they are; do not remeasure the corpora")),
+    "lock": (lambda: cc._lock_parser(), "usage: change_control.py lock [-h] --initial", ()),
+    "counts": (lambda: cc._counts_parser(), "usage: change_control.py counts [-h] [--write]",
+               ()),
+    "pre-push": (lambda: cc._pre_push_parser(),
+                 "usage: change_control.py pre-push [-h] remote [url]", ()),
+}
+
+
+@pytest.mark.parametrize("command", sorted(HELP))
+def test_each_command_shows_its_usage_and_help(command):
+    build, usage, shown = HELP[command]
+
+    text = _help(build())
+
+    assert text.startswith(usage)
+    assert [line for line in shown if line not in text] == []
+    assert "--repo" not in text or command == "check"
+
+
+@pytest.mark.parametrize("argv", [
+    ["--head", "HEAD"],
+    ["declare", "C3", "--reason", "why"],
+    ["declare", "C3", "--kind", "fix"],
+    ["declare", "C3", "--kind", "bugfix", "--reason", "why"],
+    ["lock"],
+    ["pre-push"],
+])
+def test_a_missing_or_unknown_argument_is_a_usage_error(argv, capsys):
+    with pytest.raises(SystemExit) as stopped:
+        cc.main(argv)
+
+    assert stopped.value.code == 2
+    assert "error:" in capsys.readouterr().err
+
+
+def test_each_command_reads_its_defaults(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    check = cc._check_parser().parse_args(["--base", "origin/main"])
+    declare = cc._declare_parser().parse_args(["C3", "--kind", "none", "--reason", "why"])
+    lock = cc._lock_parser().parse_args(["--initial"])
+    counts = cc._counts_parser().parse_args([])
+    push = cc._pre_push_parser().parse_args(["origin"])
+
+    assert (check.head, check.measured, check.moved) == ("HEAD", None, None)
+    assert check.repo.resolve() == tmp_path.resolve()
+    assert (declare.calcs, declare.against_oracle, declare.base, declare.no_regenerate,
+            declare.repo) == ("", [], "HEAD", False, REPO)
+    assert (lock.initial, lock.repo, counts.write, counts.repo) == (True, REPO, False, REPO)
+    assert (push.remote, push.url) == ("origin", None)
+
+
+def test_each_command_reads_its_paths_and_repeated_rulings():
+    check = cc._check_parser().parse_args(["--base", "b", "--repo", "r", "--measured", "m",
+                                           "--moved", "v.tsv"])
+    declare = cc._declare_parser().parse_args([
+        "C3", "--kind", "fix", "--reason", "why", "--against-oracle", "R-A",
+        "--against-oracle", "R-B", "--no-regenerate", "--repo", "r"])
+    counts = cc._counts_parser().parse_args(["--write", "--repo", "r"])
+    push = cc._pre_push_parser().parse_args(["origin", "https://example.invalid/x.git"])
+
+    assert (check.repo, check.measured, check.moved) == (Path("r"), Path("m"), Path("v.tsv"))
+    assert (declare.against_oracle, declare.no_regenerate, declare.repo) == (
+        ["R-A", "R-B"], True, Path("r"))
+    assert (counts.write, counts.repo, push.url) == (True, Path("r"),
+                                                     "https://example.invalid/x.git")
 
 
 # --- the first lock and the test counts ----------------------------------------------------------

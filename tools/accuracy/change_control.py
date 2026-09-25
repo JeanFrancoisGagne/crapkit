@@ -882,22 +882,30 @@ def _by_source(function):
     return lambda tree, cell, row: function(row, corpus_source(tree, cell))
 
 
-ORACLES = {("row", ".py"): ("ast", _by_source(ast_row)),
-           ("ccn_std", ".py"): ("radon", _by_source(radon_ccn)),
-           ("ccn_mod", ".py"): ("radon", _by_source(radon_ccn)),
-           ("ccn", ".py"): ("radon", _by_source(radon_ccn)),
-           ("cognitive", ".py"): ("complexipy", _by_source(complexipy_cognitive)),
-           ("crap", ""): ("kit.exact", _by_source(exact_crap)),
-           ("cov", ""): ("counts table", counts_cov),
-           **{(column, suffix): ("sonarjs" if column == "cognitive" else "eslint",
-                                 _by_source(partial(eslint_answer, column=column)))
-              for column in ESLINT_RULES for suffix in JS_SUFFIXES}}
+def _eslint_oracles() -> dict:
+    return {(column, suffix): ("sonarjs" if column == "cognitive" else "eslint",
+                               _by_source(partial(eslint_answer, column=column)))
+            for column in ESLINT_RULES for suffix in JS_SUFFIXES}
+
+
+def oracle_table() -> dict:
+    """{(column, file suffix, or '' for any file): (oracle name, answer)}. Built on
+    each call rather than at import, so a mutant of a helper that builds it is live
+    in the tests (tools/accuracy/mutation.py mutates this file)."""
+    return {("row", ".py"): ("ast", _by_source(ast_row)),
+            ("ccn_std", ".py"): ("radon", _by_source(radon_ccn)),
+            ("ccn_mod", ".py"): ("radon", _by_source(radon_ccn)),
+            ("ccn", ".py"): ("radon", _by_source(radon_ccn)),
+            ("cognitive", ".py"): ("complexipy", _by_source(complexipy_cognitive)),
+            ("crap", ""): ("kit.exact", _by_source(exact_crap)),
+            ("cov", ""): ("counts table", counts_cov),
+            **_eslint_oracles()}
 
 
 def oracle_for(cell: Cell):
     """(name, function) that answers this cell, or None."""
-    suffix = PurePosixPath(cell.path).suffix.lower()
-    return ORACLES.get((cell.column, suffix)) or ORACLES.get((cell.column, ""))
+    table, suffix = oracle_table(), PurePosixPath(cell.path).suffix.lower()
+    return table.get((cell.column, suffix)) or table.get((cell.column, ""))
 
 
 def _close(value: str, oracle: str) -> bool:
@@ -1708,14 +1716,18 @@ def check(repo: Path, base: str, head: str = "HEAD", moved: Path | None = None,
     return (1 if problems else 0), text
 
 
-def _check_main(argv: list[str]) -> int:
+def _check_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="change_control.py", description="Judge a diff.")
     parser.add_argument("--base", required=True, help="the ref to compare with (merge base)")
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--measured", type=Path, help="the CI hand-off directory")
     parser.add_argument("--moved", type=Path, help="a moved-row map in moved.tsv's columns")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def _check_main(argv: list[str]) -> int:
+    args = _check_parser().parse_args(argv)
     skipped = measurement_stopped(args.measured)
     if skipped:
         print(skipped)
@@ -2150,11 +2162,15 @@ def lock_initial(root: Path, now: Running, today: str, counts: dict[str, int]) -
     return f"locked {len(files)} files under C1; metric-digests and test counts written"
 
 
-def _lock_main(argv: list[str]) -> int:
+def _lock_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="change_control.py lock")
     parser.add_argument("--initial", action="store_true", required=True)
     parser.add_argument("--repo", type=Path, default=REPO, help=argparse.SUPPRESS)
-    args = parser.parse_args(argv)
+    return parser
+
+
+def _lock_main(argv: list[str]) -> int:
+    args = _lock_parser().parse_args(argv)
     now = running(DirTree(args.repo))
     print(lock_initial(args.repo, now, _today(), collect_counts(args.repo)))
     return 0
@@ -2170,11 +2186,15 @@ def count_problems(committed: bytes | None, counts: dict[str, int]) -> list[Prob
             for packet in wrong]
 
 
-def _counts_main(argv: list[str]) -> int:
+def _counts_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="change_control.py counts")
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--repo", type=Path, default=REPO, help=argparse.SUPPRESS)
-    args = parser.parse_args(argv)
+    return parser
+
+
+def _counts_main(argv: list[str]) -> int:
+    args = _counts_parser().parse_args(argv)
     counts = collect_counts(args.repo)
     if args.write:
         (args.repo / COUNTS).write_bytes(counts_bytes(counts))
@@ -2244,11 +2264,15 @@ def pre_push(repo: Path, remote: str, stdin: str) -> int:
     return max(codes, default=0)
 
 
-def _pre_push_main(argv: list[str]) -> int:
+def _pre_push_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="change_control.py pre-push")
     parser.add_argument("remote")
     parser.add_argument("url", nargs="?")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def _pre_push_main(argv: list[str]) -> int:
+    args = _pre_push_parser().parse_args(argv)
     repo = Path(git(Path.cwd(), "rev-parse", "--show-toplevel").decode().strip())
     return pre_push(repo, args.remote, sys.stdin.read())
 

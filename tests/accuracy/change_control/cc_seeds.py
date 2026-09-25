@@ -288,6 +288,12 @@ def fixed_ccn(tree: dict[str, str], key: str = "C3", calcs: str = CCN) -> dict[s
     return with_bug(with_digest(bump(changelog(head, key), "12"), "12", key))
 
 
+def ccn9(tree: dict[str, str]) -> dict[str, str]:
+    """parse at ccn 9, which radon does not give it: 81 * 0.125 + 9 = 19.125."""
+    rows = scored_rows(parse_ccn=9, parse_crap="19.125")
+    return bump({**tree, SCORED: scored(rows), INVENTORY: inventory(rows)}, "12")
+
+
 def ccn8() -> list[dict]:
     return scored_rows(parse_ccn=8, parse_crap="16.0")
 

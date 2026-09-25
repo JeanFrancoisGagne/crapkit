@@ -671,13 +671,6 @@ def _request(kind="fix", calcs=(seeds.CCN,), against=(), key="C3"):
     return cc.Request(key, kind, tuple(calcs), "parse's ccn moved", tuple(against), "2026-09-24")
 
 
-def _ccn9(tree: dict) -> dict:
-    """parse at ccn 9, which radon does not give it: 81 * 0.125 + 9 = 19.125."""
-    rows = seeds.scored_rows(parse_ccn=9, parse_crap="19.125")
-    return seeds.bump({**tree, seeds.SCORED: seeds.scored(rows),
-                       seeds.INVENTORY: seeds.inventory(rows)}, "12")
-
-
 def _declare(top: Path, request) -> str:
     return cc.declare(top, request, "HEAD", regenerate_goldens=False, lizard=LIZARD)
 
@@ -685,7 +678,7 @@ def _declare(top: Path, request) -> str:
 @pytest.mark.process
 def test_declare_refuses_a_move_the_oracle_disagrees_with(make_repo, oracle):
     oracle("radon")
-    top = _working(make_repo, BASE, _ccn9(BASE))
+    top = _working(make_repo, BASE, seeds.ccn9(BASE))
 
     with pytest.raises(cc.ChangeControlError) as refused:
         _declare(top, _request())
@@ -698,7 +691,7 @@ def test_declare_refuses_a_move_the_oracle_disagrees_with(make_repo, oracle):
 @pytest.mark.process
 def test_declare_takes_a_disagreement_a_named_ruling_covers(make_repo, oracle):
     oracle("radon")
-    top = _working(make_repo, BASE, _ccn9(BASE))
+    top = _working(make_repo, BASE, seeds.ccn9(BASE))
 
     text = _declare(top, _request(against=("R-D5", "R-CCN")))
 
