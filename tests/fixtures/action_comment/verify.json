@@ -2,6 +2,9 @@
  "baseline_commit": "33d7b33ec8084d6e7257b04e5fe5a85733d592e0",
  "baseline_run": 1,
  "changed_files": 1,
+ "changed_paths": [
+  "app/calc.py"
+ ],
  "commit": "cade9528c16de7af511b1883c84877db0c45876e",
  "committed_findings": 1,
  "diff_uncovered": [
@@ -54,6 +57,7 @@
  "diff_uncovered_max": 3,
  "dirty_failures": [],
  "dirty_findings": 0,
+ "forgiven_failures": [],
  "gate_violations": [
   {
    "ccn": 8,
@@ -73,10 +77,13 @@
  "ratchet_changes": null,
  "ratchet_regressions": [],
  "ratchet_sha256": "49c55301e67326b1f961d011073011dcc3600c6117b9be767aaf8ad2e6f1f767",
+ "retried_passes": [],
  "run_id": 3,
  "schema": 1,
  "tool_versions": {
   "crapkit": "0.4.15",
   "lizard": "1.24.0"
- }
+ },
+ "unmarked_over_target": 1,
+ "untracked_in_scope": []
 }

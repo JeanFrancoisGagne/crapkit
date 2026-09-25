@@ -6,6 +6,7 @@ consumer finds out when the job exits 2 on their pull request. These read
 `action.yml` the way `test_cli_docs_contract.py` reads README's Subcommands
 table, and they read the dogfood job that runs the action on this repo.
 """
+import json
 import os
 import re
 import shutil
@@ -946,6 +947,29 @@ def test_the_readme_comment_is_the_render_of_the_recorded_payloads(tmp_path):
     assert fence.group(1) == out.read_text(encoding="utf-8")
 
 
+def _documented_verify_keys() -> set[str]:
+    """The top-level keys of the `crapkit verify --json` sample in docs/agent-json.md,
+    which test_cli_verifying_inproc.py holds to the keys verify prints."""
+    page = (ROOT / "docs" / "agent-json.md").read_text(encoding="utf-8")
+    sample = page.split("$ crapkit verify --json", 1)[1].split("```json", 1)[1]
+    return set(json.loads(sample.split("```", 1)[0]))
+
+
+def test_the_recorded_verify_payload_carries_every_key_verify_prints():
+    """The README fence renders this payload. One recorded before verify gained
+    `changed_paths` rendered the counts line with no file names, so the page
+    showed a comment no current release writes."""
+    recorded = set(json.loads((FIXTURES / "verify.json").read_text(encoding="utf-8")))
+
+    assert _documented_verify_keys() <= recorded, sorted(_documented_verify_keys() - recorded)
+
+
+def test_the_readme_fence_names_the_file_behind_verify_s_count():
+    fence = _readme_section().split("```markdown\n", 1)[1].split("```", 1)[0]
+
+    assert "Run 3 against baseline 1, 1 changed file (`app/calc.py`): 1 gate violation" in fence
+
+
 # --- the scored line quotes the ceilings and a lane failure (spec item 11) -----
 
 def _coverage(**over) -> dict:
@@ -1088,7 +1112,8 @@ def test_the_counts_line_of_a_failure_names_the_changed_files_too():
 
 
 def test_a_verify_payload_without_changed_paths_renders_the_count_alone():
-    """A 0.8.0 verify prints no changed_paths; the README's saved payloads are one."""
+    """A verify older than 0.8.1 prints no changed_paths, and the Action may render one
+    a job saved before the upgrade."""
     line = _builder().verdict_line({**_passing_verify(), "changed_files": 1}, 0)
 
     assert line.endswith("1 changed file."), line

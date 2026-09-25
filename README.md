@@ -645,7 +645,7 @@ to their render:
 - gate: `app/calc.py:34` `route( a , b , c , d )` ccn 8, cov 0%, crap 72.0 -> decompose
 - uncovered lines in `app/calc.py`: 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45
 
-Run 3 against baseline 1, 1 changed file: 1 gate violation, 0 ratchet regressions, 0 new test failures, 11 uncovered changed lines.
+Run 3 against baseline 1, 1 changed file (`app/calc.py`): 1 gate violation, 0 ratchet regressions, 0 new test failures, 11 uncovered changed lines.
 
 ### Worklist: 1 changed file
 
@@ -667,9 +667,10 @@ The verdict opens with the exit code and the rule it stands for (`complexity gat
 finding: each gate violation with its function, ccn, coverage, CRAP and remedy; each
 ratchet regression as recorded -> fresh; each new test failure by id; and the first twenty
 uncovered changed lines, one bullet per file, with a count of the rest. The counts line
-closes it. A verify that passed is one line: `**verify passed.** Run 2 against baseline 1,
-7 changed files.` From a 0.8.1 verify, which lists its `changed_paths`, the count names up
-to three of the files it judged and counts the rest: ``1 changed file (`app/calc.py`)``.
+closes it, naming up to three of the files verify judged and counting the rest:
+``1 changed file (`app/calc.py`)``. A verify that passed is one line: `**verify passed.**
+Run 2 against baseline 1, 7 changed files (`a.py`, `b.py`, `c.py` and 4 more).` A verify
+older than 0.8.1 lists no `changed_paths`, and its line gives the count alone.
 
 The rows are the ranked worklist for the files the pull request changed, worst first,
 `top` of them, with the rows a finding names listed first. `risk` is ccn times churn

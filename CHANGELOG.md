@@ -233,7 +233,8 @@
   says under its worklist heading that the base diff failed, quotes git, and names
   `fetch-depth: 0`. A push logs `no base commit on this event: the comment ranks the whole
   repository`. The step's count names up to three files, and so does the comment's verdict
-  line, from verify's `changed_paths`: ``1 changed file (`app/calc.py`)``.
+  line, from verify's `changed_paths`: ``1 changed file (`app/calc.py`)``. The README's
+  example comment renders that line from a saved payload that carries `changed_paths`.
 
 ### claude-hook remembers what it judged, and says what it could not judge
 
