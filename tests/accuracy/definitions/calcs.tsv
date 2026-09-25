@@ -1,0 +1,2 @@
+calc	independent_test	modules	functions
+Field definitions across docs and schemas	tests/accuracy/definitions/test_definition_models.py::test_sarif_over_target_messages_follow_the_definitions	src/crapkit/sarif.py, src/crapkit/mcp_server.py, src/crapkit/doctor.py	src/crapkit/sarif.py:over_target_results, src/crapkit/sarif.py:sarif_document

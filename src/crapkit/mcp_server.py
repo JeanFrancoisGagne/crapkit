@@ -45,6 +45,16 @@ _OCCURRENCE = {"type": "integer", "description": (
     "source creation order among functions sharing start, from 1; 0 on an older row with no "
     "recorded position")}
 
+# The field definitions every row schema shares, said once so no tool's schema
+# drifts from docs/agent-json.md (tests/accuracy/definitions reads both).
+_COV_DESCRIPTION = ("branch coverage inside the span, 0.0 to 1.0; statement coverage when the "
+                    "span has no branches, and invoked-or-not (1.0 or 0.0) when it has no "
+                    "statements; Python and/or add to ccn but coverage.py records no branch arc "
+                    "for them; 0.0 on an untested, no-lane or cc-only row")
+_CRAP_DESCRIPTION = "ccn^2 x (1 - cov)^3 + ccn, or ccn on a cc-only row"
+_CEILING_DESCRIPTION = "the highest CRAP a function may carry, and so also the highest ccn"
+_UNCOVERED_PATHS_DESCRIPTION = "(1 - cov) x ccn rounded half to even, so 2.5 reads 2"
+
 # The partition a large repo needs before `top` means anything: one --scope
 # per element, exact names as declared in crapkit.toml.
 _SCOPE = {
@@ -73,21 +83,23 @@ _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared s
                'description': 'Sonar-spec cognitive complexity, reporting only, never gated'},
  'nloc': {'type': 'integer', 'description': 'non-comment lines of code'},
  'nesting': {'type': 'integer', 'description': 'maximum nesting depth'},
- 'cov': {'type': 'number', 'description': 'branch coverage inside the span, 0.0 to 1.0'},
+ 'cov': {'type': 'number', 'description': _COV_DESCRIPTION},
  'flag': {'type': 'string',
           'description': 'measured, untested, no-lane or cc-only: whether a lane artifact could '
                          'measure this span',
           'enum': ('measured', 'untested', 'no-lane', 'cc-only')},
- 'crap': {'type': 'number', 'description': 'the score: ccn^2 x (1 - cov)^3 + ccn'},
+ 'crap': {'type': 'number', 'description': 'the score: ' + _CRAP_DESCRIPTION},
  'remedy': _REMEDY,
- 'target': {'type': 'integer', 'description': "this scope's effective ccn ceiling"},
+ 'target': {'type': 'integer',
+            'description': "this scope's effective ceiling: " + _CEILING_DESCRIPTION},
  'commits': {'type': 'integer', 'description': 'commits touching the file in the churn window'},
  'authors': {'type': 'integer', 'description': 'distinct authors of those commits'},
  'est_splits': {'type': 'integer',
                 'description': '0 when ccn <= target, else ceil(ccn / target): roughly how many '
                                'functions this must become'},
  'est_uncovered_paths': {'type': 'integer',
-                         'description': 'round((1 - cov) x ccn): decision paths no test walks'},
+                         'description': _UNCOVERED_PATHS_DESCRIPTION + ': decision paths no '
+                                        'test walks'},
  'uncovered_lines': {'type': ('array', 'null'),
                      'description': 'line numbers no test ran; [] when the span is fully covered; '
                                     'null when no artifact could answer, then uncovered_lines_note '
@@ -133,10 +145,10 @@ _WORKLIST_ITEM = {'type': 'object',
                                           'and it can differ from this one',
                            'enum': (*_REMEDIES, None)},
                 'crap': {'type': ('number', 'null'),
-                         'description': 'the score from the ranked run; null on an inventory-only '
-                                        'run'},
+                         'description': ('the score from the ranked run, ' + _CRAP_DESCRIPTION
+                                         + '; null on an inventory-only run')},
                 'cov': {'type': ('number', 'null'),
-                        'description': 'branch coverage 0.0 to 1.0; null on an inventory-only run'},
+                        'description': _COV_DESCRIPTION + '; null on an inventory-only run'},
                 'ratchet_mark': {'type': ('number', 'null'),
                                  'description': 'the committed ratchet mark on this function, read '
                                                 'under its own ratchet key; null when it carries '
@@ -387,8 +399,8 @@ TOOLS: tuple[dict, ...] = (
                 "description": "payload schema version, 1"},
             "target": {
                 "type": "integer",
-                "description": ("the [crapkit] target: the default ccn ceiling every scope inherits "
-                "unless it sets its own")},
+                "description": ("the [crapkit] target: the default ceiling, "
+                + _CEILING_DESCRIPTION + ", that every scope inherits unless it sets its own")},
             "runs": {
                 "type": "array",
                 "description": "one row per trusted run, oldest first",
@@ -496,8 +508,8 @@ TOOLS: tuple[dict, ...] = (
                 "enum": _REMEDIES},
             "target": {
                 "type": "integer",
-                "description": ("this scope's effective ccn ceiling, the same value as "
-                "gate_rule.ceiling")},
+                "description": ("this scope's effective ceiling: " + _CEILING_DESCRIPTION
+                + "; the same value as gate_rule.ceiling")},
             "scored": {
                 "type": "object",
                 "description": "the whole scored row from the run",
@@ -541,7 +553,7 @@ TOOLS: tuple[dict, ...] = (
                         "description": "parameter count"},
                     "cov": {
                         "type": "number",
-                        "description": "branch coverage 0.0 to 1.0"},
+                        "description": _COV_DESCRIPTION},
                     "flag": {
                         "type": "string",
                         "description": ("measured, untested, no-lane or cc-only: whether a lane "
@@ -549,7 +561,7 @@ TOOLS: tuple[dict, ...] = (
                         "enum": ("measured", "untested", "no-lane", "cc-only")},
                     "crap": {
                         "type": "number",
-                        "description": "the score: ccn^2 x (1 - cov)^3 + ccn"},
+                        "description": "the score: " + _CRAP_DESCRIPTION},
                     "remedy": _REMEDY}},
             "source": {
                 "type": "string",
@@ -575,7 +587,7 @@ TOOLS: tuple[dict, ...] = (
                 "description": "0 when ccn <= target, else ceil(ccn / target)"},
             "est_uncovered_paths": {
                 "type": "integer",
-                "description": "round((1 - cov) x ccn)"},
+                "description": _UNCOVERED_PATHS_DESCRIPTION},
             "uncovered_lines": {
                 "type": ("array", "null"),
                 "description": ("line numbers no test ran; [] when the span is fully covered; null "
@@ -608,7 +620,7 @@ TOOLS: tuple[dict, ...] = (
                             "description": "complexity"},
                         "crap": {
                             "type": "number",
-                            "description": "score"},
+                            "description": "score: " + _CRAP_DESCRIPTION},
                         "remedy": _REMEDY,
                         "occurrence": _OCCURRENCE}}},
             "file_totals": {
@@ -919,11 +931,12 @@ TOOLS: tuple[dict, ...] = (
                                         "description": "complexity in that run"},
                                     "cov": {
                                         "type": ("number", "null"),
-                                        "description": ("branch coverage 0.0 to 1.0; null on an "
-                                        "inventory run")},
+                                        "description": (_COV_DESCRIPTION
+                                                        + "; null on an inventory run")},
                                     "crap": {
                                         "type": ("number", "null"),
-                                        "description": "score; null on an inventory run"},
+                                        "description": ("score: " + _CRAP_DESCRIPTION
+                                                        + "; null on an inventory run")},
                                     "flag": {
                                         "type": ("string", "null"),
                                         "description": ("measured, untested, no-lane or cc-only; null "
@@ -1355,7 +1368,7 @@ TOOLS: tuple[dict, ...] = (
                             "description": "complexity measured fresh from the working tree"},
                         "cov": {
                             "type": "number",
-                            "description": "branch coverage from the baseline run, 0.0 to 1.0"},
+                            "description": "from the baseline run: " + _COV_DESCRIPTION},
                         "flag": {
                             "type": "string",
                             "description": ("measured, untested, no-lane or cc-only: whether a lane "
@@ -1363,7 +1376,8 @@ TOOLS: tuple[dict, ...] = (
                             "enum": ("measured", "untested", "no-lane", "cc-only")},
                         "crap": {
                             "type": "number",
-                            "description": "score from fresh ccn and baseline cov"},
+                            "description": ("score from fresh ccn and baseline cov: "
+                                            + _CRAP_DESCRIPTION)},
                         "remedy": _REMEDY,
                         "occurrence": _OCCURRENCE,
                         "stale_coverage": {
@@ -1410,10 +1424,10 @@ TOOLS: tuple[dict, ...] = (
                                     "description": "fresh complexity"},
                                 "cov": {
                                     "type": "number",
-                                    "description": "baseline coverage"},
+                                    "description": "from the baseline run: " + _COV_DESCRIPTION},
                                 "crap": {
                                     "type": "number",
-                                    "description": "score"},
+                                    "description": "score: " + _CRAP_DESCRIPTION},
                                 "remedy": _REMEDY,
                                 "key_name": {
                                     "type": "string",

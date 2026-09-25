@@ -123,16 +123,16 @@ $ crapkit next-item
 | `ccn` | int | `min(ccn_std, ccn_mod)`. This is what the gate and the ratchet judge. |
 | `ccn_std` | int | Standard cyclomatic complexity. |
 | `cognitive` | int | Sonar-spec cognitive complexity, measured in every language crapkit scans. Reporting only, never gated. |
-| `nloc` | int | Non-comment lines of code. |
+| `nloc` | int | Non-comment lines of code, lizard's NLOC: comment-only lines and blank lines do not count. |
 | `nesting` | int | Maximum nesting depth. A Python row reads it off crapkit's cognitive pass: the deepest that pass's nesting stack gets, one level per `if`, `elif`, `else`, `for`, `while`, `except` and comprehension `for`, none for `with`, `try`, `finally`, `match`, `case` or a nested `def` (a nested function's blocks count on its own row). A flat function of seven `if`s reads 1, a three-deep one reads 3, an `if` inside a `with` inside an `if` reads 2. Every other language keeps lizard's ND column. |
-| `cov` | float | Branch coverage in the span, 0.0 to 1.0. |
+| `cov` | float | Branch coverage in the span, 0.0 to 1.0. With no branches it falls back to statement coverage, and with no statements to invoked-or-not (1.0 or 0.0). Python `and`/`or` add to `ccn`, but coverage.py records no branch arc for them, so a short-circuit no test takes leaves `cov` unchanged. An `untested`, `no-lane` or `cc-only` row reads 0.0. |
 | `flag` | string | `measured`, `untested`, `no-lane` or `cc-only`. See the [README](../README.md#flags-why-a-coverage-number-is-missing). |
-| `crap` | float | The score. |
+| `crap` | float | The score, `ccn^2 * (1 - cov)^3 + ccn`, unrounded. A `cc-only` row scores `ccn`, since no coverage number can exist for it. |
 | `remedy` | string | `decompose`, `split-lines`, `add-tests` or `ok`. `split-lines` means another function shares the source lines, or a Python def's body starts on the line its signature ends under a coverage.py lane, which reads that body as the `def` statement that runs at import; either way no test lowers the score until the definitions, or the signature and its body, are on separate lines. Judged against `target`, the ceiling `crapkit.toml` holds now, not the one the run was scored under: an uncommitted ceiling edit moves the remedy, and what the queue offers, before the next run lands. |
-| `target` | int | This scope's effective ceiling. |
+| `target` | int | This scope's effective ceiling: the highest CRAP a function may carry, and so also the highest `ccn`, since CRAP never falls below `ccn`. A scope's own `target` overrides the `[crapkit]` one. |
 | `commits`, `authors` | int | Churn for the file in the window. |
 | `est_splits` | int | `0` when `ccn <= target`, else `ceil(ccn / target)`. Roughly how many functions this needs to become. |
-| `est_uncovered_paths` | int | `round((1 - cov) * ccn)`. Decision paths no test walks. |
+| `est_uncovered_paths` | int | `(1 - cov) * ccn`, rounded half to even: 2.5 reads 2 and 3.5 reads 4. Decision paths no test walks. |
 | `uncovered_lines` | array or **null** | See below. |
 | `uncovered_lines_note` | string | Present **only** when `uncovered_lines` is null. |
 
@@ -398,7 +398,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
 | `source` | string | no | The function's own text, `start` to `end` inclusive, newlines intact. The packet is editable without a second read of the file. |
 | `params` | array of object | no | Its parameters in declaration order, each `{name, type}`: `name` as declared, `type` the annotation as lizard printed it, or `null` when there is none. A new test can call the function without opening the file. `scored.params` is the count of these. |
 | `scored` | object | no | The whole scored row: the 17 fields above, including `occurrence`, `params` and `ccn_mod`. `next-item` does not carry the latter two. |
-| `target` | int | no | The scope's effective ceiling. |
+| `target` | int | no | The scope's effective ceiling: the highest CRAP a function may carry, and so also the highest `ccn`. Same value as `gate_rule.ceiling`. |
 | `stale` | bool | no | `true` when `commit` is not HEAD, so every number here describes an older tree. Run `commands.refresh` first. |
 | `file_functions` | array | no | Every scored function in the same file: `function`, `start`, `end`, `occurrence`, `ccn`, `crap`, `remedy`. What an extracted helper lands beside, and what names are already taken. |
 | `file_totals` | object | no | That file rolled up: `functions`, `over_target`, `crap_load`. |
@@ -1254,6 +1254,11 @@ the sentence that names the fix instead of an empty stream:
 | 3 | `config` | `crapkit.toml` is missing, does not parse, or refuses a value; an unknown `--lane` or `--scope` is this too. |
 | 4 | `git` | A git command failed or a commit is missing: a baseline that is not an ancestor, a shallow clone. |
 | 5 | `tool` | A lane or an external tool failed: every lane failed, an artifact the last attempt never wrote, lizard missing. |
+| 5 | `internal` | An internal check failed before anything was written: a number crapkit computed broke a bound its docs set, such as a CRAP outside `ccn` to `ccn^2 + ccn`. This is a crapkit bug, not a problem in your repo. No run was stored and no ratchet mark changed. Do not retry and do not edit the config: report the message and `crapkit --version` at https://github.com/JeanFrancoisGagne/crapkit/issues. |
+
+`internal` shares exit 5 with `tool`, so a wrapper that reads only the exit code still
+fails the job; read `kind` to tell a crapkit bug from a lane that failed. Its stderr
+opens with `crapkit stopped: an internal check failed before anything was written.`
 
 `message` is the stderr line without its `crapkit: ` prefix; that line and the exit code
 are unchanged. Verdict exits are not errors: `verify`'s 6 to 9 and `rescore --gate`'s 6

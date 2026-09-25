@@ -15,7 +15,7 @@ The highest CRAP a function may carry before it is over; one per repository, ove
 _Avoid_: target (that is the configuration key that sets a ceiling, not the concept), threshold, limit
 
 **Coverage**:
-The share of a function's branches the suite ran, read from the artifact; never measured by crapkit itself.
+The share of a function's branches the suite ran, read from the artifact; never measured by crapkit itself. A function with no branches falls back to the share of its statements that ran, and one with no statements to invoked-or-not: 1 if the suite called it, 0 if not. Python's `and` and `or` add to complexity, but coverage.py records no branch arc for them, so a short-circuit the suite never took leaves the share unchanged.
 
 **Risk**:
 What ranks the worklist: complexity times recency-weighted churn. Not the CRAP score.
