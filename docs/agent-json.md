@@ -1091,11 +1091,31 @@ Two plain releases order; a pre-release or a local build names both repairs:
 crapkit doctor: the plugin at <root> is version 0.9.0, and the crapkit its hooks spawn (/home/you/.local/bin/crapkit) is <version>. The CLI is behind; upgrade it with `uv tool upgrade crapkit`.
 ```
 
+Claude Code's update runs once per scope `installed_plugins.json` records for the install.
+Claude Code keeps one cache directory per version, so a user install and project installs
+of one version share it. A project or local install belongs to one project, and
+`claude plugin update --scope project` run outside it moves the first project install on
+the list, so the line names the directory to run it in:
+
+```
+crapkit doctor: the plugin at <root> is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. The plugin is behind; update it with `claude plugin marketplace update crapkit`, then `claude plugin update crapkit@crapkit --scope project` (run in /home/you/app); `claude plugin update crapkit@crapkit --scope user`, and restart Claude Code's sessions.
+```
+
+Claude Code loads a plugin from a marketplace added as a local directory in place, and
+`claude plugin update` only refreshes the cache copy beside it. For that plugin the repair
+is an update of the directory: `git -C <dir> pull` when it is a git checkout, else a copy
+of the CLI version's `plugin/` directory over it:
+
+```
+crapkit doctor: the plugin at /home/you/crapkit/plugin is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. The plugin is behind; update it with `git -C /home/you/crapkit pull` (Claude Code loads it in place from the local directory marketplace at /home/you/crapkit, and `claude plugin update` does not change it), and restart Claude Code's sessions.
+```
+
 Between releases main keeps the release's version string, `claude plugin update` answers
 "already at the latest version", and the install keeps the release's files. When the
 install and its marketplace's copy (the clone `known_marketplaces.json` names) carry one
-version and different files, doctor names the reinstall for the scope the install was made
-in:
+version and different files, doctor names the reinstall for each scope that holds the
+install, with the project directory for a project or local one, since `claude plugin
+install --scope project` writes to the project it runs in:
 
 ```
 crapkit doctor: the plugin at <root> is version <version>, and so is the marketplace's copy at <clone>/plugin, but 1 file differs between them (skills/crapkit/SKILL.md); `claude plugin update` keeps an install whose version did not move, so reinstall it with `claude plugin uninstall crapkit@crapkit --scope user`, then `claude plugin install crapkit@crapkit --scope user`, and restart Claude Code's sessions.

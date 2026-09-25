@@ -221,7 +221,10 @@ an existing session. A failed, malformed or undecodable launcher probe is a fail
 not a version match. When the two disagree, its line says which side is behind and
 prints the commands that move that side: these update lines for the plugin, or the
 upgrade for the installer that owns the launcher (`uv tool upgrade crapkit`, `pipx
-upgrade crapkit`, or pip for that launcher's python). Between releases the plugin keeps
+upgrade crapkit`, or pip for that launcher's python). A plugin installed with `--scope
+project` or `--scope local` gets that scope and the project directory to run the update in,
+and a plugin from a marketplace added as a local directory, which Claude Code loads in
+place, gets `git -C <that directory> pull`. Between releases the plugin keeps
 the release's version string and `claude plugin update` answers "already at the latest
 version"; doctor then compares the installed files with the marketplace's copy and, when
 they differ, prints the `claude plugin uninstall` and `claude plugin install` lines that

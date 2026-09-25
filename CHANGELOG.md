@@ -164,13 +164,18 @@ nothing. Each of these now gets a line naming the object and the next step:
   line sent every gap to `claude plugin install crapkit@crapkit`, which prints "already
   installed" over an older copy, and to `pip install -U crapkit`, which reaches no uv tool
   or pipx install. A plugin behind now gets `claude plugin marketplace update crapkit`
-  and `claude plugin update crapkit@crapkit --scope user`, or for a plugin Codex
-  installed, `codex plugin marketplace upgrade crapkit` and `codex plugin add
+  and `claude plugin update crapkit@crapkit --scope <scope>` once per scope that holds the
+  install, with the project directory to run a project or local one in (a `--scope user`
+  update over a project install answered "not installed at scope user"). A plugin Claude
+  Code loads in place from a local directory marketplace gets `git -C <dir> pull`, since
+  `claude plugin update` only refreshes the cache copy beside it. A plugin Codex
+  installed gets `codex plugin marketplace upgrade crapkit` and `codex plugin add
   crapkit@crapkit`. A CLI behind gets `uv tool upgrade crapkit`, `pipx upgrade crapkit`,
   or pip for the python its launcher starts (`uv pip` in a venv uv made). A pre-release
   or local build names both repairs.
 - An install whose files differ from its marketplace's copy at one version is named, with
-  the `claude plugin uninstall` and `claude plugin install` lines for its scope. Between
+  the `claude plugin uninstall` and `claude plugin install` lines for each scope that
+  holds it, run in its project for a project or local install. Between
   releases main keeps the release's version string, so `claude plugin update` answers
   "already at the latest version" and the install keeps the release's files.
 - Run under uvx or `pipx run`, it looks past the environment that runner built for this
