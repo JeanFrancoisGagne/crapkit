@@ -1447,16 +1447,39 @@ def _hook_handlers(hooks: dict) -> list[dict]:
             for matcher in event for handler in matcher.get("hooks", [])]
 
 
+def _handler_words(handler: dict) -> list[str]:
+    """The words one handler starts: its `args` in exec form, else its
+    `command` split the way the shell that runs a shell-form hook splits it.
+    Raises ValueError on a shape no harness could run."""
+    import shlex
+
+    words = handler["args"] if "args" in handler else shlex.split(handler.get("command", ""))
+    if not isinstance(words, list) or any(not isinstance(word, str) for word in words):
+        raise ValueError("hook args must be a list of strings")
+    return words
+
+
 def _named_protocol(handler: dict) -> str | None:
     """The `--protocol` value one handler spawns crapkit with, or None.
 
-    Paired off the arg list rather than indexed past the flag: a handler whose
-    args end at `--protocol` is malformed, and reading it must not raise.
+    Read off `args` in exec form and off the command string in shell form,
+    spelled `--protocol N` or `--protocol=N` as argparse takes either. Paired
+    off the word list rather than indexed past the flag: a handler whose words
+    end at `--protocol` is malformed, and reading it must not raise.
     """
-    args = handler.get("args", [])
-    if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
-        raise ValueError("hook args must be a list of strings")
-    return dict(zip(args, args[1:])).get("--protocol")
+    words = _handler_words(handler)
+    inline = next((word.partition("=")[2] for word in words if word.startswith("--protocol=")), None)
+    return inline or dict(zip(words, words[1:])).get("--protocol")
+
+
+def _exec_form(root: Path) -> bool:
+    """Does any of the plugin's hooks pass `args`? Only those reach crapkit
+    through a field Claude Code below 2.1.139 drops."""
+    hooks = _plugin_json(root / "hooks" / "hooks.json")
+    try:
+        return any("args" in handler for handler in _hook_handlers(hooks))
+    except (AttributeError, TypeError):
+        return False
 
 
 def _hook_protocols(root: Path) -> tuple[str, ...] | None:
@@ -1769,11 +1792,12 @@ def _claude_code_version() -> tuple[str, str] | None:
     return executable, done.stdout.strip()
 
 
-def _claude_code_floor() -> list[str]:
-    """The line for a Claude Code on PATH too old to pass the plugin's hook args."""
+def _claude_code_floor(root: Path) -> list[str]:
+    """The line for a Claude Code on PATH too old to pass the plugin's hook
+    args, when its hooks pass any: a shell-form hook runs as written."""
     from ..doctor import claude_code_floor_gap
 
-    found = _claude_code_version()
+    found = _claude_code_version() if _exec_form(root) else None
     line = claude_code_floor_gap(*found) if found else None
     return [line] if line else []
 
@@ -1830,7 +1854,7 @@ def _plugin_lines(root: Path) -> list[str]:
                                  protocols=_hook_protocols(root), supported=PROTOCOL,
                                  harness=plugin_harness(str(root), os.environ.get("CODEX_HOME")),
                                  cli_upgrade=upgrade_command(executable, _shell_quote))
-    return handshake + _stale_copy(root) + _claude_code_floor()
+    return handshake + _stale_copy(root) + _claude_code_floor(root)
 
 
 def _same_bytes(a: Path, b: Path) -> bool:

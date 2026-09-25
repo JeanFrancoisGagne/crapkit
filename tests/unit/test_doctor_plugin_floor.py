@@ -10,6 +10,7 @@ version and adds one line when it is below the floor.
 """
 from __future__ import annotations
 
+import json
 import sys
 import tomllib
 from pathlib import Path
@@ -21,7 +22,6 @@ from crapkit.cli import admin, main
 from crapkit.doctor import CLAUDE_CODE_ARGS_FLOOR, claude_code_floor_gap
 
 ROOT = Path(__file__).resolve().parents[2]
-REPO_PLUGIN = ROOT / "plugin"
 CLAUDE = "/usr/local/bin/claude"
 # The memoized probe, held before a test replaces the name, so its cache is
 # cleared on both sides whatever the test put in its place.
@@ -71,20 +71,33 @@ def test_the_floor_is_the_one_the_deploy_suite_pins():
     assert pins["harness"]["claude-code"]["floors"][0] == CLAUDE_CODE_ARGS_FLOOR
 
 
-def test_doctor_plugin_root_prints_the_line_and_exits_1(monkeypatch, capsys):
+def _exec_form_plugin(root: Path) -> Path:
+    """A plugin whose hook passes `args`, the form an older Claude Code drops.
+    Built here rather than read from plugin/, which may ship shell form."""
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / "hooks").mkdir()
+    (root / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "crapkit", "version": crapkit.__version__}), encoding="utf-8")
+    handler = {"type": "command", "command": "crapkit", "args": ["claude-hook", "--protocol", "1"]}
+    (root / "hooks" / "hooks.json").write_text(
+        json.dumps({"hooks": {"PostToolUse": [{"matcher": "Edit", "hooks": [handler]}]}}), encoding="utf-8")
+    return root
+
+
+def test_doctor_plugin_root_prints_the_line_and_exits_1(monkeypatch, capsys, tmp_path):
     _claude_answers(monkeypatch, (CLAUDE, "2.1.138 (Claude Code)"))
 
-    assert main(["doctor", "--plugin-root", str(REPO_PLUGIN)]) == 1
+    assert main(["doctor", "--plugin-root", str(_exec_form_plugin(tmp_path / "p"))]) == 1
     out = capsys.readouterr().out.strip().splitlines()
     assert out == [claude_code_floor_gap(CLAUDE, "2.1.138 (Claude Code)")]
 
 
 @pytest.mark.parametrize("answer", [(CLAUDE, "2.1.139 (Claude Code)"), None])
 def test_doctor_plugin_root_stays_silent_at_the_floor_and_without_claude(monkeypatch, capsys,
-                                                                          answer):
+                                                                          answer, tmp_path):
     _claude_answers(monkeypatch, answer)
 
-    assert main(["doctor", "--plugin-root", str(REPO_PLUGIN)]) == 0
+    assert main(["doctor", "--plugin-root", str(_exec_form_plugin(tmp_path / "p"))]) == 0
     assert capsys.readouterr().out == ""
 
 
