@@ -12,8 +12,17 @@ off coverage.py's report of that scenario, except:
   is the Python producer a lane reads, docs/lanes.md#which-languages-a-lane-can-measure);
 - the def-line layouts the README floors (a one-line def, a body on a
   multi-line signature's last line), which no score reads;
-- the two functions the probe's coveragerc excludes, which slipcover has no
-  way to read.
+- exclude_also, an oracle bug: slipcover drops the excluded `raise` line but
+  still counts the branch into it, where coverage.py counts no branch at a
+  conditional one of whose choices is excluded
+  (https://coverage.readthedocs.io/en/7.16.1/branch.html#excluding-code).
+  test_slipcover_counts_a_branch_into_an_excluded_line pins the oracle's
+  behavior, so a slipcover that fixes it fails there and rejoins the check.
+
+slipcover 1.1.0 reads no .coveragerc: it excludes `# pragma: no cover` by
+default and takes exclude-also from [tool.slipcover] in pyproject.toml
+(slipcover/slipcover.py DEFAULT_EXCLUDE and slipcover/config.py), so the run
+gets a pyproject.toml carrying the probe coveragerc's exclude_also line.
 
 slipcover runs here under this interpreter, so the test is nightly.
 """
@@ -33,7 +42,9 @@ pytestmark = [pytest.mark.nightly, pytest.mark.process]
 COVERAGE_PY = under_test.crapkit("coverage_py")
 PROBE = "py/shapes.py"
 PARTED = {"match_case": "D8", "one_line": "floor", "body_on_signature": "floor",
-          "excluded": "coveragerc", "exclude_also": "coveragerc"}
+          "exclude_also": "oracle bug"}
+# probes/py/coveragerc's exclude_also, in the form slipcover reads.
+PYPROJECT = '[tool.slipcover]\nexclude-also = ["raise NotImplementedError"]\n'
 
 
 @pytest.fixture(scope="module")
@@ -42,6 +53,7 @@ def slipcover(tmp_path_factory, oracle):
     oracle("slipcover")
     work = tmp_path_factory.mktemp("slipcover")
     shutil.copytree(probe_repo.PROBES / "py", work / "py")
+    (work / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
     reports = {}
     for scenario in probe_repo.SCENARIOS:
         tiers.require_process("slipcover")
@@ -116,3 +128,13 @@ def test_d8_a_match_statement_reads_differently_under_slipcover(slipcover):
 
     rulings.pin_ruling("D8", crapkit=round(_crapkit("call")["match_case"], 4),
                        oracle=round(float(theirs), 4))
+
+
+def test_slipcover_counts_a_branch_into_an_excluded_line(slipcover):
+    """The oracle bug that keeps exclude_also out of the comparison: line 100
+    (`raise NotImplementedError`) is excluded, so it is neither run nor missed,
+    yet the branch 99->100 into it is still counted as missed."""
+    member = slipcover["call"]
+    lines = set(member["executed_lines"]) | set(member["missing_lines"])
+
+    assert (100 in lines, [99, 100] in member["missing_branches"]) == (False, True)
