@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Callable, NamedTuple
 
+from .invariants import check_rollup, check_totals
 from .score import ScoredRow, grade
 from .keys import key_names, key_of
 
@@ -49,7 +50,9 @@ def _totals_by(rows: list[ScoredRow], ceiling_of: _CeilingOf) -> Totals:
 def totals_from_counts(functions: int, over_target: int, load: float) -> Totals:
     """The rounding rule, in one place. A caller that already has the three sums
     (store.run_totals adds them up inside the scan) must round them exactly the
-    way a caller holding the rows does, or the same run reads two ways."""
+    way a caller holding the rows does, or the same run reads two ways. The
+    sums are checked against their bounds first (`invariants.check_totals`)."""
+    check_totals(functions, over_target, load)
     return Totals(
         functions=functions,
         over_target=over_target,
@@ -78,11 +81,14 @@ def scope_rollup(by_scope: dict[str, Totals]) -> dict[str, dict]:
 
     One shaping in one place: the two commands reach their Totals differently
     (rows in hand vs a GROUP BY), and a second shaping would let the same run
-    read two ways depending on which command asked.
+    read two ways depending on which command asked. Each grade is checked
+    against the README's band table (`invariants.check_rollup`).
     """
-    return {scope: {"functions": t.functions, "over_target": t.over_target,
-                    "crap_load": t.crap_load, "grade": grade(t.over_target, t.functions)}
-            for scope, t in by_scope.items()}
+    rollup = {scope: {"functions": t.functions, "over_target": t.over_target,
+                      "crap_load": t.crap_load, "grade": grade(t.over_target, t.functions)}
+              for scope, t in by_scope.items()}
+    check_rollup(rollup)
+    return rollup
 
 
 def latest_comparable_pair(runs: list[dict]) -> tuple[dict, dict] | None:

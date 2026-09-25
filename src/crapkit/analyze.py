@@ -29,7 +29,8 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     from .lizardtypescript import mask_templates, reads_templates, uses_type_syntax
 
 from .cache import partition_by_cache, updated_cache
-from .errors import ToolError
+from .errors import InternalCheckError, ToolError
+from .invariants import check_record
 from .lizardcognitive import LizardExtension as _Cognitive
 from .merge import FunctionRecord, UnanalyzableFile
 from .keys import bare_name
@@ -344,9 +345,11 @@ def _nesting_depth(rel_path: str, fn) -> int:
 
 
 def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
+    """One function's numbers, checked against their documented bounds before
+    anything can store them (`invariants.check_record`)."""
     std = fn.cyclomatic_complexity
     mod = std + (getattr(fn, "modified_delta", 0) or 0)
-    return FunctionRecord(
+    record = FunctionRecord(
         path=rel_path,
         long_name=fn.long_name,
         start=fn.start_line,
@@ -361,6 +364,8 @@ def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
         occurrence=occurrence,
         inline_body=int(getattr(fn, "crapkit_inline_body", False)),
     )
+    check_record(record)
+    return record
 
 
 # How many colliding names one warning prints before it stops. A generated file
@@ -585,6 +590,8 @@ def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:
     try:
         analysis = _Analyzer(_extensions_for(rel_path))(abs_path)
         return rel_path, _trusted_records(rel_path, analysis.function_list)
+    except InternalCheckError:
+        raise  # crapkit's own number broke its bound: a stop, never a refused file
     except Exception as exc:  # loud and counted, never fatal: see _note_unanalyzable
         return rel_path, UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
 
@@ -603,6 +610,8 @@ def analyze_source(rel_path: str, code: str, *, note: bool = True) -> list[Funct
         analyzer = _Analyzer(_extensions_for(rel_path))
         analysis = analyzer.analyze_source_code(rel_path, code)
         records = _trusted_records(rel_path, analysis.function_list)
+    except InternalCheckError:
+        raise
     except Exception as exc:  # per-file, exactly as in analyze_one; the hook keeps going
         records = UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
     if isinstance(records, UnanalyzableFile):
@@ -865,6 +874,8 @@ def _analyze_verified(job: tuple[str, str, str]) -> tuple[str, list[FunctionReco
         analyzer = _Analyzer(_extensions_for(relative))
         analysis = analyzer.analyze_source_code(relative, decode_source(raw))
         return relative, _trusted_records(relative, analysis.function_list)
+    except InternalCheckError:
+        raise
     except Exception as exc:  # a parse refusal, unlike the read and hash above, is per-file
         return relative, UnanalyzableFile(f"lizard failed on {relative}: {exc}")
 

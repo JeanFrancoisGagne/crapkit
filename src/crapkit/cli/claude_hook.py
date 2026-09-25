@@ -271,7 +271,18 @@ def _judge(root: Path, rel: str) -> int:
     finally:
         diff.close()
     breaches, ceiling = _verdict(cfg, in_scope, rel, records, ranges)
+    _check_advisory(breaches, ceiling, in_scope, cfg)
     return _report(root, cfg, rel, breaches, ceiling, records)
+
+
+def _check_advisory(breaches: list, ceiling: int, in_scope: dict, cfg) -> None:
+    """The breaches and the ceiling the head line prints, against the parsed
+    config (`invariants.check_advisory`). A number past its bound stops the
+    advisory before it prints; the catch-all turns that stop into the silent
+    exit 0 every internal failure here gets."""
+    from ..invariants import check_advisory
+
+    check_advisory(breaches, ceiling, in_scope, cfg.ceiling_of)
 
 
 def _config(root: Path):

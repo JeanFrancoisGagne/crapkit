@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
+from ..invariants import STORED, UNSETTLED, check_rows, check_verdict
 from ..invocation import _self
 from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
@@ -425,12 +426,17 @@ def _settle_verify(store: SnapshotStore, run_id: int, verdict,
     """Stamp the verdict; a clean pass (not an override) tightens the ratchet.
     Returns the tighten's counts, or None when the tighten wrote nothing.
 
+    The verdict an override settled is checked against the README's exit
+    table again first, so neither the stamp nor the tighten reads a verdict
+    whose `ok` and exit disagree.
+
     `--no-tighten` is the blunt escape: the verdict still stands, the marks file
     is simply not rewritten.
     """
     from ..ratchet import update_ratchet
     from ..verify import dirty_counts
 
+    check_verdict(verdict, _verify_exit_code(verdict), kept=UNSETTLED)
     changes = None
     if verdict.ok and not verdict.overridden and not args.no_tighten:
         hold = _held_marks(store, cfg, commit, run_id, ratchet, scored)
@@ -719,6 +725,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _warn_standing_debt(unmarked)
     verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
+    # Every row and the verdict meet their documented bounds, or nothing is written.
+    check_rows(scored, cfg.ceiling_of)
+    check_verdict(verdict, _verify_exit_code(verdict), kept=STORED)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=_stored_lanes(provenance, verdict.retried_passes), kind="verify")
     verdict = _apply_verify_override(store, run_id, root, cfg, verdict, args.override,

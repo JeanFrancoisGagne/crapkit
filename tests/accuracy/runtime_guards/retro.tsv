@@ -1,0 +1,2 @@
+id	fix_commit	before_commit	test	platform	before	fix	note
+R27	c24e6a427ff3297780e9ff71f0f08764ff2a60c7	20f00e1371334f84aa70bba6f7b23bfc4bdae0f6	tests/accuracy/runtime_guards/test_invariant_verdict.py::test_r27_a_nonfinite_coverage_count_never_becomes_a_stored_crap	all	pending	pending	the second check: a NaN covered-branch count stored a NaN CRAP before the reader refused it; crapkit.invariants now stops any non-finite CRAP before the store as well

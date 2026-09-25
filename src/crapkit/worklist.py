@@ -23,6 +23,7 @@ from types import MappingProxyType
 from typing import NamedTuple
 
 from .churn import FileChurn
+from .invariants import check_worklist
 from .snapshot import InventoryRow
 from .keys import claim_key, key_names, key_of, lookup, position
 
@@ -260,18 +261,25 @@ def build_worklist(
     as well: this list ranks rows the burn-down queue declines, and a row that
     says nothing about which it is sends an agent to work a wiring gap.
     `ratchet` is the committed marks file, so a row can say it is accepted debt.
+
+    Before the cap, `invariants.check_worklist` counts the rows over their
+    ceiling against the ones admitted, and reads each entry's churn and the
+    risk order against their documented bounds.
     """
     if top < 1:
         raise ValueError(f"worklist top must be >= 1, got {top}")
     adm = admission(churn, floor)
-    active, dormant = [], []
+    active, dormant, over = [], [], 0
     for r in rows:
         c, remedy = adm.of(r.path), marks.verdict(r)[1]
-        if not adm.admits(r.path, r.ccn, over_target=remedy not in (None, "ok")):
+        judged_over = remedy not in (None, "ok")
+        over += judged_over
+        if not adm.admits(r.path, r.ccn, over_target=judged_over):
             continue
         (active if c.commits > 0 else dormant).append(_entry(r, c, marks, ratchet))
     active.sort(key=_rank_key)
     dormant.sort(key=_rank_key)
+    check_worklist(active, dormant, over, churn)
     return Worklist(active=active[:top], dormant=dormant, active_total=len(active))
 
 

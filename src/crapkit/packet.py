@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 
+from .invariants import check_budget, check_rejudged
 from .ratchet_report import DAY, mark_age_days
 from .keys import position
 from .score import remedy, shares_its_def_line
@@ -194,10 +195,12 @@ def budget(row, ceiling: int) -> dict:
     One definition for both readers. `next-item` published these and `brief` did
     not, so a session that opened on a packet re-derived numbers the queue had
     already computed — and two derivations of one formula drift with nothing to
-    catch it.
+    catch it. `invariants.check_budget` reads both against their definitions.
     """
-    return {"est_splits": 0 if row.ccn <= ceiling else -(-row.ccn // ceiling),
-            "est_uncovered_paths": max(0, round((1 - row.cov) * row.ccn))}
+    estimate = {"est_splits": 0 if row.ccn <= ceiling else -(-row.ccn // ceiling),
+                "est_uncovered_paths": max(0, round((1 - row.cov) * row.ccn))}
+    check_budget(row, ceiling, estimate)
+    return estimate
 
 
 # The flags of rows no coverage artifact joins: the scope has no lane, or asks
@@ -215,12 +218,15 @@ def rejudged(row, ceiling: int, rows_of):
     uncommitted edit from 6 to 4, a ccn-5 function read `remedy: ok` beside
     `est_splits: 2`. `rows_of(path)` returns the file's scored rows and is
     called only for a row whose stored verdict cannot say whether another
-    function declares its lines.
+    function declares its lines. The row it returns is checked against the
+    README's remedy table at `ceiling` (`invariants.check_rejudged`).
     """
     verdict = remedy(row.ccn, row.crap, ceiling)
     if verdict == "add-tests" and _shares_span(row, rows_of):
         verdict = "split-lines"
-    return row if verdict == row.remedy else row._replace(remedy=verdict)
+    judged = row if verdict == row.remedy else row._replace(remedy=verdict)
+    check_rejudged(judged, ceiling)
+    return judged
 
 
 def _shares_span(row, rows_of) -> bool:

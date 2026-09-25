@@ -26,6 +26,7 @@ from .analyze import analyze_jobs, analyze_source, decode_source
 from .config import Config
 from .diffparse import changed_ranges
 from .gitio import GitReads
+from .invariants import check_violations
 from .keys import key_names, key_of
 from .merge import FunctionRecord
 from .universe import _source_extensions, assign_files, exclude_matcher, excluded
@@ -130,6 +131,7 @@ def _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, i
         violations.extend(_file_violations(rel, records_by_path[rel], ranges_by_path[rel],
                                            by_file[rel]))
     violations.sort(key=lambda v: (-v.ccn, v.path, v.start))
+    check_violations(violations, in_scope, cfg.ceiling_of)
     return violations
 
 

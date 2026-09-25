@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 from typing import NamedTuple
 
+from .invariants import check_dump, check_marks_kept
 from .invocation import _self
 from .keys import split_ordinal
 from .score import ScoredRow
@@ -274,7 +275,9 @@ def mark_for(entries: list[RatchetEntry], path: str, long_name: str) -> float | 
 def dump_ratchet(entries: list[RatchetEntry], *, stamp: str, key_version: int = 0) -> str:
     """`stamp` is written verbatim, and "" writes none. No default: a writer that
     stamped by omission relabeled marks another metric recorded, so the choice
-    belongs to `ratchetfile.RatchetFile`'s stamp rules."""
+    belongs to `ratchetfile.RatchetFile`'s stamp rules. Every mark must read back
+    as the number it is (`invariants.check_dump`): the file holds four decimals."""
+    check_dump(entries)
     lines = [f"# {stamp}"] if stamp else []
     if key_version:
         lines.append(f"{_KEY_STAMP}{key_version}")
@@ -325,7 +328,9 @@ def seed_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: i
         a, t = _seed_mark(marks, key, row.crap)
         added += a
         tightened += t
-    return sorted(marks.values(), key=lambda e: (e.path, e.long_name)), added, tightened
+    seeded = sorted(marks.values(), key=lambda e: (e.path, e.long_name))
+    check_marks_kept(prior, seeded, adds=True)
+    return seeded, added, tightened
 
 
 def _seed_mark(marks: dict, key: tuple, crap: float) -> tuple[int, int]:
@@ -443,26 +448,39 @@ def update_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target:
                    hold: frozenset[tuple[str, str]] = frozenset()) -> list[RatchetEntry]:
     """`hold` names keys whose mark this run may not move — `unstable_marks`
     picks them. A held mark keeps its recorded value, drop included: leaving the
-    file is the deepest tighten there is."""
+    file is the deepest tighten there is. No mark rises and none is added
+    (`invariants.check_marks_kept`)."""
     from .verify import rows_by_key
 
     fresh_by_key = rows_by_key(fresh)
+    ceilings = scope_targets or {}
     updated = []
     for entry in prior:
-        row = fresh_by_key.get((entry.path, entry.long_name))
-        if row is None or (entry.path, entry.long_name) in hold:
-            # Two ways a mark passes through untouched. Absent from the scored
-            # rows is NOT proof the code is gone — an exclude glob or a lane
-            # outage also removes it, and dropping the entry would erase an
-            # audited override's only diff-visible record; stale entries are
-            # inert (verify checks only present functions). Held is a
-            # measurement this run cannot vouch for.
-            updated.append(entry)
-            continue
-        if row.crap <= (scope_targets or {}).get(row.scope, target):
-            continue  # fixed for real: below the scope's ceiling needs no mark
-        updated.append(RatchetEntry(entry.path, entry.long_name, min(entry.crap, round(row.crap, 4))))
-    return sorted(updated, key=lambda e: (e.path, e.long_name))
+        key = (entry.path, entry.long_name)
+        kept = _updated_mark(entry, fresh_by_key.get(key), key in hold,
+                             lambda scope: ceilings.get(scope, target))
+        if kept is not None:
+            updated.append(kept)
+    updated.sort(key=lambda e: (e.path, e.long_name))
+    check_marks_kept(prior, updated, adds=False)
+    return updated
+
+
+def _updated_mark(entry: RatchetEntry, row: ScoredRow | None, held: bool,
+                  ceiling_of) -> RatchetEntry | None:
+    """One mark after the update, or None when the function now sits at or
+    under its scope's ceiling and needs no mark."""
+    if row is None or held:
+        # Two ways a mark passes through untouched. Absent from the scored
+        # rows is NOT proof the code is gone — an exclude glob or a lane
+        # outage also removes it, and dropping the entry would erase an
+        # audited override's only diff-visible record; stale entries are
+        # inert (verify checks only present functions). Held is a
+        # measurement this run cannot vouch for.
+        return entry
+    if row.crap <= ceiling_of(row.scope):
+        return None  # fixed for real: below the scope's ceiling needs no mark
+    return RatchetEntry(entry.path, entry.long_name, min(entry.crap, round(row.crap, 4)))
 
 
 class RatchetDelta(NamedTuple):

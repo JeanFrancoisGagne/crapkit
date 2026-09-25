@@ -13,6 +13,7 @@ from typing import NamedTuple
 from .. import __version__
 from ..cache import merged_cache
 from ..errors import ConfigError, CrapkitError, ToolError
+from ..invariants import check_rows
 from ..gitio import GitFacts, ls_files
 from ..invocation import _self
 from ..snapshot import build_inventory_rows, tsv_lines
@@ -117,6 +118,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     db_path = Path(args.db) if args.db else state_dir / "crap.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = SnapshotStore(db_path)
+    check_rows(rows, cfg.ceiling_of)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=rows, kind="inventory")
     _record_twin_index(root, store, run_id)
 
@@ -479,12 +481,15 @@ def _judged_rows(scored, unmeasured: list[str]) -> list:
 
 
 def _coverage_summary(run_id: int, run: _ScoredRun, cfg, shape: _RunShape, db_path) -> dict:
+    """The run's summary, its counts and grade checked against their bounds
+    before anything prints it (`invariants.check_summary`)."""
+    from ..invariants import check_summary
     from ..score import grade
 
     flags = _flag_counts(run.scored)
     judged = _judged_rows(run.scored, shape.unmeasured)
     over = sum(1 for r in judged if r.crap > cfg.ceiling_of(r.scope))
-    return {
+    summary = {
         "run_id": run_id, "commit": run.commit, "files": run.corpus.files,
         "functions": len(run.scored), "cache_hits": run.cache_hits,
         "measured": flags["measured"], "untested": flags["untested"],
@@ -496,6 +501,8 @@ def _coverage_summary(run_id: int, run: _ScoredRun, cfg, shape: _RunShape, db_pa
         "lane_failures": run.lane_errors, "db": str(db_path),
         "kind": shape.kind, "unmeasured_scopes": shape.unmeasured, "ceilings": cfg.ceilings,
     }
+    check_summary(summary, len(judged))
+    return summary
 
 
 def _lanes_word(names: list[str]) -> str:
@@ -601,6 +608,7 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     store = SnapshotStore(db_path)
     _warn_suite_drop(store, run.provenance)
     shape = _run_shape(lanes, cfg, run)
+    check_rows(run.scored, cfg.ceiling_of)
     run_id = store.write_run(commit=run.commit, tool_versions=run.tool_versions, rows=run.scored,
                              lanes=run.provenance, kind=shape.kind)
     _record_twin_index(root, store, run_id)
@@ -854,12 +862,16 @@ def _unpardoned_breaches(root: Path, cfg, overlay, touched: list) -> list:
 
 
 def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int]) -> _GateVerdict:
+    """The verdict, once the rescored rows and the breaches meet their bounds
+    against the parsed config (`invariants.check_gate`)."""
+    from ..invariants import check_gate
     from ..keys import key_names
 
     untracked = _untracked_of(root, overlay)
     candidates = _gate_candidates(root, overlay) + [r for r in overlay if r.path in untracked]
     touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
     breaches = _unpardoned_breaches(root, cfg, overlay, touched)
+    check_gate(overlay, breaches, cfg.ceiling_of)
     return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked))
 
 
