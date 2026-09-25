@@ -81,7 +81,7 @@ def test_no_page_still_prints_the_refresh_command_that_could_not_refresh():
 def test_the_json_page_prints_the_refresh_command_the_packet_carries():
     """Without the `python -m` prefix: the page's transcripts use the console
     script, and the flag is the load-bearing half."""
-    flag = packet.REFRESH.split("crapkit ", 1)[1]
+    flag = packet.REFRESH
 
     assert f"crapkit {flag}" in _doc("docs/agent-json.md")
     assert flag == "coverage --reuse-unchanged"

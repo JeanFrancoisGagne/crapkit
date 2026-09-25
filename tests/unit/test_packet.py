@@ -9,6 +9,8 @@ import base64
 import shlex
 from types import SimpleNamespace
 
+from uvx_process import as_uvx
+
 from crapkit import packet
 from crapkit.score import ScoredRow
 
@@ -177,6 +179,32 @@ def test_windows_commands_escape_a_double_quote_for_powershell_to_pass_on(monkey
     script = base64.b64decode(encoded.removeprefix(prefix)).decode("utf-16le")
     assert script.endswith(r"""& $command.Source 'explain' 'src/cls.py' 'g( s = \"a\\\\\" )'; """
                            "exit $LASTEXITCODE")
+
+
+def test_a_packet_built_under_uvx_runs_every_command_through_uvx(tmp_path, monkeypatch):
+    """uvx puts no `crapkit` on PATH. A packet a uvx run built handed its agent
+    four commands, and the agent's shell answered each with 127."""
+    as_uvx(tmp_path, monkeypatch)
+    monkeypatch.setattr(packet, "os", SimpleNamespace(name="posix"))
+
+    out = packet.commands("core/alpha.py", True)
+
+    assert out["gate"] == "uvx crapkit rescore core/alpha.py --gate"
+    assert out["scoped_tests"] == "uvx crapkit test-scoped core/alpha.py"
+    assert out["verify"] == "uvx crapkit verify"
+    assert out["refresh"] == "uvx crapkit coverage --reuse-unchanged"
+
+
+def test_a_windows_packet_under_uvx_starts_uvx_and_hands_it_crapkit(tmp_path, monkeypatch):
+    as_uvx(tmp_path, monkeypatch)
+    monkeypatch.setattr(packet, "os", SimpleNamespace(name="nt"))
+
+    assert packet.commands("src/a & b.py", True)["gate"] == 'uvx crapkit rescore "src/a & b.py" --gate'
+    encoded = packet.commands("src/a'%VAR%.py", True)["scoped_tests"]
+    script = base64.b64decode(encoded.removeprefix(packet.ENCODED_PREFIX)).decode("utf-16le")
+    assert script == ("$command = Get-Command uvx -CommandType Application -TotalCount 1 -ErrorAction Stop; "
+                      "$LASTEXITCODE = 1; & $command.Source 'crapkit' 'test-scoped' 'src/a''%VAR%.py'; "
+                      "exit $LASTEXITCODE")
 
 
 # --- regrowth: complexity that came back --------------------------------------

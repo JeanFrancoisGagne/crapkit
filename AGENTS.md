@@ -36,7 +36,8 @@ and `commands.verify` come back filled in for this file and this scope; run them
 given rather than retyping them, which is how a lane flag or a scope's own test template
 gets dropped. They are spelled as the console script (`crapkit rescore PATH --gate`),
 which is the spelling that resolves from an activated venv on Windows: bare `python`
-there can reach the WindowsApps stub or the base interpreter the venv wraps.
+there can reach the WindowsApps stub or the base interpreter the venv wraps. A packet
+built under uvx spells them `uvx crapkit ...`, because uvx puts no `crapkit` on PATH.
 
 `commands.refresh` is the fourth string: it creates a `coverage` run.
 Automatic reuse requires the same clean HEAD and unchanged configuration,

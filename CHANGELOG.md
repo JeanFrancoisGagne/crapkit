@@ -435,6 +435,10 @@ nothing. Each of these now gets a line naming the object and the next step:
   interpreter running it (`<python> -m crapkit`). A runner's cache is a directory tagged
   CACHEDIR.TAG above the environment; `uv tool install` and `pipx install` still get
   `crapkit`.
+- A packet built under uvx (`uvx crapkit brief --json`, or `get_function_brief` from an
+  MCP server uvx started) spells `commands.gate`, `scoped_tests`, `verify` and `refresh`
+  as `uvx crapkit ...`, and the Windows encoded form starts `uvx`. The agent's shell
+  answered all four with `crapkit: not found`. Everywhere else they stay `crapkit ...`.
 - `uvx crapkit doctor --plugin-root` no longer counts the launcher uvx put on its own PATH.
   It found that copy and passed, exit 0, a plugin whose hooks spawn a `crapkit` that no
   other process's PATH carries. It now prints ``FAIL no `crapkit` on PATH``.

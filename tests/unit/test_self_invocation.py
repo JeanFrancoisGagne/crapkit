@@ -20,14 +20,13 @@ from pathlib import Path
 
 import pytest
 
+from uvx_process import CACHE_TAG, as_uvx as _as_uvx, cached_env, run_from
+
 from crapkit.errors import CrapkitError
 from crapkit.invocation import _self
 
 MODULE_RUN = str(Path(sys.prefix) / "Lib" / "site-packages" / "crapkit" / "__main__.py")
 CONSOLE_RUN = str(Path(sys.prefix) / "Scripts" / "crapkit.exe")
-# The tag line the cache directory spec fixes, which uv and pipx both write at
-# the root of their caches.
-CACHE_TAG = "Signature: 8a477f597d28d172789f06886806bc55\n"
 
 
 @pytest.fixture(autouse=True)
@@ -50,26 +49,11 @@ def as_console(monkeypatch):
     monkeypatch.setattr(sys, "argv", [CONSOLE_RUN, "coverage"])
 
 
-def _cached_env(cache: Path) -> Path:
-    """An environment the way uv and pipx cache one: a directory under a cache
-    root that CACHEDIR.TAG marks."""
-    env = cache / "archive-v0" / "Ds2JZStGIUIB0F1a"
-    (env / "bin").mkdir(parents=True)
-    (cache / "CACHEDIR.TAG").write_text(CACHE_TAG, encoding="utf-8")
-    return env
-
-
-def _run_from(env: Path, monkeypatch) -> None:
-    monkeypatch.setattr(sys, "prefix", str(env))
-    monkeypatch.setattr(sys, "argv", [str(env / "bin" / "crapkit"), "init"])
-
-
 @pytest.fixture()
 def as_uvx(tmp_path, monkeypatch):
     """argv, prefix and environment as `uvx crapkit` leaves them: the launcher in
     an environment under uv's cache, and uv's own path in UV."""
-    _run_from(_cached_env(tmp_path / "uv" / "cache"), monkeypatch)
-    monkeypatch.setenv("UV", "/usr/local/bin/uv")
+    _as_uvx(tmp_path, monkeypatch)
 
 
 # --- the helper itself -------------------------------------------------------
@@ -120,8 +104,8 @@ def test_a_cached_run_uv_did_not_start_names_its_interpreter(tmp_path, monkeypat
     """`pipx run crapkit` caches its environment the same way and sets no UV.
     Nothing names the runner, and the interpreter running this process resolves
     for as long as the cache keeps it."""
-    env = _cached_env(tmp_path / "pipx")
-    _run_from(env, monkeypatch)
+    env = cached_env(tmp_path / "pipx")
+    run_from(env, monkeypatch)
     monkeypatch.setattr(sys, "executable", "/cache/pipx/0ef8/bin/python")
 
     assert _self() == "/cache/pipx/0ef8/bin/python -m crapkit"
@@ -135,7 +119,7 @@ def test_an_installed_tool_under_uv_names_the_console_script(tmp_path, monkeypat
     env = tmp_path / "share" / "uv" / "tools" / "crapkit"
     (env / "bin").mkdir(parents=True)
     (env / "CACHEDIR.TAG").write_text(CACHE_TAG, encoding="utf-8")
-    _run_from(env, monkeypatch)
+    run_from(env, monkeypatch)
     monkeypatch.setenv("UV", "/usr/local/bin/uv")
 
     assert _self() == "crapkit"

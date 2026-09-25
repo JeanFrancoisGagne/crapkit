@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 
 import pytest
+
+from uvx_process import as_uvx
 
 import crapkit
 from crapkit.cli import admin, main
@@ -475,16 +476,12 @@ def test_an_empty_path_resolves_no_crapkit_at_all(tmp_path, monkeypatch):
 
 
 def _uvx_process(tmp_path: Path, monkeypatch) -> Path:
-    """This process as `uvx crapkit` starts it: running from an environment in
-    uv's cache, whose bin uv put first on this process's PATH and nowhere else.
-    Returns that bin, holding the launcher uvx started."""
-    cache = tmp_path / "uv" / "cache"
-    env = cache / "archive-v0" / "Ds2JZStGIUIB0F1a"
-    _crapkit_shim(env / "bin", CLI)
-    (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n",
-                                        encoding="utf-8")
-    monkeypatch.setattr(sys, "prefix", str(env))
-    return env / "bin"
+    """This process as `uvx crapkit` starts it, with uvx's launcher in the
+    cached environment's bin. Returns that bin, which uv put first on this
+    process's PATH and on no other."""
+    own = as_uvx(tmp_path, monkeypatch)
+    _crapkit_shim(own, CLI)
+    return own
 
 
 def test_the_launcher_uvx_put_on_this_process_path_is_no_crapkit_on_path(tmp_path,

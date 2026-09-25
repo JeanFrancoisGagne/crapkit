@@ -468,6 +468,9 @@ With a scoped template and without one:
 
 All four commands resolve the `crapkit` console script on PATH, including the
 Windows encoded form. Activate the intended environment before executing them.
+A packet that `uvx crapkit brief` built spells all four `uvx crapkit ...`, and its
+encoded form starts `uvx`: uvx puts no `crapkit` on PATH, and the uvx line resolves
+in any shell on a machine that has uv.
 `test-scoped` then runs the owning scope's configured template; a template with
 no `{files}` still runs its declared arguments unchanged.
 

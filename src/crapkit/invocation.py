@@ -26,10 +26,13 @@ both, the reader runs `uvx crapkit`. A cache some other runner keeps, such as
 uv also tags every environment it creates, installed tools included, so only a
 tag ABOVE the environment makes it a cache.
 
-Not everything crapkit prints goes through here. The brief packet's `commands.*`
-stay console-script strings (docs/agent-json.md, #37), and so do the crapkit.toml
-template comments `init` writes into a consumer's repo: both are read somewhere
-other than the process that produced them.
+Not everything crapkit prints goes through `_self`. The brief packet's
+`commands.*` stay console-script strings (docs/agent-json.md, #37), because they
+are read somewhere other than the process that produced them; they take
+`console_script`, so a packet a uvx run built says `uvx crapkit`, which resolves
+in any shell on a machine with uv. The crapkit.toml template comments `init`
+writes into a consumer's repo keep `crapkit`: every clone reads them, and each
+clone's own route decides its spelling.
 """
 from __future__ import annotations
 
@@ -47,9 +50,17 @@ def _self() -> str:
     argv0 = sys.argv[0] if sys.argv else ""
     if Path(argv0).stem != _CONSOLE_SCRIPT:
         return _module_form()
-    if not runs_from_cache():
-        return _CONSOLE_SCRIPT
-    return f"uvx {_CONSOLE_SCRIPT}" if os.environ.get("UV") else _module_form()
+    if runs_from_cache() and not os.environ.get("UV"):
+        return _module_form()
+    return console_script()
+
+
+def console_script() -> str:
+    """The console script as a reader outside this process runs it: `uvx
+    crapkit` when uvx started this process, since uvx puts no `crapkit` on
+    PATH, and `crapkit` otherwise."""
+    uvx = runs_from_cache() and bool(os.environ.get("UV"))
+    return f"uvx {_CONSOLE_SCRIPT}" if uvx else _CONSOLE_SCRIPT
 
 
 def _module_form() -> str:
