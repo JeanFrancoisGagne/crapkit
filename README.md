@@ -821,9 +821,9 @@ the heading and no table.
 
 The two file counts describe the same diff, counted twice. `39 changed files` is
 `git diff --name-only --relative base.sha...HEAD` run in `working-directory`, the
-branch's own commits under it, and it is what the table is filtered to. The count on the verdict line is what `verify` measured from the
-same fork point. With `delta: "false"` the second one is 0, because there is nothing
-behind the checkout to measure from.
+branch's own commits under it, and it is what the table is filtered to. The count on the
+verdict line is what `verify` measured from the same fork point. With `delta: "false"`
+the second one is 0, because there is nothing behind the checkout to measure from.
 
 ### The inputs
 
@@ -863,11 +863,11 @@ the baseline verify wants nor a diff anyone is reviewing.
 
 The base run happens in a detached worktree under `RUNNER_TEMP`, in the same
 `working-directory` inside it, and its store is copied over the checkout's so both runs
-sit in one place. The cost is **two lane runs on a pull
-request**: your suite runs once at the fork point and once on the checkout. Set `delta:
-"false"` to skip the base run, and the verdict falls back to the checkout against its own
-run, which reports the tree's own health and judges no changed function. The comment says
-so in place of `verify passed`:
+sit in one place. The cost is **two lane runs on a pull request**: your suite runs once
+at the fork point and once on the checkout. Set `delta: "false"` to skip the base run,
+and the verdict falls back to the checkout against its own run, which reports the tree's
+own health and judges no changed function. The comment says so in place of
+`verify passed`:
 
 ```markdown
 **verify judged no changed function:** the base run was not made (no base commit). Run 2 against baseline 2, 0 changed files.
