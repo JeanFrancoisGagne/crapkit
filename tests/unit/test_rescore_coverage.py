@@ -158,6 +158,23 @@ def test_an_artifact_the_lane_parser_cannot_read_is_refused_as_a_tool_failure(re
     assert "unparseable istanbul artifact" in err, err
 
 
+def test_an_artifact_that_measured_another_checkout_is_refused_and_named(repo, capsys):
+    """Every path in it resolves outside this repo, so the join would match
+    nothing and the gate would fail `forked` as untested: a verdict built on
+    the wrong tree. The lane run's own check refuses it instead, naming PATH."""
+    with open(repo / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
+        fh.write(FORKED)
+    other = repo.parent / "other-checkout"
+    istanbul(other, "scoped.json", "src/app.ts", {"forked": (20, 26, 2)})
+    artifact = other / "scoped.json"
+
+    code, _, err = run(["rescore", "src/app.ts", "--coverage", str(artifact), "--gate"],
+                       repo, capsys)
+
+    assert code == 5, err
+    assert f"{artifact} describes a different tree" in err, err
+
+
 def test_files_whose_lanes_read_two_formats_are_refused(repo, capsys):
     toml = repo / "crapkit.toml"
     text = toml.read_text(encoding="utf-8")
