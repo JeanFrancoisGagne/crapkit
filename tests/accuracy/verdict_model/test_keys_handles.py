@@ -25,6 +25,7 @@ import json
 import pytest
 
 from accuracy.kit import drive, repos
+from accuracy.verdict_model import cadence
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
 
@@ -241,11 +242,28 @@ def _legacy(tmp_path, measured) -> drive.Driver:
     return drive.Driver(top)
 
 
+@pytest.fixture(scope="module")
+def under_floor(repo_templates, tmp_path_factory):
+    """The same files at target 100: every callback's CRAP (its ccn, 3 at most)
+    sits under the ceiling and its ccn under the default worklist_floor of 5
+    (docs/configuration.md, worklist_floor), so the list never prints the
+    twins (README, worklist)."""
+    files = {"crapkit.toml": config(target=100), **FILES}
+    built = repo_templates.copy(repos.Spec(steps=(repos.Commit(files=files, message="seed"),)),
+                                tmp_path_factory.mktemp("floor") / "repo")
+    assert drive.Driver(built.root).run("coverage").code == 0
+    return built, None
+
+
 @pytest.mark.process
-def test_worklist_refuses_unordered_same_line_twins(tmp_path, measured):
+@pytest.mark.parametrize("where", cadence.tiered(["over_ceiling", "under_floor"], push=["over_ceiling"]))
+def test_worklist_refuses_unordered_same_line_twins(tmp_path, request, where):
     """CONTEXT.md, Legacy run: a command that must read the same-line twins
-    from it refuses and names the run."""
-    result = _legacy(tmp_path, measured).run("worklist", "--json")
+    from it refuses and names the run. The worklist reads every row's verdict to
+    decide what its floor may hide (agent-json.md, below_floor), so twins it
+    never prints still refuse it."""
+    built = request.getfixturevalue("measured" if where == "over_ceiling" else "under_floor")
+    result = _legacy(tmp_path, built).run("worklist", "--json")
     assert result.code == 5, result.stdout + result.stderr
     assert "web/app.ts" in result.stderr
 
