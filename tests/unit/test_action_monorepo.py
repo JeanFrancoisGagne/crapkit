@@ -194,3 +194,15 @@ def test_the_comment_judges_the_package_diff(monorepo_job):
 
     assert "**verify passed.**" in comment and "1 changed file." in comment, "\n".join(job["ran"])
     assert "### Worklist: 1 changed file" in comment
+
+
+def test_a_job_that_leaves_the_input_out_is_told_to_set_it(tmp_path):
+    """README's job as it was, on the same repository: coverage at the top
+    still exits 3, and the comment now says which input moves it."""
+    (tmp_path / "workspace").mkdir()
+    job = _pull_request_job(tmp_path, _monorepo(tmp_path / "workspace"))
+
+    comment = _read(job["state"], "crapkit-comment.md")
+
+    assert _read(job["state"], "crapkit-coverage.exit") == "3", "\n".join(job["ran"])
+    assert "set the action's `working-directory` input to the directory that holds crapkit.toml" in comment, comment

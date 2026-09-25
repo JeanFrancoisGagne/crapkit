@@ -514,6 +514,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   directory at the fork point, and the changed files are named from it, the way the
   worklist names them. Set `working-directory: packages/api` on the crapkit step and on
   the job's own `pip install -e ".[dev]"` step; README's "The inputs" shows both.
+- A job that leaves the input out still gets exit 3 at the top, and the comment now says
+  what to do about it: the no-verdict line ends ``set the action's `working-directory`
+  input to the directory that holds crapkit.toml`` after the directory coverage looked in.
 
 ## 0.8.0 — 2026-09-23
 

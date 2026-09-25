@@ -838,6 +838,31 @@ def test_every_lane_failing_points_at_the_job_log_not_above():
         "the README quotes the line the builder prints"
 
 
+def _refusal_without_config(directory: Path) -> dict:
+    """What `coverage --json` prints in a directory with no crapkit.toml, the
+    message taken from the CLI itself so the two cannot drift apart."""
+    from crapkit.cli._shared import _load_repo_config
+    from crapkit.errors import ConfigError
+
+    with pytest.raises(ConfigError) as refused:
+        _load_repo_config(directory)
+    return {"error": {"exit": 3, "kind": "config", "message": str(refused.value)}, "schema": 1}
+
+
+_WORKING_DIRECTORY_STEP = "set the action's `working-directory` input to the directory that holds crapkit.toml"
+
+
+def test_no_crapkit_toml_in_the_checkout_names_the_input_that_moves_the_steps(tmp_path):
+    """A monorepo job that leaves the input out ran coverage at the top and
+    exited 3. The comment named the directory it looked in and no way out;
+    a flag or a cd is no step a workflow author can take, the input is."""
+    line = _builder().no_verdict_line(_refusal_without_config(tmp_path), 3)
+
+    assert line == (f"**no verdict: `crapkit coverage` exited 3 (no crapkit.toml at {tmp_path} - "
+                    f"nothing to analyze; {_WORKING_DIRECTORY_STEP}); verify did not run.**")
+    assert _WORKING_DIRECTORY_STEP in " ".join(_readme_section().split()),         "the README quotes the step the builder prints"
+
+
 def test_the_body_renders_no_verdict_in_place_of_the_verify_line_when_coverage_failed():
     coverage = {"lane_failures": {"py": "lane 'py' wrote no artifact on its last attempt"}}
 
