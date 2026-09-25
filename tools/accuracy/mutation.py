@@ -10,7 +10,9 @@
     python tools/accuracy/mutation.py killer [PYTEST ARGS...]
 
 mutmut 3.8.0 runs in the accuracy image (it forks, so Linux only). `weekly`
-mutates one shard of the modules every tests/accuracy/*/calcs.tsv row names;
+mutates one shard of the modules every tests/accuracy/*/calcs.tsv row names
+(a cli module only at the functions a row names, and never a module `tools`
+mutates);
 `diff` mutates only the functions changed since the last weekly run and stops
 at its cap, reporting `incomplete`, never `pass`. Both run in a detached
 worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose [tool.mutmut]
@@ -672,6 +674,47 @@ def _canary_globs() -> list[str]:
     return [mutmut_glob(*CANARY)]
 
 
+# --- the calc runs' scope ---------------------------------------------------------------------
+# The plan's mutation section: a cli module is mutated only at the functions a
+# calcs.tsv row names, and the modules the second config (`tools`) mutates
+# against their own tests stay out of the weekly and nightly runs.
+CLI = "src/crapkit/cli/"
+
+
+def calc_functions() -> dict[str, set[str]]:
+    """The functions the calcs.tsv rows name, by module path."""
+    from accuracy.kit import calcs
+    named: dict[str, set[str]] = {}
+    for row in calcs.load(REPO / "tests" / "accuracy"):
+        for entry in row.functions:
+            path, _, name = entry.partition(":")
+            named.setdefault(path, set()).add(name)
+    return named
+
+
+def weekly_modules() -> list[str]:
+    """The calc modules the weekly shards split, less the ones `tools` mutates."""
+    return [module for module in calc_modules() if module not in TOOL_TARGETS]
+
+
+def calc_globs(modules: list[str], named: dict[str, set[str]]) -> list[str]:
+    """mutmut's filter for a calc run over `modules`: each whole module, a cli
+    module only at its named functions."""
+    return [glob for module in modules for glob in _module_globs(module, named)]
+
+
+def _module_globs(module: str, named: dict[str, set[str]]) -> list[str]:
+    if module.startswith(CLI):
+        return [mutmut_glob(module, name) for name in sorted(named.get(module, ()))]
+    return [f"{_dotted(module)}.*"]
+
+
+def in_calc_scope(pairs: list[tuple[str, str]], named: dict[str, set[str]]) -> list[tuple[str, str]]:
+    """The changed (module, function) pairs a calc run mutates."""
+    return [(module, name) for module, name in pairs if module not in TOOL_TARGETS
+            and (not module.startswith(CLI) or name in named.get(module, ()))]
+
+
 # --- the second config: the accuracy tools and kit.exact -----------------------------------------
 
 TOOLS_STAGE = RECEIPTS / "tools-stage"
@@ -929,8 +972,8 @@ def _print_floor(floor: Floor) -> None:
 
 
 def _weekly(args) -> int:
-    modules = shard(calc_modules(), args.shard, args.of)
-    globs = _globs_for(modules) + _canary_globs()
+    modules = shard(weekly_modules(), args.shard, args.of)
+    globs = calc_globs(modules, calc_functions()) + _canary_globs()
     deselected = open_failures()
     rows, _ = staged_run(CALC_STAGE, calc_targets(modules), globs,
                          calc_env(dict(os.environ), deselected), args.max_children)
@@ -957,7 +1000,7 @@ def _diff_receipt(base: str, changed: list, rows: list[Result], complete: bool) 
 
 def _diff_run(args) -> int:
     base = args.base or weekly_base(REPO, datetime.datetime.now(datetime.timezone.utc))
-    changed = changed_functions(REPO, base, calc_modules())
+    changed = in_calc_scope(changed_functions(REPO, base, calc_modules()), calc_functions())
     rows, complete = _run_changed(changed, args.cap_minutes * 60)
     receipt = _diff_receipt(base, changed, rows, complete)
     _write_receipt(receipt, f"diff-{receipt['head'][:12]}.json")
@@ -983,7 +1026,8 @@ def _floors_cmd(args) -> int:
 def _covered(args) -> int:
     weeklies, diffs = receipts_in(args.receipts)
     head = weekly_head(weeklies)
-    missing = uncovered(changed_functions(REPO, head, calc_modules()), diffs)
+    changed = changed_functions(REPO, head, calc_modules())
+    missing = uncovered(in_calc_scope(changed, calc_functions()), diffs)
     for line in missing:
         print(f"mutation: {line} changed since the weekly run at {head[:12]} and no "
               "complete diff run mutated it")

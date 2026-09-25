@@ -1799,3 +1799,40 @@ def test_a_diff_run_deselects_the_open_failures(tmp_path, monkeypatch):
     assert mutation.main(["diff", "--base", "b" * 40]) == 0
 
     assert recorder.calls[0]["env"]["PYTEST_ADDOPTS"].endswith("--deselect tests/unit/t.py::f")
+
+
+# --- the calc runs' scope: cli modules at their named functions, tools elsewhere --------------------
+
+NAMED = {"src/crapkit/cli/analyses.py": {"cmd_mutate"}, "src/crapkit/score.py": {"crap"}}
+
+
+def test_a_cli_module_is_mutated_only_at_the_functions_calcs_tsv_names():
+    """The plan's mutation section mutates the cli modules only at the functions
+    calcs.tsv names; cmd_mutate is this packet's, the rest of analyses.py is not
+    a calculation. A cli module no row names a function of is not mutated."""
+    globs = mutation.calc_globs(["src/crapkit/cli/analyses.py", "src/crapkit/cli/queue.py",
+                                 "src/crapkit/mutate.py"], NAMED)
+
+    assert globs == ["crapkit.cli.analyses.x_cmd_mutate__mutmut_*", "crapkit.mutate.*"]
+
+
+def test_the_weekly_shards_leave_the_second_config_s_modules_to_it(monkeypatch):
+    monkeypatch.setattr(mutation, "calc_modules", lambda: [
+        "src/crapkit/mutate.py", "tools/accuracy/retro.py", "tools/release/release.py"])
+
+    assert mutation.weekly_modules() == ["src/crapkit/mutate.py", "tools/release/release.py"]
+
+
+def test_a_changed_function_is_in_scope_unless_tools_or_an_unnamed_cli_function_holds_it():
+    changed = [("src/crapkit/cli/analyses.py", "cmd_mutate"), ("src/crapkit/cli/analyses.py", "cmd_dup"),
+               ("tools/accuracy/retro.py", "digest"), ("src/crapkit/score.py", "remedy")]
+
+    assert mutation.in_calc_scope(changed, NAMED) == [
+        ("src/crapkit/cli/analyses.py", "cmd_mutate"), ("src/crapkit/score.py", "remedy")]
+
+
+def test_the_functions_named_here_include_this_packet_s_cli_entry():
+    named = mutation.calc_functions()
+
+    assert named["src/crapkit/cli/analyses.py"] == {"cmd_mutate"}
+    assert "run_one" in named["src/crapkit/mutate_pool.py"]
