@@ -602,3 +602,199 @@ def test_the_launcher_names_a_module_the_way_its_tests_import_it(tmp_path):
 
     assert namespace["canonical"]("tests/accuracy/kit/exact.py") == "accuracy.kit.exact"
     assert namespace["canonical"]("tools/accuracy/run.py") == "tools.accuracy.run"
+
+
+# --- reading mutmut's results, through a launcher that stands in for mutmut -------------------------
+#
+# collect() reads mutmut's .meta files and asks the launcher for the diffs of the
+# mutants that live; _rerun_timeouts() asks it to run the timeouts again, one at
+# a time. FAKE_LAUNCHER plays mutmut: `diffs` answers each name with a diff of
+# its own, `run` rewrites the meta file as if the reruns were killed, and every
+# call is logged, so a test sees how often mutmut would have started.
+
+FAKE_LAUNCHER = '''\
+import json, pathlib, sys
+here = pathlib.Path.cwd()
+with open(here / "calls.log", "a", encoding="utf-8") as log:
+    log.write(json.dumps(sys.argv[1:]) + "\\n")
+if sys.argv[1:2] == ["diffs"]:
+    for name in sys.stdin.read().split():
+        if "silent" not in name:
+            print(json.dumps([name, "-    return a\\n+    return " + name]))
+elif sys.argv[1:2] == ["run"]:
+    meta = here / "mutants" / "src" / "crapkit" / "score.py.meta"
+    codes = json.loads(meta.read_text(encoding="utf-8"))
+    for name in sys.argv[2:]:
+        if name in codes["exit_code_by_key"]:
+            codes["exit_code_by_key"][name] = 1
+    meta.write_text(json.dumps(codes), encoding="utf-8")
+'''
+META = {"crapkit.score.x_crap__mutmut_1": 1, "crapkit.score.x_crap__mutmut_2": 0,
+        "crapkit.score.x_crap__mutmut_3": 33, "crapkit.score.x_crap__mutmut_4": 36,
+        "crapkit.score.x_crap__mutmut_5": None}
+DIGEST_META = {"crapkit.digest.x_totals__mutmut_1": 0}
+
+
+def _mutmut_tree(tmp_path: Path, meta: dict = META) -> Path:
+    for module in ("score", "digest"):
+        (tmp_path / "src" / "crapkit").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "src" / "crapkit" / f"{module}.py").write_text("x = 1\n", encoding="utf-8")
+    for module, codes in (("score", meta), ("digest", DIGEST_META)):
+        path = tmp_path / "mutants" / "src" / "crapkit" / f"{module}.py.meta"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"exit_code_by_key": codes}), encoding="utf-8")
+    (tmp_path / "fake_launch.py").write_text(FAKE_LAUNCHER, encoding="utf-8")
+    return tmp_path
+
+
+def _calls(tree: Path) -> list[list[str]]:
+    log = tree / "calls.log"
+    return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if (
+        log.is_file()) else []
+
+
+def _key_of(name: str) -> str:
+    return mutation.mutant_key(f"-    return a\n+    return {name}")
+
+
+def test_collect_reads_the_meta_files_and_keys_every_live_mutant_in_one_call(tmp_path):
+    tree = _mutmut_tree(tmp_path)
+
+    rows = mutation.collect(tree, ["crapkit.score.*"], ("fake_launch.py",))
+
+    got = {row.name.rsplit("_", 1)[1]: (row.module, row.function, row.status, row.key)
+           for row in rows}
+    assert got == {
+        "1": ("src/crapkit/score.py", "crap", "killed", ""),
+        "2": ("src/crapkit/score.py", "crap", "survived", _key_of("crapkit.score.x_crap__mutmut_2")),
+        "3": ("src/crapkit/score.py", "crap", "no tests", _key_of("crapkit.score.x_crap__mutmut_3")),
+        "4": ("src/crapkit/score.py", "crap", "timeout", _key_of("crapkit.score.x_crap__mutmut_4")),
+        "5": ("src/crapkit/score.py", "crap", "not checked", ""),
+    }
+    assert _calls(tree) == [["diffs"]]
+
+
+def test_collect_with_no_glob_reads_every_module(tmp_path):
+    rows = mutation.collect(_mutmut_tree(tmp_path), None, ("fake_launch.py",))
+
+    assert sorted({row.module for row in rows}) == ["src/crapkit/digest.py", "src/crapkit/score.py"]
+
+
+def test_a_live_mutant_the_launcher_gives_no_diff_stops_the_run(tmp_path):
+    tree = _mutmut_tree(tmp_path, {"crapkit.score.x_crap__mutmut_silent": 0})
+
+    with pytest.raises(mutation.MutationError, match="no diff for 1 mutant"):
+        mutation.collect(tree, ["crapkit.score.*"], ("fake_launch.py",))
+
+
+def test_a_run_with_only_kills_asks_for_no_diff(tmp_path):
+    tree = _mutmut_tree(tmp_path, {"crapkit.score.x_crap__mutmut_1": 1})
+
+    rows = mutation.collect(tree, ["crapkit.score.*"], ("fake_launch.py",))
+
+    assert [row.status for row in rows] == ["killed"] and _calls(tree) == []
+
+
+def test_a_timeout_gets_one_serial_rerun(tmp_path):
+    tree = _mutmut_tree(tmp_path)
+    rows = mutation.collect(tree, ["crapkit.score.*"], ("fake_launch.py",))
+
+    again = mutation._rerun_timeouts(tree, rows, ("fake_launch.py",), dict(mutation.os.environ))
+
+    assert ["run", "--max-children", "1", "crapkit.score.x_crap__mutmut_4"] in _calls(tree)
+    assert {row.name: row.status for row in again}["crapkit.score.x_crap__mutmut_4"] == "killed"
+    assert len(again) == len(rows)
+
+
+def test_a_run_without_a_timeout_reruns_nothing(tmp_path):
+    tree = _mutmut_tree(tmp_path, {"crapkit.score.x_crap__mutmut_1": 1})
+    rows = mutation.collect(tree, ["crapkit.score.*"], ("fake_launch.py",))
+
+    assert mutation._rerun_timeouts(tree, rows, ("fake_launch.py",)) == rows
+    assert _calls(tree) == []
+
+
+def test_mutmut_s_exit_code_comes_back_and_a_budget_that_runs_out_reads_minus_one(tmp_path):
+    (tmp_path / "exits.py").write_text("import sys, time\ntime.sleep(float(sys.argv[1]))\n"
+                                       "sys.exit(7)\n", encoding="utf-8")
+
+    assert mutation._mutmut(tmp_path, ["0"], None, ("exits.py",)) == 7
+    assert mutation._mutmut(tmp_path, ["5"], 0.5, ("exits.py",)) == -1
+
+
+# --- the commands that read receipts --------------------------------------------------------------
+
+def test_the_floors_command_fails_a_group_below_its_floor(tmp_path, monkeypatch, capsys):
+    _tables(tmp_path, floors=[{**GROUPS[0], "paths": "src/crapkit/score.py"}])
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
+    receipt = tmp_path / "r.json"
+    rows = [_crap(KEYS[0], "killed").__dict__, _crap(KEYS[1], "timeout").__dict__]
+    receipt.write_text(json.dumps({"results": rows}), encoding="utf-8")
+    passing = tmp_path / "p.json"
+    passing.write_text(json.dumps({"results": rows[:1]}), encoding="utf-8")
+
+    assert mutation.main(["floors", str(receipt)]) == 1
+    assert "floor core: 50.0% (1/2), floor 95.0% BELOW" in capsys.readouterr().out
+    assert mutation.main(["floors", str(passing)]) == 0
+    assert "floor core: 100.0% (1/1), floor 95.0% ok" in capsys.readouterr().out
+
+
+def test_the_covered_command_names_each_changed_function_no_diff_run_mutated(
+        tmp_path, monkeypatch, capsys):
+    weekly = {"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 1}
+    diff = {"kind": "diff", "complete": True, "functions": [["src/crapkit/score.py", "crap"]]}
+    receipts = _receipts(tmp_path / "r", weekly, diff)
+    seen = []
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
+    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: seen.append(
+        (base, modules)) or [("src/crapkit/score.py", "crap"), ("src/crapkit/score.py", "grade")])
+
+    assert mutation.main(["covered", "--receipts", str(receipts)]) == 1
+    assert seen == [(HEAD_A, ["src/crapkit/score.py"])]
+    assert capsys.readouterr().out == (
+        f"mutation: src/crapkit/score.py:grade changed since the weekly run at {HEAD_A[:12]} "
+        "and no complete diff run mutated it\n")
+
+
+def test_the_covered_command_passes_when_every_change_was_mutated(tmp_path, monkeypatch):
+    weekly = {"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 1}
+    monkeypatch.setattr(mutation, "calc_modules", lambda: [])
+    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [])
+
+    assert mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "r", weekly))]) == 0
+
+
+# --- what changed since the weekly run, on a dated repo ------------------------------------------
+
+def _dated_repo(tmp_path: Path, commits: list[tuple[str, str]]) -> Path:
+    """One commit per (ISO date, text of m.py)."""
+    for args in (["init", "-q"], ["config", "user.name", "t"], ["config", "user.email", "t@t"],
+                 ["config", "commit.gpgsign", "false"]):
+        mutation._git(tmp_path, *args)
+    for date, text in commits:
+        (tmp_path / "m.py").write_text(text, encoding="utf-8")
+        mutation._git(tmp_path, "add", "m.py")
+        env = {**mutation.os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+        done = mutation.subprocess.run(["git", "commit", "-qm", date], cwd=tmp_path, env=env,
+                                       capture_output=True, text=True)
+        assert done.returncode == 0, done.stderr
+    return tmp_path
+
+
+def test_the_weekly_base_is_the_newest_commit_before_saturday_six_utc(tmp_path):
+    repo = _dated_repo(tmp_path, [("2026-09-18T12:00:00Z", "a = 1\n"),
+                                  ("2026-09-20T12:00:00Z", "a = 2\n")])
+    friday = mutation._git(repo, "rev-list", "-1", "HEAD~1").strip()
+
+    assert mutation.weekly_base(repo, _utc(2026, 9, 24, 12, 0)) == friday
+    with pytest.raises(mutation.MutationError, match="no commit before the weekly run"):
+        mutation.weekly_base(repo, _utc(2026, 9, 17, 12, 0))
+
+
+def test_changed_functions_name_what_a_diff_from_the_base_touches(tmp_path):
+    before = "def a():\n    return 1\n\n\ndef b():\n    return 2\n"
+    repo = _dated_repo(tmp_path, [("2026-09-18T12:00:00Z", before),
+                                  ("2026-09-20T12:00:00Z", before.replace("return 2", "return 3"))])
+    base = mutation._git(repo, "rev-list", "-1", "HEAD~1").strip()
+
+    assert mutation.changed_functions(repo, base, ["m.py", "gone.py"]) == [("m.py", "b")]
