@@ -8,6 +8,7 @@ No environment-variable or silent bypass exists anywhere in crapkit.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -17,6 +18,18 @@ from .ratchet import RatchetEntry
 from .ratchetfile import RatchetFile
 from .store import SnapshotStore
 from .verify import GateViolation
+
+
+# One crapkit.toml line per shell that runs alert_command (subprocess with
+# shell=True): sh has `cat`; cmd.exe has none, and `findstr "^"` echoes every
+# line of its stdin. Both append the alert to .crapkit/alerts.log.
+POSIX_ALERT_EXAMPLE = 'alert_command = "cat >> .crapkit/alerts.log"'
+WINDOWS_ALERT_EXAMPLE = """alert_command = 'findstr "^" >> .crapkit/alerts.log'"""
+
+
+def alert_example() -> str:
+    """The alert_command line a refusal hands the user, for this platform's shell."""
+    return WINDOWS_ALERT_EXAMPLE if os.name == "nt" else POSIX_ALERT_EXAMPLE
 
 
 def record_override(
@@ -101,7 +114,7 @@ def _require_auditable_override(reason: str, alert_command: str) -> None:
     if not alert_command.strip():
         raise ConfigError(
             "no alert_command configured — the override requires a visible alert line; "
-            "set [crapkit] alert_command in crapkit.toml")
+            f"set [crapkit] alert_command in crapkit.toml, for example {alert_example()}")
 
 
 def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolation],

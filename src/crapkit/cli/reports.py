@@ -52,8 +52,11 @@ def _send_digest_alert(root: Path, cfg, prev: dict, cur: dict, lines: list[str])
     """Hand the digest body to the configured alert command; a nonzero exit is fatal."""
     import subprocess
 
+    from ..override import alert_example
+
     if not cfg.alert_command.strip():
-        raise ConfigError("digest --alert needs [crapkit] alert_command")
+        raise ConfigError("digest --alert needs [crapkit] alert_command in crapkit.toml, "
+                          f"for example {alert_example()}")
     body = f"crapkit digest (runs {prev['id']} -> {cur['id']}):\n" + "\n".join(lines) + "\n"
     proc = subprocess.run(cfg.alert_command, shell=True, cwd=root, input=body,
                           capture_output=True, text=True, encoding="utf-8", errors="replace")

@@ -808,9 +808,21 @@ no trail. Without `alert_command` the override is refused outright, before anyth
 
 ```
 $ crapkit verify --override "shipping the hotfix, ticket 412"
-crapkit: no alert_command configured — the override requires a visible alert line; set [crapkit] alert_command in crapkit.toml
+crapkit: no alert_command configured — the override requires a visible alert line; set [crapkit] alert_command in crapkit.toml, for example alert_command = "cat >> .crapkit/alerts.log"
 EXIT=3
 ```
+
+The line it prints appends each alert to `.crapkit/alerts.log`:
+
+```toml
+[crapkit]
+alert_command = "cat >> .crapkit/alerts.log"
+```
+
+On Windows the command runs under cmd.exe, which has no `cat`, and the refusal prints
+`alert_command = 'findstr "^" >> .crapkit/alerts.log'`, which appends the same line
+there. Point it at a chat webhook or a mail command instead when a person should see the
+alert as it fires; the command gets the alert on stdin.
 
 With it configured:
 

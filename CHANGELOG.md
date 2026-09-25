@@ -566,6 +566,11 @@ nothing. Each of these now gets a line naming the object and the next step:
   `crapkit: not found`. The section takes out the hook and the merge driver first, then the
   files crapkit wrote, then the package and the plugins, with each gate route's pieces and
   each installer's removal line.
+- An override or `digest --alert` with no `alert_command` now prints a line to paste:
+  `alert_command = "cat >> .crapkit/alerts.log"`, and on Windows, whose cmd.exe has no
+  `cat`, `alert_command = 'findstr "^" >> .crapkit/alerts.log'`. The configuration and
+  ratchet pages give both. The refusal named the key and no value, and no page showed
+  one.
 - The Dockerfile header and the Docker section of agent-json.md give
   `--user "$(id -u):$(id -g)"`. On a Linux host whose uid is not 1000 the image still
   answers, but it cannot save its churn and coupling caches under `.crapkit/`, so every
