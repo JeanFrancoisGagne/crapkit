@@ -19,6 +19,8 @@ CHECKS = [
      "pytest": [_PACKET + "test_mcp_equals_cli.py"]},
     {"name": "the wheel diff's moved-row map and xplat rule", "seconds": 8,
      "pytest": [_PACKET + "test_wheel_diff_tool.py"]},
+    {"name": "exports noted for the cross-platform receipts", "seconds": 1,
+     "pytest": [_PACKET + "test_xplat_digest.py"]},
     {"name": "two runs normalize to one golden", "seconds": 15, "tiers": ["nightly"],
      "pytest": [_PACKET + "test_normalized_twice.py"]},
 ]

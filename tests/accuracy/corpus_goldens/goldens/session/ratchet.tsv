@@ -1,0 +1,35 @@
+# crapkit-analysis=11 lizard=1.24.0
+# crapkit-keys=1
+path	long_name	crap
+src/native/matcher.rs	weight kind : & str	7.0000
+src/py/bom.py	count_words( text )	12.0000
+src/py/cr_only.py	normalize( text , strip )	12.0000
+src/py/crlf.py	count_words( text )	12.0000
+src/py/grades.py	curve( scores , mode , floor , ceiling , skip_none )	10.3704
+src/py/grades.py	pick( a , b )	12.0000
+src/py/nested.py	unused_branchy( flag , other )	30.0000
+src/py/oneline.py	clamp( value , low , high )	12.0000
+src/py/signatures.py	__init__( self , args , bufsize = - 1 , executable = None , stdin = None , stdout = None , stderr = None , preexec_fn = None , close_fds = True , shell = False , cwd = None , env = None , universal_newlines = None , startupinfo = None , creationflags = 0 , restore_signals = True , start_new_session = False , pass_fds = ( )	19.1250
+src/py/signatures.py	make( name , * , bases = ( )	8.1250
+src/py/twins.py	helper( values )	12.0000
+src/py/twins.py	run( self , mode = "fast" )	6.7969
+src/py/untested.py	orphan( a , b , c )	20.0000
+src/web/Counter.vue	tone ( count )	6.7969
+src/web/arrows.js	dispatch ( event )	8.1250
+src/web/arrows.js	down ( x )	12.0000
+src/web/arrows.js	up ( x )	12.0000
+src/web/esm.mjs	retry ( fn , times )	12.0000
+src/web/nullish.ts	firstSet ( a , b , c )	13.1250
+src/web/nullish.ts	withDefaults ( options port host null )	8.1250
+vendor/cjson/cJSON_Utils.c	apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)	37.0000
+vendor/cjson/cJSON_Utils.c	compare_json( cJSON * a , cJSON * b , const cJSON_bool case_sensitive)	19.0000
+vendor/cjson/cJSON_Utils.c	compare_pointers( const unsigned char * name , const unsigned char * pointer , const cJSON_bool case_sensitive)	17.0000
+vendor/cjson/cJSON_Utils.c	create_patches( cJSON * const patches , const unsigned char * const path , cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)	20.0000
+vendor/cjson/cJSON_Utils.c	sort_list( cJSON * list , const cJSON_bool case_sensitive)	21.0000
+vendor/gson/ISO8601Utils.java	ISO8601Utils::parse( String date , ParsePosition pos)	29.0000
+vendor/ky/merge.ts	appendSearchParameters ( target , source )	17.0000
+vendor/ky/merge.ts	deepMergeInternal ( isRoot , sources Array )	38.0000
+vendor/nvm/install.sh	install_nvm_from_git()	18.0000
+vendor/nvm/install.sh	nvm_do_install()	29.0000
+vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	29.0000
+vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	18.0000

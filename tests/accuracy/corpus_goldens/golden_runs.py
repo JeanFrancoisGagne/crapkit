@@ -289,6 +289,7 @@ def _session(work: Path, run: corpus_run.CorpusRun) -> dict:
     codes.update(_mcp(driver, outputs, raw))
     _accept_legacy(root)
     codes.update({name: _record(driver, outputs, name, argv) for name, argv in PREPARE})
+    shutil.copyfile(root / "crapkit-ratchet.tsv", outputs / "ratchet.tsv")
     _edit(root)
     codes.update({name: _record(driver, outputs, name, argv) for name, argv in JUDGE})
     codes["pr-comment.md"] = comment(outputs, run.outputs / "coverage.json",
