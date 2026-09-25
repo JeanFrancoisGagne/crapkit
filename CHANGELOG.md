@@ -53,7 +53,10 @@ Two of the source reads below move function keys and scores, so the analysis ver
   resolves as the OS spelled it, so under a checkout directory named in Latin-1 it lands
   inside the repo. An override sends its alert and stores all three audit records, where the
   store write failed after the alert had gone out; a lane run on such a host or under such
-  a directory takes its output lock.
+  a directory takes its output lock. A pytest-cov lane there still fails, since
+  coverage.py's own combine cannot store such a path, and the failure line now names the
+  directory or the host name and the rename; it called the shard coverage.py left what a
+  killed parallel run leaves and handed over a `coverage combine` that fails the same way.
 - A junit report declared ISO-8859-1 or written as UTF-16 is read as it declares, in
   `coverage`, `verify`, `verify --reuse-artifacts`, the flake retest and `doctor --tune`.
   Each ended with a UnicodeDecodeError.

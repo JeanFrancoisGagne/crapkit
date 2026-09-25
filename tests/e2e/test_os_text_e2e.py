@@ -257,6 +257,40 @@ def test_every_command_answers_the_same_under_any_directory_name(tmp_path, paren
     assert _commands_under(tmp_path / parent) == _commands_under(tmp_path / "ascii")
 
 
+PYTEST_COV_TOML = (b'[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n\n'
+                   b'[[lane]]\nname = "unit"\n'
+                   b'command = "python -m pytest -q -p no:cacheprovider --cov=src --cov-branch '
+                   b'--cov-report=json:cov.json t_app.py"\n'
+                   b'artifact = "cov.json"\nparser = "coveragepy"\nscopes = ["src"]\nfull_suite = false\n')
+PYTEST_COV_TEST = b"import sys\nsys.path.insert(0, 'src')\nimport app\n\n\ndef test_pick():\n    assert app.pick('a') == 1\n"
+NEEDS_PYTEST_COV = pytest.mark.skipif(not LINUX or not shutil.which("python"),
+                                      reason="a Latin-1 directory exists only on a POSIX file system, and the "
+                                             "lane runs `python -m pytest --cov` from PATH")
+
+
+@NEEDS_PYTEST_COV
+@pytest.mark.parametrize("parent", [LATIN1, "café"], ids=["dir-invalid-utf8", "dir-valid-accent"])
+def test_a_pytest_cov_lane_under_a_latin1_directory_names_the_rename(tmp_path, parent):
+    """coverage.py stores every measured path as UTF-8, so under a Latin-1
+    parent its combine fails and leaves a shard. crapkit called that shard what
+    a killed parallel run leaves and handed over a `coverage combine` that fails
+    the same way (utf8-author shape-31); it now names the directory."""
+    pytest.importorskip("pytest_cov")
+    repo = repository(tmp_path / parent / "repo")
+    commit(repo, {b"crapkit.toml": PYTEST_COV_TOML, b".gitignore": b".crapkit/\ncov.json\n.coverage*\n",
+                  b"t_app.py": PYTEST_COV_TEST, b"src/app.py": APP})
+
+    res = run_cli(repo, "coverage")
+
+    if parent == LATIN1:
+        assert res.returncode == 5, shown(res)
+        assert "caf\\xe9/repo holds bytes that are not UTF-8" in res.stderr, shown(res)
+        assert "Rename it to UTF-8 and run the lane again" in res.stderr, shown(res)
+        assert "killed parallel run" not in res.stderr, shown(res)
+    else:
+        answered(res)
+
+
 # --- crapkit's own output: cli/parser._reconfigure_streams ---------------------
 #
 # utf8-author-shape-21, -boundary-21 and -history-14, all green on both trees.

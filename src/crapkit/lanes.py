@@ -29,7 +29,7 @@ from .coverage_istanbul import FnCoverage
 from .coverage_format import lane_format
 from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
-from .gitpaths import shown
+from .gitpaths import readable, shown
 from .lane_command import launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
 from .textcodec import os_bytes
@@ -268,12 +268,32 @@ def _shard_hint(root: Path, lane: Lane) -> str:
     shards = sorted(shard_dir.glob(".coverage.*"))
     if not shards:
         return ""
+    unreadable = _unreadable_shard_name(shard_dir, shards[0])
+    if unreadable:
+        return unreadable
     target = Path(os.path.relpath(root / lane.artifact, shard_dir)).as_posix()
     noun, verb = ("shard", "sits") if len(shards) == 1 else ("shards", "sit")
     return (f"; {len(shards)} coverage {noun} ({shards[0].name}, ...) {verb} in "
             f"{shard_dir}, which is what a killed parallel run leaves behind: "
             f"`coverage combine && coverage json -o {target}` there, then a "
             "re-run with --reuse-artifacts, scores what that suite did measure")
+
+
+def _unreadable_shard_name(shard_dir: Path, shard: Path) -> str:
+    """Why coverage.py left shards and no report, when a name it stores holds
+    bytes that are not UTF-8: the directory it measured under, or the host name
+    it puts in each shard's name. coverage.py keeps every measured path as UTF-8
+    text, so its combine fails there, and `coverage combine` by hand fails the
+    same way; the rename is the fix, not the killed-run recipe."""
+    if not readable(str(shard_dir)):
+        named = f"the directory {shown(str(shard_dir))}"
+    elif not readable(shard.name):
+        named = f"this host's name, which coverage.py puts in each shard's name ({shown(shard.name)})"
+    else:
+        return ""
+    return (f"; coverage.py cannot combine the shards it left in {shown(str(shard_dir))}: {named} "
+            "holds bytes that are not UTF-8, and coverage.py stores every path as UTF-8. "
+            "Rename it to UTF-8 and run the lane again")
 
 
 def _no_artifact_head(root: Path, lane: Lane, stale: list[str], reuse: bool = False) -> str:
@@ -338,7 +358,7 @@ def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | 
     hint = f"; last output: {tail}" if tail else ""
     raise UnwrittenArtifact(
         f"lane {lane.name!r} {_no_artifact_head(root, lane, list(refused), reuse)}{detail}"
-        f"; lane log: {log_path}{hint}{_missing_plugin_hint(tail, lane)}"
+        f"; lane log: {shown(str(log_path))}{hint}{_missing_plugin_hint(tail, lane)}"
         f"{_shard_hint(root, lane)}", refused)
 
 

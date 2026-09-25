@@ -1536,6 +1536,16 @@ report that looks exactly like a whole run, and taking that for a full measureme
 the crashed-worker check above refuses. Whether a half-run is worth scoring is your call,
 and `--reuse-artifacts` is where you make it.
 
+Shards left under a directory whose name is not UTF-8, or named for a host whose name is
+not, come from a run that was not killed: coverage.py stores every measured path as UTF-8
+text, so its own combine failed with a `UnicodeEncodeError`, and a `coverage combine` by
+hand fails the same way. The refusal names the directory or the host name, with each byte
+that is not UTF-8 as `\xNN`, instead of the recipe:
+
+```
+crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/coverage.json (command exit 1); lane log: /home/ren\xe9/repo/.crapkit/lane-py.log; last output: ...; coverage.py cannot combine the shards it left in /home/ren\xe9/repo: the directory /home/ren\xe9/repo holds bytes that are not UTF-8, and coverage.py stores every path as UTF-8. Rename it to UTF-8 and run the lane again
+```
+
 ---
 
 ## An artifact that measured a different tree

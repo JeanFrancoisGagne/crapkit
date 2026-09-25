@@ -108,8 +108,9 @@ names in the first place.
 A checkout under a directory whose name is not UTF-8, or on a host whose name is
 not, works for every crapkit command: both names are hashed as the bytes the OS
 holds. coverage.py does not: its combine step fails under such a directory or host
-name, so a pytest-cov lane there fails and crapkit reports it as that lane's
-failure, exit 5. Rename the directory or the host to UTF-8.
+name, so a pytest-cov lane there fails at exit 5, and the failure line names the
+directory or the host name and the rename ([lanes](lanes.md#a-killed-run-leaves-its-coverage-shards-behind)).
+Rename the directory or the host to UTF-8.
 
 Parsed source diffs use Crapkit's own Git settings. Display preferences, external
 diff commands and textconv do not change attribution. A supported source file
