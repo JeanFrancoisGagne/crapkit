@@ -8,12 +8,15 @@ destination; a copy never moves a mark. hand_renames.tsv applies those three
 conditions by hand to the moves in RENAME_MOVES; nightly, pygit2's own rename
 detection (find_similar at 50 percent) and a parse of each file's functions
 apply them again. The marks are read with oracles/marks_history_walk.py's
-reader. This file imports no crapkit.
+reader. Across surfaces, the pre-commit hook, `rescore --gate` and `verify`
+each pardon a touched function whose mark followed it and gate the rest. This
+file imports no crapkit.
 """
 from __future__ import annotations
 
 import ast
 from pathlib import Path
+import re
 import shutil
 
 import pytest
@@ -74,6 +77,68 @@ def test_marks_follow_the_documented_renames(make_repo):
     moved(built, driver)
 
     assert marks(built.root) == history_hand.renamed_marks()
+
+
+# The files that hold a gated function after the moves; src/c2.py's fc has no branch.
+TOUCHED = ("src/moved/a.py", "src/b.py", "src/b_copy.py", "src/d2.py", "src/e2.py")
+_HOOK_LINE = re.compile(r"^\s+ccn\s+\d+\s+(\S+):\d+\s+(\w+)\(", re.MULTILINE)
+
+
+def _touch(root: Path) -> None:
+    """Every function in TOUCHED returns another string: its branches stay as they were."""
+    for path in TOUCHED:
+        target = root / path
+        target.write_bytes(re.sub(rb"return '\w+'", b"return 'touched'", target.read_bytes()))
+
+
+def _mccabe(node: ast.FunctionDef) -> int:
+    """McCabe's number of a function with no boolean operators: 1 plus its ifs."""
+    return 1 + sum(isinstance(inner, ast.If) for inner in ast.walk(node))
+
+
+def _over_ceiling(root: Path) -> set[tuple[str, str]]:
+    """{(path, function)} in TOUCHED whose McCabe number passes the target of 3."""
+    found = set()
+    for path in TOUCHED:
+        tree = ast.parse((root / path).read_bytes())
+        found |= {(path, node.name) for node in ast.walk(tree)
+                  if isinstance(node, ast.FunctionDef) and _mccabe(node) > 3}
+    return found
+
+
+def _rescore_gated(driver: drive.Driver) -> set[tuple[str, str]]:
+    result = driver.run("rescore", *TOUCHED, "--gate", "--json")
+    assert result.code in (0, 6), result.stdout + result.stderr
+    return {(b["path"], b["function"].split("(")[0]) for b in result.json()["gate"]["breaches"]}
+
+
+def _hook_gated(built: repos.Built, driver: drive.Driver) -> set[tuple[str, str]]:
+    repos.git(built.root, "add", "--", *TOUCHED)
+    result = driver.run("hook-precommit")
+    assert result.code in (0, 6), result.stdout + result.stderr
+    return set(_HOOK_LINE.findall(result.stdout + result.stderr))
+
+
+def _verify_gated(driver: drive.Driver) -> set[tuple[str, str]]:
+    result = driver.run("verify", "--no-tighten", "--json")
+    assert result.code in (0, 6), result.stdout + result.stderr
+    return {(v["path"], v["key_name"].split("(")[0]) for v in result.json()["gate_violations"]}
+
+
+def test_every_gate_reads_the_followed_marks(make_repo):
+    """After prune follows the renames, a touched function over the ceiling is
+    pardoned at the hook, `rescore --gate` and `verify` exactly when its mark
+    followed it (hand_renames.tsv): the copy's fb and the renamed fe_new are
+    gated at all three, and the moved fa, ga, fd and gd at none."""
+    built, driver, _ = seeded(make_repo, specs.RENAMES)
+    moved(built, driver)
+    _touch(built.root)
+    expected = _over_ceiling(built.root) - history_hand.renamed_marks()
+
+    gated = (_rescore_gated(driver), _hook_gated(built, driver), _verify_gated(driver))
+
+    assert gated == (expected,) * 3
+    assert expected == {("src/b_copy.py", "fb"), ("src/e2.py", "fe_new")}
 
 
 def test_a_root_below_the_git_top_follows_a_rename(make_repo):
