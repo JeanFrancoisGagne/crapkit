@@ -191,18 +191,20 @@ def _assign(functions, items, owner) -> dict[str, list]:
     return owned
 
 
+def _all_and_hit(owned: list) -> tuple[tuple, tuple]:
+    """(every item, the items taken or run), each sorted."""
+    return (tuple(sorted(item for item, _ in owned)),
+            tuple(sorted(item for item, hit in owned if hit)))
+
+
 def _istanbul_file(path: str, data: dict, rule: str) -> list[Counts]:
     functions = _functions(data)
     owner = OWNERS[rule]
     arms = _assign(functions, _branch_arms(data), owner)
     stmts = _assign(functions, _statements(data), owner)
     calls = data.get("f", {})
-    return [Counts(path, fn.name, int(fn.start[0]), fn.last_line,
-                   tuple(sorted(label for label, _ in arms[fn.index])),
-                   tuple(sorted(label for label, taken in arms[fn.index] if taken)),
-                   tuple(sorted(line for line, _ in stmts[fn.index])),
-                   tuple(sorted(line for line, ran in stmts[fn.index] if ran)),
-                   calls.get(fn.index, 0) > 0)
+    return [Counts(path, fn.name, int(fn.start[0]), fn.last_line, *_all_and_hit(arms[fn.index]),
+                   *_all_and_hit(stmts[fn.index]), calls.get(fn.index, 0) > 0)
             for fn in functions]
 
 

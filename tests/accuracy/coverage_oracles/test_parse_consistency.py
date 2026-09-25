@@ -25,20 +25,30 @@ from crapkit.coverage_py import parse_coveragepy_both_file
 REPORTS = probe_repo.RECORDED / "coveragepy-reports-7.16.1"
 
 
+def _fn(rest: str, functions: dict, arms: list) -> None:
+    start, end, name = rest.split(",", 2)
+    functions[name] = [int(start), int(end), 0]
+
+
+def _fnda(rest: str, functions: dict, arms: list) -> None:
+    count, name = rest.split(",", 1)
+    functions[name][2] = int(count)
+
+
+def _brda(rest: str, functions: dict, arms: list) -> None:
+    parts = rest.split(",")
+    arms.append((int(parts[0]), parts[-1] not in ("-", "0")))
+
+
+LCOV_TAGS = {"FN": _fn, "FNDA": _fnda, "BRDA": _brda}
+
+
 def _lcov(text: str) -> dict:
     """{name: (start, end, calls, [(line, taken)])} from one SF record."""
     functions, arms = {}, []
     for line in text.splitlines():
         tag, _, rest = line.partition(":")
-        if tag == "FN":
-            start, end, name = rest.split(",", 2)
-            functions[name] = [int(start), int(end), 0]
-        elif tag == "FNDA":
-            count, name = rest.split(",", 1)
-            functions[name][2] = int(count)
-        elif tag == "BRDA":
-            parts = rest.split(",")
-            arms.append((int(parts[0]), parts[-1] not in ("-", "0")))
+        LCOV_TAGS.get(tag, lambda *_: None)(rest, functions, arms)
     return {name: (*span, _arms_in(functions, span, arms)) for name, span in functions.items()}
 
 

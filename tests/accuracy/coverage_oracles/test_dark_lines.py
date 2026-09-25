@@ -84,11 +84,13 @@ def test_dead_lines_are_the_statements_the_driver_never_ran(producer, scenario):
 
 # --- 2. the spans next-item and explain read ----------------------------------------------------
 
-def _in_span_expected(probe_run, slot, dark: dict) -> dict:
+def _measured_rows(slot) -> list:
     rows = ground_table.rows_for(slot.producer, slot.scenario, slot.probes)
-    return {(row.path, row.start): sorted(line for line in dark.get(row.path, ())
-                                          if row.start <= line <= row.end)
-            for row in rows if row.modelled and not row.unmeasured}
+    return [row for row in rows if row.modelled and not row.unmeasured]
+
+
+def _in_span(dark: dict, row) -> list[int]:
+    return sorted(line for line in dark.get(row.path, ()) if row.start <= line <= row.end)
 
 
 def _load_uncovered(root):
@@ -96,26 +98,22 @@ def _load_uncovered(root):
     return UNCOVERED.load_uncovered(root, CONFIG.load_config_text(text, root=root))
 
 
+def _wrong_spans(uncovered, slot) -> list[tuple]:
+    """(function, crapkit's lines, the hand lines) wherever they differ."""
+    dark = hand_dark(slot.producer, slot.scenario)
+    found = ((row, uncovered.in_span(f"{slot.prefix}/{row.path}", row.start, row.end))
+             for row in _measured_rows(slot))
+    return [(slot.producer, slot.scenario, row.function, got, _in_span(dark, row))
+            for row, got in found if got != _in_span(dark, row)]
+
+
 @pytest.mark.process
 def test_every_function_gets_the_dark_lines_inside_its_span(probe_run):
     uncovered = _load_uncovered(probe_run.root)
-    wrong = []
-    for slot in probe_run.slots:
-        if slot.producer not in ground_table.FAMILIES:
-            continue
-        expected = _in_span_expected(probe_run, slot, hand_dark(slot.producer, slot.scenario))
-        got = {key: uncovered.in_span(f"{slot.prefix}/{key[0]}", key[1], _end(slot, key))
-               for key in expected}
-        wrong += [(slot.producer, slot.scenario, key, got[key], lines)
-                  for key, lines in expected.items() if got[key] != lines]
+    documented = [slot for slot in probe_run.slots if slot.producer in ground_table.FAMILIES]
 
     assert uncovered.note == ""
-    assert wrong == []
-
-
-def _end(slot, key) -> int:
-    rows = ground_table.rows_for(slot.producer, slot.scenario, slot.probes)
-    return next(row.end for row in rows if (row.path, row.start) == key)
+    assert [wrong for slot in documented for wrong in _wrong_spans(uncovered, slot)] == []
 
 
 # --- 3. D6: the lcov line rule ------------------------------------------------------------------
@@ -187,8 +185,11 @@ def folded_model(lanes: list[dict]) -> dict:
     """docs/agent-json.md#uncovered_lines-null-is-not-: a line is dark when no
     lane that measured its file ran it; a lane silent on a file says nothing."""
     paths = {path for lane in lanes for path in lane}
-    return {path: set.intersection(*(set(lane[path]) for lane in lanes if path in lane))
-            for path in paths}
+    return {path: set.intersection(*_measuring(lanes, path)) for path in paths}
+
+
+def _measuring(lanes: list[dict], path: str) -> list[set]:
+    return [set(lane[path]) for lane in lanes if path in lane]
 
 
 @given(st.lists(LANE, min_size=1, max_size=4), st.randoms(use_true_random=False))

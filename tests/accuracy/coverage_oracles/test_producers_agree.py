@@ -45,13 +45,13 @@ def test_crapkit_attributes_every_recording_by_the_documented_line_rule(path):
     assert _crapkit_counts(path) == _table_counts(path)
 
 
+def _negative_count(data: dict) -> int:
+    return sum(1 for hits in data.get("b", {}).values() for value in hits if value < 0)
+
+
 def _negatives(artifact: dict) -> dict[str, int]:
-    found = {}
-    for key, data in artifact.items():
-        count = sum(1 for hits in data.get("b", {}).values() for value in hits if value < 0)
-        if count:
-            found[key] = count
-    return found
+    counts = {key: _negative_count(data) for key, data in artifact.items()}
+    return {key: count for key, count in counts.items() if count}
 
 
 def test_negative_derived_counters_clamp_to_not_taken(capsys):
@@ -114,6 +114,13 @@ def test_crapkit_scores_the_providers_alike(probe_run, scenario):
 
 # --- raw v8-to-istanbul is not the model ---------------------------------------------------------
 
+def _off(row: ground_table.Truth, scored: dict) -> bool:
+    """A measured row, other than the v8-hinted one, whose score parts from the table."""
+    if row.unmeasured or row.function == "ignoredV8":
+        return False
+    return scored[(row.path, row.start)].cov != float(ground_table.expected(row))
+
+
 def _off_truth(probe_run, producer: str) -> int:
     """How many modelled functions crapkit scores away from the ground truth."""
     off = 0
@@ -121,8 +128,7 @@ def _off_truth(probe_run, producer: str) -> int:
         scored = probe_run.scored(producer, scenario)
         rows = ground_table.rows_for("vitest-istanbul-5.0.1", scenario,
                                      probe_repo.PRODUCERS[producer][1])
-        off += sum(1 for row in rows if not row.unmeasured and row.function != "ignoredV8"
-                   and scored[(row.path, row.start)].cov != float(ground_table.expected(row)))
+        off += sum(1 for row in rows if _off(row, scored))
     return off
 
 

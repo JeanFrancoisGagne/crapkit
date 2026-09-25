@@ -130,12 +130,16 @@ def test_nonfinite_refuses(tmp_path):
 
 def _admitted(value) -> bool:
     """docs/lanes.md#what-the-istanbul-parser-reads: a nonnegative integer, an
-    integral JSON number such as 1.0 included; never a boolean or a fraction."""
-    if isinstance(value, bool) or value is None:
-        return value is None
-    if isinstance(value, float):
-        return math.isfinite(value) and value.is_integer() and value >= 0
-    return isinstance(value, int) and value >= 0
+    integral JSON number such as 1.0 included; never a boolean or a fraction.
+    None stands for a count the artifact leaves out."""
+    return ADMIT.get(type(value), lambda _: False)(value)
+
+
+def _integral_float(value: float) -> bool:
+    return math.isfinite(value) and value.is_integer() and value >= 0
+
+
+ADMIT = {type(None): lambda _: True, int: lambda value: value >= 0, float: _integral_float}
 
 
 def _valid(pair) -> bool:
@@ -224,7 +228,13 @@ def verdict(root: Path, keys: list[str], scope_path: str) -> str:
     """docs/lanes.md#an-artifact-that-measured-a-different-tree, as a table."""
     if any(_reaches(key.replace("\\", "/"), scope_path) for key in keys):
         return "admitted"
-    escaped = [key for key in keys if _escapes(key)]
+    return _unreached_verdict(root, [key for key in keys if _escapes(key)])
+
+
+def _unreached_verdict(root: Path, escaped: list[str]) -> str:
+    """No key reaches a scope: an escaping key from another tree refuses, one
+    that is this tree spelled absolutely refuses with the other fix, and
+    in-tree keys only warn."""
     if any(not _under(root, key) for key in escaped):
         return "different tree"
     return "spelled absolutely" if escaped else "warned"

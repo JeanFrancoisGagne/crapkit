@@ -314,20 +314,22 @@ def _record(producer: Producer, root: Path, scenario: str, out: Path) -> None:
     record_one(producer, root, scenario, out, RECORDED / producer.name)
 
 
+ACTIONS = {"record": _record, "check": check_one}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("action", choices=("record", "check"))
     parser.add_argument("--producer", action="append", choices=sorted(PRODUCERS))
     args = parser.parse_args(argv)
     sys.path.append(str(HERE))
-    act = _record if args.action == "record" else check_one
     try:
-        problems = _each(args.producer or sorted(PRODUCERS), act)
+        problems = _each(args.producer or sorted(PRODUCERS), ACTIONS[args.action])
     except ProducerMissing as missing:
         print(f"regenerate: {missing}", file=sys.stderr)
         return 3
     print("\n".join(problems) or f"regenerate: {args.action} ok", file=sys.stderr)
-    return 1 if problems else 0
+    return int(bool(problems))
 
 
 if __name__ == "__main__":

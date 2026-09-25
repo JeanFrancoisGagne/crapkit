@@ -64,12 +64,15 @@ class Slot:
     artifact: Path
 
 
+def _committed() -> list[tuple]:
+    return [(name, scenario, parser, probes, RECORDED / name / f"{scenario}.json")
+            for name, (parser, probes) in PRODUCERS.items() for scenario in SCENARIOS]
+
+
 def slots(live: dict[tuple[str, str], Path] | None = None) -> list[Slot]:
     """Every committed recording, then the live ones, each with its own pNN/."""
-    found = [(name, scenario, parser, probes, RECORDED / name / f"{scenario}.json")
-             for name, (parser, probes) in PRODUCERS.items() for scenario in SCENARIOS]
-    found += [(name, scenario, "coveragepy", PYTHON, path)
-              for (name, scenario), path in sorted((live or {}).items())]
+    found = _committed() + [(name, scenario, "coveragepy", PYTHON, path)
+                            for (name, scenario), path in sorted((live or {}).items())]
     return [Slot(name, scenario, f"p{number:02d}", parser, probes, path)
             for number, (name, scenario, parser, probes, path) in enumerate(found)]
 
@@ -87,12 +90,19 @@ def merged(all_slots: list[Slot], parser: str) -> dict:
     """One artifact holding every slot's recording of one format, keys moved
     under each slot's pNN/. Two lanes read the whole matrix, so the run starts
     two lane commands, not one per recording."""
-    ours = [slot for slot in all_slots if slot.parser == parser]
-    parts = [(slot, json.loads(slot.artifact.read_bytes())) for slot in ours]
     if parser == "istanbul":
-        return {k: v for slot, part in parts for k, v in _rekeyed(part, slot.prefix, True).items()}
-    files = {k: v for slot, part in parts for k, v in _rekeyed(part["files"], slot.prefix, False).items()}
-    return {"meta": {"format": 3, "branch_coverage": True}, "files": files}
+        return _moved(all_slots, parser, lambda part: part)
+    return {"meta": {"format": 3, "branch_coverage": True},
+            "files": _moved(all_slots, parser, lambda part: part["files"])}
+
+
+def _moved(all_slots: list[Slot], parser: str, members) -> dict:
+    """Every file member of the parser's recordings, under its slot's pNN/."""
+    moved: dict = {}
+    for slot in (slot for slot in all_slots if slot.parser == parser):
+        part = members(json.loads(slot.artifact.read_bytes()))
+        moved.update(_rekeyed(part, slot.prefix, parser == "istanbul"))
+    return moved
 
 
 def _languages(slot: Slot) -> list[str]:

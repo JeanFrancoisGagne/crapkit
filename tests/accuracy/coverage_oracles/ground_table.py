@@ -76,13 +76,21 @@ def load(language: str) -> list[Truth]:
     return [_truth(dict(zip(header, line.split("\t")))) for line in lines[1:]]
 
 
+def _describes(row: Truth, scenario: str, probes: tuple, family: str) -> bool:
+    return (row.scenario, row.path in probes, row.producers in ("all", family)) == (
+        scenario, True, True)
+
+
 def rows_for(producer: str, scenario: str, probes: tuple) -> list[Truth]:
     """The rows that describe one recording: its scenario, its files, its family."""
     family = FAMILIES[producer]
+    return [row for row in _tables(probes) if _describes(row, scenario, probes, family)]
+
+
+def _tables(probes: tuple) -> list[Truth]:
+    """Every row of the tables of the probes' languages."""
     languages = sorted({probe.split("/")[0] for probe in probes})
-    rows = [row for language in languages for row in load(language)]
-    return [row for row in rows if row.scenario == scenario and row.path in probes
-            and row.producers in ("all", family)]
+    return [row for language in languages for row in load(language)]
 
 
 def expected(row: Truth) -> Fraction:

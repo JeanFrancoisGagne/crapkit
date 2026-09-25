@@ -78,23 +78,40 @@ def _hand(row: ground_table.Truth) -> tuple:
     return set(row.arms), set(row.arms_taken), set(row.stmts), set(row.stmts_run)
 
 
-def _mismatch(producer: str, row: ground_table.Truth, found: dict) -> str | None:
-    counts = found.get(_key(producer, row))
-    if row.arms == ("absent",):
-        return None if counts is None else f"{row.path}:{row.function} is in the artifact"
+def _absent(row: ground_table.Truth, counts) -> str | None:
+    return None if counts is None else f"{row.path}:{row.function} is in the artifact"
+
+
+def _excluded(row: ground_table.Truth, counts) -> str | None:
+    kept = counts is not None and bool(counts.arms or counts.stmts)
+    return f"{row.function} kept lines" if kept else None
+
+
+def _counted(row: ground_table.Truth, counts) -> str | None:
     if counts is None:
         return f"{row.path}:{row.function} ({row.scenario}) is missing from the artifact"
-    if row.arms == ("excluded",):
-        return None if not (counts.arms or counts.stmts) else f"{row.function} kept lines"
     hand, stated = _hand(row), _stated(counts)
     return None if hand == stated else f"{row.path}:{row.function} ({row.scenario}) {hand} != {stated}"
 
 
+MISMATCH = {("absent",): _absent, ("excluded",): _excluded}
+
+
+def _mismatch(producer: str, row: ground_table.Truth, found: dict) -> str | None:
+    return MISMATCH.get(row.arms, _counted)(row, found.get(_key(producer, row)))
+
+
+def _checked_rows(producer: str, scenario: str) -> list[ground_table.Truth]:
+    """The modelled rows, less CO3's: the v8 provider counts a default
+    parameter's arm as the function's own (ruling CO3)."""
+    rows = ground_table.rows_for(producer, scenario, PROBES[producer])
+    return [row for row in rows if row.modelled and _ruling(producer, row) != "CO3"]
+
+
 def _mismatches(producer: str, scenario: str, artifact: dict) -> list[str]:
     found = _producer_rows(producer, artifact)
-    rows = [row for row in ground_table.rows_for(producer, scenario, PROBES[producer])
-            if row.modelled and _ruling(producer, row) != "CO3"]
-    return [line for line in (_mismatch(producer, row, found) for row in rows) if line]
+    lines = (_mismatch(producer, row, found) for row in _checked_rows(producer, scenario))
+    return [line for line in lines if line]
 
 
 def _recorded(producer: str, scenario: str) -> dict:
@@ -126,25 +143,35 @@ def test_the_def_line_layouts_read_the_same_called_or_not():
     """README.md#remedy-what-to-do-about-it: coverage.py cannot show a call to a
     one-line def or a body on its signature's last line, which is why crapkit
     floors them. The recordings bear it out: called and idle state one thing."""
-    for producer in [name for name in RECORDED if ground_table.FAMILIES[name] == "coveragepy"]:
-        rows = {scenario: {row.name: row for row in counts_table.coveragepy_rows(
-            _recorded(producer, scenario))} for scenario in probe_repo.SCENARIOS}
-        assert (rows["call"]["body_on_signature"].stmts_run
-                == rows["idle"]["body_on_signature"].stmts_run == ())
-        assert rows["call"]["one_line"].stmts_run == rows["idle"]["one_line"].stmts_run == (85,)
+    for producer in PYTHON_RECORDED:
+        call, idle = (_named_rows(producer, scenario) for scenario in probe_repo.SCENARIOS)
+        assert call["body_on_signature"].stmts_run == idle["body_on_signature"].stmts_run == ()
+        assert call["one_line"].stmts_run == idle["one_line"].stmts_run == (85,)
+
+
+PYTHON_RECORDED = [name for name in RECORDED if ground_table.FAMILIES[name] == "coveragepy"]
+
+
+def _named_rows(producer: str, scenario: str) -> dict:
+    return {row.name: row for row in counts_table.coveragepy_rows(_recorded(producer, scenario))}
 
 
 # --- 3: crapkit's score agrees with the ground truth ----------------------------------------------
+
+def _param(producer: str, row: ground_table.Truth):
+    """One case, a strict xfail when its rulings row is an open defect."""
+    ruling = _ruling(producer, row)
+    marks = rulings.applies(ruling) if ruling else ()
+    marks = marks if isinstance(marks, pytest.MarkDecorator) else ()
+    return pytest.param(producer, row, ruling, marks=marks,
+                        id=f"{producer}-{row.scenario}-{row.path}-{row.function}")
+
 
 def _cases():
     for producer in [*RECORDED, LIVE]:
         for scenario in probe_repo.SCENARIOS:
             for row in ground_table.rows_for(producer, scenario, PROBES[producer]):
-                ruling = _ruling(producer, row)
-                marks = rulings.applies(ruling) if ruling else ()
-                marks = marks if isinstance(marks, pytest.MarkDecorator) else ()
-                yield pytest.param(producer, row, ruling, marks=marks,
-                                   id=f"{producer}-{scenario}-{row.path}-{row.function}")
+                yield _param(producer, row)
 
 
 def _relation(scored) -> str:
