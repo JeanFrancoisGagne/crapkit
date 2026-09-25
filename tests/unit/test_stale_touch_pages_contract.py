@@ -850,9 +850,16 @@ def test_both_lane_kinds_prove_the_crapkit_version(tmp_path, inputs):
     assert "A lane's proof holds the crapkit version, with `inputs` or without" in _prose(_release())
 
 
-def test_the_changelog_names_the_0_8_0_library_name_that_is_gone():
-    assert not hasattr(lanes, "staleness_reads") and hasattr(_FRESHNESS, "Freshness")
-    assert "`lanes.staleness_reads`, which 0.8.0 exported, is gone" in _prose(_release())
+@pytest.mark.parametrize("page", ["CHANGELOG.md", "docs/upgrading.md"])
+def test_the_pages_keep_the_0_8_0_staleness_reads_as_a_shim_and_name_its_replacement(page):
+    """Q11: a 0.8.0 library name stays through 0.8.x as a warning shim. A page
+    saying it is gone sends a caller to rewrite code that still runs."""
+    text = _prose(_release() if page == "CHANGELOG.md" else _upgrading_freshness())
+
+    assert callable(lanes.staleness_reads) and hasattr(_FRESHNESS.Freshness, "__enter__")
+    assert "`lanes.staleness_reads` keeps" in text or "`lanes.staleness_reads` stays" in text
+    assert "lane_freshness.Freshness(root, lanes, scope_paths)" in text
+    assert "staleness_reads` is gone" not in text and "exported, is gone" not in text
 
 
 @pytest.mark.parametrize("page", ["CHANGELOG.md", "docs/upgrading.md"])
@@ -982,7 +989,7 @@ def test_the_upgrade_notes_say_a_0_8_0_stamp_is_judged_by_its_commit_until_the_l
     notes = _upgrading_freshness()
 
     assert "A stamp 0.8.0 wrote records only its commit" in notes
-    assert "`lanes.staleness_reads` is gone, with no shim" in notes
+    assert "`lanes.staleness_reads` stays through 0.8.x on the same terms" in notes
 
 
 # -- scored_changes is null when crapkit cannot compare, in every payload ---------

@@ -554,6 +554,17 @@ def lane_sources_unchanged(root: Path, lane: Lane, scope_paths: dict, git=None) 
     return not Freshness(root, (lane,), scope_paths, git=git).lines(lane)
 
 
+def staleness_reads(root: Path, lanes, scope_paths: dict, git=None):
+    """Deprecated since 0.8.1 and removed in 0.9: a context whose value
+    `lane_sources_unchanged` takes as `git`, the caller's own GitFacts when it
+    passes one. `lane_freshness.Freshness(root, lanes, scope_paths)` reads the
+    stamp file once for every lane and starts the git reads it needs itself."""
+    warnings.warn("crapkit.lanes.staleness_reads is deprecated and goes in 0.9; use "
+                  "crapkit.lane_freshness.Freshness(root, lanes, scope_paths) as a context instead",
+                  DeprecationWarning, stacklevel=2)
+    return nullcontext(_facts(root, git))
+
+
 def _read_and_parse(lane: Lane, root: Path,
                     artifact_path: Path, dead_lines=None) -> tuple[dict[str, list[FnCoverage]], str]:
     """This lane's coverage, plus the sha256 of the artifact's own bytes.

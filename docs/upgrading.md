@@ -186,8 +186,10 @@ again. Run `crapkit coverage` once after the upgrade to write stamps in the new 
 its bool answer through 0.8.x and warns with a `DeprecationWarning` when called;
 0.9.0 removes it. Read `lane_freshness.Freshness(root, lanes, scope_paths).lines(lane)`
 instead: an empty string means fresh, any other string is the reason.
-`lanes.staleness_reads` is gone, with no shim; `lane_freshness.Freshness` answers what
-it did.
+`lanes.staleness_reads` stays through 0.8.x on the same terms: it warns, and the value
+it yields is what `lane_sources_unchanged` takes as `git`. Replace the `with` block with
+`with lane_freshness.Freshness(root, lanes, scope_paths) as fresh:`, which reads the
+stamp file once for every lane.
 
 **A failed lane's leftover stays refused until new bytes replace it.** When a lane's
 attempt fails and leaves the previous run's artifact in place, `--reuse-artifacts` and

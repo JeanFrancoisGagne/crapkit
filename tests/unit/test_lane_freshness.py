@@ -231,6 +231,34 @@ def test_lane_sources_unchanged_still_answers_and_warns_that_it_goes_in_0_9(tmp_
     assert "goes in 0.9" in str(caught[0].message)
 
 
+def _staleness_read(root: Path, cfg, own_facts: bool):
+    """0.8.0's calling pattern: the reads opened once for every lane, then
+    handed to lane_sources_unchanged, with or without the caller's own facts."""
+    from crapkit import lanes
+    from crapkit.gitio import GitFacts
+
+    git = GitFacts(root) if own_facts else None
+    with lanes.staleness_reads(root, cfg.lanes, cfg.scope_paths, git) as facts:
+        return lanes.lane_sources_unchanged(root, cfg.lanes[0], cfg.scope_paths, facts)
+
+
+@pytest.mark.parametrize("own_facts", [False, True], ids=["reads-of-its-own", "callers-facts"])
+def test_staleness_reads_still_serves_the_0_8_0_pattern_and_warns_that_it_goes_in_0_9(tmp_path, own_facts):
+    root = stale_tree.measure(stale_tree.build(tmp_path / "repo"))
+    cfg = stale_tree.config(root)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fresh = _staleness_read(root, cfg, own_facts)
+        stale_tree.write(root / REL, stale_tree.APP_TS + "// edited\n")
+        moved = _staleness_read(root, cfg, own_facts)
+
+    shim = [str(w.message) for w in caught if "staleness_reads" in str(w.message)]
+    assert (fresh, moved) == (True, False)
+    assert len(shim) == 2 and "goes in 0.9" in shim[0]
+    assert {w.category for w in caught} == {DeprecationWarning}
+
+
 def test_the_lanes_page_quotes_the_reuse_line_a_lane_prints(tmp_path, capsys):
     page = (Path(__file__).resolve().parents[2] / "docs" / "lanes.md").read_text(encoding="utf-8")
     root = stale_tree.measure(stale_tree.build(tmp_path / "repo"))

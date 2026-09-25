@@ -50,10 +50,13 @@
   answer through 0.8.x, and warns with a `DeprecationWarning` when called; 0.9.0 removes
   it. Read `lane_freshness.Freshness(root, lanes, scope_paths).lines(lane)` instead: an
   empty string means the lane's lines are fresh, any other string is the reason they are
-  not. `lanes.staleness_reads`, which 0.8.0 exported, is gone: `lane_freshness.Freshness`
-  answers each lane from one read of the stamp file. `MissingLines` takes an optional
-  third field, `drift`, and `uncovered.lane_views` returns each lane's note with
-  `blackout`, whether it withholds every file's lines.
+  not. `lanes.staleness_reads` keeps its 0.8.0 arguments through 0.8.x too, warns the
+  same way, and yields the value `lane_sources_unchanged` takes as `git`, so the 0.8.0
+  pattern of one `with` block around every lane's call still runs. Use
+  `lane_freshness.Freshness(root, lanes, scope_paths)` as that context instead: it reads
+  the stamp file once for every lane. `MissingLines` takes an optional third field,
+  `drift`, and `uncovered.lane_views` returns each lane's note with `blackout`, whether it
+  withholds every file's lines.
 
 ### `--reuse-unchanged` reuses a lane whose inputs did not move, and reruns one whose inputs did, whatever git's diff skips
 
