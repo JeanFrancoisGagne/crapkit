@@ -33,9 +33,11 @@ def _supports(transactions: list[frozenset], max_len: int) -> Counter:
 def counts(change_sets: list[frozenset]) -> tuple[Counter, Counter]:
     """(commits per file over every commit, shared commits per pair over non-bulk ones)."""
     files = Counter({items[0]: n for items, n in _supports(change_sets, 1).items()})
-    small = [changed for changed in change_sets if len(changed) <= BULK]
-    pairs = Counter({items: n for items, n in _supports(small, 2).items() if len(items) == 2})
-    return files, pairs
+    return files, _pairs(_supports([s for s in change_sets if len(s) <= BULK], 2))
+
+
+def _pairs(itemsets: Counter) -> Counter:
+    return Counter({items: n for items, n in itemsets.items() if len(items) == 2})
 
 
 def rule_confidence(change_sets: list[frozenset], pair: tuple[str, str]) -> float:

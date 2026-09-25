@@ -125,9 +125,16 @@ def test_code_maat_counts_what_crapkit_counts(make_repo, oracle, tmp_path):
     revs, authors = code_maat.revisions(log), code_maat.authors(log)
     assert {path: (s.commits, s.authors) for path, s in stored.items()} == {
         path: (revs[path], authors[path]) for path in revs}
+    assert _predicted(said, small) == _tracked_degrees(built, log)
+
+
+def _predicted(said: list[tuple], small_revs: dict) -> dict:
+    return {files: _predicted_degree(support, small_revs, files) for files, support, _ in said}
+
+
+def _tracked_degrees(built, log) -> dict:
     tracked = coupling_reads.tracked(built.root)
-    degrees = {pair: d for pair, d in code_maat.coupling(log).items() if set(pair) <= tracked}
-    assert {files: _predicted_degree(support, small, files) for files, support, _ in said} == degrees
+    return {pair: d for pair, d in code_maat.coupling(log).items() if set(pair) <= tracked}
 
 
 @pytest.mark.nightly
