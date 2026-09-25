@@ -26,12 +26,11 @@ from pathlib import Path
 import hang_guard
 import pytest
 
-from kit import docsnip, gitmirror, shim
+from kit import gitmirror, shim
 from kit.cells import cell
 from kit.mcp_client import McpClient
-from test_claude_plugin import (TOOLS, cli_venv, doctor_plugin, fence_holding, github, harness_on_path,
-                                measured_repo, old_page, page_lines, plain_repo, rename_table, run_lines,
-                                upgrade_cli)
+from test_claude_plugin import (TOOLS, cli_venv, doctor_plugin, github, harness_on_path, measured_repo, old_lines,
+                                page_lines, plain_repo, rename_table, run_lines, upgrade_cli)
 
 PACKET = "deploy-plugins"
 PLUGIN = "crapkit@crapkit"
@@ -248,8 +247,7 @@ def install_old(box, version: str, cwd: Path) -> gitmirror.Mirror:
     cli_venv(box, spec=f"crapkit=={version}")
     mirror = github(box, at=version)
     harness_on_path(box)
-    readme = old_page(box, mirror, version)
-    run_lines(box, docsnip.commands(fence_holding("README.md", "codex plugin marketplace add", base=readme)), cwd=cwd)
+    run_lines(box, old_lines(box, mirror, version, "codex plugin marketplace add"), cwd=cwd)
     assert codex_version(box) == version
     return mirror
 
@@ -262,11 +260,11 @@ def guide_lines(box) -> list[str]:
     return [line.replace(" PATH", f' "{root}"') if line.endswith(" PATH") else line for line in lines]
 
 
-def run_guide(box, cwd: Path) -> list:
+def run_guide(box, cwd: Path, expect: int | None = 0) -> list:
     """The Codex lines in page order; the doctor line is built after the refresh."""
     lines = page_lines("Plugin and MCP clients", index=1, page="docs/upgrading.md")
-    steps = run_lines(box, lines[:-1], cwd=cwd)
-    return steps + run_lines(box, guide_lines(box)[-1:], cwd=cwd)
+    steps = run_lines(box, lines[:-1], cwd=cwd, expect=expect)
+    return steps + run_lines(box, guide_lines(box)[-1:], cwd=cwd, expect=expect)
 
 
 @cell("lin-up-codex-plugin-0.7.6", channel="Codex marketplace", harness="Codex",

@@ -297,13 +297,17 @@ def test_claude_plugin_fresh_uv_tool_windows(box, candidate, templates):
     fresh_install(box, candidate, templates, uv_tool_cli(box))
 
 
+def old_lines(box, mirror: gitmirror.Mirror, version: str, holding: str) -> list[str]:
+    """The commands of the README fence holding `holding`, as release `version` printed it."""
+    return docsnip.commands(fence_holding("README.md", holding, base=old_page(box, mirror, version)))
+
+
 def install_old_plugin(box, version: str, cwd: Path) -> gitmirror.Mirror:
     """CLI and plugin at release `version`, each from the lines that release printed."""
     cli_venv(box, spec=f"crapkit=={version}")
     mirror = github(box, at=version)
     harness_on_path(box)
-    lines = docsnip.commands(fence_holding("README.md", "claude plugin install", base=old_page(box, mirror, version)))
-    run_lines(box, lines, cwd=cwd)
+    run_lines(box, old_lines(box, mirror, version, "claude plugin install"), cwd=cwd)
     assert installed(box)["version"] == version
     return mirror
 
