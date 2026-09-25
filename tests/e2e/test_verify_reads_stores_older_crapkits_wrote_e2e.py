@@ -13,6 +13,11 @@ nowhere else, so read as a baseline it forgave a later real failure of the same
 test, exit 0, and every baseline after it forgave it too. A coverage run holds
 no retry, so the failure list an older coverage run stored still forgives.
 
+A 0.8.0 verify over a reused junit it could not find passed and stored a
+trusted run with no failure list and no test count. This tree's verify refuses
+that case with exit 5 and stores nothing, but a store 0.8.0 wrote can still hold
+such a run, and every reader walks past it to the run behind it.
+
 The tags come from the git history, which CI's `fetch-depth: 0` checkout
 carries. A shallow or tagless clone skips these tests and says why.
 """
@@ -136,8 +141,30 @@ def junit(repo: Path, *failing: str) -> None:
                                     encoding="utf-8")
 
 
+def passing_junit(repo: Path, tests: int) -> None:
+    """A finished report of `tests` passing cases."""
+    cases = "".join(f'<testcase classname="t" name="c{i}"/>' for i in range(tests))
+    (repo / "junit.xml").write_text(f'<testsuite name="t" tests="{tests}">{cases}</testsuite>',
+                                    encoding="utf-8")
+
+
+def runs(repo: Path) -> list[dict]:
+    return SnapshotStore(repo / ".crapkit" / "crap.sqlite").list_runs()
+
+
 def newest_run(repo: Path) -> dict:
-    return SnapshotStore(repo / ".crapkit" / "crap.sqlite").list_runs()[-1]
+    return runs(repo)[-1]
+
+
+def verify_over_a_deleted_junit_as_0_8_0(repo: Path, tmp_path_factory) -> dict:
+    """0.8.0's verify reuses a junit that is gone, passes, and stores a trusted
+    run whose lane holds neither a failure list nor a test count."""
+    (repo / "junit.xml").unlink()
+    write_as("v0.8.0", repo, tmp_path_factory, "verify", "--reuse-artifacts", "--no-tighten")
+    stored = newest_run(repo)
+    assert stored["kind"] == "verify", stored
+    assert not {"failures", "tests_total"} & set(stored["lanes"]["py"]), stored["lanes"]
+    return stored
 
 
 def version_of(writer: str) -> str:
@@ -208,3 +235,47 @@ def test_a_failure_an_older_coverage_run_recorded_is_still_forgiven(
 
     assert res.returncode == 0, res.stdout + res.stderr
     assert json.loads(res.stdout)["forgiven_failures"] == ["t::c0"]
+
+
+def test_a_failure_behind_a_0_8_0_verify_over_a_deleted_junit_is_still_forgiven(
+        tmp_path, tmp_path_factory):
+    """The 0.8.0 verify is the newest trusted run and recorded no failure list,
+    so this tree reads the list off the coverage run behind it, where t::c0
+    already failed. Read as 'nothing failed', t::c0 was new, exit 8."""
+    repo = build(tmp_path, retest=False)
+    junit(repo, "t::c0")
+    write_as("v0.8.0", repo, tmp_path_factory, "coverage", "--reuse-artifacts")
+    baseline = verify_over_a_deleted_junit_as_0_8_0(repo, tmp_path_factory)
+    junit(repo, "t::c0")
+
+    res = run_cli(repo, "verify", "--reuse-artifacts", "--no-tighten", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    payload = json.loads(res.stdout)
+    assert (payload["baseline_run"], payload["new_failures"]) == (baseline["id"], [])
+    assert payload["forgiven_failures"] == ["t::c0"]
+
+
+@pytest.mark.parametrize(("argv", "line"), [
+    pytest.param(("coverage", "--reuse-artifacts"),
+                 "lane 'py' ran 12 tests, 8 fewer than run {counted}'s 20 (the last trusted "
+                 "run, run {gap}, recorded no test count for it)", id="coverage"),
+    pytest.param(("verify", "--reuse-artifacts", "--no-tighten"),
+                 "warning: lane 'py' runs 8 fewer tests than run {counted} (baseline run {gap} "
+                 "recorded no test count for it)", id="verify"),
+])
+def test_a_drop_behind_a_0_8_0_verify_over_a_deleted_junit_is_still_named(
+        tmp_path, tmp_path_factory, argv, line):
+    """Both suite-size checks compare 12 tests with the 20 the coverage run
+    counted, and name that run and the one that counted nothing. Read as the
+    newest trusted run's count, the missing count hid the drop."""
+    repo = build(tmp_path, retest=False)
+    passing_junit(repo, 20)
+    write_as("v0.8.0", repo, tmp_path_factory, "coverage", "--reuse-artifacts")
+    gap = verify_over_a_deleted_junit_as_0_8_0(repo, tmp_path_factory)["id"]
+    passing_junit(repo, 12)
+
+    res = run_cli(repo, *argv)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert line.format(counted=runs(repo)[0]["id"], gap=gap) in res.stderr, res.stderr
