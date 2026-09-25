@@ -824,6 +824,7 @@ $ crapkit verify --json
   "baseline_commit": "8c780bb18da329dfe039b55d14faa5a6dc9fcb50",
   "baseline_run": 8,
   "changed_files": 1,
+  "changed_paths": ["app/m.py"],
   "commit": "8c780bb18da329dfe039b55d14faa5a6dc9fcb50",
   "committed_findings": 1,
   "diff_uncovered": [],
@@ -851,7 +852,8 @@ $ crapkit verify --json
   "run_id": 9,
   "schema": 1,
   "tool_versions": {"crapkit": "<version>", "lizard": "1.24.0"},
-  "unmarked_over_target": 0
+  "unmarked_over_target": 0,
+  "untracked_in_scope": []
 }
 ```
 
@@ -864,6 +866,8 @@ $ crapkit verify --json
 | `baseline_run`, `baseline_commit` | int, string | What it was measured against. |
 | `commit` | string | The commit the verified tree is at. Equal to `baseline_commit` when you are verifying uncommitted work. |
 | `changed_files` | int | Files in the diff being judged. |
+| `changed_paths` | array of strings | Those files, sorted, since 0.8.1. The text form names the first three on a line under the verdict, `changed files: app/m.py, app/n.py, tests/test_m.py`, then `and N more`. |
+| `untracked_in_scope` | array of strings | Source files inside a scope that git does not track, since 0.8.1. verify's diff and corpus hold git-tracked files only, so these were not judged. The text form warns on stderr, names the first three and says to `git add` them. |
 
 ### Findings
 
@@ -877,7 +881,7 @@ $ crapkit verify --json
 | `overridden` | gate-violation objects an `--override` exempted | none; the run passes |
 | `forgiven_failures` | array of test ids the fresh run and the baseline both failed | none; the text form counts them on the OK line as `(N unchanged failures forgiven, first ID)` |
 | `retried_passes` | array of new failures that passed their [flake retry](lanes.md#flake-retest) | none; the text form names them on the OK line as `(N new failures passed on rerun, first ID)` |
-| `unmarked_over_target` | int: functions over their ceiling that carry no ratchet mark, the standing debt neither the gate (touched functions only) nor the ratchet check (marks only) guards | none; the text form prints one `warning: N function(s) over the ceiling carry no ratchet mark ...` line on stderr when it is not zero, naming `ratchet seed` as the fix |
+| `unmarked_over_target` | int: functions over their ceiling that carry no ratchet mark, the standing debt neither the gate (touched functions only) nor the ratchet check (marks only) guards | none; the text form prints one `warning: N function(s) over the ceiling carry no ratchet mark ...` line on stderr when it is not zero, naming the first three as path and function and `ratchet seed` as the fix |
 
 `key_name` on a gate violation is the ratchet key: the `long_name` when one function in
 the file holds that name, and `long_name#2` for the second function holding it. It is the

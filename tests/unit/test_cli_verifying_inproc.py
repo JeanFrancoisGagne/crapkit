@@ -11,6 +11,7 @@ asserted through it: exit code, stdout, stderr, and what the store and the marks
 file hold afterwards.
 """
 import json
+from pathlib import Path
 
 from cli_inproc_repo import (add_knotty, commit_all, git, istanbul,  # noqa: F401
                              repo, seed_artifacts, template_repo)
@@ -402,6 +403,22 @@ def test_a_verify_run_records_what_each_file_it_scored_held(baselined, capsys):
     recorded = store_of(baselined).run_sources(json.loads(out)["run_id"])
 
     assert recorded and "src/app.ts" in recorded, recorded
+
+
+def _documented_verify_keys() -> set[str]:
+    """The top-level keys of the `crapkit verify --json` sample in docs/agent-json.md."""
+    page = (Path(__file__).resolve().parents[2] / "docs" / "agent-json.md").read_text(
+        encoding="utf-8")
+    sample = page.split("$ crapkit verify --json", 1)[1].split("```json", 1)[1]
+    return set(json.loads(sample.split("```", 1)[0]))
+
+
+def test_the_agent_json_verify_sample_carries_every_key_verify_prints(baselined, capsys):
+    """An agent reads that page as the payload's contract, and `changed_paths`
+    and `untracked_in_scope` reached the README and the changelog first."""
+    _, out, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+
+    assert set(json.loads(out)) == _documented_verify_keys()
 
 
 @pytest.mark.parametrize("reason", ["", "   "])
