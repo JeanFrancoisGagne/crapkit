@@ -63,26 +63,46 @@ READS = (
     ("refusal-scope.json", ("worklist", "--scope", "no-such-scope", "--json")),
 )
 
-# The 12 MCP tools, each with the arguments a call passes, and the CLI argv the
-# docs map it to (docs/agent-json.md "MCP server"). test_mcp_equals_cli compares
-# the pairs; the argv here is written from the docs, not read from mcp_server.py.
+# The 12 MCP tools, each called as docs/agent-json.md ("MCP server") describes
+# its arguments, and the CLI argv that table maps the call to: an array argument
+# becomes one flag per element, a bool adds its flag. (label, tool, arguments,
+# argv); a tool's first call is labelled by its name. test_mcp_equals_cli
+# compares each pair; the argv is written from the docs, not read from
+# mcp_server.py. The last call names no function, so both sides refuse.
 MCP_CALLS = (
-    ("get_next_item", {"top": 3}, ("next-item", "--top", "3")),
-    ("list_worklist", {"top": 4, "scope": ["py"]},
+    ("get_next_item", "get_next_item", {"top": 3}, ("next-item", "--top", "3")),
+    ("list_worklist", "list_worklist", {"top": 4, "scope": ["py"]},
      ("worklist", "--top", "4", "--scope", "py", "--json")),
-    ("list_runs", {}, ("runs", "--json")),
-    ("get_trend", {}, ("trend", "--json")),
-    ("get_function_brief", {"path": "src/py/grades.py", "name": "curve"},
+    ("list_runs", "list_runs", {}, ("runs", "--json")),
+    ("get_trend", "get_trend", {}, ("trend", "--json")),
+    ("get_function_brief", "get_function_brief", {"path": "src/py/grades.py", "name": "curve"},
      ("brief", "src/py/grades.py", "curve", "--json")),
-    ("get_function_history", {"path": "src/py/grades.py", "name": "letter"},
+    ("get_function_history", "get_function_history",
+     {"path": "src/py/grades.py", "name": "letter"},
      ("explain", "src/py/grades.py", "letter", "--json")),
-    ("check_config", {}, ("doctor", "--json")),
-    ("list_coupled_files", {}, ("coupling", "--json")),
-    ("list_duplicate_functions", {}, ("duplication", "--json")),
-    ("get_ratchet_report", {}, ("ratchet", "report", "--json")),
-    ("check_gate", {"path": "src/py/grades.py"}, ("rescore", "--gate", "src/py/grades.py",
-                                                  "--json")),
-    ("list_claims", {}, ("claims", "list", "--json")),
+    ("check_config", "check_config", {}, ("doctor", "--json")),
+    ("list_coupled_files", "list_coupled_files", {}, ("coupling", "--json")),
+    ("list_duplicate_functions", "list_duplicate_functions", {}, ("duplication", "--json")),
+    ("get_ratchet_report", "get_ratchet_report", {}, ("ratchet", "report", "--json")),
+    ("check_gate", "check_gate", {"path": "src/py/grades.py"},
+     ("rescore", "--gate", "src/py/grades.py", "--json")),
+    ("list_claims", "list_claims", {}, ("claims", "list", "--json")),
+    ("get_next_item-arrays", "get_next_item",
+     {"top": 2, "exclude": ["vendor/", "twins"], "scope": ["py", "web"]},
+     ("next-item", "--top", "2", "--exclude", "vendor/", "--exclude", "twins", "--scope", "py",
+      "--scope", "web")),
+    ("list_worklist-scopes", "list_worklist", {"top": 5, "scope": ["py", "web"]},
+     ("worklist", "--top", "5", "--scope", "py", "--scope", "web", "--json")),
+    ("get_function_history-flags", "get_function_history",
+     {"path": "src/py/grades.py", "name": "curve", "history": True, "tests": True},
+     ("explain", "src/py/grades.py", "curve", "--history", "--tests", "--json")),
+    ("list_coupled_files-min", "list_coupled_files", {"min_support": 1, "min_confidence": 0.1},
+     ("coupling", "--min-support", "1", "--min-confidence", "0.1", "--json")),
+    ("list_duplicate_functions-similarity", "list_duplicate_functions", {"similarity": 0.5},
+     ("duplication", "--similarity", "0.5", "--json")),
+    ("get_function_brief-unknown", "get_function_brief",
+     {"path": "src/py/grades.py", "name": "no_such_function"},
+     ("brief", "src/py/grades.py", "no_such_function", "--json")),
 )
 
 EDIT_LETTER = '''
@@ -209,15 +229,15 @@ def golden_form(result: dict) -> dict:
 
 
 def _mcp(driver: drive.Driver, outputs: Path, raw: Path) -> dict:
-    """Each tool's result, raw under `raw` for the MCP-equals-CLI check and in
+    """Each call's result, raw under `raw` for the MCP-equals-CLI check and in
     golden form under `outputs`, and the CLI command the docs map it to."""
-    results = driver.mcp([(name, arguments) for name, arguments, _ in MCP_CALLS])
+    results = driver.mcp([(tool, arguments) for _, tool, arguments, _ in MCP_CALLS])
     codes = {}
-    for (name, _, argv), result in zip(MCP_CALLS, results):
-        (raw / f"mcp-{name}.json").write_text(json.dumps(result), encoding="utf-8")
-        (outputs / f"mcp-{name}.json").write_text(json.dumps(golden_form(result)),
-                                                  encoding="utf-8")
-        codes[f"cli-{name}.json"] = _record(driver, outputs, f"cli-{name}.json", argv)
+    for (label, _, _, argv), result in zip(MCP_CALLS, results):
+        (raw / f"mcp-{label}.json").write_text(json.dumps(result), encoding="utf-8")
+        (outputs / f"mcp-{label}.json").write_text(json.dumps(golden_form(result)),
+                                                   encoding="utf-8")
+        codes[f"cli-{label}.json"] = _record(driver, outputs, f"cli-{label}.json", argv)
     return codes
 
 

@@ -1,0 +1,101 @@
+{
+ "isError": false,
+ "structuredContent": {
+  "functions": [
+   {
+    "commits": [
+     {
+      "body": "",
+      "date": "2025-06-15",
+      "sha": "fd39664",
+      "subject": "seed"
+     }
+    ],
+    "history": [
+     {
+      "ccn": 8,
+      "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+      "cov": null,
+      "crap": null,
+      "created_at": "<created_at>",
+      "flag": null,
+      "kind": "inventory",
+      "run_id": 1
+     },
+     {
+      "ccn": 8,
+      "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+      "cov": 0.6666666666666666,
+      "crap": 10.37037037037037,
+      "created_at": "<created_at>",
+      "flag": "measured",
+      "kind": "coverage",
+      "run_id": 2
+     }
+    ],
+    "long_name": "curve( scores , mode , floor , ceiling , skip_none )",
+    "ratchet_mark": null,
+    "ratchet_mark_note": "no ratchet file",
+    "tests": null,
+    "tests_note": "no context data — run the py lane with dynamic_context = test_function and a --show-contexts JSON report",
+    "uncovered_lines": [
+     22,
+     26,
+     30
+    ]
+   }
+  ],
+  "name": "curve",
+  "path": "src/py/grades.py",
+  "schema": 1
+ },
+ "text": {
+  "functions": [
+   {
+    "commits": [
+     {
+      "body": "",
+      "date": "2025-06-15",
+      "sha": "fd39664",
+      "subject": "seed"
+     }
+    ],
+    "history": [
+     {
+      "ccn": 8,
+      "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+      "cov": null,
+      "crap": null,
+      "created_at": "<created_at>",
+      "flag": null,
+      "kind": "inventory",
+      "run_id": 1
+     },
+     {
+      "ccn": 8,
+      "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+      "cov": 0.6666666666666666,
+      "crap": 10.37037037037037,
+      "created_at": "<created_at>",
+      "flag": "measured",
+      "kind": "coverage",
+      "run_id": 2
+     }
+    ],
+    "long_name": "curve( scores , mode , floor , ceiling , skip_none )",
+    "ratchet_mark": null,
+    "ratchet_mark_note": "no ratchet file",
+    "tests": null,
+    "tests_note": "no context data — run the py lane with dynamic_context = test_function and a --show-contexts JSON report",
+    "uncovered_lines": [
+     22,
+     26,
+     30
+    ]
+   }
+  ],
+  "name": "curve",
+  "path": "src/py/grades.py",
+  "schema": 1
+ }
+}

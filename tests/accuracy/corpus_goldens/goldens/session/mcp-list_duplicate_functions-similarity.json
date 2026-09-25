@@ -1,0 +1,95 @@
+{
+ "isError": false,
+ "structuredContent": {
+  "pairs": [
+   {
+    "contained": false,
+    "functions": [
+     {
+      "end": 1065,
+      "long_name": "cJSONUtils_ApplyPatches( cJSON * const object , const cJSON * const patches)",
+      "nloc": 23,
+      "path": "vendor/cjson/cJSON_Utils.c",
+      "start": 1038
+     },
+     {
+      "end": 1094,
+      "long_name": "cJSONUtils_ApplyPatchesCaseSensitive( cJSON * const object , const cJSON * const patches)",
+      "nloc": 23,
+      "path": "vendor/cjson/cJSON_Utils.c",
+      "start": 1067
+     }
+    ],
+    "similarity": 0.75
+   },
+   {
+    "contained": false,
+    "functions": [
+     {
+      "end": 1294,
+      "long_name": "cJSONUtils_GeneratePatches( cJSON * const from , cJSON * const to)",
+      "nloc": 11,
+      "path": "vendor/cjson/cJSON_Utils.c",
+      "start": 1281
+     },
+     {
+      "end": 1309,
+      "long_name": "cJSONUtils_GeneratePatchesCaseSensitive( cJSON * const from , cJSON * const to)",
+      "nloc": 11,
+      "path": "vendor/cjson/cJSON_Utils.c",
+      "start": 1296
+     }
+    ],
+    "similarity": 0.5
+   }
+  ],
+  "run_id": 2,
+  "schema": 1
+ },
+ "text": {
+  "pairs": [
+   {
+    "contained": false,
+    "functions": [
+     {
+      "end": 1065,
+      "long_name": "cJSONUtils_ApplyPatches( cJSON * const object , const cJSON * const patches)",
+      "nloc": 23,
+      "path": "vendor/cjson/cJSON_Utils.c",
+      "start": 1038
+     },
+     {
+      "end": 1094,
+      "long_name": "cJSONUtils_ApplyPatchesCaseSensitive( cJSON * const object , const cJSON * const patches)",
+      "nloc": 23,
+      "path": "vendor/cjson/cJSON_Utils.c",
+      "start": 1067
+     }
+    ],
+    "similarity": 0.75
+   },
+   {
+    "contained": false,
+    "functions": [
+     {
+      "end": 1294,
+      "long_name": "cJSONUtils_GeneratePatches( cJSON * const from , cJSON * const to)",
+      "nloc": 11,
+      "path": "vendor/cjson/cJSON_Utils.c",
+      "start": 1281
+     },
+     {
+      "end": 1309,
+      "long_name": "cJSONUtils_GeneratePatchesCaseSensitive( cJSON * const from , cJSON * const to)",
+      "nloc": 11,
+      "path": "vendor/cjson/cJSON_Utils.c",
+      "start": 1296
+     }
+    ],
+    "similarity": 0.5
+   }
+  ],
+  "run_id": 2,
+  "schema": 1
+ }
+}
