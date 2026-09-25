@@ -35,6 +35,7 @@ import json
 import math
 from multiprocessing import util as _mp_util
 import os
+import sys
 import tempfile
 from time import perf_counter_ns
 from typing import NoReturn
@@ -115,7 +116,7 @@ def _watch_receipt() -> None:
         _mp_util.Finalize(None, _write_receipt, args=(directory,), exitpriority=0)
 
 
-def _forked() -> None:
+def _forked(_module) -> None:
     """A forked worker starts from a copy of the command's tally, which the
     command reports itself. The lists stay, since a site may hold one."""
     for tally in COST.values():
@@ -125,8 +126,9 @@ def _forked() -> None:
 
 
 _watch_receipt()
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_forked)
+# A worker multiprocessing forks (the fork and forkserver start methods) drops
+# the finalizers it inherited, then runs these hooks: the worker's own goes here.
+_mp_util.register_after_fork(sys.modules[__name__], _forked)
 
 
 # --- one function's measured shape ----------------------------------------------------
