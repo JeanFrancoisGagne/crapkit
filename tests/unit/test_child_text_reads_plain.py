@@ -13,6 +13,7 @@ The logs and the junit report below are the bytes pytest 9 writes under
 FORCE_COLOR=1 (lane on 3.12) and PYTHON_COLORS=1 (lane on 3.14), escape for
 escape; tests/e2e/test_lane_colour_reads_plain_e2e.py runs the real lanes.
 """
+import ast
 from pathlib import Path
 
 import pytest
@@ -98,6 +99,39 @@ def test_printed_text_reads_a_childs_bytes_as_a_text_mode_pipe_would_without_col
     from crapkit.plaintext import printed_text
 
     assert printed_text(raw) == text
+
+
+# --- one home for the rule ---------------------------------------------------
+
+ROOT = Path(__file__).resolve().parents[2]
+HOME = "src/crapkit/plaintext.py"
+ESC_SPELLINGS = ("\x1b", "\\x1b", "\\x1B", "#x1B", "\\033", "\\u001b", "\\e[")
+
+
+def _spells_esc(node: ast.AST, docstrings: set[int]) -> bool:
+    """`node` is a string constant, not a docstring, that spells ESC."""
+    text = node.value if isinstance(node, ast.Constant) and id(node) not in docstrings else None
+    return isinstance(text, str) and any(spelling in text for spelling in ESC_SPELLINGS)
+
+
+def _escape_constants(path: Path) -> list[str]:
+    """The string constants in `path` that spell ESC, docstrings aside."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docstrings = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr)}
+    return [node.value for node in ast.walk(tree) if _spells_esc(node, docstrings)]
+
+
+def test_only_plaintext_spells_an_escape_sequence():
+    """Every reader of a child's text strips colour through crapkit.plaintext,
+    the Action's comment builder included: the Action installs crapkit before
+    it runs the builder. A second copy of the pattern is a second rule that can
+    drift from the first."""
+    sources = [*ROOT.glob("src/crapkit/**/*.py"), *ROOT.glob("tools/**/*.py")]
+    found = {path.relative_to(ROOT).as_posix(): _escape_constants(path) for path in sources}
+    home = found.pop(HOME)
+
+    assert {rel: spelled for rel, spelled in found.items() if spelled} == {}
+    assert home, "the home itself spells the pattern this scan looks for"
 
 
 # --- the lane refusal --------------------------------------------------------

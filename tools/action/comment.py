@@ -8,7 +8,9 @@ escaping is json.dumps' problem and never a shell quoting question.
 
 It reads the payloads and nothing else: no git, no network, no clock. Run it on
 three saved files and you get the byte-identical comment the job would post,
-which is how the rendering in README's action section was produced.
+which is how the rendering in README's action section was produced. It imports
+crapkit.plaintext, so run it where crapkit is installed; the action installs
+crapkit from its own checkout before this step.
 """
 from __future__ import annotations
 
@@ -18,6 +20,8 @@ import json
 import re
 import sys
 from pathlib import Path
+
+from crapkit.plaintext import strip_escapes, strip_junit_escapes
 
 # The line that makes the comment findable. The action greps for it to decide
 # between a POST and a PATCH, so a second spelling means a comment per push
@@ -38,16 +42,13 @@ _RULES = {6: "complexity gate", 7: "ratchet regressions", 8: "new test failures"
 _FINDING_LISTS = ("gate_violations", "ratchet_regressions", "overridden")
 _CELL_BREAKS = str.maketrans({char: ascii(char)[1:-1] for char in "\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029"})
 
-# What a quoted line loses: every escape sequence (the same ECMA-48 shapes
-# crapkit.plaintext removes, with ESC written as an actual ESC or as the `#x1B`
-# text a junit report holds) and every other C0 control but tab, newline and
-# carriage return, which the line split reads. crapkit's own payloads arrive
-# plain; this covers a payload saved from a crapkit before 0.8.1, whose lane
-# failures carried a coloured test runner's escape codes. Written out here
-# because the Action runs this file by path, on the standard library alone.
-_ESC, _BEL = r"(?:\x1b|#x1B)", r"(?:\x07|#x07)"
-_CONTROLS = re.compile(rf"{_ESC}(?:\[[0-?]*[ -/]*[@-~]|\](?:(?!{_BEL}|{_ESC}).)*(?:{_BEL}|{_ESC}\\)?"
-                       r"|[ -/]*[0-~])?|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# What a quoted line loses after crapkit.plaintext has removed every escape
+# sequence (written as an actual ESC, or as the `#x1B` text a junit report
+# holds): every other C0 control but tab, newline and carriage return, which the
+# line split reads. crapkit's own payloads arrive plain; the strip covers a
+# payload saved from a crapkit before 0.8.1, whose lane failures carried a
+# coloured test runner's escape codes.
+_CONTROLS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _read_text(path: str | None) -> str:
@@ -111,7 +112,8 @@ def _plural(count: int, noun: str) -> str:
 def _first_line(text) -> str:
     """The first line of crapkit's text as the comment quotes it: plain, with
     no escape sequence or control character a reader would see as garbage."""
-    lines = _CONTROLS.sub("", str(text or "")).strip().splitlines()
+    plain = strip_escapes(strip_junit_escapes(str(text or "")))
+    lines = _CONTROLS.sub("", plain).strip().splitlines()
     return lines[0].strip() if lines else ""
 
 
