@@ -709,7 +709,7 @@ devcontainers-cli = ["lin-devcontainer"]
 "user site and a venv | git hook" = { consumer = "git", cell = "lin-two-installs" }
 "pipx | Route 2 hook" = { consumer = "git", reason = "the hook finds crapkit the way the Route 1 hook does, which lin-pair-pipx-route1 runs under pipx" }
 "uv tool | Route 1 hook" = { consumer = "git", reason = "the hook finds crapkit the way the Route 2 hook does, which lin-pair-uvtool-route2 runs under uv tool" }
-"uvx | Route 1 hook" = { consumer = "git", reason = "uvx installs no launcher, the case lin-pair-uvx-merge-driver and lin-pair-python3-only run" }
+"uvx | Route 1 hook" = { consumer = "git", reason = "uvx installs no launcher, so the hook reaches crapkit through its uvx line, which docs-hook-line runs as uvx x route1" }
 "Docker image | any git consumer" = { consumer = "git", reason = "the image serves MCP; the docs give no hook or driver line for it" }
 "pip venv | Claude plugin" = { consumer = "plugin", cell = "lin-claude-plugin-fresh" }
 "pip --user | Claude plugin" = { consumer = "plugin", cell = "lin-pipuser-path" }

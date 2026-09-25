@@ -2,10 +2,12 @@
 
 The README says `uv tool install crapkit` or `pipx install crapkit` "puts a
 `crapkit` command on PATH once, which is what the commit gate ... call[s]",
-and `uvx crapkit` "runs the same commands". The hooks Routes 1 and 2 write
-run `python -m crapkit`, and the merge driver line runs `crapkit`. Each cell
-installs through one channel, wires one consumer from the docs, and commits
-or merges through git: the gate must refuse a breach, the driver must merge.
+and `uvx crapkit` "runs the same commands". The hook Routes 1 and 2 write
+runs the `crapkit` command, then `uvx crapkit`, then `python -m crapkit`,
+whichever it reaches first, and the merge driver line runs `crapkit`. Each
+cell installs through one channel, wires one consumer from the docs, and
+commits or merges through git: the gate must refuse a breach, the driver
+must merge.
 
 The pairs, as MAP.toml [pairs] lists them for the git consumers:
   pipx     x Route 1       uv tool x Route 2
@@ -88,8 +90,8 @@ def gated(box, templates, route) -> Path:
 
 
 @cell("lin-pair-pipx-route1", channel="pipx x Route 1", harness="git 2.47",
-      scenario="fresh: the message git shows when the hook cannot reach crapkit", use_cases="commit gate",
-      os="linux", image="cells", cadence="nightly")
+      scenario="fresh: the hook reaches crapkit, refuses a ccn-8 function, then takes its split",
+      use_cases="commit gate", os="linux", image="cells", cadence="nightly")
 def test_pipx_install_feeds_the_route1_gate(box, templates):
     pipx(box)
     repo = gated(box, templates, gitsurf.route1)
@@ -98,8 +100,8 @@ def test_pipx_install_feeds_the_route1_gate(box, templates):
 
 
 @cell("lin-pair-uvtool-route2", channel="uv tool x Route 2", harness="git 2.47",
-      scenario="fresh: the message git shows when the hook cannot reach crapkit", use_cases="commit gate",
-      os="linux", image="cells", cadence="nightly")
+      scenario="fresh: the hook reaches crapkit, refuses a ccn-8 function, then takes its split",
+      use_cases="commit gate", os="linux", image="cells", cadence="nightly")
 def test_uv_tool_install_feeds_the_route2_gate(box, templates):
     uv_tool(box)
     repo = gated(box, templates, gitsurf.route2)
@@ -108,8 +110,8 @@ def test_uv_tool_install_feeds_the_route2_gate(box, templates):
 
 
 @cell("lin-pair-python3-only", channel="pip --user on a python3-only system x Route 1", harness="git 2.47",
-      scenario="fresh: the message git shows when the hook cannot reach crapkit", use_cases="commit gate",
-      os="linux", image="cells", cadence="nightly")
+      scenario="fresh: the hook reaches crapkit, refuses a ccn-8 function, then takes its split",
+      use_cases="commit gate", os="linux", image="cells", cadence="nightly")
 def test_a_python3_only_install_feeds_the_route1_gate(box, templates):
     python3_user(box)
     assert box.which("python") is None
