@@ -26,9 +26,10 @@ import importlib.util
 import json
 import subprocess
 import sys
-import tarfile
 import tomllib
 from pathlib import Path
+
+import export
 
 HERE = Path(__file__).resolve().parent
 
@@ -59,9 +60,7 @@ def newest_release(lock: Path) -> str:
 
 def extract(tree: Path, dest: Path) -> Path:
     dest.mkdir(parents=True)
-    with tarfile.open(tree) as tar:
-        tar.extractall(dest, filter="tar")
-    return dest
+    return export.unpack_tar(tree, dest)
 
 
 def surfaces(root: Path) -> tuple:

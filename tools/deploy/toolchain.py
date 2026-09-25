@@ -36,10 +36,10 @@ import shutil
 import stat
 import subprocess
 import sys
-import tarfile
 import zipfile
 from pathlib import Path
 
+import export
 import lock
 import pins as pinsfile
 
@@ -112,8 +112,7 @@ def unpack(archive: Path, dest: Path) -> Path:
         with zipfile.ZipFile(archive) as bundle:
             bundle.extractall(dest)
     else:
-        with tarfile.open(archive) as bundle:
-            bundle.extractall(dest, filter="tar")
+        export.unpack_tar(archive, dest)
     return dest
 
 

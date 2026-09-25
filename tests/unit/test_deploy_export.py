@@ -98,3 +98,44 @@ def test_the_command_line_writes_both_files(worktree, tmp_path):
     assert export.main(["--repo", str(worktree), "--out", str(out)]) == 0
 
     assert sorted(path.name for path in out.iterdir()) == ["src.bundle", "tree.tar"]
+
+
+# --- unpacking ---------------------------------------------------------------------
+# CPython took extraction filters in 3.11.4. Debian 12's python3 is 3.11.2, and
+# so was the Windows `python` a run.py user starts with, where every unpack of
+# tree.tar or a pinned archive stopped with "extractall() got an unexpected
+# keyword argument 'filter'".
+
+def _tarball(tmp_path, name, text="x"):
+    source = tmp_path / "member.txt"
+    source.write_text(text, encoding="utf-8")
+    archive = tmp_path / "in.tar"
+    with tarfile.open(archive, "w") as tar:
+        tar.add(source, arcname=name)
+    return archive
+
+
+# The stand-in calls the real extractall with no filter, which 3.12 and 3.13 warn about.
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_a_python_without_extraction_filters_still_unpacks(tmp_path, monkeypatch):
+    original = tarfile.TarFile.extractall
+
+    def before_filters(self, path=".", members=None, *, numeric_owner=False, **extra):
+        if extra:
+            raise TypeError(f"extractall() got an unexpected keyword argument {next(iter(extra))!r}")
+        return original(self, path, members, numeric_owner=numeric_owner)
+
+    monkeypatch.delattr(tarfile, "tar_filter", raising=False)
+    monkeypatch.setattr(tarfile.TarFile, "extractall", before_filters)
+
+    export.unpack_tar(_tarball(tmp_path, "pkg/a.txt", "kept"), tmp_path / "dest")
+
+    assert (tmp_path / "dest" / "pkg" / "a.txt").read_text(encoding="utf-8") == "kept"
+
+
+@pytest.mark.skipif(not hasattr(tarfile, "tar_filter"), reason="this Python has no extraction filters")
+def test_a_python_with_filters_refuses_a_member_outside_the_destination(tmp_path):
+    with pytest.raises(tarfile.FilterError):
+        export.unpack_tar(_tarball(tmp_path, "../escape.txt"), tmp_path / "dest")
+
+    assert not (tmp_path / "escape.txt").exists()

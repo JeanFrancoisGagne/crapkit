@@ -44,7 +44,6 @@ import shutil
 import stat
 import subprocess
 import sys
-import tarfile
 import time
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
@@ -448,8 +447,7 @@ def native_env(toolchain: Path, out: Path) -> dict[str, str]:
 def _unpack(out: Path, work: Path) -> Path:
     src = work / "src"
     src.mkdir(parents=True)
-    with tarfile.open(out / "in" / "tree.tar") as tar:
-        tar.extractall(src, filter="tar")
+    export.unpack_tar(out / "in" / "tree.tar", src)
     subprocess.run(["git", "-c", "init.defaultBranch=main", "clone", "-q", "--mirror",
                     str(out / "in" / "src.bundle"), str(work / "src.git")], check=True)
     return src

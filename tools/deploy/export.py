@@ -97,6 +97,21 @@ def export(repo: Path, out: Path) -> tuple[Path, Path]:
     return write_bundle(repo, out / "src.bundle"), write_tree(repo, out / "tree.tar")
 
 
+def extract_options() -> dict:
+    """tarfile's 'tar' filter where this Python has extraction filters. CPython
+    took them in 3.11.4; 3.11.0 to 3.11.3 (Debian 12's python3 is 3.11.2) accept
+    no `filter` argument, and every archive this kit unpacks there is its own
+    export or a download already held to its pins.toml sha256."""
+    return {"filter": "tar"} if hasattr(tarfile, "tar_filter") else {}
+
+
+def unpack_tar(archive: Path, dest: Path) -> Path:
+    """Unpack a tarball (tree.tar, or a pinned download) under dest."""
+    with tarfile.open(archive) as tar:
+        tar.extractall(dest, **extract_options())
+    return dest
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", type=Path, default=Path.cwd())
