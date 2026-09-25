@@ -356,13 +356,32 @@ def test_a_late_high_score_is_a_b():
 
 
 def tighten(box, repo: Path, test: str, text: str) -> None:
-    """Burn down one mark the way the docs say it falls: a test that covers
-    more of the function, a passing verify that tightens its mark, a commit."""
+    """Burn down one mark the way docs/ratchet.md says it falls: commit a test
+    that covers more of the function, and the passing verify on that commit
+    tightens its mark; commit the marks file it names."""
     (repo / "tests" / test).write_text(text, encoding="utf-8", newline="\n")
-    verdict = box.run(["crapkit", "verify"], cwd=repo, expect=0)
-    assert "1 tightened" in verdict.stdout, verdict.stdout
     box.run(["git", "add", "-A"], cwd=repo, expect=0)
     box.run(["git", "commit", "-q", "-m", f"cover more: {test}"], cwd=repo, env=box.commit_env(), expect=0)
+    verdict = _verify_after_switch(box, repo, box.run(["crapkit", "verify"], cwd=repo))
+    assert "1 tightened -> git add crapkit-ratchet.tsv" in verdict.stdout, verdict.stdout
+    box.run(["git", "add", "crapkit-ratchet.tsv"], cwd=repo, expect=0)
+    box.run(["git", "commit", "-q", "-m", "tighten the mark verify lowered"], cwd=repo, env=box.commit_env(),
+            expect=0)
+
+
+SWITCHED = re.compile(r"baseline commit \w+ is not an ancestor of HEAD .* - run `(crapkit coverage)` for a fresh baseline")
+
+
+def _verify_after_switch(box, repo: Path, verdict):
+    """A verify on the second branch finds the first branch's run as its
+    baseline and exits 4 (deploy-git-4). The cell runs the fix the line
+    prints, as a user would, and verifies again."""
+    fix = SWITCHED.search(verdict.stderr)
+    if verdict.exit == 0 or fix is None:
+        return verdict
+    box.transcript.note("deploy-git-4: verify after a branch switch exited 4; running the fix it printed")
+    box.script(fix[1], cwd=repo, expect=0)
+    return box.run(["crapkit", "verify"], cwd=repo, expect=0)
 
 
 def diverge(box, repo: Path) -> dict[str, float]:
