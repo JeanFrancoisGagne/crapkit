@@ -6,7 +6,9 @@ kind = "cli"
 [doc]
 heading = "Qwen Code"
 format = "mcpservers-json"
-scope = "project"
+# User scope: Qwen Code 0.24.5 lists a server from the project's .qwen/settings.json
+# as "Pending approval" and does not start it.
+scope = "user"
 path = ".qwen/settings.json"
 config = '''
 {
@@ -33,10 +35,11 @@ windows = "cross-spawn"
 # What it sends first, and the client a sim cell drives crapkit with.
 [initialize]
 client = "ts-sdk"
-sdk = "sdk-1-23"
-protocol = "2025-06-18"
+# The kit's newest SDK alias: 0.24.5 offers 2025-11-25, which sdk-1-23 and later speak.
+sdk = "sdk-1-29"
+protocol = "2025-11-25"
 discover_first = false
-client_name = "qwen-code"
+client_name = "mcp-test-client"
 
 # What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
 [limits]
@@ -71,15 +74,15 @@ autoupgrade = true
 
 # One tag per field above: observed, source, docs or inferred.
 [evidence]
-"spawn.cwd" = "inferred"
-"spawn.env" = "inferred"
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
 "spawn.resolve" = "inferred"
 "spawn.windows" = "inferred"
 "initialize.client" = "inferred"
 "initialize.sdk" = "inferred"
-"initialize.protocol" = "inferred"
-"initialize.discover_first" = "inferred"
-"initialize.client_name" = "inferred"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
 "limits.output_tokens" = "inferred"
 "limits.tool_prefix" = "inferred"
 "limits.startup_seconds" = "inferred"
@@ -89,4 +92,4 @@ autoupgrade = true
 "hooks.events" = "inferred"
 "hooks.matcher" = "inferred"
 "hooks.exit2" = "inferred"
-sources = ["a Gemini CLI fork: each value is Gemini CLI's until calibrate-all observes the latest release"]
+sources = ["a Gemini CLI fork: each value is Gemini CLI's until calibrate-all observes the latest release", "calibrate-all against qwen 0.24.5: `qwen mcp list` shows a server from the project's .qwen/settings.json as 'Pending approval' and never starts it", "calibrate-all against qwen 0.24.5 with the server in ~/.qwen/settings.json: `qwen mcp list` starts it in the workspace with its own environment and offers 2025-11-25 as mcp-test-client (its connection test, as Gemini CLI's)"]

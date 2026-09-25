@@ -791,7 +791,9 @@ def write_observed(folder: str, key: str, text: str) -> Path:
 LATEST_SCRIPTS = {
     "cursor": "curl -fsSL https://cursor.com/install | bash",
     "goose": "curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash",
-    "aider": "uv tool install --force aider-chat",
+    # Aider's own install line: without --python, uv took its newest Python,
+    # for which numpy 1.26.4 has no wheel, and the build found no compiler.
+    "aider": "uv tool install --force --python python3.12 --with pip aider-chat@latest",
     "kiro": "curl -fsSL https://cli.kiro.dev/install | bash",
     "windsurf": "curl -fsSL https://cli.devin.ai/install.sh | bash",
     "qwen-code": "npm i -g @qwen-code/qwen-code@latest",
