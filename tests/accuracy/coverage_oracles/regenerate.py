@@ -156,14 +156,20 @@ def _uv(*args: str) -> None:
 
 
 def python_for(producer: Producer) -> Path:
-    """The producer's own interpreter: a venv holding exactly its pinned packages."""
+    """The producer's own interpreter: a venv holding exactly its pinned packages.
+
+    The venv counts as built only once its install finished and wrote the stamp:
+    one whose install failed (no network) is cleared and built again, so a retry
+    meets the same infra miss instead of a venv without its producer."""
     base = Path(os.environ.get("CRAPKIT_ACCURACY_PRODUCERS")
                 or Path.home() / ".cache" / "crapkit-accuracy" / "producers")
     venv = base / f"{producer.name}-py{sys.version_info[0]}{sys.version_info[1]}"
-    python = _venv_python(venv)
-    if not python.is_file():
-        _uv("venv", "--quiet", "--python", sys.executable, str(venv))
+    python, stamp = _venv_python(venv), venv / "producer-packages.txt"
+    wanted = " ".join(producer.packages)
+    if not (stamp.is_file() and stamp.read_text(encoding="utf-8") == wanted):
+        _uv("venv", "--quiet", "--clear", "--python", sys.executable, str(venv))
         _uv("pip", "install", "--quiet", "--python", str(python), *producer.packages)
+        stamp.write_text(wanted, encoding="utf-8")
     return python
 
 

@@ -20,6 +20,7 @@ canonical form), so the ground truth holds for the producer as installed.
 import dataclasses
 from fractions import Fraction
 import json
+from pathlib import Path
 import sys
 
 import pytest
@@ -308,3 +309,30 @@ def test_the_producer_rerun_matches_its_recording(producer):
     if done.returncode == MISSING:
         runlog.note("infra", message=done.stderr.strip())
     assert done.returncode == 0, done.stderr
+
+
+def test_a_half_built_producer_venv_is_built_again(tmp_path, monkeypatch):
+    """A venv whose install failed (no network) is built again on the next call,
+    so run.py's retry meets the same infra miss, never a venv without its
+    producer; a venv whose install finished is reused."""
+    from accuracy.coverage_oracles import regenerate
+    calls = []
+
+    def uv(*args: str) -> None:
+        calls.append(args[0])
+        if args[0] == "venv":
+            python = regenerate._venv_python(Path(args[-1]))
+            python.parent.mkdir(parents=True, exist_ok=True)
+            python.write_bytes(b"")
+        elif calls.count("pip") == 1:
+            raise regenerate.ProducerMissing("no network for a venv")
+
+    monkeypatch.setattr(regenerate, "_uv", uv)
+    monkeypatch.setenv("CRAPKIT_ACCURACY_PRODUCERS", str(tmp_path))
+    producer = regenerate.PRODUCERS["coveragepy-7.16.1"]
+    with pytest.raises(regenerate.ProducerMissing):
+        regenerate.python_for(producer)
+    regenerate.python_for(producer)
+    regenerate.python_for(producer)
+
+    assert calls == ["venv", "pip", "venv", "pip"]
