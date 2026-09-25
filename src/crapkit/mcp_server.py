@@ -11,6 +11,7 @@ from .procs import run_owned
 import sys
 from pathlib import Path
 
+from .agent_fields import schema_of
 from .invocation import _self
 from .rootfind import CONFIG_NAME, find_root
 
@@ -54,6 +55,19 @@ _SCOPE = {
     "items": {
         "type": "string"}}
 
+
+def _unread_files_schema(payload: str, key: str) -> dict:
+    """The one shape an unread-file finding has in every payload that carries it."""
+    return {**schema_of(payload, key), "items": {
+        "type": "object", "description": "one changed file the gate refused unread",
+        "properties": {name: schema_of(payload, f"{key}[].{name}")
+                       for name in ("path", "reason", "dirty")}}}
+
+
+# The fields 0.8.1 adds take their schema from the one declaration of them.
+_SHALLOW_CHURN = schema_of("worklist --json", "shallow")
+_UNMEASURED = schema_of("next-item", "item.unmeasured")
+
 _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared scope that owns the file'},
  'path': {'type': 'string', 'description': 'repo-relative source path, forward slashes'},
  'function': {'type': 'string',
@@ -96,7 +110,8 @@ _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared s
  'uncovered_lines_note': {'type': 'string',
                           'description': 'present only when uncovered_lines is null: the reason '
                                          'and the move (stale artifact, no test imports the file, '
-                                         'coverage_optional scope)'}}
+                                         'coverage_optional scope)'},
+ 'unmeasured': _UNMEASURED}
 
 _WORKLIST_ITEM = {'type': 'object',
  'description': 'one ranked function',
@@ -193,6 +208,7 @@ TOOLS: tuple[dict, ...] = (
                 "description": ("true when the run's commit is not HEAD, so cov, crap and "
                 "uncovered_lines describe an older tree; crapkit coverage "
                 "--reuse-unchanged (get_function_brief's commands.refresh) clears it")},
+            "shallow": _SHALLOW_CHURN,
             "empty": {
                 "type": "boolean",
                 "description": ("true when the queue has nothing to hand out; then reasons is present "
@@ -284,6 +300,7 @@ TOOLS: tuple[dict, ...] = (
                 "description": ("true when the run's commit is not HEAD, so cov, crap and "
                 "uncovered_lines describe an older tree; crapkit coverage "
                 "--reuse-unchanged (get_function_brief's commands.refresh) clears it")},
+            "shallow": _SHALLOW_CHURN,
             "floor": {
                 "type": "integer",
                 "description": ("the effective worklist_floor: rows under this ccn are listed only "
@@ -479,6 +496,8 @@ TOOLS: tuple[dict, ...] = (
                 "type": "boolean",
                 "description": ("true when the run's commit is not HEAD, so every number here "
                 "describes an older tree; run commands.refresh first")},
+            "shallow": schema_of("brief --json", "shallow"),
+            "unmeasured": schema_of("brief --json", "unmeasured"),
             "path": {
                 "type": "string",
                 "description": "the resolved file, repo-relative"},
@@ -1289,7 +1308,8 @@ TOOLS: tuple[dict, ...] = (
                 "description": ("null when no debt policy is configured, [] when the policy ran "
                 "clean, else the findings as sentences"),
                 "items": {
-                    "type": "string"}}},
+                    "type": "string"}},
+            "shallow": schema_of("ratchet report --json", "shallow")},
     },
     {
         "name": "check_gate",
@@ -1369,15 +1389,17 @@ TOOLS: tuple[dict, ...] = (
                         "stale_coverage": {
                             "type": "boolean",
                             "description": ("always true: complexity is the working tree's, coverage "
-                            "is the baseline run's")}}}},
+                            "is the baseline run's")},
+                        "unmeasured": schema_of("rescore --gate --json",
+                                                "functions[].unmeasured")}}},
             "gate": {
                 "type": "object",
                 "description": "the verdict block",
                 "properties": {
                     "ok": {
                         "type": "boolean",
-                        "description": ("true when breaches is empty; false is the verdict (CLI exit "
-                        "6), delivered as a normal result")},
+                        "description": ("true when breaches and unread_files are empty; false is the "
+                        "verdict (CLI exit 6), delivered as a normal result")},
                     "judged": {
                         "type": "integer",
                         "description": ("functions the working tree changed since HEAD, an untracked "
@@ -1425,7 +1447,9 @@ TOOLS: tuple[dict, ...] = (
                         "type": "array",
                         "description": "rescored paths git tracks nothing of, judged in full",
                         "items": {
-                            "type": "string"}}}}},
+                            "type": "string"}},
+                    "unread_files": _unread_files_schema("rescore --gate --json",
+                                                         "gate.unread_files")}}},
     },
     {
         "name": "list_claims",

@@ -4,9 +4,9 @@ import json
 from types import SimpleNamespace
 
 from crapkit.sarif import (diff_uncovered_results, gate_results, over_target_results,
-                           sarif_document)
+                           sarif_document, unread_results)
 from crapkit.score import ScoredRow
-from crapkit.verify import GateViolation
+from crapkit.verify import GateViolation, UnreadFile
 
 
 def scored(path="src/a.ts", name="f( )", ccn=8, cov=0.0, scope="src"):
@@ -21,7 +21,7 @@ def test_document_shape_and_rule_registration():
     assert run["tool"]["driver"]["name"] == "crapkit"
     rule_ids = {r["id"] for r in run["tool"]["driver"]["rules"]}
     assert {"crapkit/over-target", "crapkit/gate", "crapkit/ratchet-regression",
-            "crapkit/diff-uncovered"} <= rule_ids
+            "crapkit/diff-uncovered", "crapkit/unread"} <= rule_ids
 
 
 def test_over_target_results_locate_the_function():
@@ -44,6 +44,15 @@ def test_gate_violations_are_errors():
     assert res["ruleId"] == "crapkit/gate"
     assert res["level"] == "error"
     assert res["locations"][0]["physicalLocation"]["region"]["startLine"] == 3
+
+
+def test_a_changed_file_no_reader_could_read_is_an_error_on_its_first_line():
+    (res,) = unread_results([UnreadFile("src/a.ts", "src/a.ts:12: arrow refused")])
+    assert res["ruleId"] == "crapkit/unread"
+    assert res["level"] == "error"
+    loc = res["locations"][0]["physicalLocation"]
+    assert (loc["artifactLocation"]["uri"], loc["region"]["startLine"]) == ("src/a.ts", 1)
+    assert "src/a.ts:12: arrow refused" in res["message"]["text"]
 
 
 # --- diff-uncovered: the changed lines no lane ran -------------------------
@@ -71,7 +80,7 @@ def _verify_sarif(tmp_path, uncovered: list) -> list[dict]:
     from crapkit.cli.verifying import _emit_verify_findings
 
     args = SimpleNamespace(sarif="out.sarif", github=False)
-    verdict = SimpleNamespace(gate_violations=(), ratchet_regressions=())
+    verdict = SimpleNamespace(gate_violations=(), ratchet_regressions=(), unread_files=())
     _emit_verify_findings(tmp_path, args, verdict, uncovered)
     doc = json.loads((tmp_path / "out.sarif").read_text(encoding="utf-8"))
     return doc["runs"][0]["results"]

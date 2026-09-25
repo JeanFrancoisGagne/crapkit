@@ -56,7 +56,8 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                            'mutation_command': {'type': 'string',
                                                                 'description': 'suite run once per '
                                                                                'mutant; nonzero exit = '
-                                                                               'killed'},
+                                                                               'killed, exit 5 = no '
+                                                                               'verdict'},
                                            'mutation_timeout_seconds': {'type': 'integer',
                                                                         'minimum': 1,
                                                                         'description': 'per-mutant '

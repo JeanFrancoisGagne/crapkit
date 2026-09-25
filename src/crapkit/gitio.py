@@ -10,11 +10,12 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import NamedTuple
 
 from .errors import GitError, ToolError
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
-_LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
+_LOG_HEADER = re.compile(r"^\0(-?\d+) ([0-9a-f]+)\n", re.MULTILINE)
 
 # Every path this module hands out is joined against root-relative rows, because
 # `git ls-files` answers relative to the cwd. Diffs do not: git names their files
@@ -74,11 +75,21 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subpro
 def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False) -> str:
     """`named` is what the error says ran — the injected flags are crapkit's
     business, not the caller's."""
-    res = _spawn(root, argv, binary=binary)
+    if binary:
+        return _run_bytes(root, argv, named).decode("utf-8")
+    res = _spawn(root, argv)
     if res.returncode != 0:
-        error = res.stderr.decode("utf-8", "replace") if binary else res.stderr
-        raise GitError(f"git {' '.join(named)} failed in {root}: {error.strip()}")
-    return res.stdout.decode("utf-8") if binary else res.stdout
+        raise GitError(f"git {' '.join(named)} failed in {root}: {res.stderr.strip()}")
+    return res.stdout
+
+
+def _run_bytes(root: Path, argv: tuple[str, ...], named: tuple[str, ...]) -> bytes:
+    """_run's stdout as git wrote it, for content that is not text."""
+    res = _spawn(root, argv, binary=True)
+    if res.returncode != 0:
+        error = res.stderr.decode("utf-8", "replace").strip()
+        raise GitError(f"git {' '.join(named)} failed in {root}: {error}")
+    return res.stdout
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
@@ -242,6 +253,19 @@ _SHALLOW_FIX = ("this shallow clone does not hold every commit: set fetch-depth:
                 "checkout or run git fetch --unshallow")
 
 
+def shallow_warning(counts: str) -> str:
+    """The one stderr line a reader of commit history prints in a shallow clone:
+    what it counted, and the fetch that brings the rest of the history in. Churn,
+    mark ages and repayments are counts of commits, and a depth-1 clone holds
+    one, so the numbers read as every file changed once and every mark new."""
+    return f"warning: {counts} read only the commits this clone holds; {_SHALLOW_FIX}"
+
+
+def shallow_refusal(judgement: str) -> GitError:
+    """The refusal a verdict over commit history gives in a shallow clone."""
+    return GitError(f"{judgement}; {_SHALLOW_FIX}")
+
+
 def merge_base(root: Path, ref: str) -> str:
     """The commit REF and HEAD forked from — a branch's real diff basis, which
     is what a mid-branch run's own commit is not.
@@ -253,7 +277,7 @@ def merge_base(root: Path, ref: str) -> str:
     """
     res = _spawn(root, (*_RELATIVE, "merge-base", ref, "HEAD"))
     if res.returncode != 0:
-        raise GitError(_merge_base_refusal(root, ref, res) + _shallow_fix(root))
+        raise GitError(_merge_base_refusal(root, ref, res) + shallow_fix(root))
     return res.stdout.strip()
 
 
@@ -264,7 +288,7 @@ def _merge_base_refusal(root: Path, ref: str, res: subprocess.CompletedProcess) 
     return f"git merge-base {ref} HEAD failed in {root}: {reason}"
 
 
-def _shallow_fix(root: Path) -> str:
+def shallow_fix(root: Path) -> str:
     """The fetch advice in a shallow clone; "" in a full one, and "" when git
     cannot say, so the merge-base reason is the one the refusal keeps."""
     try:
@@ -291,6 +315,39 @@ def is_shallow(root: Path) -> bool:
     right thing, since a commit a shallow clone never fetched is not one a
     rebase rewrote. `rev-parse` answers with the word `true` or `false`."""
     return _git(root, "rev-parse", "--is-shallow-repository").strip() == "true"
+
+
+def shallow_checkout(root: Path) -> bool:
+    """is_shallow, read straight out of .git: git marks a depth-limited clone
+    with a `shallow` file in its common directory and deletes it on `fetch
+    --unshallow`, and `rev-parse --is-shallow-repository` answers from that file.
+
+    worklist, next-item, brief and ratchet report ask on every call, and an
+    empty next-item queue starts no git process at all; a spawn costs ~20 ms on
+    Windows. With no .git above root, git is asked, as head_commit asks it.
+    """
+    gitdir = _git_dir(root)
+    if gitdir is None:
+        return is_shallow(root)
+    return (_common_dir(gitdir) / "shallow").is_file()
+
+
+def blob_at(root: Path, commit: str, rel_path: str) -> bytes | None:
+    """The bytes `rel_path` (relative to `root`) held at `commit`, or None when
+    that commit holds no such file. A commit this clone does not hold, or any
+    other git failure, raises GitError: it is not a commit without the file."""
+    listed = _git_paths(root, "--literal-pathspecs", "ls-tree", "-z", commit, "--", rel_path)
+    if not listed:
+        return None
+    blob = ("cat-file", "blob", listed[0].split(None, 3)[2])
+    return _run_bytes(root, blob, blob)
+
+
+def commits_touching(root: Path, rev_range: str, rel_path: str) -> list[str]:
+    """The commits in `rev_range` that changed `rel_path`, newest first. A range
+    this clone does not hold raises GitError: it is not a range with no commits."""
+    return _git(root, "--literal-pathspecs", "log", "--format=%H", rev_range, "--",
+                rel_path).split()
 
 
 def _batch_stream(root: Path, requests: bytes) -> bytes:
@@ -528,38 +585,56 @@ def staged_reads(root: Path, base: str | None = None):
         reads.close()
 
 
-def file_log_patches(root: Path, rel_path: str) -> list[tuple[int, str]]:
-    """(commit timestamp, unified patch) per commit touching one file, oldest first.
+class LogEntry(NamedTuple):
+    """One commit that touched a file: when, which, and its -U0 patch."""
+    timestamp: int
+    commit: str
+    patch: str
 
-    -U0: the only reader is ratchet_report, which looks at +/- lines alone, so
-    context lines are pipe traffic that grows with the ratchet file.
+
+def file_log(root: Path, rel_path: str) -> list[LogEntry]:
+    """Each commit touching one file, oldest first, with its patch.
+
+    -U0: the readers look at +/- lines alone, so context lines are pipe traffic
+    that grows with the file.
     No --follow: rename detection cost 0.6s of a 1.14s `ratchet report` on a
     72k-commit history and found nothing. The cost is real, since --follow also
     gives up the commit-graph path filtering the plain log gets (measured on a
     30k-commit synthetic: 0.436s vs 0.257s, same events either way). The price
-    is that renaming the ratchet file restarts its burn-down history at the
-    rename.
+    is that renaming the file restarts its history at the rename, which
+    `commit_renames` lets a reader name.
     """
     # A path may hold U+0001, the old separator. Body NULs have +/- prefixes;
     # only a physical header line starts with the NUL timestamp marker. Raw LF
     # framing prevents CR in a legacy field from manufacturing a header line.
-    out = _git(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at",
+    out = _git(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at %H",
                "-p", *_PATCH, "--text", "--", rel_path, binary=True)
-    return _history_patches(out)
+    return _log_entries(out)
 
 
-def _history_patches(out: str) -> list[tuple[int, str]]:
-    patches = []
-    stamp, start = None, 0
+def commit_renames(root: Path, commit: str) -> dict[str, str]:
+    """old path -> new path for each file one commit renamed, relative to root.
+
+    One commit's diff, with rename detection on for it alone. A commit with no
+    parent (the first commit, or a shallow clone's boundary) renamed nothing.
+    """
+    fields = _git_paths(root, "diff-tree", "-r", "-M", "--relative", "--name-status",
+                        "--no-commit-id", "-z", commit)
+    return _rename_pairs(fields)
+
+
+def _log_entries(out: str) -> list[LogEntry]:
+    entries = []
+    head, start = None, 0
     for header in _LOG_HEADER.finditer(out):
-        if stamp is not None:
-            patches.append((stamp, out[start:header.start()]))
-        stamp, start = int(header.group(1)), header.end()
-    if stamp is not None:
-        patches.append((stamp, out[start:]))
+        if head is not None:
+            entries.append(LogEntry(int(head.group(1)), head.group(2), out[start:header.start()]))
+        head, start = header, header.end()
+    if head is not None:
+        entries.append(LogEntry(int(head.group(1)), head.group(2), out[start:]))
     elif out:
         raise GitError("Git patch history has no timestamp header")
-    return patches
+    return entries
 
 
 # core.longpaths on the worktree calls, and on those alone. On a 31,459-file

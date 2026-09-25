@@ -148,11 +148,17 @@ def test_a_testcase_error_that_is_not_a_crash_is_still_just_a_failed_test():
     assert failed == {"t::b"} and counts == {"tests": 2, "skipped": 0}
 
 
+def behind(*lane_sets: dict):
+    """What coverage hands suite_drops: the trusted runs, newest first, read on
+    demand. Each mapping is one run's lane provenance, as the store keeps it."""
+    return lambda: [{"kind": "coverage", "lanes": lanes} for lanes in lane_sets]
+
+
 def test_a_lane_that_ran_far_fewer_tests_than_the_last_trusted_run_is_named():
     """The reporter's own numbers: 10,674 of 15,300 after one worker died."""
-    from crapkit.lanes import suite_drops
+    from crapkit.lane_results import suite_drops
 
-    (note,) = suite_drops({"py": {"tests_total": 15300}}, {"py": {"tests_total": 10674}})
+    (note,) = suite_drops(behind({"py": {"tests_total": 15300}}), {"py": {"tests_total": 10674}})
 
     assert "lane 'py' ran 10674 tests, 4626 fewer" in note
 
@@ -160,18 +166,39 @@ def test_a_lane_that_ran_far_fewer_tests_than_the_last_trusted_run_is_named():
 def test_a_handful_of_deleted_tests_is_not_a_drop():
     """Deleting a test file is routine. A warning that fires on it is noise, and
     noise is what makes the real one invisible."""
-    from crapkit.lanes import suite_drops
+    from crapkit.lane_results import suite_drops
 
-    assert suite_drops({"py": {"tests_total": 15300}}, {"py": {"tests_total": 15290}}) == []
+    assert suite_drops(behind({"py": {"tests_total": 15300}}), {"py": {"tests_total": 15290}}) == []
 
 
 def test_a_lane_the_last_trusted_run_never_measured_cannot_drop():
     """A new lane, or one whose junit the old run had no count for. There is
     nothing to compare, and inventing zero would flag every first run."""
-    from crapkit.lanes import suite_drops
+    from crapkit.lane_results import suite_drops
 
-    assert suite_drops({}, {"py": {"tests_total": 10}}) == []
-    assert suite_drops({"py": {}}, {"py": {"tests_total": 10}}) == []
+    assert suite_drops(behind({}), {"py": {"tests_total": 10}}) == []
+    assert suite_drops(behind({"py": {}}), {"py": {"tests_total": 10}}) == []
+
+
+def test_a_reused_junit_that_is_gone_is_not_a_suite_that_ran_zero_tests(tmp_path, capsys):
+    """The reuse warning already says the count cannot be checked. Reading the
+    absent count as zero added a second line claiming the lane ran 0 tests,
+    every one of the last trusted run's tests short."""
+    from crapkit.lane_results import suite_drops
+
+    lane = lane_over(tmp_path, CLEAN)
+    (tmp_path / "junit.xml").unlink()
+    outcome = run_lane(tmp_path, lane, reuse_artifact=True)
+
+    assert suite_drops(behind({"py": {"tests_total": 1}}), {"py": outcome.provenance}) == []
+
+
+def test_a_lane_that_stopped_declaring_a_junit_cannot_drop():
+    """The same absence from the config side: the lane ran, its provenance has
+    no count, and nothing says how many tests it ran."""
+    from crapkit.lane_results import suite_drops
+
+    assert suite_drops(behind({"py": {"tests_total": 20}}), {"py": {"exit_code": 0}}) == []
 
 
 def test_coverage_warns_off_the_last_trusted_run_before_writing_this_one(tmp_path, capsys):
@@ -188,6 +215,48 @@ def test_coverage_warns_off_the_last_trusted_run_before_writing_this_one(tmp_pat
     _warn_suite_drop(store, {"py": {"tests_total": 10674}})
 
     assert "4626 fewer" in capsys.readouterr().err
+
+
+def _counted_runs(tmp_path, *lane_sets):
+    """A store holding one trusted coverage run per lane-provenance mapping, oldest first."""
+    from crapkit.snapshot import InventoryRow
+    from crapkit.store import SnapshotStore
+
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    rows = [InventoryRow("src", "src/a.py", "hot( n )", 1, 9, 7, 5, 5, 8, 1, 2)]
+    for lanes in lane_sets:
+        store.write_run(commit="a" * 40, tool_versions={}, rows=rows, kind="coverage",
+                        lanes=lanes)
+    return store
+
+
+def test_a_run_that_counted_no_tests_does_not_hide_the_next_runs_drop(tmp_path, capsys):
+    """A reused run whose junit was gone records no count and is still the
+    newest trusted run. Comparing against it alone compared nothing, so the run
+    after it could lose 8 of 20 tests without a word."""
+    from crapkit.cli.scoring import _warn_suite_drop
+
+    store = _counted_runs(tmp_path, {"py": {"tests_total": 20}}, {"py": {}})
+
+    first, last = (run["id"] for run in store.list_runs())
+
+    _warn_suite_drop(store, {"py": {"tests_total": 12}})
+
+    assert (f"lane 'py' ran 12 tests, 8 fewer than run {first}'s 20 (the last trusted run, "
+            f"run {last}, recorded no test count for it)") in capsys.readouterr().err
+
+
+def test_the_newest_count_is_the_one_compared(tmp_path, capsys):
+    """Skipping a run with no count must not reach past a newer one that has
+    it: 19 against the newest 20 is a deleted test, not a drop from 100."""
+    from crapkit.cli.scoring import _warn_suite_drop
+
+    store = _counted_runs(tmp_path, {"py": {"tests_total": 100}}, {"py": {"tests_total": 20}},
+                          {"py": {}})
+
+    _warn_suite_drop(store, {"py": {"tests_total": 19}})
+
+    assert capsys.readouterr().err == ""
 
 
 def test_a_crash_during_a_flake_retest_keeps_every_failure(tmp_path):

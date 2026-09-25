@@ -78,6 +78,115 @@ def test_a_stamp_without_a_refusal_reuses_as_before(tmp_path):
     assert outcome.provenance["parser"] == "istanbul"
 
 
+# --- a stamps file crapkit cannot read may have held the refusal -----------------
+#
+# The refusal lives in .crapkit/artifacts.json. A file that does not parse, one
+# whose top level is not an object, or an entry that is not an object read as no
+# stamp at all, and reuse scored the dead lane's leftover as a trusted run.
+
+def _stamps_file(root: Path) -> Path:
+    return root / ".crapkit" / "artifacts.json"
+
+
+def _cut_short(root: Path) -> None:
+    text = _stamps_file(root).read_text(encoding="utf-8")
+    _stamps_file(root).write_text(text[: len(text) // 2], encoding="utf-8")
+
+
+def _top_level_list(root: Path) -> None:
+    data = json.loads(_stamps_file(root).read_text(encoding="utf-8"))
+    _stamps_file(root).write_text(json.dumps([data]), encoding="utf-8")
+
+
+def _entry_not_object(root: Path) -> None:
+    data = json.loads(_stamps_file(root).read_text(encoding="utf-8"))
+    data["cov.json"] = "hand-edited"
+    _stamps_file(root).write_text(json.dumps(data), encoding="utf-8")
+
+
+def _not_utf8(root: Path) -> None:
+    _stamps_file(root).write_bytes(b'{"cov.json": "caf\xe9"}')
+
+
+UNREADABLE_STAMPS = {
+    "cut-short-mid-write": (_cut_short, "it does not parse as JSON"),
+    "top-level-not-an-object": (_top_level_list, "its top level is not an object"),
+    "entry-not-an-object": (_entry_not_object, "its entry for cov.json is not an object"),
+    "not-utf8": (_not_utf8, "it does not parse as JSON"),
+}
+
+
+@pytest.mark.parametrize("form", sorted(UNREADABLE_STAMPS))
+def test_a_stamps_file_crapkit_cannot_read_refuses_reuse_and_says_why(tmp_path, form):
+    lane = _lane()
+    _refused(tmp_path, lane, _plant(tmp_path, "cov.json", BEFORE))
+    damage, why = UNREADABLE_STAMPS[form]
+    damage(tmp_path)
+
+    with pytest.raises(ToolError) as raised:
+        run_lane(tmp_path, lane, reuse_artifact=True)
+
+    message = str(raised.value)
+    assert message.startswith(f"lane 'py': .crapkit/artifacts.json cannot be read ({why}"), message
+    assert ("so crapkit cannot tell whether cov.json is the file a failed attempt left; rerun "
+            "the lane (") in message and "--lane py`), or delete .crapkit/artifacts.json to " \
+        "reuse the file as it stands" in message, message
+    assert raised.value.exit_code == 5
+
+
+def test_an_unreadable_stamps_file_with_no_artifact_is_the_missing_artifact_refusal(tmp_path):
+    """Absence of the artifact still outranks everything the stamps say."""
+    lane = _lane()
+    _stamps_file(tmp_path).parent.mkdir(parents=True)
+    _stamps_file(tmp_path).write_text("{", encoding="utf-8")
+
+    with pytest.raises(ToolError, match="produced no artifact at cov.json"):
+        run_lane(tmp_path, lane, reuse_artifact=True)
+
+
+def test_no_stamps_file_at_all_reuses_as_before(tmp_path):
+    """A repo that only ever reuses artifacts another command wrote has never
+    stamped one: no file is not an unreadable file."""
+    lane = _lane()
+    _plant(tmp_path, "cov.json", BEFORE)
+
+    outcome = run_lane(tmp_path, lane, reuse_artifact=True)
+
+    assert outcome.provenance["parser"] == "istanbul"
+
+
+def test_a_real_run_repairs_the_stamps_file_it_could_not_read(tmp_path):
+    """The write replaces what it could not read, so one real run clears the
+    refusal to reuse."""
+    lane = _lane(command="python -c \"import os; os.utime('cov.json')\"")
+    _plant(tmp_path, "cov.json", BEFORE)
+    _stamps_file(tmp_path).parent.mkdir(parents=True)
+    _stamps_file(tmp_path).write_text("[", encoding="utf-8")
+
+    write_stamps(tmp_path, {"cov.json": {"commit": "abc", "lane": "py", "seconds": 1.0}})
+
+    assert read_stamps(tmp_path) == {"cov.json": {"commit": "abc", "lane": "py", "seconds": 1.0}}
+    assert run_lane(tmp_path, lane, reuse_artifact=True).provenance["exit_code"] is None
+
+
+def test_the_stamps_file_is_replaced_whole_and_never_left_cut_short(tmp_path, monkeypatch):
+    """A crash during the write used to leave the file cut short. The write now
+    goes to a temporary file that replaces the old one in one step, so a crash
+    leaves the old file whole."""
+    write_stamps(tmp_path, {"cov.json": {"lane": "py", "refused_mtime_ns": 7}})
+    before = _stamps_file(tmp_path).read_bytes()
+
+    def crash(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", crash)
+    with pytest.raises(OSError):
+        write_stamps(tmp_path, {"other.json": {"lane": "js", "seconds": 1.0}})
+
+    assert _stamps_file(tmp_path).read_bytes() == before
+    assert [p.name for p in _stamps_file(tmp_path).parent.iterdir()] == ["artifacts.json"]
+
+
 def test_a_refusal_for_a_file_that_is_gone_is_the_missing_artifact_refusal(tmp_path):
     """The persisted refusal never outranks absence: a cleaned .crapkit/cov/
     still reads as `produced no artifact at`, the sentence the recover skill
@@ -218,6 +327,22 @@ def test_the_lanes_page_and_the_changelog_quote_the_refusal_reuse_prints(tmp_pat
     assert printed.split("lane 'py' ", 1)[1] in unwrapped, "the changelog quotes something else"
     for page in (lanes_page, changelog):
         assert "`--reuse-artifacts` is untouched" not in page, "a promise 0.5.0 broke is still made"
+
+
+def test_the_lanes_page_quotes_the_refusal_an_unreadable_stamps_file_draws(tmp_path, monkeypatch):
+    """The page runs `$ crapkit coverage`, so the refusal names that spelling."""
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/crapkit", "coverage"])
+    root = Path(__file__).resolve().parent.parent.parent
+    lane = Lane(name="py", command="python -m pytest --cov", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("src",))
+    _plant(tmp_path, lane.artifact, BEFORE)
+    _stamps_file(tmp_path).write_text("{", encoding="utf-8")
+    with pytest.raises(ToolError) as raised:
+        run_lane(tmp_path, lane, reuse_artifact=True)
+
+    quoted = f"crapkit: lane 'py' FAILED: {raised.value}"
+    assert str(raised.value).startswith("lane 'py': .crapkit/artifacts.json cannot be read"), quoted
+    assert quoted in (root / "docs" / "lanes.md").read_text(encoding="utf-8").splitlines()
 
 
 def test_two_leftover_files_are_named_in_the_plural(tmp_path):

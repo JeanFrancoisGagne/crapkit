@@ -12,7 +12,7 @@ from crapkit.coupling import change_coupling_lines
 from crapkit.diffparse import changed_ranges
 from crapkit.errors import GitError
 from crapkit.mutate import file_mutants
-from crapkit.mutate_pool import drop_pool, run_mutants
+from crapkit.mutate_pool import MutantVerdict, drop_pool, run_mutants
 from hang_guard import HANG_SECONDS
 
 
@@ -81,7 +81,8 @@ def test_mutation_workers_receive_dirty_leading_space_dependency(repository, wor
     cfg = SimpleNamespace(mutation_workers=workers, mutation_timeout_seconds=HANG_SECONDS,
                           mutation_command=f'"{sys.executable}" runner.py')
     try:
-        assert run_mutants(repository, cfg, [mutant, mutant], lambda *args: None) == [True, True]
+        assert run_mutants(repository, cfg, [mutant, mutant],
+                           lambda *args: None) == [MutantVerdict.KILLED] * 2
     finally:
         drop_pool(repository)
 

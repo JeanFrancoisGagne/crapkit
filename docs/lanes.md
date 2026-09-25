@@ -223,6 +223,31 @@ booleans, fractions and non-finite values are refused. A coverage.py summary als
 cannot report more covered lines or branches than its declared total. A bad
 artifact fails its lane with the input named in the error.
 
+A count that is missing is refused the same way, never read as a zero. In istanbul every
+`fnMap`, `statementMap` and `branchMap` id needs its counter in `f`, `s` and `b`: a
+dropped counter read as a function never called, a statement that never ran or a branch
+pair that did not exist, and the score moved with nothing said. A `b` array also needs one
+hit count per location its `branchMap` entry lists, since crapkit counts a branch's paths
+by its hit counts: an if/else cut to `[1]` scored 1 of 1, and `[]` fell back to the
+statements. An entry with no `locations` list is counted by its hit counts. The refusal
+names the file and the first id:
+
+```
+crapkit: lane 'ui' FAILED: unparseable istanbul artifact coverage/ui.json: src/hot.ts: statement '3' has no hit count in `s`, so crapkit cannot tell whether it ran (1 such in this file); regenerate the artifact with the coverage tool, or merge shards with one that keeps every counter
+```
+
+```
+crapkit: lane 'ui' FAILED: unparseable istanbul artifact coverage/ui.json: src/hot.ts: branch '0' has 1 hit count(s) in `b` for its 2 location(s), so crapkit cannot tell which of its paths ran (1 such in this file); regenerate the artifact with the coverage tool, or merge shards with one that keeps every counter
+```
+
+A coverage.py function needs its `summary`, and each kind of count in it as a pair:
+`num_statements` with `covered_lines`, `num_branches` with `covered_branches`. A summary
+with neither kind, one count without its partner, or no statement counts beside 0 of 0
+branches is refused: each read as 0 of 0 where that count decides, and a function that ran
+scored cov 0. A kind with neither count and nothing to decide is one the report did not
+measure: branches in a report run without `--cov-branch`, or statements beside branches,
+which decide on their own.
+
 crapkit scores functions, so `fnMap` is the part that decides everything. Per file in the
 artifact:
 
@@ -554,6 +579,16 @@ that scores from statements with the downgrade said out loud rather than failing
 ```
 $ crapkit coverage
 crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact — add --cov-branch to the lane command to measure branches
+```
+
+The report measures branches when its `meta.branch_coverage` says so, or when any of its
+functions carries branch counts, so a report with no `meta` is judged by what it holds.
+In a report that measures branches, coverage.py writes `num_branches: 0` for a function
+with none, so a function with no branch counts at all was rewritten by something else.
+Read from its statements, its coverage moved with nothing said; the report is refused:
+
+```
+crapkit: lane 'py' FAILED: coverage.py report measures branches, but 1 function(s) carry no branch counts (api/views.py: render), so crapkit cannot tell how many of their branches ran; regenerate the report with the coverage tool
 ```
 
 Every function in the model already falls back to statement coverage when it holds no
@@ -979,7 +1014,7 @@ which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-b
 
 | Flag | Behavior |
 |---|---|
-| `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp. |
+| `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp. A declared junit it cannot read is a warning under `coverage` and [exit 5 under `verify`](#under---reuse-artifacts-it-is-a-warning). |
 | `--reuse-unchanged` | Reuse a lane only when its stamp proves nothing it reads changed; otherwise run it again. A lane without `inputs` needs the same clean HEAD, unchanged lane settings, `crapkit.toml` bytes, inherited environment and coverage/JUnit bytes. A lane with `inputs` needs its artifact's commit still behind HEAD, no change under those paths, its own lane table and `env` unchanged, and the same coverage/JUnit bytes. A failed attempt that wrote no artifact always reruns. Each lane prints one line saying which it did, and a rerun names the first condition that failed. |
 
 Without `inputs`, automatic reuse covers the whole tracked tree, including tests and
@@ -1016,8 +1051,9 @@ A rerun names the first condition that failed: `no artifact at PATH`, a last att
 that wrote none, `its stamp holds no proof` (measured with uncommitted changes, or by a
 crapkit that recorded none), uncommitted changes, `HEAD is X and its artifact was built
 at Y`, `crapkit.toml changed`, `its lane table changed`, `N environment variable(s)
-changed: NAME`, changes under a lane's `inputs` since its commit, or artifact bytes that
-differ from the stamp. `coverage --json` carries the same sentence per lane as
+changed: NAME`, changes under a lane's `inputs` since its commit, or a declared file
+that no longer matches its stamp: `PATH: missing`, `PATH: unreadable (why)` or `PATH:
+bytes differ from its stamp`. `coverage --json` carries the same sentence per lane as
 `rerun_reason`, `""` for a lane it reused.
 
 Ignored inputs other than `crapkit.toml`, files outside the repository, installed
@@ -1095,6 +1131,24 @@ records nothing either: that file is this run's, and reuse judges it on its own 
 
 `--reuse-unchanged` reads the same refusal stamp, so a lane whose last attempt wrote
 nothing reruns even when every other input still matches.
+
+The refusal lives only in `.crapkit/artifacts.json`, so reuse also refuses a lane while
+that record cannot be read: a file that does not parse, one whose top level is not an
+object, or an entry for the lane's artifact that is not an object. Each of those read as no
+stamp at all, and reuse scored a dead lane's leftover as a trusted run:
+
+```
+$ crapkit coverage --reuse-artifacts
+crapkit: lane 'py' FAILED: lane 'py': .crapkit/artifacts.json cannot be read (it does not parse as JSON), so crapkit cannot tell whether .crapkit/cov/py.json is the file a failed attempt left; rerun the lane (`crapkit coverage --lane py`), or delete .crapkit/artifacts.json to reuse the file as it stands
+```
+
+`doctor` WARNs about the same file. crapkit writes it through a temporary file that
+replaces the old one in one step, so a crash mid-write no longer leaves it cut short. A
+missing file is not an unreadable one: a repo that only ever reuses artifacts another
+command wrote never stamps any. That is also why deleting `.crapkit/artifacts.json` drops
+every refusal it held, and why a store a crapkit older than 0.5.0 left behind holds none:
+reuse then scores whatever file is on disk. Delete it only when you mean to trust every
+artifact there.
 
 ---
 
@@ -1236,6 +1290,12 @@ Rules that keep this from hiding real failures:
 - A test that passed its rerun is stored under the lane's `retried_passes`, and the lane's
   `failures` keeps the first attempt. A later verify that measures against this run never
   forgives that test.
+- A verify run stored by crapkit 0.7.x has no `retried_passes`: a test that passed its
+  rerun sits in its `failures` beside the real ones. A later verify reads that run's
+  failures from the newest trusted run behind it that a baseline can forgive from, and says
+  so (`baseline run 4 was written by crapkit 0.7.6, which kept a failure that passed its
+  flake retry in its failure list`). Reading that list as it stood forgave a real failure of
+  the test that once passed its rerun.
 
 ---
 
@@ -1345,9 +1405,24 @@ run 11 @ 525a3276065: 5 functions scored: 5 measured, ...
 ```
 
 The lane records no test counts, which is the same no-counts path a lane with no
-`results_artifact` takes, and `verify` says so against its baseline. The alternative was
-deleting `results_artifact` from the config, which gives up both checks on every future
-run to get past one.
+`results_artifact` takes. The alternative was deleting `results_artifact` from the config,
+which gives up both checks on every future run to get past one.
+
+`verify --reuse-artifacts` does not pass over that warning. Its verdict is the
+no-new-failures check, and a lane whose declared junit it could not read checked no test.
+So it exits 5 before it stores the run, as a real run over the same file does:
+
+```
+$ crapkit verify --reuse-artifacts
+crapkit: lane 'py' reused .crapkit/cov/junit-py.xml and cannot check it: results_artifact .crapkit/cov/junit-py.xml is missing; the crashed-worker and no-new-failures checks cannot run for this lane
+crapkit: lane 'py' declares results_artifact .crapkit/cov/junit-py.xml, which this verify reused and could not read, so no test in it was checked for a new failure; run verify without --reuse-artifacts so the lane writes it again
+EXIT=5
+```
+
+That verify used to pass: exit 0, `"ok": true` under `--json`, and the run stored as the
+next trusted baseline. The Action never reached it, since its `coverage` step refuses the
+same junit first. A lane that declares no `results_artifact` had no report to read, so
+verify still passes it and lists it under `lanes_without_results`.
 
 ### The test count is the second check
 
@@ -1366,9 +1441,9 @@ A warning, never a failure: deleting a test file is a legitimate way to get ther
 reports **any** shrink against its own baseline, which is the strict half of the same check.
 
 Both counts are optional and neither absence is an error. A baseline recorded before the
-lane declared a `results_artifact` carries no count and compares nothing. A lane that wrote
-no junit this run gets one line naming the gap. Here the baseline had a junit and the lane
-that ran under `verify` had lost it:
+lane declared a `results_artifact` carries no count and compares nothing. A lane that
+declares no junit this run gets one line naming the gap. Here the baseline had a junit and
+the lane has since stopped declaring one:
 
 ```
 $ crapkit verify
@@ -1378,6 +1453,47 @@ verify OK @ 437a254ba09 vs baseline 437a254ba09 (2 changed files)
 
 Reading that absent count as zero is what used to turn such a run into a KeyError, after
 the lane had already run.
+
+`coverage` reads both absences the same way. A lane with no count this run compares
+nothing and prints no drop: a lane with no `results_artifact` has nothing to count, and
+under `--reuse-artifacts` the reuse warning above already names the missing junit. A
+trusted run that counted nothing for a lane is passed over, so a drop is measured from the
+newest count a trusted run recorded, even when an older run holds it. The line then names
+that run and why:
+
+```
+crapkit: lane 'py' ran 12 tests, 8 fewer than run 1's 20 (the last trusted run, run 2, recorded no test count for it) — check the runner's log for a worker that died without reporting it
+```
+
+`verify` reaches past its baseline the same way, for the count and for the failure list.
+When the baseline recorded neither for a lane, it compares with the newest trusted run at
+or behind the baseline's commit that did, and says which:
+
+```
+$ crapkit verify
+warning: lane 'py': baseline run 2 recorded no test results, so its failures are compared with run 1's
+warning: lane 'py' runs 8 fewer tests than run 1 (baseline run 2 recorded no test count for it)
+verify OK @ 0e8073a7421 vs baseline 0e8073a7421 (0 changed files) (1 unchanged failure forgiven, first t::c0)
+```
+
+Before, that run compared nothing: a suite that fell from 20 tests to 2 passed without a
+word, and a test failing at the baseline's own commit came back as a `NEW FAILURE`, exit 8.
+When no run recorded a failure list for the lane, its failures still count as new, since a
+gate fails closed, and the line says they may predate the change:
+
+```
+warning: lane 'py': no trusted run at or behind the baseline recorded which of its tests failed, so its 1 new failure may predate this change; a baseline measured with results_artifact declared tells them apart
+```
+
+That is the pull request that adds `results_artifact` to a lane whose suite already fails a
+test. `verify --json` lists such lanes under `lanes_without_baseline_results`, and every
+lane that declares no `results_artifact` under `lanes_without_results`. A lane with no
+`results_artifact` whose command exited nonzero gets its own line, since its exit code is
+recorded and not enforced and nothing else says a test failed:
+
+```
+warning: lane 'py' exited 1 and declares no results_artifact, so verify cannot see which of its tests failed; declare results_artifact (the lane's junit report) to check them
+```
 
 ---
 

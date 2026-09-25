@@ -588,6 +588,29 @@ ratchet burn-down: 1 open mark(s), 0 repaid (0 in the last 30d, 0 in 90d)
 A mark with no commit behind it reports `0d`. The burn-down clock starts when you commit the
 file.
 
+### A history the checkout does not hold
+
+The ages and repayments are only as long as the history git holds. A shallow clone, which is
+what `actions/checkout` makes unless you set `fetch-depth: 0`, holds one commit: every open
+mark reads `0d` and no repayment shows. The report keeps those numbers, adds `"shallow": true`
+to `--json`, and prints one line on stderr:
+
+    warning: mark ages and repayments read only the commits this clone holds; this shallow clone does not hold every commit: set fetch-depth: 0 on the checkout or run git fetch --unshallow
+
+`--enforce` refuses to judge the policy there; see [the debt policy](#the-debt-policy).
+`brief` reads `gate_rule.mark_age_days` off the same history, so its packet carries
+`shallow` and prints the same kind of line.
+
+The history is read without rename detection, which cost 0.6 s of a 1.14 s report on a
+72k-commit history. Renaming the marks file (`git mv crapkit-ratchet.tsv debt.tsv`, then
+`ratchet_file = "debt.tsv"`) therefore restarts its history at the rename: every open mark
+reads its age from that commit, and no earlier repayment counts. The report names the commit:
+
+    warning: debt.tsv's history starts at 3f2a91c07be, the commit that renamed it from crapkit-ratchet.tsv, so mark ages and repayments count from there
+
+`--enforce` still judges the policy after a rename, on the history from that commit on. Keep
+the marks file's name if its ages matter to a policy.
+
 ---
 
 ## The debt policy
@@ -620,6 +643,16 @@ distinguishes the three states honestly:
 | `["..."]` | Violations, and the exit code is 1. |
 
 Do not read `[]` off a call without `--enforce`. There is none to read.
+
+In a shallow clone, `--enforce` with a debt key set exits 4 before it judges anything:
+
+    crapkit: ratchet report --enforce judges mark ages and repayments by the git history of crapkit-ratchet.tsv; this shallow clone does not hold every commit: set fetch-depth: 0 on the checkout or run git fetch --unshallow
+
+Every mark there reads `0d` and no repayment shows, so an age limit would pass and a
+repayment quota would fail on history the clone never fetched. With neither key set there is
+nothing to judge, and `--enforce` reports what the plain report does, the stderr line
+included. Under `--json` the refusal is the error object every command prints, with `exit`
+4 and `kind` `git`.
 
 ---
 
@@ -667,6 +700,28 @@ EXIT=7
 
 That run changed only a test file. The source function was untouched; deleting its coverage
 was enough.
+
+A marks file that is missing, or holds nothing but blank lines, is not a repo that never
+marked any debt. `verify` then reads the newest marks the history from the baseline's commit
+to HEAD committed, judges against those and says which commit held them, so deleting or
+emptying the file cannot let a rise through:
+
+```
+$ crapkit verify
+warning: crapkit-ratchet.tsv is missing, but commit 8c780bb18da, the newest since the baseline to hold it, has 1 mark(s); verify judged against those and left crapkit-ratchet.tsv as it is. Restore it with `git checkout 8c780bb18da -- crapkit-ratchet.tsv`, or drop the marks of code that is gone with `crapkit ratchet prune`
+verify FAILED @ 3a45b8a9b6c vs baseline 8c780bb18da (1 changed files)
+  RATCHET  app/m.py  pick( a , b , c ): 10.75 -> 20.0
+  findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
+EXIT=7
+```
+
+verify never writes those marks back. A pass leaves a missing file missing and an emptied
+file empty; before this, an emptied file was restamped into a header with no rows, and the
+`git add` the OK line asked for committed the lost marks away. The JSON receipt keeps
+`ratchet_sha256` for the file on the tree (`null` when it is gone), and says
+`"ratchet_source": "committed"` with the commit in `ratchet_source_commit` and the committed
+marks' digest in `ratchet_source_sha256`. When the clone does not hold the history since the
+baseline, verify refuses with exit 4 rather than judge against no marks.
 
 Comparison happens at the precision the mark is stored at (four decimals). `cov` is a
 division, so long decimals are routine and an unrounded compare would wedge an unchanged
@@ -749,9 +804,9 @@ $ crapkit overrides
 run  10 @ 8c780bb18da 2026-08-23T01:36:42Z  crap 56.0  app/m.py  route( a , b , c , d )  (shipping the hotfix, ticket 412)
 ```
 
-An override grants gate violations and nothing else. A ratchet regression or a new test
-failure in the same run refuses it, and the refusal is one stderr line naming the cause and
-the escape; the exit code stays the verdict's:
+An override grants gate violations and nothing else. A ratchet regression, a new test
+failure or an unread file in the same run refuses it, and the refusal is one stderr line
+naming the cause and the escape; the exit code stays the verdict's:
 
 ```
 $ crapkit verify --override "hotfix INV-412 ships tonight; decompose next sprint"
@@ -769,7 +824,11 @@ pushed past its mark carries a gate violation and a regression in one payload
 way to accept that debt is to raise the mark in `crapkit-ratchet.tsv` by hand and commit the
 change where a reviewer sees it. A new test failure is refused from the other side: the
 override records debt in the marks file, and a failing test is not debt a mark can carry;
-fix the test first. A run holding both causes is refused once, both on the line. A refused
+fix the test first. An unread file, a changed file no reader could read, is refused from a
+third side: no function in it was judged, so there is no debt to sign, and granting the
+functions beside it would sign debt while the gate still refuses the file. Its escape is the
+one the `UNREAD` line gives: change what the reason names, or list the file under
+`[exclude]`. A run holding several causes is refused once, every cause on the line. A refused
 override writes no alert line, no store row and no mark. Under `--json` the line is on
 stderr and stdout stays one object.
 
@@ -793,7 +852,14 @@ and `SHELL` for the hook whichever shell started the commit.
 The hook path never raises an existing mark. It has no coverage data, so it synthesizes a
 worst-case score, and letting that overwrite a real measurement would blind the ratchet to a
 later coverage collapse. A prior tighter mark stays, and the next `verify` still demands
-repayment.
+repayment. The worst case is the CRAP the function's scope scores with no coverage: ccn^2 +
+ccn where a lane measures the scope, and ccn in a `coverage_optional` scope, which scores
+CRAP = ccn. Before 0.8.1 the hook wrote ccn^2 + ccn there too, 72 for a ccn-8 function, and
+verify let the function grow to ccn 72 before its mark failed.
+
+The hook refuses the override before it writes anything when a staged file went unread,
+with the same `override refused` line verify prints; the commit fails on the file either
+way, so a grant there would only sign debt for a commit that never lands.
 
 The hook path leaves the metric stamp alone too. Its score comes from ccn alone and it compares
 no mark, so a marks file stamped under an older metric keeps that stamp, and the next `verify`

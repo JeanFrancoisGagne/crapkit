@@ -7,7 +7,7 @@ import pytest
 
 from crapkit.config import load_config_text
 from crapkit.diffparse import changed_ranges
-from crapkit.gitio import config_value, diff_since, file_log_patches, staged_reads
+from crapkit.gitio import config_value, diff_since, file_log, staged_reads
 from crapkit.hook import gate_staged
 
 
@@ -71,7 +71,7 @@ def test_changed_ranges_and_history_ignore_presentation(changed_repo, settings):
     configure(changed_repo, settings)
     assert changed_ranges(diff_since(changed_repo, "HEAD")) == {"b/app.py": [(2, 9)]}
     git(changed_repo, "commit", "-qm", "change")
-    assert changed_ranges(file_log_patches(changed_repo, "b/app.py")[-1][1]) == {
+    assert changed_ranges(file_log(changed_repo, "b/app.py")[-1].patch) == {
         "b/app.py": [(2, 9)]}
     for key, value in settings.items():
         assert config_value(changed_repo, key) == value

@@ -92,9 +92,9 @@ MOD_PY = "def ok(a):\n    return a\n"
 # one. It measures the python scope; the Rust and Go scopes are cc-only.
 MAKE_COV = '''import json
 
-FILE = {"missing_lines": [], "summary": {"num_branches": 0, "covered_branches": 0},
-        "functions": {"ok": {"summary": {"num_branches": 0, "covered_branches": 0},
-                             "missing_lines": []}}}
+SUMMARY = {"covered_lines": 0, "num_statements": 1, "num_branches": 0, "covered_branches": 0}
+FILE = {"missing_lines": [], "summary": SUMMARY,
+        "functions": {"ok": {"summary": SUMMARY, "missing_lines": []}}}
 
 with open("cov.json", "w", encoding="utf-8") as fh:
     json.dump({"meta": {"branch_coverage": True}, "files": {"pylib/mod.py": FILE}}, fh)

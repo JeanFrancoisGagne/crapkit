@@ -25,6 +25,15 @@ MARKER = "<!-- crapkit-action -->"
 
 _HEADER = "| File | Function | ccn | risk | remedy |\n|---|---|---:|---:|---|"
 
+# The line `crapkit worklist` prints on stderr when the checkout is a shallow
+# clone, repeated above the table because `risk` is ranked on the churn it
+# describes and the job log is where nobody reads it. The worklist payload's
+# `shallow` says when; tests/unit/test_action_contract.py pins the words to the
+# CLI's.
+SHALLOW_LINE = ("warning: churn counts read only the commits this clone holds; this shallow "
+                "clone does not hold every commit: set fetch-depth: 0 on the checkout or run "
+                "git fetch --unshallow")
+
 # The rule each verify exit code stands for. verify reports the first that
 # fires, so the phrase names the rule that refused the tree and the bullets
 # below it list every finding the payload carries.
@@ -119,10 +128,13 @@ def coverage_failure(coverage: dict | None) -> str:
     The first line of the first lane failure the summary carries; the error
     object's message when the command died before a summary (0.5.0 prints one
     under --json, including when every lane failed); or a pointer at the job log
-    when nothing was printed at all.
+    when nothing was printed at all. Since that error object, an empty payload
+    means crapkit itself stopped before printing: blaming every lane sent a
+    reader hunting lane logs for a crash or a kill.
     """
     if not coverage:
-        return "no run summary was printed, so every lane failed; the lane errors are in the job log"
+        return ("it printed no run summary, so it crashed or was killed before scoring; "
+                "its error is in the job log")
     error = coverage.get("error")
     if error:
         return _error_line(error)
@@ -175,11 +187,33 @@ def scored_line(coverage: dict | None) -> str:
             f"{_plural(coverage.get('files', 0), 'file')}, "
             f"{coverage.get('over_target', 0)} {_over(coverage)}, "
             f"CRAP load {coverage.get('crap_load', 0)}, "
-            f"grade {coverage.get('grade', '?')}{_lane_failures(coverage)}.")
+            f"grade {coverage.get('grade', '?')}{_empty_scopes(coverage)}{_lane_failures(coverage)}.")
+
+
+def _empty_scopes(coverage: dict) -> str:
+    """One clause per scope that scored no function: nothing in it counts over
+    the ceiling, so without the clause the grade reads as a clean tree."""
+    return "".join(f"; scope `{_cell_text(name)}` scored no function: {_why_empty(files)}"
+                   for name, files in (coverage.get("empty_scopes") or {}).items())
+
+
+def _why_empty(files: int) -> str:
+    if not files:
+        return "it claims no file"
+    return f"no reader could read its {_plural(files, 'file')}"
+
+
+def _gate_count(verify: dict) -> str:
+    """Functions over the ceiling plus changed files no reader could read:
+    both fail the gate, exit 6, so an unread file alone never reads as
+    `0 gate violations` under a failed gate."""
+    unread = len(verify.get("unread_files") or [])
+    count = _plural(len(verify.get("gate_violations", [])) + unread, "gate violation")
+    return f"{count} ({_plural(unread, 'unread file')})" if unread else count
 
 
 def _findings(verify: dict) -> str:
-    parts = [_plural(len(verify.get("gate_violations", [])), "gate violation"),
+    parts = [_gate_count(verify),
              _plural(len(verify.get("ratchet_regressions", [])), "ratchet regression"),
              _plural(len(verify.get("new_failures", [])), "new test failure"),
              _plural(verify.get("diff_uncovered_count", 0), "uncovered changed line")]
@@ -187,8 +221,31 @@ def _findings(verify: dict) -> str:
 
 
 def _against(verify: dict) -> str:
-    return (f"Run {verify.get('run_id')} against baseline {verify.get('baseline_run')}, "
+    return (f"Run {verify.get('run_id')} against {_baseline_name(verify)}, "
             f"{_plural(verify.get('changed_files', 0), 'changed file')}")
+
+
+def _baseline_name(verify: dict) -> str:
+    """`baseline 4`, or the commit a `--baseline-tsv` file names: that
+    baseline is no stored run, and its id is null."""
+    if verify.get("baseline_run") is not None:
+        return f"baseline {verify['baseline_run']}"
+    return f"the baseline file at {str(verify.get('baseline_commit') or '?')[:11]}"
+
+
+def _unchecked(verify: dict) -> str:
+    """A sentence naming the lanes whose new failures nothing checked, because
+    they recorded no test results; "" when every lane was checked."""
+    lanes = verify.get("lanes_without_results") or []
+    if not lanes:
+        return ""
+    subject, pronoun = ("lane", "it") if len(lanes) == 1 else ("lanes", "they")
+    return (f" New test failures went unchecked in {subject} {_code_list(lanes)}: {pronoun} "
+            "recorded no test results.")
+
+
+def _code_list(names: list[str]) -> str:
+    return ", ".join(f"`{_cell_text(name)}`" for name in names)
 
 
 def _exit_phrase(verify: dict, exit_code: int) -> str:
@@ -217,6 +274,14 @@ def _gate_bullets(verify: dict) -> list[str]:
             for v in verify.get("gate_violations", [])]
 
 
+def _unread_bullets(verify: dict) -> list[str]:
+    """A changed file no reader could read fails the gate with no function to
+    name; the reason says what to change."""
+    return [f"- unread: `{u.get('path')}`, so the gate judged none of its functions: "
+            f"{_cell_text(u.get('reason'))}"
+            for u in verify.get("unread_files") or []]
+
+
 def _ratchet_bullets(verify: dict) -> list[str]:
     return [f"- ratchet: `{r.get('path')}` `{r.get('long_name')}` "
             f"{r.get('recorded')} -> {r.get('fresh_crap')} (recorded -> fresh)"
@@ -224,7 +289,13 @@ def _ratchet_bullets(verify: dict) -> list[str]:
 
 
 def _failure_bullets(verify: dict) -> list[str]:
-    return [f"- new test failure: `{test}`" for test in verify.get("new_failures", [])]
+    """One bullet per new failure, then one per lane whose baseline recorded no
+    failure list: verify counts those failures as new because nothing says
+    otherwise, and the reviewer should not read them as the change's doing."""
+    unjudged = [f"- lane `{_cell_text(name)}`: the baseline recorded no failure list, so its "
+                "new failures may predate this change"
+                for name in verify.get("lanes_without_baseline_results") or []]
+    return [f"- new test failure: `{test}`" for test in verify.get("new_failures", [])] + unjudged
 
 
 def _uncovered_bullets(verify: dict) -> list[str]:
@@ -243,9 +314,9 @@ def _failed(verify: dict, exit_code: int) -> str:
     """The exit phrase, one bullet per finding, and the counts line last, as
     it always read."""
     head = f"**verify failed, {_exit_phrase(verify, exit_code)}.**"
-    counts = f"{_against(verify)}: {_findings(verify)}."
-    bullets = (_gate_bullets(verify) + _ratchet_bullets(verify) + _failure_bullets(verify)
-               + _uncovered_bullets(verify))
+    counts = f"{_against(verify)}: {_findings(verify)}.{_unchecked(verify)}"
+    bullets = (_gate_bullets(verify) + _unread_bullets(verify) + _ratchet_bullets(verify)
+               + _failure_bullets(verify) + _uncovered_bullets(verify))
     if not bullets:
         return f"{head} {counts}"
     return "\n".join([head, "", *bullets, "", counts])
@@ -271,7 +342,7 @@ def verdict_line(verify: dict | None, exit_code: int, base_reason: str | None = 
     if base_reason is not None:
         return (f"**verify judged no changed function:** the base run was not made "
                 f"({base_reason}). {_against(verify)}.")
-    return f"**verify passed.** {_against(verify)}."
+    return f"**verify passed.** {_against(verify)}.{_unchecked(verify)}"
 
 
 def _in_diff(active: list[dict], changed: list[str]) -> list[dict]:
@@ -338,6 +409,31 @@ def _scope_line(changed: list[str], entries: list[dict]) -> str:
     return f"### Worklist: the whole repository, top {len(entries)}"
 
 
+def worklist_gap(worklist: dict | None) -> str | None:
+    """Why there is no ranking to show, or None when `crapkit worklist` ran.
+
+    Its step keeps going when the command fails: with no run to read it prints
+    an error object and exits 1, and a crash leaves an empty file. Read as a
+    worklist with no rows, either one told the reviewer that no function in
+    their changed files ranked.
+    """
+    if worklist is None:
+        return "`crapkit worklist` printed no ranking; its error is in the job log."
+    error = worklist.get("error")
+    if error:
+        return f"`crapkit worklist` exited {error.get('exit')}: {_first_line(error.get('message'))}."
+    return None
+
+
+def _worklist_section(worklist, changed: list[str], entries: list[dict]) -> list[str]:
+    gap = worklist_gap(worklist)
+    if gap is not None:
+        heading = f"### Worklist: {_plural(len(changed), 'changed file')}" if changed else "### Worklist"
+        return [heading, "", gap]
+    shallow = [SHALLOW_LINE, ""] if worklist.get("shallow") else []
+    return [_scope_line(changed, entries), "", *shallow, table(entries)]
+
+
 def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: int,
          base_reason: str | None = None, coverage_exit: int = 0) -> str:
     """The whole comment. The marker leads, so a truncated body still carries
@@ -348,8 +444,7 @@ def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: in
     return "\n".join([MARKER, "", "## crapkit", "",
                       scored_line(coverage), "",
                       verdict, "",
-                      _scope_line(changed, entries), "",
-                      table(entries), ""])
+                      *_worklist_section(worklist, changed, entries), ""])
 
 
 def _parse(argv: list[str] | None) -> argparse.Namespace:

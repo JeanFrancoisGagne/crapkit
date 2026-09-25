@@ -12,7 +12,7 @@ from pathlib import Path
 from .. import keys, packet
 from ..churn_cache import load_churn
 from ..errors import ConfigError, CrapkitError
-from ..gitio import head_commit, ls_files
+from ..gitio import head_commit, ls_files, shallow_checkout, shallow_warning
 from ..invocation import _self
 from ..keys import claim_key, key_names, key_of, lookup, position, split_ordinal
 from ..score import SCORED_COLUMNS
@@ -66,6 +66,13 @@ def _pushdown_floor(cfg) -> int:
     return sql_floor(cfg.worklist_floor, min([cfg.target, *cfg.scope_targets.values()]))
 
 
+def _warn_shallow(shallow: bool, counts: str) -> None:
+    """The stderr line that says the churn or mark ages below count a history
+    this clone holds only part of. The JSON carries the same fact as `shallow`."""
+    if shallow:
+        print(shallow_warning(counts), file=sys.stderr)
+
+
 def cmd_next_item(args: argparse.Namespace) -> int:
     _positive_top("next-item", args.top)
     root = _command_root(args.repo)
@@ -85,7 +92,8 @@ def cmd_next_item(args: argparse.Namespace) -> int:
     commit = head_commit(root)
     ranked, conflicts = _maybe_claim(commit, args.claim, ranked, handles, args.top)
     head = _next_head(latest, skipped_no_lane, skipped_claimed + conflicts,
-                      latest["commit"] != commit)
+                      latest["commit"] != commit, shallow_checkout(root))
+    _warn_shallow(head["shallow"], "churn counts")
     _emit_next(store, head, ranked, args.top, adm, cfg, scored, excludes, scopes,
                lambda: load_uncovered(root, cfg), handles)
     return 0
@@ -147,15 +155,17 @@ def _claim_available(row, held: dict, legacy: set, handles) -> bool:
 
 
 def _next_head(latest: dict, skipped_no_lane: int, skipped_claimed: int,
-               stale: bool) -> dict:
+               stale: bool, shallow: bool) -> dict:
     """skipped_claimed appears only when a claim actually hid something, so a
     store nobody ever claimed in emits exactly the JSON it emitted before.
 
     `stale` is the same verdict worklist prints its warning from: the snapshot
     describes a commit HEAD has moved past, so the spans in it may have moved.
+    `shallow` says the churn the queue ranks ties on was counted in a clone
+    that holds only part of its history.
     """
     head = {"run_id": latest["id"], "commit": latest["commit"],
-            "skipped_no_lane": skipped_no_lane, "stale": stale}
+            "skipped_no_lane": skipped_no_lane, "stale": stale, "shallow": shallow}
     if skipped_claimed:
         head["skipped_claimed"] = skipped_claimed
     return head
@@ -349,6 +359,7 @@ def _next_item_payload(top, adm, cfg, uncovered, handle: str | None = None) -> d
         # budgeting hints: pieces a decomposition needs; decision paths no test
         # walks. brief publishes these from the same helper, never a second copy
         **packet.budget(top, ceiling),
+        **packet.measurement(top),
         # est_uncovered_paths counts them; these name them, so an add-tests
         # remedy no longer costs a by-hand read of the coverage artifact
         **_uncovered_fields(uncovered, top),
@@ -540,11 +551,14 @@ class _BriefLoader:
     by what actually invalidates it — the path — never by which packet asked.
     """
 
-    def __init__(self, root: Path, cfg, store, latest: dict) -> None:
+    def __init__(self, root: Path, cfg, store, latest: dict, shallow: bool | None = None) -> None:
+        """`shallow` is the command's one answer to whether this clone holds its
+        whole history; None only for a loader no command built."""
         self.root = root
         self.cfg = cfg
         self.store = store
         self.latest = latest
+        self.shallow = shallow
         self._whole_repo: dict = {}
         self._scored_files: dict = {}
         self._file_keys: dict = {}
@@ -656,10 +670,17 @@ class _BriefLoader:
                                     self.key(row))
 
     def _read_mark_events(self) -> list:
-        from ..gitio import file_log_patches
+        """The mark events off the marks file's history, read once per batch, and
+        the line ratchet report prints when that history starts at a rename:
+        the age counts from there too."""
+        from ..marks_history import marks_history, rename_warning
         from ..ratchet_report import mark_events
 
-        return mark_events(file_log_patches(self.root, self.cfg.ratchet_file))
+        history = marks_history(self.root, self.cfg.ratchet_file)
+        renamed = rename_warning(self.cfg.ratchet_file, history)
+        if renamed:
+            print(renamed, file=sys.stderr)
+        return mark_events(history.patches)
 
     def attempts(self, row) -> list:
         key = self.key(row)
@@ -732,6 +753,7 @@ def _packet_context(loader, row, rows: list) -> dict:
         "gate_rule": _packet_gate(loader, row),
         "lane": packet.lane_record(packet.lane_for(scope, cfg.lanes)),
         "stale": loader.stale(),
+        "shallow": loader.shallow,
         "versions": loader.versions(),
         "commands": _packet_commands(cfg, row, scope),
         "attempts": loader.attempts(row),
@@ -762,6 +784,7 @@ def _brief_packet(loader, row) -> dict:
         "target": ceiling,
         "remedy": row.remedy,
         **packet.budget(row, ceiling),
+        **packet.measurement(row),
         "ratchet_mark": loader.mark(row),
         "churn": _brief_churn(loader.churn(), row.path),
         "coupling": _brief_coupling(loader.coupling(), row.path),
@@ -807,13 +830,19 @@ def _print_brief_context(out: dict) -> None:
           f"lane {lane['name'] if lane else 'none'}  ->  {out['commands']['gate']}")
 
 
+def _cov_word(out: dict) -> str:
+    """The coverage a reader at a terminal sees: a percentage, or the fact that
+    nothing measured it, which a 0% beside a no-lane row used to hide."""
+    return "not measured" if out["unmeasured"] else f"{out['scored']['cov']:.0%}"
+
+
 def _print_brief(as_json: bool, out: dict) -> None:
     if as_json:
         _print_json(out)
         return
     s = out["scored"]
     print(f"{out['path']}:{s['start']}  {out['function']}")
-    print(f"  ccn {s['ccn']} (cognitive {s['cognitive']})  cov {s['cov']:.0%}  "
+    print(f"  ccn {s['ccn']} (cognitive {s['cognitive']})  cov {_cov_word(out)}  "
           f"crap {s['crap']:.1f} vs ceiling {out['target']}  -> {s['remedy']}")
     print(f"  mark {_mark_text(out['ratchet_mark'])}  churn {_churn_text(out['churn'])}")
     print(f"  uncovered lines: {_brief_lines_text(out)}")
@@ -855,7 +884,7 @@ def _brief_batch(loader, count: int) -> dict:
     rows, skipped_claimed = _batch_rows(loader, count)
     loader.prime_attempts(rows)
     out = {"run_id": loader.latest["id"], "commit": loader.latest["commit"],
-           "stale": loader.stale(),
+           "stale": loader.stale(), "shallow": loader.shallow,
            "packets": [_brief_packet(loader, row) for row in rows]}
     if skipped_claimed:
         out["skipped_claimed"] = skipped_claimed
@@ -875,7 +904,8 @@ def cmd_brief(args: argparse.Namespace) -> int:
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     store, latest = _scored_store(root)
-    loader = _BriefLoader(root, cfg, store, latest)
+    loader = _BriefLoader(root, cfg, store, latest, shallow_checkout(root))
+    _warn_shallow(loader.shallow, "churn counts and mark ages")
     if args.batch is not None:
         _print_json(_brief_batch(loader, _resolve_batch(args.batch)))
         return 0
@@ -969,10 +999,11 @@ def _cap_label(requested: int | None, top: int) -> str:
 
 
 def _worklist_print(as_json: bool, wl, latest: dict, cfg, stale: bool,
-                    batches: list | None, cap: str) -> None:
+                    batches: list | None, cap: str, shallow: bool) -> None:
     _stale_warning(stale, as_json, latest)
+    _warn_shallow(shallow, "churn counts")
     if as_json:
-        _print_json(_worklist_payload(wl, latest, cfg, stale, batches))
+        _print_json({**_worklist_payload(wl, latest, cfg, stale, batches), "shallow": shallow})
         return
     print(f"worklist @ {latest['commit'][:11]} (run {latest['id']}, floor ccn>={cfg.worklist_floor}, "
           f"churn {cfg.churn_window_months}mo) - {len(wl.active)} of {wl.active_total} active "
@@ -1023,7 +1054,7 @@ def cmd_worklist(args: argparse.Namespace) -> int:
     wl = _worklist_for(root, cfg, store, latest, top=top, scopes=scopes)
     batches = _worklist_batches(root, cfg, wl.active, args.batches)
     _worklist_print(args.json, wl, latest, cfg, latest["commit"] != head_commit(root), batches,
-                    _cap_label(args.top, top))
+                    _cap_label(args.top, top), shallow_checkout(root))
     return 0
 
 

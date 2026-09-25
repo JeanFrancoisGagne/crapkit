@@ -111,6 +111,75 @@ def _admit_hits(cov: dict) -> int:
     return clamped
 
 
+# Each map istanbul writes, the counter group that pairs with it, and what one
+# entry of it is.
+_COUNTED = (("fnMap", "f", "function"), ("statementMap", "s", "statement"),
+            ("branchMap", "b", "branch"))
+
+
+def _require_counters(cov: dict, rel: str) -> dict:
+    """`cov` once every mapped id has its hit counter.
+
+    istanbul's writers pair every fnMap, statementMap and branchMap entry with a
+    counter in f, s and b. A salvage merged by hand or a converter can drop one,
+    and attribution read the absent counter as a zero: a statement that never
+    ran, a branch pair that did not exist, a function never called. The score
+    moved with nothing said, so the artifact is refused instead, like a negative
+    counter in f or s.
+    """
+    for mapped, counters, kind in _COUNTED:
+        _require_counter_group(cov, rel, mapped, counters, kind)
+    _require_branch_paths(cov, rel)
+    return cov
+
+
+_REGENERATE = ("regenerate the artifact with the coverage tool, or merge shards with one "
+               "that keeps every counter")
+
+
+def _require_counter_group(cov: dict, rel: str, mapped: str, counters: str, kind: str) -> None:
+    hits = cov.get(counters, {})
+    missing = [key for key in cov.get(mapped, {}) if key not in hits]
+    if missing:
+        raise ValueError(
+            f"{rel}: {kind} {missing[0]!r} has no hit count in `{counters}`, so crapkit cannot "
+            f"tell whether it ran ({len(missing)} such in this file); {_REGENERATE}")
+
+
+def _location_count(branch: object) -> int | None:
+    """How many paths a branchMap entry lists, or None for an entry with no
+    `locations` list, such as a hand-built one that carries only `loc`."""
+    locations = branch.get("locations") if isinstance(branch, dict) else None
+    return len(locations) if isinstance(locations, list) else None
+
+
+def _miscounted_branches(cov: dict) -> list[tuple[str, int, int]]:
+    """(id, hit counts, locations) for each branch whose `b` array is not one
+    hit count per location."""
+    hits = cov.get("b", {})
+    wrong = []
+    for key, branch in cov.get("branchMap", {}).items():
+        paths = _location_count(branch)
+        if paths is not None and isinstance(hits[key], list) and len(hits[key]) != paths:
+            wrong.append((key, len(hits[key]), paths))
+    return wrong
+
+
+def _require_branch_paths(cov: dict, rel: str) -> None:
+    """istanbul writes one hit count in `b` per location of a branchMap entry.
+    Attribution counts the hit counts, so an array cut short read the paths it
+    lost as no path at all: an if/else at [1] scored 1 of 1, and at [] it fell
+    back to its statements. An array longer than the locations counts paths
+    the branch does not have."""
+    wrong = _miscounted_branches(cov)
+    if wrong:
+        key, counted, paths = wrong[0]
+        raise ValueError(
+            f"{rel}: branch {key!r} has {counted} hit count(s) in `b` for its {paths} "
+            f"location(s), so crapkit cannot tell which of its paths ran ({len(wrong)} such "
+            f"in this file); {_REGENERATE}")
+
+
 def _fn_spans(cov: dict) -> list[list]:
     spans = []
     for fid, fn in cov.get("fnMap", {}).items():
@@ -218,15 +287,18 @@ _BAD_ISTANBUL = "unparseable istanbul artifact"
 
 
 def _istanbul_map(w, repo_root: str, per_file) -> dict:
-    return {_rel_path(abs_path, repo_root): per_file(cov)
-            for abs_path, cov in covstream.split_window(w)}
+    out = {}
+    for abs_path, cov in covstream.split_window(w):
+        rel = _rel_path(abs_path, repo_root)
+        out[rel] = per_file(_require_counters(cov, rel))
+    return out
 
 
 def _istanbul_both(w, repo_root: str) -> tuple[dict, dict]:
     per_file, dead = {}, {}
     for abs_path, cov in covstream.split_window(w):
         rel = _rel_path(abs_path, repo_root)
-        per_file[rel] = _file_coverage(cov)
+        per_file[rel] = _file_coverage(_require_counters(cov, rel))
         dead[rel] = _dead_lines(cov)
     return per_file, dead
 

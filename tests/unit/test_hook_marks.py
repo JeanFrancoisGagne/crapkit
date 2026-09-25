@@ -10,8 +10,14 @@ rule: at or under the recorded mark it is carried debt, past it the mark rose
 and the verdict fails. Those two are `_unmarked_breaches`, and this file pins
 that the new hook rule did not leak into them.
 """
+import json
+
 import pytest
 
+from cli_inproc_repo import (add_knotty, commit_all, git, repo,  # noqa: F401
+                             seed_artifacts, template_repo)
+
+from crapkit.cli import main
 from crapkit.cli.scoring import _ceiling_breaches, _unmarked_breaches
 from crapkit.cli.verifying import _split_marked
 from crapkit.hook import Violation
@@ -94,3 +100,55 @@ def test_a_scored_breach_at_its_mark_is_still_carried_debt():
                                  {"src/mod.py": 6})
 
     assert _unmarked_breaches(breaches, [MARK]) == []
+
+
+# --- the marks file deleted in the commit under gate ----------------------------
+#
+# Both rules pardon through the marks file, so a commit that deletes it takes
+# every pardon with it. Each gate then judges every changed function, the strict
+# direction: a gone file never reads as "this function was signed for".
+
+# check_gate is the MCP tool; it runs `rescore FILE --gate --json`.
+_GATE_ARGV = {"rescore --gate": ["rescore", "src/app.ts", "--gate"],
+              "hook-precommit": ["hook-precommit"],
+              "check_gate": ["rescore", "src/app.ts", "--gate", "--json"]}
+
+# Where each gate names what it refused: rescore's table lists every function,
+# so its refusal is the stderr block; the hook prints its refusal on stdout.
+_REFUSAL = {
+    "rescore --gate": lambda out: out.err,
+    "hook-precommit": lambda out: out.out,
+    "check_gate": lambda out: str([b["function"] for b in json.loads(out.out)["gate"]["breaches"]]),
+}
+
+
+@pytest.fixture()
+def marked(repo, capsys):
+    """knotty ( n ) over its ceiling and marked at its crap, then touched inside
+    without a change to its complexity."""
+    seed_artifacts(repo)
+    add_knotty(repo)
+    commit_all(repo, "knotty")
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    assert main(["ratchet", "seed", "--repo", str(repo)]) == 0
+    commit_all(repo, "marks")
+    app = repo / "src" / "app.ts"
+    app.write_text(app.read_text(encoding="utf-8").replace("{ return 1; }", "{ return 1; } // x"),
+                   encoding="utf-8", newline="\n")
+    capsys.readouterr()
+    return repo
+
+
+@pytest.mark.parametrize("consumer", list(_GATE_ARGV))
+@pytest.mark.parametrize(("marks", "code"), [pytest.param("kept", 0, id="control"),
+                                             pytest.param("deleted", 6, id="deleted")])
+def test_a_deleted_marks_file_pardons_nothing(marked, capsys, consumer, marks, code):
+    if marks == "deleted":
+        (marked / "crapkit-ratchet.tsv").unlink()
+    git(marked, "add", "-A")
+
+    got = main([*_GATE_ARGV[consumer], "--repo", str(marked)])
+    out = capsys.readouterr()
+
+    assert got == code, (out.out, out.err)
+    assert code == 0 or "knotty ( n )" in _REFUSAL[consumer](out), (out.out, out.err)

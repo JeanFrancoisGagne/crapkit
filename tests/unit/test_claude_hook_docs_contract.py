@@ -148,8 +148,15 @@ def advisory_samples(text: str) -> list[str]:
     return [line for line in stripped if line.startswith("crapkit advisory:")]
 
 
+_UNREAD = re.compile(r"crapkit advisory: (\S+) could not be read")
+
+
 def rendered_head(sample: str) -> str:
-    """The head line the hook would build for the values this sample names."""
+    """The head line the hook would build for the values this sample names:
+    the unread-file head for a sample about a file, else the breach head."""
+    unread = _UNREAD.match(sample)
+    if unread:
+        return claude_hook._unread_advisory(unread.group(1), "why")[0]
     values = _VALUES.search(sample)
     assert values, f"no count, ceiling and path to read out of {sample!r}"
     count, ceiling, rel = int(values.group(1)), int(values.group(2)), values.group(3)
@@ -172,6 +179,16 @@ def test_the_page_prints_the_closing_line_the_hook_builds(page):
     closing = claude_hook._advisory_lines("calc/grade.py", [_BREACH], 6)[-1]
 
     assert closing in _prose(page), f"{page} does not carry {closing!r}"
+
+
+def test_the_agent_page_prints_the_unread_advisory_the_hook_builds():
+    """The unread block's closing line says what the commit gate does and the
+    fix; the page that shows the block carries it word for word."""
+    text = _prose("docs/agent-json.md")
+    head, _, closing = claude_hook._unread_advisory("src/a.ts", "why")
+
+    assert head in advisory_samples(text)
+    assert closing in text
 
 
 def test_a_page_that_kept_an_older_wording_would_be_caught():

@@ -37,3 +37,10 @@ class UnanalyzableFile(list):
     def __init__(self, reason: str = "") -> None:
         super().__init__()
         self.reason = reason
+
+
+# What every gate tells the user to do about a changed file no reader could
+# read. It lives beside the type so the commit hook, rescore --gate, verify and
+# claude-hook, whose module scope stays stdlib only, print one sentence.
+UNREAD_ADVICE = ("change what the reason names so a reader can parse the file, or list it "
+                 "under [exclude] globs in crapkit.toml to leave it ungated")

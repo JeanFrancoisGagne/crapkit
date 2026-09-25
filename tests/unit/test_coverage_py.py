@@ -160,3 +160,149 @@ def test_qualname_collapse_fails_conservative_never_confident():
     executed_twin = InventoryRow("py", "m.py", "make( x )", 9, 11, 3, 3, 3, 3, 1, 1)
     (scored,) = score_rows([executed_twin], per_file, lane_scopes={"py"})
     assert scored.cov == 0.0 and scored.flag == "untested"
+
+
+# --- a function whose summary lacks what the report says it measured --------------
+#
+# coverage.py writes every function's summary with both counts of each kind it
+# measured. A summary that is gone, or a covered count with no total beside it,
+# read as 0 of 0: a function that ran scored cov 0 with nothing on stderr. A
+# function with no branch counts in a report that measures branches fell back
+# to its statements without a word, and a report with no meta at all said its
+# term was statement-based while the functions scored on branches.
+
+import copy  # noqa: E402
+
+GUARDED = ("pylib\\mod.py", "guarded")
+
+
+def _edited(edit) -> dict:
+    report = copy.deepcopy(REPORT)
+    edit(report["files"][GUARDED[0]]["functions"][GUARDED[1]])
+    return report
+
+
+def _drop(*keys):
+    def edit(fn):
+        for key in keys:
+            fn["summary"].pop(key)
+    return edit
+
+
+def _no_branch_and(edit):
+    """The function as coverage.py writes one with no branch, 0 of 0, then `edit`."""
+    def edited(fn):
+        fn["summary"].update(num_branches=0, covered_branches=0)
+        edit(fn)
+    return edited
+
+
+REFUSED = {
+    "function-summary-missing": (lambda fn: fn.pop("summary"),
+                                 "summary is missing, so crapkit cannot tell how much of it ran"),
+    "covered-lines-missing": (_drop("covered_lines"), "num_statements without covered_lines"),
+    "covered-branches-missing": (_drop("covered_branches"),
+                                 "num_branches without covered_branches"),
+    "num-statements-missing": (_drop("num_statements"), "covered_lines without num_statements"),
+    "summary-empty": (_drop("covered_lines", "num_statements", "num_branches", "covered_branches"),
+                      "summary holds neither statement nor branch counts"),
+    "statement-counts-missing-with-no-branch": (
+        _no_branch_and(_drop("covered_lines", "num_statements")),
+        "summary holds no statement counts and no branch, so crapkit cannot tell how much "
+        "of it ran"),
+    "count-not-a-count": (lambda fn: fn["summary"].update(covered_lines=-1),
+                          "covered_lines must be a nonnegative integer count, got -1"),
+}
+
+
+@pytest.mark.parametrize("form", sorted(REFUSED))
+def test_a_summary_missing_a_count_refuses_the_report_naming_the_file_and_the_fix(form):
+    """The refusal names the source file as well as the function, since one
+    report holds many files with a function of that name, and ends with what
+    to do, as the istanbul refusals do."""
+    edit, what = REFUSED[form]
+
+    with pytest.raises(ToolError) as raised:
+        parse_coveragepy(json.dumps(_edited(edit)), path_prefix="")
+
+    message = str(raised.value)
+    assert message.startswith("unparseable coverage.py report"), message
+    assert f"pylib/mod.py: guarded: {what}" in message, message
+    assert message.endswith("; regenerate the report with the coverage tool"), message
+
+
+def test_statement_counts_alone_missing_still_score_on_branches():
+    """Both statement counts gone and both branch counts kept: the branch term
+    decides this function's coverage, so the score cannot move."""
+    per_file = parse_coveragepy(json.dumps(_edited(_drop("covered_lines", "num_statements"))),
+                                path_prefix="")
+
+    guarded = {f.name: f for f in per_file["pylib/mod.py"]}["guarded"]
+    assert guarded.coverage == 0.75
+
+
+def test_a_function_with_no_branch_scores_from_its_statements():
+    """The control for the refusal above: 0 of 0 branches and both statement
+    counts kept, so the statements decide, 3 of 4."""
+    per_file = parse_coveragepy(json.dumps(_edited(_no_branch_and(lambda fn: None))),
+                                path_prefix="")
+
+    guarded = {f.name: f for f in per_file["pylib/mod.py"]}["guarded"]
+    assert (guarded.branches_total, guarded.coverage) == (0, 0.75)
+
+
+def test_a_start_line_missing_takes_the_first_measured_line():
+    """coverage 7.6 to 7.13.0 wrote no start_line: the span starts where the
+    function's measured lines do, and the score does not move."""
+    per_file = parse_coveragepy(json.dumps(_edited(lambda fn: fn.pop("start_line"))),
+                                path_prefix="")
+
+    guarded = {f.name: f for f in per_file["pylib/mod.py"]}["guarded"]
+    assert (guarded.start, guarded.coverage) == (1, 0.75)
+
+
+def test_one_function_with_no_branch_counts_in_a_branch_report_refuses_the_report():
+    """coverage.py writes 0 of 0 for a function with no branch. Read from its
+    statements instead, this one's coverage moved from 0.75 to 1.0 unsaid."""
+    with pytest.raises(ToolError) as raised:
+        parse_coveragepy(json.dumps(_edited(_drop("num_branches", "covered_branches"))),
+                         path_prefix="")
+
+    assert ("coverage.py report measures branches, but 1 function(s) carry no branch counts "
+            "(pylib/mod.py: guarded), so crapkit cannot tell how many of their branches ran; "
+            "regenerate the report with the coverage tool") == str(raised.value)
+
+
+def test_a_report_without_meta_reads_its_branch_counts_as_branch_data(capsys):
+    report = copy.deepcopy(REPORT)
+    del report["meta"]
+
+    per_file = parse_coveragepy(json.dumps(report), path_prefix="")
+
+    guarded = {f.name: f for f in per_file["pylib/mod.py"]}["guarded"]
+    assert guarded.coverage == 0.75
+    assert "statement-based" not in capsys.readouterr().err, "the functions carry branch counts"
+
+
+def test_a_report_without_meta_or_branch_counts_still_says_it_is_statement_based(capsys):
+    report = copy.deepcopy(NO_BRANCH)
+    del report["meta"]
+
+    parse_coveragepy(json.dumps(report), path_prefix="")
+
+    assert "carries no branch data" in capsys.readouterr().err
+
+
+def test_the_lanes_page_quotes_the_branchless_function_refusal():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    report = {"meta": {"branch_coverage": True}, "files": {"api/views.py": {"functions": {
+        "render": {"start_line": 1, "executed_lines": [1], "missing_lines": [],
+                   "summary": {"covered_lines": 1, "num_statements": 1}}}}}}
+
+    with pytest.raises(ToolError) as raised:
+        parse_coveragepy(json.dumps(report), path_prefix="")
+
+    quoted = f"crapkit: lane 'py' FAILED: {raised.value}"
+    assert quoted in (root / "docs" / "lanes.md").read_text(encoding="utf-8").splitlines()

@@ -179,7 +179,7 @@ def test_a_run_that_loses_the_lock_removes_its_own_trees(tmp_path, monkeypatch):
 
 # --- the baseline: a command that cannot run is not a suite that kills --------
 #
-# run_one reads any nonzero exit as a killed mutant, so a mutation_command whose
+# run_one reads a nonzero exit other than 5 as a killed mutant, so a mutation_command whose
 # first word is not the interpreter holding pytest killed every mutant without
 # ever importing the code under test, and `mutate` printed a 100% score for a
 # suite that never ran. docs ship `python -m pytest -q -x`, a bare name, so the
@@ -228,12 +228,12 @@ def test_a_command_that_cannot_run_is_refused_before_any_mutant_is_scored(tmp_pa
 def test_a_command_that_passes_on_the_unmutated_tree_scores_normally(tmp_path):
     """The other half: the baseline must not turn a working suite into an error.
     `exit 0` is a command every shell this runs under can start."""
-    from crapkit.mutate_pool import run_mutants
+    from crapkit.mutate_pool import MutantVerdict, run_mutants
 
     verdicts = run_mutants(tmp_path, _Cfg("exit 0"), [_mutant(tmp_path)],
-                           lambda i, m, killed: None)
+                           lambda i, m, verdict: None)
 
-    assert verdicts == [False], "exit 0 per mutant is a survivor, not a kill"
+    assert verdicts == [MutantVerdict.SURVIVED], "exit 0 per mutant is a survivor, not a kill"
 
 
 def test_a_baseline_that_times_out_says_so_rather_than_naming_an_exit_code(tmp_path):
@@ -272,3 +272,83 @@ def test_a_run_with_no_mutants_starts_no_suite_at_all(tmp_path):
 
     assert verdicts == []
     assert started == [], f"nothing to score, so nothing may run: {started}"
+
+
+# --- one verdict per mutant: killed, timed out, survived, or no verdict --------
+#
+# run_one read every nonzero exit as a kill and the deadline as a kill, so a
+# suite that ran no test (pytest's exit 5) and a suite that hung both scored
+# 2/2 killed, 100%, byte for byte the output of real kills.
+
+@pytest.mark.parametrize("code,verdict", [
+    (1, "KILLED"), (2, "KILLED"), (-9, "KILLED"), (None, "TIMED_OUT"), (0, "SURVIVED"),
+    (5, "NO_VERDICT")], ids=["test-failed", "interrupted", "signalled", "deadline", "passed",
+                             "no-tests-ran"])
+def test_each_suite_exit_reads_as_one_verdict(code, verdict):
+    from crapkit.mutate_pool import MutantVerdict, verdict_of
+
+    assert verdict_of(code) is MutantVerdict[verdict]
+
+
+def _python(body: str) -> str:
+    import sys
+
+    return f'"{sys.executable}" -c "{body}"'
+
+
+# variation -> (the suite's body, its timeout, the verdict it must read as)
+_SUITES = {
+    "a-test-fails": ("raise SystemExit(1)", HANG_SECONDS, "KILLED"),
+    "every-test-passes": ("pass", HANG_SECONDS, "SURVIVED"),
+    "no-test-ran": ("print('no tests ran'); raise SystemExit(5)", HANG_SECONDS, "NO_VERDICT"),
+    "past-the-deadline": ("import time; time.sleep(60)", 2, "TIMED_OUT"),
+}
+
+
+@pytest.mark.parametrize("variation", list(_SUITES))
+def test_run_one_reads_a_real_suite_exit_as_its_verdict(tmp_path, variation):
+    """Through a real command under the shell run_one starts it in. The file
+    comes back whatever the verdict."""
+    from crapkit.mutate_pool import MutantVerdict, run_one
+
+    body, timeout, verdict = _SUITES[variation]
+    mutant = _mutant(tmp_path)
+    before = (tmp_path / "a.py").read_bytes()
+    cfg = _Cfg(_python(body))
+    cfg.mutation_timeout_seconds = timeout
+
+    assert run_one(tmp_path, cfg, mutant) is MutantVerdict[verdict]
+    assert (tmp_path / "a.py").read_bytes() == before
+
+
+def test_the_progress_line_names_each_verdict():
+    import io
+
+    from crapkit.mutate import Mutant
+    from crapkit.mutate_pool import MutantVerdict, reporter
+
+    stream = io.StringIO()
+    report = reporter(4, stream)
+    mutant = Mutant(path="a.py", line=2, op="> -> >=", original="x > 1", mutated="x >= 1")
+    for index, verdict in enumerate(MutantVerdict):
+        report(index, mutant, verdict)
+
+    assert stream.getvalue().splitlines() == [
+        "  mutant 1/4 a.py:2 [> -> >=] killed",
+        "  mutant 2/4 a.py:2 [> -> >=] timed out, counted killed",
+        "  mutant 3/4 a.py:2 [> -> >=] SURVIVED",
+        "  mutant 4/4 a.py:2 [> -> >=] no verdict: the suite ran no test (exit 5), counted killed"]
+
+
+def test_a_baseline_that_runs_no_test_says_no_mutant_would_get_a_verdict(tmp_path):
+    """Refused as before, but a suite that ran no test no longer scores every
+    mutant killed, so the refusal no longer threatens a 100% score."""
+    from crapkit.errors import ToolError
+    from crapkit.mutate_pool import require_live_suite
+
+    with pytest.raises(ToolError) as caught:
+        require_live_suite(tmp_path, _Cfg(_python("raise SystemExit(5)")))
+
+    assert ("exits 5 (no test ran) on the UNMUTATED tree, so no mutant would get a verdict"
+            in str(caught.value)), caught.value
+    assert "100%" not in str(caught.value)

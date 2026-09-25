@@ -212,6 +212,178 @@ def test_a_partial_run_counts_debt_over_the_measured_scopes_only(repo, capsys):
     assert "4 functions scored: 2 measured / 2 no-lane, 0 over ceiling 6" in text, text
 
 
+# how -> (the ui lane's artifact is seeded, the lanes flag, exit, the scopes measured)
+_LOAD_RUNS = {
+    "full-run": (True, [], 0, ["src", "web"]),
+    "lane-subset": (True, ["--lane", "unit"], 0, ["src"]),
+    "lane-failed": (False, [], 5, ["src"]),
+}
+
+
+def _measured_load(summary: dict) -> tuple[list[str], float]:
+    """The scopes the run measured, and the CRAP load their rollups sum to."""
+    measured = [s for s in summary["by_scope"] if s not in summary["unmeasured_scopes"]]
+    return measured, sum(summary["by_scope"][s]["crap_load"] for s in measured)
+
+
+def test_the_pages_define_the_crap_load_as_the_code_sums_it():
+    """The agent page said the load summed "the functions over_target counts",
+    which reads as the functions over the ceiling; the code sums every judged
+    function, over its ceiling or not."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    agent = " ".join((root / "docs" / "agent-json.md").read_text(encoding="utf-8").split())
+    readme = " ".join((root / "README.md").read_text(encoding="utf-8").split())
+
+    assert ("| `crap_load` | Sum of the CRAP of every function in the scopes this run measured, "
+            "over or under its ceiling") in agent
+    assert "Both are taken over the scopes the run measured" in readme
+
+
+@pytest.mark.parametrize("how", list(_LOAD_RUNS))
+def test_the_crap_load_is_summed_over_the_scopes_the_run_measured(repo, capsys, how):
+    """The run's CRAP load sat on the same line as its over-ceiling count and
+    grade, which leave out the scopes no lane measured, yet summed web's
+    knotty at the cov-0 stand-in: 0 over ceiling, grade A+, CRAP load 80."""
+    ui, subset, exit_code, scopes = _LOAD_RUNS[how]
+    add_knotty(repo, "web/ui.ts")
+    commit_all(repo, "knotty in web")
+    seed_artifacts(repo, ui=ui)
+
+    code, out, _ = run(["coverage", "--reuse-artifacts", "--json", *subset], repo, capsys)
+    summary = json.loads(out)
+
+    measured, load = _measured_load(summary)
+    assert code == exit_code
+    assert summary["crap_load"] == pytest.approx(load, abs=0.01), summary
+    assert measured == scopes
+
+
+# --- a scope that scored no function -------------------------------------------
+#
+# A run whose scope claims no file, or none a reader could read, scores no
+# function in it and reported 0 over the ceiling, grade A+, at exit 0. Only
+# doctor said the scope claimed nothing, and coverage, verify and the Action never
+# run doctor.
+
+def _lose_scope_src(repo, form: str) -> None:
+    from cli_inproc_repo import git
+
+    toml = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    if form == "dir-renamed":
+        git(repo, "mv", "src", "lib")
+    elif form == "scope-path-typo":
+        toml = toml.replace('paths = ["src"]', 'paths = ["scr"]')
+    elif form == "language-mismatch":
+        toml = toml.replace('paths = ["src"]\nlanguages = ["typescript"]',
+                            'paths = ["src"]\nlanguages = ["python"]')
+    else:
+        with open(repo / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
+            fh.write("\nexport const pick = (x: number) => convert<string, number>(x);\n")
+    (repo / "crapkit.toml").write_text(toml, encoding="utf-8", newline="\n")
+    commit_all(repo, form)
+
+
+EMPTY_SCOPE_FORMS = {"dir-renamed": 0, "scope-path-typo": 0, "language-mismatch": 0,
+                     "every-file-unreadable": 1}
+
+
+def _no_file_line(paths: str, languages: str) -> str:
+    return (f"warning: scope 'src' claims no file (paths: {paths}; languages: {languages}), so "
+            f"none of its code was scored; point its paths and languages at the code in "
+            f"crapkit.toml, and `{_self()} doctor` lists the files each scope claims")
+
+
+def _expected_empty_line(form: str) -> str:
+    if form == "every-file-unreadable":
+        return ("warning: scope 'src' scored no function: no reader could read any of its "
+                "1 file(s), named above")
+    paths = "scr" if form == "scope-path-typo" else "src"
+    return _no_file_line(paths, "python" if form == "language-mismatch" else "typescript")
+
+
+@pytest.mark.parametrize("form", sorted(EMPTY_SCOPE_FORMS))
+@pytest.mark.parametrize("command", ["inventory", "coverage"])
+def test_a_scope_that_scored_no_function_is_named(repo, capsys, form, command):
+    _lose_scope_src(repo, form)
+    seed_artifacts(repo)
+    argv = [command, "--json"] + (["--reuse-artifacts"] if command == "coverage" else [])
+
+    _, out, err = run(argv, repo, capsys)
+
+    assert _expected_empty_line(form) in err.splitlines(), err
+    assert json.loads(out)["empty_scopes"] == {"src": EMPTY_SCOPE_FORMS[form]}
+
+
+def test_verify_names_a_scope_the_change_emptied(repo, capsys):
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    _lose_scope_src(repo, "dir-renamed")
+
+    _, _, err = run(["verify", "--reuse-artifacts"], repo, capsys)
+
+    assert _expected_empty_line("dir-renamed") in err.splitlines(), err
+
+
+def test_a_run_whose_every_scope_scored_something_names_no_empty_scope(repo, capsys):
+    seed_artifacts(repo)
+
+    code, out, err = run(["coverage", "--reuse-artifacts", "--json"], repo, capsys)
+
+    assert code == 0
+    assert json.loads(out)["empty_scopes"] == {}
+    assert "scored no function" not in err and "claims no file" not in err, err
+
+
+def _add_constants_scope(repo) -> None:
+    """A declared scope whose one readable file holds no function."""
+    with open(repo / "crapkit.toml", "a", encoding="utf-8", newline="\n") as fh:
+        fh.write('\n[[scope]]\nname = "consts"\npaths = ["consts"]\nlanguages = ["typescript"]\n')
+    (repo / "consts").mkdir()
+    (repo / "consts" / "limits.ts").write_text("export const LIMIT = 1;\n", encoding="utf-8",
+                                               newline="\n")
+    commit_all(repo, "constants")
+
+
+@pytest.mark.parametrize("command", ["inventory", "coverage"])
+def test_a_scope_whose_readable_files_hold_no_function_is_not_named_empty(repo, capsys, command):
+    """A package of constants was read and holds no debt. Naming it on every run
+    is a warning a user learns to skip, next to the one that means a typo."""
+    _add_constants_scope(repo)
+    seed_artifacts(repo)
+    argv = [command, "--json"] + (["--reuse-artifacts"] if command == "coverage" else [])
+
+    code, out, err = run(argv, repo, capsys)
+
+    assert code == 0, err
+    assert json.loads(out)["empty_scopes"] == {}
+    assert "'consts'" not in err, err
+
+
+def _empty_scopes_row() -> str:
+    """The `empty_scopes` row of the agent page's field table."""
+    from pathlib import Path
+
+    page = (Path(__file__).resolve().parents[2] / "docs" / "agent-json.md").read_text(
+        encoding="utf-8")
+    (row,) = [line for line in page.splitlines() if line.startswith("| `empty_scopes` |")]
+    return row
+
+
+def test_the_pages_say_which_scopes_empty_scopes_leaves_out():
+    from crapkit.agent_fields import ADDED
+
+    declared = [field.description for field in ADDED if field.key == "empty_scopes"]
+
+    assert len(declared) == 2
+    for text in (_empty_scopes_row(), *declared):
+        assert "a scope whose readable files hold no function is not listed" in text.lower(), text
+        assert "claims no file" in text, text
+        assert "no reader could read" in text, text
+
+
 def test_the_summary_labels_every_ceiling_in_force(repo, capsys):
     toml = (repo / "crapkit.toml").read_text(encoding="utf-8")
     (repo / "crapkit.toml").write_text(
@@ -292,16 +464,46 @@ def test_coverage_says_when_a_lane_measured_far_fewer_tests_than_before(repo, ca
     """`coverage` is the command that WRITES a baseline, and until this warning
     it said nothing at all about a suite that halved between two runs."""
     seed_artifacts(repo)
-    (repo / ".crapkit").mkdir()
-    store = SnapshotStore(repo / ".crapkit" / "crap.sqlite")
-    store.write_run(commit=head(repo), tool_versions={}, rows=[], kind="coverage",
-                    lanes={"unit": {"tests_total": 400}, "ui": {"tests_total": 0}})
+    _unit_junit(repo, tests=12)
+    _baseline_counts(repo, {"unit": {"tests_total": 400}, "ui": {"tests_total": 0}})
 
     code, _, err = run(["coverage", "--reuse-artifacts"], repo, capsys)
 
     assert code == 0
-    assert "lane 'unit' ran 0 tests, 400 fewer" in err, err
+    assert "lane 'unit' ran 12 tests, 388 fewer" in err, err
     assert "lane 'ui'" not in err, "a lane the baseline never counted cannot have dropped"
+
+
+def test_coverage_does_not_say_a_lane_that_counted_nothing_ran_zero_tests(repo, capsys):
+    """A lane that declares no results_artifact records no count. That is not a
+    count of zero, and reading it as one told the operator every test of the
+    last trusted run was missing."""
+    seed_artifacts(repo)
+    _baseline_counts(repo, {"unit": {"tests_total": 400}})
+
+    code, _, err = run(["coverage", "--reuse-artifacts"], repo, capsys)
+
+    assert code == 0
+    assert "ran 0 tests" not in err, err
+
+
+def _baseline_counts(repo, lanes: dict) -> None:
+    """One trusted coverage run at HEAD carrying these lane provenances."""
+    (repo / ".crapkit").mkdir()
+    store = SnapshotStore(repo / ".crapkit" / "crap.sqlite")
+    store.write_run(commit=head(repo), tool_versions={}, rows=[], kind="coverage", lanes=lanes)
+
+
+def _unit_junit(repo, *, tests: int) -> None:
+    """Give the `unit` lane a junit of this many passing tests."""
+    cases = "".join(f'<testcase classname="src/app.test.ts" name="t{i}"/>' for i in range(tests))
+    (repo / "junit.xml").write_text(f'<testsuite tests="{tests}">{cases}</testsuite>',
+                                    encoding="utf-8")
+    text = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    (repo / "crapkit.toml").write_text(
+        text.replace('artifact = "coverage/unit.json"',
+                     'artifact = "coverage/unit.json"\nresults_artifact = "junit.xml"'),
+        encoding="utf-8")
 
 
 # --- rescore ------------------------------------------------------------------
@@ -431,7 +633,7 @@ def test_a_passing_gate_json_says_ok_and_what_it_judged(scored, capsys):
 
     assert (code, err) == (0, "")
     assert json.loads(out)["gate"] == {"ok": True, "judged": 1, "ceilings": {"src/app.ts": 6},
-                                       "breaches": [], "untracked": []}
+                                       "breaches": [], "untracked": [], "unread_files": []}
 
 
 def test_the_text_form_prints_the_gate_line_when_it_passes(scored, capsys):

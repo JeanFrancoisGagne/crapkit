@@ -885,6 +885,43 @@ def test_a_gate_violation_with_no_coverage_prints_a_dash():
     assert "cov -," in line
 
 
+def test_a_changed_file_no_reader_could_read_gets_its_own_bullet():
+    """Exit 6 with no gate violation to name: the bullet says which file and
+    what to change, where the counts alone read 0 gate violations."""
+    unread = {"path": "src/a.ts", "reason": "src/a.ts:12: arrow refused; wrap it", "dirty": False}
+
+    line = _builder().verdict_line(_failing_verify(unread_files=[unread]), 6)
+
+    assert ("- unread: `src/a.ts`, so the gate judged none of its functions: "
+            "src/a.ts:12: arrow refused; wrap it") in line.splitlines(), line
+
+
+@pytest.mark.parametrize(("gate", "unread", "counted"), [
+    pytest.param(0, 1, "1 gate violation (1 unread file)", id="only-an-unread-file"),
+    pytest.param(1, 2, "3 gate violations (2 unread files)", id="unread-files-beside-a-violation"),
+    pytest.param(1, 0, "1 gate violation,", id="no-unread-file-reads-as-before"),
+])
+def test_the_counts_line_counts_an_unread_file_as_a_gate_violation(gate, unread, counted):
+    """An unread file fails the gate, exit 6, like a function over the ceiling.
+    The counts read `0 gate violations` under `verify failed, exit 6` for a
+    verify whose only finding was one."""
+    files = [{"path": f"src/{n}.ts", "reason": "arrow refused", "dirty": False} for n in range(unread)]
+    verify = _failing_verify(gate_violations=[_violation()] * gate, unread_files=files)
+
+    counts = _builder().verdict_line(verify, 6).splitlines()[-1]
+
+    assert f"1 changed file: {counted}" in counts, counts
+
+
+def test_the_readme_quotes_the_count_an_unread_file_gets():
+    files = [{"path": "src/a.ts", "reason": "arrow refused", "dirty": False}]
+    counts = _builder().verdict_line(_failing_verify(unread_files=files), 6).splitlines()[-1]
+    quoted = "1 gate violation (1 unread file)"
+
+    assert quoted in counts
+    assert f"`{quoted}`" in _readme_section()
+
+
 def test_a_marked_row_is_labelled_accepted_debt():
     marked = {"path": "app/calc.py", "start": 19, "function": "legacy_router( a , b , c , d , e )",
               "ccn": 8, "risk": 4.0, "remedy": "decompose", "ratchet_mark": 72.0}
@@ -979,6 +1016,19 @@ def test_the_scored_line_quotes_the_first_line_of_a_lane_failure():
     assert "full log" not in line
 
 
+@pytest.mark.parametrize("files, why", [(0, "it claims no file"),
+                                        (2, "no reader could read its 2 files")])
+def test_the_scored_line_names_a_scope_that_scored_no_function(files, why):
+    """A scope that scored nothing adds nothing over the ceiling, so the line's
+    grade reads as a clean tree unless the line says what went unscored."""
+    coverage = _coverage(functions=0, over_target=0, crap_load=0, grade="A+",
+                         empty_scopes={"src": files})
+
+    line = _builder().scored_line(coverage)
+
+    assert line.endswith(f"grade A+; scope `src` scored no function: {why}."), line
+
+
 def test_the_scored_line_quotes_the_error_message_when_coverage_died_under_json():
     """0.5.0's --json prints one error object on stdout when a crapkit error
     escapes, so the sentence that names the fix reaches the comment."""
@@ -1001,6 +1051,118 @@ def test_a_verify_error_object_is_quoted_and_never_counted():
     line = _builder().verdict_line(verify, 4)
 
     assert line == f"**`crapkit verify` exited 4 and wrote no verdict: {message}.**"
+
+
+
+# --- test results a verdict could not judge -------------------------------------
+
+def test_a_pass_names_the_lanes_whose_failures_went_unchecked():
+    """`verify passed` beside a lane that recorded no test results read as a
+    suite that failed nothing, when nothing checked it."""
+    verify = {**_failing_verify(), "ok": True, "lanes_without_results": ["py"]}
+
+    line = _builder().verdict_line(verify, 0)
+
+    assert line == ("**verify passed.** Run 3 against baseline 1, 1 changed file. New test "
+                    "failures went unchecked in lane `py`: it recorded no test results.")
+
+
+def test_a_pass_with_every_lane_checked_reads_as_before():
+    verify = {**_failing_verify(), "ok": True, "lanes_without_results": []}
+
+    assert _builder().verdict_line(verify, 0) ==         "**verify passed.** Run 3 against baseline 1, 1 changed file."
+
+
+def test_a_failure_the_baseline_could_not_judge_says_it_may_predate_the_change():
+    """The fork point's lane declared no results_artifact, so a test that
+    failed there too counts as new; the comment must not pin it on the PR."""
+    verify = _failing_verify(new_failures=["t::c0"], lanes_without_baseline_results=["py"])
+
+    line = _builder().verdict_line(verify, 8)
+
+    assert "- new test failure: `t::c0`" in line
+    assert ("- lane `py`: the baseline recorded no failure list, so its new failures may "
+            "predate this change") in line, line
+
+
+def test_a_file_baseline_is_named_by_its_commit_not_as_none():
+    verify = {**_failing_verify(), "ok": True, "baseline_run": None,
+              "baseline_commit": "abc1234def5678"}
+
+    line = _builder().verdict_line(verify, 0)
+
+    assert "None" not in line, line
+    assert "Run 3 against the baseline file at abc1234def5, 1 changed file." in line, line
+
+
+
+# --- a payload the Action never got ---------------------------------------------
+
+def test_no_summary_at_all_blames_a_crash_and_not_every_lane():
+    """Since 0.5.0 a run whose every lane failed prints an error object, so an
+    empty payload means crapkit printed nothing: it crashed or was killed."""
+    line = _builder().no_verdict_line(None, 1)
+
+    assert "every lane failed" not in line, line
+    assert line == ("**no verdict: `crapkit coverage` exited 1 (it printed no run summary, so "
+                    "it crashed or was killed before scoring; its error is in the job log); "
+                    "verify did not run.**")
+
+
+def test_a_worklist_error_object_is_quoted_and_not_read_as_an_empty_ranking():
+    """`crapkit worklist --json` with no run to read prints an error object and
+    exits 1; the comment said no function in the changed files ranked."""
+    worklist = {"error": {"exit": 1, "kind": "state",
+                          "message": "no snapshot in /repo/.crapkit/crap.sqlite: run "
+                                     "`crapkit coverage` first\n"}}
+
+    text = _builder().body(None, None, 1, worklist, ["src/a.py"], 5)
+
+    assert "No ranked function" not in text, text
+    assert ("`crapkit worklist` exited 1: no snapshot in /repo/.crapkit/crap.sqlite: run "
+            "`crapkit coverage` first.") in text, text
+
+
+def test_a_worklist_that_printed_nothing_says_so_and_ranks_no_top_zero():
+    text = _builder().body(None, None, 1, None, [], 5)
+
+    assert "No ranked function" not in text and "top 0" not in text, text
+    assert "`crapkit worklist` printed no ranking; its error is in the job log." in text, text
+
+
+def test_a_worklist_that_ran_and_ranks_nothing_in_the_diff_still_says_so():
+    text = _builder().body(None, None, 1, _worklist(), ["docs/readme.md"], 5)
+
+    assert "No ranked function in these files." in text, text
+
+
+# --- a ranking read off a shallow clone -----------------------------------------
+
+SHALLOW_LINE = ("warning: churn counts read only the commits this clone holds; this shallow "
+                "clone does not hold every commit: set fetch-depth: 0 on the checkout or run "
+                "git fetch --unshallow")
+
+
+@pytest.mark.parametrize("payload, said", [
+    ({"shallow": True}, True),
+    ({"shallow": False}, False),
+    ({}, False),
+])
+def test_the_table_repeats_the_shallow_clone_line_above_the_ranking(payload, said):
+    """`risk` is ccn times churn, and a depth-1 checkout counts one commit per
+    file: the ranking inverts and the job log is the only place worklist said
+    so. `{}` is a payload an older crapkit wrote, which names nothing."""
+    text = _builder().body(None, None, 0, {**_worklist(), **payload}, [], 5)
+
+    assert text.count(SHALLOW_LINE) == (1 if said else 0), text
+    if said:
+        assert text.index(SHALLOW_LINE) < text.index("| File | Function |"), text
+
+
+def test_the_comment_line_is_the_one_worklist_prints():
+    from crapkit.gitio import shallow_warning
+
+    assert SHALLOW_LINE == shallow_warning("churn counts")
 
 
 # --- the pin the README hands the consumer ------------------------------------

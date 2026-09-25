@@ -85,6 +85,9 @@ UNDER_TEST = {
         "test_lane_timeout_kills_the_command_and_says_so expects this lane to time out",
     ("unit/test_holding_suite_raises_the_mutation_deadline.py", 10):
         "the deadline holding_suite must raise to the hold",
+    ("e2e/test_mutate_e2e.py", 3):
+        "test_a_mutant_whose_suite_gave_no_result_is_counted_apart[timeout] expects the "
+        "suite to time out; the other modes wait the hang bound",
 }
 
 

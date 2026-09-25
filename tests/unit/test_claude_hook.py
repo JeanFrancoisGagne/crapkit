@@ -442,3 +442,73 @@ def test_a_configuration_saved_with_a_bom_reads_as_the_same_configuration(tmp_pa
     err = capsys.readouterr().err
     assert code == 2, err
     assert "crapkit advisory" in err, err
+
+
+# --- a file no reader could read ---------------------------------------------
+#
+# Since 0.7.2 a file a reader refuses scores as zero functions, and zero
+# functions read as zero breaches: the hook exited 0 in silence on an edit that
+# left a ccn-8 function beside a TypeScript arrow the reader refuses, and on a
+# Python def cut off at its signature, while the commit gate refuses both once
+# staged. The advisory now names the file, the reader's reason and the fix.
+
+ARROW_TOML = ('[crapkit]\ntarget = 6\n\n'
+              '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n')
+KNOTTY_TS = ("export function knotty(n: number): number {\n"
+             + "".join(f"  if (n === {i}) {{ n += {i}; }}\n" for i in range(1, 8))
+             + "  return n;\n}\n")
+ARROW = "export const pick = (x: number) => convert<string, number>(x);\n"
+UNREAD_TAIL = ("the commit gate refuses this file once staged; change what the reason names so "
+               "a reader can parse the file, or list it under [exclude] globs in crapkit.toml "
+               "to leave it ungated")
+
+
+def _unread_repo(tmp_path: Path, rel: str, toml: str, source: str) -> Path:
+    (tmp_path / "crapkit.toml").write_text(toml, encoding="utf-8")
+    edited = tmp_path / rel
+    edited.parent.mkdir(parents=True, exist_ok=True)
+    edited.write_text(source, encoding="utf-8", newline="\n")
+    return edited
+
+
+@pytest.mark.parametrize(("rel", "toml", "source", "reason"), [
+    pytest.param("src/a.ts", ARROW_TOML, KNOTTY_TS + ARROW,
+                 "expression-arrow body has '<' before a comma", id="typescript-arrow"),
+    pytest.param("calc/grade.py", TOML, BREACH.replace("sprawl(n)", "sprawl(n"),
+                 "the Python reader reached no body for 1 def(s)", id="python-signature-cut-off"),
+])
+def test_an_edit_that_leaves_a_file_no_reader_can_read_draws_the_advisory(
+        tmp_path, capsys, monkeypatch, rel, toml, source, reason):
+    edited = _unread_repo(tmp_path, rel, toml, source)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_event(edited, tmp_path))))
+
+    code = main(["claude-hook", "--protocol", "1"])
+
+    lines = capsys.readouterr().err.splitlines()
+    assert code == 2, lines
+    assert lines[0] == (f"crapkit advisory: {rel} could not be read, so no function in it was "
+                        "judged (the edit landed; nothing was blocked)")
+    assert lines[1].startswith(f"  UNREAD  {rel}: ") and reason in lines[1], lines
+    assert lines[2:] == [UNREAD_TAIL]
+
+
+def test_the_unread_advisory_keeps_the_advisorys_own_voice():
+    text = "\n".join(claude_hook._unread_advisory("src/a.ts", "why"))
+
+    assert "the edit landed; nothing was blocked" in text
+    for banned in ("crapkit gate", "gate:", "decompose before committing"):
+        assert banned not in text
+
+
+@pytest.mark.parametrize(("ranges", "advised"), [
+    pytest.param(None, True, id="untracked"),
+    pytest.param([(3, 4)], True, id="edited-lines"),
+    pytest.param([], False, id="tracked-and-unchanged-against-HEAD"),
+])
+def test_an_unread_file_is_advised_only_when_the_edit_changed_it(ranges, advised):
+    """The commit gate refuses an unread file it was asked to judge, a staged
+    one; a tracked file whose diff against HEAD is empty holds no change."""
+    from crapkit.merge import UnanalyzableFile
+
+    assert claude_hook._unread_change(UnanalyzableFile("why"), ranges) is advised
+    assert claude_hook._unread_change([], ranges) is False

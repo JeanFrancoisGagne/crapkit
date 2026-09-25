@@ -1,0 +1,163 @@
+"""The marks file's history, read in one place: `marks_history`.
+
+ratchet report and brief read mark ages off the file's commits, and verify
+judges a deleted or emptied marks file against the newest marks a commit since
+the baseline held. Three readers once had three paths into git for these, and
+only ratchet report said when the history starts at a rename.
+
+The git reads under them answer a fact or raise GitError. `blob_at` answered
+None and `commits_touching` answered [] for any git failure, so a clone that
+did not hold the baseline read as a history that never held marks, and verify
+would judge against no marks at all. Every test here builds a real repo.
+"""
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from crapkit.errors import GitError
+from crapkit.gitio import blob_at, commits_touching
+from crapkit.marks_history import marks_history, newest_committed_marks, rename_warning
+from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
+
+MARKS = "crapkit-ratchet.tsv"
+UNHELD = "0123456789abcdef0123456789abcdef01234567"
+
+
+def git(root: Path, *args: str, date: str = "2026-01-01T12:00:00+00:00") -> str:
+    env = {**os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+    return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                           "-c", "commit.gpgsign=false", *args], cwd=root, check=True,
+                          capture_output=True, text=True, env=env).stdout.strip()
+
+
+def marks(crap: float) -> str:
+    entry = RatchetEntry("src/a.py", "hot( n )", crap)
+    return dump_ratchet([entry], stamp=metric_version(), key_version=KEY_VERSION)
+
+
+def commit_file(root: Path, rel: str, text: str | None, message: str, date: str) -> str:
+    path = root / rel
+    if text is None:
+        path.unlink()
+    else:
+        path.write_text(text, encoding="utf-8", newline="\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "--allow-empty", "-m", message, date=date)
+    return git(root, "rev-parse", "HEAD")
+
+
+@pytest.fixture()
+def history(tmp_path: Path) -> dict[str, str]:
+    """base (no marks), a 12.0 mark, a 10.0 mark, then the file deleted."""
+    git(tmp_path, "init", "-q", "-b", "main")
+    shas = {"base": commit_file(tmp_path, "README", "r\n", "base", "2026-01-01T12:00:00+00:00")}
+    shas["first"] = commit_file(tmp_path, MARKS, marks(12.0), "seed", "2026-02-01T12:00:00+00:00")
+    shas["newer"] = commit_file(tmp_path, MARKS, marks(10.0), "tighten", "2026-03-01T12:00:00+00:00")
+    shas["gone"] = commit_file(tmp_path, MARKS, None, "delete", "2026-04-01T12:00:00+00:00")
+    shas["root"] = str(tmp_path)
+    return shas
+
+
+# --- the git reads answer a fact or raise --------------------------------------
+
+def test_blob_at_answers_the_bytes_or_none_for_a_commit_without_the_file(history):
+    root = Path(history["root"])
+
+    assert blob_at(root, history["newer"], MARKS) == marks(10.0).encode("utf-8")
+    assert blob_at(root, history["base"], MARKS) is None
+    assert blob_at(root, history["gone"], MARKS) is None
+
+
+@pytest.mark.parametrize("read", [
+    pytest.param(lambda root: blob_at(root, UNHELD, MARKS), id="blob-at-a-commit-not-held"),
+    pytest.param(lambda root: commits_touching(root, f"{UNHELD}..HEAD", MARKS),
+                 id="commits-in-a-range-not-held"),
+])
+def test_a_git_read_that_fails_raises_instead_of_answering_nothing(history, read):
+    with pytest.raises(GitError, match=UNHELD[:12]):
+        read(Path(history["root"]))
+
+
+def test_commits_touching_lists_the_range_newest_first(history):
+    root = Path(history["root"])
+
+    assert commits_touching(root, f"{history['base']}..HEAD", MARKS) == [
+        history["gone"], history["newer"], history["first"]]
+
+
+# --- verify's stand-in: the newest committed marks since the baseline ----------
+
+def test_the_stand_in_is_the_newest_revision_that_held_marks(history):
+    commit, committed = newest_committed_marks(Path(history["root"]), history["base"], MARKS)
+
+    assert commit == history["newer"]
+    assert [e.crap for e in committed.entries] == [10.0]
+
+
+def test_no_revision_since_the_baseline_held_marks(history):
+    root = Path(history["root"])
+
+    assert newest_committed_marks(root, history["gone"], MARKS) is None
+
+
+def test_a_baseline_the_clone_does_not_hold_is_named_not_read_as_no_marks(history):
+    """Reading it as None let verify judge against no marks at all, the case the
+    stand-in exists to stop. The refusal names the file and the commit."""
+    with pytest.raises(GitError) as refused:
+        newest_committed_marks(Path(history["root"]), UNHELD, MARKS)
+
+    message = str(refused.value)
+    assert message.startswith(f"cannot read the history of {MARKS} since the baseline "
+                              f"{UNHELD[:11]} to stand in for the missing marks: ")
+    assert "--unshallow" not in message, "a full clone is not told to fetch more history"
+
+
+def test_a_shallow_clone_that_lacks_the_baseline_names_the_fetch(history, tmp_path):
+    """The default CI checkout: depth 1 holds HEAD alone, so the baseline and the
+    commits that held the marks are not there to read."""
+    shallow = tmp_path / "shallow"
+    git(tmp_path, "clone", "-q", "--depth", "1", Path(history["root"]).as_uri(), str(shallow))
+
+    with pytest.raises(GitError) as refused:
+        newest_committed_marks(shallow, history["first"], MARKS)
+
+    assert str(refused.value).endswith("set fetch-depth: 0 on the checkout or run "
+                                       "git fetch --unshallow")
+
+
+# --- the history ratchet report and brief read ----------------------------------
+
+def test_the_history_starts_at_the_first_commit_that_touched_the_file(history):
+    read = marks_history(Path(history["root"]), MARKS)
+
+    assert [ts for ts, _ in read.patches] == sorted(ts for ts, _ in read.patches)
+    assert len(read.patches) == 3
+    assert (read.first, read.renamed_from) == (history["first"], None)
+    assert rename_warning(MARKS, read) is None
+
+
+def test_a_history_that_starts_at_a_rename_names_the_commit_and_the_old_name(history):
+    root = Path(history["root"])
+    commit_file(root, MARKS, marks(9.0), "restore", "2026-05-01T12:00:00+00:00")
+    git(root, "mv", MARKS, "debt.tsv")
+    moved = commit_file(root, "README", "r2\n", "rename", "2026-06-01T12:00:00+00:00")
+
+    read = marks_history(root, "debt.tsv")
+
+    assert (read.first, read.renamed_from) == (moved, MARKS)
+    assert rename_warning("debt.tsv", read) == (
+        f"warning: debt.tsv's history starts at {moved[:11]}, the commit that renamed it "
+        f"from {MARKS}, so mark ages and repayments count from there")
+
+
+def test_a_file_no_commit_touched_has_no_history(tmp_path):
+    git(tmp_path, "init", "-q", "-b", "main")
+    commit_file(tmp_path, "README", "r\n", "base", "2026-01-01T12:00:00+00:00")
+
+    read = marks_history(tmp_path, MARKS)
+
+    assert (read.patches, read.first, read.renamed_from) == ([], None, None)

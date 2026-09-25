@@ -188,7 +188,7 @@ Three rules decide what it judges:
 | Exit | Meaning | Next action |
 |---|---|---|
 | 0 | every changed function is at or under its ceiling | go to step 4 |
-| 6 | the listed functions are over | decompose them, rerun |
+| 6 | the listed functions are over, or an `UNREAD` line names a changed file no reader could read | decompose them, or change what the unread file's reason names; rerun |
 
 Exit 0 is not a verify. `rescore` overlays fresh complexity on the last run's stale
 coverage and writes no run, so a new function at exactly the ceiling with no tests
@@ -262,11 +262,16 @@ This is the slow step and the only authoritative one.
 | Exit | Verdict | Next action |
 |---|---|---|
 | 0 | pass | baseline advanced, ratchet tightened, finished claims released. Commit |
-| 5 | a lane produced no artifact, one that measured a different tree, or one that measured this tree and reported it in absolute paths | tooling, not your code. For the first two, read the lane log the message names and fix the lane command in crapkit.toml. The third names the runner's own switch instead, `relative_files = true` under `[tool.coverage.run]` for coverage.py or the reporter's `cwd`/`root` option for istanbul, because the lane command is fine and only the spelling of the paths is not |
-| 6 | gate: a touched function is over its ceiling on CRAP and above any ratchet mark it carries | decompose it, or cover it |
+| 5 | a lane produced no artifact, one that measured a different tree, or one that measured this tree and reported it in absolute paths; or, under `--reuse-artifacts`, a lane whose declared `results_artifact` is missing or unreadable | tooling, not your code. For the first two, read the lane log the message names and fix the lane command in crapkit.toml. The third names the runner's own switch instead, `relative_files = true` under `[tool.coverage.run]` for coverage.py or the reporter's `cwd`/`root` option for istanbul, because the lane command is fine and only the spelling of the paths is not. For the junit, rerun `commands.verify` as given: it runs the lanes and writes the file. No run was stored, so nothing passed |
+| 6 | gate: a touched function is over its ceiling on CRAP and above any ratchet mark it carries, or a changed file no reader could read (`UNREAD`) | decompose it, or cover it; for `UNREAD`, change what the reason names |
 | 7 | ratchet: a recorded score got worse | restore that function below its mark |
 | 8 | a test that passed in the baseline fails now | fix the test or the code |
 | 9 | more uncovered changed lines than `diff_uncovered_max` | cover the changed lines |
+
+Exit 8 with `warning: lane 'py': no trusted run at or behind the baseline recorded which
+of its tests failed` means the baseline cannot tell your failure from an old one: the lane
+declared no `results_artifact` when the baseline ran. verify counts it as new anyway. Check
+whether the test fails at the baseline commit before you change code for it.
 
 One verdict per run, in that order: 6 beats 7 beats 8, and 9 fires only when nothing
 else did. A run that exits non-zero never becomes a baseline and never tightens the
@@ -312,6 +317,12 @@ make and writes three lines to stderr when that edit pushed a function over its 
 Nothing was blocked and nothing was written. Read it as the earliest warning that step 3
 will fail, not as a rejected edit. A function the committed ratchet already marks never
 triggers it, and a repo with no `crapkit.toml` never hears from the hook at all.
+
+An edit that leaves a file no reader can read (a TypeScript arrow body the reader refuses,
+a Python def cut off at its signature) gets the same three-line shape, opening
+`crapkit advisory: src/a.ts could not be read, so no function in it was judged`, then an
+`UNREAD` line with the reader's reason and the fix. The commit gate refuses that file once
+staged, so fix what the reason names before you commit.
 
 An edit event names its file. A `Bash` event names none, so the hook reads the working
 tree instead: the dirty or untracked `*.py` files whose mtime falls inside a 12-second
@@ -410,7 +421,7 @@ Where a packet's `PATH` and `FUNCTION` come from when no orchestrator handed you
 `next-item` always prints one JSON object on stdout and has no `--json` flag. One real
 payload, one line, sorted keys:
 
-    {"commit": "f6e9bde18a7b4a4d4a0610c16b0526bd9aefc6c6", "empty": false, "item": {"authors": 1, "ccn": 11, "ccn_std": 11, "cognitive": 15, "commits": 6, "cov": 0.0, "crap": 132.0, "end": 84, "est_splits": 2, "est_uncovered_paths": 11, "flag": "measured", "function": "curve( scores , mode , floor , ceiling , skip_none )", "handle": "curve", "nesting": 3, "nloc": 17, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 67, "target": 6, "uncovered_lines": [69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84]}, "run_id": 5, "schema": 1, "skipped_no_lane": 0, "stale": false}
+    {"commit": "f6e9bde18a7b4a4d4a0610c16b0526bd9aefc6c6", "empty": false, "item": {"authors": 1, "ccn": 11, "ccn_std": 11, "cognitive": 15, "commits": 6, "cov": 0.0, "crap": 132.0, "end": 84, "est_splits": 2, "est_uncovered_paths": 11, "flag": "measured", "function": "curve( scores , mode , floor , ceiling , skip_none )", "handle": "curve", "nesting": 3, "nloc": 17, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 67, "target": 6, "uncovered_lines": [69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84], "unmeasured": false}, "run_id": 5, "schema": 1, "shallow": false, "skipped_no_lane": 0, "stale": false}
 
 Act on these fields:
 
@@ -425,6 +436,8 @@ Act on these fields:
 | `handle` | the shorter name form, and the one to use on a function printed as `(anonymous)`: `(anonymous)#2` names a position in the file, so it outlives your own edit |
 | `start` | the other name form `brief` takes; a line number, so an edit above it invalidates it |
 | `stale` | `true` means the run predates HEAD; rerun `crapkit coverage` before acting on `cov` |
+| `unmeasured` | `true` means no measurement stands behind `cov` (`flag` `cc-only`, or `no-lane` on a `brief`), so `cov` 0.0 and `est_uncovered_paths` are stand-ins, and `brief`'s text prints `not measured`. A test does not move them: a `no-lane` scope needs a lane, and a `cc-only` scope has none by design |
+| `shallow` | on the envelope: `true` means the checkout is a shallow clone, so `commits`, `authors` and churn count only the commits it holds (one per file at depth 1), and stderr names the fix, `set fetch-depth: 0 on the checkout or run git fetch --unshallow` |
 
 `uncovered_lines: null` with a sibling `uncovered_lines_note` means no artifact could name
 line numbers for that file. The note names which case, and `flag` is the same answer in one
@@ -458,7 +471,7 @@ before:**
     skipped_claimed              0, or absent
     reasons.no_lane_over_target  0, or absent
 
-    {"commit": "8d10c13303dfd9ef4172d9f736582ff4ffa96e60", "empty": true, "reasons": {"all_remaining_at_or_under_target": 4, "below_floor": 1, "churn_window_months": 12, "excluded_by_flag": 0, "no_churn_in_window": 0, "no_lane": 0, "no_lane_over_target": 0}, "run_id": 3, "schema": 1, "skipped_no_lane": 0, "stale": false}
+    {"commit": "8d10c13303dfd9ef4172d9f736582ff4ffa96e60", "empty": true, "reasons": {"all_remaining_at_or_under_target": 4, "below_floor": 1, "churn_window_months": 12, "excluded_by_flag": 0, "no_churn_in_window": 0, "no_lane": 0, "no_lane_over_target": 0}, "run_id": 3, "schema": 1, "shallow": false, "skipped_no_lane": 0, "stale": false}
 
 That payload is a finished burn-down. `empty: true` on its own is not: it says the queue
 has nothing to hand out, and two things stop it handing out work that still exists. A
@@ -595,7 +608,7 @@ Twelve tools, every one the CLI command's `--json` form:
 | `list_duplicate_functions` | `similarity` | JSON |
 | `get_ratchet_report` | none | JSON |
 | `list_claims` | none | JSON (`claims list --json`) |
-| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it; `ok` false on a breach (exit 6), answered as a result, not a tool error |
+| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it; `ok` false on a breach or on a changed file no reader could read (`gate.unread_files`), exit 6, answered as a result, not a tool error |
 
 Arguments are checked against the served schema before the CLI spawns. `tools/list`
 carries `required` from each tool's positionals, and a missing positional, an undeclared
@@ -693,10 +706,15 @@ clears tempfile's cached directory for the call. These files do:
 | `test_encoding_e2e.py` | the child's stdio encoding under a legacy code page |
 | `test_mcp_e2e.py`, `test_mcp_no_config.py` | the MCP server as a stdio process; any `mcp` call spawns, since the server reads a real stdin descriptor |
 | `test_claude_hook_e2e.py` | the hook as Claude Code starts it: stdin payload, start time, PYTHONPATH shims |
-| `test_inventory_e2e.py`, `test_hook_prefetch_e2e.py`, `test_init_doctor_e2e.py`, `test_init_scoped_tests_e2e.py`, `test_ratchet_stamp_e2e.py`, `test_advisory_gate_coherence_e2e.py` | PYTHONPATH set through `env_extra` |
+| `test_inventory_e2e.py`, `test_hook_prefetch_e2e.py`, `test_init_doctor_e2e.py`, `test_init_scoped_tests_e2e.py`, `test_ratchet_stamp_e2e.py`, `test_advisory_gate_coherence_e2e.py`, `test_absent_state_fixed_by_other_classes_e2e.py` | PYTHONPATH set through `env_extra` |
 | `test_claim_competition_e2e.py` | sessions racing for claims, three at once |
 | `test_cpp_family_admission_e2e.py`, `test_polyglot_admission_e2e.py` | repos big enough for the analysis pool, which forks its caller on Linux |
 | `test_verify_git_dedupe_e2e.py` | a counter patched onto `gitio` while `run_cli` builds the repo |
+
+Two files start their processes without the runner.
+`test_verify_reads_stores_older_crapkits_wrote_e2e.py` runs older releases, taken from
+`git archive`, through PYTHONPATH, and `test_action_fork_point_without_results_e2e.py` runs
+the Action's step bodies under bash, whose steps start crapkit themselves.
 
 Every test-side wait on a child goes through `tests/hang_guard.py`, whose one bound,
 `HANG_SECONDS` (120), replaces a guess per call site: verify run 103 failed six tests on a
@@ -741,6 +759,9 @@ Shared rules belong to these modules:
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
 | `lane_command.py` | how a lane starts and how its command reads. `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike |
+| `lane_results.py` | which run's record of a lane's test results a comparison reads. `read_results` parses a lane's record into `LaneResults`, where a lane with no junit this run has no count and no failure list (None), never 0 tests or no failures, and a list a verify older than 0.8.0 stored is not trusted; a comparison reads the run it compares against, else the newest run behind it that recorded one, else says it cannot compare. verify's baseline and coverage's `suite_drops` both walk it. No other module reads `failures`, `tests_total` or `tests_skipped` off a lane record, and `tests/unit/test_lane_results.py` fails on one that does |
+| `marks_history.py` | what the marks file held in the past: the history `ratchet report` and `brief` read mark ages off, the commit a renamed marks file's history starts at and the one line both print about it, and the newest committed marks verify judges a missing or emptied marks file against. A git read under it that fails raises `GitError`; none answers an empty history |
+| `agent_fields.py` | which fields a release adds to the agent JSON payloads: each one's payload, key, JSON types (null among them only where it may be null) and meaning. The MCP output schemas take those entries from it, and `tests/unit/test_agent_fields.py` checks the printed payloads, the MCP schemas and docs/agent-json.md against it. Add a field there first; JSON schema 1 never changes an existing field's meaning |
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |

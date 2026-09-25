@@ -179,3 +179,74 @@ def test_the_corpus_cut_is_the_one_scoring_uses():
     assert kept == {"src/a.py": None}
     assert outside == ["src/b.rb", "src/big.py", "src/gen/client.py",
                        "src/tests/test_a.py", "tests/test_b.py"]
+
+
+# --- the summary: a timeout and a no-verdict mutant are kills counted apart -----
+#
+# `killed` keeps its 0.8.0 meaning, mutants - survived, in the text and in
+# --json: JSON schema 1 keeps every field's meaning, and a no-verdict mutant
+# leaves the score only with schema 2. Each kind of kill no test decided is
+# named on a line of its own and counted in --json.
+
+_TIMEOUT_LINE = ("  {} of the {} killed timed out past mutation_timeout_seconds; "
+                 "a timeout counts as killed")
+_NO_VERDICT_LINE = ("  no verdict: {} of the {} killed ran no test (exit 5), so no test caught "
+                    "them; check that mutation_command collects a test for them")
+_SURVIVED_LINE = "  SURVIVED  a.py:{}  [> -> >=]  x >= 1"
+
+# variation -> (one verdict per mutant, the text summary, the --json counts)
+_SUMMARIES = {
+    "all-killed": ("KK", ["mutation: 2/2 killed (100%)"], (2, 2, 0, 0, 0)),
+    "one-survivor": ("KS", ["mutation: 1/2 killed (50%)", _SURVIVED_LINE.format(2)],
+                     (2, 1, 1, 0, 0)),
+    "every-suite-timed-out": ("TT", ["mutation: 2/2 killed (100%)", _TIMEOUT_LINE.format(2, 2)],
+                              (2, 2, 0, 2, 0)),
+    "no-suite-ran-a-test": ("NN", ["mutation: 2/2 killed (100%)", _NO_VERDICT_LINE.format(2, 2)],
+                            (2, 2, 0, 0, 2)),
+    "one-of-each": ("KTSN", ["mutation: 3/4 killed (75%)", _TIMEOUT_LINE.format(1, 3),
+                             _NO_VERDICT_LINE.format(1, 3), _SURVIVED_LINE.format(3)],
+                    (4, 3, 1, 1, 1)),
+}
+
+
+def _judged(letters: str):
+    from crapkit.mutate import Mutant
+    from crapkit.mutate_pool import MutantVerdict
+
+    verdicts = {"K": MutantVerdict.KILLED, "T": MutantVerdict.TIMED_OUT,
+                "S": MutantVerdict.SURVIVED, "N": MutantVerdict.NO_VERDICT}
+    mutants = [Mutant(path="a.py", line=i + 1, op="> -> >=", original="x > 1",
+                      mutated="x >= 1") for i in range(len(letters))]
+    return mutants, [verdicts[letter] for letter in letters]
+
+
+@pytest.mark.parametrize("variation", list(_SUMMARIES))
+def test_the_text_summary_rates_timeouts_and_no_verdicts_as_killed_and_names_each(capsys,
+                                                                                   variation):
+    """The rate counts every mutant that did not survive, as `killed` does in JSON
+    schema 1; a timed-out or no-verdict mutant gets a line of its own under it."""
+    from crapkit.cli.analyses import _print_mutation
+
+    letters, lines, _ = _SUMMARIES[variation]
+    _print_mutation(False, *_judged(letters), [])
+
+    assert capsys.readouterr().out.splitlines() == lines
+
+
+@pytest.mark.parametrize("variation", list(_SUMMARIES))
+def test_json_counts_timeouts_and_no_verdicts_inside_killed(capsys, variation):
+    """`mutants` and `killed` keep their meaning: every mutant run, and every
+    one that did not survive. `timed_out` and `no_verdict` are counts inside
+    `killed`, so killed + survived is still mutants."""
+    import json
+
+    from crapkit.cli.analyses import _print_mutation
+
+    letters, _, counts = _SUMMARIES[variation]
+    _print_mutation(True, *_judged(letters), [])
+
+    out = json.loads(capsys.readouterr().out)
+    keys = ("mutants", "killed", "survived", "timed_out", "no_verdict")
+    assert tuple(out[key] for key in keys) == counts
+    assert len(out["survivors"]) == out["survived"]
+    assert out["killed"] + out["survived"] == out["mutants"]

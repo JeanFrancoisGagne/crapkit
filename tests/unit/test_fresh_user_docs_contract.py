@@ -137,7 +137,7 @@ def test_the_sample_payload_carries_every_envelope_key_the_command_emits():
     sample = _sample_payload()
 
     assert set(sample) == {"schema", "empty", "item", "run_id", "commit",
-                           "skipped_no_lane", "stale"}
+                           "skipped_no_lane", "stale", "shallow"}
 
 
 def test_the_sample_item_carries_every_key_the_payload_builder_returns():
@@ -279,6 +279,7 @@ def _packet_keys(monkeypatch) -> set[str]:
     import crapkit.coupling_cache
     import crapkit.dup
     import crapkit.gitio
+    import crapkit.marks_history
 
     row = ScoredRow("core", "core/alpha.py", "alpha( a )", 1, 20, 8, 8, 8, 18, 1, 2,
                     0.5, "untested", 64.0, "decompose", 7)
@@ -293,7 +294,7 @@ def _packet_keys(monkeypatch) -> set[str]:
                          ("_brief_versions", {"crapkit": "0"})):
         monkeypatch.setattr(queue, name, lambda *a, _v=answer, **k: _v)
     for module, name in ((crapkit.coupling_cache, "load_coupling"),
-                         (crapkit.dup, "twins_in"), (crapkit.gitio, "file_log_patches")):
+                         (crapkit.dup, "twins_in"), (crapkit.marks_history, "file_log")):
         monkeypatch.setattr(module, name, lambda *a, **k: [])
     store = SimpleNamespace(read_rows=lambda *a, **k: [row],
                             read_scored=lambda *a, **k: [row],

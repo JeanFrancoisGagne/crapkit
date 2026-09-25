@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 from typing import NamedTuple
 
@@ -281,6 +282,12 @@ def _working_marks(root: Path, ratchet_file: str) -> dict:
     return {(e.path, e.long_name): e.crap for e in entries}
 
 
+def _judges_policy(cfg, enforce: bool) -> bool:
+    """--enforce with a debt knob in [crapkit]: the one case the report judges."""
+    knobs = (cfg.debt_max_age_months, cfg.repayment_min_per_30d)
+    return enforce and any(k is not None for k in knobs)
+
+
 def _policy_findings(cfg, report: dict, enforce: bool) -> list | None:
     """The debt-policy findings, or None when no policy was evaluated.
 
@@ -290,21 +297,52 @@ def _policy_findings(cfg, report: dict, enforce: bool) -> list | None:
     """
     from ..ratchet_report import policy_violations
 
-    knobs = (cfg.debt_max_age_months, cfg.repayment_min_per_30d)
-    if not enforce or all(k is None for k in knobs):
+    if not _judges_policy(cfg, enforce):
         return None
-    return policy_violations(report, *knobs)
+    return policy_violations(report, cfg.debt_max_age_months, cfg.repayment_min_per_30d)
+
+
+def _refuse_a_cut_history(cfg, enforce: bool, shallow: bool) -> None:
+    """Exit 4 before judging the policy on a history the clone does not hold.
+
+    Every age and every repayment is read off the ratchet file's commits. A
+    depth-1 clone holds one, so every mark read 0 days old and nothing was ever
+    repaid: an age limit passed that a full clone fails, and a repayment quota
+    failed that a full clone passes.
+    """
+    from ..gitio import shallow_refusal
+
+    if shallow and _judges_policy(cfg, enforce):
+        raise shallow_refusal("ratchet report --enforce judges mark ages and repayments by "
+                              f"the git history of {cfg.ratchet_file}")
+
+
+def _warn_history(ratchet_file: str, history, shallow: bool) -> None:
+    """One line for each way the history the ages count is not the file's
+    whole history: a shallow clone, and a history that starts at a rename."""
+    from ..gitio import shallow_warning
+    from ..marks_history import rename_warning
+
+    for line in (shallow and shallow_warning("mark ages and repayments"),
+                 rename_warning(ratchet_file, history)):
+        if line:
+            print(line, file=sys.stderr)
 
 
 def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
-    from ..gitio import file_log_patches
+    from ..gitio import shallow_checkout
+    from ..marks_history import marks_history
     from ..ratchet_report import mark_events, report_from_events
 
-    events = mark_events(file_log_patches(root, cfg.ratchet_file))
-    report = report_from_events(events, working=_working_marks(root, cfg.ratchet_file))
+    shallow = shallow_checkout(root)
+    _refuse_a_cut_history(cfg, enforce, shallow)
+    history = marks_history(root, cfg.ratchet_file)
+    report = report_from_events(mark_events(history.patches),
+                                working=_working_marks(root, cfg.ratchet_file))
     violations = _policy_findings(cfg, report, enforce)
+    _warn_history(cfg.ratchet_file, history, shallow)
     if as_json:
-        _print_json({**report, "policy_violations": violations})
+        _print_json({**report, "policy_violations": violations, "shallow": shallow})
     else:
         _print_ratchet_report(report, violations or [], cfg.ratchet_file)
     return 1 if violations else 0

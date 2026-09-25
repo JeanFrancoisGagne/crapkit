@@ -2,7 +2,7 @@
 import pytest
 
 from crapkit.coverage_istanbul import FnCoverage
-from crapkit.score import crap, score_rows
+from crapkit.score import crap, flagged_crap, score_rows
 from crapkit.snapshot import InventoryRow
 
 
@@ -16,6 +16,18 @@ def test_crap_formula_exact_values():
     assert crap(1, 0.0) == 2
     assert round(crap(6, 1.0), 6) == 6
     assert crap(7, 1.0) == 7, "cc 7 at full coverage still exceeds a target of 6"
+
+
+@pytest.mark.parametrize(("flag", "cov", "expected"), [
+    ("cc-only", 0.0, 8.0),
+    ("untested", 0.0, 72.0),
+    ("no-lane", 0.0, 72.0),
+    ("measured", 1.0, 8.0),
+])
+def test_a_cc_only_row_scores_its_ccn_and_every_other_flag_the_formula(flag, cov, expected):
+    """cc-only has no coverage number at all, so its CRAP is ccn. The override
+    grant reads this same rule, where it once wrote 72 for a cc-only ccn 8."""
+    assert flagged_crap(8, cov, flag) == expected
 
 
 def test_join_by_span_overlap_flags_measured():
@@ -154,3 +166,39 @@ def test_overlay_ignores_unmeasured_baseline_rows_with_the_same_name():
     (scored,) = overlay_stale_coverage([row(path="src/a.ts", name="f( )", start=1, end=6, ccn=5)],
                                        baseline, lane_scopes={"src"})
     assert scored.flag == "untested", "only measured baseline rows carry coverage forward"
+
+
+# --- a row no measurement stands behind -----------------------------------------
+
+@pytest.mark.parametrize("case, name, scope, baseline_flag, cov, flag, stand_in", [
+    ("joined", "f( )", "src", "measured", 0.5, "measured", False),
+    ("baseline-judged-untested", "f( )", "src", "untested", 0.0, "untested", False),
+    ("added-since-the-run", "g( )", "src", "measured", 0.0, "untested", True),
+    ("renamed-since-the-run", "f2( )", "src", "measured", 0.0, "untested", True),
+    ("no-lane-scope", "f( )", "ui", "measured", 0.0, "no-lane", True),
+    ("cc-only-scope", "f( )", "opt", "measured", 0.0, "cc-only", True),
+])
+def test_overlay_collects_every_row_whose_cov_nothing_measured(case, name, scope, baseline_flag,
+                                                               cov, flag, stand_in):
+    """A function the baseline holds no row for reads cov 0.0 and `untested`,
+    the values the preview has always given it. The collector is how a caller
+    learns that nothing measured that 0.0; a function the baseline judged
+    untested was measured at 0.0 and is not collected."""
+    from crapkit.score import ScoredRow, overlay_stale_coverage
+
+    baseline = [ScoredRow("src", "src/a.ts", "f( )", 1, 6, 5, 5, 5, 6, 1, 1,
+                          0.5 if baseline_flag == "measured" else 0.0, baseline_flag, 9.4, "add-tests")]
+    found: set = set()
+    (scored,) = overlay_stale_coverage([row(name=name, start=1, end=6, ccn=5, scope=scope)], baseline,
+                                       lane_scopes={"src", "opt"}, cc_only_scopes=frozenset({"opt"}),
+                                       unjoined=found)
+
+    assert (scored.cov, scored.flag) == (cov, flag), case
+    assert (scored in found) is stand_in, case
+
+
+def test_unjoined_flags_are_the_ones_no_artifact_can_speak_about():
+    from crapkit.score import unjoined
+
+    assert [f for f in ("measured", "untested", "no-lane", "cc-only") if unjoined(f)] == \
+        ["no-lane", "cc-only"]

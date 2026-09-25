@@ -30,22 +30,76 @@ _OLD_COVERAGE = "needs coverage >= 7.6"
 _SAMPLE = 3
 
 
-def _admit_summary(name: str, summary: dict) -> dict:
-    pairs = (("num_branches", "covered_branches"), ("num_statements", "covered_lines"))
+_PAIRS = (("num_branches", "covered_branches"), ("num_statements", "covered_lines"))
+_REGENERATE = "regenerate the report with the coverage tool"
+
+
+def _admit_summary(name: str, summary: object) -> dict:
+    """One function's counts, each kind as a total and a covered count or not at
+    all. coverage.py writes both of every kind it measured, so a summary that is
+    gone, a count without its partner, or no count of either kind is a report
+    something else rewrote; each read as 0 of 0, and a function that ran scored
+    cov 0. A kind with neither count is one the report did not measure.
+
+    `name` is `path: function`, so the refusal names the file as well: a report
+    holds many files, and one function name can sit in several of them. Every
+    refusal ends with the fix, as the istanbul reader's do."""
+    try:
+        return _summary_counts(name, summary)
+    except ValueError as exc:
+        raise ValueError(f"{exc}; {_REGENERATE}") from exc
+
+
+def _summary_counts(name: str, summary: object) -> dict:
+    if not isinstance(summary, dict):
+        raise ValueError(f"{name}: summary is missing, so crapkit cannot tell how much of it ran")
     counts = {}
-    for total, covered in pairs:
-        counts[total] = coverage_count(summary.get(total, 0), f"{name}: {total}")
-        counts[covered] = coverage_count(summary.get(covered, 0), f"{name}: {covered}")
-        if counts[covered] > counts[total]:
-            raise ValueError(f"{name}: {covered} exceeds {total}")
+    for total, covered in _PAIRS:
+        counts.update(_admit_pair(name, summary, total, covered))
+    if not counts:
+        raise ValueError(f"{name}: summary holds neither statement nor branch counts")
+    _require_deciding_statements(name, counts)
     return counts
 
 
-def _fn_coverage(name: str, fn: dict) -> FnCoverage:
-    summary = _admit_summary(name, fn.get("summary", {}))
+def _require_deciding_statements(name: str, counts: dict) -> None:
+    """With 0 of 0 branches the statement pair decides the function's coverage,
+    so a summary without it read as a function that never ran: cov 0 for one
+    that ran every line. With branches, the branch pair decides and the missing
+    statement pair changes nothing."""
+    if "num_statements" not in counts and counts["num_branches"] == 0:
+        raise ValueError(f"{name}: summary holds no statement counts and no branch, so "
+                         "crapkit cannot tell how much of it ran")
+
+
+def _admit_pair(name: str, summary: dict, total: str, covered: str) -> dict:
+    present = [key for key in (total, covered) if key in summary]
+    if not present:
+        return {}
+    _require_partner(name, present, total, covered)
+    return _counted_pair(name, summary, total, covered)
+
+
+def _counted_pair(name: str, summary: dict, total: str, covered: str) -> dict:
+    counts = {key: coverage_count(summary[key], f"{name}: {key}") for key in (total, covered)}
+    if counts[covered] > counts[total]:
+        raise ValueError(f"{name}: {covered} exceeds {total}")
+    return counts
+
+
+def _require_partner(name: str, present: list[str], total: str, covered: str) -> None:
+    if len(present) == 1:
+        other = covered if present[0] == total else total
+        raise ValueError(f"{name}: {present[0]} without {other}")
+
+
+def _fn_coverage(name: str, fn: dict, path: str = "") -> FnCoverage:
+    summary = _admit_summary(f"{path}: {name}" if path else name, fn.get("summary"))
     lines = list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
     start = fn.get("start_line") or (min(lines) if lines else 0)
     end = max(lines) if lines else start
+    # A kind the summary lacks reads 0 of 0 below only where it cannot decide:
+    # _admit_summary refused every summary whose missing kind would.
     return FnCoverage(name=name, start=start, end=end,
                       invoked=summary.get("covered_lines", 0) > 0,
                       branches_total=summary.get("num_branches", 0),
@@ -66,11 +120,13 @@ def has_regions(data: object) -> bool:
     return isinstance(data, dict) and data.get("functions") is not None
 
 
-def _file_functions(data: dict) -> list[FnCoverage]:
+def _file_functions(data: dict, path: str = "") -> list[FnCoverage]:
     """One file's functions, sorted by start line. Ask `has_regions` first: this
-    reads an absent "functions" key as an empty one."""
+    reads an absent "functions" key as an empty one. `path` names the file in a
+    refusal."""
     # the "" key is the "(no function)" module-level bucket
-    fns = [_fn_coverage(name, fn) for name, fn in (data.get("functions") or {}).items() if name]
+    fns = [_fn_coverage(name, fn, path) for name, fn in (data.get("functions") or {}).items()
+           if name]
     return sorted(fns, key=lambda f: f.start)
 
 
@@ -102,6 +158,27 @@ def judge_branch(branch: bool, per_file: dict[str, list[FnCoverage]], label: str
     print(f"crapkit: {_named(label)}coverage.py report carries no branch data, so the "
           "coverage term is statement-based for this artifact — add --cov-branch to the "
           "lane command to measure branches", file=sys.stderr)
+
+
+def _judge_branch_counts(meta_branch: bool, files: _Files, label: str) -> None:
+    """The report measures branches when its meta says so, or when any function
+    carries branch counts: a report with no meta said its term was
+    statement-based while its functions scored on branches."""
+    has_branches = meta_branch or files.branch_counted > 0
+    judge_branch(has_branches, files.per_file, label)
+    if has_branches:
+        _refuse_branchless(files.branchless)
+
+
+def _refuse_branchless(branchless: list[str]) -> None:
+    """A function with no branch counts in a report that measures branches.
+    coverage.py writes 0 of 0 for a function with no branch, so something else
+    rewrote this one; read as statements, its coverage moved with nothing said."""
+    if branchless:
+        raise ToolError(
+            f"coverage.py report measures branches, but {len(branchless)} function(s) carry no "
+            f"branch counts ({_sample(branchless)}), so crapkit cannot tell how many of their "
+            "branches ran; regenerate the report with the coverage tool")
 
 
 def judge_regions(regionless: list[str], total: int, label: str = "") -> None:
@@ -181,6 +258,8 @@ class _Files:
         self.dead: dict[str, set[int]] = {}
         self.regionless: list[str] = []
         self.total = 0
+        self.branch_counted = 0
+        self.branchless: list[str] = []
 
     def add(self, prefix: str, raw_path: str, data: dict) -> None:
         self.total += 1
@@ -189,7 +268,16 @@ class _Files:
         if not has_regions(data):
             self.regionless.append(raw_path)
             return
-        self.per_file[path] = _file_functions(data)
+        self.per_file[path] = _file_functions(data, path)
+        branchless = _branchless(path, data)
+        self.branchless += branchless
+        self.branch_counted += len(self.per_file[path]) - len(branchless)
+
+
+def _branchless(path: str, data: dict) -> list[str]:
+    """`path: name` for each function whose summary carries no branch counts."""
+    return [f"{path}: {name}" for name, fn in data["functions"].items()
+            if name and "num_branches" not in fn["summary"]]
 
 
 def _coveragepy_both(w, prefix: str, label: str) -> tuple[dict, dict]:
@@ -205,7 +293,7 @@ def _coveragepy_both(w, prefix: str, label: str) -> tuple[dict, dict]:
     # Same order as the whole-document reader: regions decide first, so the two
     # cannot answer one report differently.
     judge_regions(files.regionless, files.total, label)
-    judge_branch(branch, files.per_file, label)
+    _judge_branch_counts(branch, files, label)
     return files.per_file, files.dead
 
 

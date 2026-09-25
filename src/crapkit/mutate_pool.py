@@ -28,6 +28,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import Enum
 from functools import partial
 from pathlib import Path
 from typing import Literal
@@ -39,6 +40,33 @@ from .gitio import head_commit, status_names, worktree_add, worktree_remove, wor
 from .mutate import apply_mutant
 from .procs import own_processes, run_bounded
 
+
+class MutantVerdict(Enum):
+    """What one mutant's suite run said, worded the way its progress line
+    prints it. A timeout is a kill counted apart. A suite that ran no test
+    judged nothing; JSON schema 1 still counts that mutant killed, as 0.8.0 did,
+    and reports it apart until schema 2 leaves it out of the score."""
+    KILLED = "killed"
+    TIMED_OUT = "timed out, counted killed"
+    SURVIVED = "SURVIVED"
+    NO_VERDICT = "no verdict: the suite ran no test (exit 5), counted killed"
+
+
+_NO_TESTS_RAN = 5  # pytest's exit code when it collected no test
+
+
+def verdict_of(code: int | None) -> MutantVerdict:
+    """One suite exit read as a verdict. None is the deadline: a mutant that
+    loops forever is detected, and reported apart from a failing test. Exit 5
+    is pytest's "no tests collected": no test judged the mutant. Any other
+    nonzero exit is a kill."""
+    if code is None:
+        return MutantVerdict.TIMED_OUT
+    if code == 0:
+        return MutantVerdict.SURVIVED
+    return MutantVerdict.NO_VERDICT if code == _NO_TESTS_RAN else MutantVerdict.KILLED
+
+
 def _suite_env() -> dict:
     """Python validates .pyc files by source SIZE and whole-second mtime, so a
     written cache would answer for the next mutant of the same size."""
@@ -49,7 +77,7 @@ def require_live_suite(tree: Path, cfg, *, owner=None) -> None:
     """Refuse to score anything until the command has passed once with nothing
     mutated.
 
-    `run_one` collapses every failure mode into one boolean, so a command that
+    `run_one` reads every nonzero exit but 5 as a kill, so a command that
     cannot run here reads as a suite that killed every mutant. docs ship
     `mutation_command = "python -m pytest -q -x"`, a bare name, and on a machine
     whose PATH `python` is not the one holding pytest — a hook, a cron, cmd.exe,
@@ -63,8 +91,7 @@ def require_live_suite(tree: Path, cfg, *, owner=None) -> None:
     if code == 0:
         return
     raise ToolError(f"mutation_command {_runner_word(cfg.mutation_command)!r} "
-                    f"{_baseline_verdict(code)} on the UNMUTATED tree, so every mutant "
-                    "would read as killed and the score would be 100% — run "
+                    f"{_baseline_verdict(code)} — run "
                     f"`{cfg.mutation_command}` in {tree} and fix it before scoring")
 
 
@@ -75,11 +102,17 @@ def _runner_word(command: str) -> str:
 
 
 def _baseline_verdict(code: int | None) -> str:
-    return "timed out" if code is None else f"exits {code}"
+    """What the unmutated run did, and what every mutant would read as."""
+    if verdict_of(code) is MutantVerdict.NO_VERDICT:
+        return "exits 5 (no test ran) on the UNMUTATED tree, so no mutant would get a verdict"
+    did = "timed out" if code is None else f"exits {code}"
+    return (f"{did} on the UNMUTATED tree, so every mutant would read as killed "
+            "and the score would be 100%")
 
 
-def run_one(tree: Path, cfg, mutant, *, owner=None) -> bool:
-    """True = killed. The original file ALWAYS comes back, whatever happens."""
+def run_one(tree: Path, cfg, mutant, *, owner=None) -> MutantVerdict:
+    """What the suite said about one mutant. The original file ALWAYS comes
+    back, whatever happens."""
     p = _private_file(tree, mutant.path)
     original = p.read_bytes()
     # Python validates .pyc files by source SIZE + mtime in WHOLE SECONDS: two
@@ -95,9 +128,8 @@ def run_one(tree: Path, cfg, mutant, *, owner=None) -> bool:
         # kills the shell alone and leaves the suite running, so a mutant that
         # loops forever was scored dead while its suite ran on to the end -
         # one of them per mutant, all at once on the single-worker path.
-        # None is the deadline: a mutant that loops forever is dead.
-        return run_bounded(cfg.mutation_command, cfg.mutation_timeout_seconds,
-                           cwd=tree, env=env, owner=owner) != 0
+        return verdict_of(run_bounded(cfg.mutation_command, cfg.mutation_timeout_seconds,
+                                      cwd=tree, env=env, owner=owner))
     finally:
         _private_file(tree, mutant.path).write_bytes(original)
 
@@ -108,9 +140,9 @@ def _shards(indexed: list, workers: int) -> list[list]:
     return [indexed[w::workers] for w in range(workers)]
 
 
-def _merge(done: list) -> list[bool]:
-    """(index, killed) pairs from every worker back into mutant order."""
-    return [killed for _, killed in sorted(done)]
+def _merge(done: list) -> list:
+    """(index, verdict) pairs from every worker back into mutant order."""
+    return [verdict for _, verdict in sorted(done)]
 
 
 def _run_shard(tree: Path, cfg, shard: list, report, owner, cancelled) -> list:
@@ -118,9 +150,9 @@ def _run_shard(tree: Path, cfg, shard: list, report, owner, cancelled) -> list:
     for index, mutant in shard:
         if cancelled.is_set():
             break
-        killed = run_one(tree, cfg, mutant, owner=owner)
-        report(index, mutant, killed)
-        out.append((index, killed))
+        verdict = run_one(tree, cfg, mutant, owner=owner)
+        report(index, mutant, verdict)
+        out.append((index, verdict))
     return out
 
 
@@ -449,7 +481,7 @@ def _cancel_owner(owner, error: BaseException) -> None:
         raise error from cleanup
 
 
-def _run_parallel(root: Path, cfg, mutants: list, workers: int, report) -> list[bool]:
+def _run_parallel(root: Path, cfg, mutants: list, workers: int, report) -> list[MutantVerdict]:
     shards = _shards(list(enumerate(mutants)), workers)
     checkout = worktree_root(root)
     prefix = root.resolve().relative_to(checkout)
@@ -469,8 +501,8 @@ def _run_parallel(root: Path, cfg, mutants: list, workers: int, report) -> list[
     return _merge(done)
 
 
-def run_mutants(root: Path, cfg, mutants: list, report) -> list[bool]:
-    """One killed flag per mutant, in mutant order. Workers past the mutant
+def run_mutants(root: Path, cfg, mutants: list, report) -> list[MutantVerdict]:
+    """One verdict per mutant, in mutant order. Workers past the mutant
     count would only pay for empty worktrees.
 
     No mutants is no score to protect. The baseline is there to stop a broken
@@ -490,10 +522,9 @@ def reporter(total: int, stream):
     locked: a half-written line read as a survivor list is worse than no line."""
     lock = threading.Lock()
 
-    def report(index: int, mutant, killed: bool) -> None:
-        verdict = "killed" if killed else "SURVIVED"
+    def report(index: int, mutant, verdict: MutantVerdict) -> None:
         with lock:
             print(f"  mutant {index + 1}/{total} {mutant.path}:{mutant.line} "
-                  f"[{mutant.op}] {verdict}", file=stream)
+                  f"[{mutant.op}] {verdict.value}", file=stream)
 
     return report

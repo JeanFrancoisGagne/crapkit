@@ -68,3 +68,39 @@ def test_a_truncated_row_is_refused_rather_than_read_short():
 def test_the_row_serializer_is_the_one_the_scored_export_uses():
     assert "".join(scored_tsv_lines([ROW])) == HEADER + ROW_LINE
     assert parse_scored_tsv(HEADER + ROW_LINE) == [ROW]
+
+
+# --- the test results a baseline file carries ---------------------------------
+
+RESULTS = {"unit": {"failures": ["tests/a b.py::t[x=1]"], "tests_skipped": 1, "tests_total": 20}}
+
+
+def test_a_baseline_file_carries_the_lanes_test_results_on_its_stamp_line():
+    """Without them a file baseline forgave no failure and compared no suite
+    size, so a suite with one old failing test failed every verify against it."""
+    doc = "".join(baseline_tsv_lines("abc1234def", "coverage", [ROW], RESULTS))
+
+    stamp = doc.split("\n", 1)[0]
+    assert stamp.startswith("# commit=abc1234def run_kind=coverage results=")
+    assert parse_baseline_tsv(doc).lanes == RESULTS
+
+
+def test_the_results_field_keeps_the_stamp_one_line_of_space_separated_fields():
+    """An older reader splits the stamp at whitespace and keeps the fields it
+    knows, so a test id holding a space or `=` must not break the line apart."""
+    stamp = "".join(baseline_tsv_lines("abc1234def", "coverage", [], RESULTS)).split("\n", 1)[0]
+
+    fields = stamp.removeprefix("# ").split()
+    assert [f.split("=", 1)[0] for f in fields] == ["commit", "run_kind", "results"]
+
+
+def test_a_baseline_file_with_results_reads_back_byte_stable():
+    once = "".join(baseline_tsv_lines("abc1234def", "verify", [ROW, OTHER], RESULTS))
+    parsed = parse_baseline_tsv(once)
+
+    assert "".join(baseline_tsv_lines(parsed.commit, parsed.kind, parsed.rows,
+                                      parsed.lanes)) == once
+
+
+def test_a_baseline_file_written_before_results_reads_as_holding_none():
+    assert parse_baseline_tsv(DOC).lanes == {}

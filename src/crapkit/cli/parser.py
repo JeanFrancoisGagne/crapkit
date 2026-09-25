@@ -137,6 +137,16 @@ class _VersionAction(argparse.Action):
         parser.exit()
 
 
+# The fix sentence is merge.UNREAD_ADVICE, spelled out here because the parser
+# loads on every command and merge is not worth that import; a test holds the two equal.
+_HOOK_PRECOMMIT = (
+    "Gate the staged functions of a commit at min-CCN <= their scope ceiling, read from the "
+    "staged blobs. A function the committed ratchet marks passes. Exit 6 on a staged function "
+    "over its ceiling or a staged file no reader could read. An UNREAD line names such a file "
+    "and the reader's reason: change what the reason names so a reader can parse the file, or "
+    "list it under [exclude] globs in crapkit.toml to leave it ungated.")
+
+
 def cmd_help(args) -> int:
     """`crapkit help [TOPIC]`, the habit git, npm and docker all answer to.
 
@@ -340,7 +350,8 @@ def build_parser() -> argparse.ArgumentParser:
     ver.add_argument("--json", action="store_true", help="print the verdict as JSON")
     ver.set_defaults(func=_Handler("verifying", "cmd_verify"))
 
-    hook = sub.add_parser("hook-precommit", help="gate staged functions at min-CCN <= target; exit 6 on violation")
+    hook = sub.add_parser("hook-precommit", help="gate staged functions at min-CCN <= target; exit 6 on a function over it "
+                                "or a staged file no reader could read", description=_HOOK_PRECOMMIT)
     hook.add_argument("--base", metavar="REF",
                       help="compare the index with merge-base(REF, HEAD), for CI checkouts")
     hook.add_argument("--repo", **_REPO_FLAG)

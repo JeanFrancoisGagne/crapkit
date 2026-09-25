@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
@@ -27,10 +27,11 @@ if TYPE_CHECKING:
 def _emit_verify_findings(root: Path, args, verdict, uncovered: list) -> None:
     if not (args.sarif or args.github):
         return
-    from ..sarif import diff_uncovered_results, gate_results, regression_results
+    from ..sarif import diff_uncovered_results, gate_results, regression_results, unread_results
 
     _emit_findings(root, args.sarif, args.github,
                    gate_results(verdict.gate_violations)
+                   + unread_results(verdict.unread_files)
                    + regression_results(verdict.ratchet_regressions)
                    + diff_uncovered_results(uncovered))
 
@@ -130,8 +131,10 @@ def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
 
 def _tsv_baseline(root: Path, rel: str) -> dict:
     """A baseline read from a file the repo carries, for a clone whose .crapkit/
-    is gitignored. It holds no lane provenance, so it can neither report a
-    shrinking suite nor forgive a failure the baseline run already had."""
+    is gitignored. Its lanes are the test results the file carries: a file
+    written before it carried them holds none, so it can neither report a
+    shrinking suite nor forgive a failure the baseline run already had, and
+    verify says so."""
     from ..verify import parse_baseline_tsv
 
     path = root / rel
@@ -139,10 +142,10 @@ def _tsv_baseline(root: Path, rel: str) -> dict:
         raise CrapkitError(f"no baseline file at {path} — write one with `verify --emit-baseline`")
     try:
         parsed = parse_baseline_tsv(repo_text(path, rel))
-    except ValueError as exc:
+    except (ValueError, UnicodeError) as exc:
         raise ConfigError(f"unreadable baseline file {rel}: {exc}") from exc
     return {"id": None, "commit": parsed.commit, "kind": parsed.kind,
-            "lanes": {}, "rows": parsed.rows}
+            "lanes": parsed.lanes, "rows": parsed.rows, "file": rel}
 
 
 def _pick_baseline(root: Path, store: SnapshotStore, args, basis: str | None, git) -> dict:
@@ -194,11 +197,14 @@ def _emit_baseline(root: Path, store: SnapshotStore, baseline: dict, rel: str | 
 
     if not rel:
         return
+    from ..lane_results import portable_results
+
     rows = baseline.get("rows")
     if rows is None:
         rows = store.read_scored(baseline["id"])
     _write_tsv(_repo_out_path(root, rel),
-               baseline_tsv_lines(baseline["commit"], baseline["kind"], rows))
+               baseline_tsv_lines(baseline["commit"], baseline["kind"], rows,
+                                  portable_results(baseline)))
 
 
 def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
@@ -222,7 +228,7 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
     """
     from ..ratchet import coverage_then_seed, metric_version
 
-    if saved.text is None:
+    if saved.blank:
         return
     if not saved.metric_stamp:
         print(f"warning: {name} carries no metric stamp (written before stamping) — "
@@ -231,6 +237,43 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
     conflict = saved.stamp_conflict(metric_version())
     if conflict:
         raise ConfigError(_stamp_refusal(conflict, named))
+
+
+class _JudgedMarks(NamedTuple):
+    """The marks verify judges against, and the commit that held them: None when
+    they are the file on the tree."""
+    marks: object
+    commit: str | None
+
+
+def _judged_marks(root: Path, saved, baseline: dict, name: str) -> _JudgedMarks:
+    """The marks verify judges against: the file on disk, or, when it is missing
+    or blank, the newest marks the history from the baseline's commit to HEAD
+    committed.
+
+    A deleted or emptied marks file read as a repo that never marked any debt,
+    so a marked function whose CRAP rose passed with exit 0. Marks are usually
+    seeded after the baseline run, so the baseline's own commit is not enough.
+    The stand-in is only judged against; verify never writes it back. A history
+    the clone cannot read refuses with GitError, exit 4, since judging against
+    no marks would pass the rise the stand-in exists to catch.
+    """
+    from ..marks_history import newest_committed_marks
+
+    found = newest_committed_marks(root, baseline["commit"], name) if saved.blank else None
+    if found is None:
+        return _JudgedMarks(saved, None)
+    commit, committed = found
+    _warn_marks_stand_in(saved, committed, commit[:11], name)
+    return _JudgedMarks(committed, commit)
+
+
+def _warn_marks_stand_in(saved, committed, commit: str, name: str) -> None:
+    state = "missing" if saved.text is None else "empty"
+    print(f"warning: {name} is {state}, but commit {commit}, the newest since the baseline to "
+          f"hold it, has {len(committed.entries)} mark(s); verify judged against those and left "
+          f"{name} as it is. Restore it with `git checkout {commit} -- {name}`, or drop the "
+          f"marks of code that is gone with `{_self()} ratchet prune`", file=sys.stderr)
 
 
 def _stamp_refusal(conflict: str, named: dict | None) -> str:
@@ -266,9 +309,9 @@ def _named_seed(named: dict) -> str:
 
 def _override_applies(verdict, reason: str | None) -> bool:
     """--override grants pure gate violations: a reason, a failed verdict, gate
-    violations, and neither of the two findings that never qualify."""
-    return bool(reason) and not verdict.ok and bool(verdict.gate_violations) \
-        and not (verdict.ratchet_regressions or verdict.new_failures)
+    violations, and none of the findings that never qualify."""
+    return (bool(reason) and not verdict.ok and bool(verdict.gate_violations)
+            and not _refusal_parts(verdict))
 
 
 def _refused_cause(count: int, noun: str, first: str) -> str:
@@ -277,29 +320,53 @@ def _refused_cause(count: int, noun: str, first: str) -> str:
     return f"{count} {noun}{'' if count == 1 else 's'} ({first})"
 
 
+def _regression_cause(regressions) -> str:
+    r = regressions[0]
+    return _refused_cause(len(regressions), "ratchet regression",
+                          f"{r.path} {r.long_name} {r.recorded} -> {r.fresh_crap}")
+
+
+def _failure_cause(failures) -> str:
+    return _refused_cause(len(failures), "new test failure", failures[0])
+
+
+def _unread_cause(unread) -> str:
+    return _refused_cause(len(unread), "unread file", f"{unread[0].path}: {unread[0].reason}")
+
+
+def _never_granted() -> tuple:
+    """Each finding kind an override never grants, how to name it, and its escape.
+
+    The escape for a regression is the only one there is; verify never raises a
+    mark, and the override path cannot reach a marked function without also
+    seeing its regression (docs/ratchet.md, Overrides and the audit trail). An
+    unread file holds no function to record as debt, and granting the functions
+    beside it would sign debt while the gate still refuses the file.
+    """
+    from ..merge import UNREAD_ADVICE
+
+    return (("ratchet_regressions", _regression_cause, "raise the mark by hand and commit it"),
+            ("new_failures", _failure_cause, "fix the failing test first"),
+            ("unread_files", _unread_cause, UNREAD_ADVICE))
+
+
+def _refusal_parts(verdict) -> list[tuple[int, str, str]]:
+    """(count, cause, escape) for each finding kind present that no override grants."""
+    return [(len(getattr(verdict, kind)), cause(getattr(verdict, kind)), escape)
+            for kind, cause, escape in _never_granted() if getattr(verdict, kind)]
+
+
 def _override_refusal(verdict) -> str | None:
     """Why a refused --override did not apply, or None when nothing disqualified it.
 
-    Both causes on one line, each with its own escape: a run holding a
-    regression and a new failure is refused once, not twice. The escape for a
-    regression is the only one there is; verify never raises a mark, and the
-    override path cannot reach a marked function without also seeing its
-    regression (docs/ratchet.md, Overrides and the audit trail).
+    Every cause on one line, each with its own escape: a run holding a
+    regression and a new failure is refused once, not twice.
     """
-    causes, escapes = [], []
-    if verdict.ratchet_regressions:
-        r = verdict.ratchet_regressions[0]
-        causes.append(_refused_cause(len(verdict.ratchet_regressions), "ratchet regression",
-                                     f"{r.path} {r.long_name} {r.recorded} -> {r.fresh_crap}"))
-        escapes.append("raise the mark by hand and commit it")
-    if verdict.new_failures:
-        causes.append(_refused_cause(len(verdict.new_failures), "new test failure",
-                                     verdict.new_failures[0]))
-        escapes.append("fix the failing test first")
-    if not causes:
+    parts = _refusal_parts(verdict)
+    if not parts:
         return None
-    count = len(verdict.ratchet_regressions) + len(verdict.new_failures)
-    verb = "qualifies" if count == 1 else "qualify"
+    counts, causes, escapes = zip(*parts)
+    verb = "qualifies" if sum(counts) == 1 else "qualify"
     return (f"override refused: {' and '.join(causes)} never {verb} for an override; "
             f"{'; '.join(escapes)}")
 
@@ -408,11 +475,13 @@ def _write_marks_if_changed(saved, prior: list[RatchetEntry],
     file holding a stamp, a header and no rows, and a repo with marks got a
     byte-identical rewrite whose mtime alone made it look touched. The tighten
     can only drop or lower marks, so a marks file that does not exist has
-    nothing to write, and a text that matches the disk has nothing to say.
+    nothing to write, and a text that matches the disk has nothing to say. An
+    emptied file is left empty too: restamped into a header with no rows, it
+    asked for a `git add` that committed the lost marks as a valid empty file.
     """
     from ..ratchet import metric_version, ratchet_delta
 
-    if saved.text is None:
+    if saved.blank:
         return None
     if not saved.publish(saved.measured(updated, metric_version(), keys=key_version)):
         return None
@@ -454,10 +523,18 @@ def _release_claims(store: SnapshotStore, git, cfg, scored) -> None:
                                        scope_targets=cfg.scope_targets, stale_commits=stale))
 
 
-def _print_verify_findings(verdict) -> None:
-    dirty_ids = set(verdict.dirty_failures)
+def _print_gate_findings(verdict) -> None:
+    from ._shared import _unread_line
+
     for v in verdict.gate_violations:
         print(_gate_line(v))
+    for u in verdict.unread_files:
+        print(_unread_line(u.path, u.reason, u.dirty))
+
+
+def _print_verify_findings(verdict) -> None:
+    dirty_ids = set(verdict.dirty_failures)
+    _print_gate_findings(verdict)
     for r in verdict.ratchet_regressions:
         print(f"  RATCHET  {r.path}  {r.long_name}: {r.recorded} -> {r.fresh_crap}{_dirty_tag(r.dirty)}")
     for f in verdict.new_failures:
@@ -482,14 +559,13 @@ def _print_finding_split(verdict) -> None:
               "(uncommitted edits and untracked files)")
 
 
+# One exit code per finding kind, in the order the first one present decides.
+_EXIT_ORDER = (("gate_violations", 6), ("unread_files", 6), ("ratchet_regressions", 7),
+               ("new_failures", 8), ("uncovered_violations", 9))
+
+
 def _verify_exit_code(verdict) -> int:
-    if verdict.gate_violations:
-        return 6
-    if verdict.ratchet_regressions:
-        return 7
-    if verdict.new_failures:
-        return 8
-    return 9 if verdict.uncovered_violations else 0
+    return next((code for kind, code in _EXIT_ORDER if getattr(verdict, kind)), 0)
 
 
 def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
@@ -498,12 +574,135 @@ def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
               f"over the ceiling {maximum}", file=sys.stderr)
 
 
-def _baseline_failures(baseline: dict) -> set:
-    """The failures a baseline carries. One that passed its flake retry in a
-    verify run is also named under `retried_passes` and is not carried: that
-    run never counted it, so a later verify must not forgive it."""
-    return {f for prov in baseline["lanes"].values() for f in prov.get("failures", ())
-            if f not in prov.get("retried_passes", ())}
+class _RunsBehind:
+    """Trusted runs older than the baseline and at or behind its commit, newest
+    first: where a lane the baseline recorded no test results for is looked up.
+
+    Read the first time a lane asks, so a baseline that recorded every lane
+    costs no store read and no git call. A baseline file has no run behind it.
+    """
+
+    def __init__(self, store: SnapshotStore, git, baseline: dict):
+        self._store, self._git, self._baseline = store, git, baseline
+        self._older: list[dict] | None = None
+
+    def __call__(self):
+        commit = self._baseline["commit"]
+        return (run for run in self._runs() if self._git.is_ancestor(run["commit"], commit))
+
+    def _runs(self) -> list[dict]:
+        if self._older is None:
+            self._older = self._read()
+        return self._older
+
+    def _read(self) -> list[dict]:
+        from ..store import trusted_runs
+
+        if self._baseline["id"] is None:
+            return []
+        newest_first = reversed(trusted_runs(self._store))
+        return [run for run in newest_first if run["id"] < self._baseline["id"]]
+
+
+def _warn_baseline_gaps(found, baseline: dict, provenance: dict, new_failures) -> list[str]:
+    """Say where a lane's baseline failures came from when the baseline held no
+    list for it, and which lanes' new failures nothing recorded could judge.
+    Returns those lanes.
+
+    A failure the baseline cannot vouch for still counts as new, because a gate
+    fails closed; the line is what keeps that from reading as this change's doing.
+    """
+    from ..lane_results import unjudged_lanes
+
+    unjudged = unjudged_lanes(found, provenance, new_failures)
+    if _warn_baseline_file(baseline, provenance):
+        return unjudged
+    for name, run in found.borrowed.items():
+        print(f"warning: lane {name!r}: baseline run {baseline['id']} "
+              f"{_why_unread(baseline, name)}, so its failures are compared with run "
+              f"{run['id']}'s", file=sys.stderr)
+    for name in unjudged:
+        print(_unjudged_line(name, baseline, provenance, new_failures), file=sys.stderr)
+    return unjudged
+
+
+def _why_unread(baseline: dict, name: str) -> str:
+    """Why the baseline's own failure list for a lane was passed over."""
+    from ..lane_results import lists_failures, retries_unrecorded
+
+    if retries_unrecorded(baseline) and lists_failures(baseline["lanes"].get(name, {})):
+        return (f"was written by crapkit {baseline['tool_versions']['crapkit']}, which kept a "
+                "failure that passed its flake retry in its failure list")
+    return "recorded no test results"
+
+
+def _unjudged_line(name: str, baseline: dict, provenance: dict, new_failures) -> str:
+    from ..lane_results import recorded_failures
+
+    count = len(set(new_failures) & recorded_failures(provenance, name))
+    where = (f"the baseline file {baseline['file']} holds no record of" if baseline.get("file")
+             else "no trusted run at or behind the baseline recorded")
+    return (f"warning: lane {name!r}: {where} which of its tests failed, so its {count} new "
+            f"failure{'' if count == 1 else 's'} may predate this change; a baseline measured "
+            "with results_artifact declared tells them apart")
+
+
+def _warn_baseline_file(baseline: dict, provenance: dict) -> bool:
+    """A baseline file written before files carried test results: said once,
+    when a lane this run recorded results the file cannot be compared with."""
+    from ..lane_results import lists_failures
+
+    stale = bool(baseline.get("file")) and not baseline["lanes"] \
+        and any(map(lists_failures, provenance.values()))
+    if stale:
+        print(f"warning: the baseline file {baseline['file']} holds no test results, so every "
+              "test failure counts as new and no suite size is compared; write it again with "
+              f"`{_self()} verify --emit-baseline {baseline['file']}` to carry them",
+              file=sys.stderr)
+    return stale
+
+
+def _refuse_unreadable_junits(lanes, provenance: dict) -> None:
+    """Refuse a verdict over a declared junit this run reused and could not read.
+
+    A lane that runs refuses that report and exits 5. Under `--reuse-artifacts`
+    the lane only warns, which suits `coverage`, since scoring off a salvaged
+    coverage file is its job. verify then passed with no test checked, stored
+    the run as a passing verify, and made it the next baseline. So it exits 5
+    here, before anything is stored, as a real run does. A lane that declares
+    no junit had nothing to read and still passes, under `lanes_without_results`.
+    """
+    unreadable = _unreadable_junits(lanes, provenance)
+    if unreadable:
+        raise ToolError("; ".join(_unreadable_junit_line(lane) for lane in unreadable))
+
+
+def _unreadable_junits(lanes, provenance: dict) -> list:
+    """The lanes, in declaration order, that declare a `results_artifact` and
+    recorded no failure list: this run reused a junit it could not read. A lane
+    that ran refuses that report itself, and a lane that declares none has no
+    report to read, so neither is named here."""
+    from ..lane_results import without_results
+
+    unrecorded = set(without_results(provenance))
+    return [lane for lane in lanes if lane.results_artifact and lane.name in unrecorded]
+
+
+def _unreadable_junit_line(lane) -> str:
+    return (f"lane {lane.name!r} declares results_artifact {lane.results_artifact}, which "
+            "this verify reused and could not read, so no test in it was checked for a new "
+            "failure; run verify without --reuse-artifacts so the lane writes it again")
+
+
+def _warn_unseen_failures(lanes, provenance: dict) -> None:
+    """A lane with no results_artifact that exited nonzero: its exit code is
+    recorded, not enforced, and it is the only sign a test failed."""
+    for lane in lanes:
+        code = provenance.get(lane.name, {}).get("exit_code")
+        if code and not lane.results_artifact:
+            print(f"warning: lane {lane.name!r} exited {code} and declares no results_artifact, "
+                  "so verify cannot see which of its tests failed; declare results_artifact "
+                  "(the lane's junit report) to check them", file=sys.stderr)
 
 
 def _stored_lanes(provenance: dict, retried: tuple[str, ...]) -> dict:
@@ -513,7 +712,9 @@ def _stored_lanes(provenance: dict, retried: tuple[str, ...]) -> dict:
 
 
 def _with_retried(prov: dict, retried: tuple[str, ...]) -> dict:
-    passed = [f for f in prov.get("failures", ()) if f in retried]
+    from ..lane_results import read_results
+
+    passed = [f for f in sorted(read_results(prov).failures or ()) if f in retried]
     return {**prov, "retried_passes": passed} if passed else prov
 
 
@@ -523,6 +724,14 @@ def _verify_attribution(verdict) -> dict:
     committed, dirty = dirty_counts(verdict)
     return {"committed_findings": committed, "dirty_findings": dirty,
             "dirty_failures": list(verdict.dirty_failures)}
+
+
+_RECORD_FINDINGS = ("gate_violations", "unread_files", "ratchet_regressions", "overridden")
+
+
+def _finding_lists(verdict) -> dict:
+    """The finding kinds whose entries are records, each as a list of objects."""
+    return {kind: [f._asdict() for f in getattr(verdict, kind)] for kind in _RECORD_FINDINGS}
 
 
 def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
@@ -540,12 +749,10 @@ def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
         "baseline_commit": baseline["commit"],
         "commit": commit,
         "changed_files": len(ranges),
-        "gate_violations": [v._asdict() for v in verdict.gate_violations],
-        "ratchet_regressions": [r._asdict() for r in verdict.ratchet_regressions],
+        **_finding_lists(verdict),
         "new_failures": verdict.new_failures,
         "forgiven_failures": list(verdict.forgiven_failures),
         "retried_passes": list(verdict.retried_passes),
-        "overridden": [v._asdict() for v in verdict.overridden],
         "diff_uncovered_count": len(uncovered),
         "diff_uncovered": [{"path": p, "line": ln} for p, ln in uncovered[:50]],
         "diff_uncovered_max": diff_uncovered_max,
@@ -579,14 +786,20 @@ def _warn_diff_uncovered(uncovered: list) -> None:
         print(f"  uncovered {path}:{line}", file=sys.stderr)
 
 
-def _receipt(tool_versions: dict, ratchet_sha256: str | None,
+def _receipt(tool_versions: dict, saved, judged: _JudgedMarks,
              changes: RatchetDelta | None) -> dict:
     """What produced the verdict and what the run did to the marks file: the
-    tool versions, the marks as read (hashed before any tighten, so the receipt
-    names the input), and the tighten's counts, null when this run's tighten
-    wrote nothing (a failed run, --no-tighten, nothing to move). An override's
-    grant is its own write and is listed under `overridden`, not counted here."""
-    return {"tool_versions": tool_versions, "ratchet_sha256": ratchet_sha256,
+    tool versions, the marks file on the tree as read (hashed before any
+    tighten, so the receipt names the input; null when the tree has none), the
+    marks verify judged against (`ratchet_source` "tree", or "committed" with
+    the commit that held them and their digest), and the tighten's counts, null
+    when this run's tighten wrote nothing (a failed run, --no-tighten, nothing
+    to move). An override's grant is its own write and is listed under
+    `overridden`, not counted here."""
+    return {"tool_versions": tool_versions, "ratchet_sha256": saved.sha256,
+            "ratchet_source": "committed" if judged.commit else "tree",
+            "ratchet_source_commit": judged.commit,
+            "ratchet_source_sha256": judged.marks.sha256,
             "ratchet_changes": None if changes is None else changes._asdict()}
 
 
@@ -671,7 +884,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     from ..diffparse import changed_ranges
     from ..gitio import GitFacts, diff_since
     from ..uncovered import missing_by_path
-    from ..verify import diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage
+    from ..verify import (diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage,
+                          with_unread)
+    from ..lane_results import baseline_failures, without_results
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
@@ -688,7 +903,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     git = GitFacts(root)
     dirty = set(git.status_names())
     baseline, basis = _verify_basis(root, store, args, git)
-    _guard_ratchet_stamp(saved, cfg.ratchet_file, _seed_source(store, args, baseline))
+    judged = _judged_marks(root, saved, baseline, cfg.ratchet_file)
+    _guard_ratchet_stamp(judged.marks, cfg.ratchet_file, _seed_source(store, args, baseline))
     _emit_baseline(root, store, baseline, args.emit_baseline)
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.
@@ -698,17 +914,22 @@ def cmd_verify(args: argparse.Namespace) -> int:
     tool_versions, fresh_failures = run.tool_versions, run.test_failures
     if run.lane_errors:
         raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
+    _refuse_unreadable_junits(cfg.lanes, provenance)
 
     ranges = changed_ranges(diff_since(root, basis))
-    ratchet = saved.entries
-    key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, scored, store,
-                                          entries=ratchet)
+    ratchet = judged.marks.entries
+    key_version = _check_ratchet_identity(judged.marks.text or "", root, cfg.ratchet_file,
+                                          scored, store, entries=ratchet)
 
+    behind = _RunsBehind(store, git, baseline)
+    found = baseline_failures(baseline, provenance, behind)
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
-                       baseline_failures=_baseline_failures(baseline), fresh_failures=fresh_failures,
+                       baseline_failures=set(found.carried), fresh_failures=fresh_failures,
                        target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty)
     verdict = _maybe_flake_retry(root, cfg, provenance, verdict)
-    _warn_suite_shrink(baseline, provenance)
+    unjudged = _warn_baseline_gaps(found, baseline, provenance, verdict.new_failures)
+    _warn_suite_shrink(baseline, provenance, behind)
+    _warn_unseen_failures(cfg.lanes, provenance)
     # diff_uncovered walks the changed ranges, so an empty diff is [] whatever
     # the artifacts say — and reading every lane's artifact to spell that [] is
     # the whole cost of the post-commit verify on an unchanged tree.
@@ -718,6 +939,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     unmarked = unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets)
     _warn_standing_debt(unmarked)
     verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
+    verdict = with_unread(verdict, run.corpus.unread, set(ranges) | dirty, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=_stored_lanes(provenance, verdict.retried_passes), kind="verify")
@@ -732,7 +954,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _report_verify(args.json,
                    {**_verify_result(verdict, run_id, baseline, commit, ranges,
                                      uncovered, cfg.diff_uncovered_max, len(unmarked)),
-                    **_receipt(tool_versions, saved.sha256, changes)},
+                    **_receipt(tool_versions, saved, judged, changes),
+                    "lanes_without_results": without_results(provenance),
+                    "lanes_without_baseline_results": unjudged},
                    verdict, cfg.ratchet_file)
     _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict)
@@ -743,9 +967,11 @@ def _flake_retry(root: Path, cfg, provenance: dict, new_failures: set) -> set:
     An id leaves the survivors only when every lane that failed it reran it
     and the rerun passed: a lane without retest_command keeps its failures,
     whatever another lane's rerun said about the same id."""
+    from ..lane_results import recorded_failures
+
     passed, kept = set(), set()
     for lane in cfg.lanes:
-        lane_new = set(provenance.get(lane.name, {}).get("failures", ())) & new_failures
+        lane_new = recorded_failures(provenance, lane.name) & new_failures
         cleared = _rerun_passes(root, lane, lane_new)
         passed |= cleared
         kept |= lane_new - cleared
@@ -775,46 +1001,67 @@ def _maybe_flake_retry(root: Path, cfg, provenance: dict, verdict):
     return settle_flake_retry(verdict, survivors)
 
 
-def _warn_suite_shrink(baseline: dict, provenance: dict) -> None:
-    """Suite decay passes a pass/fail check silently; say it out loud."""
+def _warn_suite_shrink(baseline: dict, provenance: dict, behind=tuple) -> None:
+    """Suite decay passes a pass/fail check silently; say it out loud.
+
+    A lane the baseline counted no tests for is compared with the newest run
+    `behind` it that counted them, and the line names that run. A trusted run
+    with no count (its junit was gone under `--reuse-artifacts`, or the lane
+    declared no `results_artifact` then) once left the next verify comparing
+    nothing, so a suite that fell from 20 tests to 2 passed without a word.
+    """
+    from ..lane_results import counted_record
+
     for name, prov in provenance.items():
-        base = baseline.get("lanes", {}).get(name, {})
-        for line in _suite_size_lines(name, base, prov):
+        source = counted_record(baseline, behind, name)
+        for line in _suite_size_lines(name, source, baseline, prov):
             print(f"warning: {line}", file=sys.stderr)
 
 
-def _suite_size_lines(name: str, base: dict, prov: dict) -> list[str]:
-    """How the suite's size moved since the baseline, or why that cannot be said.
+def _suite_size_lines(name: str, source: dict | None, baseline: dict, prov: dict) -> list[str]:
+    """How the suite's size moved since the run that last counted it, or why
+    that cannot be said.
 
-    Both counts are optional. A baseline recorded before the lane declared a
-    `results_artifact` carries none and compares nothing. A lane that wrote no
-    junit THIS run (the lane declares no `results_artifact` at the commit under
-    test, or `--reuse-artifacts` read one it could not check; a declared file
-    missing after a real run is a lane failure and never reaches here) has
-    nothing to compare either; reading its absent count as
-    zero once turned every such run into a KeyError after the lane had run.
+    No run counted the lane: nothing to compare. This run wrote no junit (the
+    lane declares no `results_artifact` at the commit under test, or
+    `--reuse-artifacts` read one it could not check; a declared file missing
+    after a real run is a lane failure and never reaches here): one line naming
+    the gap. Reading that absent count as zero once turned every such run into
+    a KeyError after the lane had run.
     """
-    b_total = base.get("tests_total")
-    if b_total and prov.get("tests_total") is None:
-        return [f"lane {name!r} wrote no test counts this run (no results_artifact was "
-                f"parsed), so the baseline's {b_total} tests cannot be compared"]
-    lines = (_fewer_tests_line(name, b_total, prov.get("tests_total")),
-             _more_skips_line(name, base.get("tests_skipped"), prov.get("tests_skipped")))
-    return [line for line in lines if line]
+    from ..lane_results import read_results, results_of
+
+    if source is None:
+        return []
+    then, now = results_of(source, name), read_results(prov)
+    noun, note = _count_source(source, baseline)
+    if now.tests is None:
+        return [f"lane {name!r} wrote no test counts this run (no results_artifact was parsed), "
+                f"so {noun}'s {then.tests} tests cannot be compared{note}"]
+    lines = (_fewer_tests_line(name, then.tests, now.tests),
+             _more_skips_line(name, then.skipped, now.skipped))
+    return [f"{line} than {noun}{note}" for line in lines if line]
 
 
-def _fewer_tests_line(name: str, base_n: int | None, fresh_n: int | None) -> str | None:
-    if base_n and fresh_n is not None and fresh_n < base_n:
-        return f"lane {name!r} runs {base_n - fresh_n} fewer tests than the baseline"
+def _count_source(source: dict, baseline: dict) -> tuple[str, str]:
+    """What a suite-size line compares with: the baseline, or the older run
+    that counted the lane when the baseline did not."""
+    if source is baseline:
+        return "the baseline", ""
+    return (f"run {source['id']}",
+            f" (baseline run {baseline['id']} recorded no test count for it)")
+
+
+def _fewer_tests_line(name: str, base_n: int, fresh_n: int) -> str | None:
+    if fresh_n < base_n:
+        return f"lane {name!r} runs {base_n - fresh_n} fewer tests"
     return None
 
 
 def _more_skips_line(name: str, base_n: int | None, fresh_n: int | None) -> str | None:
     if base_n is not None and fresh_n is not None and fresh_n > base_n:
-        return f"lane {name!r} skips {fresh_n - base_n} more tests than the baseline"
+        return f"lane {name!r} skips {fresh_n - base_n} more tests"
     return None
-
-
 
 
 def _owning_scope(path: str, scope_paths: dict[str, tuple[str, ...]]) -> str | None:
@@ -937,6 +1184,18 @@ def _print_clear_the_reason() -> None:
           "here — clear it where it was set.")
 
 
+def _granted_crap(cfg, violation) -> float:
+    """The mark the hook's grant writes: the CRAP the function's scope scores
+    with no coverage behind it. A staged blob carries no coverage, so a scope a
+    lane measures marks the untested CRAP, and a cc-only scope marks ccn, as
+    `score` scores it there."""
+    from ..score import flagged_crap
+
+    scope = owning_scope(violation.path, path_matchers({s.name: s.paths for s in cfg.scopes}))
+    flag = "cc-only" if scope in cfg.coverage_optional_scopes else "untested"
+    return flagged_crap(violation.ccn, 0.0, flag)
+
+
 def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) -> None:
     """The audited hook override: alert line, ratchet debt (staged into the
     pending commit), and a snapshot record — all three or nothing."""
@@ -955,7 +1214,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
     run_id = store.write_run(commit=head_commit(root), tool_versions={}, rows=[],
                              lanes={"_hook_override": {"staged": True}}, kind="hook")
     gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0,
-                          float(v.ccn * v.ccn + v.ccn), "decompose", False, v.key_name)
+                          _granted_crap(cfg, v), "decompose", False, v.key_name)
             for v in violations]
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=gate, reason=reason,
@@ -1043,26 +1302,64 @@ def _staged_gate(root: Path, cfg, base: str | None = None):
 
 
 def cmd_hook_precommit(args: argparse.Namespace) -> int:
-    import os
+    """Exit 6 when a staged function is over its ceiling, or when a staged file
+    could not be read at all: zero records from a file nothing read are not
+    zero functions over the ceiling, and the override has no function to
+    record as debt for it."""
+    from ._shared import _print_unread
 
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     gate = _staged_gate(root, cfg, getattr(args, "base", None))
     _warn_unscoped_staged(gate.unscoped)
+    _print_unread(gate.unread, "staged")
+    code = _judge_staged(root, cfg, gate)
+    return 6 if gate.unread else code
+
+
+def _env_override_reason() -> str:
+    import os
+
+    return os.environ.get("CRAPKIT_OVERRIDE_REASON", "").strip()
+
+
+def _hook_override_refusal(unread: dict) -> str | None:
+    """The line verify --override prints for the same unread files, or None
+    when every staged file was read."""
+    from ..verify import Verdict, with_unread
+
+    return _override_refusal(with_unread(Verdict(False, [], [], [], []), unread, set(unread), set()))
+
+
+def _judge_staged(root: Path, cfg, gate) -> int:
     violations = _gated_violations(root, cfg, gate.violations, gate.records)
-    if not violations:
-        return 0
+    reason = _env_override_reason()
+    refusal = _hook_override_refusal(gate.unread) if reason else None
+    if violations:
+        _print_staged_violations(root, cfg, violations)
+    if refusal:
+        # Before any side effect: the grant writes and stages the marks file,
+        # raises the alert and stores a run, and the unread file refuses the
+        # commit whatever the grant signed.
+        print(f"crapkit: {refusal}")
+        return 6
+    return _grant_or_refuse(root, cfg, violations, reason, gate.records)
+
+
+def _print_staged_violations(root: Path, cfg, violations: list) -> None:
     print(f"crapkit gate: {len(violations)} staged function(s) exceed the complexity ceiling of {cfg.target}:")
     for v in violations:
         print(f"  ccn {v.ccn:>3}  {v.path}:{v.start}  {v.long_name}")
     _note_stale_staged(root, {v.path for v in violations})
 
-    # CRAPKIT_OVERRIDE_REASON is not a bypass: it routes through the full
-    # three-record audit and the gate holds unless all three land.
-    reason = os.environ.get("CRAPKIT_OVERRIDE_REASON", "").strip()
-    if reason:
-        _grant_env_override(root, cfg, violations, reason, gate.records)
-        return 0
 
+def _grant_or_refuse(root: Path, cfg, violations: list, reason: str, records) -> int:
+    """CRAPKIT_OVERRIDE_REASON is not a bypass: it routes through the full
+    three-record audit and the gate holds unless all three land."""
+    if not violations:
+        return 0
+    if reason:
+        _grant_env_override(root, cfg, violations, reason, records)
+        return 0
     print("decompose before committing (coverage cannot save a function above the target).")
     return 6

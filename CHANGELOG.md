@@ -1,5 +1,192 @@
 # Changelog
 
+## Unreleased
+
+### A lane with no test results is not a lane that ran 0 tests or failed none
+
+A lane records a test count and a failure list only when it parsed a junit report. It
+records neither when it declares no `results_artifact`, or when `--reuse-artifacts` finds
+the report gone or unreadable. Every reader of those fields took that absence for a value.
+
+- `coverage` no longer reports a lane that wrote no test counts as having run 0 tests, and
+  a run that counted nothing no longer hides the next run's suite drop. The drop line then
+  names the older run it compared with, `fewer than run 1's 20 (the last trusted run, run
+  2, recorded no test count for it)`, where it called that count the last trusted run's.
+- `verify` compares a lane's suite size and failures with the newest trusted run at or
+  behind the baseline's commit that recorded them, when the baseline recorded neither, and
+  a line names that run. A suite that fell from 20 tests to 2 passed without a word, and a
+  test failing at the baseline's own commit came back as a `NEW FAILURE`, exit 8.
+- When no run recorded a failure list for the lane, each of its failures still counts as
+  new, exit 8, and verify now says they may predate the change. This is the pull request
+  that adds `results_artifact` to a lane whose suite already fails a test. `verify --json`
+  lists such lanes under `lanes_without_baseline_results`, and the Action's comment gives
+  each one a bullet.
+- `verify --reuse-artifacts` exits 5 when a lane declares a `results_artifact` it reused
+  and could not read (gone, empty, malformed, zero testcases, a crashed worker, a count
+  that does not match its cases), names each such lane and its file, and stores no run.
+  The refusal ends `run verify without --reuse-artifacts so the lane writes it again`.
+  verify read the absent failure list as no new failures: exit 0, `"ok": true`, and a run
+  that checked no test became the next trusted baseline. `coverage --reuse-artifacts`
+  over the same junit still warns and scores the lane.
+- `verify --json` lists under `lanes_without_results` every lane that declares no
+  `results_artifact`, and the Action's comment says their new failures went unchecked. A
+  lane with no `results_artifact` whose command exited nonzero gets a stderr line naming
+  the exit code, which was the only sign a test failed.
+- A verify run that crapkit 0.7.x stored kept a failure that passed its flake retry in its
+  failure list. Read as a baseline, it forgave a later real failure of that test. verify
+  now reads such a run's failures from the newest trusted run behind it, and says so.
+- `verify --emit-baseline` writes each lane's test count and failure list on the file's
+  stamp line, so `--baseline-tsv` forgives a failure the baseline had and warns about a
+  shrinking suite. A file written by 0.8.0 or older carries neither; verify says so once
+  and names the command that rewrites it. The Action's comment names a file baseline by its
+  commit, where it printed `baseline None`.
+- A reused junit that is not valid UTF-8 is an unreadable report that names its line and
+  column, the same warning as any other. It ended `coverage --reuse-artifacts` with a
+  traceback.
+
+### The Action's comment tells a missing payload from an empty one
+
+- When `crapkit worklist` wrote no ranking, the comment quotes its error, or says it
+  printed nothing, in place of `No ranked function in these files.`. With no run to read
+  it exits 1 with an error object, which the comment read as a ranking with no rows.
+- When `crapkit coverage` printed no summary at all, the no-verdict line says it crashed or
+  was killed before scoring. It said every lane failed, which since 0.5.0 prints an error
+  object of its own.
+
+### A missing file, record or history is not an empty one
+
+- `verify` reads a marks file that is missing, or holds only blank lines, as a file it
+  cannot see, not as a repo that never marked any debt. It judges against the newest marks
+  the history since the baseline committed, and names that commit and the `git checkout`
+  that restores them. A commit that deleted or emptied `crapkit-ratchet.tsv` let a marked
+  function's CRAP rise with exit 0. verify never writes those marks back, and a pass no
+  longer restamps an emptied file into a header with no rows and asks for a `git add`.
+  `verify --json` keeps `ratchet_sha256` for the file on the tree and adds
+  `ratchet_source` (`"tree"` or `"committed"`), `ratchet_source_commit` and
+  `ratchet_source_sha256`, which name the marks it judged against. When the clone does not
+  hold that history, verify refuses with exit 4; the git reads under it answered as if no
+  commit had held marks.
+- The commit hook, `rescore --gate` (and so the MCP tool `check_gate`) and verify refuse a
+  changed file no reader could read, exit 6, with an `UNREAD` line naming the file and the
+  reader's reason. Such a file is scored as zero functions, and every gate read that as
+  nothing over the ceiling: a ccn-8 function in the same file as one TypeScript arrow the
+  reader refuses passed all four. `rescore --gate --json` lists them under
+  `gate.unread_files` and `verify --json` under `unread_files`, each entry
+  `{path, reason, dirty}`; SARIF names them `crapkit/unread`, and the Action's comment
+  gives each a bullet. An unread file the change never touched still passes.
+- An override never grants past an unread file. With `CRAPKIT_OVERRIDE_REASON` set, the
+  commit hook signed the debt beside a staged file no reader could read: it wrote and
+  staged `crapkit-ratchet.tsv`, raised the alert and stored a hook run, then refused the
+  commit over the file anyway. `verify --override` wrote the mark, printed `1 mark
+  granted` and exited 6 with no reason given. Both now refuse first, write nothing, and
+  print `override refused: 1 unread file (PATH: REASON) never qualifies for an override`
+  with what to do about the file.
+- The advisory hook (`crapkit claude-hook`) exits 2 when an edit leaves a file no reader
+  can read, with `crapkit advisory: PATH could not be read, so no function in it was
+  judged (the edit landed; nothing was blocked)`, an `UNREAD` line and the fix. It exited
+  0 in silence, so an agent learned of the file only when the commit gate refused it. A
+  tracked file the edit left unchanged against `HEAD` stays silent. The Action's comment
+  counts an unread file among the gate violations (`1 gate violation (1 unread file)`),
+  where its count line read `0 gate violations` under a failed gate.
+- The run's line for such a file now ends `and the commit gate refuses these files when
+  staged`, `crapkit doctor` WARNs about each file the newest coverage run could not read
+  and no reader can read now, and `hook-precommit --help` names the refusal. The upgrade
+  guide says to run `crapkit coverage` and fix or exclude each file it names before the
+  hook refuses a commit over one.
+- `inventory`, `coverage` and `verify` name on stderr each declared scope that scored no
+  function: one that claims no file (a renamed directory, a path typo, the wrong language)
+  or one whose every file no reader could read. Such a run reported `0 over ceiling 6,
+  CRAP load 0, grade A+` at exit 0, and only `doctor` said the scope was empty. The run
+  summary's `empty_scopes` carries them, and the Action's scored line names each one. A
+  scope whose files a reader read and found no function in, such as one of constants, is
+  measured and not named.
+- The run's CRAP load counts the scopes its over-ceiling count and grade count. A partial
+  run summed a failed or skipped lane's functions at the cov-0 stand-in, so one line read
+  `0 over ceiling 6, CRAP load 32.0, grade A+` where the measured scopes held 2.0.
+  `by_scope` still carries each unmeasured scope's own load.
+- `--reuse-artifacts` refuses a lane while `.crapkit/artifacts.json` cannot be read (it does
+  not parse, its top level is not an object, or the lane's entry is not an object), and
+  says to rerun the lane or delete the file. The refusal a failed attempt records lives in
+  that file, and each of those forms read as no stamp, so reuse scored the dead lane's
+  leftover as a trusted run. The file is now written through a temporary file, so a crash
+  cannot cut it short, and `doctor` WARNs about a file that does not parse, as it did for a
+  mangled entry.
+- A coverage artifact that lacks a count is refused and names it, where the parser read
+  the absent count as a zero and the score moved with nothing said. In istanbul that is
+  a `fnMap`, `statementMap` or `branchMap` id with no counter in `f`, `s` or `b`, or a
+  `b` array whose hit counts do not match its branch's `locations`: a dropped branch
+  counter flipped a function from `add-tests` to `ok`, and an if/else whose array was cut
+  to `[1]` scored 1 of 1. In coverage.py it is a function with no `summary`, one count of a
+  pair without its partner, no count of either kind, or no statement counts beside 0 of 0
+  branches: a function that ran scored cov 0, or, in a report that measures branches, a
+  function with no branch counts, which scored from its statements. A report with no `meta`
+  is judged by the counts its functions carry, where it said its term was statement-based
+  while scoring on branches. Each refusal names the source file and the function, and ends
+  with what to do: `regenerate the report with the coverage tool`.
+- `digest` lists an over-ceiling function in a scope the older run of its pair never
+  scored as `newly scored over ceiling in scope NAME`. A scope added to `crapkit.toml`
+  between two runs announced its old debt as `new over ceiling`, which now means only a
+  function added to a scope both runs scored.
+- `coverage --reuse-unchanged` says `junit.xml: missing` when a file a lane declares, its
+  `artifact` or `results_artifact`, is gone, and `junit.xml: unreadable (why)` when it
+  cannot be opened. The stderr line and the stored `rerun_reason` said the bytes of a file
+  that no longer exists differ from its stamp. The lane reran either way.
+
+### A value nobody measured is named, not printed as a fact
+
+Nine changes in this release can move an exit code: the gates' refusal of an unread
+file and the advisory hook's exit 2, the `verify --reuse-artifacts` refusal of an
+unreadable junit, the shallow-clone refusal below, the refusal of a coverage artifact
+missing a count, the `--reuse-artifacts` refusal while `.crapkit/artifacts.json` cannot be
+read, the marks verify judges when the marks file is deleted or emptied, and the failure
+lists verify reads from an older run, in both directions. The [upgrade
+guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#missing-values-that-081-names)
+lists each with its old and new exit and what to change. A repo upgrading from 0.4.15 or older runs `crapkit coverage` once
+without `--reuse-artifacts` first: those stamps hold no refusal, so the first reuse scores
+an artifact a failed lane left, and one real run records the refusal for a lane that still
+writes nothing.
+
+- A depth-1 clone, the `actions/checkout` default, holds one commit, so every mark read 0
+  days old, nothing read as repaid and churn counted one commit per file. `ratchet report
+  --enforce` with `debt_max_age_months` or `repayment_min_per_30d` set now exits 4 there,
+  ending `set fetch-depth: 0 on the checkout or run git fetch --unshallow`. It passed an
+  age limit a full clone fails and failed a repayment quota a full clone passes.
+  `worklist`, `next-item`, `brief` and `ratchet report` still answer, print one stderr
+  line such as `warning: churn counts read only the commits this clone holds`, and carry
+  `shallow` in their JSON, as do the MCP tools `list_worklist` and `get_next_item`. The
+  Action's comment repeats the line above its table. A marks file renamed with `git mv`
+  restarts its history at the rename, and `ratchet report` now names that commit.
+- A row no coverage measured carries `unmeasured: true` and its text says `not measured`:
+  a function in a `no-lane` or `cc-only` scope, or one `rescore` and `check_gate` find no
+  row for because it was added or renamed since the run. Such a row read as cov 0% and
+  untested, and `brief` and `next-item` multiplied that stand-in into
+  `est_uncovered_paths`. `cov`, `crap`, `flag`, `remedy` and `est_uncovered_paths` keep
+  their values until JSON schema 2.
+- `brief`, `next-item`, `explain` and the MCP tools `get_function_brief` and
+  `get_next_item` give a function in a scope no lane covers its own dark-line note: `no lane covers scope 'src',
+  so no artifact can name uncovered lines for src/a.py; add 'src' to a [[lane]]'s scopes
+  to measure it`. A lane whose artifact went stale, or was only ever reused and so never
+  stamped, set its note for every path, so such a function read `lane 'lib': files in
+  its scopes changed since cov.json was written`, and rerunning that lane measured nothing
+  there.
+- `mutate` reports two kinds of kill no failing test decided apart from the rest. A
+  mutant whose suite ran past `mutation_timeout_seconds` prints `timed out, counted
+  killed`, and one whose suite exits 5, pytest's code for a run that collected no test,
+  prints `no verdict: the suite ran no test (exit 5), counted killed`. The summary says how
+  many of the killed were each, and `--json` adds `timed_out` and `no_verdict`, both
+  counts inside `killed`. Both printed `mutation: 2/2 killed (100%)`, the output of real
+  kills, with nothing else. `killed`, `survived` and the rate keep their meaning; JSON
+  schema 2 takes no-verdict mutants out of `killed`.
+- The commit hook's audited override marks the CRAP a function's scope scores. In a
+  `coverage_optional` scope, where CRAP is ccn because no coverage exists there, it wrote
+  ccn^2 + ccn, the CRAP of a function measured at 0%: 72 for a ccn-8 function. verify then
+  let that function grow to ccn 72 before its mark failed. A scope a lane measures still
+  marks the untested CRAP, since a staged blob carries no coverage.
+- `doctor --tune` sums only the lanes that recorded a duration and names the others
+  (`130.0s serial -> ~100.0s across 3 lane slot(s) for 2 of 3 lanes; cost unknown for
+  'b'`). A lane with no duration was dropped from the sum, and one whose junit carries no
+  `time` attribute was summed as 0 s.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

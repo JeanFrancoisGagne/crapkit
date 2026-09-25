@@ -943,6 +943,46 @@ def _doctor_unmeasured(root: Path, cfg, files: list[str]) -> list[Finding]:
             for g in unmeasured_directories(counts, files)]
 
 
+def _doctor_unread(root: Path, cfg, files: list[str]) -> list[Finding]:
+    """WARN, never FAIL: each file the newest coverage run could not read and no
+    reader can read now. The commit gate refuses it once staged, so the user
+    meets it here and not at a refused commit. A file the run scored a
+    function in was read, so only the files it scored nothing in are read
+    again, and a file fixed since then is no longer named."""
+    from ..merge import UNREAD_ADVICE
+
+    scored = _newest_scored_paths(root)
+    if scored is None:
+        return []
+    unread = _unread_now(root, sorted(_scoped_files(root, cfg, files) - scored))
+    return [Finding("WARN", f"{path} could not be read, so the commit gate refuses it when "
+                            f"staged: {why}; {UNREAD_ADVICE}")
+            for path, why in sorted(unread.items())]
+
+
+def _newest_scored_paths(root: Path) -> set[str] | None:
+    """The paths the newest coverage run scored a function in; None with no such run."""
+    store = _store_if_any(root)
+    run = _newest_coverage_run(store) if store else None
+    if run is None:
+        return None
+    return {path for path, *_ in store.count_by_path(run["id"], flag="untested")}
+
+
+def _scoped_files(root: Path, cfg, files: list[str]) -> set[str]:
+    by_scope = assign_files(files, cfg, size_of=_file_sizer(root))
+    return {f for scoped in by_scope.values() for f in scoped}
+
+
+def _unread_now(root: Path, paths: list[str]) -> dict[str, str]:
+    """{path: the reader's reason} for each of `paths` no reader can read."""
+    from ..analyze import analyze_source, read_source, unread_reasons
+
+    present = [p for p in paths if (root / p).is_file()]
+    return unread_reasons({p: analyze_source(p, read_source(str(root / p)), note=False)
+                           for p in present})
+
+
 def _hook_modes(root: Path) -> dict[str, str]:
     """Index modes of the files the repo's `core.hooksPath` points at.
 
@@ -1110,7 +1150,8 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_commit_graph(root)
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, files)
-            + _doctor_unmeasured(root, cfg, files))
+            + _doctor_unmeasured(root, cfg, files)
+            + _doctor_unread(root, cfg, files))
 
 
 def _doctor_inputs(root: Path, lanes) -> list[Finding]:
@@ -1181,18 +1222,29 @@ def _unreadable_stamp_note(key: str, writers: dict[str, str]) -> str:
     fix = (f"lane {writer!r} replaces it on its next successful run, or delete the entry"
            if writer else "no declared lane writes this key, so delete the entry")
     return (f".crapkit/artifacts.json: the entry for {key!r} is not an object, so crapkit "
-            f"reads it as no stamp (no commit, no duration); {fix}")
+            f"reads it as no stamp (no commit, no duration) and `--reuse-artifacts` refuses the "
+            f"lane while it stands; {fix}")
+
+
+def _unreadable_file_note(reason: str) -> str:
+    return (f".crapkit/artifacts.json cannot be read ({reason}), so every lane reads as "
+            "unstamped and `--reuse-artifacts` refuses each lane whose artifact is on disk; "
+            "the next real run of any lane rewrites the file, or delete it to reuse the "
+            "artifacts as they stand")
 
 
 def _doctor_stamps(root: Path, lanes) -> list[Finding]:
     """WARN, never FAIL: every reader already takes a mangled entry as no stamp.
     Named anyway, because the file is hand-edited and the reader has to find the
     line doctor skipped."""
-    from ..lanes import read_stamps, unreadable_stamps
+    from ..lanes import UnreadableStamps, read_stamps, unreadable_stamps
 
+    stamps = read_stamps(root)
+    if isinstance(stamps, UnreadableStamps):
+        return [Finding("WARN", _unreadable_file_note(stamps.reason))]
     writers = {lane.artifact: lane.name for lane in lanes}
     return [Finding("WARN", _unreadable_stamp_note(key, writers))
-            for key in unreadable_stamps(read_stamps(root))]
+            for key in unreadable_stamps(stamps)]
 
 
 def _doctor_report(root: Path, cfg, findings: list[Finding]) -> dict:
@@ -1263,12 +1315,20 @@ def _lane_seconds(root: Path, lane, stamps: dict) -> float | None:
     return _junit_seconds(root / lane.results_artifact) if lane.results_artifact else None
 
 
-def _lane_durations(root: Path, cfg) -> tuple[float, ...]:
+def _lane_durations(root: Path, cfg) -> tuple[tuple[float, ...], tuple[str, ...]]:
+    """The durations on disk, and the names of the lanes that left none. A lane
+    with no cost signal is named, never summed as 0 and never dropped unsaid."""
     from ..lanes import read_stamps
 
     stamps = read_stamps(root)
-    measured = [_lane_seconds(root, lane, stamps) for lane in cfg.lanes]
-    return tuple(s for s in measured if s is not None)
+    known, unknown = [], []
+    for lane in cfg.lanes:
+        seconds = _lane_seconds(root, lane, stamps)
+        if seconds is None:
+            unknown.append(lane.name)
+        else:
+            known.append(seconds)
+    return tuple(known), tuple(unknown)
 
 
 def _doctor_tune(root: Path, cfg) -> int:
@@ -1281,7 +1341,8 @@ def _doctor_tune(root: Path, cfg) -> int:
         print(f"{finding.level} {finding.text}", file=sys.stderr)
     cpus, _ = available_cpus()
     knobs = suggest_knobs(cpus=cpus, lanes=len(cfg.lanes), shared=shared_coverage_data(cfg.lanes))
-    for line in tune_lines(cpus=cpus, knobs=knobs, durations=_lane_durations(root, cfg)):
+    durations, unmeasured = _lane_durations(root, cfg)
+    for line in tune_lines(cpus=cpus, knobs=knobs, durations=durations, unmeasured=unmeasured):
         print(line)
     return 0
 

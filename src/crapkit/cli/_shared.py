@@ -14,6 +14,7 @@ from pathlib import Path
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
+from ..merge import UNREAD_ADVICE
 from ..repotext import repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
@@ -261,6 +262,24 @@ def _gate_line(v) -> str:
     report the same finding, so they must read the same."""
     return (f"  GATE  crap {v.crap:8.1f}  ccn {v.ccn:>3} cov {v.cov:.0%}  "
             f"{v.path}:{v.start}  {v.long_name}  -> {v.remedy}{_dirty_tag(v.dirty)}")
+
+
+def _unread_line(path: str, reason: str, dirty: bool = False) -> str:
+    """One changed file a gate refused because no reader could read it; every
+    gate prints it the same way."""
+    return f"  UNREAD  {path}: {reason}{_dirty_tag(dirty)}"
+
+
+def _print_unread(unread: dict[str, str], what: str, file=None) -> None:
+    """The changed files a gate refuses, `what` saying which ("staged",
+    "changed"), and what to do; nothing when every file was read."""
+    if not unread:
+        return
+    print(f"crapkit gate: {len(unread)} {what} file(s) could not be read, so no function in "
+          "them was judged:", file=file)
+    for path, reason in sorted(unread.items()):
+        print(_unread_line(path, reason), file=file)
+    print(UNREAD_ADVICE, file=file)
 
 
 def _latest_scored(store: SnapshotStore):

@@ -21,6 +21,7 @@ from crapkit import config
 from crapkit.cli.verifying import _verify_exit_code
 from crapkit.cli import main
 from crapkit.cli import verifying
+from crapkit.invocation import _self
 from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation, RatchetRegression, Verdict
@@ -443,6 +444,139 @@ def test_no_tighten_passes_the_verdict_without_rewriting_the_marks(baselined, ca
     assert (baselined / MARKS).read_text(encoding="utf-8") == before
 
 
+def _commit_marks(repo, crap: float) -> str:
+    write_marks(repo, ("src/app.ts", "plain ( x )", crap))
+    commit_all(repo, f"a {crap} mark on plain")
+    return head(repo)
+
+
+@pytest.fixture(params=["seeded-before-the-baseline", "seeded-after-the-baseline"])
+def committed_marks(request, repo, capsys):
+    """A trusted coverage run and a committed 0.1 mark on plain, which scores 2.5,
+    so a verify that reads the mark exits 7. Seeding usually follows the run it
+    reads, so the marks commit often comes after the baseline's. Returns the
+    repo and the commit holding the marks."""
+    seed_artifacts(repo)
+    first = request.param == "seeded-before-the-baseline"
+    marked = _commit_marks(repo, 0.1) if first else None
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    return repo, marked or _commit_marks(repo, 0.1)
+
+
+def _lose_marks(repo, form: str) -> None:
+    marks = repo / MARKS
+    if form.startswith("emptied"):
+        marks.write_bytes(b"")
+    elif form == "blank-lines":
+        marks.write_bytes(b"\n\r\n  \n")
+    else:
+        marks.unlink()
+    if form.endswith("-in-commit"):
+        commit_all(repo, "lose the marks file")
+
+
+@pytest.mark.parametrize("form", ["deleted", "deleted-in-commit", "emptied", "emptied-in-commit",
+                                  "blank-lines"])
+def test_a_marks_file_gone_from_the_tree_is_judged_by_its_newest_committed_marks(
+        committed_marks, capsys, form):
+    """A deleted or emptied marks file read as a repo that never marked any debt,
+    so a mark that rose passed with exit 0. The history since the baseline still
+    holds the marks; verify judges against the newest and says which commit."""
+    repo, marked = committed_marks
+    _lose_marks(repo, form)
+    before = (repo / MARKS).read_bytes() if (repo / MARKS).exists() else None
+
+    code, out, err = run(["verify", "--reuse-artifacts"], repo, capsys)
+
+    assert code == 7, out + err
+    assert "RATCHET  src/app.ts  plain ( x ): 0.1 -> 2.5" in out, out
+    state = "missing" if before is None else "empty"
+    short = marked[:11]
+    assert (f"warning: {MARKS} is {state}, but commit {short}, the newest since the baseline to "
+            f"hold it, has 1 mark(s); verify judged against those and left {MARKS} as it is. "
+            f"Restore it with `git checkout {short} -- {MARKS}`, or drop the marks of code that "
+            f"is gone with `{_self()} ratchet prune`") in err, err
+    assert "written before stamping" not in err, err
+    after = (repo / MARKS).read_bytes() if (repo / MARKS).exists() else None
+    assert after == before, "verify must not write the marks back, or rewrite an empty file"
+
+
+def test_the_newest_marks_since_the_baseline_are_the_ones_judged(committed_marks, capsys):
+    """Two marks commits after the baseline: the newer 0.2 is what the file held
+    last, so it is the mark a deletion must not escape."""
+    repo, _ = committed_marks
+    newer = _commit_marks(repo, 0.2)
+    (repo / MARKS).unlink()
+
+    code, out, err = run(["verify", "--reuse-artifacts"], repo, capsys)
+
+    assert code == 7, out + err
+    assert "RATCHET  src/app.ts  plain ( x ): 0.2 -> 2.5" in out, out
+    assert f"but commit {newer[:11]}, the newest" in err, err
+
+
+RECEIPT_KEYS = ("ratchet_sha256", "ratchet_source", "ratchet_source_commit",
+                "ratchet_source_sha256")
+
+
+@pytest.mark.parametrize("form", ["deleted", "emptied", "kept"])
+def test_the_receipt_keeps_the_trees_digest_and_names_the_marks_verify_judged(
+        committed_marks, capsys, form):
+    """ratchet_sha256 keeps its meaning under JSON schema 1: the digest of the
+    marks file on the tree, null when there is none. The stand-in verify judged
+    against is named beside it, in fields of its own: ratchet_source says
+    whether the marks came from the tree or from a commit, and
+    ratchet_source_commit and ratchet_source_sha256 say which."""
+    import hashlib
+
+    repo, marked = committed_marks
+    committed = hashlib.sha256((repo / MARKS).read_bytes()).hexdigest()
+    if form != "kept":
+        _lose_marks(repo, form)
+    on_tree = (hashlib.sha256((repo / MARKS).read_bytes()).hexdigest()
+               if (repo / MARKS).exists() else None)
+
+    code, out, _ = run(["verify", "--reuse-artifacts", "--json"], repo, capsys)
+
+    receipt = json.loads(out)
+    expected = {"kept": (committed, "tree", None, committed),
+                "deleted": (None, "committed", marked, committed),
+                "emptied": (on_tree, "committed", marked, committed)}[form]
+    assert code == 7
+    assert tuple(receipt[key] for key in RECEIPT_KEYS) == expected
+
+
+def test_an_emptied_marks_file_that_nothing_rose_against_passes_and_stays_empty(committed_marks,
+                                                                                capsys):
+    """A pass used to restamp an emptied file into a header with no rows and ask
+    for a `git add`, which commits the lost marks as a valid empty file."""
+    repo, _ = committed_marks
+    looser = _commit_marks(repo, 9.0)
+    (repo / MARKS).write_bytes(b"")
+
+    code, out, err = run(["verify", "--reuse-artifacts"], repo, capsys)
+
+    assert code == 0, out + err
+    assert f"{MARKS} is empty, but commit {looser[:11]}" in err, err
+    assert "git add" not in out, out
+    assert (repo / MARKS).read_bytes() == b""
+
+
+@pytest.mark.parametrize("form", ["deleted", "emptied"])
+def test_no_marks_at_the_baseline_and_none_now_says_nothing(baselined, capsys, form):
+    """With no marks file at the baseline either, there is nothing to stand in."""
+    if form == "emptied":
+        (baselined / MARKS).write_bytes(b"")
+
+    code, _, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
+
+    assert code == 0, err
+    assert f"{MARKS} is" not in err, err
+    assert "written before stamping" not in err, err
+    assert (baselined / MARKS).exists() == (form == "emptied")
+
+
 def test_a_measurement_that_bounced_on_one_commit_holds_its_mark(baselined, capsys):
     """One commit measured twice cannot have improved, so a score that moved past
     tighten_max_jump is the measurement's own noise. Tightening on the lucky half
@@ -641,16 +775,21 @@ def test_verify_cannot_conclude_with_a_lane_that_failed(baselined, capsys):
 
 def test_a_test_the_baseline_never_saw_fail_is_a_new_failure(baselined, capsys):
     """A lane declaring no retest_command keeps its failures untouched, so the
-    verdict is the lane's report."""
+    verdict is the lane's report. The baseline's lane declared no
+    results_artifact, so exit 8 comes with the line saying the failure may
+    predate the change (Q26): a gate fails closed, and the line keeps that from
+    reading as this change's doing."""
     _junit(baselined, failing=True)
     _results_artifact(baselined)
 
-    code, out, _ = run(["verify", "--reuse-artifacts"], baselined, capsys)
+    code, out, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
 
     assert code == 8
     assert "NEW FAILURE  src/app.test.ts::renders" in out, out
     assert "findings: 1 committed / 0 dirty" in out, \
         "nothing in this tree edited the test file, so the failure is the commit's"
+    assert ("no trusted run at or behind the baseline recorded which of its tests failed, so "
+            "its 1 new failure may predate this change") in err, err
 
 
 def test_a_failure_that_passes_on_rerun_is_reported_as_a_flake(baselined, capsys):
@@ -668,6 +807,37 @@ def test_a_failure_that_passes_on_rerun_is_reported_as_a_flake(baselined, capsys
 
     assert code == 0, (out, err)
     assert "flake retry: 1 of 1 new failures passed on rerun" in err, err
+
+
+# The rerun's own report is the only proof a failure was a flake. Each of these
+# leaves no report that proves it, so nothing it names may leave the verdict.
+_RERUNS_WITH_NO_RESULT = {
+    "writes-nothing": "pass\n",
+    "deletes-the-junit": "import os\nos.remove('junit.xml')\n",
+    "writes-malformed-xml": ("import pathlib\n"
+                             "pathlib.Path('junit.xml').write_text('<testsuite><testcase')\n"),
+    "writes-an-unfinished-run": (
+        "import pathlib\n"
+        "pathlib.Path('junit.xml').write_text('<testsuites><testsuite tests=\"1\">"
+        "<testcase classname=\"src/app.test.ts\" name=\"renders\"/></testsuite>"
+        "<error message=\"worker &apos;gw0&apos; crashed while running "
+        "&apos;src/app.test.ts::renders&apos;\"/></testsuites>')\n"),
+    "exits-3": "import sys\nsys.exit(3)\n",
+}
+
+
+@pytest.mark.parametrize("rerun", sorted(_RERUNS_WITH_NO_RESULT))
+def test_a_rerun_that_leaves_no_readable_result_keeps_every_failure(baselined, capsys, rerun):
+    _junit(baselined, failing=True)
+    (baselined / "repair.py").write_text(_RERUNS_WITH_NO_RESULT[rerun], encoding="utf-8")
+    _results_artifact(baselined, retest=True)
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+
+    payload = json.loads(out)
+    assert code == 8, (out, err)
+    assert payload["new_failures"] == ["src/app.test.ts::renders"]
+    assert payload["retried_passes"] == []
 
 
 def _junit(repo, *, failing: bool, skipped: bool = False) -> None:
@@ -826,6 +996,42 @@ def test_the_env_override_grants_the_commit_through_a_full_audit(repo, capsys, m
     assert "knotty" in (repo / MARKS).read_text(encoding="utf-8")
     assert MARKS in git(repo, "diff", "--cached", "--name-only")
     assert [r["kind"] for r in store_of(repo).list_runs()] == ["hook"]
+
+
+CC_ONLY_SCOPE = """
+[[scope]]
+name = "cc"
+paths = ["cc"]
+languages = ["typescript"]
+coverage_optional = true
+"""
+
+
+@pytest.mark.parametrize(("source", "mark"), [
+    pytest.param("cc/rules.ts", 8.0, id="cc-only-scope-marks-ccn"),
+    pytest.param("src/app.ts", 72.0, id="lane-scope-marks-crap-at-cov-0"),
+])
+def test_the_env_override_marks_the_crap_the_scope_scores(repo, capsys, monkeypatch, source, mark):
+    """A cc-only scope scores CRAP = ccn, so its grant marks ccn. Marking
+    ccn^2 + ccn there (72 at ccn 8) read the coverage no lane can measure as 0,
+    and verify then pardoned the function until ccn 72. A scope a lane measures
+    still marks the CRAP of an untested function: the hook reads a blob, and a
+    blob carries no coverage."""
+    from crapkit.ratchet import load_ratchet
+
+    with open(repo / "crapkit.toml", "a", encoding="utf-8", newline="\n") as fh:
+        fh.write(CC_ONLY_SCOPE)
+    (repo / "cc").mkdir(exist_ok=True)
+    (repo / "cc" / "rules.ts").touch()
+    add_knotty(repo, source)
+    stage(repo, "crapkit.toml", source)
+    monkeypatch.setenv("CRAPKIT_OVERRIDE_REASON", "hotfix, ticket 42")
+
+    code, out, err = run(["hook-precommit"], repo, capsys)
+
+    assert code == 0, out + err
+    marks = load_ratchet((repo / MARKS).read_text(encoding="utf-8"))
+    assert [(e.path, e.long_name, e.crap) for e in marks] == [(source, "knotty ( n )", mark)]
 
 
 # --- the receipt is spelled for the shell that ran the hook --------------------

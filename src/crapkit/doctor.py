@@ -206,11 +206,22 @@ def parallel_seconds(durations: tuple[float, ...], slots: int) -> float:
     return max(ends)
 
 
-def _cost_line(slots: int, durations: tuple[float, ...]) -> str:
+def _cost_line(slots: int, durations: tuple[float, ...], unmeasured: tuple[str, ...]) -> str:
     if not durations:
         return "# lane cost: no durations recorded yet — suggested from the cpu count alone"
     return (f"# lane cost: {sum(durations):.1f}s serial -> "
-            f"~{parallel_seconds(durations, slots):.1f}s across {slots} lane slot(s)")
+            f"~{parallel_seconds(durations, slots):.1f}s across {slots} lane slot(s)"
+            + _unmeasured_words(len(durations), unmeasured))
+
+
+def _unmeasured_words(known: int, unmeasured: tuple[str, ...]) -> str:
+    """Both numbers are lower bounds once a lane has no duration, so the line
+    says how many lanes it counted and names the rest."""
+    if not unmeasured:
+        return ""
+    names = ", ".join(repr(name) for name in unmeasured)
+    return (f" for {known} of {known + len(unmeasured)} lanes; cost unknown for {names}, "
+            "which recorded no duration yet (crapkit coverage records one when it runs a lane)")
 
 
 def _held_lines(shared: tuple[tuple[str, ...], ...]) -> list[str]:
@@ -222,15 +233,18 @@ def _held_lines(shared: tuple[tuple[str, ...], ...]) -> list[str]:
     return out
 
 
-def tune_lines(*, cpus: int, knobs: Knobs, durations: tuple[float, ...]) -> list[str]:
-    """Paste-ready [crapkit] knob lines plus what the suggestion was based on."""
+def tune_lines(*, cpus: int, knobs: Knobs, durations: tuple[float, ...],
+               unmeasured: tuple[str, ...] = ()) -> list[str]:
+    """Paste-ready [crapkit] knob lines plus what the suggestion was based on.
+    `unmeasured` names the lanes whose cost is unknown; the cost line leaves
+    them out of its sum and says so."""
     return [f"# doctor --tune: suggestions for {cpus} cpu(s); nothing was written",
             "[crapkit]",
             f"max_parallel_lanes = {knobs.max_parallel_lanes}",
             *_held_lines(knobs.shared),
             f"analysis_workers = {knobs.analysis_workers}",
             f"mutation_workers = {knobs.mutation_workers}",
-            _cost_line(knobs.max_parallel_lanes, durations)]
+            _cost_line(knobs.max_parallel_lanes, durations, unmeasured)]
 
 
 class ArtifactLitter(NamedTuple):

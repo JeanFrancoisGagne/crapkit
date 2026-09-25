@@ -17,6 +17,10 @@ _Avoid_: target (that is the configuration key that sets a ceiling, not the conc
 **Coverage**:
 The share of a function's branches the suite ran, read from the artifact; never measured by crapkit itself.
 
+**Unmeasured**:
+A row no measurement stands behind: its scope has no lane (`no-lane`) or asks for none (`cc-only`), or rescore finds no row in the run for a function added or renamed since. It scores at coverage 0.0 all the same; payloads carry `unmeasured: true` beside that stand-in, and text says `not measured`.
+_Avoid_: untested (an untested function was measured, and no test reached it)
+
 **Risk**:
 What ranks the worklist: complexity times recency-weighted churn. Not the CRAP score.
 
@@ -52,7 +56,7 @@ _Avoid_: report (a report is crapkit's own HTML page)
 A glob that removes files from the corpus before inventory.
 
 **Unanalyzable file**:
-A source file the analysis names on stderr and scores as zero functions, because lizard failed on it or a Python def in it was read no further than its signature. Every run tries it again.
+A source file the analysis names on stderr and scores as zero functions, because lizard failed on it or a Python def in it was read no further than its signature. Every run tries it again. A gate refuses a changed one, because it judged none of its functions, and no override grants past it; the advisory hook names it after the edit, and doctor WARNs about each one the newest run could not read. JSON calls it an unread file.
 _Avoid_: skipped file (nothing about it is silent)
 
 ### Runs
@@ -69,15 +73,19 @@ A stored run written before crapkit recorded where same-line functions sit. Its 
 **Baseline**:
 The trusted earlier run a verdict compares against.
 
+**Newly scored**:
+What the digest calls a function that the older run of its pair holds no row for, when that run scored no function in the function's scope: a scope added to crapkit.toml since then, say. The code may be years old; only its measurement is new.
+_Avoid_: new (a new function sits in a scope both runs scored)
+
 **Named baseline**:
 A run that `--baseline ID` names for verify, ratchet seed or ratchet prune. It steps past the rule that a failed verify taints later runs, and nothing else: a failed verify, a hook run, a partial run or an inventory run is still refused.
 _Avoid_: forced baseline, override baseline
 
 **Verdict**:
-The outcome of `verify`: the gate result, ratchet regressions and new test failures against the baseline.
+The outcome of `verify`: the gate result, ratchet regressions and new test failures against the baseline. A lane whose declared junit `verify --reuse-artifacts` reused and could not read leaves no verdict: verify exits 5 and stores nothing.
 
 **Forgiven failure**:
-A test failure the fresh run and the baseline both have. It is not new, so it fails no verdict; the OK line counts it.
+A test failure the fresh run and the baseline both have. It is not new, so it fails no verdict; the OK line counts it. When the baseline recorded no failure list for a lane, the newest trusted run at or behind it that did stands in for that lane.
 _Avoid_: known failure, ignored failure
 
 **Flake retry**:
@@ -129,3 +137,15 @@ Active rows are ranked by risk; dormant rows have no recent churn.
 **Churn window**:
 The months of history churn reads (`churn_window_months`). A commit counts while its commit date is at or after the window's cutoff; its recency weight reads the author date.
 _Avoid_: floor for the window's start (Floor is worklist admission); call it the cutoff
+
+**Shallow clone**:
+A checkout that holds only part of its history (`git clone --depth N`, the `actions/checkout` default). Churn, mark ages and repayments count only the commits it holds, so worklist, next-item, brief and ratchet report carry `shallow: true` and print one line naming `fetch-depth: 0`, and `ratchet report --enforce` refuses to judge the debt policy there.
+
+### Mutation
+
+**Killed mutant**:
+A mutant whose suite failed a test, or ran past `mutation_timeout_seconds`. A timeout counts as killed and is reported apart, as `timed_out`.
+
+**No verdict**:
+A mutant whose suite ran no test (exit 5, pytest's "no tests collected"). No test judged it, so it is in neither `killed` nor `survived`, and the kill rate leaves it out.
+_Avoid_: killed, for a suite that never ran a test
