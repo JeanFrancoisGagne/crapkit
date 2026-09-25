@@ -311,9 +311,8 @@ def git(repo: Path, *args: str, stdin: bytes | None = None) -> bytes:
 class DictTree:
     """A tree held in memory: {repo path: bytes}."""
 
-    def __init__(self, files: dict, label: str = "tree"):
+    def __init__(self, files: dict):
         self.files = {path: data for path, data in files.items() if data is not None}
-        self.label = label
 
     def paths(self) -> list[str]:
         return sorted(self.files)
@@ -394,9 +393,8 @@ def _walk(root: Path, top: str) -> list[str]:
 class DirTree:
     """The working tree: tests/accuracy and the few root files the rules read."""
 
-    def __init__(self, root: Path, label: str = "the working tree"):
+    def __init__(self, root: Path):
         self.root = Path(root)
-        self.label = label
 
     def paths(self) -> list[str]:
         walked = _walk(self.root, "tests/accuracy")

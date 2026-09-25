@@ -76,8 +76,40 @@ def test_a_base_that_names_no_commit_is_refused_with_the_fix(make_repo, capsys):
 
 @pytest.mark.process
 def test_a_failed_git_call_names_its_command(tmp_path):
-    with pytest.raises(cc.ChangeControlError, match="^git cat-file -t nope exited 128: "):
+    with pytest.raises(cc.ChangeControlError, match="^git cat-file -t nope exited 128: fatal: "):
         cc.git(tmp_path, "cat-file", "-t", "nope")
+
+
+TAB_PATH = "tests/accuracy/score_model/a\tb.tsv"
+
+
+@pytest.mark.process
+def test_a_commit_s_tree_reads_every_path_and_batches_the_accuracy_blobs(make_repo, monkeypatch):
+    """A path holding a tab (git writes it raw under -z), added to the index only,
+    so NTFS never has to spell it, and read back whole; the tests/accuracy blobs
+    arrive in one batch, any other file on its own."""
+    top = seeds.seeded(make_repo, BASE)
+    blob = cc.git(top, "hash-object", "-w", "--stdin", stdin=b"tabbed\n").decode().strip()
+    repos.git(top, "-c", "core.protectNTFS=false", "update-index", "--add", "--cacheinfo",
+              f"100644,{blob},{TAB_PATH}")
+    repos.git(top, "commit", "-q", "-m", "a tab", date=repos.EPOCH + 60)
+    batches = []
+    real = cc._cat_blobs
+    monkeypatch.setattr(cc, "_cat_blobs", lambda repo, ids: batches.append(len(ids)) or real(
+        repo, ids))
+
+    tree = cc.GitTree(top, "HEAD")
+    tab, rulings, module = tree.read(TAB_PATH), tree.read(seeds.RULINGS), tree.read(seeds.MODULE)
+
+    assert TAB_PATH in tree.paths()
+    assert (tab, rulings, module) == (b"tabbed\n", BASE[seeds.RULINGS].encode(),
+                                      BASE[seeds.MODULE].encode())
+    assert batches[1:] == [1] and batches[0] > 5
+
+
+def test_a_working_tree_answers_nothing_for_a_missing_path(tmp_path):
+    assert (cc.DirTree(tmp_path).id("absent.tsv"), cc.DirTree(tmp_path).paths()) == (None, [])
+    assert cc.raw_rows(None) == []
 
 
 def _python(code: str) -> list[str]:
