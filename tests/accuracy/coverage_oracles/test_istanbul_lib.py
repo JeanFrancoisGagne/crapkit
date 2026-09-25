@@ -15,6 +15,11 @@
    unrun arrow assigned to a const as unrun, as the ground truth does (CO-B1),
    and a function an ignore hint dropped as unknown, never another function's
    number.
+4. Two functions on one line, the join's tie: istanbul-lib-instrument 6.0.3
+   instruments a TypeScript line holding two arrows, and one is called with
+   both arms of its ternary. crap-typescript matches each method to its fnMap
+   entry by column and reads 2 of 2 and 0 of 2, as the calls say; crapkit
+   reads spans by line and floors both to uncovered (ruling CO11).
 
 All of it runs node, so it runs in the nightly tier.
 """
@@ -24,8 +29,8 @@ from pathlib import Path
 import pytest
 
 import hang_guard
-from accuracy.coverage_oracles import counts_table, probe_repo, under_test
-from accuracy.kit import oracles, rulings, tiers
+from accuracy.coverage_oracles import counts_table, mini_repo, probe_repo, under_test
+from accuracy.kit import oracles, rulings, surfaces, tiers
 
 pytestmark = [pytest.mark.nightly, pytest.mark.process]
 HERE = Path(__file__).resolve().parent
@@ -191,3 +196,65 @@ def test_crap_typescript_reads_an_unrun_const_arrow_as_unrun(oracle):
 
     rulings.pin_ruling("CO-B1", crapkit=ours[60].coverage,
                        oracle=method["statements"]["percent"] / 100)
+
+
+# --- two functions on one line: how each side breaks the tie ---------------------------------------
+
+SIBLINGS = "export const called = (x) => (x ? 1 : 2), idle = (y) => (y ? 3 : 4);\n"
+# The driver: called(true) and called(false) take both arms of called's ternary;
+# nothing calls idle. Worked by hand: called 2 of 2 arms, idle 0 of 2.
+SIBLING_CALLS = [["called", [True]], ["called", [False]]]
+SIBLING_ARMS = {"called": 1.0, "idle": 0.0}
+
+
+@pytest.fixture(scope="module")
+def siblings(tmp_path_factory):
+    """(crap-typescript's methods by name, crapkit's scored rows) over the
+    coverage istanbul-lib-instrument records for SIBLINGS and SIBLING_CALLS."""
+    work = tmp_path_factory.mktemp("siblings")
+    source = work / "shared.ts"
+    source.write_text(SIBLINGS, encoding="utf-8", newline="\n")
+    coverage = _node("instrument_run.mjs", str(source), str(work), json.dumps(SIBLING_CALLS))
+    artifact = work / "coverage.json"
+    artifact.write_text(json.dumps(coverage), encoding="utf-8")
+    methods = _node("crap_typescript.mjs", str(artifact), str(work), str(source))
+    return ({method["name"]: method for method in methods},
+            _sibling_rows(tmp_path_factory.mktemp("siblings-repo"), coverage))
+
+
+def _sibling_rows(top: Path, coverage: dict) -> list[dict]:
+    """crapkit's scored rows for SIBLINGS, its lane reading the same coverage."""
+    entry = dict(next(iter(coverage.values())), path="ts/shared.ts")
+    config = mini_repo.config([mini_repo.scope("ts", ["ts"], ["typescript"])],
+                              [mini_repo.lane("ts", "istanbul", ["ts"])])
+    driver = mini_repo.build(top / "repo", {"crapkit.toml": config, "ts/shared.ts": SIBLINGS,
+                                            "recorded/ts.json": json.dumps({"ts/shared.ts": entry})})
+    result = driver.run("coverage", "--export", "scored.tsv")
+    assert result.code == 0, result.stderr
+    return surfaces.read_tsv((driver.root / "scored.tsv").read_text(encoding="utf-8"))[1]
+
+
+def test_crap_typescript_tells_two_functions_on_one_line_apart(siblings, oracle):
+    oracle("@barney-media/crap-typescript-core")
+    methods = siblings[0]
+
+    assert {name: _percent(methods[name]["branches"]) for name in SIBLING_ARMS} == SIBLING_ARMS
+
+
+def test_crapkit_floors_both_functions_on_one_line(siblings):
+    """README.md#remedy-what-to-do-about-it: another function shares its source
+    lines, so the score stays at uncovered whatever the tests do."""
+    rows = siblings[1]
+
+    assert sorted((int(row["start"]), float(row["cov"]), row["flag"]) for row in rows) == [
+        (1, 0.0, "untested"), (1, 0.0, "untested")]
+
+
+@rulings.applies("CO11")
+def test_co11_crapkit_floors_what_crap_typescript_splits_by_column(siblings, oracle):
+    oracle("@barney-media/crap-typescript-core")
+    methods, rows = siblings
+    called = next(row for row in rows if row["long_name"].startswith("called"))
+
+    rulings.pin_ruling("CO11", crapkit=float(called["cov"]),
+                       oracle=_percent(methods["called"]["combined"]))
