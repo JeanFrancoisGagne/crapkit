@@ -299,22 +299,45 @@ def test_a_map_keyed_by_file_is_cut_by_entries_after_the_lists(monkeypatch, tmp_
     assert answer["gate"]["ok"] is False and answer["gate"]["judged"] == 61
 
 
+_SCALARS = {"integer": 123456, "number": 1234.5, "boolean": True}
+
+
+def _kind(schema: dict):
+    kind = schema.get("type")
+    return next(k for k in kind if k != "null") if isinstance(kind, list) else kind
+
+
+def _many(depth: int) -> int:
+    return 400 if depth < 3 else 3
+
+
+def _filled_map(entries: dict, depth: int) -> dict:
+    return {f"src/pkg/module_{n:04}.py": _filled(entries, depth + 1) for n in range(_many(depth))}
+
+
+def _properties(schema: dict) -> dict:
+    return {key: value for key, value in schema.get("properties", {}).items() if key != "truncated"}
+
+
+def _filled_object(schema: dict, depth: int) -> dict:
+    """A map keyed by data when the schema names no properties, else every
+    named property but `truncated`."""
+    named, entries = _properties(schema), schema.get("additionalProperties")
+    if isinstance(entries, dict) and not named:
+        return _filled_map(entries, depth)
+    return {key: _filled(value, depth + 1) for key, value in named.items()}
+
+
 def _filled(schema: dict, depth: int = 0):
     """An answer as large as the output schema allows at each field: long
     lists, long strings and large maps, at every depth the schema declares."""
-    kind = schema.get("type")
-    kind = next(k for k in kind if k != "null") if isinstance(kind, list) else kind
-    many = 400 if depth < 3 else 3
-    if kind == "object":
-        entries = schema.get("additionalProperties")
-        if isinstance(entries, dict) and not schema.get("properties"):
-            return {f"src/pkg/module_{n:04}.py": _filled(entries, depth + 1) for n in range(many)}
-        return {key: _filled(value, depth + 1) for key, value in schema.get("properties", {}).items()
-                if key != "truncated"}
-    if kind == "array":
-        return [_filled(schema.get("items", {"type": "string"}), depth + 1) for _ in range(many)]
-    return {"string": "s" * (3000 if depth < 3 else 30), "integer": 123456, "number": 1234.5,
-            "boolean": True}.get(kind)
+    fillers = {
+        "object": _filled_object,
+        "array": lambda s, d: [_filled(s.get("items", {"type": "string"}), d + 1)
+                               for _ in range(_many(d))],
+        "string": lambda s, d: "s" * (3000 if d < 3 else 30)}
+    filler = fillers.get(_kind(schema))
+    return filler(schema, depth) if filler else _SCALARS.get(_kind(schema))
 
 
 @pytest.mark.parametrize("entry", tool_listing(), ids=lambda entry: entry["name"])
