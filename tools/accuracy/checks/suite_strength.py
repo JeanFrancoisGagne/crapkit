@@ -3,25 +3,26 @@ floors and canary, `crapkit mutate`'s verdicts and their mutmut and Stryker
 differentials, the self-measurement floor, the release gate's model, the
 runner's check targets and the release-tier rows.
 
-Seconds are serial ubuntu estimates for the push tier, rounded up from a run in
-the accuracy image (13 s for the packet, 10.3 of them in tests); the mutate
-fixtures spawn crapkit and git, which is where the time goes. A check whose
-tests run only nightly or at release declares 0.
+Seconds are serial ubuntu estimates for the push tier: each check's larger JUnit
+sum over two runs in the accuracy image, rounded up (14 s for the packet; the
+latest run measured 9.3 s); the mutate fixtures spawn crapkit and git, which
+is where the time goes. A check whose tests run only nightly or at release
+declares 0.
 """
 SHARD = "verdict-score"
 _SS = "tests/accuracy/suite_strength/"
 CHECKS = [
     {"name": "retro ledger and triage", "seconds": 1,
      "pytest": [_SS + "test_retro_ledger.py"]},
-    {"name": "retro tool", "seconds": 3,
+    {"name": "retro tool", "seconds": 2,
      "pytest": [_SS + "test_retro_tool.py"]},
-    {"name": "mutation tool and floors", "seconds": 3,
+    {"name": "mutation tool and floors", "seconds": 2,
      "pytest": [_SS + "test_mutation_tool.py", _SS + "test_mutation_floors.py"]},
-    {"name": "crapkit mutate verdicts", "seconds": 5,
+    {"name": "crapkit mutate verdicts", "seconds": 4,
      "pytest": [_SS + "test_mutate_results.py"]},
     {"name": "mutant generation from source text", "seconds": 1,
      "pytest": [_SS + "test_mutant_generation.py", _SS + "test_mutate_command.py"]},
-    {"name": "mutation worktree pool in-process", "seconds": 2,
+    {"name": "mutation worktree pool in-process", "seconds": 3,
      "pytest": [_SS + "test_mutate_pool_plumbing.py"]},
     {"name": "crapkit mutate against mutmut and Stryker", "seconds": 0,
      "pytest": [_SS + "test_mutate_differential.py"]},
