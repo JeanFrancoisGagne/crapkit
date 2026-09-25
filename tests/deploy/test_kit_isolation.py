@@ -539,17 +539,37 @@ def update_switches(box) -> dict[str, object]:
     return {**{name: box.env.get(name) for name in UPDATE_ENV}, **files}
 
 
+def must_start(spec: dict) -> bool:
+    """An image runs every harness it holds (prototype/probe_offline.sh). A
+    native toolchain must run its core harnesses; its full npm lock also
+    installs Junie, whose launcher wants a shim in the home the image fixes,
+    and omp, which wants Bun, and no native cell drives either."""
+    return IN_IMAGE or spec.get("image") == "core"
+
+
+def version_check(box, spec: dict) -> bool | None:
+    """Whether `<command> --version` printed the pinned version, run the way
+    a user who installed it has it: its bin dir on PATH. None for a harness
+    this run does not need that could not start. The bound is SLOW: Copilot
+    CLI unpacks itself into a fresh home on its first start, 105 s on a
+    loaded Windows machine."""
+    step = box.run([box.which(spec["command"]), "--version"], bound=sandbox.SLOW)
+    if step.exit != 0 and not must_start(spec):
+        box.transcript.note(f"{spec['command']} does not start here, and no cell on this machine drives it")
+        return None
+    return spec.get("prints", spec["version"]) in step.stdout + step.stderr
+
+
+def held_harnesses(box) -> dict[str, dict]:
+    """The pinned harnesses this image or toolchain holds."""
+    return {name: spec for name, spec in pinned_harnesses().items() if harness(box, spec["command"])}
+
+
 def run_each_harness(box) -> dict[str, bool]:
-    """harness -> whether `<command> --version` printed its pinned version,
-    run the way a user who installed it has it: its bin dir on PATH."""
+    """harness -> whether it printed its pinned version."""
     box.put_harnesses_on_path()
-    printed = {}
-    for name, spec in pinned_harnesses().items():
-        found = box.which(spec["command"]) if harness(box, spec["command"]) else None
-        if found:
-            step = box.run([found, "--version"])
-            printed[name] = spec.get("prints", spec["version"]) in step.stdout + step.stderr
-    return printed
+    checked = {name: version_check(box, spec) for name, spec in held_harnesses(box).items()}
+    return {name: printed for name, printed in checked.items() if printed is not None}
 
 
 def test_no_harness_binary_changes_during_the_session_with_every_update_switch_set(box, request):
@@ -640,6 +660,11 @@ def test_odd_home_and_repo_names_survive(tmp_path, transcript, toolchain, templa
 # --- every deploy test goes through the kit -----------------------------------------------
 
 SHELL_OUTS = {"subprocess", "os.system", "os.popen", "os.spawnv", "os.spawnl", "os.execv", "os.startfile"}
+# A module that must reach this machine on purpose: the names it may use, and why.
+REACHES_THE_MACHINE = {
+    "test_harness_profiles.py": ({"subprocess"}, "win-profiles-sim asks PowerShell for the CI runner's own $PROFILE, "
+                                                 "which Zed's spawn runs and a sandbox HOME cannot stand in for"),
+}
 
 
 def _reached(node) -> list[str]:
@@ -656,43 +681,10 @@ def shell_outs(tree: ast.AST) -> list[str]:
     return [name for node in ast.walk(tree) for name in _reached(node) if name in SHELL_OUTS]
 
 
-def _is_cell(decorator: ast.expr) -> bool:
-    function = decorator.func if isinstance(decorator, ast.Call) else None
-    return getattr(function, "id", getattr(function, "attr", None)) == "cell"
-
-
-def _first_argument(call: ast.Call) -> str:
-    """A @cell's id, or "?" when the id is computed."""
-    first = call.args[0] if call.args else None
-    return first.value if isinstance(first, ast.Constant) else "?"
-
-
-def _cell_ids(function: ast.FunctionDef) -> list[str]:
-    return [_first_argument(decorator) for decorator in function.decorator_list if _is_cell(decorator)]
-
-
-def _targets(node: ast.Assign) -> list[str | None]:
-    return [getattr(target, "id", None) for target in node.targets]
-
-
-def _pytestmarks(tree: ast.Module) -> list[ast.expr]:
-    assigns = [node for node in tree.body if isinstance(node, ast.Assign)]
-    return [node.value for node in assigns if "pytestmark" in _targets(node)]
-
-
-def _is_kit_module(tree: ast.Module) -> bool:
-    return "pytest.mark.kit" in [ast.unparse(mark) for mark in _pytestmarks(tree)]
-
-
-def collected_tests(tree: ast.AST) -> list[ast.FunctionDef]:
-    return [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name.startswith("test")]
-
-
-def loose_tests(tree: ast.Module) -> list[str]:
-    """Tests that are neither kit tests nor @cell: no cadence selects them."""
-    if _is_kit_module(tree):
-        return []
-    return [function.name for function in collected_tests(tree) if not _cell_ids(function)]
+def unexplained_shell_outs(name: str, tree: ast.AST) -> list[str]:
+    """The shell-outs of module `name` that REACHES_THE_MACHINE does not explain."""
+    allowed = REACHES_THE_MACHINE.get(name, (set(), ""))[0]
+    return [reached for reached in shell_outs(tree) if reached not in allowed]
 
 
 def deploy_modules() -> dict[str, ast.Module]:
@@ -700,36 +692,64 @@ def deploy_modules() -> dict[str, ast.Module]:
 
 
 def test_no_deploy_test_module_starts_a_process_past_the_sandbox():
-    assert {name: shell_outs(tree) for name, tree in deploy_modules().items() if shell_outs(tree)} == {}
+    found = {name: unexplained_shell_outs(name, tree) for name, tree in deploy_modules().items()}
+
+    assert {name: names for name, names in found.items() if names} == {}
 
 
-def _module_cell_ids(tree: ast.Module) -> list[str]:
-    return [cell_id for function in collected_tests(tree) for cell_id in _cell_ids(function)]
-
-
-def duplicate_cell_ids(modules: dict[str, ast.Module]) -> list[str]:
-    ids = [cell_id for tree in modules.values() for cell_id in _module_cell_ids(tree)]
-    return sorted({cell_id for cell_id in ids if ids.count(cell_id) > 1})
-
-
-def test_every_deploy_test_is_a_kit_test_or_a_cell_with_a_unique_id():
-    modules = deploy_modules()
-
-    assert {name: loose_tests(tree) for name, tree in modules.items() if loose_tests(tree)} == {}
-    assert duplicate_cell_ids(modules) == []
-
-
-def test_the_kit_rules_catch_a_shell_out_and_a_loose_test():
-    source = ("import subprocess\nimport os\nfrom kit.cells import cell\n\n"
-              "def test_loose():\n    os.system('crapkit')\n\n"
-              "@cell('lin-x', channel='c', harness='h', scenario='s', use_cases='u', os='linux')\n"
-              "def test_a_cell(box):\n    pass\n")
-    tree = ast.parse(source)
+def test_a_shell_out_is_caught_unless_the_module_is_a_reviewed_exception():
+    tree = ast.parse("import subprocess\nimport os\n\ndef test_x():\n    os.system('crapkit')\n")
 
     assert shell_outs(tree) == ["subprocess", "os.system"]
-    assert loose_tests(tree) == ["test_loose"]
-    assert [_cell_ids(function) for function in collected_tests(tree)] == [[], ["lin-x"]]
-    assert duplicate_cell_ids({"a.py": tree, "b.py": tree}) == ["lin-x"]
+    assert unexplained_shell_outs("test_x.py", tree) == ["subprocess", "os.system"]
+    assert unexplained_shell_outs("test_harness_profiles.py", tree) == ["os.system"]
+
+
+def test_every_deploy_test_is_a_kit_test_or_a_cell(request):
+    """A test with neither mark runs in no job. Several tests may share one
+    cell id: a cell's steps, or its passing half beside a strict xfail."""
+    assert request.config.stash.get(cells.LOOSE, None) == []
+
+
+# A loose test, a helper marked kit on the function, and a cell, collected
+# under -m kit as run.py runs: the rule must see the loose test before -m
+# deselects it.
+LOOSE_PROBE = '''import pytest
+from kit.cells import cell
+from test_kit_isolation import test_every_deploy_test_is_a_kit_test_or_a_cell as the_rule
+
+PACKET = "deploy-kit-probe"
+test_rule = pytest.mark.kit(the_rule)
+
+
+def test_loose():
+    pass
+
+
+@pytest.mark.kit
+def test_a_helper():
+    pass
+
+
+@cell("lin-loose-probe", channel="c", harness="h", scenario="s", use_cases="u", os="linux", cadence="push")
+def test_a_cell():
+    pass
+'''
+
+
+def test_a_loose_test_fails_the_rule_even_where_a_mark_filter_drops_it(box, toolchain):
+    run = run_probe_suite(box, LOOSE_PROBE, toolchain.source, "-m", "kit")
+
+    assert run.exit == 1 and "1 failed, 1 passed, 2 deselected" in run.stdout
+    assert "'test_probe.py::test_loose'" in run.stdout
+    assert "::test_a_helper" not in run.stdout and "::test_a_cell" not in run.stdout
+
+
+def test_a_packets_own_kit_tests_run_under_its_packet():
+    assert cells.selected(None, [], "deploy-upgrade", home="deploy-upgrade")
+    assert not cells.selected(None, [], "deploy-git", home="deploy-upgrade")
+    assert cells.selected(None, [], "deploy-kit", home="deploy-upgrade")
+    assert not cells.selected(None, ["lin-x"], "deploy-upgrade", home="deploy-upgrade")
 
 
 # --- a cell's JUnit record ------------------------------------------------------------------
@@ -750,7 +770,7 @@ def junit_properties(path: Path) -> dict[str, str]:
     return {prop.get("name"): prop.get("value") for prop in ElementTree.parse(path).iter("property")}
 
 
-def run_probe_suite(box, source: str, toolchain_json: Path):
+def run_probe_suite(box, source: str, toolchain_json: Path, *pytest_args: str):
     """A one-module pytest session under this conftest, as run.py runs a cell:
     xunit1 JUnit at <box>/junit.xml. Returns the step; its exit is the run's."""
     suite = box.root / "suite"
@@ -761,7 +781,8 @@ def run_probe_suite(box, source: str, toolchain_json: Path):
            "CRAPKIT_DEPLOY_TOOLCHAIN": str(toolchain_json), "CRAPKIT_DEPLOY_IMAGE_DIGEST": "sha256:probe",
            "CRAPKIT_DEPLOY_OUT": str(box.root / "out")}
     return box.run([box.toolchain["runner_python"], "-m", "pytest", str(suite), "-q", "-p", "no:cacheprovider",
-                    "-o", "junit_family=xunit1", f"--junitxml={box.root / 'junit.xml'}"], cwd=suite, env=env)
+                    "-o", "junit_family=xunit1", f"--junitxml={box.root / 'junit.xml'}", *pytest_args],
+                   cwd=suite, env=env)
 
 
 def test_a_cells_junit_record_names_every_field_the_image_and_the_toolchain(box, toolchain):

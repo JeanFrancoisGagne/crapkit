@@ -10,7 +10,9 @@ environment the kit reads.
 
 The session also holds every harness binary to what it was when the session
 started (kit/sandbox.py harness_stamps): a harness that updates itself
-mid-run would make two cells of one run test different releases.
+mid-run would make two cells of one run test different releases. And it
+records every deploy test that is neither a kit test nor a cell, which no
+run.py job selects (test_kit_isolation fails on any).
 """
 from __future__ import annotations
 
@@ -58,9 +60,14 @@ def pytest_sessionfinish(session, exitstatus):
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config, items):
+    """Runs before -m deselects anything, so the loose-test record sees every
+    collected deploy test."""
+    config.stash[cells.LOOSE] = cells.loose(items, Path(__file__).resolve().parent)
     wanted, packet = config.getoption("--deploy-cell"), config.getoption("--deploy-packet")
-    keep, dropped = cells.partition(items, lambda item: cells.selected(cells.cell_meta(item), wanted, packet))
+    keep, dropped = cells.partition(items, lambda item: cells.selected(cells.cell_meta(item), wanted, packet,
+                                                                        cells.module_packet(item)))
     if dropped:
         config.hook.pytest_deselected(items=dropped)
         items[:] = keep

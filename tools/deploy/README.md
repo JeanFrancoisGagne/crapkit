@@ -121,8 +121,11 @@ Rules the kit holds a cell to:
   environment (an allowlist, a fresh HOME, offline pip and uv) and write the
   transcript. A bare `subprocess` call sees this machine instead, so
   `test_kit_isolation` fails any `tests/deploy/test_*.py` that imports
-  `subprocess` or calls `os.system`, and any test there that is neither a kit
-  test nor a `@cell`, or shares its cell id with another.
+  `subprocess` or calls `os.system`, unless `REACHES_THE_MACHINE` there names
+  the module and why. It also fails on any collected test that is neither a
+  `@cell` nor marked `kit`: no job selects it. Several tests may share a cell
+  id. A helper test marked `@pytest.mark.kit` runs in every job and under
+  `--packet` for the packet its module's `PACKET` names.
 - Each command gets the 120 s hang bound. A whole package install (`npm ci`,
   a large `pip install`) passes `bound=sandbox.SLOW`: `npm ci` of the 420
   fixture packages took 2 to 3 minutes on a loaded Windows machine.

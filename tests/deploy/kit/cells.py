@@ -130,15 +130,38 @@ def partition(items: list, keep_item) -> tuple[list, list]:
 KIT_PACKET = "deploy-kit"
 
 
-def _kit_selected(cells: list[str], packet: str | None) -> bool:
-    return not cells and packet in (None, KIT_PACKET)
+def module_packet(item) -> str | None:
+    """The PACKET a test's module names, or None."""
+    return getattr(getattr(item, "module", None), "PACKET", None)
 
 
-def selected(meta: dict | None, cells: list[str], packet: str | None) -> bool:
-    """Whether --deploy-cell / --deploy-packet keep an item. The kit's own
-    tests run when neither narrows the run, or under --deploy-packet deploy-kit."""
+def _kit_selected(cells: list[str], packet: str | None, home: str | None) -> bool:
+    return not cells and packet in (None, KIT_PACKET, home)
+
+
+def selected(meta: dict | None, cells: list[str], packet: str | None, home: str | None = None) -> bool:
+    """Whether --deploy-cell / --deploy-packet keep an item. A kit test runs
+    when neither narrows the run, under --deploy-packet deploy-kit, and under
+    the packet its module names (`home`), so a packet's own helper tests run
+    with its cells."""
     if meta is None:
-        return _kit_selected(cells, packet)
+        return _kit_selected(cells, packet, home)
     if cells and meta["id"] not in cells:
         return False
     return packet is None or meta.get("packet") == packet
+
+
+# tests/deploy/conftest.py keeps here the deploy tests no run selects;
+# test_kit_isolation fails while it holds any.
+LOOSE = pytest.StashKey[list]()
+
+
+def _under(item, root: Path) -> bool:
+    return Path(str(getattr(item, "path", ""))).is_relative_to(root)
+
+
+def loose(items: list, root: Path) -> list[str]:
+    """The tests under `root` that carry neither `kit` nor @cell. run.py
+    selects on `kit or (<cadence> and ...)`, so no job ever runs them."""
+    return [item.nodeid for item in items
+            if _under(item, root) and item.get_closest_marker("kit") is None and cell_meta(item) is None]
