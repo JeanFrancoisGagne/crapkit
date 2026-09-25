@@ -6,8 +6,10 @@ failure is `not replayable`; the fix must pass. The planted repo below has a
 `crapkit` whose `double` answers 3n at its first commit and 2n at its second,
 so the expected verdicts are known before anything runs.
 
-The planted replays build two worktrees and two venvs each (about 10 s), so
-they run nightly; the verdict, digest and slicing rules run on every push.
+The planted replays build two worktrees and two venvs each (about 10 s), and
+the bundle fetch runs about fifteen git commands, so they run nightly; the
+verdict, digest and slicing rules and the plumbing, with git and uv stood in
+for, run on every push.
 """
 from __future__ import annotations
 
@@ -976,7 +978,7 @@ LONG = "x" * 400
      {"outcome": "failed", "exc_type": "two", "assertion": False, "message": "two"}),
     ("import sys\nsys.exit(3)\n",
      {"outcome": "failed", "exc_type": "(no output)", "assertion": False, "message": "(no output)"}),
-])
+], ids=["passes", "assertion", "long", "dotted", "last-line", "silent"])
 def test_a_probe_passes_on_exit_zero_and_fails_on_its_last_stderr_line(tmp_path, body, record):
     probe = _file(tmp_path, body)
 
@@ -1262,6 +1264,7 @@ def _git_repo(tmp_path: Path, name: str) -> tuple[Path, str]:
     return repo, retro._checked(["git", "rev-parse", "HEAD"], repo).strip()
 
 
+@pytest.mark.nightly
 @pytest.mark.process
 def test_a_commit_only_the_bundle_holds_gets_a_worktree_at_it(tmp_path, monkeypatch):
     source, sha = _git_repo(tmp_path, "source")
