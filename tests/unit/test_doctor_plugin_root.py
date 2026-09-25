@@ -107,13 +107,20 @@ def test_the_plugin_this_repo_ships_matches_the_cli_it_ships_with(capsys):
 
 def test_a_version_gap_is_one_line_naming_both_numbers(tmp_path, capsys):
     """A reader holding one line has to be able to act on it, so the line says
-    which two versions disagree and how to close the gap from either side."""
+    which two versions disagree and how to close the gap from either side.
+
+    A plugin behind the CLI is already installed, and `claude plugin install`
+    on it only answers so (Claude Code 2.1.281): the same doctor line came back
+    after it. The marketplace refresh and `claude plugin update` the README runs
+    after an upgrade are what move it."""
     code, lines, err = check(plugin(tmp_path / "p", version="0.1.0"), capsys)
 
     assert (code, err) == (1, "")
     assert len(lines) == 1, lines
     assert "0.1.0" in lines[0] and CLI in lines[0], lines[0]
-    assert "claude plugin install crapkit@crapkit" in lines[0], lines[0]
+    assert "`claude plugin marketplace update crapkit`" in lines[0], lines[0]
+    assert "`claude plugin update crapkit@crapkit --scope user`" in lines[0], lines[0]
+    assert "claude plugin install" not in lines[0], lines[0]
 
 
 def test_a_protocol_this_cli_does_not_answer_is_one_line(tmp_path, capsys):

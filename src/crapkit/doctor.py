@@ -498,12 +498,18 @@ def _version_gap(where: str, version: str, cli_version: str, cli_where: str) -> 
     question. The path rides this line rather than a line of its own: agreement
     is silence here, and a line printed on success is a line people stop
     reading.
+
+    The plugin repair is the README's refresh pair. The plugin is already
+    installed, so `claude plugin install` only answers that it is and leaves
+    the old version where the hooks run it.
     """
     if version == cli_version:
         return None
     return (f"crapkit doctor: the plugin at {where} is version {version}, and the crapkit "
-            f"its hooks spawn ({cli_where}) is {cli_version}. Reinstall whichever is "
-            f"behind: `claude plugin install crapkit@crapkit`, or `pip install -U crapkit`.")
+            f"its hooks spawn ({cli_where}) is {cli_version}. Update whichever is behind: "
+            f"the plugin with `claude plugin marketplace update crapkit` then "
+            f"`claude plugin update crapkit@crapkit --scope user`, or the CLI with "
+            f"`pip install -U crapkit`.")
 
 
 def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str) -> str | None:

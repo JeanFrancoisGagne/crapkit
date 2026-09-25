@@ -1073,7 +1073,7 @@ answers. One line per disagreement, silence when they agree, exit 1 when it prin
 
 ```
 $ crapkit doctor --plugin-root crapkit
-crapkit doctor: the plugin at crapkit is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or `pip install -U crapkit`.
+crapkit doctor: the plugin at crapkit is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. Update whichever is behind: the plugin with `claude plugin marketplace update crapkit` then `claude plugin update crapkit@crapkit --scope user`, or the CLI with `pip install -U crapkit`.
 crapkit doctor: the plugin at crapkit asks for hook protocol 2; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit.
 ```
 

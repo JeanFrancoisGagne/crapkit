@@ -115,6 +115,10 @@ version stays 11, so no repo re-seeds.
   refresh lines, the ones the README runs after an upgrade. Its old line, `claude plugin
   install crapkit@crapkit`, only answers that the plugin is already installed, and the
   old version stays in place.
+- `crapkit doctor --plugin-root` names the same refresh pair when the plugin and the CLI
+  disagree on the version: `claude plugin marketplace update crapkit`, then `claude
+  plugin update crapkit@crapkit --scope user`. It named `claude plugin install`, and after
+  running it doctor printed the same line again.
 - The README, the adoption page, the handbook and `crapkit-onboard` name where a copy of
   `plugin/skills/*` goes: `~/.claude/skills` for Claude Code, `$CODEX_HOME/skills`
   (`~/.codex/skills` by default) for Codex, `~/.gemini/skills` for Gemini CLI. They said
