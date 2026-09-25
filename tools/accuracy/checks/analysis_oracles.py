@@ -53,4 +53,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_packet_params.py"]},
     {"name": "Go ccn, cognitive and nesting against gocyclo, gocognit and revive", "seconds": 40,
      "pytest": [_PACKET + "test_go_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "Rust ccn and cognitive against rust-code-analysis and cargo-crap", "seconds": 60,
+     "pytest": [_PACKET + "test_rust_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
 ]
