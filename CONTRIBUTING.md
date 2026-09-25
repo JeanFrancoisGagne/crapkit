@@ -136,7 +136,7 @@ functions your diff touched, and checks that no ratchet mark rose and no test th
 in the baseline fails now. CI also runs the event-base hook and a complete verdict
 against separate base and candidate wheel installations.
 
-**In CI** (`.github/workflows/ci.yml`), five jobs. A newer push to a pull request
+**In CI** (`.github/workflows/ci.yml`), nine jobs. A newer push to a pull request
 cancels the run it replaces; every push to main runs to the end.
 
 | Job | Runs | What fails the job |
@@ -146,6 +146,10 @@ cancels the run it replaces; every push to main runs to the end.
 | `verdict` | `python tools/testing/ci.py --base "$BASE_REF" --join` checks each uploaded wheel against the bytes and commit its proof records, installs it into a fresh venv, proves its source again, transfers the complete baseline ledger and runs `verify --no-tighten`. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict. |
 | `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. | A validation error. |
 | `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on Crapkit. | Action execution errors, a test failure or an event-base complexity breach (`hook-precommit --base "$BASE_REF"`). Its `gate: false` setting leaves score enforcement to `verdict`. |
+| `deploy-linux` | `python tools/deploy/run.py --cadence push --os linux --image core --cache gha -n 4` builds `crapkit-deploy:core`, or reuses it from the Actions cache, and runs every Linux push cell of `tests/deploy` in it with no network. | A cell failure, or a new image whose tools differ from `tools/deploy/pins.toml`. |
+| `deploy-linux-native` | `tools/deploy/toolchain.py`, then `run.py --native --os linux --cadence push --cell lin-native-start` on the bare runner, where the container guard does not apply. | A cell failure. |
+| `deploy-windows` | `tools/deploy/toolchain.py`, then `run.py --native --os windows --cadence push -n 4`: the Windows push cells under cmd.exe, both PowerShells and PortableGit. | A cell failure. |
+| `deploy-action` | `tools/deploy/consumer.py` builds a consumer beside the checkout, `uses: ./crapkit` scores it with gate "true" and delta "false" under a read-only pull-request token, and `tools/deploy/assert_action.py` checks the outcome, the log line and the comment. | An assertion about what the consumer sees. |
 
 Both verdict jobs check installed source bytes: a measurement before mapping
 coverage paths, the join before an uploaded measurement stands for its revision.
