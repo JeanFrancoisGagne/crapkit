@@ -13,6 +13,8 @@ CHECKS = [
      "pytest": [_PACKET + "test_goldens.py"]},
     {"name": "every surface prints the counts", "seconds": 10,
      "pytest": [_PACKET + "test_surfaces_agree.py"]},
+    {"name": "the HTML report's grades, trend, worklist and banner", "seconds": 10,
+     "pytest": [_PACKET + "test_html_report.py"]},
     {"name": "SARIF schema, uris and annotation escapes", "seconds": 3,
      "pytest": [_PACKET + "test_sarif_annotations.py"]},
     {"name": "every MCP tool answers what its CLI command prints", "seconds": 3,

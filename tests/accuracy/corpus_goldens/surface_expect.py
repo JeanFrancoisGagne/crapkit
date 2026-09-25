@@ -138,3 +138,42 @@ def compare(surface: str, view: dict, rules: dict, expected: dict) -> tuple[list
     found = [check(surface, key, field, rule, value, expected[key])
              for key, field, rule, value in pairs]
     return [item for item in found if item], len(pairs)
+
+
+# --- run and scope totals -------------------------------------------------------------------
+
+def _printed_crap(row: dict) -> Fraction:
+    cov = Fraction(float(row["cov"])).limit_denominator(1000)
+    return exact.crap(int(row["ccn"]), cov)
+
+
+def row_totals(scored: str, expected: dict, printed_path: str) -> list[tuple[str, int, Fraction]]:
+    """(scope, ceiling, exact CRAP) per scored.tsv row: the model's value, except
+    the rows of `printed_path` (a file a strict xfail covers), which count at
+    the coverage crapkit printed for them."""
+    rows = surfaces.read_tsv(scored)[1]
+    roster = surfaces.Roster(rows)
+    found = []
+    for row in rows:
+        item = expected[roster.key(row["path"], row["long_name"], row["start"])]
+        crap = _printed_crap(row) if row["path"] == printed_path else item.crap
+        found.append((row["scope"], item.ceiling, crap))
+    return found
+
+
+def _of_scope(totals: list, scope: str | None) -> list[tuple[int, Fraction]]:
+    """(ceiling, crap) for the scope's rows, or for every row when scope is None."""
+    return [(ceiling, crap) for name, ceiling, crap in totals if scope in (None, name)]
+
+
+def scope_totals(totals: list, scope: str | None) -> tuple[int, int, str, str]:
+    """(functions, over target, CRAP load at 2 dp, grade) over a scope's rows."""
+    mine = _of_scope(totals, scope)
+    over = len([crap for ceiling, crap in mine if crap > ceiling])
+    load = sum(crap for _, crap in mine)
+    return len(mine), over, exact.fixed(load, 2), exact.grade(over, len(mine))
+
+
+def average(totals: list) -> str:
+    """The mean CRAP over every row, at 4 dp half-even."""
+    return exact.fixed(sum(crap for *_, crap in totals) / len(totals), 4)
