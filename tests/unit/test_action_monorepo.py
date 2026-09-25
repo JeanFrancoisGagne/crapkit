@@ -38,8 +38,12 @@ artifact = ".crapkit/py.json"
 parser = "coveragepy"
 scopes = ["calc"]
 full_suite = false
+container_ok = true
 """
 
+# The lane writes an empty coverage.py report and runs no suite. container_ok
+# lets this file run inside a container, where crapkit refuses a coveragepy lane
+# that does not set it.
 MAKE_COV = ('import json, os\n'
             'os.makedirs(".crapkit", exist_ok=True)\n'
             'json.dump({"meta": {"branch_coverage": True}, "files": {}},'
