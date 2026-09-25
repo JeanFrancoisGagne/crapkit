@@ -167,6 +167,17 @@ each, `crapkit ratchet prune --baseline N` then `crapkit ratchet seed --baseline
 their lines and verify's refusal name it. Review the diff and commit it before the
 next `crapkit verify`.
 
+Open claims need no step. A claim taken before the upgrade on a def nested three or
+more deep saved the old name, `a.a.b.c( x )`. Once `coverage` has measured under
+version 11, `next-item` and `brief --batch` skip that def under its new name, `verify`
+closes the claim when the def reaches its ceiling, `brief` counts the claim among the
+def's `attempts`, and `crapkit claims release PATH NAME` takes either name. `crapkit
+claims` still lists the name the claim was taken under. Two of the renames leave a
+claim nothing to follow: a generic def that read `]( a : int )`, since that name holds
+no def name, and a def that moved to the next twin key because a one-line def of the
+same name above it is now listed. Release a claim on either before upgrading, and take
+the def again with `crapkit next-item --claim` after the first `coverage`.
+
 ### Analysis version 10
 
 Analysis version 10, in 0.7.0, replaced version 9 from 0.6.0. It separates

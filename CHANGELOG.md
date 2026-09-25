@@ -452,6 +452,39 @@ nothing. Each of these now gets a line naming the object and the next step:
   rather than running it through uvx: uvx puts its own interpreter first on the PATH the
   lane inherits, so the lane's `python` has neither the suite's packages nor pytest-cov.
 
+### A claim taken before analysis version 11 keeps holding its nested def
+
+- A claim saves the name its function was handed out under. One taken under 0.7.x on a
+  Python def nested three or more deep saved `a.a.b.c( x )`, and once `coverage` measured
+  under analysis version 11, which names the def `a.b.c( x )`, that name matched no
+  function. `next-item` and `brief --batch` handed the def to the next session while the
+  claim stood, `verify` never closed the claim, `claims release` refused the name `brief`
+  prints, and `brief` left the claim out of the def's `attempts`. Each now reads a claim
+  against the run's own names, so the claim holds the def under its new name. A run that
+  still holds the saved name keeps it: a def nested in a def of its own name reads
+  `a.a.b.c` under version 11 as well, and its claim stays on it.
+- Two of version 11's renames leave a claim nothing to follow: a generic def that read
+  `]( a : int )`, and a def that moved to the next twin key because a one-line def of
+  its name above it is now listed. The [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-11)
+  says to release a claim on either before upgrading and take it again after the first
+  `coverage`.
+
+### The printed steps from `init` reach a passing verify
+
+- The README's first run is `coverage`, `worklist`, `ratchet seed`, a commit and
+  `verify`. `coverage` printed `-> next: crapkit worklist`, and `worklist` and `seed`
+  printed no next step, so a user who ran only what crapkit printed stopped at the risk
+  map with no mark signed and no verify passed.
+- `worklist` now ends with the command to run next: `coverage` when the run it ranked
+  cannot serve as a baseline, `ratchet seed` while the repo has no `crapkit-ratchet.tsv`,
+  with a line saying what the seed does, and `next-item` after that. `worklist --json`
+  prints the map alone, as before.
+- `ratchet seed` ends with ``-> next: commit crapkit-ratchet.tsv, then run `crapkit
+  verify` ``. A seed from a run another crapkit version measured adds no such line,
+  because its own line already says verify refuses those marks and names the run that
+  restamps them.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

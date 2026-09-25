@@ -179,3 +179,67 @@ def test_the_lanes_page_quotes_the_held_line_tune_prints_for_its_testpath_lanes(
 
     assert held.startswith("# held at 1: "), held
     assert f"\n{held}\n" in _page("docs/lanes.md"), held
+
+
+# --- the next step worklist and seed end with -----------------------------------
+
+TRANSCRIPT_PAGES = ("README.md", *sorted(str(p.relative_to(ROOT)).replace("\\", "/")
+                                         for p in (ROOT / "docs").glob("*.md")))
+
+
+def _as_typed(lines: list[str]) -> list[str]:
+    """The lines as the pages spell crapkit: the console script a reader types."""
+    from crapkit.invocation import _self
+
+    return [line.replace(_self(), "crapkit") for line in lines]
+
+
+def _outputs(page: str, prefix: str) -> list[tuple[str, list[str]]]:
+    lines = _page(page).splitlines()
+    return [(page, _output_under(lines[i + 1:])) for i, line in enumerate(lines)
+            if line.startswith(f"$ {prefix}")]
+
+
+def _printed_blocks(prefix: str, opening: str) -> list[tuple[str, list[str]]]:
+    """(page, output) for every `$ <prefix>...` whose output opens with `opening`."""
+    found = [block for page in TRANSCRIPT_PAGES for block in _outputs(page, prefix)]
+    return [(page, block) for page, block in found if _opens_with(block, opening)]
+
+
+def _opens_with(block: list[str], opening: str) -> bool:
+    return bool(block) and block[0].startswith(opening)
+
+
+def _worklist_endings(root: Path) -> list[list[str]]:
+    """What worklist prints last over a trusted run, before and after the seed."""
+    from types import SimpleNamespace
+
+    from crapkit.cli.queue import _worklist_next
+
+    cfg, run = SimpleNamespace(ratchet_file=MARKS), {"id": 1, "kind": "coverage"}
+    unseeded = _as_typed(_worklist_next(root, cfg, run))
+    (root / MARKS).write_text("", encoding="utf-8")
+    return [unseeded, _as_typed(_worklist_next(root, cfg, run))]
+
+
+def test_every_worklist_transcript_ends_with_the_step_worklist_prints(tmp_path):
+    """worklist printed no next step, and the pages showed it that way; a page
+    that stops at the rows now shows a run the CLI no longer prints."""
+    endings = _worklist_endings(tmp_path)
+    blocks = _printed_blocks("crapkit worklist", "worklist @")
+
+    assert len(blocks) >= 5, blocks
+    assert [(page, block[-2:]) for page, block in blocks
+            if not any(block[-len(end):] == end for end in endings)] == []
+
+
+def test_every_seed_transcript_under_the_running_metric_ends_with_commit_then_verify(capsys):
+    from crapkit.cli.ratchet_cmds import _print_seed_next
+
+    _print_seed_next("seed", MARKS, "")
+    [after] = _as_typed(capsys.readouterr().out.splitlines())
+    seeds = [(page, block) for page, block in _printed_blocks("crapkit ratchet seed", f"{MARKS}: added")
+             if "was measured under" not in block[0]]
+
+    assert len(seeds) >= 6, seeds
+    assert [(page, block[-1]) for page, block in seeds if block[-1] != after] == []

@@ -887,6 +887,8 @@ run 1 @ 387e938f537: 1 functions scored: 1 measured, 1 over ceiling 6, CRAP load
 $ crapkit worklist --repo packages/api
 worklist @ 387e938f537 (run 1, floor ccn>=5, churn 12mo) - 1 of 1 active (worklist_top 50), 0 dormant
   risk     10.5  ccn   7  crap    13.1  cov  50%    6c/1a  calc/grade.py:1  classify( score , attempts , late , bonus )
+no crapkit-ratchet.tsv yet: seed marks each function over its ceiling at today's score, and from then on a mark may only fall
+-> next: crapkit ratchet seed
 ```
 
 `--repo` names the crapkit root, never the git top, and every subcommand you invoke by hand

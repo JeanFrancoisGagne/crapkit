@@ -165,11 +165,16 @@ run 1 @ 549e0ccdcdf: 3 functions scored: 2 measured / 1 untested, 2 over ceiling
 
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 2, tightened 0 - 2 mark(s) vs run 1 (549e0ccdcdf)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
 ```
 
 `seed` marks every function over its scope ceiling from the latest full run, at its current
 score. It is idempotent, and it can only lower: rerunning after an improvement reports
-`tightened`, never `added`.
+`tightened`, never `added`. Its last line names the next two steps: commit the marks file,
+then run `crapkit verify`, whose pass is the repo's first passing verdict. A seed from a run
+another crapkit version measured prints no such line, because verify refuses the stamp it
+signed; its own line names the run that restamps the marks
+([the metric stamp](#the-metric-stamp)).
 
 **Seed once, early.** Skipping it means a legacy repo's existing debt carries no marks, so
 the ratchet check has nothing to compare and coverage rot on untouched code goes unnoticed.
@@ -213,6 +218,7 @@ run 3 the fresh `coverage` somebody ran to move on. Both actions walk back to ru
 ```
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2 and the newer run 3 (pass `--baseline 3` to read it)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
 
 $ crapkit ratchet prune
 crapkit-ratchet.tsv: pruned 0, followed 0 rename(s) - 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2 and the newer run 3 (pass `--baseline 3` to read it)
@@ -418,6 +424,7 @@ reseeding from a fresh coverage run updated the stamp as follows:
 ```
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
 
 $ head -1 crapkit-ratchet.tsv
 # crapkit-analysis=8 lizard=1.24.0
@@ -651,6 +658,7 @@ have not committed yet is still debt somebody owes, and the report says so:
 ```
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run 2 (d9cdcfdcb1a)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
 
 $ crapkit ratchet report
 ratchet burn-down: 1 open mark(s), 0 repaid (0 in the last 30d, 0 in 90d)

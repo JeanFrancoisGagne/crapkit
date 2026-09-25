@@ -68,6 +68,8 @@ crapkit coverage    # runs the lane, joins coverage, stores a scored run
 crapkit worklist    # the ranked risk map
 crapkit ratchet seed
 git add crapkit.toml crapkit-ratchet.tsv .gitignore
+git commit -m "adopt crapkit"
+crapkit verify      # the first passing verdict
 ```
 
 Not a Python repo? `uvx crapkit init` runs the same commands and adds nothing to your
@@ -89,6 +91,8 @@ generated config before running its commands. When detection leaves a commented
 lane, fill it in using the [lane recipes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md).
 Commit the adoption files, then run `crapkit verify` to establish a passing verdict.
 Install the [commit gate](#the-gate) when the config and ratchet are ready.
+Each step prints the next one: `init` names `coverage`, `coverage` names `worklist`,
+`worklist` names `ratchet seed`, and `ratchet seed` names the commit and `verify`.
 
 `coverage` scores, `worklist` ranks:
 
@@ -100,6 +104,8 @@ run 1 @ fae4db93108: 2 functions scored: 2 measured, 1 over ceiling 6, CRAP load
 $ crapkit worklist
 worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) - 1 of 1 active (worklist_top 50), 0 dormant
   risk     14.0  ccn  14  crap    38.5  cov  50%    1c/1a  calc/grade.py:7  classify( score , attempts , late , bonus )
+no crapkit-ratchet.tsv yet: seed marks each function over its ceiling at today's score, and from then on a mark may only fall
+-> next: crapkit ratchet seed
 ```
 
 `risk 14.0` is ccn times a churn weight of one: a one-commit repo has no spread of commits
@@ -915,6 +921,7 @@ because it takes its root from the file named in the hook payload it reads.
 $ crapkit worklist --repo /path/to/repo --scope util --top 1
 worklist @ a7c5c85ac37 (run 1, floor ccn>=5, churn 12mo) - 1 of 3 active (--top 1), 0 dormant
   risk      5.4  ccn   5  crap    30.0  cov   0%    5c/1a  util/stats.py:1  bucket( value , low , high )
+-> next: crapkit next-item
 ```
 
 Before it, argparse reads the path as the subcommand name and exits 2 without ever
@@ -935,13 +942,13 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `inventory [--db PATH] [--export PATH] [--json]` | One lizard pass over every in-scope file into a SQLite snapshot run, cached by content hash. `--db` is the only way to point crapkit at a store outside `.crapkit/`, and only this command accepts it. |
 | `coverage [--lane NAME] [--reuse-artifacts] [--reuse-unchanged] [--export PATH] [--sarif PATH] [--github] [--json]` | Runs the lanes, joins branch coverage onto a fresh inventory, writes a scored run. A failed lane is recorded, not fatal: its scopes fall back to `no-lane` and the run is typed `partial`, so it can never serve as a baseline. See [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md). |
 | `verify [--baseline ID \| --base REF \| --baseline-tsv PATH] [--emit-baseline PATH] [--override REASON] [--reuse-artifacts] [--reuse-unchanged] [--no-tighten] [--sarif PATH] [--github] [--json]` | The full verdict against the trusted baseline: gate on touched functions, ratchet, no new test failures, optional diff-coverage ceiling. The three baseline selectors are mutually exclusive; `--baseline ID` also bypasses the taint rule ([The trusted baseline](#the-trusted-baseline)), and `--baseline-tsv` reads a commit-stamped file so a fresh clone verifies with no store. `--no-tighten` passes the verdict without rewriting the ratchet. Findings a dirty tree produced are tagged `dirty` and counted apart. It reads each istanbul artifact once for coverage, dead lines and its digest, and skips the artifact walk on an empty diff; skipping the whole run on an unchanged tree was measured and rejected, because a key made of HEAD plus the dirty names cannot see a second edit to a file that was already dirty. |
-| `worklist [--top N] [--scope NAME] [--batches N] [--json]` | The risk map: every admitted function ranked by `ccn * churn weight`, floored by `worklist_floor`, with hot simple code and anything over its ceiling admitted past that floor. It ranks finished rows and `no-lane` rows too, marked `ok` and `no-lane`, so it never empties; `next-item` carries the stop condition. Every row carries the function's `crap` and `cov` off the ranked run and its `ratchet_mark` when the committed marks file signs for it, and the header counts the active rows the cap hid: `50 of 3980 active (worklist_top 50)`. `--scope NAME` (repeatable) is exact, not a substring; a name no `[[scope]]` declares is a configuration error, exit 3, naming the declared scopes. `--batches N` **adds** a `batches[]` view cutting the active list into at most N file-disjoint batches with co-changing files kept together, off the same cached pairs `coupling` reads; the normal keys stay. |
+| `worklist [--top N] [--scope NAME] [--batches N] [--json]` | The risk map: every admitted function ranked by `ccn * churn weight`, floored by `worklist_floor`, with hot simple code and anything over its ceiling admitted past that floor. It ranks finished rows and `no-lane` rows too, marked `ok` and `no-lane`, so it never empties; `next-item` carries the stop condition. Every row carries the function's `crap` and `cov` off the ranked run and its `ratchet_mark` when the committed marks file signs for it, and the header counts the active rows the cap hid: `50 of 3980 active (worklist_top 50)`. `--scope NAME` (repeatable) is exact, not a substring; a name no `[[scope]]` declares is a configuration error, exit 3, naming the declared scopes. `--batches N` **adds** a `batches[]` view cutting the active list into at most N file-disjoint batches with co-changing files kept together, off the same cached pairs `coupling` reads; the normal keys stay. The text ends with the command to run next: `coverage` when the ranked run cannot serve as a baseline, `ratchet seed` while the repo has no marks file, `next-item` after that. |
 | `next-item [--top N] [--exclude FRAG] [--scope NAME] [--claim]` | The actionable queue as JSON, with churn, budget estimates and uncovered lines. Same run and same admission floor as `worklist`, a different view of it: `no-lane` rows are skipped and counted in `skipped_no_lane`, and what is left is ranked by `crap` descending rather than by risk, so the item it hands out is often not the worklist's first row. `--exclude FRAG` (repeatable) skips items whose path or function name contains FRAG; `--scope NAME` (repeatable) is exact, not a substring, and a name no `[[scope]]` declares is a configuration error, exit 3, naming the declared scopes. `--claim` holds what it hands out so a second session skips it. `stale` is true when the ranked run's commit is not HEAD, the same field `worklist` carries. Every item carries a `handle`: the bare identifier, or `(anonymous)#N` for a function with no name, which is the name form that survives the edit the item asks for. |
-| `claims [list \| release PATH NAME \| release --all] [--json]` | The open claims, and the way to hand one back without waiting for a verify. `release` takes the bare identifier, the whole long name, or the `handle` the claim was taken under, which is the only one that picks out a single `(anonymous)` claim. |
+| `claims [list \| release PATH NAME \| release --all] [--json]` | The open claims, and the way to hand one back without waiting for a verify. `release` takes the bare identifier, the whole long name, or the `handle` the claim was taken under, which is the only one that picks out a single `(anonymous)` claim. A claim taken before analysis version 11 on a nested Python def also answers to the name that version gives the def. |
 | `brief FILE NAME [--batch N] [--json]` | The start-editing packet for one function: its own `source` text, every function in the file, the scored row and the scope ceiling, the ratchet mark and what the gate will bind on, uncovered lines, duplication twins, file churn, coupling partners, the config's notes, and the literal commands for the rest of the loop. Plus `handle`, `remedy` and the same `est_splits` / `est_uncovered_paths` the queue prints, and a `commands.refresh` that writes a run (`refresh_writes_run`) rather than re-reading the stale one. `NAME` takes the bare identifier, the long name `next-item` printed, the function's start line, `(anonymous)#N` for a function printed `(anonymous)` counting the file's anonymous functions from the top, or `NAME#2` for the second of several functions a file gives one name to. `--batch N` drops the positionals and emits `packets[]` instead: the top N of the queue, built from one read of the store and one duplication pass over the snapshot for the whole batch (batch of 5: 11.8 s to 5.2 s, output byte-identical to five separate calls). |
 | `explain FILE NAME [--history] [--tests] [--json]` | A function's score across runs plus its mark. `NAME` resolves exact first: a function whose bare identifier or long name is exactly `NAME` wins, and only when nothing matches exactly does it fall back to a prefix match, so `route` explains `route` rather than every `route_*` beside it. It also takes the function's start line, the form `brief` takes, which is how you open one printed `(anonymous)`. `--history` adds the commits that touched it (`git log -L`), each carrying its message `body`, `--tests` the tests that covered it, which needs coverage.py contexts turned on ([recipe](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#test-attribution-for-explain---tests)). `--json` emits the same content as one `schema` 1 object. |
 | `rescore FILE ... [--gate] [--json]` | Fresh complexity for named files over the latest run's stale coverage, joined by name. A function on a line span another one shares, and a Python def whose body starts on the line its signature ends, scores untested, as the coverage run scores it. Advisory: it writes no run. `--gate` applies the pre-commit hook's policy to the same selection the hook uses (functions the tree changed since HEAD), minus functions whose CRAP sits at or under their ratchet mark, and exits 6. A marked function past its mark is gated; the pre-commit hook exempts on the mark's existence instead, because a staged blob has no coverage to score. |
-| `ratchet seed \| prune \| merge \| move \| report [--baseline ID] [--enforce] [--json]` | The mark lifecycle: seed new debt, prune gone code (a mark whose file git renamed follows it), merge as a git driver, move re-paths marks, report reads burn-down from the file's own git history. `seed` and `prune` take `--baseline ID` to read a named run instead of verify's pick, refused for the reasons `verify --baseline` refuses one. See [docs/ratchet.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md). |
+| `ratchet seed \| prune \| merge \| move \| report [--baseline ID] [--enforce] [--json]` | The mark lifecycle: seed new debt, prune gone code (a mark whose file git renamed follows it), merge as a git driver, move re-paths marks, report reads burn-down from the file's own git history. `seed` ends by naming the commit and `verify` that follow it. `seed` and `prune` take `--baseline ID` to read a named run instead of verify's pick, refused for the reasons `verify --baseline` refuses one. See [docs/ratchet.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md). |
 | `runs [list \| prune [--keep N]] [--json]` | Run history, and retention. `list` marks the run `verify` compares against today `baseline`, and prints `verdict=-` for a run that produces no verdict rather than one that failed. See [The trusted baseline](#the-trusted-baseline). `--keep` (default 5) is a floor on the newest trusted runs, not a cap: the digest pair, every passing verify baseline, every run an override names, and the newest non-hook run are kept too. `prune` VACUUMs afterwards. |
 | `overrides [--json]` | The override audit trail: who granted what, when, and why. |
 | `trend [--json]` | Totals per trusted run: functions, over-target count, CRAP load, average, per-scope rollup. It reads a per-run rollup table rather than rescanning every scored row, and fills that table for any run missing one, so it writes to the store (best effort: a read-only `.crapkit/` costs the speed, not the command). |
@@ -1006,6 +1013,7 @@ worklist @ a7c5c85ac37 (run 1, floor ccn>=5, churn 12mo) - 3 of 3 active (workli
   risk      5.4  ccn   5  crap    30.0  cov   0%    5c/1a  util/stats.py:1  bucket( value , low , high )
   risk      4.5  ccn   9  crap    90.0  cov   0%    1c/1a  util/curve.py:1  curve( scores , mode , floor , ceiling , skip_none )
   risk      4.3  ccn   4  crap     4.2  cov  75%    5c/1a  util/stats.py:13  spread( values , cap )  ok
+-> next: crapkit next-item
 ```
 
 `bucket` at ccn 5 outranks `curve` at ccn 9 because five commits touched it and one
@@ -1245,6 +1253,8 @@ run 1 @ fae4db93108: 2 functions scored: 2 measured, 1 over ceiling 6, CRAP load
 $ crapkit worklist
 worklist @ fae4db93108 (run 1, floor ccn>=5, churn 12mo) - 1 of 1 active (worklist_top 50), 0 dormant
   risk     14.0  ccn  14  crap    38.5  cov  50%    1c/1a  calc/grade.py:7  classify( score , attempts , late , bonus )
+no crapkit-ratchet.tsv yet: seed marks each function over its ceiling at today's score, and from then on a mark may only fall
+-> next: crapkit ratchet seed
 ```
 
 Columns: `risk`, `ccn`, the function's `crap` and `cov` off the ranked run (`-` on an
@@ -1253,6 +1263,11 @@ function's long name, then a marker on rows the burn-down queue will not hand ou
 `no-lane`). The header counts the active rows against their total, so `50 of 3980 active
 (worklist_top 50)` says what the cap hid, and reads `(--top N)` when the flag set the cap.
 `--json` also carries `ccn_std`, `weight` and `ratchet_mark`.
+
+The last line names the step after this one. It is `ratchet seed` while the repo has no
+marks file, `next-item` once it has one, and `coverage` when the ranked run cannot serve
+as a baseline: an inventory run, a partial run or a failed verify. This walk looks at the
+top item first, in step 4, and seeds in step 5.
 
 **`worklist` is the risk map, not a to-do list.** It ranks finished rows too, so it does
 not empty when the burn-down does. `next-item` is the other view of that run: it drops the
@@ -1278,9 +1293,13 @@ function at its current score, and from then on nothing may get worse.
 ```
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run 1 (fae4db93108)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
 
 $ git add crapkit.toml crapkit-ratchet.tsv .gitignore && git commit -m "adopt crapkit"
 ```
+
+A `verify` here would pass and give the repo its first passing verdict. This walk runs it
+in step 6, after the fix.
 
 ### 6. Fix it and verify
 
@@ -1393,6 +1412,8 @@ run 1 @ 8bfbe613fcd: 2 functions scored: 2 measured, 1 over ceiling 6, CRAP load
 $ crapkit worklist
 worklist @ 8bfbe613fcd (run 1, floor ccn>=5, churn 12mo) - 1 of 1 active (worklist_top 50), 0 dormant
   risk     15.0  ccn  15  crap    52.4  cov  45%    1c/1a  src/grade.ts:8  classify ( row Row )
+no crapkit-ratchet.tsv yet: seed marks each function over its ceiling at today's score, and from then on a mark may only fall
+-> next: crapkit ratchet seed
 ```
 
 `classify` is ccn 15 against a ceiling of 6: one function holding the late-and-retry
@@ -1406,6 +1427,7 @@ can get worse while you burn this one down.
 ```
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run 1 (8bfbe613fcd)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
 
 $ git add crapkit.toml crapkit-ratchet.tsv .gitignore && git commit -m "adopt crapkit"
 ```

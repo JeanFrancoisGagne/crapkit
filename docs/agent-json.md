@@ -244,6 +244,12 @@ A claim is released three ways: `verify` releases it once the function sits at i
 or its commit leaves the history, `runs prune` drops claims older than the oldest kept run,
 and `crapkit claims release` closes one by hand.
 
+A claim keeps the name it was handed out under. One taken before analysis version 11 on
+a Python def nested three or more deep saved `a.a.b.c( x )`, which version 11 names
+`a.b.c( x )`. `next-item`, `brief --batch`, `verify` and `brief`'s `attempts` match it
+against the run's own names, so it keeps holding that def
+([upgrading](upgrading.md#analysis-version-11)).
+
 ---
 
 ## `claims`
@@ -280,7 +286,9 @@ every anonymous function in a file carries the same `(anonymous)` long name, and
 handle stays valid after the session's own edit moves the lines. `null` on a claim taken
 before handles existed, or by a caller that had none.
 
-Release takes any name form:
+Release takes any name form. A claim taken before analysis version 11 on a nested def
+also answers to the name version 11 gives the def, when no claim answers to the name as
+saved:
 
 ```
 $ crapkit claims release calc/grade.py classify --json

@@ -229,7 +229,9 @@ def build_parser() -> argparse.ArgumentParser:
                           "or, with --all, every one")
     clm.add_argument("target", nargs="*", metavar="ARG",
                      help="release: PATH NAME, taking either the bare identifier or the "
-                          "long_name next-item printed; PATH" + _WHERE)
+                          "long_name next-item printed, and for a claim taken before "
+                          "analysis version 11 on a nested def, the name that version "
+                          "gives it; PATH" + _WHERE)
     clm.add_argument("--all", action="store_true", help="release: close every open claim")
     clm.add_argument("--repo", **_REPO_FLAG)
     clm.add_argument("--json", action="store_true", help="machine output")
@@ -366,7 +368,8 @@ def build_parser() -> argparse.ArgumentParser:
     chk.set_defaults(func=_Handler("claude_hook", "cmd_claude_hook"))
 
     wl = sub.add_parser("worklist", help="ranked risk map: every admitted function, "
-                                         "finished and no-lane rows included, so it never empties")
+                                         "finished and no-lane rows included, so it never empties; "
+                                         "ends with the command to run next")
     wl.add_argument("--repo", **_REPO_FLAG)
     wl.add_argument("--top", type=int, default=None, help="cap the active list (default: config worklist_top)")
     wl.add_argument("--scope", action="append", default=[], metavar="NAME",
@@ -374,7 +377,8 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--batches", type=int, default=None, metavar="N",
                     help="split the active list into at most N batches with no shared "
                          "files, co-changing files kept together: one per agent session")
-    wl.add_argument("--json", action="store_true", help="print as JSON")
+    wl.add_argument("--json", action="store_true",
+                    help="print as JSON: the map alone, without the next-step lines the text ends with")
     wl.set_defaults(func=_Handler("queue", "cmd_worklist"))
 
     ini = sub.add_parser("init", help="sniff the repo and write a starter crapkit.toml")

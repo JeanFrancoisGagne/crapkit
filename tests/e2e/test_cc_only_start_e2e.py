@@ -162,7 +162,8 @@ def test_the_readme_start_matches_the_commands_this_test_runs():
     the sequence must change this list, not silently narrow what runs below."""
     assert start_commands() == [["crapkit", "init"], ["crapkit", "doctor"],
                                 ["crapkit", "coverage"],
-                                ["crapkit", "worklist"], ["crapkit", "ratchet", "seed"]]
+                                ["crapkit", "worklist"], ["crapkit", "ratchet", "seed"],
+                                ["crapkit", "verify"]]
 
 
 def test_the_printed_start_runs_clean_on_a_go_only_repo(go_repo: Path):
