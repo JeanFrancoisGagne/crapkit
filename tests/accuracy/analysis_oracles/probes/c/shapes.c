@@ -39,3 +39,14 @@ int braceless_then_loop(int a, int n) {
     }
     return 2;
 }
+
+int count(int n) {
+    int count = n;
+    return count;
+}
+
+int two_ternaries(int x, int y) {
+    int a = x ? 1 : 2;
+    int b = y ? 3 : 4;
+    return a + b;
+}

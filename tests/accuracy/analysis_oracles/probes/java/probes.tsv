@@ -100,3 +100,6 @@ j-annotation-default	Element.java	alternate	rows	0	The Java Language Specificati
 j-anon-field	Anonymous.java	make	nloc	6	lizard 1.24.0 README: NLOC counts lines of code without comments; make's own lines, the anonymous class's field and its method's header among them	AO-JAVA-ANON-FIELD-NLOC
 j-nested-ternary	Ternaries.java	pick	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1, the ternary in its else operand +2	AO-COG-TERNARY-NEST
 j-try-loop	Ternaries.java	tryLoop	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: try opens no level, the for does	AO-N-TRY
+j-closure-if	Lambdas.java	closureIf	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the closure raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
+j-closure-if	Lambdas.java	closureIf	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the closure	AO-N-CLOSURE-IF
+j-closure-if	Lambdas.java	closureIf	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	

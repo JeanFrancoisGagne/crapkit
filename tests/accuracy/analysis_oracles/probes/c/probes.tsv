@@ -93,3 +93,8 @@ c-decimal-point	shapes.c	decimal_point	nloc	9	lizard 1.24.0 README: NLOC counts 
 c-for-then-ifs	shapes.c	for_then_ifs	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: for, if, if	
 c-braceless	shapes.c	braceless_then_loop	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if inside the for is two levels deep	AO-ND-BRACELESS
 c-braceless	shapes.c	braceless_then_loop	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, for +1, the if inside +2	
+c-name-variable	shapes.c	count	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; Recursion: the local variable count is no call	AO-COG-RECURSION-NAME-C
+c-name-variable	shapes.c	count	params	1	C11 sec. 6.9.1: count declares one parameter, n	
+c-two-ternaries	shapes.c	two_ternaries	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: two conditional operators side by side, neither inside the other	AO-ND-TERNARY-PAIR
+c-two-ternaries	shapes.c	two_ternaries	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two conditional operators at level 0, +1 each	
+c-two-ternaries	shapes.c	two_ternaries	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two conditional operators	

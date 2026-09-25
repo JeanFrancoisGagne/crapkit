@@ -91,3 +91,6 @@ c-guarded	constructs.cpp	guarded	ccn_mod	3	lizard 1.24.0 README option -m: a swi
 c-guarded	constructs.cpp	guarded	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two catch clauses at nesting 0, +1 each	
 c-guarded	constructs.cpp	guarded	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each catch body; try opens none	
 c-guarded	constructs.cpp	guarded	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	AO-C-VOID-FNPTR-PARAM
+c-closure-if	shapes.cpp	closure_if	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the closure raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
+c-closure-if	shapes.cpp	closure_if	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the closure	AO-N-CLOSURE-IF
+c-closure-if	shapes.cpp	closure_if	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	

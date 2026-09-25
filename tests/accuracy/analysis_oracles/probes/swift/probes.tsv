@@ -91,3 +91,6 @@ c-fact	Constructs.swift	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch 
 c-fact	Constructs.swift	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
 c-fact	Constructs.swift	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
 c-fact	Constructs.swift	fact	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+s-closure-if	Shapes.swift	closureIf	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the closure raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
+s-closure-if	Shapes.swift	closureIf	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the closure	AO-N-CLOSURE-IF
+s-closure-if	Shapes.swift	closureIf	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	

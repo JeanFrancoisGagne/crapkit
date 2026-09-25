@@ -91,3 +91,21 @@ c-guarded	constructs.m	guarded	ccn_mod	3	lizard 1.24.0 README option -m: a switc
 c-guarded	constructs.m	guarded	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two catch clauses at nesting 0, +1 each	
 c-guarded	constructs.m	guarded	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each catch body; try opens none	
 c-guarded	constructs.m	guarded	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions (a C function is Objective-C): the parameters the function declares	AO-C-VOID-FNPTR-PARAM
+o-params	shapes.m	pairFor:	params	2	Apple, Programming with Objective-C, Methods Can Take Arguments: pairFor:to: declares a and b	AO-OBJC-PARAMS
+o-params	shapes.m	pairFor:	start	5	Apple, Programming with Objective-C: a method starts on its declaring line	
+o-params	shapes.m	pairFor:	end	7	Apple, Programming with Objective-C: a method ends at the brace that closes its body	
+o-params	shapes.m	pairFor:	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+o-narrower	shapes.m	narrower:	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; Recursion: [self narrower:] is another method than narrower:to:	AO-OBJC-SELECTOR-RECURSION
+o-super	shapes.m	viewDidLoad	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; Recursion: [super viewDidLoad] runs the superclass's method	AO-OBJC-SELECTOR-RECURSION
+o-recursion	shapes.m	sum:	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the if +1, and Recursion +1 for [self sum:with:]	
+o-recursion	shapes.m	sum:	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+o-and-selector	shapes.m	join:	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the selector part `and` is a name, not an operator	AO-COG-KEYWORD-NAMES-BRACE
+o-and-selector	shapes.m	join:	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+o-block	shapes.m	withBlock:	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the block raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
+o-block	shapes.m	withBlock:	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the block	AO-N-CLOSURE-IF
+o-block	shapes.m	withBlock:	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+o-extension	shapes.m	Extension	rows	0	Apple, Programming with Objective-C, Class Extensions: an interface declares no method body	AO-OBJC-IVAR-BLOCK
+o-extension-adopting	shapes.m	_offset	rows	0	Apple, Programming with Objective-C, Class Extensions: an instance variable is no function	AO-OBJC-IVAR-BLOCK
+o-name-variable	shapes.m	serializer	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; Recursion: the local variable serializer is no call	AO-COG-RECURSION-NAME-C
+o-pragmas	shapes.m	pragmas	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments; the three #pragma lines are code	AO-C-DIRECTIVE-NLOC
+o-pragmas	shapes.m	pragmas	start	59	C11 sec. 6.9.1: a function starts on its declaring line	

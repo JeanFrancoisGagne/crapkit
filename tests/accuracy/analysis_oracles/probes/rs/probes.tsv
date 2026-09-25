@@ -107,3 +107,6 @@ r-nested-let-else	shapes.rs	nested_let_else	cognitive	3	Sonar Cognitive Complexi
 r-closure-depth	shapes.rs	closure_depth	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: a closure raises the nesting level	AO-N-CLOSURE
 r-arm-continue	shapes.rs	arm_continue	cognitive	5	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, match +2, if +2; an unlabeled continue adds nothing (Jumps to labels)	AO-RS-ARM-JUMP
 r-arm-continue	shapes.rs	arm_continue	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; for, the arm 0, if	
+r-closure-if	shapes.rs	closure_if	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the closure raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
+r-closure-if	shapes.rs	closure_if	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the closure	AO-N-CLOSURE-IF
+r-closure-if	shapes.rs	closure_if	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	

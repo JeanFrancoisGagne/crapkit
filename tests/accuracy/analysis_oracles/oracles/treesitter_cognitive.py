@@ -7,7 +7,8 @@ no lizard reader and no crapkit.
   (+1 and the nesting level); else if and else (+1, no nesting increment);
   each sequence of like binary logical operators (+1); a goto and a break or
   continue that names a label (+1, "Jumps to labels"); direct recursion (+1
-  once, "Recursion").
+  once, "Recursion"). An Objective-C method recurses when it sends its own
+  full selector to self.
 - B2 nesting level: the bodies of if, else if, else, switch, loops, catch and
   a conditional operator, and a closure's body, sit one level deeper than the
   structure; a condition sits at the structure's own level.
@@ -38,6 +39,7 @@ class Count:
     spec: object
     data: bytes
     name: bytes
+    selector: bytes = b""
     total: int = 0
     recursed: bool = False
     deepest: int = 0
@@ -137,9 +139,41 @@ def _callee(node):
     return _named_callee(node)
 
 
+def selector(parts, data: bytes) -> bytes:
+    """An Objective-C selector: each part, with a colon where an argument follows it."""
+    text = b""
+    for part in parts:
+        after = part.next_sibling
+        takes = after is not None and after.type in (":", "method_parameter")
+        text += data[part.start_byte:part.end_byte] + (b":" if takes else b"")
+    return text
+
+
+def method_selector(fn, data: bytes) -> bytes:
+    if fn.type != "method_definition":
+        return b""
+    return selector([kid for kid in fn.children if kid.type == "identifier"], data)
+
+
+def _messages_itself(node, count: Count) -> bool:
+    """[self sel...] with the method's own full selector; [super ...] is another method."""
+    receiver = node.child_by_field_name("receiver")
+    if receiver is None or count.data[receiver.start_byte:receiver.end_byte] != b"self":
+        return False
+    parts = [kid for index, kid in enumerate(node.children)
+             if node.field_name_for_child(index) == "method"]
+    return selector(parts, count.data) == count.selector
+
+
+def _calls_itself(node, count: Count) -> bool:
+    if node.type == "message_expression":
+        return bool(count.selector) and _messages_itself(node, count)
+    callee = _callee(node)
+    return callee is not None and count.data[callee.start_byte:callee.end_byte] == count.name
+
+
 def _recursion(node, count: Count) -> int:
-    callee = None if count.recursed or not count.name else _callee(node)
-    if callee is None or count.data[callee.start_byte:callee.end_byte] != count.name:
+    if count.recursed or not count.name or not _calls_itself(node, count):
         return 0
     count.recursed = True
     return 1
@@ -257,7 +291,8 @@ PARAMETER_LISTS = frozenset({"parameters", "parameter_list", "formal_parameters"
 
 def measure(fn, spec, data: bytes) -> Count:
     name = counters.name_node(fn)
-    count = Count(spec, data, b"" if name is None else data[name.start_byte:name.end_byte])
+    count = Count(spec, data, b"" if name is None else data[name.start_byte:name.end_byte],
+                  method_selector(fn, data))
     for child in (child for child in fn.children if child.type not in PARAMETER_LISTS):
         _visit(child, 0, count)
     return count

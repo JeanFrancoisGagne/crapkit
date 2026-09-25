@@ -79,3 +79,11 @@ pub trait Builder {
 pub fn after_trait(n: i32) -> i32 {
     n + 1
 }
+
+pub fn closure_if(v: Vec<i32>) {
+    v.iter().for_each(|x| {
+        if *x > 0 {
+            show(x);
+        }
+    });
+}

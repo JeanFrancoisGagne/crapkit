@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from accuracy.analysis_oracles.oracles import treesitter_cognitive as cognitive
 from accuracy.analysis_oracles.oracles import treesitter_counters as counters
 
 ROW = "row"
@@ -153,7 +154,8 @@ def void_function_pointer_param(fn, context: Context) -> bool:
     return text.startswith(b"void") and b"(" in text
 
 
-def _walk(node):
+def walk(node):
+    """node and every node under it."""
     stack = [node]
     while stack:
         current = stack.pop()
@@ -183,7 +185,7 @@ def _loose_function_type(node) -> bool:
 def loose_function_types(context: Context) -> list:
     """The start bytes of a Go file's loose function types, cached per file."""
     if "loose" not in context.facts:
-        context.facts["loose"] = sorted(node.start_byte for node in _walk(context.tree.root_node)
+        context.facts["loose"] = sorted(node.start_byte for node in walk(context.tree.root_node)
                                         if _loose_function_type(node))
     return context.facts["loose"]
 
@@ -205,7 +207,7 @@ def near_loose_function_type(fn, context: Context) -> bool:
 
 def _parameter_nodes(fn, context: Context) -> list:
     listed = counters._parameter_list(fn)
-    return [] if listed is None or listed == fn else list(_walk(listed))
+    return [] if listed is None or listed == fn else list(walk(listed))
 
 
 def parameter_holds(kinds):
@@ -226,8 +228,8 @@ def _negation(node) -> bool:
 
 
 def _negated_calls_with_commas(node) -> bool:
-    negated = (inner for inner in _walk(node) if _negation(inner))
-    return any(_call_with_commas(args) for inner in negated for args in _walk(inner))
+    negated = (inner for inner in walk(node) if _negation(inner))
+    return any(_call_with_commas(args) for inner in negated for args in walk(inner))
 
 
 def negated_call_run(fn, context: Context) -> bool:
@@ -294,7 +296,7 @@ def _first_after(starts: list, end: int):
 
 
 def _after_signatures(context: Context) -> set:
-    signatures = [node.end_byte for node in _walk(context.tree.root_node)
+    signatures = [node.end_byte for node in walk(context.tree.root_node)
                   if node.type == "function_signature_item"]
     starts = sorted(fn.start_byte for fn in counters.functions(context.tree, context.spec))
     return {_first_after(starts, end) for end in signatures}
@@ -302,7 +304,7 @@ def _after_signatures(context: Context) -> set:
 
 def signature_line(context: Context, start: int) -> bool:
     return any(node.type == "function_signature_item" and node.start_point[0] + 1 == start
-               for node in _walk(context.tree.root_node))
+               for node in walk(context.tree.root_node))
 
 
 # --- every brace language -----------------------------------------------------------------------
@@ -350,7 +352,7 @@ def structure_in_else(fn, context: Context) -> bool:
     """An if, loop, switch, catch or conditional expression inside a plain else's body."""
     kinds = _structures(context) | context.spec.catches | context.spec.ternaries
     return any(node.type in context.spec.ifs and any(
-        inner.type in kinds for part in _else_parts(node, context) for inner in _walk(part))
+        inner.type in kinds for part in _else_parts(node, context) for inner in walk(part))
                for node in own(fn, context))
 
 
@@ -377,7 +379,7 @@ def _nested_after_statement(fn, context: Context) -> list:
 
 
 def _holds_structure(node, kinds) -> bool:
-    return any(inner.type in kinds for inner in _walk(node) if inner != node)
+    return any(inner.type in kinds for inner in walk(node) if inner != node)
 
 
 def _semicolon_header(node, kinds) -> bool:
@@ -421,7 +423,7 @@ def _quoted_substitution(node, context: Context) -> bool:
     return node.type == "string" and any(
         inner.type == "command_substitution" and (b"&&" in context.text(inner)
                                                   or b"||" in context.text(inner))
-        for inner in _walk(node))
+        for inner in walk(node))
 
 
 def quoted_substitution(fn, context: Context) -> bool:
@@ -431,7 +433,7 @@ def quoted_substitution(fn, context: Context) -> bool:
 
 def optional_mark(fn, context: Context) -> bool:
     """A Zig optional type (`?T`) or unwrap (`x.?`) anywhere in fn, its signature too."""
-    return any(not node.is_named and node.type in ("?", ".?") for node in _walk(fn))
+    return any(not node.is_named and node.type in ("?", ".?") for node in walk(fn))
 
 
 def payload_else_if(fn, context: Context) -> bool:
@@ -461,9 +463,9 @@ def _leaves_level_open(node, context: Context) -> bool:
 
 def braceless_then_structure(fn, context: Context) -> bool:
     """AO-ND-BRACELESS: a braceless if or a conditional expression ends before another
-    structure."""
+    structure or conditional expression."""
     ends = [node.end_byte for node in own(fn, context) if _leaves_level_open(node, context)]
-    starts = _starts_of(fn, context, _structures(context))
+    starts = _starts_of(fn, context, _structures(context) | context.spec.ternaries)
     return any(end <= start for end in ends for start in starts)
 
 
@@ -558,7 +560,7 @@ def _java_extra_line(node) -> int | None:
 
 
 def java_extra_line(context: Context, start: int) -> bool:
-    return any(_java_extra_line(node) == start for node in _walk(context.tree.root_node))
+    return any(_java_extra_line(node) == start for node in walk(context.tree.root_node))
 
 
 def after_local_annotation(fn, context: Context) -> bool:
@@ -576,6 +578,90 @@ def _all(*languages: str) -> frozenset:
 
 
 C_FAMILY = _all("c", "cpp", "objc", "java")
+# --- Objective-C and closures ------------------------------------------------------------------
+
+def _message_parts(node) -> list:
+    return [kid for index, kid in enumerate(node.children)
+            if node.field_name_for_child(index) == "method"]
+
+
+def _messages_named(fn, context: Context, wanted: bytes) -> list:
+    """The messages in fn whose first selector part is spelled `wanted`."""
+    return [node for node in own(fn, context) if node.type == "message_expression"
+            and [context.text(part) for part in _message_parts(node)[:1]] == [wanted]]
+
+
+def _to_self_as(node, context: Context, own_selector: bytes) -> bool:
+    receiver = node.child_by_field_name("receiver")
+    return (receiver is not None and context.text(receiver) == b"self"
+            and cognitive.selector(_message_parts(node), context.data) == own_selector)
+
+
+def selector_recursion(fn, context: Context) -> bool:
+    """An Objective-C method sends a message that starts with its own first selector
+    part, and none that sends its exact selector to self."""
+    own_selector = cognitive.method_selector(fn, context.data)
+    if not own_selector:
+        return False
+    messages = _messages_named(fn, context, context.text(counters.name_node(fn)))
+    return bool(messages) and not any(_to_self_as(node, context, own_selector)
+                                      for node in messages)
+
+
+def _callee_of_call(node) -> bool:
+    parent = node.parent
+    return parent is not None and parent.type == "call_expression" and (
+        parent.child_by_field_name("function") == node)
+
+
+def name_not_called(fn, context: Context) -> bool:
+    """fn's name spelled in its body other than as a plain call's callee: a variable, a
+    field, a message to another receiver."""
+    name = counters.name_node(fn)
+    if name is None:
+        return False
+    wanted = context.text(name)
+    return any(_names_without_calling(node, name, wanted, context) for node in own(fn, context))
+
+
+def _names_without_calling(node, name, wanted: bytes, context: Context) -> bool:
+    """node spells `wanted` as an identifier other than the definition's own name and
+    other than a plain call's callee."""
+    return (node.type in ("identifier", "field_identifier") and node != name
+            and context.text(node) == wanted and not _callee_of_call(node))
+
+
+def closure_structure(fn, context: Context) -> bool:
+    """A closure, lambda or block literal in fn that holds a structure the nesting
+    level scores."""
+    spec = context.spec
+    kinds = spec.ifs | spec.loops | spec.switches | spec.catches | spec.ternaries
+    return any(node.type in spec.lambdas and any(inner.type in kinds for inner in walk(node))
+               for node in own(fn, context))
+
+
+def method_parameters(fn, context: Context) -> bool:
+    return any(kid.type == "method_parameter" for kid in fn.children)
+
+
+def _ivar_extensions(context: Context) -> list:
+    """(first line, last line) of each class extension that holds instance variables."""
+    if "ivar_extensions" not in context.facts:
+        context.facts["ivar_extensions"] = [
+            (node.start_point[0] + 1, node.end_point[0] + 1)
+            for node in walk(context.tree.root_node) if _ivar_extension(node)]
+    return context.facts["ivar_extensions"]
+
+
+def _ivar_extension(node) -> bool:
+    return node.type == "class_interface" and (
+        {"(", "instance_variables"} <= {kid.type for kid in node.children})
+
+
+def ivar_block_line(context: Context, start: int) -> bool:
+    return any(first <= start <= last for first, last in _ivar_extensions(context))
+
+
 ND_LANGUAGES = _all("c", "cpp", "objc", "java", "go", "rust", "swift", "zig", "shell")
 SHAPES = [
     # nesting: lizard's ND column against the Sonar B2 depth
@@ -674,6 +760,13 @@ SHAPES = [
     Shape("AO-RS-ARM-JUMP", _all("rust"), COGNITIVE, arm_jump),
     Shape("AO-RS-WHERE", _all("rust"), CCN,
           lambda fn, c: any(node.type == "where_clause" for node in fn.children)),
+    # Objective-C and closures
+    Shape("AO-OBJC-PARAMS", _all("objc"), PARAMS, method_parameters),
+    Shape("AO-OBJC-SELECTOR-RECURSION", _all("objc"), COGNITIVE, selector_recursion),
+    Shape("AO-COG-KEYWORD-NAMES-BRACE", _all("objc"), COGNITIVE, named_like({b"and", b"or"})),
+    Shape("AO-COG-CLOSURE", ND_LANGUAGES, COGNITIVE, closure_structure),
+    Shape("AO-COG-RECURSION-NAME-C", C_FAMILY, COGNITIVE, name_not_called),
+    Shape("AO-C-DIRECTIVE-NLOC", C_FAMILY, NLOC, lambda fn, c: has_type(fn, c, {"preproc_call"})),
 ]
 
 
@@ -698,4 +791,5 @@ def _loose_line(context: Context, start: int) -> bool:
     return start in lines
 
 
-EXTRA_ROWS = {"go": _loose_line, "rust": signature_line, "java": java_extra_line}
+EXTRA_ROWS = {"go": _loose_line, "rust": signature_line, "java": java_extra_line,
+              "objc": ivar_block_line}
