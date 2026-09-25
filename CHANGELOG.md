@@ -130,10 +130,14 @@ the report gone or unreadable. Every reader of those fields took that absence fo
 
 ### A value nobody measured is named, not printed as a fact
 
-The shallow-clone refusal below, and the `verify --reuse-artifacts` refusal and the
-gates' refusal of an unread file above, can change a CI job's exit code; the [upgrade
+Nine changes in this release can move an exit code: the gates' refusal of an unread
+file and the advisory hook's exit 2, the `verify --reuse-artifacts` refusal of an
+unreadable junit, the shallow-clone refusal below, the refusal of a coverage artifact
+missing a count, the `--reuse-artifacts` refusal while `.crapkit/artifacts.json` cannot be
+read, the marks verify judges when the marks file is deleted or emptied, and the failure
+lists verify reads from an older run, in both directions. The [upgrade
 guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#missing-values-that-081-names)
-says what to change. A repo upgrading from 0.4.15 or older runs `crapkit coverage` once
+lists each with its old and new exit and what to change. A repo upgrading from 0.4.15 or older runs `crapkit coverage` once
 without `--reuse-artifacts` first: those stamps hold no refusal, so the first reuse scores
 an artifact a failed lane left, and one real run records the refusal for a lane that still
 writes nothing.

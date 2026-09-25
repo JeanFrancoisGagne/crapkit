@@ -95,6 +95,79 @@ def test_the_upgrade_notes_name_each_change_that_moves_an_exit_code_or_a_count()
     assert "0.4.15" in notes and "without `--reuse-artifacts`" in notes
 
 
+# Every change in 0.8.1 that moves an exit code: (what the job meets, a command
+# the row names, the 0.8.0 exit, the 0.8.1 exit). A change the table leaves out
+# fails a CI job with no line in the guide that says why.
+EXIT_MOVES = {
+    "unread-file-gates": ("a changed file no reader could read", "`rescore --gate`", "0", "6"),
+    "unread-file-hook": ("an edit that leaves a file no reader can read", "`claude-hook`",
+                         "0", "2"),
+    "unreadable-junit": ("a declared junit it reused and cannot read",
+                         "`verify --reuse-artifacts`", "0", "5"),
+    "shallow-enforce": ("a debt policy key in a shallow clone", "`ratchet report --enforce`",
+                        "0 or 1", "4"),
+    "artifact-count": ("a coverage artifact missing a count", "`coverage`, `verify`", "0", "5"),
+    "unreadable-stamps": ("a `.crapkit/artifacts.json` that cannot be read",
+                          "`coverage --reuse-artifacts`, `verify --reuse-artifacts`", "0", "5"),
+    "marks-deleted": ("a deleted or emptied marks file", "`verify`", "0",
+                      "7, or 4 when the clone lacks the history"),
+    "failures-walk-back": ("a failure the baseline's own commit had", "`verify`", "8", "0"),
+    "retried-pass-0.7": ("a failure a 0.7.x verify retried to a pass", "`verify`", "0", "8"),
+}
+
+
+def _table_rows(text: str) -> list[list[str]]:
+    rows = [line.strip().strip("|").split("|") for line in text.splitlines()
+            if line.startswith("| ") and not line.startswith("| What")]
+    return [[cell.strip() for cell in row] for row in rows]
+
+
+@pytest.mark.parametrize("move", sorted(EXIT_MOVES))
+def test_the_upgrade_table_names_each_change_that_moves_an_exit_code(move: str):
+    meets, command, was, now = EXIT_MOVES[move]
+
+    rows = [row for row in _table_rows(_section(UPGRADING, UPGRADE_NOTES))
+            if row[0].startswith(meets)]
+
+    assert len(rows) == 1, f"no single row for {meets!r}"
+    assert command in rows[0][1] and rows[0][2:] == [was, now], rows[0]
+
+
+def test_the_upgrade_table_holds_no_row_the_tests_do_not_know():
+    rows = _table_rows(_section(UPGRADING, UPGRADE_NOTES))
+
+    assert len(rows) == len(EXIT_MOVES), [row[0] for row in rows]
+
+
+def test_the_changelog_counts_the_same_changes_the_upgrade_table_lists():
+    words = {9: "Nine", 10: "Ten", 11: "Eleven", 12: "Twelve"}
+
+    assert (f"{words[len(EXIT_MOVES)]} changes in this release can move an exit code"
+            in " ".join(_doc("CHANGELOG.md").split()))
+
+
+def test_the_upgrade_notes_quote_the_fix_each_new_refusal_prints():
+    """The paragraph under each row quotes the line the job's log shows."""
+    import contextlib
+    import io
+    from types import SimpleNamespace
+
+    from crapkit import coverage_istanbul, coverage_py
+    from crapkit.cli.verifying import _warn_marks_stand_in
+
+    printed = io.StringIO()
+    with contextlib.redirect_stderr(printed):
+        _warn_marks_stand_in(SimpleNamespace(text=None), SimpleNamespace(entries=[1, 2]),
+                             "C", "crapkit-ratchet.tsv")
+    marks_line = printed.getvalue().split(" has 2 mark(s)", 1)[0]
+    notes = " ".join(_section(UPGRADING, UPGRADE_NOTES).split())
+
+    for quoted in (coverage_py._REGENERATE, coverage_istanbul._REGENERATE,
+                   "crapkit coverage --lane NAME", "delete `.crapkit/artifacts.json`",
+                   marks_line + " has N mark(s)", "`git checkout`"):
+        assert quoted in notes, quoted
+
+
 def test_the_0_4_15_note_quotes_the_refusal_reuse_prints_once_a_real_run_records_it(tmp_path):
     """The note's remedy ends at the line the next reuse prints; quoted wrong,
     a reader cannot tell the remedy worked."""

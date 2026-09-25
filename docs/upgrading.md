@@ -161,7 +161,21 @@ JSON stays at `schema: 1`; consumers must accept added fields.
 ## Missing values that 0.8.1 names
 
 Before 0.8.1 some commands read a value nobody measured as zero, empty or passing.
-0.8.1 names each one instead, and three of those changes can move a CI job's exit code.
+0.8.1 names each one instead. These changes can move an exit code; each has its own
+paragraph below with what to change:
+
+| What the job meets | Command | 0.8.0 exit | 0.8.1 exit |
+|---|---|---|---|
+| a changed file no reader could read | commit hook, `rescore --gate`, `check_gate`, `verify` | 0 | 6 |
+| an edit that leaves a file no reader can read | `claude-hook` | 0 | 2 |
+| a declared junit it reused and cannot read | `verify --reuse-artifacts` | 0 | 5 |
+| a debt policy key in a shallow clone | `ratchet report --enforce` | 0 or 1 | 4 |
+| a coverage artifact missing a count | `coverage`, `verify` | 0 | 5 |
+| a `.crapkit/artifacts.json` that cannot be read | `coverage --reuse-artifacts`, `verify --reuse-artifacts` | 0 | 5 |
+| a deleted or emptied marks file, and a marked function that rose | `verify` | 0 | 7, or 4 when the clone lacks the history |
+| a failure the baseline's own commit had, where the baseline recorded no failure list | `verify` | 8 | 0 |
+| a failure a 0.7.x verify retried to a pass, failing again | `verify` | 0 | 8 |
+
 The mutate counts below keep their meaning and gain two fields.
 
 **Files no reader could read.** A file crapkit's readers refuse, such as a TypeScript
@@ -206,6 +220,43 @@ them`, and `--json` adds `no_verdict`, a count inside `killed`. A mutant whose s
 timed out is counted the same way under `timed_out`. A script that wants the rate over
 the mutants a test judged divides `killed - no_verdict` by `mutants - no_verdict`. JSON
 schema 2, in a later release, takes no-verdict mutants out of `killed` itself.
+
+**Coverage artifacts missing a count.** coverage.py and istanbul write every count a
+function's score reads. A report something else rewrote, such as a hand merge of shards
+or a format converter, could drop one, and crapkit read the gap as zero: a function that
+ran scored cov 0, or a dropped branch counter moved a function from `add-tests` to `ok`,
+at exit 0. From 0.8.1 the lane fails, so `coverage` and `verify` exit 5. The refusal names
+the report, the file and the function or id, and ends `regenerate the report with the
+coverage tool` for coverage.py, or `regenerate the artifact with the coverage tool, or
+merge shards with one that keeps every counter` for istanbul. A report the coverage tool
+wrote is never refused for this; [what the istanbul parser reads](lanes.md#what-the-istanbul-parser-reads)
+lists each form for both formats.
+
+**An unreadable `.crapkit/artifacts.json`.** The record that a lane's last attempt failed
+lives in that file. A file that did not parse, or whose lane entry was not an object, read
+as no record, so `--reuse-artifacts` scored the artifact the failed attempt left.
+`coverage --reuse-artifacts` and `verify --reuse-artifacts` now exit 5 on each lane while
+the file cannot be read, and name both fixes: rerun the lane
+(`crapkit coverage --lane NAME`), or delete `.crapkit/artifacts.json` to reuse the files
+as they stand.
+
+**A deleted or emptied marks file.** verify read a missing `crapkit-ratchet.tsv`, or one
+holding only blank lines, as a repo that never marked any debt, so a commit that deleted
+it let a marked function's CRAP rise at exit 0. verify now judges against the newest marks
+the history since the baseline committed and exits 7 on a rise. It prints
+`warning: crapkit-ratchet.tsv is missing, but commit C, the newest since the baseline to
+hold it, has N mark(s)` with the `git checkout` that restores the file, and never writes
+those marks back. A clone that does not hold that history exits 4 and says what it could
+not read, ending with the fetch that brings it when the clone is shallow.
+
+**Failure lists read from an older run.** When the baseline recorded no failure list for a
+lane, verify now reads the newest trusted run behind it that recorded one, and a line
+names that run. A test that already failed at the baseline's own commit came back as
+`NEW FAILURE`, exit 8; it is now forgiven when that older run recorded it failing. When no
+run recorded a list, every failure still counts as new, exit 8, and verify says it may
+predate the change. A verify stored by 0.7.x kept a failure that passed its flake retry in
+its failure list, and read as a baseline it forgave a later real failure of that test at
+exit 0; verify now reads that run's list from the run behind it, so the failure exits 8.
 
 **Artifact stamps from 0.4.15 or older.** The record that stops `--reuse-artifacts` from
 scoring the artifact a failed lane left behind lives in `.crapkit/artifacts.json`, and
