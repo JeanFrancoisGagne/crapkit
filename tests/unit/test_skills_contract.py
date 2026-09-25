@@ -127,6 +127,19 @@ def test_the_merge_driver_both_pages_configure_is_the_console_script():
         assert "python -m crapkit ratchet merge" not in _doc(page), page
 
 
+UVX_MERGE_DRIVER = 'git config merge.crapkit-ratchet.driver "uvx crapkit ratchet merge %O %A %B"'
+
+
+def test_both_pages_give_a_uvx_clone_a_driver_git_can_start():
+    """uvx puts no `crapkit` on PATH, so the console-script driver fails every
+    marks-file merge with `crapkit: not found` and leaves ours in the file with
+    no conflict markers. Both pages name the uvx form and that symptom."""
+    for page in (RECOVER_SKILL, "docs/ratchet.md"):
+        assert UVX_MERGE_DRIVER in _doc(page), page
+        assert "crapkit: not found" in _doc(page), page
+        assert "git merge --abort" in _doc(page), page
+
+
 def test_the_crapkit_description_quotes_the_gate_refusal_the_hook_prints(capsys):
     from crapkit.cli import verifying
     from crapkit.hook import Violation

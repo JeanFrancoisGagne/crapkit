@@ -223,6 +223,13 @@ the merge:
 
     git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"
 
+When git printed `crapkit: not found` above the conflict, the driver is installed and git's
+PATH has no `crapkit`, which is where a clone that runs crapkit through uvx lands. The file
+then holds your side with no conflict markers: do not stage it. Run `git merge --abort`, set
+the driver to the uvx form, and merge again:
+
+    git config merge.crapkit-ratchet.driver "uvx crapkit ratchet merge %O %A %B"
+
 Owner: [docs: the git merge driver](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-git-merge-driver).
 When the driver itself refuses (`marks from different metric versions cannot merge`),
 run `crapkit coverage`, then re-baseline one side with `crapkit ratchet seed`, and merge again.

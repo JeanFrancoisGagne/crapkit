@@ -549,6 +549,28 @@ none, with the line that defines it:
 WARN crapkit-ratchet.tsv has merge=crapkit-ratchet in its git attributes, but merge.crapkit-ratchet.driver is not set in this clone, so git merges the marks file as text and leaves its conflicts to be resolved by hand; run `git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"` (docs/ratchet.md#the-git-merge-driver)
 ```
 
+git runs the driver through a shell with the PATH `git merge` has, so `crapkit` has to
+resolve there. uvx puts no `crapkit` on PATH, so a clone that runs crapkit as `uvx crapkit`
+sets the driver through uvx:
+
+```
+git config merge.crapkit-ratchet.driver "uvx crapkit ratchet merge %O %A %B"
+```
+
+A driver git cannot start fails every marks-file merge, and the file it leaves is easy to
+commit by mistake:
+
+```
+$ git merge feature -m merge
+crapkit ratchet merge .merge_file_gnwGYk .merge_file_DvJ0hn .merge_file_ObrhTO: 1: crapkit: not found
+Auto-merging crapkit-ratchet.tsv
+CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
+```
+
+crapkit-ratchet.tsv then holds your side unchanged, with no conflict markers, and the
+other branch's lowered marks are gone from it. Do not `git add` it. Run
+`git merge --abort`, set the driver to a command that resolves, and merge again.
+
 `%O %A %B` are base, ours, theirs. The driver writes the merged result **in place over
 `%A`** and exits 0, which is what git requires of a merge driver.
 
