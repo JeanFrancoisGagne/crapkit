@@ -74,6 +74,9 @@ def test_random_edits_match_pygit2(oracle):
     crapkit's reading of that text names the new-side lines libgit2's own hunks
     do, a '++ ' or '-- ' content line (R03) and a pure deletion (H9) included."""
     oracle("pygit2")
+    # The first call imports pygit2, 0.3 to 0.8 s in the image: outside the
+    # examples, or the first one passes Hypothesis's 200 ms deadline.
+    pygit2_hunks.patch("", "", "f.py")
 
     _pygit2_reads_as_crapkit_does()
 
