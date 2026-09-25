@@ -26,7 +26,7 @@ import sys
 import pytest
 
 import hang_guard
-from accuracy.kit import rulings
+from accuracy.kit import exact, rulings
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
@@ -106,6 +106,14 @@ def test_no_module_sits_under_two_floors():
     paths = [path for path, _ in pairs]
 
     assert sorted({path for path in paths if paths.count(path) > 1}) == []
+
+
+def test_kit_exact_has_no_grade_for_an_empty_target():
+    """kit/exact.py sits under a 100 percent floor. Its own refusal cases all have
+    more over the target than in it, so `total <= 0` weakened to `total < 0`
+    lived there: grade(0, 0) then divides by zero instead of refusing."""
+    with pytest.raises(ValueError, match="^no grade for 0 over target of 0$"):
+        exact.grade(0, 0)
 
 
 # --- recorded runs meet their floors ---------------------------------------------------------------
