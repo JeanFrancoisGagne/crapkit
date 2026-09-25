@@ -1,1 +1,11 @@
 module	function	diff_sha256	evidence	strategy	checked
+src/crapkit/mutate.py	_angle_kind	d3ec92c673e43e6094b2ffde2e9812fa769d3445a01390ada5c234aeeea69f1a	10000 examples, derandomized, no difference	tests/accuracy/suite_strength/mutation_sources.py::source_texts	2026-09-25
+src/crapkit/mutate.py	_angle_kind	916d6c3f7c70e46befc36e4769b2afeb303fe2a3048f290373dc84466bac5e9b	10000 examples, derandomized, no difference	tests/accuracy/suite_strength/mutation_sources.py::source_texts	2026-09-25
+src/crapkit/mutate.py	_code_tokens	c57dc3b6f9ee2800ad5f06fe09d95efa7b36cbf5ac2a3f10ad916ff67340fe93	10000 examples, derandomized, no difference	tests/accuracy/suite_strength/mutation_sources.py::source_texts	2026-09-25
+src/crapkit/mutate.py	_code_tokens	741006b4834fdcb243b98531455291ea5107690d0c6443745eba4980ea04be20	10000 examples, derandomized, no difference	tests/accuracy/suite_strength/mutation_sources.py::source_texts	2026-09-25
+src/crapkit/mutate.py	_code_tokens	a12439bfd6a52642e2c02ae0947d941373d0df45322f53b69aba507f5a260e92	10000 examples, derandomized, no difference	tests/accuracy/suite_strength/mutation_sources.py::source_texts	2026-09-25
+src/crapkit/mutate.py	_code_tokens	cec5ad7c21ba87141155e4637ac31217e7b5d10580fb02c8638719396fd21fed	10000 examples, derandomized, no difference	tests/accuracy/suite_strength/mutation_sources.py::source_texts	2026-09-25
+src/crapkit/mutate.py	_code_tokens	1b914ae7aefca5a3e742b71dd1c6408961a13d2a25e112e3ca6e3c8095fccf36	10000 examples, derandomized, no difference	tests/accuracy/suite_strength/mutation_sources.py::source_texts	2026-09-25
+src/crapkit/mutate.py	_code_tokens	087afdb9f82e625222db9325ed929c1353e2c885aff9764e8bce3d47c59d2d90	10000 examples, derandomized, no difference	tests/accuracy/suite_strength/mutation_sources.py::source_texts	2026-09-25
+src/crapkit/mutate.py	_code_tokens	b5b14f723e9034cfc31f763f31ac881dce009ee07f4e19940ee2bc470662e0b3	10000 examples, derandomized, no difference	tests/accuracy/suite_strength/mutation_sources.py::source_texts	2026-09-25
+src/crapkit/mutate.py	_syntax_depths	99f41548f400e4a6eab36882d19f049d6e71a110693e1fcbbdf8b3e6fe55e324	10000 examples, derandomized, no difference	tests/accuracy/suite_strength/mutation_sources.py::source_texts	2026-09-25
