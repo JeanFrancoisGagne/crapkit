@@ -194,3 +194,14 @@ def test_a_respelled_claim_keeps_its_twin_ordinal():
     assert (moved["long_name"], moved["key_name"], moved["handle"]) == \
         (NEW, f"{NEW}#2", "outer.mid.inner#2")
     assert keys.claim_key(moved) == (PATH, f"{NEW}#2")
+
+
+def test_attempts_asked_with_no_run_pair_a_claim_by_the_name_it_saved(tmp_path):
+    from crapkit.store import SnapshotStore
+
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    store.record_claim(path=PATH, long_name=OLD, commit="c1", handle="outer.outer.mid.inner")
+
+    found = store.attempts_for([(PATH, OLD), (PATH, NEW)])
+
+    assert [len(found[key]) for key in ((PATH, OLD), (PATH, NEW))] == [1, 0]
