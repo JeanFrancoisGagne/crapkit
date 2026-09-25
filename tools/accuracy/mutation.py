@@ -868,8 +868,16 @@ COMMANDS = {"weekly": _weekly, "diff": _diff_run, "gate": _gate, "floors": _floo
             "covered": _covered, "tools": _tools, "key": _key, "killer": _killer}
 
 
+def _args(argv: list[str]) -> argparse.Namespace:
+    """The parsed command. Every word after `killer` is pytest's, dashes included:
+    argparse's REMAINDER refuses one that starts with a dash."""
+    if argv[:1] == ["killer"]:
+        return argparse.Namespace(command="killer", pytest=argv[1:])
+    return _parser().parse_args(argv)
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    args = _args(sys.argv[1:] if argv is None else argv)
     try:
         return COMMANDS[args.command](args)
     except MutationError as refused:

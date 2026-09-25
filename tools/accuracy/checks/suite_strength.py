@@ -1,6 +1,7 @@
 """suite-strength's checks: the retro ledger and replay tool, the mutation tool,
-floors and canary, `crapkit mutate`'s verdicts, the self-measurement floor, the
-release gate's model, the runner's check targets and the release-tier rows.
+floors and canary, `crapkit mutate`'s verdicts and their mutmut and Stryker
+differentials, the self-measurement floor, the release gate's model, the
+runner's check targets and the release-tier rows.
 
 Seconds are serial ubuntu estimates for the push tier from measured runs; the
 mutate fixtures spawn crapkit and git, which is where the time goes. A check
@@ -17,6 +18,8 @@ CHECKS = [
      "pytest": [_SS + "test_mutation_tool.py", _SS + "test_mutation_floors.py"]},
     {"name": "crapkit mutate verdicts", "seconds": 9,
      "pytest": [_SS + "test_mutate_results.py"]},
+    {"name": "crapkit mutate against mutmut and Stryker", "seconds": 0,
+     "pytest": [_SS + "test_mutate_differential.py"]},
     {"name": "self-measurement floor", "seconds": 0,
      "pytest": [_SS + "test_self_measure_floor.py"]},
     {"name": "release gate model", "seconds": 1,

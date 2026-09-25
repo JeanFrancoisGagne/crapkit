@@ -408,6 +408,19 @@ def test_the_killer_suite_deselects_every_dependent_method():
     assert argv[3:5] == ["tests/unit", "tests/accuracy"] and "-x" in argv
 
 
+def test_the_killer_hands_pytest_every_argument_after_its_name(monkeypatch):
+    """`mutation.py killer [PYTEST ARGS...]`: an argument that starts with a dash
+    is pytest's, not the tool's."""
+    handed = []
+    monkeypatch.setitem(mutation.COMMANDS, "killer", lambda args: handed.append(args.pytest) or 0)
+
+    assert mutation.main(["killer", "--deselect", "tests/unit/a.py::t", "-k", "x"]) == 0
+    assert mutation.main(["killer"]) == 0
+    assert handed == [["--deselect", "tests/unit/a.py::t", "-k", "x"], []]
+    with pytest.raises(SystemExit):
+        mutation.main(["key", "--deselect", "x"])
+
+
 def test_a_table_round_trips_and_a_wrong_header_is_refused(tmp_path):
     path = tmp_path / "survivors.tsv"
     rows = [{"module": "m.py", "function": "f", "diff_sha256": KEYS[0], "reason": "why",

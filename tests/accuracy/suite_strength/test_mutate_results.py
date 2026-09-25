@@ -29,11 +29,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import re
+import shlex
+import sys
+import time
+import tomllib
+from xml.etree import ElementTree
 
 import pytest
 
 import hang_guard
-from accuracy.kit import drive, repos
+from accuracy.kit import drive, repos, rulings
 
 pytestmark = pytest.mark.process
 
@@ -340,3 +346,95 @@ def test_an_uncommitted_test_kills_at_any_worker_count(repo_templates, tmp_path,
     run = _mutate(root, "--files", "src/w/calc.py")
 
     assert (run.payload["mutants"], run.survivors()) == (2, [])
+
+
+# --- sound: this repo's own mutation_command ------------------------------------------------------
+#
+# crapkit mutate runs mutation_command once on the unmutated tree before any
+# mutant, in a checkout of HEAD, and refuses to score when it fails
+# (docs/configuration.md:80). The accuracy plan asks three things of the
+# command crapkit.toml gives this repo: it passes on a clean tree, it runs at
+# least every test tests/unit collects on its own, and it takes at most a
+# third of mutation_timeout_seconds, the headroom that deadline was set with.
+#
+# The command runs as written. PYTEST_ADDOPTS adds a JUnit file, which counts
+# what ran whatever verbosity the repo's addopts set; the tests the run names
+# FAILED or ERROR come from its short summary, which pytest prints at any -q.
+
+REPO = Path(__file__).resolve().parents[3]
+_COLLECTED = re.compile(r"(\d+) tests? collected")
+_FAILED = re.compile(r"^(?:FAILED|ERROR) (\S+)", re.MULTILINE)
+
+
+def ran(junit_xml: str) -> int:
+    """How many tests a run's JUnit file records, skipped ones included."""
+    root = ElementTree.fromstring(junit_xml)
+    suites = [root] if root.tag == "testsuite" else root.iter("testsuite")
+    return sum(int(suite.get("tests", "0")) for suite in suites)
+
+
+def collected(output: str) -> int:
+    """The count `pytest --collect-only -q` ends with."""
+    counts = _COLLECTED.findall(output)
+    return int(counts[-1]) if counts else 0
+
+
+def failing(output: str) -> str:
+    """The node ids a pytest run's short summary names FAILED or ERROR, sorted, or `none`."""
+    return ",".join(sorted(set(_FAILED.findall(output)))) or "none"
+
+
+def test_a_junit_file_and_a_summary_read_as_what_ran():
+    xdist = ('<testsuites><testsuite name="pytest" tests="3435" failures="0" errors="0" '
+             'skipped="12"/></testsuites>')
+    assert ran(xdist) == 3435
+    assert ran('<testsuite tests="2" failures="1"/>') == 2
+    assert ran("<testsuites/>") == 0
+    assert collected("a::b\nc::d\n\n2 tests collected in 0.4s\n") == 2
+    assert collected("1 test collected in 0.1s") == 1
+    assert collected("tests/unit/a.py: 2\n") == 0
+    summary = "FAILED tests/a.py::t - AssertionError: x\nERROR tests/b.py\nFAILED tests/a.py::t\n"
+    assert failing(summary) == "tests/a.py::t,tests/b.py"
+    assert failing("3 passed in 1s\n") == "none"
+
+
+@pytest.fixture
+def clean_tree(tmp_path):
+    """A detached checkout of HEAD, as crapkit mutate builds for its workers."""
+    tree = tmp_path / "clean"
+    added = hang_guard.run(["git", "-C", str(REPO), "worktree", "add", "--detach", str(tree), "HEAD"],
+                           text=True, capture_output=True)
+    assert added.returncode == 0, added.stderr
+    yield tree
+    hang_guard.run(["git", "-C", str(REPO), "worktree", "remove", "--force", str(tree)],
+                   capture_output=True)
+
+
+def _in_tree(argv: list[str], tree: Path, timeout: float, extra: dict | None = None):
+    env = drive.child_env({"PYTHONDONTWRITEBYTECODE": "1", **(extra or {})})
+    return hang_guard.run(argv, cwd=tree, env=env, timeout=timeout, text=True,
+                          encoding="utf-8", errors="replace", capture_output=True)
+
+
+@rulings.applies("SS3")
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.platform("linux")
+def test_mutation_command_is_sound(clean_tree, tmp_path):
+    """Linux only: the jobs that run this command (accuracy.yml's mutation jobs
+    and the `accuracy` label's crapkit mutate) run in the accuracy image."""
+    config = tomllib.loads((REPO / "crapkit.toml").read_text(encoding="utf-8"))["crapkit"]
+    deadline, junit = config["mutation_timeout_seconds"], tmp_path / "killer.xml"
+    started = time.monotonic()
+    killer = _in_tree(shlex.split(config["mutation_command"]), clean_tree, deadline,
+                      {"PYTEST_ADDOPTS": f"--junitxml={junit}"})
+    seconds = time.monotonic() - started
+    unit = _in_tree([sys.executable, "-m", "pytest", "tests/unit", "-o", "addopts=",
+                     "--collect-only", "-q", "-p", "no:cacheprovider"], clean_tree, deadline)
+
+    rulings.pin_ruling("SS3", crapkit=failing(killer.stdout), oracle="none")
+    assert killer.returncode == 0, killer.stdout[-3000:] + killer.stderr[-3000:]
+    assert ran(junit.read_text(encoding="utf-8")) >= collected(unit.stdout) > 0
+    assert seconds <= deadline / 3, (
+        f"the clean run took {seconds:.0f} s, over a third of mutation_timeout_seconds "
+        f"({deadline}); set it to three times the clean run")
