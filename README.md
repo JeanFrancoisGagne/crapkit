@@ -71,7 +71,8 @@ git add crapkit.toml crapkit-ratchet.tsv .gitignore
 ```
 
 Not a Python repo? `uvx crapkit init` runs the same commands and adds nothing to your
-manifest: see [A repo that is not Python](#a-repo-that-is-not-python).
+manifest: see [A repo that is not Python](#a-repo-that-is-not-python). pip stops with
+`externally-managed-environment`? See [When pip refuses](#when-pip-refuses).
 
 `init` detects pytest, Vitest and Jest from the repository's own files. Review the
 generated config before running its commands. When detection leaves a commented
@@ -143,6 +144,49 @@ of `main`, or from a local clone (run at the clone root):
 pip install git+https://github.com/JeanFrancoisGagne/crapkit.git
 pip install .
 ```
+
+### When pip refuses
+
+Debian 12, Ubuntu 23.04 and later, Homebrew and uv mark the Python they install as
+theirs (PEP 668), and pip writes nothing into it:
+
+```
+$ pip install crapkit
+error: externally-managed-environment
+```
+
+Give crapkit an environment of its own. Either line installs it into one and puts a
+`crapkit` command in `~/.local/bin` (`%USERPROFILE%\.local\bin` on Windows), the
+command the commit gate and the agent plugins run:
+
+```
+pipx install crapkit
+uv tool install crapkit
+```
+
+When that directory is not on PATH yet, the installer says so and names the fix:
+`pipx ensurepath`, or `uv tool update-shell`. Open a new shell after either.
+
+A Python repo can carry crapkit in its own venv instead, beside the test dependencies
+its lane runs:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+pip install "crapkit[py]"
+```
+
+The same from cmd.exe on Windows:
+
+```bat
+python -m venv .venv
+.venv\Scripts\activate
+pip install "crapkit[py]"
+```
+
+`--break-system-packages` makes pip write into the system Python anyway, where the next
+OS package update can break crapkit or the OS's own tools. None of the routes above
+needs it.
 
 ### A repo that is not Python
 
