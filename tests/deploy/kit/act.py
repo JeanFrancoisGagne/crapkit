@@ -60,6 +60,9 @@ OUTCOME_STEP = ("- if: always()", '  run: echo "crapkit-step-outcome=${{ steps.c
 # One job runs the lanes up to three times (base, checkout, verify's reuse)
 # and two pip installs: several suites' worth of the one hang bound.
 JOB_SECONDS = 4 * hang_guard.HANG_SECONDS
+# The action's exit step failed and act printed none of its output.
+DROPPED_EXIT_LINE = re.compile(r"Run Main the exit code\n[^\n|]*Failure - Main the exit code")
+ATTEMPTS = 3
 
 
 # --- the job -------------------------------------------------------------------------
@@ -89,11 +92,14 @@ class Job:
             raise docsnip.DocSnipError(f"README.md > The GitHub Action: no step holds {holding!r}")
         return found[0]
 
+    def with_steps(self, holding: str, steps: tuple[tuple[str, ...], ...]) -> "Job":
+        """The step holding `holding` replaced by `steps`, in order."""
+        index = self.find(holding)
+        return replace(self, steps=self.steps[:index] + tuple(steps) + self.steps[index + 1:])
+
     def with_step(self, holding: str, lines: tuple[str, ...] | None) -> "Job":
         """The step holding `holding` replaced by `lines`, or dropped for None."""
-        index = self.find(holding)
-        kept = () if lines is None else (tuple(lines),)
-        return replace(self, steps=self.steps[:index] + kept + self.steps[index + 1:])
+        return self.with_steps(holding, () if lines is None else (tuple(lines),))
 
     def with_head(self, prefix: str, line: str) -> "Job":
         """The head line starting with `prefix` (stripped) replaced by `line`, indent kept."""
@@ -127,9 +133,9 @@ def _steps(lines: list[str], indent: str) -> list[tuple[str, ...]]:
     return [tuple(step) for step in steps]
 
 
-def action_step(ref: str, inputs: dict) -> tuple[str, ...]:
+def action_step(ref: str, inputs: dict, step_id: str = "crapkit") -> tuple[str, ...]:
     with_lines = ("  with:", *(f'    {name}: "{value}"' for name, value in inputs.items())) if inputs else ()
-    return (f"- uses: {ref}", "  id: crapkit", "  continue-on-error: true", *with_lines)
+    return (f"- uses: {ref}", f"  id: {step_id}", "  continue-on-error: true", *with_lines)
 
 
 def readme_job() -> Job:
@@ -146,6 +152,15 @@ def crapkit_job(ref: str, *, events: str = "[push, pull_request]", install: bool
     job = job.with_head("pull-requests:", f"pull-requests: {permission}")
     job = job if install else job.with_step('pip install -e ".[dev]"', None)
     return job.plus(*OUTCOME_STEP)
+
+
+def upgrade_job(old: str, new: str, **inputs: str) -> Job:
+    """A push job that runs the action at `old` (gate off, id `old`) and then at
+    `new` (id crapkit, `inputs`) in one workspace, so the second finds the
+    first one's .crapkit/ store: a pin moved on a runner that keeps it."""
+    job = crapkit_job(new, events="[push]", **inputs)
+    before = action_step(old, {"gate": "false", "delta": "false"}, step_id="old")
+    return job.with_steps(f"uses: {new}", (before, job.steps[job.find(f"uses: {new}")]))
 
 
 # --- events -----------------------------------------------------------------------------
@@ -260,8 +275,27 @@ class Runner:
         return argv + [flag for repository in repositories for flag in ("--local-repository", repository)]
 
     def run(self, workspace: Path, job: Job, payload: dict, *, event: str | None = None) -> Result:
-        """One act run of `job` on `workspace` for a pull_request or push `payload`."""
+        """One act run of `job` on `workspace` for a pull_request or push
+        `payload`. act can drop the one line the action's failing exit step
+        prints (a race in its host executor, seen once in about forty runs
+        under load, never on a GitHub runner); that run is made again from
+        the same stub state, and the transcript says so."""
         self.runs += 1
+        before = self._saved_state()
+        for attempt in range(ATTEMPTS):
+            result = self._run_once(workspace, job, payload, event)
+            if not DROPPED_EXIT_LINE.search(result.log):
+                return result
+            self.box.transcript.note(f"act run {self.runs} attempt {attempt + 1} dropped the exit step's line")
+            _restore(before, self.state)
+        return result
+
+    def _saved_state(self) -> Path:
+        saved = self.box.root / "act" / f"gh-state-before-{self.runs}"
+        shutil.copytree(self.state, saved)
+        return saved
+
+    def _run_once(self, workspace: Path, job: Job, payload: dict, event: str | None) -> Result:
         event = event or ("pull_request" if "pull_request" in payload else "push")
         workflow, event_file = self._write(job, payload)
         _origin(self.box, workspace)
@@ -297,6 +331,11 @@ class Runner:
 
 def _decode(data: bytes) -> str:
     return data.decode("utf-8", "replace")
+
+
+def _restore(saved: Path, state: Path) -> None:
+    shutil.rmtree(state)
+    shutil.copytree(saved, state)
 
 
 def _action_files(workspace: Path, releases: dict[str, Path]) -> list[Path]:
