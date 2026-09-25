@@ -9,14 +9,20 @@ its log the way ci.yml's deploy-action job reads the GitHub runner's.
 
 The gha-act-* cells take the action as README pins it,
 `JeanFrancoisGagne/crapkit@v<candidate>`, from the sandbox's git mirror. The
-gha-action-* cells are the act model of the jobs a GitHub runner runs: the
-crapkit checkout sits at `crapkit/` in the workspace, consumer.py runs from
-it, and the step is `uses: ./crapkit` with `pull-requests: read`.
+gha-action-* cells are the act model of the jobs ci.yml and deploy.yml run on
+a GitHub runner: the crapkit checkout sits at `crapkit/` in the workspace,
+`python crapkit/tools/deploy/consumer.py` runs from the workspace root with
+its defaults, the step is `uses: ./crapkit` with `pull-requests: read`, gate
+"true" and delta "false", and the job's next step is ci.yml's own
+`assert_action.py --cell <id>` over the action's state directory. The log
+is then held to the same cell's checks. gha-action-windows runs that job on
+this Windows machine under act, with `runs-on: windows-latest`.
 
-The consumer commits `container_ok = true` on its lane (docs/lanes.md,
-"Containers") because act runs the job inside the image's container, where
-crapkit's guard would refuse the lane; gha-action-container-job is the cell
-that leaves it out and asserts that refusal.
+On Linux the consumer commits `container_ok = true` on its lane
+(docs/lanes.md, "Containers") because act runs the job inside the image's
+container, where crapkit's guard would refuse the lane;
+gha-action-container-job is the cell that leaves it out and asserts that
+refusal.
 """
 from __future__ import annotations
 
@@ -24,6 +30,7 @@ import functools
 import importlib.util
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -34,19 +41,24 @@ from kit import act, docsnip, gitmirror, wheels
 from kit.cells import cell
 
 PACKET = "deploy-action"
+DEPLOY_TOOLS = wheels.SRC / "tools" / "deploy"
 CONSUMER = Path("tools") / "deploy" / "consumer.py"
-BREACH = "grade( score , attempts , late , bonus )"
 FORK_REPO = "someone/consumer-fork"
 # The release a team pins behind the candidate: analysis version 10, where the
 # candidate seeds under 11 (docs/upgrading.md, "Analysis version 11").
 OLD = "0.7.6"
 HARNESS = "act (pinned), self-hosted in the ci image"
+RUNNER = "GitHub runner (act model)"
 
 
 @functools.cache
 def tool(name: str):
-    """tools/deploy/<name>.py, a script ci.yml runs, as a module."""
-    spec = importlib.util.spec_from_file_location(name, wheels.SRC / "tools" / "deploy" / f"{name}.py")
+    """tools/deploy/<name>.py, a script ci.yml runs, as a module. Its
+    directory goes on sys.path (last), as it is for the script itself, so
+    assert_action.py finds consumer.py beside it."""
+    if str(DEPLOY_TOOLS) not in sys.path:
+        sys.path.append(str(DEPLOY_TOOLS))
+    spec = importlib.util.spec_from_file_location(name, DEPLOY_TOOLS / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -57,20 +69,45 @@ def _assert_action():
     return tool("assert_action")
 
 
+BREACH = tool("consumer").BREACH
+STAMP_REFUSAL = _assert_action().STAMP_REFUSAL
+
+
+def consumer_argv(box, candidate, checkout: bool, seed: str | None) -> list[str]:
+    """ci.yml's line when crapkit is checked out beside the consumer
+    (`python crapkit/tools/deploy/consumer.py`, its defaults seeding from that
+    checkout), else the staged tree's script seeded from the candidate's wheel."""
+    python = box.toolchain.python("3.12")
+    if checkout:
+        return [python, str(Path("crapkit") / CONSUMER), *(["--seed-from", seed] if seed else [])]
+    return [python, str(candidate.staged / CONSUMER), "--root", ".", "--seed-from", seed or str(candidate.wheel)]
+
+
 def build_consumer(box, candidate, *flags: str, checkout: bool = False, seed: str | None = None) -> tuple[Path, dict]:
     """consumer.py's repository at <box>/workspace, seeded by the candidate
     unless `seed` names another pip requirement. With `checkout`, the way the
-    deploy-action job builds it: crapkit checked out to crapkit/, and
-    consumer.py run from that checkout, seeding from it."""
+    deploy-action job builds it: crapkit checked out to crapkit/ first."""
     root = box.root / "workspace"
     root.mkdir()
-    script, seed = candidate.staged / CONSUMER, seed or ("./crapkit" if checkout else str(candidate.wheel))
     if checkout:
         shutil.copytree(candidate.staged, root / "crapkit")
-        script = root / "crapkit" / CONSUMER
-    step = box.run([box.toolchain.python("3.12"), str(script), "--root", ".", "--seed-from", seed, *flags],
-                   cwd=root, expect=0)
+    step = box.run(consumer_argv(box, candidate, checkout, seed) + list(flags), cwd=root, expect=0)
     return root, json.loads(step.stdout.strip().splitlines()[-1])
+
+
+def runner_job(cell_id: str, *, runs_on: str = "ubuntu-latest") -> act.Job:
+    """ci.yml's deploy-action job in README's shape: `uses: ./crapkit` with
+    pull-requests: read, gate "true", delta "false", then ci.yml's in-job
+    `assert_action.py --cell <cell_id>`."""
+    job = act.crapkit_job("./crapkit", permission="read", runs_on=runs_on, gate="true", delta="false")
+    return job.plus(*act.assert_step(cell_id))
+
+
+def check_runner_cell(runner, result, cell_id: str, event: str) -> None:
+    """The job's log held to the cell's checks, and the in-job check passed."""
+    runner.check(result, "--cell", cell_id, "--event", event)
+    assert f"Success - Main {act.ASSERT_STEP}" in result.log, "ci.yml's in-job check failed; its output is in the log"
+    assert "skip posting: not read" in result.log
 
 
 def published(box, candidate, runner) -> str:
@@ -224,26 +261,35 @@ def test_a_job_without_the_install_step_names_the_missing_lane(box, candidate):
                  "--comment-has", "**no verdict: `crapkit coverage` exited 5")
 
 
+def declares_input(name: str) -> bool:
+    """Whether the action.yml under test declares the input `name`."""
+    text = (wheels.SRC / "action.yml").read_text(encoding="utf-8")
+    return re.search(rf"^  {re.escape(name)}:\s*$", text, re.MULTILINE) is not None
+
+
+# A monorepo user sets the input whose description names their layout, once
+# action.yml has one; until then README's job is all there is.
+WORKDIR = declares_input("working-directory")
+
+
 @cell("gha-act-monorepo", channel="Action under act, README job", harness=HARNESS,
-      scenario="fresh: crapkit.toml in packages/api below the git top; README's job as written; exit 3 or a "
-               "verdict on packages/api",
+      scenario="fresh: crapkit.toml in packages/api below the git top; README's job, with the action's "
+               "working-directory input when it has one; exit 3 or a verdict on packages/api",
       use_cases="Action verdict", os="linux", image="ci", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-action-1: the Action scores the workspace root, and a "
-                                       "monorepo whose crapkit.toml sits in packages/api gets exit 3 with no input "
-                                       "to point it there")
+@pytest.mark.xfail(not WORKDIR, strict=True,
+                   reason="deploy-bug deploy-action-1: the Action scores the workspace root, and a monorepo whose "
+                          "crapkit.toml sits in packages/api gets exit 3 with no input to point it there")
 def test_a_monorepo_gets_a_verdict_on_the_package_it_adopted(box, candidate):
     runner = act.Runner.make(box)
     root, built = build_consumer(box, candidate, "--container-ok", "--subdir", "packages/api")
-    job = act.crapkit_job(published(box, candidate, runner), gate="true")
+    inputs = {"gate": "true", **({"working-directory": "packages/api"} if WORKDIR else {})}
+    job = act.crapkit_job(published(box, candidate, runner), **inputs)
     install = job.steps[job.find('pip install -e ".[dev]"')]
     job = job.with_step('pip install -e ".[dev]"', (*install, "  working-directory: packages/api"))
 
     result = runner.run(root, job, act.pull_request(built))
 
     runner.check(result, "--event", "pull_request", "--post", "posted", "--gate-code", "6", "--function", BREACH)
-
-
-STAMP_REFUSAL = "ratchet marks were recorded under [crapkit-analysis="
 
 
 @cell("gha-act-skew", channel="Action @v0.7.6 under act", harness=HARNESS,
@@ -296,27 +342,23 @@ def bump_stamp(marks: Path, analysis: int) -> None:
                      encoding="utf-8")
 
 
-@cell("gha-action-container-job", channel="README job in a container", harness="GitHub runner (act model)",
-      scenario="fresh: the job runs inside a container with no container_ok: the guard refuses the lane at the "
-               "fork point and the checkout, the log names the key; docs/lanes.md's key, merged on main, turns "
-               "it into a verdict",
+@cell("gha-action-container-job", channel="README job in a container", harness=RUNNER,
+      scenario="fresh: deploy.yml's job runs inside a container with no container_ok: the guard refuses the "
+               "lane, coverage's 5 fails the check and the log names the key; docs/lanes.md's key, merged on "
+               "main, turns it into a verdict on the marked function",
       use_cases="container guard", os="linux", image="ci", cadence="nightly")
 def test_a_container_job_names_the_guard_and_the_documented_key_clears_it(box, candidate):
     runner = act.Runner.make(box)
-    root, built = build_consumer(box, candidate)
-    job = act.crapkit_job(published(box, candidate, runner), delta="true")
+    root, built = build_consumer(box, candidate, checkout=True)
 
-    refused = runner.run(root, job, act.pull_request(built))
-    runner.check(refused, "--event", "pull_request", "--expect-outcome", "success", "--gate", "off",
-                 "--gate-code", "5", "--post", "posted", "--comment-has", "**no verdict: `crapkit coverage` exited 5")
-    assert refused.log.count("host-only (container runs OOM); set container_ok = true") >= 2
+    refused = runner.run(root, runner_job("gha-action-container-job"), act.push(built))
+    check_runner_cell(runner, refused, "gha-action-container-job", "push")
+    assert "host-only (container runs OOM); set container_ok = true" in refused.log
 
     fixed = land_on_main(box, root, lambda: add_to_lane(root / "crapkit.toml", container_fix()),
                          "crapkit: this job's container is sized for the suite")
-    verdict = runner.run(root, job, act.pull_request(fixed))
-    runner.check(verdict, "--event", "pull_request", "--expect-outcome", "success", "--gate", "off",
-                 "--gate-code", "6", "--post", "posted", "--function", BREACH)
-    assert f"the verdict covers the diff from {fixed['fork']}" in verdict.log
+    verdict = runner.run(root, runner_job("gha-action-consumer"), act.push(fixed))
+    check_runner_cell(runner, verdict, "gha-action-consumer", "push")
 
 
 def upgrade_steps(box, root: Path, candidate) -> None:
@@ -331,35 +373,34 @@ def upgrade_steps(box, root: Path, candidate) -> None:
 
 def move_the_pin(box, candidate):
     """A repo adopted under OLD whose job runs the action at @vOLD and then at
-    ./crapkit (the candidate) in one workspace. The runner, the repo, the
-    consumer, and the candidate step's part of the log."""
+    ./crapkit (the candidate) in one workspace, then ci.yml's in-job check,
+    as deploy.yml's gha-action-tag-upgrade job does. The runner, the repo,
+    the consumer, and the candidate step's part of the log."""
     assert OLD in wheels.releases()
     runner = act.Runner.make(box)
     root, built = build_consumer(box, candidate, "--container-ok", checkout=True, seed=f"crapkit=={OLD}")
     job = act.upgrade_job(runner.release(gitmirror.make(box), OLD), "./crapkit", gate="true", delta="false")
-    moved = runner.run(root, job, act.push(built))
+    moved = runner.run(root, job.plus(*act.assert_step("gha-action-tag-upgrade")), act.push(built))
     old, new = moved.log.split("Run Main ./crapkit", 1)
     assert "gate is off: verify's code 7 is in the comment" in old
     return runner, root, built, act.Result(moved.step, new, moved.outcome)
 
 
-@cell("gha-action-tag-upgrade", channel="Action pin moved", harness="GitHub runner (act model)",
+@cell("gha-action-tag-upgrade", channel="Action pin moved", harness=RUNNER,
       scenario="upgrade: @v0.7.6 then ./crapkit in one job, .crapkit carried; the moved pin refuses the "
                "0.7.6 marks naming the re-seed, and after docs/upgrading.md's steps the gate judges again",
       use_cases="Action pin move", os="linux", image="ci", cadence="nightly")
 def test_moving_the_pin_carries_the_store_and_the_upgrade_steps_restore_the_gate(box, candidate):
     runner, root, built, moved = move_the_pin(box, candidate)
-    runner.check(moved, "--event", "push", "--gate-code", "3",
-                 "--comment-has", f"{STAMP_REFUSAL}10 ", "--comment-has", "`crapkit ratchet seed")
+    check_runner_cell(runner, moved, "gha-action-tag-upgrade", "push")
     assert "crapkit coverage exited 0" in moved.log and "sqlite" not in moved.log.lower()
 
     upgraded = land_on_main(box, root, lambda: upgrade_steps(box, root, candidate), "ratchet: re-seed after the upgrade")
-    after = runner.run(root, act.crapkit_job("./crapkit", permission="read", gate="true", delta="false"),
-                       act.push(upgraded))
-    runner.check(after, "--event", "push", "--gate-code", "7", "--function", BREACH)
+    after = runner.run(root, runner_job("gha-action-consumer"), act.push(upgraded))
+    check_runner_cell(runner, after, "gha-action-consumer", "push")
 
 
-@cell("gha-action-tag-upgrade", channel="Action pin moved", harness="GitHub runner (act model)",
+@cell("gha-action-tag-upgrade", channel="Action pin moved", harness=RUNNER,
       scenario="upgrade: the store the @v0.7.6 step left holds a failed verify; the moved pin's refusal must "
                "not send the reader to a run id that exists only in that runner's store",
       use_cases="Action pin move", os="linux", image="ci", cadence="nightly")
@@ -376,35 +417,51 @@ def test_the_moved_pins_refusal_names_no_run_the_reader_cannot_see(box, candidat
 
 # --- the GitHub runner's jobs, modelled under act ---------------------------------------------
 
-@cell("gha-action-consumer", channel="`uses: ./crapkit`, push event", harness="GitHub runner (act model)",
+@cell("gha-action-consumer", channel="`uses: ./crapkit`, push event", harness=RUNNER,
       scenario='fresh: pull-requests: read, delta "false", gate "true"; outcome failure; "gate is on: exiting '
-               "with verify's code N\"; 'no pull request on this event'; the comment names the function",
+               "with verify's code N\"; 'no pull request on this event'; the comment names the function; "
+               "ci.yml's in-job check passes",
       use_cases="Action verdict", os="linux", image="ci", cadence="push")
 def test_the_runner_job_on_a_push_fails_on_the_marked_function(box, candidate):
     runner = act.Runner.make(box)
     root, built = build_consumer(box, candidate, "--container-ok", checkout=True)
-    job = act.crapkit_job("./crapkit", permission="read", gate="true", delta="false")
 
-    result = runner.run(root, job, act.push(built))
+    result = runner.run(root, runner_job("gha-action-consumer"), act.push(built))
 
-    runner.check(result, "--event", "push", "--gate-code", "7", "--function", BREACH)
+    check_runner_cell(runner, result, "gha-action-consumer", "push")
 
 
-@cell("gha-action-readonly-token", channel="`uses: ./crapkit`, pull_request event",
-      harness="GitHub runner (act model)",
+@cell("gha-action-readonly-token", channel="`uses: ./crapkit`, pull_request event", harness=RUNNER,
       scenario="fresh: pull-requests: read; 'posting the crapkit comment exited' with gh's 403; the gate "
-               "still decides",
+               "still decides; ci.yml's in-job check passes",
       use_cases="Action comment", os="linux", image="ci", cadence="push")
 def test_the_runner_job_on_a_pull_request_with_a_read_token(box, candidate):
     runner = act.Runner.make(box)
     runner.readonly()
     root, built = build_consumer(box, candidate, "--container-ok", checkout=True)
-    job = act.crapkit_job("./crapkit", permission="read", gate="true", delta="false")
 
-    result = runner.run(root, job, act.pull_request(built))
+    result = runner.run(root, runner_job("gha-action-readonly-token"), act.pull_request(built))
 
-    runner.check(result, "--event", "pull_request", "--post", "denied", "--gate-code", "7", "--function", BREACH)
+    check_runner_cell(runner, result, "gha-action-readonly-token", "pull_request")
     assert "gh's own error is above, and the verdict is in this job's log" in result.log
+
+
+@cell("gha-action-windows", channel="`uses: ./crapkit` on a Windows runner", harness="GitHub runner (act model, Windows)",
+      scenario="fresh: deploy.yml's job with runs-on windows-latest, the action's bash steps in Git Bash: a push "
+               "fails on the marked function with verify's code 7 and posts nothing; a pull request with a "
+               "read token logs gh's 403 and the gate still decides; ci.yml's in-job check passes on both",
+      use_cases="Action verdict, Action comment", os="windows", image=None, cadence="nightly")
+def test_the_runner_job_on_windows_fails_on_the_marked_function(box, candidate):
+    runner = act.Runner.make(box)
+    root, built = build_consumer(box, candidate, checkout=True)
+    job = runner_job("gha-action-windows", runs_on="windows-latest")
+
+    pushed = runner.run(root, job, act.push(built))
+    check_runner_cell(runner, pushed, "gha-action-windows", "push")
+
+    runner.readonly()
+    pulled = runner.run(root, job, act.pull_request(built))
+    check_runner_cell(runner, pulled, "gha-action-windows", "pull_request")
 
 
 # --- the pieces, on every OS -------------------------------------------------------------------
@@ -535,6 +592,7 @@ def test_the_act_job_is_readmes_job_with_the_cells_edits():
 
     assert act.readme_job().action_ref().startswith(f"{act.SLUG}@v")
     assert "on: [push, pull_request]" in text and "pull-requests: read" in text
+    assert "runs-on: ubuntu-latest" in text
     assert 'pip install -e ".[dev]"' not in text and "actions/setup-python@v5" in text
     assert ('- uses: ./crapkit\n        id: crapkit\n        continue-on-error: true\n        with:\n'
             '          gate: "true"\n          delta: "false"\n') in text
@@ -544,12 +602,89 @@ def test_the_act_job_is_readmes_job_with_the_cells_edits():
 
 
 @pytest.mark.kit
-def test_act_tells_a_dropped_exit_line_from_an_exit_step_that_printed_it():
+def test_the_runner_job_is_ci_ymls_job_with_its_in_job_check():
+    text = runner_job("gha-action-windows", runs_on="windows-latest").text()
+
+    assert "runs-on: windows-latest" in text and "runs-on: ubuntu-latest" not in text
+    assert text.endswith(f"- name: {act.ASSERT_STEP}\n        if: always()\n        run: python "
+                         "crapkit/tools/deploy/assert_action.py --cell gha-action-windows --outcome "
+                         '"${{ steps.crapkit.outcome }}"\n')
+
+
+@pytest.mark.kit
+def test_consumer_excludes_what_the_workspace_held_before_it(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "crapkit").mkdir()
+    (tmp_path / "crapkit-v0.7.6").mkdir()
+    (tmp_path / "notes.txt").write_text("x\n", encoding="utf-8")
+    consumer = tool("consumer")
+
+    assert consumer.already_there(tmp_path) == ["/crapkit-v0.7.6/", "/crapkit/", "/notes.txt"]
+    defaults = consumer.parse([])
+    assert defaults.root == Path(".") and defaults.seed_from == str(DEPLOY_TOOLS.parents[1])
+
+
+def state_dir(temp: Path, name: str, code: str, body: str, mtime: int) -> Path:
+    """One crapkit.* directory as the action's steps leave it under RUNNER_TEMP."""
+    state = temp / f"crapkit.{name}"
+    state.mkdir(parents=True)
+    (state / "crapkit-verify.exit").write_text(f"{code}\n", encoding="utf-8")
+    (state / "crapkit-comment.md").write_text(body, encoding="utf-8")
+    os.utime(state / "crapkit-verify.exit", (mtime, mtime))
+    return state
+
+
+@pytest.mark.kit
+def test_assert_action_in_the_job_reads_the_newest_state_and_skips_the_log_lines(tmp_path, monkeypatch, capsys):
+    older = f"<!-- crapkit-action -->\n**`crapkit verify` exited 3: {STAMP_REFUSAL}10 ...**"
+    state_dir(tmp_path, "old", "3", older, 1_000_000)
+    state_dir(tmp_path, "new", "7", f"<!-- crapkit-action -->\n- ratchet: `calc/grade.py` `{BREACH}`\n", 2_000_000)
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+    assert _assert_action().main(["--cell", "gha-action-windows", "--outcome", "failure"]) == 0
+    out = capsys.readouterr().out
+    assert "ok   gate: verify's code in crapkit-verify.exit is 7" in out and "skip posting: not read" in out
+
+    assert _assert_action().main(["--cell", "gha-action-tag-upgrade", "--outcome", "failure"]) == 1
+    assert "FAIL gate: verify's code in crapkit-verify.exit is 7, expected 3" in capsys.readouterr().out
+
+
+@pytest.mark.kit
+def test_assert_action_in_a_job_whose_action_never_ran_fails(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+    assert _assert_action().main(["--cell", "gha-action-consumer", "--event", "push", "--outcome", "failure"]) == 1
+    assert "FAIL state: no crapkit.*/crapkit-verify.exit under $RUNNER_TEMP" in capsys.readouterr().out
+
+
+@pytest.mark.kit
+def test_a_cell_brings_its_checks_and_the_run_brings_its_event(monkeypatch):
+    module = _assert_action()
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    upgrade = module.parse(["--cell", "gha-action-tag-upgrade", "--outcome", "failure"])
+    moved = module.parse(["--cell", "gha-action-consumer", "--gate-code", "6", "--outcome", "failure"])
+
+    assert (upgrade.event, upgrade.gate_code) == ("pull_request", "3")
+    assert f"{STAMP_REFUSAL}10 " in upgrade.comment_has and moved.gate_code == "6"
+    assert [module.default_post(event) for event in ("pull_request", "push", "schedule")] == ["denied", "none", "none"]
+    monkeypatch.delenv("GITHUB_EVENT_NAME")
+    with pytest.raises(SystemExit):
+        module.parse(["--cell", "gha-action-consumer", "--outcome", "failure"])
+
+
+@pytest.mark.kit
+def test_act_tells_a_lost_exit_line_from_one_printed_late():
     header, failed = "[crapkit.yml/crapkit] ⭐ Run Main the exit code\n", "[crapkit.yml/crapkit]   ❌  Failure - Main the exit code [13ms]\n"
     printed = "[crapkit.yml/crapkit]   | gate is on: exiting with verify's code 6\n"
+    old_step = header + "[crapkit.yml/crapkit]   | gate is off: verify's code 7 is in the comment, this check stays green\n"
 
-    assert act.DROPPED_EXIT_LINE.search(header + failed)
-    assert not act.DROPPED_EXIT_LINE.search(header + printed + failed)
+    assert act.lost_exit_line(header + failed)
+    assert not act.lost_exit_line(header + printed + failed)
+    assert not act.lost_exit_line(header + failed + "[crapkit.yml/crapkit] exit status 6\n" + printed)
+    assert act.lost_exit_line(old_step + header + failed)
 
 
 @pytest.mark.kit

@@ -11,19 +11,24 @@ The job is README's "The whole job those four lines sit in" fence, read
 through docsnip and edited step by step: the crapkit step takes an id,
 continue-on-error and the cell's inputs, and a last step prints its outcome.
 
-act runs the job on this machine (`-P ubuntu-latest=-self-hosted`) with
---action-offline-mode, so nothing is fetched:
+act runs the job on this machine (`-P ubuntu-latest=-self-hosted`, and
+windows-latest the same way, so a Windows host runs a job that names it)
+with --action-offline-mode, so nothing is fetched:
 
   actions   every `actions/<name>@<ref>` the workflow and the crapkit action
             use resolves (--local-repository) to the checkout of that action
-            pins.toml [actions] pins, which the ci image pre-fetched; a ref
-            other than the pinned SHA is noted in the transcript
+            pins.toml [actions] pins, which the ci image pre-fetched (and a
+            Windows toolchain holds in act-actions/); a ref other than the
+            pinned SHA is noted in the transcript
   crapkit   `JeanFrancoisGagne/crapkit@v<version>` resolves to that tag of the
             sandbox's git mirror, exported to a directory
-  python    setup-python finds the pinned 3.12 in act's tool cache, a fresh
-            venv per job, as a hosted runner starts each job on a clean image
+  python    setup-python finds the pinned 3.12 in act's tool cache, fresh per
+            job (a venv, or on Windows a copy of the install), as a hosted
+            runner starts each job on a clean image
   gh        kit/stub_gh/gh first on PATH, answering from a state directory
   pip       the sandbox's pip.conf: the wheelhouse and the candidate's dist/
+  bash      on Windows, PortableGit's bin/ on PATH, where a Windows runner
+            has Git's, for the action's `shell: bash` steps
 
 The workspace is act's copy of the consumer with .gitignore not applied: act
 otherwise honours .git/info/exclude and leaves out the `crapkit/` checkout a
@@ -57,11 +62,14 @@ SLUG = "JeanFrancoisGagne/crapkit"
 USES = re.compile(r"uses:\s*(?P<name>actions/[\w.-]+)@(?P<ref>[\w.-]+)")
 OUTCOME = re.compile(r"crapkit-step-outcome=(?P<outcome>\w*)")
 OUTCOME_STEP = ("- if: always()", '  run: echo "crapkit-step-outcome=${{ steps.crapkit.outcome }}"')
+PLATFORMS = ("ubuntu-latest", "windows-latest")
+ASSERT_STEP = "assert what the consumer sees"
 # One job runs the lanes up to three times (base, checkout, verify's reuse)
 # and two pip installs: several suites' worth of the one hang bound.
 JOB_SECONDS = 4 * hang_guard.HANG_SECONDS
-# The action's exit step failed and act printed none of its output.
-DROPPED_EXIT_LINE = re.compile(r"Run Main the exit code\n[^\n|]*Failure - Main the exit code")
+# act's header for the action's exit step, and the one line each run of it prints.
+EXIT_HEADER = "Run Main the exit code"
+GATE_LINE = re.compile(r"\|\s?gate is o(?:n|ff)\b")
 ATTEMPTS = 3
 
 
@@ -144,14 +152,22 @@ def readme_job() -> Job:
 
 
 def crapkit_job(ref: str, *, events: str = "[push, pull_request]", install: bool = True,
-                permission: str = "write", **inputs: str) -> Job:
-    """README's job as a cell runs it: on these events, the crapkit step at
-    `ref` with `inputs`, the install step kept or left out, and a last step
-    that prints the crapkit step's outcome."""
+                permission: str = "write", runs_on: str = "ubuntu-latest", **inputs: str) -> Job:
+    """README's job as a cell runs it: on these events and runner, the crapkit
+    step at `ref` with `inputs`, the install step kept or left out, and a last
+    step that prints the crapkit step's outcome."""
     job = readme_job().with_head("on:", f"on: {events}").uses(ref, **inputs)
-    job = job.with_head("pull-requests:", f"pull-requests: {permission}")
+    job = job.with_head("pull-requests:", f"pull-requests: {permission}").with_head("runs-on:", f"runs-on: {runs_on}")
     job = job if install else job.with_step('pip install -e ".[dev]"', None)
     return job.plus(*OUTCOME_STEP)
+
+
+def assert_step(cell: str) -> tuple[str, ...]:
+    """The step ci.yml runs after the action in the same job:
+    tools/deploy/assert_action.py for `cell` over the action's state directory."""
+    outcome = "${{ steps.crapkit.outcome }}"
+    return (f"- name: {ASSERT_STEP}", "  if: always()",
+            f'  run: python crapkit/tools/deploy/assert_action.py --cell {cell} --outcome "{outcome}"')
 
 
 def upgrade_job(old: str, new: str, **inputs: str) -> Job:
@@ -229,8 +245,7 @@ class Runner:
         state = root / "gh-state"
         state.mkdir(parents=True, exist_ok=True)
         box.prepend_path(install_stub(root / "gh-bin"))
-        return cls(box, act_binary(box.toolchain), Path(box.toolchain.get("act_actions", IMAGE_ACTIONS)),
-                   root / "cache", state)
+        return cls(box, act_binary(box.toolchain), actions_dir(box.toolchain), root / "cache", state)
 
     # --- the stub gh ---
     def readonly(self) -> None:
@@ -268,26 +283,28 @@ class Runner:
 
     def argv(self, event: str, workflow: Path, payload: Path, workspace: Path) -> list[str]:
         argv = [self.act, event, "-e", str(payload), "-W", str(workflow), "-C", str(workspace),
-                "-P", "ubuntu-latest=-self-hosted", "--action-offline-mode", "--no-cache-server",
-                "--container-daemon-socket", "-", "--action-cache-path", str(self.cache),
-                "--use-gitignore=false", "-s", f"GITHUB_TOKEN={TOKEN}"]
+                *(flag for label in PLATFORMS for flag in ("-P", f"{label}=-self-hosted")),
+                "--action-offline-mode", "--no-cache-server", "--container-daemon-socket", "-",
+                "--action-cache-path", str(self.cache), "--use-gitignore=false", "-s", f"GITHUB_TOKEN={TOKEN}"]
         repositories = self.local_repositories(workflow.read_text(encoding="utf-8"), workspace)
         return argv + [flag for repository in repositories for flag in ("--local-repository", repository)]
 
     def run(self, workspace: Path, job: Job, payload: dict, *, event: str | None = None) -> Result:
         """One act run of `job` on `workspace` for a pull_request or push
-        `payload`. act can drop the one line the action's failing exit step
-        prints (a race in its host executor, seen once in about forty runs
-        under load, never on a GitHub runner); that run is made again from
-        the same stub state, and the transcript says so."""
+        `payload`. Under load act prints a failing step's last line after the
+        step's failure line, which assert_action.py reads wherever it lands;
+        once in about forty runs it printed no line at all for the exit step
+        (a race in its host executor, never seen on a GitHub runner). That run
+        is made again from the same stub state, and the transcript says so."""
         self.runs += 1
         before = self._saved_state()
-        for attempt in range(ATTEMPTS):
-            result = self._run_once(workspace, job, payload, event)
-            if not DROPPED_EXIT_LINE.search(result.log):
-                return result
-            self.box.transcript.note(f"act run {self.runs} attempt {attempt + 1} dropped the exit step's line")
+        result = self._run_once(workspace, job, payload, event)
+        for attempt in range(1, ATTEMPTS):
+            if not lost_exit_line(result.log):
+                break
+            self.box.transcript.note(f"act run {self.runs} attempt {attempt} printed no line for an exit step")
             _restore(before, self.state)
+            result = self._run_once(workspace, job, payload, event)
         return result
 
     def _saved_state(self) -> Path:
@@ -313,9 +330,13 @@ class Runner:
         return where / "crapkit.yml", where / "event.json"
 
     def _spawn(self, argv: list[str], cwd: Path) -> Step:
-        env = {**self.box.env, "STUB_GH_STATE": str(self.state)}
+        """act with an empty, closed stdin, as a runner starts a step. Given
+        a pytest-xdist worker's stdin on Windows instead, the build-dependency
+        pip that `pip install -e` starts inside a `shell: bash` step lost its
+        stdout (EBADF, exit 120) and the action's install step failed."""
+        env = {**self.box.env, "STUB_GH_STATE": str(self.state), "PATH": runner_path(self.box)}
         started = time.monotonic()
-        done = hang_guard.run(argv, cwd=str(cwd), env=env, timeout=JOB_SECONDS)
+        done = hang_guard.run(argv, cwd=str(cwd), env=env, timeout=JOB_SECONDS, input=b"")
         decode = _decode(done.stdout), _decode(done.stderr)
         step = Step(argv, str(cwd), done.returncode, *decode, round(time.monotonic() - started, 2), "act")
         return self.box.transcript.add(step)
@@ -327,6 +348,11 @@ class Runner:
         script = wheels.SRC / "tools" / "deploy" / "assert_action.py"
         return self.box.run([self.box.toolchain["runner_python"], str(script), "--log", str(log),
                              "--outcome", result.outcome, *flags], expect=expect)
+
+
+def lost_exit_line(log: str) -> bool:
+    """Whether a run of the action's exit step printed no gate line."""
+    return log.count(EXIT_HEADER) > len(GATE_LINE.findall(log))
 
 
 def _decode(data: bytes) -> str:
@@ -367,20 +393,60 @@ def _origin(box, workspace: Path) -> None:
         box.run(["git", "remote", "add", "origin", f"https://github.com/{REPO}.git"], cwd=workspace, expect=0)
 
 
+def runner_path(box) -> str:
+    """The sandbox PATH, with PortableGit's bin/ (bash) on Windows, where a
+    Windows runner has Git's bin/ for `shell: bash` steps."""
+    parts = [str(Path(box.toolchain["bash"]).parent)] if WINDOWS else []
+    return os.pathsep.join([*parts, box.env["PATH"]])
+
+
 def fresh_tool_cache(box, tool_cache: Path) -> Path:
     """RUNNER_TOOL_CACHE holding the pinned 3.12 as setup-python finds it
-    (Python/<version>/x64 and its .complete marker): a new venv each job."""
+    (Python/<version>/x64 and its .complete marker), fresh each job: a venv,
+    or on Windows, where setup-python wants python.exe in x64 itself, a copy
+    of the pinned install."""
     version = pinned_python("3.12")
     home = tool_cache / "Python" / version
     shutil.rmtree(home, ignore_errors=True)
     home.mkdir(parents=True)
-    box.run([box.toolchain.python("3.12"), "-m", "venv", str(home / "x64")], expect=0)
+    python = box.toolchain.python("3.12")
+    if WINDOWS:
+        windows_tool_python(box, Path(python), home / "x64")
+    else:
+        box.run([python, "-m", "venv", str(home / "x64")], expect=0)
     (home / "x64.complete").write_text("", encoding="utf-8")
     return home
 
 
+def windows_tool_python(box, python: Path, dest: Path) -> None:
+    """A copy of the pinned install as a Windows runner's tool-cache Python
+    is: not marked EXTERNALLY-MANAGED (uv marks its own installs), and with
+    pip's launchers in Scripts/, which the pinned install lacks and a
+    `run: pip install` step looks for."""
+    shutil.copytree(python.parent, dest, ignore=shutil.ignore_patterns("EXTERNALLY-MANAGED"))
+    box.run([str(dest / "python.exe"), "-m", "pip", "install", "-q", "--no-deps", "--force-reinstall", "pip"],
+            expect=0)
+
+
+# --- where act and the pinned actions are ----------------------------------------------
+
+def native_root(toolchain) -> Path:
+    """The directory toolchain.json sits in: a native toolchain's root."""
+    return Path(toolchain.source).parent
+
+
 def act_binary(toolchain) -> str:
-    found = toolchain.get("act") or (IMAGE_ACT if Path(IMAGE_ACT).exists() else None)
-    if not found:
-        raise AssertionError("kit: this toolchain holds no act; the ci image has it at " + IMAGE_ACT)
-    return found
+    """act from toolchain.json, the ci image, or a Windows toolchain's act-windows/."""
+    found = [toolchain.get("act"), IMAGE_ACT, str(native_root(toolchain) / "act-windows" / "act.exe")]
+    present = next((path for path in found if path and Path(path).exists()), None)
+    if not present:
+        raise AssertionError(f"kit: this toolchain holds no act; the ci image has it at {IMAGE_ACT}, and a "
+                             "Windows toolchain needs [binary.act-windows-x64] unpacked into act-windows/")
+    return present
+
+
+def actions_dir(toolchain) -> Path:
+    """The pinned action checkouts: toolchain.json's, the ci image's, or a
+    Windows toolchain's act-actions/ (named <owner>-<name>@<sha> like the image's)."""
+    found = [toolchain.get("act_actions"), IMAGE_ACTIONS, str(native_root(toolchain) / "act-actions")]
+    return next((Path(path) for path in found if path and Path(path).is_dir()), Path(IMAGE_ACTIONS))

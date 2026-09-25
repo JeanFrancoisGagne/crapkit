@@ -1,6 +1,6 @@
 """Build the repository that calls crapkit's GitHub Action, the way an adopter's looks.
 
-    python crapkit/tools/deploy/consumer.py --root . --seed-from ./crapkit
+    python crapkit/tools/deploy/consumer.py [--root .] [--seed-from ./crapkit]
 
 The deploy-action job checks crapkit out to `crapkit/` in its workspace and
 runs this from the workspace root, so `uses: ./crapkit` then scores a
@@ -16,11 +16,13 @@ Either way the result is one git repository at --root:
             so it scores worse than its ratchet mark. HEAD is left here.
 
 The seeding crapkit is installed from --seed-from (a pip requirement: a path,
-a wheel or `crapkit==X`) into a throwaway venv outside --root, with pytest and
-pytest-cov for the lane `init` writes. Its `.crapkit/` store is deleted after
-the seed, because a CI checkout holds none. `crapkit/` goes in
-.git/info/exclude, and the config `init` writes scopes only the consumer's
-own tracked files, so the action's checkout is never scored.
+a wheel or `crapkit==X`; by default the crapkit checkout this script sits in)
+into a throwaway venv outside --root, with pytest and pytest-cov for the lane
+`init` writes. Its `.crapkit/` store is deleted after the seed, because a CI
+checkout holds none. Whatever --root (default: the current directory) held
+before this ran goes in .git/info/exclude: the job's own checkouts, such as
+`crapkit/` and a second release's worktree beside it. The config `init`
+writes scopes only the consumer's own tracked files, so no checkout is scored.
 
 --subdir puts the adopted package below the git top (a monorepo),
 --container-ok commits `container_ok = true` on the lane (docs/lanes.md,
@@ -43,8 +45,11 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-FIXTURE = HERE.parents[1] / "tests" / "fixtures" / "action_consumer"
-EXCLUDED = ["crapkit/"]
+CHECKOUT = HERE.parents[1]
+FIXTURE = CHECKOUT / "tests" / "fixtures" / "action_consumer"
+# The function the breach makes worse, as lizard names it: the name a verdict
+# and the comment quote.
+BREACH = "grade( score , attempts , late , bonus )"
 IDENTITY = ["-c", "user.name=crapkit deploy consumer", "-c", "user.email=consumer@example.com",
             "-c", "commit.gpgsign=false"]
 WINDOWS = os.name == "nt"
@@ -64,14 +69,20 @@ def commit(root: Path, message: str) -> str:
     return git(root, "rev-parse", "HEAD")
 
 
-def init_repo(root: Path) -> None:
-    """A repository at root with main checked out and crapkit/ excluded."""
+def already_there(root: Path) -> list[str]:
+    """What root held before the consumer, as exclude patterns anchored at root."""
+    return sorted(f"/{entry.name}/" if entry.is_dir() else f"/{entry.name}"
+                  for entry in root.iterdir() if entry.name != ".git")
+
+
+def init_repo(root: Path, excluded: list[str]) -> None:
+    """A repository at root with main checked out and `excluded` left out of it."""
     if not (root / ".git").exists():
         git(root, "init", "-q", "-b", "main")
     exclude = root / ".git" / "info" / "exclude"
     exclude.parent.mkdir(parents=True, exist_ok=True)
     kept = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
-    exclude.write_text(kept + "".join(f"{line}\n" for line in EXCLUDED), encoding="utf-8")
+    exclude.write_text(kept + "".join(f"{line}\n" for line in excluded), encoding="utf-8")
 
 
 def porcelain(root: Path) -> str:
@@ -153,9 +164,10 @@ def seed(spec: str, target: Path, container_ok: bool) -> None:
 # --- the consumer ----------------------------------------------------------------------
 
 def build(root: Path, spec: str, subdir: str = "", container_ok: bool = False, main_moves: bool = False) -> dict:
+    excluded = already_there(root)
     target = root / subdir if subdir else root
     target.mkdir(parents=True, exist_ok=True)
-    init_repo(root)
+    init_repo(root, excluded)
     copy_tree(FIXTURE / "base", target)
     commit(root, "calc: grades and a curve")
     seed(spec, target, container_ok)
@@ -178,8 +190,10 @@ def move_main(root: Path) -> str:
 
 def parse(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--root", type=Path, required=True, help="the git top to build at (the workspace)")
-    parser.add_argument("--seed-from", required=True, help="pip requirement for the crapkit that seeds the ratchet")
+    parser.add_argument("--root", type=Path, default=Path("."),
+                        help="the git top to build at, the workspace (default: the current directory)")
+    parser.add_argument("--seed-from", default=str(CHECKOUT),
+                        help="pip requirement for the crapkit that seeds the ratchet (default: this checkout)")
     parser.add_argument("--subdir", default="", help="put the adopted package here, below the git top")
     parser.add_argument("--container-ok", action="store_true", help="commit container_ok = true on the lane")
     parser.add_argument("--main-moves", action="store_true", help="add a commit on main after the fork")
