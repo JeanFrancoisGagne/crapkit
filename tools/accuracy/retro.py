@@ -381,20 +381,29 @@ def ledger_row(bug: Bug, before: Outcome, fix: Outcome, note: str = "") -> dict:
 
 # --- choosing rows -------------------------------------------------------------------------------------
 
+def check_exists(row: dict, repo: Path = REPO) -> bool:
+    """Whether this tree holds the row's check yet: its packet may not have landed."""
+    return (repo / row["test"].split("::")[0]).is_file()
+
+
 def replayable_here(row: dict, platform: str = sys.platform) -> bool:
+    """An open bug has no fix to replay, a platform row runs on its platform only,
+    and a check this tree does not hold yet cannot run."""
     wanted = PLATFORMS.get(row["platform"], row["platform"])
-    return row["replay"] != "open" and (not wanted or platform.startswith(wanted))
+    on_platform = not wanted or platform.startswith(wanted)
+    return row["replay"] != "open" and on_platform and check_exists(row)
+
+
+def _is_stale(row: dict, ledger: dict) -> bool:
+    recorded = ledger.get(row_key(row))
+    bug = bug_of(row)
+    return recorded is None or recorded["digest"] != digest(bug.test, bug.probe)
 
 
 def stale(bugs: list[dict], ledger: dict) -> list[dict]:
-    """Rows never replayed, or whose check changed since the recorded replay."""
-    out = []
-    for row in bugs:
-        recorded = ledger.get(row_key(row))
-        bug = bug_of(row)
-        if recorded is None or recorded["digest"] != digest(bug.test, bug.probe):
-            out.append(row)
-    return out
+    """Rows whose check this tree holds and that were never replayed, or whose
+    check changed since the recorded replay."""
+    return [row for row in bugs if check_exists(row) and _is_stale(row, ledger)]
 
 
 def weekly_slice(rows: list[dict], of: int, day: int) -> list[dict]:
