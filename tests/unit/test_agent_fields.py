@@ -135,6 +135,18 @@ def test_the_unread_finding_has_one_shape_in_every_payload(payloads):
     assert keys == {payload: [["dirty", "path", "reason"]] for payload in shapes}
 
 
+@pytest.mark.parametrize("page", ["AGENTS.md", "docs/agent-json.md"])
+def test_the_check_gate_row_names_the_unread_key_the_gate_block_carries(page: str):
+    """An MCP client reads the key off this row; the old name finds nothing."""
+    import re
+
+    rows = [line for line in (ROOT / page).read_text(encoding="utf-8").splitlines()
+            if line.startswith("| `check_gate` |")]
+
+    assert len(rows) == 1 and "unread_files" in rows[0], rows
+    assert not re.search(r"`(gate\.)?unread`", rows[0]), rows[0]
+
+
 def _entry_keys(payload: dict, key: str) -> list[list[str]]:
     return [sorted(entry) for entry in values_at(payload, f"{key}[]")]
 

@@ -608,7 +608,7 @@ Twelve tools, every one the CLI command's `--json` form:
 | `list_duplicate_functions` | `similarity` | JSON |
 | `get_ratchet_report` | none | JSON |
 | `list_claims` | none | JSON (`claims list --json`) |
-| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it; `ok` false on a breach or on a changed file no reader could read (`gate.unread`), exit 6, answered as a result, not a tool error |
+| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it; `ok` false on a breach or on a changed file no reader could read (`gate.unread_files`), exit 6, answered as a result, not a tool error |
 
 Arguments are checked against the served schema before the CLI spawns. `tools/list`
 carries `required` from each tool's positionals, and a missing positional, an undeclared
