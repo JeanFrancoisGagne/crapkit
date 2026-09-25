@@ -383,12 +383,17 @@ def build_parser() -> argparse.ArgumentParser:
                      help="print suggested [crapkit] parallelism knobs for this machine from "
                           "cpu count and recorded lane durations; writes nothing")
     doc.add_argument("--plugin-root", nargs="?", const="", default=None, metavar="PATH",
-                     help="check an installed Claude Code plugin against this CLI instead of "
-                          "reading a repo: manifest version and hook protocol, one line per "
-                          "disagreement, silent when they agree. PATH is the plugin root or "
+                     help="check an installed crapkit plugin, Claude Code's or Codex's, "
+                          "against the crapkit on PATH instead of reading a repo: manifest "
+                          "version, hook protocol, an install whose files differ from its "
+                          "marketplace's copy at one version, and the Claude Code the hooks "
+                          "need. One line per disagreement, and each line names the command "
+                          "that closes it; silent when they agree. PATH is the plugin root or "
                           "any directory above it, ~/.claude included (the newest crapkit "
-                          "install under it wins); with no PATH, the newest crapkit install "
-                          "in Claude Code's plugin cache")
+                          "install under it wins); with no PATH, the newest install Claude "
+                          "Code recorded or cached (a local directory marketplace is checked "
+                          "in that directory, where Claude Code loads it), else the newest in "
+                          "Codex's plugin cache")
     doc.set_defaults(func=_Handler("admin", "cmd_doctor"))
 
     rat = sub.add_parser("ratchet", help="manage the committed marks file: seed new debt, prune gone code")

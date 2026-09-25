@@ -579,3 +579,24 @@ def test_versions_that_do_not_order_plainly_name_both_repairs(tmp_path, capsys, 
                     "with `claude plugin marketplace update crapkit`, then `claude plugin update "
                     "crapkit@crapkit --scope user`; the CLI with `python -m pip install --upgrade "
                     "crapkit`.")
+
+
+# --- what --help promises ------------------------------------------------------------------
+
+def _doctor_help(capsys) -> str:
+    with pytest.raises(SystemExit):
+        main(["doctor", "--help"])
+    return " ".join(capsys.readouterr().out.split())
+
+
+def test_the_help_says_where_a_bare_plugin_root_looks_and_what_it_names(capsys):
+    """The help said "the newest crapkit install in Claude Code's plugin cache"
+    after doctor learned to check a local directory marketplace in place and to
+    fall back to Codex's cache, and it named no repairs."""
+    text = _doctor_help(capsys)
+
+    assert "check an installed crapkit plugin, Claude Code's or Codex's," in text
+    assert ("with no PATH, the newest install Claude Code recorded or cached (a local directory "
+            "marketplace is checked in that directory, where Claude Code loads it), else the "
+            "newest in Codex's plugin cache") in text
+    assert "each line names the command that closes it" in text
