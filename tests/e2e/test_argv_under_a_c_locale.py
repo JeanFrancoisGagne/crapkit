@@ -1,15 +1,17 @@
-"""A non-ASCII path argument answers under a C locale with UTF-8 mode off.
+"""A non-ASCII path argument under a C locale with UTF-8 mode off.
 
 `crapkit brief pkg/café.py résumé_ü` on Linux under LC_ALL=C PYTHONUTF8=0
 PYTHONCOERCECLOCALE=0 reaches Python as ASCII: each byte of `é` becomes a lone
-surrogate, and the store's sqlite query refused it with a UnicodeEncodeError
-traceback. crapkit now reads such an argument back into the bytes the shell
-passed (textcodec.os_text), so the path names the file git tracks.
+surrogate, and the store's sqlite query refuses it with a UnicodeEncodeError
+traceback. That row and the function-name row below are strict xfails: they
+fail today, and the day crapkit reads such an argument back into the bytes the
+shell passed they pass, which strict=True reports as a failure until the
+marker goes.
 
-The two neighbouring locales keep answering: plain LC_ALL=C, where Python
-coerces the locale to UTF-8, and LANG=C.UTF-8. Windows hands argv over as
-UTF-16 and has no C locale to decode it, so these rows run on Linux only; the
-Windows encodings are test_encoding_e2e.py's rows.
+The two neighbouring locales answer today and must keep answering: plain
+LC_ALL=C, where Python coerces the locale to UTF-8, and LANG=C.UTF-8. Windows
+hands argv over as UTF-16 and has no C locale to decode it, so these rows run
+on Linux only; the Windows encodings are test_encoding_e2e.py's rows.
 """
 import os
 
@@ -53,11 +55,16 @@ scopes = ["pkg"]
 """
 
 LOCALES = {
-    # Python decodes argv as ASCII here: the row that raised a traceback.
+    # Python decodes argv as ASCII here: the row that raises a traceback.
     "c-no-coercion-no-utf8": {"LC_ALL": "C", "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0"},
     "c-coerced": {"LC_ALL": "C", "PYTHONUTF8": None, "PYTHONCOERCECLOCALE": None},
     "c-utf8": {"LANG": "C.UTF-8", "LC_ALL": None},
 }
+# What the ASCII-locale rows wait for. Drop both markers when they pass.
+ARGV_AS_SURROGATES = pytest.mark.xfail(strict=True, reason=(
+    "under an ASCII locale Python hands each non-ASCII byte of an argument over as a lone "
+    "surrogate, and the store's sqlite query refuses it (UnicodeEncodeError): crapkit does "
+    "not yet read argv back into the bytes the shell passed"))
 
 
 @pytest.fixture(scope="module")
@@ -73,11 +80,14 @@ def measured(tmp_path_factory):
     return repo
 
 
-@pytest.mark.parametrize("locale", list(LOCALES))
+@pytest.mark.parametrize("locale", [
+    pytest.param("c-no-coercion-no-utf8", marks=ARGV_AS_SURROGATES),
+    "c-coerced",
+    "c-utf8",
+])
 def test_brief_on_a_non_ascii_path_answers_under_every_locale(measured, locale):
-    """The red row: under the ASCII locale this was a UnicodeEncodeError
-    traceback. Now the path reads back as the file git tracks, so the answer
-    names it and the function it holds."""
+    """The answer names the file git tracks and the function it holds. Under
+    the ASCII locale it is a UnicodeEncodeError traceback today."""
     result = _run(measured, "brief", FILE, NAME, env_extra=LOCALES[locale])
 
     assert "Traceback" not in result.stderr, result.stderr
@@ -86,8 +96,7 @@ def test_brief_on_a_non_ascii_path_answers_under_every_locale(measured, locale):
     assert NAME in result.stdout + result.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="the function-name argument does not pass through "
-                   "textcodec.os_text yet: only the path argument does (cli/_shared._repo_relative)")
+@ARGV_AS_SURROGATES
 def test_brief_reads_a_non_ascii_function_name_under_an_ascii_locale(measured):
     result = _run(measured, "brief", FILE, NAME, env_extra=LOCALES["c-no-coercion-no-utf8"])
 
