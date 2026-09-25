@@ -16,8 +16,9 @@ MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-l
 
 ## Measure before changing marks
 
-0.8.0 moves the reader to analysis version 11, so a marks file stamped under 10
-needs one re-seed; [analysis version 11](#analysis-version-11) says what moved.
+0.8.1 moves the reader to analysis version 12, so a marks file stamped under 11
+needs one re-seed; [analysis version 12](#analysis-version-12) says what moved.
+0.8.0 moved it to 11; [analysis version 11](#analysis-version-11) says what moved then.
 The package upgrade rebuilds the versioned analysis cache automatically, and the
 first `inventory` or `coverage` after it analyzes every file again. That run's
 [twin-key note](ratchet.md#twins-one-name-several-functions) names the first five
@@ -43,6 +44,35 @@ any mark changes.
 | Function membership or same-line identity | Review the [saved-mark mapping](ratchet.md#reconcile-saved-marks) before changing keys or stamps. |
 | Coverage or JUnit producer | Run a fresh lane and resolve [artifact admission errors](lanes.md#a-junit-that-says-the-run-did-not-finish). |
 | Shared exports or portable baselines | Upgrade readers before writing [encoded records](portable-records.md) for them. |
+
+### Analysis version 12
+
+0.8.1 reads two kinds of source bytes as text where 0.8.0 did not. Each one changes
+some functions' names or numbers, and the stamp records the rules, so every marks file
+re-seeds once:
+
+- A source file that opens with a UTF-16 byte-order mark, as PowerShell 5.1's
+  `Out-File` and the ISE save it, scores its functions. 0.8.0 read it as empty, so its
+  functions appear for the first time and one over its ceiling fails the gate the next
+  time its file changes.
+- An identifier that holds one of the five bytes cp1252 leaves undefined (0x81, 0x8D,
+  0x8F, 0x90, 0x9D) keeps its name, the byte read as the letter U+01NN. 0.8.0 keyed
+  such a function as `�( x )`, `(anonymous)` or, in C, `if( x)` at ccn 1; it now
+  keys as `cafƁ( x )` at its own ccn, so a mark under the old key names a function the
+  run lacks.
+
+After upgrading, in each repo:
+
+```sh
+crapkit coverage
+crapkit ratchet prune
+crapkit ratchet seed
+```
+
+`coverage` measures under version 12, `ratchet prune` drops the marks left under the
+old keys, and `ratchet seed` stamps the marks with the new version. In a repo with no
+UTF-16 source and no such byte in a name no key or score moves, so prune drops
+nothing.
 
 ### Analysis version 11
 

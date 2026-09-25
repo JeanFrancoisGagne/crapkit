@@ -72,3 +72,19 @@ def test_a_differing_stamp_names_both_versions_and_the_fix():
 def test_a_lizard_bump_alone_conflicts():
     assert stamp_conflict("crapkit-analysis=3 lizard=1.17.10",
                           "crapkit-analysis=3 lizard=1.24.0") is not None
+
+
+def test_marks_stamped_before_the_source_readers_moved_reseed_once():
+    """Q9: a change that can move an existing function's ccn or name on the
+    same tree bumps the analysis version. 0.8.1 reads a UTF-16 source that 0.8.0
+    scored as empty, and keys an identifier holding one of the five bytes cp1252
+    leaves undefined by its name, where it read `U+FFFD( x )` or C's `if( x)`
+    at ccn 1 took the function's place. A marks file stamped under 0.8.0's
+    version 11 is not comparable, so it re-seeds once."""
+    import lizard
+
+    from crapkit.analyze import ANALYSIS_VERSION
+    from crapkit.ratchet import metric_version
+
+    assert ANALYSIS_VERSION == 12
+    assert stamp_conflict(stamp_text(11, lizard.version), metric_version()) is not None

@@ -5,6 +5,9 @@
 ### Text that is not UTF-8
 
 A commit, file name, report or MCP frame that is not UTF-8 no longer ends a command with a traceback.
+Two of the source reads below move function keys and scores, so the analysis version moves to
+12 and every marks file re-seeds once: run `crapkit coverage`, `crapkit ratchet prune`, then
+`crapkit ratchet seed` ([analysis version 12](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-12)).
 
 - An author name, subject, body or patch line a commit stored in bytes that are not UTF-8
   reads as U+FFFD: in the churn window (`worklist`, `next-item`, `brief`, `coupling` and
