@@ -7,7 +7,7 @@ Seconds are serial ubuntu estimates from measured Windows runs.
 SHARD = "analysis"
 _PACKET = "tests/accuracy/analysis_oracles/"
 CHECKS = [
-    {"name": "hand probes in every language", "seconds": 8,
+    {"name": "hand probes in every language", "seconds": 6,
      "pytest": [_PACKET + "test_hand_probes.py"]},
     {"name": "one shape reads the same in every language", "seconds": 2,
      "pytest": [_PACKET + "test_equivalence.py"]},
@@ -47,4 +47,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_watch.py"]},
     {"name": "watch snapshots against a plain os.stat model", "seconds": 1,
      "pytest": [_PACKET + "test_watch_stat_model.py"]},
+    {"name": "inventory rows against hand bytes and the portable record rules", "seconds": 2,
+     "pytest": [_PACKET + "test_inventory_rows.py"]},
 ]
