@@ -43,6 +43,8 @@ the user touches. The kit owns everything a cell must not re-invent:
                 upgrade
   stub_anthropic, stub_openai
                 scripted model APIs that record every request body
+  clock         what run.py --faketime changes for a cell: the environment
+                name libfaketime adds, and the releases it cannot start
 
 The environment a run.py invocation hands the kit:
 

@@ -27,7 +27,7 @@ from pathlib import Path
 import hang_guard
 import pytest
 
-from kit import cells, repos, sandbox, wheels
+from kit import cells, clock, profiles, repos, sandbox, wheels
 
 pytestmark = pytest.mark.kit
 
@@ -188,7 +188,8 @@ def _child_env_names(box) -> set[str]:
 
 
 def test_a_child_sees_only_the_allowlist(box):
-    assert _child_env_names(box) <= _names(ALLOWED | {"PWD", "SHLVL", "_"})
+    # Under run.py --faketime libfaketime adds FAKETIME_SHARED to each process itself.
+    assert _child_env_names(box) <= _names(ALLOWED | {"PWD", "SHLVL", "_"} | clock.added_env())
 
 
 def test_nothing_the_runner_exports_reaches_a_new_sandbox(tmp_path, transcript, toolchain, monkeypatch):
@@ -565,10 +566,17 @@ def held_harnesses(box) -> dict[str, dict]:
     return {name: spec for name, spec in pinned_harnesses().items() if harness(box, spec["command"])}
 
 
+def startable_harnesses(box) -> dict[str, dict]:
+    """The held harnesses this container's clock lets start: under run.py
+    --faketime, every one but the releases kit/clock.py names."""
+    return {name: spec for name, spec in held_harnesses(box).items()
+            if not clock.blocker(box.which(spec["command"]))}
+
+
 def run_each_harness(box) -> dict[str, bool]:
     """harness -> whether it printed its pinned version."""
     box.put_harnesses_on_path()
-    checked = {name: version_check(box, spec) for name, spec in held_harnesses(box).items()}
+    checked = {name: version_check(box, spec) for name, spec in startable_harnesses(box).items()}
     return {name: printed for name, printed in checked.items() if printed is not None}
 
 
@@ -579,6 +587,106 @@ def test_no_harness_binary_changes_during_the_session_with_every_update_switch_s
     assert sandbox.changed_stamps(session_start, sandbox.harness_stamps(box.toolchain)) == []
     assert printed == {name: True for name in printed}
     assert update_switches(box) == {**UPDATE_ENV, **{relative: value for relative, _, value in UPDATE_FILES}}
+
+
+# --- the moved clock (run.py --faketime) --------------------------------------------------
+# kit/clock.py: under the clock every process runs under libfaketime, which
+# adds FAKETIME_SHARED to its environment, and a release in CANNOT_START
+# deadlocks before main, so the kit skips a cell at its first start.
+
+CLOCK_PROBE_SECONDS = 20
+LIBFAKETIME = "/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1\n"
+
+
+def fake_release(root: Path, package: str) -> Path:
+    """node_modules/<package>/bin, the dir npm links from, holding a `claude`
+    that prints fake-claude: an sh script, and a cmd one for Windows."""
+    bin_dir = root / "node_modules" / package / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "claude").write_text("#!/bin/sh\necho fake-claude\n", encoding="utf-8", newline="\n")
+    (bin_dir / "claude").chmod(0o755)
+    (bin_dir / "claude.cmd").write_text("@echo fake-claude\r\n", encoding="utf-8", newline="")
+    return bin_dir
+
+
+def move_the_clock(monkeypatch, tmp_path: Path, text: str = LIBFAKETIME) -> None:
+    preload = tmp_path / "ld.so.preload"
+    preload.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(clock, "PRELOAD", preload)
+
+
+def claude_steps(box) -> list[str]:
+    """The recorded steps that started claude, directly or in a script."""
+    return [step.text() for step in box.transcript.steps if "claude" in " ".join([*step.argv, step.note])]
+
+
+def test_a_moved_clock_adds_libfaketimes_name_and_blocks_only_the_listed_release(tmp_path, monkeypatch):
+    listed = fake_release(tmp_path, "@anthropic-ai/claude-code") / "claude"
+    floor = fake_release(tmp_path, "claude-code-2.1.139") / "claude"
+    monkeypatch.setattr(clock, "PRELOAD", tmp_path / "no-preload")
+    assert clock.added_env() == frozenset() and clock.blocker(str(listed)) is None
+
+    move_the_clock(monkeypatch, tmp_path)
+    assert clock.added_env() == {"FAKETIME_SHARED"}
+    assert "deadlocks before main" in clock.blocker(str(listed))
+    assert clock.blocker(str(floor)) is None
+
+
+def test_a_preload_that_names_another_library_moves_no_clock(tmp_path, monkeypatch):
+    move_the_clock(monkeypatch, tmp_path, "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2\n")
+
+    assert not clock.moved() and clock.added_env() == frozenset()
+
+
+def test_a_moved_clock_skips_the_cell_at_a_release_it_cannot_start(box, tmp_path, monkeypatch):
+    bin_dir = fake_release(tmp_path, "@anthropic-ai/claude-code")
+    box.prepend_path(bin_dir)
+    move_the_clock(monkeypatch, tmp_path)
+
+    with pytest.raises(pytest.skip.Exception, match="cannot start under libfaketime, so the cell stops here"):
+        box.run([box.which("claude"), "--version"])
+    with pytest.raises(pytest.skip.Exception, match="deadlocks before main"):
+        box.run(["claude", "--version"])
+    with pytest.raises(pytest.skip.Exception, match="kit/clock.py CANNOT_START lists the release"):
+        box.script("echo one && claude plugin install crapkit@crapkit")
+    assert claude_steps(box) == []
+
+
+def test_the_real_clock_starts_the_same_release(box, tmp_path, monkeypatch):
+    box.prepend_path(fake_release(tmp_path, "@anthropic-ai/claude-code"))
+    monkeypatch.setattr(clock, "PRELOAD", tmp_path / "no-preload")
+
+    printed = box.script("claude --version", expect=0).stdout.splitlines()
+    assert "fake-claude" in [line.strip() for line in printed]  # cmd echoes the command line first
+    assert len(claude_steps(box)) == 1
+
+
+def test_a_start_under_the_clock_reads_as_the_env_rule_it_follows(box, tmp_path, monkeypatch):
+    names = set(profiles.SDK_DEFAULT[os.name]) | {"FAKETIME_SHARED"}
+    monkeypatch.setattr(clock, "PRELOAD", tmp_path / "no-preload")
+    assert profiles.env_rule(box, names, set()) == "allowlist"
+
+    move_the_clock(monkeypatch, tmp_path)
+    assert profiles.env_rule(box, names, set()) == "sdk-default"
+
+
+def answers_under_the_clock(box, path: str) -> bool:
+    try:
+        hang_guard.run([path, "--version"], cwd=str(box.root), env=box.env, timeout=CLOCK_PROBE_SECONDS)
+    except AssertionError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(not clock.moved(), reason="runs under run.py --faketime only")
+def test_each_release_the_clock_skips_still_cannot_start_under_it(box):
+    box.put_harnesses_on_path()
+    blocked = [box.which(spec["command"]) for name, spec in held_harnesses(box).items()
+               if name not in startable_harnesses(box)]
+    answered = [path for path in blocked if answers_under_the_clock(box, path)]
+
+    assert answered == [], (f"{answered} answered --version under libfaketime within {CLOCK_PROBE_SECONDS} s: "
+                            "remove the package from kit/clock.py CANNOT_START so lin-clock runs its cells again")
 
 
 def test_a_changed_harness_binary_is_named():

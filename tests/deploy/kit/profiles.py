@@ -43,7 +43,7 @@ from pathlib import Path
 
 import hang_guard
 from e2e import repo_templates
-from kit import repos, sandbox, shim, stub_anthropic, stub_openai, wheels, writers
+from kit import clock, repos, sandbox, shim, stub_anthropic, stub_openai, wheels, writers
 from kit.transcript import Step
 
 PROFILES = Path(__file__).resolve().parents[1] / "profiles"
@@ -712,8 +712,9 @@ def _folded_set(names) -> set[str]:
 
 def env_rule(box, names: set[str], configured: set[str]) -> str:
     """The [spawn] env value a start's environment matches: the SDK default set,
-    most of the harness's own environment (inherit), or an allowlist."""
-    own = _folded_set(names - configured)
+    most of the harness's own environment (inherit), or an allowlist. The
+    names libfaketime adds under run.py --faketime belong to no rule."""
+    own = _folded_set(names - configured - clock.added_env())
     if own <= _folded_set(SDK_DEFAULT[os.name]):
         return "sdk-default"
     return "inherit" if len(own & _folded_set(box.env)) >= 0.9 * len(box.env) else "allowlist"

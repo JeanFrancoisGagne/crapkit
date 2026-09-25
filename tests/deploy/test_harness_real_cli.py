@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from kit import docsnip, gitmirror, profiles, repos, shim
+from kit import clock, docsnip, gitmirror, profiles, repos, shim
 from kit.cells import cell
 from kit.mcp_client import McpClient
 
@@ -140,7 +140,7 @@ def test_codex_mcp_add(box, templates, candidate):
         answer = app.call_tool(thread, "get_next_item", {"repo": str(repo)})
     assert not answer["isError"] and answer["structuredContent"]["item"]["path"] == "calc/grade.py"
     start = last_start(box)
-    allowed = set(profiles.load("codex").spawn["env_allow"])
+    allowed = set(profiles.load("codex").spawn["env_allow"]) | clock.added_env()
     assert start["cwd"] == str(repo) and "VIRTUAL_ENV" not in start["env"]
     assert set(start["env"]) <= allowed, sorted(set(start["env"]) - allowed)
     assert initialize_params(start)["protocolVersion"] == profiles.load("codex").initialize["protocol"]
@@ -171,8 +171,9 @@ def cursor_tools(box, repo: Path) -> list[str]:
 def assert_cursor_start(box, repo: Path) -> None:
     start = last_start(box)
     allowed = {profiles._folded(name) for name in profiles.allowed_names(profiles.load("cursor"))}
+    allowed |= {"PATH", *clock.added_env()}
     assert start["cwd"] == str(repo)
-    assert {profiles._folded(name) for name in start["env"]} <= allowed | {"PATH"}, sorted(start["env"])
+    assert {profiles._folded(name) for name in start["env"]} <= allowed, sorted(start["env"])
 
 
 @cell("lin-cursor-cli", channel=".cursor/mcp.json", harness="Cursor agent 2026.09.23",

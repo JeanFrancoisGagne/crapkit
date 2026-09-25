@@ -37,6 +37,7 @@ from pathlib import Path
 
 import hang_guard
 
+from kit import clock
 from kit.transcript import Step, Transcript
 
 WINDOWS = os.name == "nt"
@@ -180,12 +181,13 @@ class Sandbox:
 
     def resolve(self, program: str) -> str:
         """argv[0] as the sandbox PATH finds it. Windows CreateProcess would
-        search the runner's PATH instead, so the kit resolves it first."""
-        if os.path.dirname(program):
-            return program
-        found = self.which(program)
+        search the runner's PATH instead, so the kit resolves it first. Under
+        `run.py --faketime` a program that cannot start there skips the cell
+        (kit/clock.py)."""
+        found = program if os.path.dirname(program) else self.which(program)
         if found is None:
             raise AssertionError(f"{program!r} is not on the sandbox PATH: {self.env['PATH']}")
+        clock.skip_unstartable(found)
         return found
 
     def commit_env(self) -> dict[str, str]:
@@ -222,6 +224,7 @@ class Sandbox:
         """Run a block of shell text as a user pastes it: sh on POSIX, cmd on
         Windows unless `shell` names powershell, pwsh, bash or sh."""
         shell = shell or ("cmd" if WINDOWS else "sh")
+        clock.skip_unstartable_in(text, self.which)
         path = self.tmp / f"step-{len(self.transcript.steps)}{SCRIPT_SUFFIX[shell]}"
         path.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
         return self.run([*self.shell(shell), str(path)], cwd=cwd, env=env, expect=expect,
