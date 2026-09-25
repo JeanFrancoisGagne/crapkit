@@ -592,3 +592,19 @@ def test_each_mcp_tool_carries_the_count_and_the_refresh_the_cli_prints(tmp_path
     assert "scored_changes" in out, out
     assert (out["stale"], out["scored_changes"]) == (cli["stale"], cli["scored_changes"])
     assert out["commands"]["refresh"] == "crapkit coverage --reuse-unchanged"
+
+
+def test_an_empty_queue_over_an_uncommitted_regression_does_not_meet_the_stop_rule(tmp_path):
+    """The stop rule reads `empty: true` with `scored_changes: 0`. A run whose
+    queue was finished, then an uncommitted edit that puts a ccn-4 function
+    over the ceiling: the queue still reads empty and `stale` false, so only
+    the count keeps the loop from stopping on numbers the edit made false."""
+    repo = _py_repo(tmp_path, {"src/app.py": SIMPLE})
+    _measure(repo)
+    done = _json(repo, "next-item")
+    assert (done["empty"], done["scored_changes"]) == (True, 0), done
+
+    _write(repo, "src/app.py", APP)
+    out = _json(repo, "next-item")
+
+    assert (out["empty"], out["stale"], out["scored_changes"]) == (True, False, 1), out
