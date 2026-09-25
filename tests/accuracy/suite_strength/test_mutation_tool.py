@@ -1865,6 +1865,25 @@ def test_a_cli_module_is_mutated_only_at_the_functions_calcs_tsv_names():
     assert globs == ["crapkit.cli.analyses.x_cmd_mutate__mutmut_*", "crapkit.mutate.*"]
 
 
+RELEASE = "tools/release/release.py"
+
+
+def test_the_release_tool_is_mutated_only_at_its_gate_functions():
+    """release.py publishes a release; only its accuracy gate computes a verdict
+    a calcs.tsv row names. The first weekly run mutated the whole module: 3,323
+    of its mutants sat in publishing code no calc test reaches."""
+    globs = mutation.calc_globs([RELEASE], {RELEASE: {"accuracy_gate", "_row_line"}})
+
+    assert globs == ["tools.release.release.x__row_line__mutmut_*",
+                     "tools.release.release.x_accuracy_gate__mutmut_*"]
+
+
+def test_a_changed_release_function_is_in_scope_only_when_named():
+    changed = [(RELEASE, "accuracy_gate"), (RELEASE, "plan")]
+
+    assert mutation.in_calc_scope(changed, {RELEASE: {"accuracy_gate"}}) == [(RELEASE, "accuracy_gate")]
+
+
 def test_the_weekly_shards_leave_the_second_config_s_modules_to_it(monkeypatch):
     monkeypatch.setattr(mutation, "calc_modules", lambda: [
         "src/crapkit/mutate.py", "tools/accuracy/retro.py", "tools/release/release.py"])

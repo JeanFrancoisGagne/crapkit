@@ -11,8 +11,8 @@
 
 mutmut 3.8.0 runs in the accuracy image (it forks, so Linux only). `weekly`
 mutates one shard of the modules every tests/accuracy/*/calcs.tsv row names
-(a cli module only at the functions a row names, and never a module `tools`
-mutates);
+(a cli module and the release tool only at the functions a row names, and
+never a module `tools` mutates);
 `diff` mutates only the functions changed since the last weekly run and stops
 at its cap, reporting `incomplete`, never `pass`. Both run in a detached
 worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose [tool.mutmut]
@@ -677,8 +677,10 @@ def _canary_globs() -> list[str]:
 # --- the calc runs' scope ---------------------------------------------------------------------
 # The plan's mutation section: a cli module is mutated only at the functions a
 # calcs.tsv row names, and the modules the second config (`tools`) mutates
-# against their own tests stay out of the weekly and nightly runs.
-CLI = "src/crapkit/cli/"
+# against their own tests stay out of the weekly and nightly runs. The release
+# tool is scoped like a cli module: only its accuracy gate is a calculation, and
+# the rest of it publishes.
+FUNCTION_SCOPED = ("src/crapkit/cli/", "tools/release/release.py")
 
 
 def calc_functions() -> dict[str, set[str]]:
@@ -699,12 +701,12 @@ def weekly_modules() -> list[str]:
 
 def calc_globs(modules: list[str], named: dict[str, set[str]]) -> list[str]:
     """mutmut's filter for a calc run over `modules`: each whole module, a cli
-    module only at its named functions."""
+    module and the release tool only at their named functions."""
     return [glob for module in modules for glob in _module_globs(module, named)]
 
 
 def _module_globs(module: str, named: dict[str, set[str]]) -> list[str]:
-    if module.startswith(CLI):
+    if module.startswith(FUNCTION_SCOPED):
         return [mutmut_glob(module, name) for name in sorted(named.get(module, ()))]
     return [f"{_dotted(module)}.*"]
 
@@ -712,7 +714,7 @@ def _module_globs(module: str, named: dict[str, set[str]]) -> list[str]:
 def in_calc_scope(pairs: list[tuple[str, str]], named: dict[str, set[str]]) -> list[tuple[str, str]]:
     """The changed (module, function) pairs a calc run mutates."""
     return [(module, name) for module, name in pairs if module not in TOOL_TARGETS
-            and (not module.startswith(CLI) or name in named.get(module, ()))]
+            and (not module.startswith(FUNCTION_SCOPED) or name in named.get(module, ()))]
 
 
 # --- the second config: the accuracy tools and kit.exact -----------------------------------------
