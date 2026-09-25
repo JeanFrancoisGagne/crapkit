@@ -14,16 +14,18 @@ equivalence and oracle tests all read one run:
   session under that launch;
 - `js_push`: the JS/TS probe files and shapes, written out, listed by the
   TypeScript compiler and measured; `eslint_push(mode)` is ESLint's numbers
-  for them under one analysis_js oracle.
+  for them under one analysis_js oracle;
+- `corpus_language(language)`: one language's files from its full-corpus
+  member and crapkit's inventory of them (nightly tests only).
 """
 import os
 
 import pytest
 
 from accuracy.analysis_oracles import (analysis_corpora, analysis_inventory, analysis_js,
-                                       analysis_shapes, analysis_tables)
+                                       analysis_shapes, analysis_tables, analysis_tstests)
 from accuracy.analysis_oracles.oracles import node_oracles
-from accuracy.kit import oracles
+from accuracy.kit import oracles, runlog
 
 
 def _shared_base(tmp_path_factory):
@@ -115,3 +117,25 @@ def eslint_push(js_push, oracle):
             cache[mode] = analysis_js.numbers(js_push.compiled, found, mode)
         return cache[mode]
     return run
+
+
+@pytest.fixture(scope="session")
+def full_corpus():
+    try:
+        return analysis_corpora.full_corpus_root()
+    except analysis_corpora.CorpusMissing as missing:
+        runlog.note("infra", message=str(missing))
+        pytest.fail(str(missing), pytrace=False)
+
+
+@pytest.fixture(scope="session")
+def corpus_language(full_corpus, measure_set):
+    cache = {}
+
+    def get(language: str):
+        if language not in cache:
+            suffixes, member = analysis_tstests.LANGUAGES[language]
+            files = analysis_corpora.member_files(full_corpus, member, suffixes)
+            cache[language] = (files, measure_set(files))
+        return cache[language]
+    return get

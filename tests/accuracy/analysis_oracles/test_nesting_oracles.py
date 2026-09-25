@@ -18,6 +18,7 @@ import pytest
 from accuracy.analysis_oracles import (analysis_choices, analysis_js, analysis_pydiff,
                                        analysis_shapes, py_defect_shapes)
 from accuracy.analysis_oracles.oracles import py_sonar, pylint_nesting
+from accuracy.analysis_oracles import analysis_tables, analysis_tstests
 from accuracy.kit import rulings, runlog
 
 pytestmark = pytest.mark.process
@@ -132,3 +133,22 @@ def test_each_max_depth_difference_is_pinned(ruling_id, js_push, eslint_push):
     crapkit, raw = analysis_js.case(js_push, eslint_push, *DEPTH_CASES[ruling_id], "max-depth")
 
     rulings.pin_ruling(ruling_id, crapkit=crapkit, oracle=raw)
+
+
+# --- brace languages and shell: the tree-sitter counters (nesting depth) -------------------------
+
+@pytest.mark.parametrize("language", sorted(analysis_tstests.LANGUAGES))
+def test_nesting_match_the_treesitter_counters_on_the_probes(language, probe_inventory):
+    files = analysis_tstests.of_language(analysis_tables.probe_files(), language)
+
+    outcome = analysis_tstests.check(files, probe_inventory, "nesting", language)
+    assert outcome.compared > 0
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("language", analysis_tstests.CORPUS_LANGUAGES)
+def test_nesting_match_the_treesitter_counters_on_the_corpus(language, corpus_language):
+    files, measured = corpus_language(language)
+
+    outcome = analysis_tstests.check(files, measured, "nesting", language)
+    assert outcome.compared > 0

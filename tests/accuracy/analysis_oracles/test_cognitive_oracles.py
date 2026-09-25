@@ -21,6 +21,7 @@ import pytest
 from accuracy.analysis_oracles import (analysis_choices, analysis_js, analysis_pydiff,
                                        analysis_shapes, py_defect_shapes)
 from accuracy.analysis_oracles.oracles import complexipy_adapter, py_sonar
+from accuracy.analysis_oracles import analysis_tables, analysis_tstests
 from accuracy.kit import rulings, runlog
 
 pytestmark = pytest.mark.process
@@ -168,3 +169,22 @@ def test_each_sonarjs_difference_is_pinned(ruling_id, js_push, eslint_push):
     crapkit, raw = analysis_js.case(js_push, eslint_push, *SONARJS_CASES[ruling_id])
 
     rulings.pin_ruling(ruling_id, crapkit=crapkit, oracle=raw)
+
+
+# --- brace languages and shell: the tree-sitter counters (cognitive) -------------------------
+
+@pytest.mark.parametrize("language", sorted(analysis_tstests.LANGUAGES))
+def test_cognitive_match_the_treesitter_counters_on_the_probes(language, probe_inventory):
+    files = analysis_tstests.of_language(analysis_tables.probe_files(), language)
+
+    outcome = analysis_tstests.check(files, probe_inventory, "cognitive", language)
+    assert outcome.compared > 0
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("language", analysis_tstests.CORPUS_LANGUAGES)
+def test_cognitive_match_the_treesitter_counters_on_the_corpus(language, corpus_language):
+    files, measured = corpus_language(language)
+
+    outcome = analysis_tstests.check(files, measured, "cognitive", language)
+    assert outcome.compared > 0

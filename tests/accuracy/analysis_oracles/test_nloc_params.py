@@ -16,6 +16,7 @@ import pytest
 
 from accuracy.analysis_oracles import analysis_pydiff, py_line_shapes
 from accuracy.analysis_oracles.oracles import py_ast_oracle, tokenize_nloc
+from accuracy.analysis_oracles import analysis_tables, analysis_tstests
 from accuracy.kit import runlog
 
 pytestmark = pytest.mark.process
@@ -130,3 +131,22 @@ def test_a_comment_or_blank_moves_no_nloc_and_a_statement_adds_one(name, edits):
     (edited,) = edits.in_file(f"edits/{name}.py")
 
     assert edited["nloc"] - base["nloc"] == EDITS[name][1]
+
+
+# --- brace languages and shell: the tree-sitter counters (nloc and params) -------------------------
+
+@pytest.mark.parametrize("language", sorted(analysis_tstests.LANGUAGES))
+def test_sizes_match_the_treesitter_counters_on_the_probes(language, probe_inventory):
+    files = analysis_tstests.of_language(analysis_tables.probe_files(), language)
+
+    outcome = analysis_tstests.check(files, probe_inventory, "sizes", language)
+    assert outcome.compared > 0
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("language", analysis_tstests.CORPUS_LANGUAGES)
+def test_sizes_match_the_treesitter_counters_on_the_corpus(language, corpus_language):
+    files, measured = corpus_language(language)
+
+    outcome = analysis_tstests.check(files, measured, "sizes", language)
+    assert outcome.compared > 0

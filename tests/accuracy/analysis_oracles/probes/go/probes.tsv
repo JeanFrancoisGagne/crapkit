@@ -77,3 +77,18 @@ c-fact	constructs.go	Fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch wit
 c-fact	constructs.go	Fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
 c-fact	constructs.go	Fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
 c-fact	constructs.go	Fact	params	1	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+g-func-type	shapes.go	AfterFuncType	rows	1	The Go Programming Language Specification, Function types: a var of function type declares a variable, so AfterFuncType is one function	AO-GO-FUNC-TYPE
+g-interface-param	shapes.go	Show	start	9	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+g-interface-param	shapes.go	Show	params	2	The Go Programming Language Specification, Function types: the parameter list declares v and w	AO-GO-INTERFACE-PARAM
+g-func-param	shapes.go	Each	params	1	The Go Programming Language Specification, Function types: the parameter list declares f; the types inside its type are not its parameters	AO-GO-FUNC-PARAM
+g-wrap	shapes.go	Wrap	nloc	5	lizard 1.24.0 README: NLOC counts lines of code without comments; the lines holding Wrap's own tokens: func, run(, }), return, }	AO-NLOC-CLOSE-LINE
+g-wrap	shapes.go	Wrap	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a function literal raises the nesting level and adds nothing	
+g-def	shapes.go	Default	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; none here	AO-ND-DEF
+g-nested-else	shapes.go	NestedInElse	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the else body is one level deep and the if inside it opens the second	AO-N-ELSE
+g-nested-else	shapes.go	NestedInElse	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else +1, the if in the else +2	
+g-init-after-if	shapes.go	InitAfterIf	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the for inside the second if is two levels deep	AO-GO-ND-INIT
+g-init-after-if	shapes.go	InitAfterIf	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, if +1, for +2	
+g-case-run	shapes.go	CaseRun	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, switch +2, one && sequence +1, if +3	AO-COG-RUNS-GO
+g-case-run	shapes.go	CaseRun	ccn_std	7	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; for, the case, three &&, if	
+g-do-call	shapes.go	DoCall	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a call to a function named do is no loop	AO-COG-KEYWORD-NAMES-BRACE
+g-long-run	shapes.go	LongRun	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, one && sequence over two lines +1	AO-COG-RUNS-LINES

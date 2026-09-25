@@ -19,6 +19,7 @@ import pytest
 from accuracy.analysis_oracles import (analysis_js, analysis_pydiff, analysis_shapes,
                                        analysis_tables, py_defect_shapes)
 from accuracy.analysis_oracles.oracles import radon_mccabe
+from accuracy.analysis_oracles import analysis_tables, analysis_tstests
 from accuracy.kit import rulings, runlog
 
 pytestmark = pytest.mark.process
@@ -207,3 +208,41 @@ def test_each_eslint_complexity_transform_is_pinned(ruling_id, js_push, eslint_p
     crapkit, raw = analysis_js.case(js_push, eslint_push, *JS_CASES[ruling_id])
 
     rulings.pin_ruling(ruling_id, crapkit=crapkit, oracle=raw)
+
+
+# --- brace languages and shell: the tree-sitter counters (function spans) -------------------------
+
+@pytest.mark.parametrize("language", sorted(analysis_tstests.LANGUAGES))
+def test_spans_match_the_treesitter_counters_on_the_probes(language, probe_inventory):
+    files = analysis_tstests.of_language(analysis_tables.probe_files(), language)
+
+    outcome = analysis_tstests.check(files, probe_inventory, "spans", language)
+    assert outcome.compared > 0
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("language", analysis_tstests.CORPUS_LANGUAGES)
+def test_spans_match_the_treesitter_counters_on_the_corpus(language, corpus_language):
+    files, measured = corpus_language(language)
+
+    outcome = analysis_tstests.check(files, measured, "spans", language)
+    assert outcome.compared > 0
+
+
+# --- brace languages and shell: the tree-sitter counters (ccn_std and ccn_mod) -------------------------
+
+@pytest.mark.parametrize("language", sorted(analysis_tstests.LANGUAGES))
+def test_ccn_match_the_treesitter_counters_on_the_probes(language, probe_inventory):
+    files = analysis_tstests.of_language(analysis_tables.probe_files(), language)
+
+    outcome = analysis_tstests.check(files, probe_inventory, "ccn", language)
+    assert outcome.compared > 0
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("language", analysis_tstests.CORPUS_LANGUAGES)
+def test_ccn_match_the_treesitter_counters_on_the_corpus(language, corpus_language):
+    files, measured = corpus_language(language)
+
+    outcome = analysis_tstests.check(files, measured, "ccn", language)
+    assert outcome.compared > 0

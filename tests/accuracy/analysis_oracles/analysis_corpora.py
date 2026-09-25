@@ -94,3 +94,39 @@ def unparsed(corpus: Corpus) -> Corpus:
     files = {name: (ast.unparse(ast.parse(data)) + "\n").encode("utf-8")
              for name, data in corpus.files.items()}
     return Corpus(files, corpus.rejected)
+
+
+# --- the full corpus (tools/accuracy/corpus.py builds and publishes it) --------------------------
+
+CORPUS_ENV = "CRAPKIT_ACCURACY_CORPUS"
+FETCH = "python tools/accuracy/corpus.py fetch"
+
+
+class CorpusMissing(LookupError):
+    """No unpacked full corpus where the kit looks for one."""
+
+
+def _candidates() -> list[Path]:
+    named = os.environ.get(CORPUS_ENV)
+    if named:
+        return [Path(named)]
+    base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".cache")
+    local = sorted((base / "crapkit-accuracy" / "corpus").glob("*/DIGEST"))
+    return [Path("/corpus"), *(digest.parent for digest in reversed(local))]
+
+
+def full_corpus_root() -> Path:
+    """The unpacked full corpus: CRAPKIT_ACCURACY_CORPUS, the image's /corpus, or the
+    newest fetch under LOCALAPPDATA (or ~/.cache)/crapkit-accuracy/corpus."""
+    for root in _candidates():
+        if (root / "DIGEST").is_file():
+            return root
+    raise CorpusMissing(f"no full corpus found; set {CORPUS_ENV} or run `{FETCH}`")
+
+
+def member_files(root: Path, member: str, suffixes: tuple) -> dict:
+    """{path: bytes} for a corpus member's files with one of `suffixes`."""
+    folder = root / member
+    return {path.relative_to(folder).as_posix(): path.read_bytes()
+            for path in sorted(folder.rglob("*"))
+            if path.is_file() and path.suffix.lower() in suffixes}
