@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -846,3 +847,114 @@ def test_harness_postinstalls_write_under_the_toolchain_not_the_users_home(tmp_p
 
     assert {env[name] for name in toolchain.HOME_VARS} == {str(tmp_path / "npm-home")}
     assert env["PATH"] == "/bin" and (tmp_path / "npm-home").is_dir()
+
+
+# A warm toolchain is rerun after every pin change, so each install step records
+# what it was made from and makes itself again when that moved. A step that only
+# checked that its output existed kept vitest 5.0.1 in the npm fixtures after the
+# pin moved to 5.0.2, and kept the old harness set after a harness lock changed.
+
+def _make_dir(target, name):
+    def make():
+        target.mkdir()
+        (target / name).write_text("", encoding="utf-8")
+    return make
+
+
+def test_a_step_made_from_another_pin_is_made_again(tmp_path):
+    target = tmp_path / "tool"
+    toolchain._once(target, _make_dir(target, "old"), "sha-1")
+    toolchain._once(target, _make_dir(target, "new"), "sha-2")
+
+    assert [path.name for path in target.iterdir()] == ["new"]
+
+
+def test_a_step_made_from_the_same_pin_is_kept(tmp_path):
+    target, ran = tmp_path / "tool", []
+    for _ in range(2):
+        toolchain._once(target, lambda: (target.mkdir(), ran.append(1)), "sha-1")
+
+    assert ran == [1]
+
+
+def test_a_step_that_stopped_halfway_is_made_again(tmp_path):
+    target = tmp_path / "tool"
+    target.mkdir()
+    (target / "partial").write_text("", encoding="utf-8")
+    toolchain._once(target, _make_dir(target, "whole"), "sha-1")
+
+    assert [path.name for path in target.iterdir()] == ["whole"]
+
+
+def test_a_read_only_file_does_not_stop_a_step_from_being_made_again(tmp_path):
+    """git packs and some npm files are read-only on Windows."""
+    target = tmp_path / "tool"
+    target.mkdir()
+    (target / "pack").write_text("", encoding="utf-8")
+    (target / "pack").chmod(0o444)
+    toolchain._once(target, _make_dir(target, "whole"), "sha-1")
+
+    assert [path.name for path in target.iterdir()] == ["whole"]
+
+
+def test_npm_ci_runs_again_only_when_its_lock_changes(tmp_path, monkeypatch):
+    source, dest = tmp_path / "source", tmp_path / "dest"
+    source.mkdir()
+    (source / "package.json").write_text("{}", encoding="utf-8")
+    (source / "package-lock.json").write_text('{"v": 1}', encoding="utf-8")
+    ran = []
+    monkeypatch.setattr(toolchain, "run_step", lambda argv, **kwargs: ran.append(argv[1]))
+    for lock_text in ('{"v": 1}', '{"v": 1}', '{"v": 2}'):
+        (source / "package-lock.json").write_text(lock_text, encoding="utf-8")
+        toolchain.npm_ci("npm", source, dest, tmp_path / "cache", {})
+
+    assert ran == ["ci", "ci"]
+    assert (dest / "package-lock.json").read_text(encoding="utf-8") == '{"v": 2}'
+
+
+def test_an_archive_whose_sha256_moved_is_unpacked_again(tmp_path, monkeypatch):
+    pins = {"binary": {"tool-windows-x64": {"os": "windows", "arch": "x86_64", "url": "https://h/tool.zip",
+                                            "sha256": "a" * 64}}}
+
+    def download(spec, dest):
+        archive = tmp_path / f"{spec['sha256'][0]}.zip"
+        with zipfile.ZipFile(archive, "w") as bundle:
+            bundle.writestr(f"tool-{spec['sha256'][0]}/tool.exe", "")
+        return archive
+    monkeypatch.setattr(toolchain, "download", download)
+    first = toolchain.install_archive(pins, "tool-windows", "windows", tmp_path / "root")
+    pins["binary"]["tool-windows-x64"]["sha256"] = "b" * 64
+    second = toolchain.install_archive(pins, "tool-windows", "windows", tmp_path / "root")
+
+    assert (first.name, second.name) == ("tool-a", "tool-b")
+    assert [path.name for path in (tmp_path / "root" / "tool-windows").iterdir()] == ["tool-b"]
+
+
+def test_the_npm_fixtures_and_the_readme_installs_are_made_again_when_the_fixtures_change(tmp_path, monkeypatch):
+    ran = []
+    monkeypatch.setattr(toolchain, "run_step", lambda argv, **kwargs: ran.append(argv[1]))
+    monkeypatch.setattr(toolchain, "npm_fixture_pin", lambda: "one")
+    toolchain.npm_fixtures("npm", tmp_path, {})
+    toolchain.npm_fixtures("npm", tmp_path, {})
+    first = list(ran)
+    monkeypatch.setattr(toolchain, "npm_fixture_pin", lambda: "two")
+    toolchain.npm_fixtures("npm", tmp_path, {})
+
+    assert first == ["i", "i", "i", "i", "ci"] and ran == first * 2
+
+
+def test_the_runner_venv_is_made_again_when_its_requirements_change(tmp_path, monkeypatch):
+    made = []
+
+    def run(argv, **kwargs):
+        made.append(argv[1])
+        if argv[1] == "venv":
+            Path(argv[-1]).mkdir()
+    monkeypatch.setattr(toolchain.subprocess, "run", run)
+    monkeypatch.setattr(toolchain, "runner_pin", lambda python: "one " + python)
+    toolchain.install_runner(Path("uv"), "py", tmp_path)
+    toolchain.install_runner(Path("uv"), "py", tmp_path)
+    monkeypatch.setattr(toolchain, "runner_pin", lambda python: "two " + python)
+    toolchain.install_runner(Path("uv"), "py", tmp_path)
+
+    assert made == ["venv", "pip", "venv", "pip"]

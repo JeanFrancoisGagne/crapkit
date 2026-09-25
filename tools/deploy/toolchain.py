@@ -28,10 +28,12 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import json
 import os
 import platform
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -132,10 +134,46 @@ def run_step(argv: list, **kwargs) -> subprocess.CompletedProcess:
     return done
 
 
-def _once(target: Path, make) -> Path:
-    if not target.exists():
-        make()
+def _once(target: Path, make, pin: str = "") -> Path:
+    """Make target once per pin. Each step records what it was made from (a
+    sha256, a lock's digest) in <target>.pin, so a changed pin, or a step that
+    stopped halfway, removes the old output and makes it again, and a rerun
+    with nothing changed costs nothing."""
+    stamp = target.with_name(target.name + ".pin")
+    if target.exists() and _read_stamp(stamp) == pin:
+        return target
+    _remove(target)
+    make()
+    stamp.write_text(pin, encoding="utf-8")
     return target
+
+
+def _read_stamp(stamp: Path) -> str:
+    return stamp.read_text(encoding="utf-8") if stamp.exists() else ""
+
+
+def _writable(func, path, _error) -> None:
+    """Clear the read-only bit Windows sets on git packs and some npm files, then retry."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+RMTREE_HANDLER = {"onexc": _writable} if sys.version_info >= (3, 12) else {"onerror": _writable}
+
+
+def _remove(target: Path) -> None:
+    if target.is_dir():
+        shutil.rmtree(target, **RMTREE_HANDLER)
+    elif target.exists():
+        target.unlink()
+
+
+def digest(*paths: Path) -> str:
+    """One sha256 over the bytes of each file, in the order given."""
+    total = hashlib.sha256()
+    for path in paths:
+        total.update(path.read_bytes())
+    return total.hexdigest()
 
 
 # --- steps -------------------------------------------------------------------------
@@ -149,16 +187,16 @@ def binary(pins: dict, stem: str, os_name: str, arch: str | None = None) -> dict
 
 
 def install_archive(pins: dict, stem: str, os_name: str, root: Path, arch: str | None = None) -> Path:
-    """Download and unpack one pinned archive into <root>/<stem>, once."""
-    target = root / stem
+    """Download and unpack one pinned archive into <root>/<stem>, again when its sha256 moves."""
+    target, spec = root / stem, binary(pins, stem, os_name, arch)
 
     def make():
-        archive = download(binary(pins, stem, os_name, arch), root / "downloads")
+        archive = download(spec, root / "downloads")
         if archive.name.endswith(".7z.exe"):
             run_step([archive, "-y", f"-o{target}"])
         else:
             unpack(archive, target)
-    return only_child(_once(target, make))
+    return only_child(_once(target, make, spec["sha256"]))
 
 
 def exe(name: str) -> str:
@@ -184,7 +222,12 @@ def install_pipx(pins: dict, python: str, root: Path) -> Path:
     return launcher
 
 
+def runner_pin(python: str) -> str:
+    return digest(DOCKER / "runner-requirements.txt") + " " + python
+
+
 def install_runner(uv: Path, python: str, root: Path) -> str:
+    """The runner venv, made again when its requirements or its Python move."""
     venv = root / "runner"
     runner = venv / ("Scripts/python.exe" if WINDOWS else "bin/python")
 
@@ -192,7 +235,7 @@ def install_runner(uv: Path, python: str, root: Path) -> str:
         subprocess.run([str(uv), "venv", "-q", "--python", python, str(venv)], check=True)
         subprocess.run([str(uv), "pip", "install", "-q", "--require-hashes", "--python", str(runner), "-r",
                         str(DOCKER / "runner-requirements.txt")], check=True)
-    _once(runner, make)
+    _once(venv, make, runner_pin(python))
     return str(runner)
 
 
@@ -232,13 +275,35 @@ def npm_env(env: dict, root: Path) -> dict:
     return {**env, **{name: str(home) for name in HOME_VARS}}
 
 
+def npm_pin(source: Path) -> str:
+    """What an npm set is made from: its package.json and package-lock.json."""
+    return digest(*sorted(source.glob("*.json")))
+
+
+def _npm_ci_into(npm: str, source: Path, dest: Path, cache: Path, env: dict) -> None:
+    shutil.copytree(source, dest)
+    run_step([npm, "ci", "--no-audit", "--no-fund", f"--cache={cache}"], cwd=dest, env=npm_env(env, cache.parent))
+
+
 def npm_ci(npm: str, source: Path, dest: Path, cache: Path, env: dict) -> Path:
-    """`npm ci` of one locked package set into dest, filling the shared cache."""
+    """`npm ci` of one locked package set into dest, filling the shared cache,
+    again whenever its package files change."""
+    return _once(dest, lambda: _npm_ci_into(npm, source, dest, cache, env), npm_pin(source))
+
+
+def npm_fixture_pin() -> str:
+    return npm_pin(DOCKER / "npm-fixtures")
+
+
+def npm_fixtures(npm: str, root: Path, env: dict) -> Path:
+    """The README's `npm i -D` lines into the cache, then the fixture lock into
+    <root>/npm-fixtures, both again whenever the fixture files change."""
+    source, dest, cache = DOCKER / "npm-fixtures", root / "npm-fixtures", root / "npm-cache"
+
     def make():
-        shutil.copytree(source, dest)
-        run_step([npm, "ci", "--no-audit", "--no-fund", f"--cache={cache}"], cwd=dest,
-                 env=npm_env(env, cache.parent))
-    return _once(dest / "node_modules", make)
+        cache_readme_installs(npm, root, cache, env)
+        _npm_ci_into(npm, source, dest, cache, env)
+    return _once(dest, make, npm_fixture_pin())
 
 
 def native_less_commands(pins: dict) -> set[str]:
@@ -355,10 +420,7 @@ def install(pins: dict, root: Path, harness: list[str]) -> dict:
     tools["harness_dirs"] = install_harness_binaries(pins, os_name, root, harness, arch)
     lock.fetch(lock.read(), lock.row_names(pins, os_name, arch), root / "wheelhouse")
     env = dict(os.environ, PATH=os.pathsep.join([str(Path(tools["node"]).parent), os.environ["PATH"]]))
-    fixtures = root / "npm-fixtures" / "node_modules"
-    if not fixtures.exists():
-        cache_readme_installs(tools["npm"], root, root / "npm-cache", env)
-    npm_ci(tools["npm"], DOCKER / "npm-fixtures", root / "npm-fixtures", root / "npm-cache", env)
+    npm_fixtures(tools["npm"], root, env)
     for name in harness:
         npm_ci(tools["npm"], DOCKER / f"harness-{name}", root / f"harness-{name}", root / "npm-cache", env)
         drop_native_less_launchers(pins, root / f"harness-{name}")
