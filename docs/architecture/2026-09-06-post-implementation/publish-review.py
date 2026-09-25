@@ -63,7 +63,7 @@ missing=[]
 for link in parser.links:
     if link.startswith('#'):
         if link[1:] not in parser.ids:missing.append(link)
-    elif not link.startswith(('https:','http:')) and not link.endswith('-evidence.zip'):
+    elif not link.startswith(('https:','http:')) and link != 'evidence.zip':
         if not (target/link).is_file():missing.append(link)
 assert not missing,missing
 assert parser.articles==18 and len(parser.ids)==len(set(parser.ids))
@@ -76,7 +76,7 @@ outputs.mkdir(parents=True,exist_ok=True)
 for suffix in ('.html','.json'):
     shutil.copyfile(target/(NAME+suffix),outputs/(NAME+suffix))
 shutil.copytree(evidence,outputs/evidence.name,dirs_exist_ok=True)
-archive=outputs/(NAME+'-evidence.zip')
+archive=outputs/'evidence.zip'
 with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED) as z:
     for path in sorted(target.rglob('*')):
         if path.is_file():z.write(path,path.relative_to(target).as_posix())

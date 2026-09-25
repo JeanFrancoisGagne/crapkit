@@ -5,11 +5,11 @@ core.longpaths off, so a checkout that writes a path of 260 characters or more
 fails with "Filename too long". Claude Code clones under
 <CLAUDE_CONFIG_DIR>\\plugins\\marketplaces\\ plus a temporary directory name,
 so the clone fits while CLAUDE_CONFIG_DIR and the longest tracked path add up
-to 203 characters or fewer. A 139-character evidence path failed the add for
-every CLAUDE_CONFIG_DIR of 66 characters or more, which the default ~\\.claude
-reaches under a user profile path of about 58, and against github.com Claude
-Code then reported only an SSH error. At 110 characters a CLAUDE_CONFIG_DIR of
-93 still fits.
+to 204 characters or fewer. A 139-character evidence path failed the add for
+every CLAUDE_CONFIG_DIR of 66 characters or more (65 installed), which the
+default ~\\.claude reaches under a user profile path of 58, and against
+github.com Claude Code then reported only an SSH error. At 110 characters a
+CLAUDE_CONFIG_DIR of 94 still fits.
 """
 from pathlib import Path
 

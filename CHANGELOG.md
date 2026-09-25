@@ -615,12 +615,14 @@ nothing. Each of these now gets a line naming the object and the next step:
   version until the next one.
 - On Windows, `claude plugin marketplace add JeanFrancoisGagne/crapkit` failed with
   `Filename too long` for any `CLAUDE_CONFIG_DIR` of 66 characters or more, which the
-  default `~\.claude` reaches under a user profile path of about 58, and against
+  default `~\.claude` reaches under a user profile path of 58, and against
   github.com Claude Code then reported only an SSH error. A 139-character evidence path
   under `docs/architecture` was the cause, because Git for Windows leaves
   `core.longpaths` off. That folder is now
   `docs/architecture/2026-09-06-post-implementation/evidence/`, the longest tracked path
-  is 101 characters, and a test fails on any path over 110.
+  is 101 characters, and a test fails on any path over 110. The review's
+  `build-review.py` and `publish-review.py` link into the new folder, and a test
+  rebuilds and publishes the review and holds both to the committed copy.
 
 ## 0.8.0 — 2026-09-23
 
