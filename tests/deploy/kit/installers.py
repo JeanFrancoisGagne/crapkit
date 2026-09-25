@@ -401,6 +401,7 @@ class Expect:
     worklist row its over-ceiling function makes."""
     lane: str = "py"
     row: str = r"calc/grade\.py:\d+\s+grade\( score , attempts , late , bonus \)"
+    marks: int = 1
 
 
 def _init(box, repo, line, want: Expect):
@@ -438,7 +439,7 @@ def _worklist(box, repo, line, want: Expect):
 
 def _seed(box, repo, line, want: Expect):
     step = box.script(line, cwd=repo, expect=0)
-    assert said(step).startswith("crapkit-ratchet.tsv: added 1, tightened 0")
+    assert said(step).startswith(f"crapkit-ratchet.tsv: added {want.marks}, tightened 0")
     return step
 
 
@@ -452,6 +453,18 @@ START_STEPS = {"crapkit init": _init, "crapkit doctor": _doctor, "crapkit covera
 
 def _step_rule(line: str):
     return next((rule for prefix, rule in START_STEPS.items() if line.startswith(prefix)), _plain)
+
+
+def start_step(box, repo: Path, line: str, want: Expect = Expect()):
+    """One line of a start block run as the 60-second start runs it: init runs
+    the fix its note names, coverage meets the container guard, the rest by
+    their own rule. The handbook's Install and Enforcement blocks share these."""
+    return _step_rule(line)(box, repo, line, want)
+
+
+def bare(line: str) -> str:
+    """A transcript command without its trailing `  # comment`."""
+    return re.split(r"\s{2,}#\s", line, maxsplit=1)[0].rstrip()
 
 
 def readme_start(box, repo: Path, want: Expect = Expect()) -> dict[str, object]:
