@@ -16,6 +16,7 @@ that prints it (docsnip), so a moved fence fails naming the page.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
@@ -178,7 +179,7 @@ def _start_step(box, repo: Path, line: str, guard: bool) -> None:
         _refused_in_container(box, repo, line)
     box.script(line, cwd=repo, expect=0)
     if line == "crapkit init" and not guard:
-        _keyed_in_container(repo)
+        keyed_in_container(repo)
 
 
 def _refused_in_container(box, repo: Path, line: str) -> None:
@@ -190,7 +191,7 @@ def _refused_in_container(box, repo: Path, line: str) -> None:
     allow_container_lane(repo)
 
 
-def _keyed_in_container(repo: Path) -> None:
+def keyed_in_container(repo: Path) -> None:
     if in_container():
         allow_container_lane(repo)
 
@@ -256,6 +257,32 @@ def refused_then_accepted(box, repo: Path, where: str = "calc", name: str = "rou
 def head_mode(box, repo: Path, path: str) -> str:
     """The mode `git ls-tree HEAD` records for `path`."""
     return box.run(["git", "ls-tree", "HEAD", path], cwd=repo, expect=0).stdout.split()[0]
+
+
+# --- the edit advisory and the MCP server --------------------------------------------------
+
+AGENT_DOC = "docs/agent-json.md"
+
+
+def advise(box, cwd: Path, edited: Path):
+    """One Claude Code PostToolUse Edit event for `edited`, sent the way the
+    plugin's hook sends it, from the session's cwd."""
+    payload = {"hook_event_name": "PostToolUse", "tool_name": "Edit", "cwd": str(cwd),
+               "tool_input": {"file_path": str(edited)}}
+    return box.run(["crapkit", "claude-hook", "--protocol", "1"], cwd=cwd, input=json.dumps(payload))
+
+
+def assert_advised(step, rel: str) -> None:
+    """Exit 2 with the head and tail lines docs/agent-json.md captured, naming `rel`."""
+    lines = docsnip.fence(AGENT_DOC, "`claude-hook`", contains="crapkit advisory:").text.splitlines()
+    expected = [lines[0].replace("app/m.py", rel), lines[-1]]
+    assert step.exit == 2 and [line for line in expected if line not in step.stderr] == [], step.stderr
+
+
+def next_item_text(client, arguments: dict) -> tuple[bool, str]:
+    """get_next_item through a live MCP session: (isError, the text it returned)."""
+    result = client.call("get_next_item", arguments)
+    return bool(result.get("isError")), result["content"][0]["text"]
 
 
 # --- the pre-commit framework ------------------------------------------------------------
