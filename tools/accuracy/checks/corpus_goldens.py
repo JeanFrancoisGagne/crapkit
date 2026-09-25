@@ -4,7 +4,7 @@ printed commands, the Action scenarios, the wheel diff, the store upgrade and th
 corpus tool.
 
 Seconds are the push tier's serial times measured in the image on Python 3.12,
-rounded up; they sum to 57, inside the packet's 60. The shared small-corpus
+rounded up; they sum to 58, inside the packet's 60. The shared small-corpus
 measurement is paid once per session by whichever check reaches it first.
 """
 SHARD = "corpus"
@@ -36,6 +36,8 @@ CHECKS = [
      "pytest": [_PACKET + "test_corpus_tool.py"]},
     {"name": "regenerate.py's canonical forms, history bundle and re-recording", "seconds": 4,
      "pytest": [_PACKET + "test_regenerate_tool.py"]},
+    {"name": "each tools function runs under its calc's independent test", "seconds": 1,
+     "pytest": [_PACKET + "test_tools_reach.py"]},
     {"name": "two runs normalize to one golden", "seconds": 15, "tiers": ["nightly"],
      "pytest": [_PACKET + "test_normalized_twice.py"]},
     {"name": "the full corpus's exports against their digests", "seconds": 180,
