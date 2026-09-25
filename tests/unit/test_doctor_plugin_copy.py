@@ -233,3 +233,39 @@ def test_the_pure_rule_names_the_directory_for_versions_that_do_not_order_plainl
     assert ("Update whichever is behind: the plugin with `git -C /m pull` (Claude Code loads it in "
             "place from the local directory marketplace at /m, and `claude plugin update` does not "
             "change it); the CLI with") in line, line
+
+
+# --- a local directory marketplace whose hooks file doctor cannot read --------------------
+#
+# The file lives in the directory Claude Code loads, so a reinstall refreshes a
+# cache copy nobody runs. The line names how the directory gets the file back.
+
+def _unreadable_hooks_in_place(tmp_path, monkeypatch, *, git: bool) -> tuple[Path, Path]:
+    _, shipped = claude_home(tmp_path, monkeypatch, LOCAL)
+    (shipped / "hooks" / "hooks.json").unlink()
+    if git:
+        (tmp_path / "clone" / ".git").mkdir()
+    return shipped, tmp_path / "clone"
+
+
+def test_a_checkout_restores_the_hooks_file_from_git(tmp_path, monkeypatch, capsys):
+    shipped, clone = _unreadable_hooks_in_place(tmp_path, monkeypatch, git=True)
+
+    code, lines = run(capsys)
+
+    assert code == 1
+    assert lines[1] == (
+        f"crapkit doctor: the plugin at {shipped} has no readable hooks/hooks.json; restore it with "
+        f"`git -C {admin._shell_quote(str(shipped))} checkout -- hooks/hooks.json` "
+        + _LOADS_IN_PLACE.format(at=clone)
+        + ", and restart Claude Code's sessions before relying on its advisory hook."), lines
+
+
+def test_a_plain_directory_restores_the_hooks_file_by_copy(tmp_path, monkeypatch, capsys):
+    shipped, clone = _unreadable_hooks_in_place(tmp_path, monkeypatch, git=False)
+
+    code, lines = run(capsys)
+
+    assert code == 1
+    assert (f"restore it by copying crapkit {CLI}'s plugin/hooks/hooks.json to hooks/hooks.json "
+            f"under {shipped} " + _LOADS_IN_PLACE.format(at=clone)) in lines[1], lines
