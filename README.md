@@ -310,7 +310,10 @@ crapkit doctor --plugin-root
 ```
 
 Restart existing Claude Code sessions to apply the plugin update. The check above
-compares installed files with the CLI on PATH; it does not reload a running session.
+compares installed files with the CLI on PATH; it does not reload a running session. When
+they disagree it prints the commands for the side that is behind, and when `claude plugin
+update` answered "already at the latest version" over files main has moved past, it prints
+the uninstall and install lines that replace them.
 
 The hook registers on `Edit|Write`, which is every write that names a file. An agent that
 writes its source through a shell heredoc names none, so a `Bash` event is judged off the
@@ -367,7 +370,10 @@ codex plugin add crapkit@crapkit
 codex plugin list --marketplace crapkit --json
 ```
 
-Check the installed Codex plugin with an explicit `crapkit doctor --plugin-root PATH`.
+Check the installed Codex plugin with `crapkit doctor --plugin-root`: with no PATH it
+reads Codex's plugin cache when Claude Code has no install, and PATH names one install
+under `~/.codex/plugins/cache/crapkit/crapkit/`. A gap there names these refresh lines,
+never a `claude` command.
 See [plugin upgrades](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#plugin-and-mcp-clients)
 for choosing that path and starting a fresh MCP session. A runtime with a skills
 directory but no compatible marketplace can copy `plugin/skills/*` into it instead:
