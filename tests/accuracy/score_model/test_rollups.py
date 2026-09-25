@@ -9,6 +9,7 @@ from __future__ import annotations
 import dataclasses
 from fractions import Fraction
 import re
+import sys
 import tomllib
 
 from hypothesis import assume, event, given, strategies as st
@@ -76,18 +77,28 @@ def _exact_rows(drawn) -> list[model_score.Row]:
             for n, (scope, ccn, twelfths) in enumerate(drawn)]
 
 
+def _load_tie(drawn) -> bool:
+    """The exact CRAP load sits on a 2 dp tie (rulings D5.2, SM-LOAD-ORDER)."""
+    return sum(r.crap for r in _exact_rows(drawn)) * 200 % 2 == 1
+
+
+def _at_a_ceiling(drawn, ceiling_of) -> bool:
+    """Some row's exact CRAP equals its ceiling (rulings SM-CEILING-EQ-TOTALS)."""
+    return any(r.crap == ceiling_of(r.scope) for r in _exact_rows(drawn))
+
+
 @given(scored_sets(), st.integers(1, 30), st.dictionaries(st.sampled_from(["a", "b"]), st.integers(1, 30)))
 @pure
 def test_totals_match_the_exact_sums(drawn, target, scope_targets):
     """functions, over their ceiling and the CRAP load at 2 dp, against the
-    exact CRAP of each row's exact coverage; an exact 2 dp tie of the load is
-    rulings D5.2's to judge."""
-    want = model_score.totals(_exact_rows(drawn),
-                              lambda scope: model_score.ceiling(scope, target, scope_targets))
-    tie = sum(r.crap for r in _exact_rows(drawn)) * 200 % 2 == 1
-    if tie:
-        event("shape:crap-load-tie")
-    assume(not tie)
+    exact CRAP of each row's exact coverage. Away from an exact 2 dp tie of the
+    load and from an exact CRAP equal to its ceiling, which rulings rows pin."""
+    ceiling_of = lambda scope: model_score.ceiling(scope, target, scope_targets)  # noqa: E731
+    edge = _load_tie(drawn) or _at_a_ceiling(drawn, ceiling_of)
+    if edge:
+        event("shape:crap-load-tie-or-crap-equals-ceiling")
+    assume(not edge)
+    want = model_score.totals(_exact_rows(drawn), ceiling_of)
     got = _crapkit_totals(_rows_of(drawn), target, scope_targets)
 
     assert got == {"functions": want["functions"], "over_target": want["over_target"],
@@ -108,11 +119,51 @@ def test_per_scope_totals_add_up_to_the_run(drawn, target):
 @given(scored_sets(), st.randoms(use_true_random=False))
 @pure
 def test_row_order_never_moves_the_totals(drawn, rnd):
+    """Away from an exact 2 dp tie of the load, which SM-LOAD-ORDER pins."""
+    if _load_tie(drawn):
+        event("shape:crap-load-tie")
+    assume(not _load_tie(drawn))
     rows = _rows_of(drawn)
     shuffled = list(rows)
     rnd.shuffle(shuffled)
 
     assert _crapkit_totals(shuffled, 6, {}) == _crapkit_totals(rows, 6, {})
+
+
+# Found by a 20,000-example nightly run on Python 3.11: eleven rows whose exact
+# CRAP load is the 2 dp tie 507.625, (ccn, twelfths covered) in this order.
+LOAD_TIE_ROWS = [("a", 3, 7), ("a", 4, 7), ("a", 8, 5), ("a", 22, 3), ("a", 25, 8), ("a", 10, 4),
+                 ("a", 13, 4), ("a", 25, 8), ("a", 3, 8), ("a", 5, 5), ("a", 10, 4)]
+# The builtin sum adds left to right on 3.11; 3.12 made it compensated, which
+# gives the correctly rounded sum here. The defect is open on 3.11 only.
+LOAD_ORDER = "SM-LOAD-ORDER" if sys.version_info < (3, 12) else "SM-LOAD-ORDER-312"
+
+
+@rulings.applies(LOAD_ORDER)
+def test_the_crap_load_of_one_run_never_follows_its_row_order():
+    """The rows in their drawn order and sorted by CRAP print one load: the
+    correctly rounded sum of their doubles, 507.62500000000006, at 2 dp."""
+    rows = _rows_of(LOAD_TIE_ROWS)
+    orders = (rows, sorted(rows, key=lambda row: row.crap))
+    printed = sorted({_crapkit_totals(order, 6, {})["crap_load"] for order in orders})
+    correctly_rounded = exact.fixed(sum((Fraction(row.crap) for row in rows), Fraction(0)), 2)
+
+    assert sum(r.crap for r in _exact_rows(LOAD_TIE_ROWS)) == Fraction(4061, 8)
+    rulings.pin_ruling(LOAD_ORDER, crapkit="|".join(printed), oracle=correctly_rounded)
+
+
+@rulings.applies("SM-CEILING-EQ-TOTALS")
+def test_a_crap_exactly_at_the_ceiling_is_not_over_target():
+    """README.md#grade-and-crap-load counts a function over its ceiling when
+    crap > ceiling. CRAP(18, 2/3) is 30 exactly: at target = 30 it is not over,
+    in the digest's totals and in a brief's file totals alike."""
+    rows = _rows_of([("a", 18, 8)])
+    digest = production.load("digest:totals")(rows, target=30).over_target
+    packet = production.load("packet:file_totals")(rows, {}, 30)["over_target"]
+
+    over = int(exact.crap(18, Fraction(2, 3)) > 30)
+
+    rulings.pin_ruling("SM-CEILING-EQ-TOTALS", crapkit=f"{digest},{packet}", oracle=f"{over},{over}")
 
 
 # --- digest ---------------------------------------------------------------------------------------

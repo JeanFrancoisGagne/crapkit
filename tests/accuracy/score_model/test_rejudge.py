@@ -57,11 +57,19 @@ def crapkit_rejudged(row, ceiling: int, neighbours: list) -> str:
     return production.load("packet:rejudged")(row, ceiling, rows_of).remedy
 
 
+def counted(cov: float) -> Fraction:
+    """The coverage a row here stands for: every row is built from a count of
+    twelfths, so the fraction nearest its double with a denominator up to 12.
+    The README defines cov as covered over total; the double 0.666...6 is 2/3,
+    and CRAP(9, 2/3) is 12 exactly."""
+    return Fraction(cov).limit_denominator(12)
+
+
 def _model(row, ceiling: int, neighbours: list) -> str:
     fresh = [model_score.Fresh(r.scope, r.path, r.long_name, r.start, r.end, r.occurrence)
              for r in [row, *neighbours] if r.flag not in ("no-lane", "cc-only")]
     shared = row.flag not in ("no-lane", "cc-only") and model_score.shared_span(fresh[0], fresh)
-    return model_score.remedy(row.ccn, exact.crap(row.ccn, Fraction(row.cov)), ceiling, shared)
+    return model_score.remedy(row.ccn, exact.crap(row.ccn, counted(row.cov)), ceiling, shared)
 
 
 @st.composite
@@ -84,7 +92,7 @@ def test_a_rejudged_row_takes_today_s_ceiling(case):
     """agent-json.md:131: judged against the ceiling crapkit.toml holds now.
     Away from an exact CRAP equal to the ceiling (rulings SM-CEILING-EQ)."""
     row, ceiling = case
-    at_ceiling = exact.crap(row.ccn, Fraction(row.cov)) == ceiling
+    at_ceiling = exact.crap(row.ccn, counted(row.cov)) == ceiling
     if at_ceiling:
         event("shape:crap-equals-ceiling")
     assume(not at_ceiling)

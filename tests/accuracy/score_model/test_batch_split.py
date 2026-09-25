@@ -167,16 +167,27 @@ def test_the_split_is_lpt_on_each_group_s_summed_risk():
                        oracle=makespan.lpt(_unit_risks(entries, pairs), 2))
 
 
+def _ranked(entries) -> list:
+    """The active list as the worklist hands it to --batches: risk first, then
+    the docs' tail (model_score.rank_key)."""
+    return sorted(entries, key=lambda e: model_score.rank_key(
+        model_score.Entry(e.path, e.start, e.occurrence, e.ccn, e.commits, e.weight)))
+
+
 @given(worklists(), st.randoms(use_true_random=False))
 @pure
-def test_the_split_ignores_pair_order_and_entry_order(case, rnd):
+def test_the_split_ignores_the_coupled_pairs_order(case, rnd):
+    """agent-json.md:709-740: --batches cuts the active list, which arrives
+    ranked. Pairs come off the coupling cache in any order; the split must
+    not follow it. (Entries at equal risk keep their ranked order: shuffling
+    them is not a relation the docs promise, and a 20,000-example run found a
+    split that moves with it.)"""
     entries, pairs, count = case
-    shuffled_entries, shuffled_pairs = list(entries), list(pairs)
-    rnd.shuffle(shuffled_entries)
-    rnd.shuffle(shuffled_pairs)
+    shuffled = list(pairs)
+    rnd.shuffle(shuffled)
 
-    assert [b.files for b in crapkit_split(shuffled_entries, shuffled_pairs, count)] == [
-        b.files for b in crapkit_split(entries, pairs, count)]
+    assert [b.files for b in crapkit_split(_ranked(entries), shuffled, count)] == [
+        b.files for b in crapkit_split(_ranked(entries), pairs, count)]
 
 
 @pytest.fixture(scope="session")
