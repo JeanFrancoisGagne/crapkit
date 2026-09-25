@@ -1,0 +1,2 @@
+exit 0
+{"runs": [{"avg": 10.0938, "by_scope": {"pkg": {"crap_load": 60.56, "functions": 6, "grade": "F", "over_target": 4}}, "commit": "287d7ba4c9d72591ceee12ff16d17459a57a6b05", "crap_load": 60.56, "created_at": "<STAMP>Z", "functions": 6, "over_target": 4, "run_id": 1}, {"avg": 10.0938, "by_scope": {"pkg": {"crap_load": 60.56, "functions": 6, "grade": "F", "over_target": 4}}, "commit": "287d7ba4c9d72591ceee12ff16d17459a57a6b05", "crap_load": 60.56, "created_at": "<STAMP>Z", "functions": 6, "over_target": 4, "run_id": 2}], "schema": 1, "target": 6}

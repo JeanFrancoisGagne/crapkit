@@ -1,0 +1,7 @@
+exit 0
+::warning file=pkg/b.py,line=1,title=crapkit/over-target::clamp_low( x , lo , hi ): CRAP 6.8 over ceiling 6 (ccn 3, cov 25%25) -> add-tests
+::warning file=pkg/calc.py,line=1,title=crapkit/over-target::grade( score ): CRAP 15.5 over ceiling 6 (ccn 5, cov 25%25) -> add-tests
+::warning file=pkg/cé.py,line=8,title=crapkit/over-target::grade_twin( score ): CRAP 15.5 over ceiling 6 (ccn 5, cov 25%25) -> add-tests
+::warning file=pkg/deep/z.py,line=1,title=crapkit/over-target::z( a , b ): CRAP 15.5 over ceiling 6 (ccn 5, cov 25%25) -> add-tests
+run 2 @ 287d7ba4c9d: 6 functions scored: 6 measured, 4 over ceiling 6, CRAP load 60.56, grade F
+-> next: crapkit worklist
