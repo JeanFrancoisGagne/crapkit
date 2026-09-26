@@ -162,9 +162,11 @@ def test_the_inputs_carry_the_defaults_the_readme_documents():
     assert inputs["python-version"]["default"] == "3.12"
 
 
-@pytest.mark.parametrize("name", list(_action()["inputs"]))
-def test_every_input_is_named_in_the_readme_section(name):
-    assert f"`{name}`" in _readme_section(), f"the action takes {name} and the README never says so"
+def test_every_input_is_named_in_the_readme_section():
+    section = _readme_section()
+
+    for name in _action()["inputs"]:
+        assert f"`{name}`" in section, f"the action takes {name} and the README never says so"
 
 
 def test_every_input_the_readme_names_exists_on_the_action():
