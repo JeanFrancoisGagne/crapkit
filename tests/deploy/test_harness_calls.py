@@ -24,8 +24,6 @@ import json
 import re
 from pathlib import Path
 
-import pytest
-
 from kit import profiles
 from kit.cells import cell
 from kit.mcp_client import McpClient
@@ -42,9 +40,6 @@ CELLS = {"claude-code": ("lin-call-claude", "core"), "opencode": ("lin-call-open
          "gemini-cli": ("lin-call-gemini", "full")}
 # Keys a harness's own model adds to each call, which the harness forwards to crapkit.
 CLIENT_ARGS = {"gemini-cli": {"wait_for_previous": False}}
-BUGS = {"cline": "deploy-bug deploy-harnesses-5: Cline keeps 8,000 characters of a tool result and cuts the "
-                 "middle out, so a Cline model gets neither get_function_brief on a 300-line function nor "
-                 "list_worklist top 50 whole"}
 # Copilot CLI: "Output too large to read at once (27.0 KB). Saved to: <path>".
 # Junie: "... has been summarized. See full logs here: <repo>/.output.txt and <repo>/.output.json."
 SAVED = re.compile(r"(?:Saved to|See full logs here): (\S+?\.txt)\b")
@@ -130,7 +125,6 @@ def joined(ways: dict[str, str | None]) -> str:
 def call_cell(key: str):
     cell_id, image = CELLS[key]
 
-    @pytest.mark.xfail(key in BUGS, strict=True, reason=BUGS.get(key, ""))
     @cell(cell_id, channel="harness + stub model", harness="pinned real CLIs",
           scenario="fresh: scripted tool call with the largest payloads; tool_result the stub receives",
           use_cases="list_worklist, get_next_item, get_function_brief", os="linux", image=image, cadence="nightly")

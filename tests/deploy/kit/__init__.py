@@ -41,7 +41,7 @@ the user touches. The kit owns everything a cell must not re-invent:
   state_manifest
                 what a crapkit repo keeps on disk, taken before and after an
                 upgrade
-  stub_anthropic, stub_openai
+  stub_anthropic, stub_openai, stub_gemini
                 scripted model APIs that record every request body
   clock         what run.py --faketime changes for a cell: the environment
                 name libfaketime adds, the releases it cannot start, and the

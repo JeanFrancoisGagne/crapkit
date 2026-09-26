@@ -331,9 +331,6 @@ def test_copied_skills_load_in_each_runtime(box, candidate):
 @cell("lin-skills-copy", channel="skills copy", harness="Codex",
       scenario="fresh: onboard is explicit-only in Codex: the model's skill list leaves it out", use_cases="skills",
       os="linux", image="full", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-plugins-9: Codex lists crapkit-onboard to the model as an "
-                   "implicit skill; its `disable-model-invocation: true` is Claude Code's key and the skill carries no "
-                   "agents/openai.yaml with allow_implicit_invocation false")
 def test_codex_keeps_onboard_explicit(box, candidate):
     repo = copied_skills(box, candidate)
     offered = codex_offers(box, repo)
