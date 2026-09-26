@@ -4,6 +4,8 @@ Two agents editing the same file collide in the worktree whatever the ranking
 says, so a batch owns whole files, and files that keep landing in the same
 commit are one unit even though nothing imports them from each other.
 """
+import random
+
 import pytest
 from crapkit.worklist import WorklistEntry, split_batches
 
@@ -42,6 +44,62 @@ def test_two_functions_in_one_file_are_never_split_apart():
     batches = split_batches(entries, [], batches=4)
     assert files_of(batches) == [["a.py"], ["b.py"]]
     assert len(batches[0].entries) == 2
+
+
+def loads(batches) -> list[float]:
+    return [sum(e.risk for e in b.entries) for b in batches]
+
+
+def test_a_file_is_placed_by_the_risk_of_all_its_rows():
+    # a.py holds 6 in two rows of 3. Ordered by its top row it went out third,
+    # onto b's batch, for 10 against 4; ordered by its 6 it goes first, for 8
+    # against 6.
+    entries = [entry("a.py", "one( )", risk=3.0), entry("a.py", "two( )", risk=3.0),
+               entry("b.py", risk=4.0), entry("c.py", risk=4.0)]
+    batches = split_batches(entries, [], batches=2)
+    assert files_of(batches) == [["b.py", "c.py"], ["a.py"]]
+    assert loads(batches) == [8.0, 6.0]
+
+
+def test_a_coupled_group_is_placed_by_its_summed_risk():
+    # {a, b} sums to 5.69 and no row of it passes 3.49. Ordered by its top row
+    # it went out third and one batch carried 9.22, past Graham's LPT bound of
+    # 9.205 for two batches; ordered by its sum the heavier batch carries 7.89.
+    risks = {"a.py": 2.2, "b.py": 3.49, "c.py": 4.36, "d.py": 3.53}
+    entries = [entry(path, risk=risk) for path, risk in risks.items()]
+    batches = split_batches(entries, [pair("a.py", "b.py")], batches=2)
+    assert files_of(batches) == [["c.py", "d.py"], ["a.py", "b.py"]]
+    assert [round(load, 2) for load in loads(batches)] == [7.89, 5.69]
+
+
+def _worklist(rng: random.Random) -> list[WorklistEntry]:
+    """One to eight files of one to three rows each, at whole-number risks."""
+    files = [f"f{n}.py" for n in range(rng.randint(1, 8))]
+    return [entry(path, f"r{k}( )", risk=float(rng.randint(1, 20)))
+            for path in files for k in range(rng.randint(1, 3))]
+
+
+def _file_risks(entries: list[WorklistEntry]) -> list[float]:
+    totals: dict[str, float] = {}
+    for e in entries:
+        totals[e.path] = totals.get(e.path, 0.0) + e.risk
+    return list(totals.values())
+
+
+def _lpt_makespan(jobs: list[float], slots: int) -> float:
+    """Largest job first, each to the least loaded slot: the heaviest slot."""
+    ends = [0.0] * slots
+    for job in sorted(jobs, reverse=True):
+        ends[ends.index(min(ends))] += job
+    return max(ends)
+
+
+def test_the_heaviest_batch_is_the_lpt_makespan_of_each_file_s_summed_risk():
+    rng = random.Random(24)
+    for _ in range(300):
+        entries, slots = _worklist(rng), rng.randint(1, 4)
+        heaviest = max(loads(split_batches(entries, [], batches=slots)))
+        assert heaviest == _lpt_makespan(_file_risks(entries), slots)
 
 
 def test_co_changing_files_land_in_the_same_batch():

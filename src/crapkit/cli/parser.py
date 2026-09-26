@@ -364,7 +364,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="restrict to this configured scope (repeatable); exact, not substring")
     wl.add_argument("--batches", type=int, default=None, metavar="N",
                     help="split the active list into at most N batches with no shared "
-                         "files, co-changing files kept together: one per agent session")
+                         "files, co-changing files kept together and summed risk balanced "
+                         "across batches: one per agent session")
     wl.add_argument("--json", action="store_true", help="print as JSON")
     wl.set_defaults(func=_Handler("queue", "cmd_worklist"))
 

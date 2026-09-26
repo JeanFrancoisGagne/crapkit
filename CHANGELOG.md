@@ -2,6 +2,20 @@
 
 ## 0.8.1 — unreleased
 
+No score changes.
+
+### Batches are placed by the risk of all their rows
+
+- `worklist --batches` hands out files, and groups of co-changing files, largest summed
+  `risk` first, each to the batch with the least `risk` so far. It ordered them by their
+  riskiest row, so a file of many middling rows went out late, onto a batch that was
+  already full. Six files at 4.36, 3.53, 3.49, 2.19, 0.01 and 0.01, where the 3.49, the
+  2.19 and one 0.01 change together, split into two batches of 9.22 and 4.37; they now
+  split 7.89 and 5.70, the best split there is. That order is LPT scheduling, so the
+  heaviest batch stays within 4/3 - 1/(3N) of the best split's heaviest, a bound the old
+  order could pass. On an unchanged store a file can move to another batch; no score
+  moves.
+
 ### A command crapkit prints for the reader to paste runs in Git Bash and PowerShell
 
 - When `python -m crapkit` started crapkit, every next step and refusal names the

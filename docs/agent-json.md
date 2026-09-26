@@ -737,9 +737,11 @@ or `stale` off a batched call still gets them.
 
 At most N batches, sharing no file, with co-changing files kept in the same batch. One batch
 per agent session: two sessions working different batches cannot collide in the same file.
-Each file, or group of co-changing files, goes to the batch with the least summed `risk`,
-and on a tie to the one with fewer entries. Batches come highest summed `risk` first, and
-batches of equal risk in the order of their files.
+Files go out largest summed `risk` first, a group of co-changing files counting as one, each
+to the batch with the least `risk` so far, and on a tie to the one with fewer entries. That is
+LPT scheduling (longest processing time first), so the heaviest batch carries at most
+4/3 - 1/(3N) times the heaviest batch of the best split: 7/6 for two batches. Batches come
+highest summed `risk` first, and batches of equal risk in the order of their files.
 
 The session that holds a batch briefs its own rows. Every entry carries `path` and
 `function`, the two arguments `brief` takes. [`--batch N`](#--batch-n) is not the per-batch

@@ -329,11 +329,16 @@ def _coupling_groups(pairs: list[dict]) -> dict[str, str]:
 
 def _unit_key(item) -> tuple:
     key, entries = item
-    return (-max(e.risk for e in entries), key)
+    return (-_risk(entries), key)
 
 
 def _units(active: list[WorklistEntry], rep: dict[str, str]) -> list[list[WorklistEntry]]:
-    """Entries grouped by coupling group, heaviest first: what a batch takes whole."""
+    """Entries grouped by coupling group, largest summed risk first: what a batch takes whole.
+
+    A unit weighs the risk of all its rows, which is the work a batch takes on
+    with it. Ranked by its riskiest row, a file of many middling rows went out
+    late, onto a batch that was already full.
+    """
     groups: dict[str, list] = {}
     for e in active:
         groups.setdefault(_find(rep, e.path), []).append(e)
@@ -374,9 +379,12 @@ def split_batches(active: list[WorklistEntry], pairs: list[dict], *,
     Two agents editing one file collide in the worktree whatever the ranking
     says, so a file is indivisible and so is a coupled group of files: the batch
     holds every entry from every file in the group. Units go to the lightest
-    batch in risk order, which is LPT scheduling, and the whole thing is a pure
-    function of the worklist and the coupling pairs — same store, same history,
-    same batches. Empty batches are dropped rather than handed to an agent.
+    batch in order of their summed risk, largest first. That is LPT scheduling
+    (longest processing time first), so the heaviest batch carries at most
+    4/3 - 1/(3 * batches) times the heaviest batch of the best split (Graham
+    1969). The split is a pure function of the worklist and the coupling pairs:
+    same store, same history, same batches. Empty batches are dropped rather
+    than handed to an agent.
     """
     if batches < 1:
         raise ValueError(f"batches must be >= 1, got {batches}")
