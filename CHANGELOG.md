@@ -11,10 +11,10 @@ No score changes.
   riskiest row, so a file of many middling rows went out late, onto a batch that was
   already full. Six files at 4.36, 3.53, 3.49, 2.19, 0.01 and 0.01, where the 3.49, the
   2.19 and one 0.01 change together, split into two batches of 9.22 and 4.37; they now
-  split 7.89 and 5.70, the best split there is. That order is LPT scheduling, so the
-  heaviest batch stays within 4/3 - 1/(3N) of the best split's heaviest, a bound the old
-  order could pass. On an unchanged store a file can move to another batch; no score
-  moves.
+  split 7.89 and 5.70, the best split there is. That order is LPT scheduling, so under
+  `--batches N` the heaviest batch stays within 4/3 - 1/(3N) times the best split's
+  heaviest: 9.205 here, which the old 9.22 passed. On an unchanged store a file can move
+  to another batch; no score moves.
 
 ### Parallel lanes start in the order doctor --tune costs them
 
