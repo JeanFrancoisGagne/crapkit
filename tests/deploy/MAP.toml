@@ -986,6 +986,11 @@ cells = ["lin-up-pip-0.7.6", "win-up-pip-0.7.6"]
 
 [[doc]]
 page = "docs/upgrading.md"
+headings = ["From a repo"]
+cells = ["lin-uninstall"]
+
+[[doc]]
+page = "docs/upgrading.md"
 headings = ["Plugin and MCP clients"]
 cells = ["lin-up-claude-plugin-0.7.6", "lin-up-codex-plugin-0.7.6", "lin-up-cursor-0.7.6", "win-up-plugins-0.7.6"]
 
