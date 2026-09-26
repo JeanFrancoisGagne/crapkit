@@ -67,7 +67,9 @@ fallback. UTF-16 source is outside that reader policy. A line ends at LF, CRLF o
 lone CR, as Python and coverage.py read source. git's diff ends a line at LF only, so
 the commit gate, `rescore --gate`, `verify`, `mutate` and the advisory hook place each
 changed line by the bytes of the file it changed, and a new file saved with CR-only
-line ends has every function in it judged.
+line ends has every function in it judged. A form feed, or any other character
+Python's `str.splitlines` also splits at, ends no line: `brief`, `mutate` and
+`duplication` count lines the way the scores do.
 
 ## `[crapkit]`
 

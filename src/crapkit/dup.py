@@ -23,14 +23,16 @@ from typing import NamedTuple
 
 from .keys import lookup
 from .snapshot import InventoryRow
+from .sourcelines import source_lines
 
 WINDOW = 4  # consecutive normalized lines per shingle
 _COMMENT_PREFIXES = ("#", "//", "/*", "*", '"""', "'''")
 # What a stored digest was made with. A stored index is only comparable with a
-# target shingled the same way, so any change to _normalized_lines, _shingles or
-# _digest changes this string, and every stored index reads as absent until the
-# next build replaces it.
-SHINGLE_FORMAT = f"v1 blake2b-8 window {WINDOW}"
+# target shingled the same way, so any change to the line split, _normalized_lines,
+# _shingles or _digest changes this string, and every stored index reads as absent
+# until the next build replaces it. v2: lines end where the reader ends them
+# (sourcelines), no longer at a form feed.
+SHINGLE_FORMAT = f"v2 blake2b-8 window {WINDOW}"
 # The one threshold a run's index is stored at: brief's, and duplication's
 # default. Any other min_lines builds its own index for that call.
 STORED_MIN_LINES = 8
@@ -65,7 +67,7 @@ def _shingles(lines: list[str]) -> set[int]:
 
 def _split_once(path: str, sources: dict[str, str]) -> list[str] | None:
     text = sources.get(path)
-    return None if text is None else text.splitlines()
+    return None if text is None else source_lines(text)
 
 
 def _row_shingles(r: InventoryRow, file_lines: list[str], min_lines: int) -> set[int] | None:

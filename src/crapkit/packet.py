@@ -22,6 +22,7 @@ from .invariants import check_budget, check_rejudged
 from .ratchet_report import DAY, mark_age_days
 from .keys import position
 from .score import crap_load, over_ceiling, remedy, shares_its_def_line
+from .sourcelines import source_lines
 
 # What the gate actually enforces, said once. A session that reads a ceiling of
 # 6 beside a standing mark of 72 otherwise reads a contradiction and either
@@ -56,7 +57,7 @@ def function_source(text: str | None, start: int, end: int) -> str | None:
     """
     if text is None:
         return None
-    return "\n".join(text.splitlines()[start - 1:end])
+    return "\n".join(source_lines(text)[start - 1:end])
 
 
 def file_functions(rows) -> list[dict]:

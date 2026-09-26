@@ -23,6 +23,7 @@ import re
 from typing import NamedTuple
 
 from .errors import ToolError
+from .sourcelines import line_end, source_lines
 from .universe import LANGUAGE_EXTENSIONS, assign_files
 
 
@@ -268,8 +269,13 @@ def _code_kind(kind, language: str) -> bool:
     return kind in Keyword or kind in Name.Builtin or kind in Operator or (language == "go" and kind in Punctuation)
 
 
+def _line_starts(text: str) -> list[int]:
+    """The offset each line starts at, on the lines the diff's ranges number."""
+    return list(accumulate((len(line) for line in source_lines(text, keepends=True)), initial=0))
+
+
 def _tokens_by_line(text: str, language: str, changed: set[int] | None) -> dict:
-    starts = list(accumulate((len(line) for line in text.splitlines(keepends=True)), initial=0))
+    starts = _line_starts(text)
     by_line = defaultdict(list)
     tokens, ambiguous = _code_tokens(text, language)
     for at, token in tokens:
@@ -285,14 +291,13 @@ def _tokens_by_line(text: str, language: str, changed: set[int] | None) -> dict:
 def _mutants(text: str, changed_lines: set[int] | None, language: str) -> list[Mutant]:
     ops = {key.strip(): tuple(value.strip() for value in values)
            for key, values in _OPS.get(language, _OPS["typescript"]).items()}
-    lines = text.splitlines()
+    lines = source_lines(text)
     return [Mutant("", number, lines[number - 1], mutated, op)
             for number, tokens in sorted(_tokens_by_line(text, language, changed_lines).items())
             for mutated, op in _line_mutations(lines[number - 1], tokens, ops)]
 
 
 def apply_mutant(text: str, mutant: Mutant) -> str:
-    lines = text.splitlines(keepends=True)
-    eol = "\n" if lines[mutant.line - 1].endswith("\n") else ""
-    lines[mutant.line - 1] = mutant.mutated + eol
+    lines = source_lines(text, keepends=True)
+    lines[mutant.line - 1] = mutant.mutated + line_end(lines[mutant.line - 1])
     return "".join(lines)

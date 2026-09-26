@@ -17,6 +17,22 @@
   blob for the commit gate, the working tree for the rest. A file with no lone CR reads
   as before. No score moves, and marks need no re-seed.
 
+### A form feed no longer moves a function in `brief`, `mutate` and `duplication`
+
+- Python's `str.splitlines` ends a line at a form feed, a vertical tab, `\x1c`-`\x1e`,
+  NEL, U+2028 and U+2029 as well as at LF and CR. `brief`, `mutate` and `duplication`
+  numbered a file's lines with it, so each such character above a function put the
+  function one line lower than its span. Below a form feed, `brief` showed the lines
+  above the function, `mutate` grew no mutant on the line the edit changed, and
+  `duplication` missed a twin.
+- `mutate` also dropped any line end but LF from the line it mutated. In a file saved
+  with CR-only line ends the mutated line ran into the next one, the mutant failed to
+  compile, and it counted as killed.
+- All three now end a line at LF, CRLF and a lone CR only, the way the scores number
+  it, and a mutated line keeps its own line end. The stored twin index changes format
+  and is built again once, the first time `brief` or `duplication` reads a run. No score
+  moves.
+
 Go and Zig functions are read to where their signature ends, and no Go type switch,
 comment or Zig multiline string ends one early. A `//` comment ends at its line in every
 language but C, C++ and Objective-C. A Zig switch and a Go `select` count as
