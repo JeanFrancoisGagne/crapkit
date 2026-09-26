@@ -63,7 +63,7 @@ _Avoid_: report (a report is crapkit's own HTML page)
 What a lane run records beside its artifact in `.crapkit/artifacts.json`: the commit, the reuse proof or why it did not hold, and the lane's content record. Read once per command.
 
 **Content record**:
-The git blob id of each file, the id `git add` would store, taken when a lane or a scored run read it. Freshness compares these ids with the tree; git's index answers for a file its stat cache calls unchanged, so a same-size edit under a restored modification time is a named limit.
+The git blob id of each file, the id `git add` would store, taken when a lane or a scored run read it. Freshness compares these ids with the tree; git's index answers for a file its stat cache calls unchanged, so a same-size edit under a restored modification time is a named limit. It holds on Windows, where the change time is the creation time, and under `core.trustctime=false`; on Linux and macOS git sees the edit once the change time moves a second past the one it recorded.
 _Avoid_: digest, snapshot (a snapshot is a run in the store)
 
 **Leftover**:

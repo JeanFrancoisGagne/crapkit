@@ -765,7 +765,8 @@ _WHERE_THE_LIMIT_HOLDS = (
 
 
 @pytest.mark.parametrize("page", ["CHANGELOG.md", "docs/upgrading.md", "docs/lanes.md",
-                                  "docs/ratchet.md", "src/crapkit/lane_sources.py"])
+                                  "docs/ratchet.md", "src/crapkit/lane_sources.py",
+                                  "AGENTS.md", "CONTEXT.md"])
 def test_each_page_that_names_the_same_size_limit_says_where_git_holds_it(page):
     """On Linux and macOS git's stat check also compares the change time, which
     no copy puts back, to the second; the same-size-new-ctime row in
