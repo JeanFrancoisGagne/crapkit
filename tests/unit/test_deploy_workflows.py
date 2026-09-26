@@ -786,7 +786,9 @@ def _push_calls():
 
 
 def _linux_entry_calls(jobs):
-    linux = {name: job for name, job in jobs.items() if job["runner"] == "linux"}
+    """The run.py calls of the deploy.yml entries that run cells in containers,
+    on the x86_64 runner (linux) or the arm64 one (arm)."""
+    linux = {name: job for name, job in jobs.items() if job["runner"] in ("linux", "arm")}
     return [(name, argv) for name, job in linux.items() for _, argv in _job_invocations(job)]
 
 
