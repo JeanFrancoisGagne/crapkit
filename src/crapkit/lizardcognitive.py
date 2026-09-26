@@ -14,19 +14,29 @@ same rules with no second parse and no new dependency:
   try / finally / case labels / with are free; nesting rises inside the
   block structures listed above.
 
-Four language-specific rules:
+Each language charges its own structures, `_Dialect.counting`. A word that
+is a keyword in one language is a name in another: `do(n)` in Go and
+`cmd.do(1)` in Python are calls, and Swift's `do` opens the scope a `catch`
+handles, not a loop. A word right after a member access (`p.catch(h)`,
+`Symbol.for(k)`) is a name in every language.
+
+Language-specific rules:
   * in C/C++ and Objective-C/C++ a `&&` before the function's opening brace
     declares an rvalue reference rather than deciding anything, and costs
     nothing. See `_declarator_and`. Past the brace, the C family's reader
     respells a declarator `&&` before this pass sees it.
-  * Rust keeps its own structures. `match` is a switch and `loop` a loop, each
-    +1 and +nesting with the arms free, and `catch`, `switch`, `foreach`, `do`
-    and `except` name nothing. `?` is no ternary: it returns early on an error
-    or relaxes a bound, and neither is an increment. A `for` is a loop unless
-    a `<` follows it (a `for<'a>` binder) or the trait's name or `>` before
-    it makes it the `for` of `impl Trait for Type`; see `_resolve_for`. These
-    rules are read only for the Rust readers because `match` is a soft keyword
-    in Python and the rest are keywords elsewhere. See `_counting`.
+  * a `match` is a switch, +1 and +nesting with the arms free: always in
+    Rust, and in Python only where a match statement stands, because there
+    `match` is a soft keyword and an ordinary name everywhere else. See
+    `_python_match`.
+  * Rust's `loop` is a loop. Its `?` is no ternary: it returns early on an
+    error or relaxes a bound, and neither is an increment. A `for` is a loop
+    unless a `<` follows it (a `for<'a>` binder) or the trait's name or `>`
+    before it makes it the `for` of `impl Trait for Type`; see `_resolve_for`.
+  * Swift's `guard` is an if whose block is its `else`: +1 and +nesting, and
+    the `else` is free. See `_guard`.
+  * the `while` of a do-while (Swift: repeat-while) is the tail of the loop
+    its `do` already paid for, and only that `while`. See `_loop_tail`.
   * in shell a block is delimited by words, not by braces or by indent: `if`
     and `case` open, `fi`, `done` and `esac` close, and `do`, `then` and `in`
     only introduce the body of a structure already charged. See
@@ -73,7 +83,20 @@ from typing import NamedTuple
 
 from .lizardrust import implements_for
 
-_COUNTING = frozenset({"if", "for", "foreach", "while", "do", "catch", "except", "switch"})
+# The structures that cost +1 and the nesting they sit in, besides `if`, per
+# language (see _Dialect.counting). `_COUNTING` is the union the pass read for
+# every language before; a reader absent from the dialect table keeps it.
+_C_FAMILY_COUNTING = frozenset({"for", "while", "do", "catch", "switch"})
+_COUNTING = _C_FAMILY_COUNTING | {"foreach", "except"}
+_PYTHON_COUNTING = frozenset({"for", "while", "except", "match"})
+_GO_COUNTING = frozenset({"for", "switch", "select"})
+_RUST_COUNTING = frozenset({"for", "while", "loop", "match"})
+_SWIFT_COUNTING = frozenset({"for", "while", "repeat", "switch", "catch", "guard"})
+_ZIG_COUNTING = frozenset({"for", "while", "switch", "catch"})
+_POWERSHELL_COUNTING = frozenset({"for", "foreach", "while", "do", "switch", "catch", "trap"})
+
+# The words that open a loop whose `while` follows its block (see _loop_tail).
+_DO = frozenset({"do"})
 
 # The logical operators every language spells with symbols. `??` is not one: a
 # null-coalescing operator costs nothing (Sonar v1.7, Ignore shorthand). The
@@ -105,7 +128,7 @@ _NEGATIONS = frozenset({"!", "not", "-not"})
 # words, which a plain group follows.
 _GROUPING_WORDS = frozenset({"if", "elif", "while", "for", "foreach", "switch", "match", "case",
                              "when", "return", "yield", "await", "and", "or", "in", "is",
-                             "else", "do", "until", "catch", "assert", "throw"})
+                             "else", "do", "until", "catch", "assert", "throw", "guard"})
 
 # The tokens that end a statement, and every run open in it.
 _STATEMENT_ENDS = frozenset({";", "{", "}"})
@@ -125,13 +148,6 @@ _SHELL_LEADS = frozenset({"", ";", "|", "&", "&&", "||", "(", "{", "`", "!", "th
                           "else", "elif", "if", "while", "until", "time"})
 _POWERSHELL_LEADS = frozenset({"", ";", "|", "&", "(", "{", "=", "return", "in", "throw"})
 
-# Rust's structures, in place of `_COUNTING`. `match` is Rust's switch and
-# `loop` its unconditional loop, and neither is in `_COUNTING`: `match` is a
-# soft keyword in Python and `loop` a name elsewhere. `catch`, `foreach`, `do`,
-# `except` and `switch` are left out because Rust names nothing with them, so a
-# method `.switch()` or a variable `catch` read as a structure.
-_RUST_COUNTING = frozenset({"for", "while", "loop", "match"})
-
 # The condition set of a reader that has none: a `?` is a conditional operator.
 _QUESTION = frozenset({"?"})
 
@@ -146,8 +162,12 @@ class _Dialect(NamedTuple):
     read at each `?`, and set from the reader for each file (see
     LizardExtension.__call__).
 
+    `counting`: the structures besides `if` that cost +1 and the nesting they
+    sit in. `do_loops`: the words that open a loop whose `while` comes after
+    its block. `goto`: the language has a goto, which costs +1.
     `declarator_and`: a `&&` before the body's brace declares an rvalue
-    reference (C, C++, Objective-C++). `shell_blocks`: blocks are delimited by words (shell).
+    reference (C, C++, Objective-C++). `shell_blocks`: blocks are delimited
+    by words (shell).
     `messages`: a call to a method is a message, `[self sel:arg]`
     (Objective-C). `command_leads`: a call is the function's name as a
     command, after one of these words (shell, PowerShell), and `fold_case`
@@ -163,6 +183,9 @@ class _Dialect(NamedTuple):
     rust: bool = False
     error_sets: bool = False
     conditions: frozenset = _QUESTION
+    counting: frozenset = _COUNTING
+    do_loops: frozenset = _DO
+    goto: bool = True
     declarator_and: bool = False
     shell_blocks: bool = False
     messages: bool = False
@@ -182,22 +205,33 @@ class _Dialect(NamedTuple):
 # for the same reason: the discriminator is the language. A reader absent from the
 # table reads under the defaults.
 _DEFAULT_DIALECT = _Dialect()
-_RUST = _Dialect(rust=True)
-_PYTHON = _Dialect(word_ops=_AND_OR, openers=_PYTHON_OPENERS, closers=_PYTHON_CLOSERS)
+_RUST = _Dialect(counting=_RUST_COUNTING, do_loops=frozenset(), goto=False, rust=True)
+_PYTHON = _Dialect(counting=_PYTHON_COUNTING, do_loops=frozenset(), goto=False, word_ops=_AND_OR,
+                   openers=_PYTHON_OPENERS, closers=_PYTHON_CLOSERS)
+_JAVASCRIPT = _Dialect(counting=_C_FAMILY_COUNTING, goto=False)
 _DIALECTS = {
-    "CLikeReader": _Dialect(declarator_and=True, word_ops=_AND_OR, elvis=True, overloads=True),
-    "ObjCReader": _Dialect(declarator_and=True, messages=True, word_ops=_AND_OR, elvis=True,
-                           overloads=True),
-    "JavaReader": _Dialect(overloads=True),
-    "SwiftReader": _Dialect(overloads=True),
+    "CLikeReader": _Dialect(counting=_C_FAMILY_COUNTING, declarator_and=True, word_ops=_AND_OR,
+                            elvis=True, overloads=True),
+    "ObjCReader": _Dialect(counting=_C_FAMILY_COUNTING, declarator_and=True, messages=True,
+                           word_ops=_AND_OR, elvis=True, overloads=True),
+    "JavaReader": _Dialect(counting=_C_FAMILY_COUNTING, goto=False, overloads=True),
+    "JavaScriptReader": _JAVASCRIPT,
+    "TypeScriptReader": _JAVASCRIPT,
+    "TSXReader": _JAVASCRIPT,
+    "VueReader": _JAVASCRIPT,
+    "GoReader": _Dialect(counting=_GO_COUNTING, do_loops=frozenset()),
+    "SwiftReader": _Dialect(counting=_SWIFT_COUNTING, do_loops=frozenset({"repeat"}), goto=False,
+                            overloads=True),
     "RustReader": _RUST,
     "CorrectedRustReader": _RUST,
     "ShellReader": _Dialect(shell_blocks=True, command_leads=_SHELL_LEADS),
-    "PowerShellReader": _Dialect(command_leads=_POWERSHELL_LEADS, fold_case=True,
+    "PowerShellReader": _Dialect(counting=_POWERSHELL_COUNTING, goto=False,
+                                 command_leads=_POWERSHELL_LEADS, fold_case=True,
                                  word_ops=_POWERSHELL_OPS),
     "PythonReader": _PYTHON,
     "PythonSignatureReader": _PYTHON,
-    "ZigReader": _Dialect(word_ops=_AND_OR),
+    "ZigReader": _Dialect(counting=_ZIG_COUNTING, do_loops=frozenset(), goto=False,
+                          word_ops=_AND_OR),
 }
 
 # A reader crapkit subclasses reads under the rules of the lizard reader it
@@ -242,7 +276,7 @@ _SHELL_COUNTING = frozenset({"if", "for", "while", "until", "select", "case"})
 _SHELL_CLOSERS = frozenset({"fi", "done", "esac"})
 
 # `do`, `then` and `in` introduce the body of a structure already charged. `do`
-# is in `_COUNTING` for C-family do-while, and reading it here too charged every
+# is a C-family do-while loop, and reading it that way here too charged every
 # shell loop twice.
 _SHELL_BODY_WORDS = frozenset({"do", "then", "in"})
 
@@ -263,8 +297,8 @@ class _FnState:
                  "at_line_start", "pending", "else_pending", "question_pending",
                  "bool_op", "fn", "own", "recursed", "body_started", "signature_depth",
                  "prev", "prev2", "label_check", "for_pending", "dialect", "call_pending",
-                 "call",
-                 "messages", "runs", "run_break", "word_op")
+                 "call", "messages", "runs", "run_break", "word_op", "braces",
+                 "closed_do", "guard_else", "match_indent")
 
     def __init__(self, fn=None, dialect: _Dialect = _DEFAULT_DIALECT):
         self.dialect = dialect
@@ -293,6 +327,10 @@ class _FnState:
         self.runs = []            # per open bracket: the run outside it; see _open_run
         self.run_break = False    # a line ended; the next token says whether the run did
         self.word_op = None       # `and`/`or` just seen; a `:` next makes it a selector part
+        self.braces = []          # per open `{`: whether a `do` opened it; see _loop_tail
+        self.closed_do = False    # the last `}` closed a `do`'s block
+        self.guard_else = False   # Swift: a guard awaits its else; see _guard
+        self.match_indent = None  # Python: a line starting with `match`; see _python_match
 
 
 class LizardExtension:
@@ -376,6 +414,7 @@ def _line_event(state: _FnState, token: str) -> None:
     later whitespace extends its indent, and the dedent settles only when the
     first real token of the line arrives."""
     if "\n" in token:
+        _match_line_ends(state)
         state.at_line_start = True
         state.run_break = _may_end_statement(state)
         state.line_indent = len(token) - token.rfind("\n") - 1
@@ -709,11 +748,15 @@ def _open_brace(state: _FnState) -> None:
     if state.pending:
         _push(state, state.brace_depth)
         state.pending = False
+    state.braces.append(state.prev in state.dialect.do_loops)
     state.brace_depth += 1
 
 
 def _close_brace(state: _FnState) -> None:
+    """A `}` closes a level opened at its depth, and says whether it closed a
+    `do`'s block; see _loop_tail."""
     state.brace_depth -= 1
+    state.closed_do = state.braces.pop() if state.braces else False
     if state.stack and state.stack[-1] == state.brace_depth:
         state.stack.pop()
 
@@ -761,11 +804,26 @@ def _bool_op(state: _FnState, token: str) -> None:
 def _keywords(state: _FnState, token: str, is_python: bool) -> None:
     if state.dialect.shell_blocks:
         _shell_keywords(state, token, is_python)
-    elif token == "if":
+    elif _names_a_member(state):
+        _recursion(state, token)
+    else:
+        _structures(state, token, is_python)
+
+
+def _names_a_member(state: _FnState) -> bool:
+    """A word right after a member access on its line names a member,
+    `p.catch(h)`, `Symbol.for(k)`, never a structure. A `.` that ends a line
+    is PowerShell's current directory, `Push-Location .`, and the next line's
+    first word starts a statement."""
+    return state.prev in _MEMBER_ACCESS and not state.at_line_start
+
+
+def _structures(state: _FnState, token: str, is_python: bool) -> None:
+    if token == "if":
         _if_token(state, is_python)
     elif token in _ELSE_KEYWORDS:
         _else_token(state, token, is_python)
-    elif _counting(state, token):
+    elif token in state.dialect.counting:
         _structure_token(state, token, is_python)
     else:
         _jumps_and_recursion(state, token, is_python)
@@ -784,8 +842,8 @@ def _shell_keywords(state: _FnState, token: str, is_python: bool) -> None:
     nests inside, and a push here would leak a level past the `fi`.
 
     `do`, `then` and `in` are free. They introduce the body of a structure this
-    function has already charged, and `do` sits in `_COUNTING` for C-family
-    do-while, which charged every shell loop a second time.
+    function has already charged, and reading `do` as a C-family do-while
+    charged every shell loop a second time.
     """
     if token in _SHELL_CLOSERS:
         _shell_close(state)
@@ -805,31 +863,77 @@ def _shell_close(state: _FnState) -> None:
         state.stack.pop()
 
 
-def _counting(state: _FnState, token: str) -> bool:
-    """True for a loop or condition charged +1 and the nesting it sits in.
-
-    Rust reads `_RUST_COUNTING`, every other brace or indent language
-    `_COUNTING`. A Rust `match` is a switch and is charged as one; it stays out
-    of `_COUNTING` because `match` is a soft keyword in Python, where `match =
-    re.match(...)` would cost a point and open a block that never closes. The
-    reader decides, the way it decides whether a `&&` is a declarator.
-
-    The block itself pays +1 and the nesting it sits in; the arms pay nothing,
-    exactly as a C `case` pays nothing. Rust's cyclomatic column counts the arms
-    instead, so the two columns say different things about one block on purpose.
-    """
-    return token in (_RUST_COUNTING if state.dialect.rust else _COUNTING)
-
-
 def _structure_token(state: _FnState, token: str, is_python: bool) -> None:
-    if token == "while" and state.prev == "}":
-        return  # the closing half of do-while; the do already paid
+    """A word in the language's `counting` set.
+
+    A `match` (Rust, Python) is a switch: the block pays +1 and the nesting it
+    sits in, and the arms pay nothing, exactly as a C `case` pays nothing.
+    Rust's cyclomatic column counts the arms instead, so the two columns say
+    different things about one block on purpose.
+    """
+    if is_python and token == "match":
+        _python_match(state, token)
+    elif token == "guard":
+        _guard(state, is_python)
+    elif not _charged_elsewhere(state, token):
+        _structure(state, token, is_python)
+
+
+def _charged_elsewhere(state: _FnState, token: str) -> bool:
+    """True for a word whose charge is decided elsewhere: a Rust `for` shows a
+    binder's at the next token (see _resolve_for) and an implementation's at the
+    one before it, and a do-while's `while` was paid for by its `do`."""
     if token == "for" and state.dialect.rust:
-        # A binder's `for` shows at the next token (_resolve_for), and an
-        # implementation's at the one before it.
         state.for_pending = not implements_for(state.prev)
+        return True
+    return _loop_tail(state, token)
+
+
+def _loop_tail(state: _FnState, token: str) -> bool:
+    """True for the `while` of a do-while (Swift: repeat-while), which the
+    `do` already paid for.
+
+    Only the `while` right after the `}` that closes a block a `do` opened
+    (see _open_brace). Reading every `while` after a `}` as a tail made the
+    loop after an `if` block, or after a Python dict, cost nothing.
+    """
+    return token == "while" and state.prev == "}" and state.closed_do
+
+
+def _guard(state: _FnState, is_python: bool) -> None:
+    """Swift's `guard` is an if whose block is its `else`: +1 and the nesting
+    it sits in, and the block, which opens at the `else`, is one level deeper.
+    The `else` itself is free (see _else_token). The level waits for the
+    `else` rather than the next `{`, so a closure in the condition,
+    `guard xs.contains(where: { $0 > 0 }) else {`, opens nothing."""
+    state.total += 1 + _nesting(state, is_python)
+    state.guard_else = True
+
+
+def _python_match(state: _FnState, token: str) -> None:
+    """A Python `match` that starts a statement may open a match statement.
+
+    `match` is a soft keyword: `match = re.match(...)`, `match(s)` and
+    `match: int = 0` use the same word as a name. A match statement is the
+    only one of them whose line ends in a `:` outside every bracket, which
+    the line's end decides; see _match_line_ends.
+    """
+    if state.at_line_start and not state.runs:
+        state.match_indent = state.line_indent
+    _recursion(state, token)
+
+
+def _match_line_ends(state: _FnState) -> None:
+    """At a line break: a line that started with `match` and ended in a `:`
+    outside every bracket is a match statement, +1 and the nesting it sits in,
+    and a level at the match's indent holds its cases. A break inside a bracket
+    or after a backslash continues the line."""
+    if state.match_indent is None or state.runs or state.prev == "\\":
         return
-    _structure(state, token, is_python)
+    if state.prev == ":":
+        state.total += 1 + len(state.stack)
+        _push(state, state.match_indent)
+    state.match_indent = None
 
 
 def _jumps_and_recursion(state: _FnState, token: str, is_python: bool) -> None:
@@ -841,7 +945,7 @@ def _jumps_and_recursion(state: _FnState, token: str, is_python: bool) -> None:
         state.question_pending = _counts_question(state)
     elif token in ("break", "continue"):
         state.label_check = not is_python
-    elif token == "goto":
+    elif token == "goto" and state.dialect.goto:
         state.total += 1
     else:
         _recursion(state, token)
@@ -944,16 +1048,23 @@ def _if_token(state: _FnState, is_python: bool) -> None:
 def _else_token(state: _FnState, token: str, is_python: bool) -> None:
     if is_python and not state.at_line_start:
         return  # the else arm of a ternary expression is part of its +1
+    if state.guard_else:
+        state.guard_else = False
+        state.pending = True  # the guard's block, which the guard paid for
+        return
+    _else_link(state, token, is_python)
+
+
+def _else_link(state: _FnState, token: str, is_python: bool) -> None:
+    """The flat +1 of an else or else-if link. `elif` and `elseif` carry their
+    own condition and their own block, so the block opens here, as it does for
+    every Python link; a brace language's bare `else` has to wait one token to
+    find out whether an `if` follows it."""
     state.total += 1
-    if token != "else":
-        # `elif` and `elseif` carry their own condition and their own block, so
-        # the block opens here; a bare `else` has to wait one token to find out
-        # whether an `if` follows it.
+    if is_python or token != "else":
         _push_structure(state, is_python)
     else:
-        state.else_pending = not is_python
-        if is_python:
-            _push_structure(state, is_python)
+        state.else_pending = True
 
 
 def _structure(state: _FnState, token: str, is_python: bool) -> None:
