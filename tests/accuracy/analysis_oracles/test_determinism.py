@@ -8,10 +8,15 @@ effect when an interpreter starts, and each starts from a fresh repo, so no
 cache is warm. The set holds more than 16 files, crapkit's pool threshold
 (README "analysis_workers"), so a run that leaves analysis_workers at 0
 analyzes in the process pool and one that sets it to 1 stays serial.
+
+analysis_inventory.run_inventory() starts a repo with no store from a copy of
+an empty one, so one check runs the set with no .crapkit/ at all, where
+crapkit sets its own store up, and expects the same rows.
 """
 from __future__ import annotations
 
 import random
+import sqlite3
 
 import pytest
 
@@ -60,6 +65,26 @@ def test_hash_seed_leaves_every_row_unchanged(seed, first_run, tmp_path):
 
 def test_pool_and_serial_analysis_give_identical_rows(first_run, tmp_path):
     assert _rows(tmp_path, SEEDS[0], serial=True) == first_run
+
+
+def _runs(store) -> int:
+    connection = sqlite3.connect(store.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        return connection.execute("SELECT count(*) FROM runs").fetchone()[0]
+    finally:
+        connection.close()
+
+
+def test_a_repo_with_no_store_reads_the_rows_of_one_started_from_the_empty_store(
+        first_run, tmp_path):
+    root = analysis_inventory.build(_files(serial=False), tmp_path / "repo")
+    measured = analysis_inventory.run_inventory(root, tmp_path / "inventory.tsv", spawn=True,
+                                                env={"PYTHONHASHSEED": SEEDS[0]}, seed=False)
+
+    assert measured.code == 0, measured.stderr
+    assert measured.rows == first_run
+    assert _runs(root / ".crapkit" / "crap.sqlite") == 1
+    assert _runs(analysis_inventory.empty_store()) == 0
 
 
 @pytest.mark.nightly

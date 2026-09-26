@@ -54,6 +54,7 @@ def _write(root: Path, path: str, text: str) -> None:
 @pytest.fixture
 def measured_repo(tmp_path):
     root = analysis_inventory.build(FILES, tmp_path / "repo")
+    analysis_inventory.seed_store(root)
     driver = drive.Driver(root)
     assert driver.run("coverage").code == 0
     return root, driver

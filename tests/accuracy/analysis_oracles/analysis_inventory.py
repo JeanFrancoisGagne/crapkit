@@ -12,20 +12,29 @@ workers that ask for the same set wait for the first and read its export.
 
 A retro replay reruns a check at an older crapkit commit; retro_tree() below
 writes the tree that commit can read, and only when a replay asks for it.
+
+run_inventory() starts a repo that has no store yet from a copy of an empty
+one (seed_store), so the run skips the store's setup; the rows it exports
+are the rows a run that sets its own store up exports (test_determinism
+pins that).
 """
 from __future__ import annotations
 
+import atexit
 from dataclasses import dataclass
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import sys
+import tempfile
 import tomllib
 
 from filelock import FileLock
+import hang_guard
 
-from accuracy.kit import drive, repos
+from accuracy.kit import drive, repos, tiers
 
 # Every language key crapkit's config accepts (README "Languages").
 LANGUAGES = ("python", "typescript", "tsx", "javascript", "vue", "swift", "go", "rust",
@@ -249,6 +258,42 @@ def build(files: dict, top: Path) -> Path:
     return top
 
 
+# crapkit sets up a new store with one committed statement per table and index.
+# Where fsync is slow that setup was most of a first run: 0.12 s on Windows and
+# 0.2 to 0.7 s in a Linux container, against about 0.03 s for the run itself.
+# The crapkit that drive.Driver runs makes one empty store per process, and an
+# inventory run in a repo that has no store yet starts from a copy of it.
+MAKE_STORE = ("import sys; from crapkit.store import SnapshotStore; "
+              "SnapshotStore(sys.argv[1]).close()")
+_EMPTY_STORES: dict = {}
+
+
+def _made_store(python: str) -> Path | None:
+    folder = Path(tempfile.mkdtemp(prefix="crapkit-empty-store-"))
+    atexit.register(shutil.rmtree, folder, ignore_errors=True)
+    done = hang_guard.run([python, "-c", MAKE_STORE, str(folder / "crap.sqlite")],
+                          env=drive.child_env(python=python))
+    return folder / "crap.sqlite" if done.returncode == 0 else None
+
+
+def empty_store() -> Path | None:
+    """An empty store at the schema of the crapkit drive.Driver runs, made once per
+    interpreter; None when that crapkit has no crapkit.store.SnapshotStore."""
+    python = os.environ.get(drive.PYTHON_ENV) or sys.executable
+    if python not in _EMPTY_STORES:
+        tiers.require_process("crapkit's store module")
+        _EMPTY_STORES[python] = _made_store(python)
+    return _EMPTY_STORES[python]
+
+
+def seed_store(root: Path) -> None:
+    """Copy the empty store into `root`'s .crapkit/, unless a store is there."""
+    template = empty_store()
+    if template is not None and not (root / drive.STORE).exists():
+        (root / drive.STORE).parent.mkdir(exist_ok=True)
+        shutil.copyfile(template, root / drive.STORE)
+
+
 # lizard's stock Python reader in place of crapkit's corrected one: the launch
 # code stubs the reader's registration before crapkit's analysis module binds
 # it, and keeps the analysis serial, since a pool worker would register again.
@@ -264,7 +309,11 @@ PLAIN = ("-m",)
 
 
 def run_inventory(root: Path, out: Path, spawn: bool = False, launch: tuple = PLAIN,
-                  env: dict | None = None) -> Measured:
+                  env: dict | None = None, seed: bool = True) -> Measured:
+    """`crapkit inventory --export` at `root`. With `seed`, a repo with no store
+    yet starts from the empty store; without it, crapkit sets its store up."""
+    if seed:
+        seed_store(root)
     done = drive.Driver(root, spawn=spawn, launch=launch, env=env).run(
         "inventory", "--export", str(out))
     rows = read_export(out.read_bytes().decode("utf-8")) if out.is_file() else []
