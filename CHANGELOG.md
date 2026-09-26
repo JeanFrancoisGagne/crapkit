@@ -853,7 +853,15 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   anonymous class is named after the classes that hold its method: it read
   `B::go.run()` when a class `B` was declared before `go`, and `G::e.run()` inside a
   nested class `G`, where it now reads `A::G::e.run()`. In 13 files of Guava, Gson and
-  JUnit and 8 of OpenJDK, 127 rows change name and nothing else.
+  JUnit and 8 of OpenJDK, 127 rows change name. One of them also loses 1 of cognitive:
+  recursion counted when a call spelled a method's whole name, which only the methods
+  of a top-level interface had, so OpenJDK's `ClassFile.of(Option...)` counted its call
+  to the overload `of()`.
+- A text block, `"""` over lines (JLS sec. 3.10.6), is one string. lizard read `""` and
+  then a string that ended at the first quote of the block's text, so the text between
+  two of its quotes was code: `a "{" b` in a block hid the next method, and `x "a && b"
+  y` added 1 to ccn. A block whose quotes hold no code reads as before: 646 blocks in
+  two OpenJDK test files change no row.
 - A record or an interface declared inside a method, `record R(int x) {...}` or
   `interface I {...}` (JLS sec. 14.3), has rows for its methods. lizard read their
   methods as statements of the method around them, which paid their `ccn`. A local

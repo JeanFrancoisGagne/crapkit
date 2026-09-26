@@ -217,7 +217,9 @@ same three commands as version 11 below.
   constant's body, an interface field's anonymous class, or a record or interface
   declared in a method, whose `ccn` falls the same way. A method whose anonymous or
   local class ended on a field or an abstract method gets its row back under its own
-  name, with the class's field lines in its `nloc`. A newly listed function
+  name, with the class's field lines in its `nloc`. A Java text block is one string,
+  so a `{` or an `&&` between two quotes in its text is no longer code that hides the
+  next method or adds to `ccn`. A newly listed function
   over its ceiling fails the gate the next time its file changes, and `ratchet seed`
   marks it.
 - Rows that were not functions go: a declaration whose trailing return type holds

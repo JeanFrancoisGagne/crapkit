@@ -218,6 +218,28 @@ def test_a_method_or_a_field_named_record_opens_no_type():
     assert names == ["A::record( int x)", "A::after()"]
 
 
+TEXT_BLOCKS = {  # label: a text block's middle line (sec. 3.10.6)
+    "a brace in quotes": '            a "{" b\n',
+    "an operator in quotes": '            x "a && b" y\n',
+    "an escaped delimiter and a brace": '            a \\""" {\n',
+}
+
+
+@pytest.mark.parametrize("label", TEXT_BLOCKS)
+def test_a_text_block_is_one_string(label):
+    """sec. 3.10.6: a text block runs from `\"\"\"` to the next unescaped `\"\"\"`.
+    lizard read `\"\"\"` as an empty string and a quote, so its text between two
+    quotes was code: a `{` there hid the next method and a `&&` counted in ccn."""
+    source = ('class B {\n    String f(int x) {\n        String s = """\n' + TEXT_BLOCKS[label]
+              + '            """;\n        return s;\n    }\n\n    int g() {\n        return 1;\n'
+              "    }\n}\n")
+
+    rows = [(r.long_name, r.start, r.end, r.ccn_std, r.nloc)
+            for r in analyze_source("B.java", source, note=False)]
+
+    assert rows == [("B::f( int x)", 2, 7, 1, 6), ("B::g()", 9, 11, 1, 3)]
+
+
 LOCAL_TYPES = {  # label: the head of a type declared in outer's body (sec. 14.3)
     "class": "class L {",
     "enum": "enum L { ONE;",

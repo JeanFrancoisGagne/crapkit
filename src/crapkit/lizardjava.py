@@ -35,6 +35,9 @@ Methods lizard hid, invented or misnamed
   method's statements, which hid its methods and charged the method their ccn.
 * A field or an abstract method ending a class declared inside a method took
   that method's row: its name stayed current to the method's closing `}`.
+* A text block (sec. 3.10.6) read as `""` and a string that ended at the first
+  quote of its text, so the text between two of its quotes was code: a `{`
+  there hid the next method. JavaReader.generate_tokens reads it as one token.
 
 Parameters
 ----------
@@ -72,6 +75,12 @@ _BRACE_DEPTH = {"{": 1, "}": -1}
 # The tokens that end an enum's constant list: `;` before its other
 # declarations, or the enum's own `}` when it declares nothing else.
 _CONSTANTS_END = frozenset({";", "}"})
+
+# A text block runs from `"""` to the next `"""` that no backslash escapes (sec.
+# 3.10.6). lizard's tokenizer read `""` and then a string that ended at the first
+# quote of the text, so the text between two quotes was code. A pattern for
+# CodeReader.generate_tokens, which takes no capturing group.
+_TEXT_BLOCK = r'|"""(?:\\.|[^\\])*?"""'
 
 # The keywords that declare a type beside `class`, which lizard reads itself.
 _TYPE_WORDS = frozenset({"enum", "interface"})
@@ -284,6 +293,11 @@ class JavaReader(_StockJavaReader):
     def __init__(self, context):
         super().__init__(context)
         self.parallel_states = [JavaFamilyStates(context), JavaNestingStates(context)]
+
+    @staticmethod
+    def generate_tokens(source_code, addition="", token_class=None):
+        """lizard's tokens, with each text block one string token."""
+        return _StockJavaReader.generate_tokens(source_code, _TEXT_BLOCK + addition, token_class)
 
 
 # Any filename picks the reader; the file is never opened.
