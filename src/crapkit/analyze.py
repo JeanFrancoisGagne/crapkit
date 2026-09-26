@@ -346,7 +346,7 @@ class _PythonBodies:
 
 # Where str.splitlines ends a line and the source does not. decode_source has
 # already turned every CR into an LF, so LF is the only line end left.
-_NOT_LINE_ENDS = dict.fromkeys(map(ord, "\x0b\x0c\x1c\x1d\x1e\x85  "), " ")
+_NOT_LINE_ENDS = dict.fromkeys(map(ord, "\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"), " ")
 
 
 class _LineEndComments:
