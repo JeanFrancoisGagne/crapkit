@@ -330,12 +330,12 @@ _SIGNATURE_DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
 
 class _FnState:
-    __slots__ = ("total", "stack", "max_depth", "brace_depth", "line_indent",
+    __slots__ = ("for_pending", "total", "stack", "max_depth", "brace_depth", "line_indent",
                  "at_line_start", "pending", "else_pending", "question_pending",
                  "bool_op", "fn", "own", "recursed", "body_started", "signature_depth",
-                 "prev", "prev2", "label_check", "for_pending", "dialect", "call_pending",
-                 "call", "messages", "runs", "run_break", "word_op", "braces",
-                 "closed_do", "guard_else", "match_indent")
+                 "prev", "prev2", "label_check", "dialect", "call_pending", "call",
+                 "messages", "runs", "run_break", "word_op", "braces", "closed_do",
+                 "guard_else", "match_indent", "else_payload")
 
     def __init__(self, fn=None, dialect: _Dialect = _DEFAULT_DIALECT):
         self.dialect = dialect
@@ -349,6 +349,7 @@ class _FnState:
         self.at_line_start = True
         self.pending = False     # a counting structure awaits its '{'
         self.else_pending = False
+        self.else_payload = False  # Zig: inside an else's `|err|`; see _resolve_else
         self.question_pending = False
         self.bool_op = None
         self.recursed = False
@@ -545,7 +546,15 @@ def _resolve_else(state: _FnState, token: str) -> bool:
     An else-if: the else already paid the flat +1, and the `if` only opens the
     block. `else =>` is the default prong of a Zig switch, which the switch's
     +1 already covers, so the +1 the `else` paid goes back and nothing opens.
+    Zig gives an else a payload, `else |err| if (...)`, and the token after the
+    payload's closing `|` is the one that decides: read at the first `|`, the
+    else was a plain one and the `if` after the payload paid +1 of its own.
     """
+    if token == "|":
+        state.else_payload = not state.else_payload  # the payload opens or closes
+        return False
+    if state.else_payload:
+        return False  # a name the payload binds
     state.else_pending = False
     if token == "=>":
         state.total -= 1
