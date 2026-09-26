@@ -1,13 +1,16 @@
 """What a harness does with the plugin's hooks/hooks.json, per its profile's [hooks].
 
-The plugin ships one PostToolUse group whose handlers each run
-`crapkit claude-hook --protocol 1` through `command` plus `args`, filtered by
-an `if` pattern per file type. A harness that drops `args` runs a bare
-`crapkit`, which prints its usage and exits 2; a harness that drops `if` runs
-every handler on every matched edit; a harness that reads exit 2 as "block"
-or "deny" stops the edit the advisory was only meant to comment on.
+The plugin ships one PostToolUse handler, `crapkit claude-hook --protocol 1`
+in shell form, on Edit and Write; claude-hook itself skips a file no lane
+measures. Releases up to 0.8.0 shipped 50 exec-form handlers instead: `crapkit`
+in `command`, the rest in `args`, and an `if` pattern per file type. A harness
+that drops `args` from one of those runs a bare `crapkit`, which prints its
+usage and exits 2; a harness that drops `if` runs every handler on every
+matched edit. A harness that reads exit 2 as "block" or "deny" stops the edit
+the advisory was only meant to comment on.
 
     handlers = hooks_rules.handlers(plugin_root)
+    spawned = hooks_rules.spawns(profile, plugin_root, [("Edit", "calc/grade.py")])
     fired = hooks_rules.fired(profile, plugin_root, tool="Edit", path="calc/grade.py")
     hooks_rules.problems(profile, argv, exit_code)
 
@@ -42,9 +45,14 @@ def _groups_to_handlers(config: dict) -> list[Handler]:
             for group in groups for entry in group.get("hooks", [])]
 
 
+def parse(text: str) -> list[Handler]:
+    """Every handler a hooks.json text declares, in file order."""
+    return _groups_to_handlers(json.loads(text))
+
+
 def handlers(plugin_root: Path, relative: str = DEFAULT) -> list[Handler]:
     """Every handler the file declares, in file order."""
-    return _groups_to_handlers(json.loads((plugin_root / relative).read_text(encoding="utf-8")))
+    return parse((plugin_root / relative).read_text(encoding="utf-8"))
 
 
 def _declared(rules: dict, plugin_root: Path):
@@ -100,6 +108,13 @@ def argv(profile, handler: Handler) -> list[str]:
     `args` only when it keeps them."""
     kept = handler.entry.get("args", []) if "args" in profile.hooks["fields"] else []
     return [*shlex.split(handler.entry["command"]), *kept]
+
+
+def spawns(profile, plugin_root: Path, edits) -> list[tuple[str, str, list[str]]]:
+    """(tool, path, argv) for every handler the harness runs on each
+    (tool, path) edit, in edit order then file order."""
+    return [(tool, path, argv(profile, handler)) for tool, path in edits
+            for handler in fired(profile, plugin_root, tool=tool, path=path)]
 
 
 def problems(profile, spawned: list[str], exit_code: int) -> list[str]:

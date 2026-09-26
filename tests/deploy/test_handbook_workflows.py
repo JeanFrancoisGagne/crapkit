@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from kit import docsnip, installers, repos
+from kit import docsnip, hooks_rules, installers, profiles, repos
 from kit.cells import cell
 from kit.installers import Expect, bare, said, shape
 
@@ -125,20 +125,12 @@ def refresh_token(req, store):
 '''
 
 
-def _handler(rule: str) -> dict:
-    """The plugin's PostToolUse handler for one `if` rule, from the stamped hooks.json."""
-    hooks = json.loads((docsnip.root() / "plugin" / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-    return next(hook for entry in hooks["hooks"]["PostToolUse"] for hook in entry["hooks"] if hook.get("if") == rule)
-
-
 def advise(box, repo: Path, path: str):
-    """The advisory, spawned as Claude Code spawns the plugin's handler for an
-    Edit of `path`: its command and args, the event on stdin."""
-    handler = _handler("Edit(*.py)")
-    event = {"hook_event_name": "PostToolUse", "tool_name": "Edit", "cwd": str(repo),
-             "tool_input": {"file_path": str(repo / path)}}
-    return box.run([handler["command"], *handler["args"]], cwd=repo, input=json.dumps(event),
-                   note="the plugin's Edit(*.py) handler, spawned the way Claude Code spawns it")
+    """The advisory, spawned as Claude Code spawns the plugin's hook for an Edit
+    of `path`: the argv the stamped hooks.json gives, the event on stdin."""
+    [(_, _, argv)] = hooks_rules.spawns(profiles.load("claude-code"), docsnip.root() / "plugin", [("Edit", path)])
+    return box.run(argv, cwd=repo, input=json.dumps(hooks_rules.payload(repo, path)),
+                   note="the plugin's hook for an Edit of a .py file, spawned the way Claude Code spawns it")
 
 
 def _advisory_lines(names: dict[str, str]) -> list[str]:

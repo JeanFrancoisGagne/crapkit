@@ -184,6 +184,24 @@ def test_the_shim_names_the_harness_behind_a_windows_launcher():
     assert parents({}, 7, "crapkit") == {"ppid": 7}
 
 
+def test_claude_code_spawns_the_shell_form_hook_on_every_edit_and_an_exec_form_one_only_where_its_if_admits(tmp_path):
+    """The hook contract cells spawn what Claude Code spawns for each edit. The
+    one shell-form handler runs on any Edit or Write, since claude-hook screens
+    the file itself; a 0.8.0-style exec-form handler runs only for the edit its
+    `if` admits. Both spawn `crapkit claude-hook --protocol 1`."""
+    claude = profiles.load("claude-code")
+    shell_form = {"type": "command", "command": "crapkit claude-hook --protocol 1"}
+    exec_form = {"type": "command", "command": "crapkit", "args": ["claude-hook", "--protocol", "1"], "if": "Edit(*.py)"}
+    edits = [("Edit", "calc/big.py"), ("Edit", "notes.md")]
+    (tmp_path / "hooks").mkdir()
+    for entry, admitted in ((shell_form, edits), (exec_form, edits[:1])):
+        text = json.dumps({"hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [entry]}]}})
+        (tmp_path / "hooks" / "hooks.json").write_text(text, encoding="utf-8")
+        assert len(hooks_rules.parse(text)) == 1
+        assert hooks_rules.spawns(claude, tmp_path, edits) == [
+            (tool, path, ["crapkit", "claude-hook", "--protocol", "1"]) for tool, path in admitted]
+
+
 def test_a_shell_form_hook_spawns_as_its_shell_splits_it_and_each_harness_hears_it_where_it_reads():
     """The plugin's hook is one shell-form command line. A harness that keeps
     only `command` still passes its arguments, each harness sends its own

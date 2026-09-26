@@ -21,7 +21,7 @@ from pathlib import Path
 
 import hang_guard
 
-from kit import docsnip, gitmirror, shim, stub_openai
+from kit import docsnip, gitmirror, hooks_rules, shim, stub_openai
 from kit.cells import cell
 from kit.mcp_client import McpClient
 
@@ -144,8 +144,7 @@ def test_codex_on_windows_loads_no_hook_and_starts_the_server_in_the_thread_cwd(
       use_cases="Codex plugin install", os="linux", image="core", cadence="nightly")
 def test_the_release_before_the_manifest_gave_codex_every_claude_code_hook(box, candidate, templates):
     _, repo = codex_ready(box, candidate, templates, release="0.8.0")
-    handlers = json.loads((candidate.staged / "plugin" / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-    count = sum(len(matcher["hooks"]) for event in handlers["hooks"].values() for matcher in event)
+    count = len(hooks_rules.parse(gitmirror.at(box).git("show", "v0.8.0:plugin/hooks/hooks.json")))
     with CodexAppServer(box, repo) as codex:
         hooks = codex.hooks(repo)
 

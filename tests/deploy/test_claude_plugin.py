@@ -16,12 +16,14 @@ The helpers below serve every module of the deploy-plugins packet.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import re
 from pathlib import Path
+from typing import NamedTuple
 
-from kit import docsnip, gitmirror, repos, shim, stub_anthropic
+from kit import docsnip, gitmirror, hooks_rules, profiles, repos, shim, stub_anthropic
 from kit.cells import cell
 
 PACKET = "deploy-plugins"
@@ -206,31 +208,30 @@ def offered_tools(box, cwd: Path, claude: str = "claude") -> list[str]:
 
 # --- the hook contract, crapkit's side ---------------------------------------------------
 
-def hook_handlers(plugin_root: Path) -> list[dict]:
-    """Every PostToolUse handler of an installed plugin's hooks.json."""
-    hooks = json.loads((plugin_root / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
-    return [handler for entry in hooks["PostToolUse"] for handler in entry["hooks"]]
+# The edits the hook contract replays: the breach in calc/big.py by either tool,
+# and a Markdown file no lane measures, which the hook must leave alone.
+EDITS = (("Edit", "calc/big.py"), ("Write", "calc/big.py"), ("Edit", "notes.md"))
 
 
-def handler_payload(handler: dict, repo: Path) -> dict:
-    """The PostToolUse event a handler's `if` filter admits: `Write(*.py)` gets a
-    Write of calc/big.py."""
-    tool, pattern = re.fullmatch(r"(\w+)\((.*)\)", handler["if"]).groups()
-    path = repo / "calc" / pattern.replace("*", "big")
-    return {"hook_event_name": "PostToolUse", "tool_name": tool, "cwd": str(repo),
-            "tool_input": {"file_path": str(path)}}
+class Spawn(NamedTuple):
+    path: str
+    argv: list[str]
+    exit: int
+    stderr: str
 
 
-def spawn_handlers(box, plugin_root: Path, repo: Path) -> list[tuple[str, int, str]]:
-    """Each handler spawned as Claude Code would, after a Write that left a breach
-    in calc/big.py: (its `if`, exit code, stderr)."""
+def spawn_handlers(box, plugin_root: Path, repo: Path) -> list[Spawn]:
+    """Every handler Claude Code runs for each of EDITS, spawned as Claude Code
+    spawns it, after a Write that left a breach in calc/big.py. The shipped
+    plugin runs its one hook on all three; a 0.8.0-style plugin runs only the
+    handler whose `if` admits the edit."""
     box.transcript.note(CRAPKIT_SIDE)
     (repo / "calc" / "big.py").write_text(BREACH, encoding="utf-8", newline="\n")
+    (repo / "notes.md").write_text("# Notes\n", encoding="utf-8", newline="\n")
     verdicts = []
-    for handler in hook_handlers(plugin_root):
-        step = box.run([handler["command"], *handler.get("args", [])], cwd=repo,
-                       input=json.dumps(handler_payload(handler, repo)))
-        verdicts.append((handler["if"], step.exit, step.stderr))
+    for tool, path, argv in hooks_rules.spawns(profiles.load("claude-code"), plugin_root, EDITS):
+        step = box.run(argv, cwd=repo, input=json.dumps(hooks_rules.payload(repo, path, tool)))
+        verdicts.append(Spawn(path, argv, step.exit, step.stderr))
     return verdicts
 
 
@@ -239,19 +240,20 @@ def hook_starts(box) -> list[list[str]]:
     return [start["argv"][1:] for start in shim.starts(box) if "claude-hook" in start["argv"]]
 
 
-def silent(verdict: tuple[str, int, str]) -> bool:
-    return verdict[1] == 0 and not verdict[2].strip()
+def silent(spawn: Spawn) -> bool:
+    return spawn.exit == 0 and not spawn.stderr.strip()
 
 
-def python_rule(verdict: tuple[str, int, str]) -> bool:
-    return verdict[0].endswith(".py)")
+def python_edit(spawn: Spawn) -> bool:
+    return spawn.path.endswith(".py")
 
 
-def assert_handler_verdicts(verdicts: list[tuple[str, int, str]]) -> None:
-    """The *.py handlers name the breach at exit 2; every other one is silent at 0."""
-    python = list(filter(python_rule, verdicts))
-    loud = [verdict for verdict in verdicts if not python_rule(verdict) and not silent(verdict)]
-    assert [(exit, "over ceiling 6 in calc/big.py" in err) for _, exit, err in python] == [(2, True), (2, True)]
+def assert_handler_verdicts(verdicts: list[Spawn]) -> None:
+    """The Edit and the Write of calc/big.py name the breach at exit 2; every
+    other spawn is silent at 0."""
+    python = [(spawn.exit, "over ceiling 6 in calc/big.py" in spawn.stderr) for spawn in filter(python_edit, verdicts)]
+    loud = [spawn for spawn in itertools.filterfalse(python_edit, verdicts) if not silent(spawn)]
+    assert python == [(2, True), (2, True)]
     assert loud == []
 
 
@@ -271,9 +273,8 @@ def fresh_install(box, candidate, templates, real: Path) -> None:
     assert "Connected" in mcp_line(box, repo)
     assert doctor.exit == 0 and doctor.stdout.splitlines() == [f"crapkit doctor: checking {root}"]
     verdicts = spawn_handlers(box, root, repo)
-    handlers = hook_handlers(root)
     assert_handler_verdicts(verdicts)
-    assert hook_starts(box) == [handler["args"] for handler in handlers]
+    assert hook_starts(box) == [spawn.argv[1:] for spawn in verdicts]
 
 
 @cell("lin-claude-plugin-fresh", channel="Claude marketplace, README line via insteadOf mirror",

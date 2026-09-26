@@ -68,15 +68,19 @@ class Mirror:
         return commit
 
 
+def at(box) -> Mirror:
+    """The mirror make() cloned into this box."""
+    return Mirror(box.root / "mirror" / "crapkit.git", box)
+
+
 def make(box, source: str | os.PathLike | None = None) -> Mirror:
     """Clone the exported mirror into the sandbox and point GitHub at it."""
     source = source or os.environ["CRAPKIT_DEPLOY_MIRROR"]
-    path = box.root / "mirror" / "crapkit.git"
-    box.run(["git", "clone", "-q", "--mirror", str(source), str(path)], expect=0)
-    mirror = Mirror(path, box)
+    mirror = at(box)
+    box.run(["git", "clone", "-q", "--mirror", str(source), str(mirror.path)], expect=0)
     _main_is_head(mirror)
     gitconfig = box.home / ".gitconfig"
-    gitconfig.write_text(gitconfig.read_text(encoding="utf-8") + rules(path.as_uri()), encoding="utf-8")
+    gitconfig.write_text(gitconfig.read_text(encoding="utf-8") + rules(mirror.url), encoding="utf-8")
     return mirror
 
 
