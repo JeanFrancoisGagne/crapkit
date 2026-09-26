@@ -37,6 +37,11 @@ Language-specific rules:
     the `else` is free. See `_guard`.
   * the `while` of a do-while (Swift: repeat-while) is the tail of the loop
     its `do` already paid for, and only that `while`. See `_loop_tail`.
+  * in C, C++, Objective-C, Java, JavaScript, TypeScript and Zig a body can
+    go without braces, `if (a) return b ? 1 : 2;`, and holds a level from its
+    header's `)` to the end of its statement. A `{` is a structure's block
+    only where the structure still waits for one at its own bracket depth.
+    See `_body_token`.
   * in shell a block is delimited by words, not by braces or by indent: `if`
     and `case` open, `fi`, `done` and `esac` close, and `do`, `then` and `in`
     only introduce the body of a structure already charged. See
@@ -133,6 +138,32 @@ _GROUPING_WORDS = frozenset({"if", "elif", "while", "for", "foreach", "switch", 
 # The tokens that end a statement, and every run open in it.
 _STATEMENT_ENDS = frozenset({";", "{", "}"})
 
+# The phases of a body in a language where it can go without braces (see
+# _open_body): the structure's keyword was just read, and a header in
+# parentheses may follow; that header is open; nothing has followed the header
+# yet; a Zig payload, `|x|`, is open; a token other than `{` followed, so the
+# body has no braces; a `{` followed, and the block on the stack holds the
+# level.
+_FRESH, _HEADER, _AWAITING, _PAYLOAD, _BEGUN, _BRACED = range(6)
+
+# The phases in which a body holds a nesting level of its own. In its header
+# a structure sits at its keyword's level, and a braced body's level is on the
+# stack.
+_HOLDING = frozenset({_AWAITING, _PAYLOAD, _BEGUN})
+
+# Words between a structure's keyword and its header: C++'s `if constexpr (`
+# and `if consteval {`, JavaScript's `for await (`.
+_HEADER_WORDS = frozenset({"constexpr", "consteval", "await"})
+
+# After a statement's end, these say the statement goes on: a try's `catch` or
+# `finally`. An `else` goes on with the if it belongs to; see _else_ends_body.
+_STATEMENT_GOES_ON = frozenset({"catch", "finally", "else"})
+
+# The characters an operator starts with, and the operators that can start a
+# JavaScript statement of their own. See _continues_line.
+_OPERATOR_START = frozenset("=.?:&|+-*/%<>,^!~")
+_PREFIX_ONLY = frozenset({"!", "~", "++", "--"})
+
 # The keywords that pay a FLAT +1 with no nesting increment, which is what the
 # whitepaper gives an else-if link. `elseif` is one word in PowerShell (and in
 # PHP); it belongs here rather than in `_COUNTING`, where it would be charged
@@ -210,7 +241,10 @@ class _Dialect(NamedTuple):
     brackets a run of logical operators is kept per. `overloads`: one name can
     belong to several functions that differ in their parameters (C++, Java,
     Swift), so a call to the name is a call to this one only when it passes a
-    number of arguments this one takes.
+    number of arguments this one takes. `braceless`: a structure's body can
+    go without braces (C, C++, Objective-C, Java, JavaScript, TypeScript, Zig).
+    `line_statements`: a line break can end a statement that has no `;`
+    (JavaScript, TypeScript).
     """
 
     rust: bool = False
@@ -230,6 +264,8 @@ class _Dialect(NamedTuple):
     openers: frozenset = _OPENERS
     closers: frozenset = _CLOSERS
     overloads: bool = False
+    braceless: bool = False
+    line_statements: bool = False
 
 
 # Keyed on the reader's exact class name, never on an issubclass test: JavaReader,
@@ -242,14 +278,15 @@ _DEFAULT_DIALECT = _Dialect()
 _RUST = _Dialect(counting=_RUST_COUNTING, do_loops=frozenset(), goto=False, labels=_rust_label)
 _PYTHON = _Dialect(counting=_PYTHON_COUNTING, do_loops=frozenset(), goto=False, word_ops=_AND_OR,
                    openers=_PYTHON_OPENERS, closers=_PYTHON_CLOSERS)
-_JAVASCRIPT = _Dialect(counting=_C_FAMILY_COUNTING, goto=False, labels=_named_label)
+_JAVASCRIPT = _Dialect(counting=_C_FAMILY_COUNTING, goto=False, labels=_named_label,
+                       braceless=True, line_statements=True)
 _DIALECTS = {
     "CLikeReader": _Dialect(counting=_C_FAMILY_COUNTING, declarator_and=True, word_ops=_AND_OR,
-                            elvis=True, overloads=True),
+                            elvis=True, overloads=True, braceless=True),
     "ObjCReader": _Dialect(counting=_C_FAMILY_COUNTING, declarator_and=True, messages=True,
-                           word_ops=_AND_OR, elvis=True, overloads=True),
+                           word_ops=_AND_OR, elvis=True, overloads=True, braceless=True),
     "JavaReader": _Dialect(counting=_C_FAMILY_COUNTING, goto=False, labels=_named_label,
-                           overloads=True),
+                           overloads=True, braceless=True),
     "JavaScriptReader": _JAVASCRIPT,
     "TypeScriptReader": _JAVASCRIPT,
     "TSXReader": _JAVASCRIPT,
@@ -266,7 +303,7 @@ _DIALECTS = {
     "PythonReader": _PYTHON,
     "PythonSignatureReader": _PYTHON,
     "ZigReader": _Dialect(counting=_ZIG_COUNTING, do_loops=frozenset(), goto=False,
-                          labels=_zig_label, word_ops=_AND_OR),
+                          labels=_zig_label, word_ops=_AND_OR, braceless=True),
 }
 
 # The rules crapkit's reader fixes add: Rust's own syntax (see _Dialect.rust) and
@@ -335,7 +372,8 @@ class _FnState:
                  "bool_op", "fn", "own", "recursed", "body_started", "signature_depth",
                  "prev", "prev2", "label_check", "dialect", "call_pending", "call",
                  "messages", "runs", "run_break", "word_op", "braces", "closed_do",
-                 "guard_else", "match_indent", "else_payload")
+                 "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies",
+                 "ended")
 
     def __init__(self, fn=None, dialect: _Dialect = _DEFAULT_DIALECT):
         self.dialect = dialect
@@ -347,7 +385,10 @@ class _FnState:
         self.brace_depth = 0
         self.line_indent = 0
         self.at_line_start = True
-        self.pending = False     # a counting structure awaits its '{'
+        self.pending = False     # a counting structure awaits its '{' (braced languages)
+        self.bracket_depth = 0   # brackets of every kind open; see _body_token
+        self.bodies = []          # [bracket depth, phase, is an if's] per body; see _open_body
+        self.ended = None         # the depth a statement just ended at; see _end_statement
         self.else_pending = False
         self.else_payload = False  # Zig: inside an else's `|err|`; see _resolve_else
         self.question_pending = False
@@ -423,6 +464,10 @@ def _state_for(states: dict, fn, last, dialect: _Dialect) -> _FnState:
     lizard named at the time. So a state that was not the last one stepped
     takes the last one's position, or the outer resumes with a stale
     `at_line_start` and reads its `if` as the ternary form, which opens nothing.
+    The bracket depth the body rules read belongs to the stream too: lizard
+    hands a JavaScript arrow the `)` that closes the call it is passed to,
+    `xs.map((v) => (v ? 1 : 2))`, and the function around it resumed two
+    brackets deep, where no `;` could end its statement.
     """
     state = states.get(fn)
     if state is None:
@@ -430,6 +475,7 @@ def _state_for(states: dict, fn, last, dialect: _Dialect) -> _FnState:
     if last is not None and state is not last:
         state.line_indent = last.line_indent
         state.at_line_start = last.at_line_start
+        state.bracket_depth = last.bracket_depth
     return state
 
 
@@ -559,8 +605,19 @@ def _resolve_else(state: _FnState, token: str) -> bool:
     if token == "=>":
         state.total -= 1
         return False
-    state.pending = True
+    _else_body(state, token)
     return token == "if"
+
+
+def _else_body(state: _FnState, token: str) -> None:
+    """The else's block, or where a body can go without braces, its body: an
+    else-if's is the `if`'s, with a header. Zig's `else =>` is a switch's
+    default prong, which has no body of an else."""
+    if not state.dialect.braceless:
+        state.pending = True
+    elif token != "=>":
+        state.bodies.append([state.bracket_depth, _FRESH if token == "if" else _AWAITING,
+                             token == "if"])
 
 
 def _resolve_words(state: _FnState, token: str) -> None:
@@ -637,7 +694,8 @@ def _resolve_word_op(state: _FnState, token: str) -> None:
 
 
 def _nesting(state: _FnState, is_python: bool) -> int:
-    return len(state.stack)
+    """The blocks open around the token, and the bodies without braces."""
+    return len(state.stack) + sum(1 for body in state.bodies if body[1] in _HOLDING)
 
 
 def _push(state: _FnState, entry) -> None:
@@ -669,6 +727,8 @@ def _observe(state: _FnState, token: str) -> None:
         _follow_call(state, token)
     if state.dialect.messages:
         _message_token(state, token)
+    if state.dialect.braceless:
+        _body_token(state, token)
 
 
 def _follow_call(state: _FnState, token: str) -> None:
@@ -816,7 +876,9 @@ def _brace(state: _FnState, token: str) -> None:
 
 
 def _open_brace(state: _FnState) -> None:
-    if state.pending:
+    if state.dialect.braceless:
+        _brace_body(state)
+    elif state.pending:
         _push(state, state.brace_depth)
         state.pending = False
     state.braces.append(state.prev in state.dialect.do_loops)
@@ -1122,7 +1184,7 @@ def _if_token(state: _FnState, is_python: bool) -> None:
         state.total += 1 + _nesting(state, is_python)  # ternary expression form
         return
     state.total += 1 + _nesting(state, is_python)
-    _push_structure(state, is_python)
+    _push_structure(state, is_python, "if")
 
 
 def _else_token(state: _FnState, token: str, is_python: bool) -> None:
@@ -1149,11 +1211,189 @@ def _else_link(state: _FnState, token: str, is_python: bool) -> None:
 
 def _structure(state: _FnState, token: str, is_python: bool) -> None:
     state.total += 1 + _nesting(state, is_python)
-    _push_structure(state, is_python)
+    _push_structure(state, is_python, token)
 
 
-def _push_structure(state: _FnState, is_python: bool) -> None:
+def _push_structure(state: _FnState, is_python: bool, token: str = "") -> None:
     if is_python:
         _push(state, state.line_indent)
+    elif state.dialect.braceless:
+        _open_body(state, token)
     else:
         state.pending = True
+
+
+# --- bodies without braces ------------------------------------------------------
+#
+# In C, C++, Objective-C, Java, JavaScript, TypeScript and Zig a structure's
+# body can go without braces, `if (a) return b ? 1 : 2;`, and it is a level
+# like a block: Sonar v1.7 (App. B3) nests what an if or a loop holds, braces or
+# not. The pass pushed a level only at a `{`, so a structure in such a body paid
+# no nesting, and the structure went on waiting past its `;` and took the next
+# block of any kind, a bare `{`, a lambda's body or an object literal, for its
+# own. Each structure now keeps a body, whose phase says where it stands.
+#
+# A body ends with its statement: at a `;` or a `,` at its own bracket depth, at
+# the close of a bracket around it, at the `}` of a braced statement that was
+# the body (`for (...) if (x) { ... }`), and in JavaScript at a line break that
+# neither the line before nor the next one continues. The token after that end
+# decides: an `else` ends the body of the if it belongs to and keeps the bodies
+# around that one (`for (...) if (a) b(); else c();`), a `catch` or `finally`
+# keeps them all, and anything else ends them all. A Zig loop's own `else`
+# inside another body ends that body too: the pass does not tell a loop's else
+# from an if's.
+
+def _open_body(state: _FnState, token: str) -> None:
+    """A structure's body, waiting for its header, or for a `do`, for its
+    first token."""
+    phase = _AWAITING if token in state.dialect.do_loops else _FRESH
+    state.bodies.append([state.bracket_depth, phase, token == "if"])
+
+
+def _body_token(state: _FnState, token: str) -> None:
+    """One token of a language whose bodies can go without braces, read for
+    where those bodies start and end."""
+    if state.at_line_start:
+        _line_break(state, token)
+    if state.ended is not None:
+        _end_statement(state, token)
+    _advance_body(state, token)
+    step = _BODY_STEPS.get(token)
+    if step is not None:
+        step(state, token)
+
+
+def _line_break(state: _FnState, token: str) -> None:
+    """A JavaScript line break ends the statement of a body that has begun,
+    unless one of the two lines says the statement goes on."""
+    if state.dialect.line_statements and _begun(state) and not _continues_line(state.prev, token):
+        state.ended = state.bracket_depth
+
+
+def _innermost_at(state: _FnState, depth: int):
+    """The innermost body, when it stands at `depth`; None otherwise."""
+    body = state.bodies[-1] if state.bodies else None
+    return body if body is not None and body[0] == depth else None
+
+
+def _begun(state: _FnState) -> bool:
+    """The innermost body has begun, and no bracket opened inside it is open."""
+    body = _innermost_at(state, state.bracket_depth)
+    return body is not None and body[1] == _BEGUN
+
+
+def _continues_line(prev: str, token: str) -> bool:
+    """The line before ends in an operator, or the next line starts with one
+    that cannot start a statement: `.then(f)`, `? a : b`, `&& c`."""
+    return _operator(prev) or (_operator(token) and token not in _PREFIX_ONLY)
+
+
+def _operator(token: str) -> bool:
+    return token[:1] in _OPERATOR_START and token not in ("++", "--")
+
+
+def _end_statement(state: _FnState, token: str) -> None:
+    """The token after a statement's end closes the bodies at its depth,
+    unless it goes on with the statement (see _STATEMENT_GOES_ON)."""
+    depth, state.ended = state.ended, None
+    if token not in _STATEMENT_GOES_ON:
+        _close_bodies(state, depth)
+
+
+def _advance_body(state: _FnState, token: str) -> None:
+    """Only a token at the innermost body's own depth moves its phase; the
+    tokens inside its header's brackets do not."""
+    body = _innermost_at(state, state.bracket_depth)
+    step = _PHASE_STEPS.get(body[1]) if body is not None else None
+    if step is not None:
+        body[1] = step(token)
+
+
+def _after_fresh(token: str) -> int:
+    if token == "(":
+        return _HEADER
+    return _FRESH if token in _HEADER_WORDS else _after_awaiting(token)
+
+
+def _after_awaiting(token: str) -> int:
+    """A Zig payload opens at `|`, and a Zig loop's continue expression, `while
+    (c) : (i += 1)`, is a second header; `{` is the body's block."""
+    if token == "|":
+        return _PAYLOAD
+    if token == ":":
+        return _FRESH
+    return _AWAITING if token == "{" else _BEGUN
+
+
+def _after_payload(token: str) -> int:
+    return _AWAITING if token == "|" else _PAYLOAD
+
+
+_PHASE_STEPS = {_FRESH: _after_fresh, _AWAITING: _after_awaiting, _PAYLOAD: _after_payload}
+
+
+def _brace_body(state: _FnState) -> None:
+    """A `{` is the block of the body that waits for one at the `{`'s own
+    depth, and of no other: a `{` in a header's brackets (`for (int x : {1,
+    2})`, a lambda in a condition) or in a body that has begun (`return {k:
+    1}`) is a literal's or a lambda's. `_body_token` has already counted this
+    `{`, so the depth outside it is one less."""
+    body = _innermost_at(state, state.bracket_depth - 1)
+    if body is not None and body[1] == _AWAITING:
+        body[1] = _BRACED
+        _push(state, state.brace_depth)
+
+
+def _open_bracket(state: _FnState, _token: str) -> None:
+    state.bracket_depth += 1
+
+
+def _close_bracket(state: _FnState, token: str) -> None:
+    """A closing bracket ends the bodies inside it. A `}` back at a body's
+    depth ends the statement that body holds, and the next token says whether
+    it goes on; a `)` back at a body's header ends the header."""
+    state.bracket_depth -= 1
+    depth = state.bracket_depth
+    _close_bodies(state, depth + 1)
+    body = _innermost_at(state, depth)
+    if body is None:
+        return
+    if token == "}":
+        state.ended = depth
+    elif body[1] == _HEADER:
+        body[1] = _AWAITING
+
+
+def _semicolon(state: _FnState, _token: str) -> None:
+    if _innermost_at(state, state.bracket_depth) is not None:
+        state.ended = state.bracket_depth
+
+
+def _comma(state: _FnState, _token: str) -> None:
+    """A comma at the depth of a body that has begun ends it: the next Zig
+    prong, `0 => if (a) 1 else 2, 1 => ...`, or C's comma operator. A comma in
+    a Zig payload, `for (a, b) |x, y|`, ends nothing."""
+    if _begun(state):
+        _close_bodies(state, state.bracket_depth)
+
+
+def _else_ends_body(state: _FnState, _token: str) -> None:
+    """An else ends the body of the if it belongs to, the innermost if open at
+    its depth, and every body inside that one: `if (a) 1 else 2` in Zig, or
+    `if (a) x(); else y();` once the `;` has ended the statement."""
+    depth = state.bracket_depth
+    while state.bodies and state.bodies[-1][0] >= depth:
+        if state.bodies.pop()[2]:
+            return
+
+
+def _close_bodies(state: _FnState, depth: int) -> None:
+    """Close the bodies at `depth` or deeper, whose statement has ended."""
+    while state.bodies and state.bodies[-1][0] >= depth:
+        state.bodies.pop()
+
+
+# The tokens the body rules read, each to the rule that reads it.
+_BODY_STEPS = {";": _semicolon, ",": _comma, "else": _else_ends_body,
+               **dict.fromkeys(("(", "[", "{"), _open_bracket),
+               **dict.fromkeys((")", "]", "}"), _close_bracket)}
