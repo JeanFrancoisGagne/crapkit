@@ -3,7 +3,7 @@
     shim_bin = shim.install(box, real=box.which("crapkit"))
     box.prepend_path(shim_bin)          # the harness now finds the shim first
     ...
-    starts = shim.starts(box)           # one dict per launch: argv, cwd, env, ppid, first_line, exit
+    starts = shim.starts(box)           # one dict per launch: argv, cwd, env, ppid, first_line, lines, exit
 
 The shim is a console script built from shim_pkg/ with the real launcher and
 the log path written into its code, installed by uv into its own venv, and
@@ -88,15 +88,22 @@ def events(box) -> list[dict]:
 
 
 def starts(box) -> list[dict]:
-    """One dict per launch: the start record with first_line and exit folded in."""
+    """One dict per launch: the start record with first_line, the client's
+    lines up to its initialize (`lines`, first_line among them) and exit
+    folded in. exit stays None for a server its harness killed."""
     launches: dict[int, dict] = {}
     for event in events(box):
-        entry = launches.setdefault(event["pid"], {"first_line": None, "exit": None})
+        entry = launches.setdefault(event["pid"], {"first_line": None, "lines": [], "exit": None})
         entry.update({key: value for key, value in event.items() if key not in ("event", "code", "line")})
-        entry.update(_folded(event))
+        _fold(entry, event)
     return list(launches.values())
 
 
-def _folded(event: dict) -> dict:
+def _fold(entry: dict, event: dict) -> None:
     kind = event["event"]
-    return {"first_line": event["line"]} if kind == "first_line" else {"exit": event["code"]} if kind == "exit" else {}
+    if kind in ("first_line", "client_line"):
+        entry["lines"].append(event["line"])
+    if kind == "first_line":
+        entry["first_line"] = event["line"]
+    if kind == "exit":
+        entry["exit"] = event["code"]

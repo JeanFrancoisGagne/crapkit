@@ -354,10 +354,18 @@ def last_start(box) -> dict:
     return starts[-1]
 
 
+def _message(line: str | None) -> dict:
+    try:
+        return json.loads(line) if line else {}
+    except ValueError:
+        return {}
+
+
 def initialize_params(start: dict) -> dict:
-    """The params of the initialize the harness sent (after any server/discover)."""
-    first = json.loads(start["first_line"])
-    return first.get("params", {}) if first.get("method") == "initialize" else {}
+    """The params of the initialize the harness sent, after any server/discover
+    (the shim records the client's lines up to it), or {} when none came."""
+    messages = [_message(line) for line in start.get("lines") or [start.get("first_line")]]
+    return next((message.get("params", {}) for message in messages if message.get("method") == "initialize"), {})
 
 
 # On Windows, `npm ci` of the harness locks leaves no .bin shim for cline:
@@ -516,7 +524,7 @@ def session_claude(box, repo: Path, url: str):
     server = parsed_doc("claude-code", repo)
     box.run(["claude", "mcp", "add", "-s", "local", "crapkit", "--", *server.argv], cwd=repo, expect=0)
     return (["claude", "-p", PROMPT, "--allowedTools", "mcp__crapkit"],
-            {"ANTHROPIC_BASE_URL": url, "ANTHROPIC_API_KEY": "sk-ant-deploy-cell"})
+            stub_anthropic.claude_env(url, "sk-ant-deploy-cell"))
 
 
 def session_opencode(box, repo: Path, url: str):

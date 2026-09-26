@@ -2,9 +2,12 @@
 
 The record is one JSON line per event, appended to the log path baked into
 _config.py: `start` (argv, cwd, the whole environment, pid, ppid), `first_line`
-(the first line the client wrote to stdin, up to 64 KiB) and `exit` (the real
-launcher's exit code). Stdin is forwarded line by line; stdout and stderr are
-the real launcher's own, inherited, so the client talks to crapkit directly.
+(the first line the client wrote to stdin, up to 64 KiB), `client_line` for
+each line after it up to the client's initialize (Goose, Copilot CLI and Crush
+send server/discover first), and `exit` (the real launcher's exit code). A
+harness that ends the server by killing its process group (Goose) leaves no
+`exit`. Stdin is forwarded line by line; stdout and stderr are the real
+launcher's own, inherited, so the client talks to crapkit directly.
 
 `ppid` is the process that started `crapkit`: the harness. On Windows a
 console-script crapkit.exe is a launcher that starts the venv's python.exe,
@@ -23,6 +26,8 @@ TH32CS_SNAPPROCESS = 2
 LAUNCHER_DEPTH = 3
 
 LIMIT = 1 << 16
+# The client lines recorded at most: the first, and the ones up to initialize.
+LEAD_LINES = 4
 
 
 def _load_config():
@@ -36,12 +41,21 @@ def record(event: str, **fields) -> None:
         log.write(line)
 
 
+def _is_initialize(line: bytes) -> bool:
+    try:
+        return json.loads(line).get("method") == "initialize"
+    except (ValueError, AttributeError):
+        return False
+
+
 def _pump(source, sink) -> None:
-    first = True
+    """Forward every line; record the first, and each one after it until the
+    client's initialize or LEAD_LINES lines, whichever comes first."""
+    lead = 0
     for line in iter(source.readline, b""):
-        if first:
-            record("first_line", line=line[:LIMIT].decode("utf-8", "replace"))
-            first = False
+        if lead < LEAD_LINES:
+            record("first_line" if lead == 0 else "client_line", line=line[:LIMIT].decode("utf-8", "replace"))
+            lead = LEAD_LINES if _is_initialize(line) else lead + 1
         sink.write(line)
         sink.flush()
 

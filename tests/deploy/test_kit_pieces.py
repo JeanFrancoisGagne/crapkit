@@ -175,6 +175,24 @@ def test_the_shim_records_a_start_and_still_runs_crapkit(box, candidate):
     assert [start["ppid"] for start in starts] == [os.getpid(), os.getpid()]
 
 
+def test_the_shim_records_the_client_s_lines_up_to_its_initialize(box, candidate):
+    """Goose, Copilot CLI and Crush send server/discover first; the start
+    record keeps the initialize that follows, so the offer is still read."""
+    box.prepend_path(shim.install(box, venv_crapkit(box)))
+    with McpClient.in_box(box, ["crapkit", "mcp"], cwd=box.root) as client:
+        request_id = next(client.ids)
+        client.send({"jsonrpc": "2.0", "id": request_id, "method": "server/discover", "params": {}})
+        client.reply(request_id)
+        client.initialize("2025-06-18", client="discover-first")
+        client.tools()
+        client.close()
+    (start,) = shim.starts(box)
+
+    assert [profiles._message(line).get("method") for line in start["lines"]] == ["server/discover", "initialize"]
+    assert profiles._message(start["first_line"])["method"] == "server/discover"
+    assert profiles.initialize_params(start)["clientInfo"]["name"] == "discover-first"
+
+
 def test_the_shim_passes_crapkit_s_exit_code_while_its_stdin_stays_open(box, candidate):
     """doctor --plugin-root probes `crapkit --version` with its own stdin
     inherited and never closed. The shim died at shutdown with a fatal
