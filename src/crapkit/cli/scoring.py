@@ -795,11 +795,11 @@ def _gate_candidates(root: Path, rows: list) -> list:
     Judging the whole file instead would flag every legacy function in it, so on
     any repo with seeded debt the flag is red forever and says nothing.
     """
-    from ..diffparse import changed_ranges
+    from ..diffparse import worktree_ranges
     from ..gitio import diff_since
     from ..verify import touched_rows
 
-    return touched_rows(rows, changed_ranges(diff_since(root, "HEAD")))
+    return touched_rows(rows, worktree_ranges(diff_since(root, "HEAD"), root))
 
 
 def _unmarked_breaches(breaches: list, entries: list) -> list:

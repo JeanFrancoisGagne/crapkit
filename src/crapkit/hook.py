@@ -24,7 +24,7 @@ from typing import NamedTuple
 
 from .analyze import analyze_jobs, analyze_source, decode_source
 from .config import Config
-from .diffparse import changed_ranges
+from .diffparse import changed_ranges, reader_ranges
 from .gitio import GitReads
 from .invariants import check_violations
 from .keys import key_names, key_of
@@ -150,6 +150,11 @@ def _unscoped_sources(staged: list[str], checked: set[str], cfg: Config) -> list
     return sorted(f for f in staged if _gate_blind_to(f, checked, exts, match))
 
 
+def _scoped_files(in_scope: dict[str, list[str]]) -> list[str]:
+    """Every file some scope claims, in path order: the files the gate judges."""
+    return sorted({f for files in in_scope.values() for f in files})
+
+
 def gate_staged(root: Path, cfg: Config, reads=None) -> StagedGate:
     """`reads` is where the staged bytes come from: git processes the caller
     already started, or a spawn-on-demand pair when nobody did. The verdict is
@@ -159,12 +164,14 @@ def gate_staged(root: Path, cfg: Config, reads=None) -> StagedGate:
     if not ranges_by_path:
         return StagedGate([])
     in_scope = assign_files(sorted(ranges_by_path), cfg)
-    checked_files = sorted({f for files in in_scope.values() for f in files})
+    checked_files = _scoped_files(in_scope)
     unscoped = _unscoped_sources(sorted(ranges_by_path), set(checked_files), cfg)
     if not checked_files:
         return StagedGate([], unscoped)
-    records_by_path = staged_records(reads.staged_blobs(checked_files),
-                                     worker_budget=cfg.analysis_worker_budget)
+    blobs = reads.staged_blobs(checked_files)
+    records_by_path = staged_records(blobs, worker_budget=cfg.analysis_worker_budget)
+    # The staged blob is the diff's new side: its bytes place git's lines.
+    ranges_by_path = reader_ranges(ranges_by_path, blobs.get)
     return StagedGate(
         _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, in_scope),
         unscoped, tuple(chain.from_iterable(records_by_path.values()))
