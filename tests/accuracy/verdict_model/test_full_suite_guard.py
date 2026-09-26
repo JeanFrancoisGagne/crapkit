@@ -3,12 +3,16 @@
 Every expected verdict is written from docs/lanes.md (How a lane command is
 read, lines 62-124, and The full-suite rule, lines 716-808) and the vitest
 lane section (lines 442-464), one row per case the docs name, split by the
-shell that runs the lane: sh on POSIX, cmd.exe on Windows. Three outside
-oracles read the same commands:
+shell that runs the lane: sh on POSIX, cmd.exe on Windows. Outside oracles
+read the same commands:
 
 - the shell itself: each command runs through sh or cmd.exe with the runner
   swapped for a script that records its argv, and a word crapkit refuses
   must be one the runner receives;
+- two word splits: shlex (POSIX mode, sh's operators) for the sh column, and
+  cmd.exe's caret and operator pass then CommandLineToArgvW for the cmd.exe
+  column (win32). Each must hand the runner the argv the shell does, and the
+  docs' rules read over it must give the row's verdict and crapkit's;
 - pytest's own option parser, which says which of those words are
   positionals, and `pytest --collect-only`, which says whether dropping them
   changes what runs (nightly);
@@ -16,7 +20,8 @@ oracles read the same commands:
   lane narrowing.
 
 Each test_fix_<sha> holds the rows of one past fix, so its replay at the
-commit before that fix goes red.
+commit before that fix goes red. Shapes past the table, where crapkit reads
+a shell's words wrong, are strict xfails from their rulings rows (nightly).
 """
 from __future__ import annotations
 
@@ -414,42 +419,74 @@ def test_the_refused_word_is_one_the_shell_hands_the_runner(guard, row):
 # --- shapes past the docs' table (nightly) ------------------------------------------------------
 # Commands the table does not list, where crapkit reads a shell's words wrong.
 # Each verdict is the docs' rules read over the argv the real shell hands the
-# recorder, which the platform's split oracle matches. (row id, lane, the sh
-# verdict or None where the shape is cmd.exe's alone, the cmd.exe verdict,
-# {shell: the calc-bug its column pins} for each shell crapkit reads wrong)
-REDIRECT = ("calc-bug verdict-model-10: a redirection whose target is quoted and touches "
-            "the operator (>\"lane.log\") is read as an argument, and the lane is refused")
-CARET_QUOTE = ("calc-bug verdict-model-10: a caret-escaped quote opens a quoted run in crapkit's "
-               "reading, but not for cmd.exe, so an & after it starts a command crapkit never checks")
-BACKSLASH_QUOTE = ("calc-bug verdict-model-10: \\\" inside a quoted run ends the run in crapkit's "
-                   "reading; the runner's own reader writes a quote and keeps the run open")
-GLUED = ("calc-bug verdict-model-5: an operator touching a word (tests>lane.log, ;echo) is not "
-         "read as the shell's, so its words land in the runner's argv")
+# recorder, which the platform's split oracle matches. Their rulings rows sit
+# here until they join rulings.tsv.
+PAST_NODE = ("tests/accuracy/verdict_model/test_full_suite_guard.py::"
+             "test_shapes_past_the_table_read_as_the_shell_reads_them")
+POSIX = "https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html"
+QUOTE_BUG = ("calc-bug verdict-model-10: crapkit's lane command reader departs from the shell "
+             "where a quote meets an operator or an escape, so the guard refuses a full-suite lane "
+             "written with >\"lane.log\", and on cmd.exe loads one whose caret-quoted & starts a "
+             "narrowed pytest")
+GLUED_BUG = ("calc-bug verdict-model-5: the lane guard splits commands only at an operator "
+             "surrounded by spaces, so a full-suite lane written as `...py.json&& python -m "
+             "coverage json` is refused as narrowing, naming python")
+
+
+def _defect(ruling_id: str, construct: str, values: tuple, support: str, issue: str) -> rulings.Ruling:
+    """A defect row: `values` is (crapkit's value, the value the shell's argv gives)."""
+    return rulings.Ruling(ruling_id, "Lane command reading and the full-suite guard",
+                          "real shell argv and the shlex or CommandLineToArgvW split, docs' rules over it",
+                          construct, *values, "defect", support,
+                          "docs/lanes.md#how-a-lane-command-is-read", PAST_NODE, issue)
+
+
+PAST_THE_TABLE_RULINGS = {row.id: row for row in (
+    _defect("V20", "a redirection whose quoted target touches > (>\"lane.log\" on both shells, "
+            ">'lane.log' on sh) is read as an argument", (">lane.log", OK),
+            POSIX + "#tag_18_07", QUOTE_BUG),
+    _defect("V20.1", "cmd.exe: 2>\"lane err.log\" is read as an argument", ("2>lane err.log", OK),
+            POSIX + "#tag_18_07", QUOTE_BUG),
+    _defect("V20.2", "cmd.exe: in -k ^\"x & python -m pytest pylib/unit^\" the caret-escaped quote "
+            "opens no run for cmd.exe (lanes.md:72), so & starts a second pytest; crapkit reads one "
+            "-k value", (OK, "pylib/unit"), "docs/lanes.md#how-a-lane-command-is-read", QUOTE_BUG),
+    _defect("V20.3", "cmd.exe: in -k \"a\\\" tests \\\"b\" the runner's reader keeps the run at \\\" "
+            "and hands -k one value; crapkit ends the run and refuses tests", ("tests", OK),
+            "https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-commandlinetoargvw",
+            QUOTE_BUG),
+    _defect("V9.1", "a redirection glued to the word before it (tests>lane.log under testpaths "
+            "tests): the shell hands pytest tests", ("tests>lane.log", OK), POSIX + "#tag_18_03",
+            GLUED_BUG),
+    _defect("V9.2", "sh: a ; glued to the next word (py.json ;echo done) ends the command",
+            (";echo", OK), POSIX + "#tag_18_03", GLUED_BUG),
+)}
+# (row id, lane, the sh verdict or None where the shape is cmd.exe's alone,
+# the cmd.exe verdict, {shell: the rulings row} where crapkit reads it wrong)
 PAST_THE_TABLE = [
     ("redirect-quoted-target", g.Lane(f'{g.PYTEST} {g.COV} >"lane.log"'), OK, OK,
-     {"sh": REDIRECT, "cmd": REDIRECT}),
+     {"sh": "V20", "cmd": "V20"}),
     ("redirect-quoted-target-fd", g.Lane(f'{g.PYTEST} {g.COV} 2>"lane err.log"'), OK, OK,
-     {"cmd": REDIRECT}),
+     {"cmd": "V20.1"}),
     ("redirect-single-quoted-target", g.Lane(f"{g.PYTEST} {g.COV} >'lane.log'"), OK, OK,
-     {"sh": REDIRECT}),
+     {"sh": "V20"}),
     ("caret-quoted-operator", g.Lane(f'{g.PYTEST} {g.COV} -k ^"x & {g.PYTEST} pylib/unit^"'),
-     None, "pylib/unit", {"cmd": CARET_QUOTE}),
-    ("backslash-quote", g.Lane(py('-k "a\\" tests \\"b"')), OK, OK, {"cmd": BACKSLASH_QUOTE}),
+     None, "pylib/unit", {"cmd": "V20.2"}),
+    ("backslash-quote", g.Lane(py('-k "a\\" tests \\"b"')), OK, OK, {"cmd": "V20.3"}),
     ("redirect-glued-to-a-word", g.Lane(py("tests>lane.log"), testpaths={"pyproject.toml": ("tests",)}),
-     OK, OK, {"sh": GLUED, "cmd": GLUED}),
+     OK, OK, {"sh": "V9.1", "cmd": "V9.1"}),
     ("semicolon-glued-to-the-next-word", g.Lane(f"{g.PYTEST} {g.COV} ;echo done"), OK, ";echo",
-     {"sh": GLUED}),
+     {"sh": "V9.2"}),
 ]
+SHELL = "cmd" if g.WINDOWS else "sh"
 
 
-def _bug_marks(bug: str | None) -> list:
-    return [pytest.mark.xfail(strict=True, raises=rulings.RulingDefect, reason=bug)] if bug else []
+def _ruling_marks(ruling_id: str | None) -> list:
+    return [rulings.applies(ruling_id, rows=PAST_THE_TABLE_RULINGS)] if ruling_id else []
 
 
 def _past_the_table() -> list:
     """This shell's cases, each a strict xfail where crapkit reads it wrong."""
-    shell = "cmd" if g.WINDOWS else "sh"
-    return [pytest.param(row, id=row[0], marks=_bug_marks(row[4].get(shell)))
+    return [pytest.param(row, id=row[0], marks=_ruling_marks(row[4].get(SHELL)))
             for row in PAST_THE_TABLE if expected(row) is not None]
 
 
@@ -463,10 +500,13 @@ def test_shapes_past_the_table_read_as_the_shell_reads_them(guard, row):
     root = guard.root(row[1])
     argvs = g.shell_argvs(root, row[1].command, _runner(row[1]))
     assert _split(row[1], g.WINDOWS) == argvs, g.cmd_lines(row[1].command)
-    assert _docs_reading(row[1], argvs) == expected(row)
-    word = g.verdict(root)
-    if word != expected(row):
-        raise rulings.RulingDefect(f"{row[0]}: crapkit reads {word!r}, the shell hands the runner {argvs}")
+    oracle = _docs_reading(row[1], argvs)
+    assert oracle == expected(row)
+    ruling = row[4].get(SHELL)
+    if ruling:
+        rulings.pin_ruling(ruling, crapkit=g.verdict(root), oracle=oracle, rows=PAST_THE_TABLE_RULINGS)
+    else:
+        assert g.verdict(root) == oracle
 
 
 # The oracles' own worked examples, written from the rules before the oracles
