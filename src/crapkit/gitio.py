@@ -162,14 +162,15 @@ def staged_diff(root: Path) -> str:
 
 
 def unstaged_paths(root: Path) -> set[str]:
-    """Tracked files whose working-tree content differs from the index.
+    """Tracked files whose working-tree content differs from the index: the
+    status records whose second letter is set and is not `?`, untracked.
 
     git decides it, through its own filters. Comparing a staged blob to the
-    file's raw bytes reads every file as different under `core.autocrlf=true` —
-    git-for-windows' installer default — because the blob holds LF and the
+    file's raw bytes reads every file as different under `core.autocrlf=true`,
+    git-for-windows' installer default, because the blob holds LF and the
     checkout holds CRLF by design.
     """
-    return set(_diff_names(root))
+    return {path for letters, path in _status(root) if letters[1] not in " ?"}
 
 
 def _diff_names(root: Path, *args: str) -> list[str]:
@@ -219,23 +220,44 @@ def renamed_paths(root: Path, since: str, *, similarity: int = 50) -> dict[str, 
 
 
 def status_names(root: Path) -> list[str]:
-    """Files with uncommitted changes: staged, unstaged, or never added.
-
-    Two diffs and an ls-files rather than `git status --porcelain`, which names
-    its files relative to the repo TOP and cannot be talked out of it —
-    `status.relativePaths=true` and `--porcelain=v1` both still print
-    `app/core/x.py` from a root one directory down, while every caller joins
-    these names against root-relative rows. The diffs take `diff.relative` like
-    the rest of this module and `ls-files --others` answers relative to the cwd
-    already.
+    """Files with uncommitted changes under `root`: staged, unstaged, or never added.
 
     Untracked files are in the set because lane reuse reads it: a test file that
     exists and git has never seen still makes that lane's coverage stale. The
     dirty-file set verify builds from this only ever meets tracked rows, so the
     wider answer cannot relabel a finding there.
     """
-    return sorted({*_diff_names(root, "--cached"), *_diff_names(root),
-                   *untracked_files(root)})
+    return sorted({path for _, path in _status(root)})
+
+
+# Which files changed is `git status`'s question. A worktree `git diff` answers
+# it from the index's stat cache: with diff.autoRefreshIndex off it named every
+# file whose mtime moved, so a `touch` or a copied checkout read as an edit, and
+# with it on it compares the content and then writes the refreshed index over
+# .git/index, whatever GIT_OPTIONAL_LOCKS says. crapkit starts its lane reads at
+# once, and on Windows a read that opened the index during that rename failed
+# with "index file open failed: Permission denied". `git --no-optional-locks
+# status` compares content whatever diff.autoRefreshIndex says and writes
+# nothing. -uall names each untracked file, as `ls-files --others` does, and
+# --no-renames keeps one path per record.
+STATUS = ("--no-optional-locks", "status", "--porcelain", "-z", "-uall", "--no-renames")
+# porcelain names every path from the repo top, whatever the cwd and
+# status.relativePaths say; this read answers the part of each name above the root.
+SHOW_PREFIX = ("rev-parse", "--show-prefix")
+
+
+def status_records(out: str, prefix: str) -> list[tuple[str, str]]:
+    """(the two status letters, the path from the root) for each `XY path`
+    record of `git status --porcelain -z` run under a root whose `rev-parse
+    --show-prefix` answer is `prefix`. The status pathspec keeps every record
+    under that prefix."""
+    cut = 3 + len(prefix.removesuffix("\n"))
+    return [(record[:2], record[cut:]) for record in out.split("\0") if record]
+
+
+def _status(root: Path) -> list[tuple[str, str]]:
+    prefix = _run(root, (*_RELATIVE, *SHOW_PREFIX), SHOW_PREFIX, binary=True)
+    return status_records(_run(root, (*_RELATIVE, *STATUS, "--", "."), STATUS, binary=True), prefix)
 
 
 _SHALLOW_FIX = ("this shallow clone does not hold every commit: set fetch-depth: 0 on the "

@@ -188,9 +188,13 @@ def _fresh_python(top: Path) -> list[Path]:
 def _porcelain(top: Path) -> str:
     """`git status --porcelain -z` over the whole tree, or "" when git cannot
     answer. -uall, because a heredoc that creates a new DIRECTORY of source
-    would otherwise arrive as one collapsed `?? newdir/` row naming no file."""
-    res = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], cwd=top,
-                         capture_output=True, text=True, encoding="utf-8",
+    would otherwise arrive as one collapsed `?? newdir/` row naming no file.
+    --no-optional-locks, because this read runs beside the agent's own git
+    commands: a plain status writes its refreshed index over .git/index, and
+    on Windows another git process that opens the index during that rename
+    fails with "index file open failed: Permission denied"."""
+    res = subprocess.run(["git", "--no-optional-locks", "status", "--porcelain", "-z", "-uall"],
+                         cwd=top, capture_output=True, text=True, encoding="utf-8",
                          errors="replace")
     return res.stdout if res.returncode == 0 else ""
 

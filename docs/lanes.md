@@ -1046,6 +1046,9 @@ which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-b
 
 Without `inputs`, automatic reuse covers the whole tracked tree, including tests and
 shared helpers: any tracked or untracked change, or a new commit, reruns the lane.
+A change means new bytes, as `git status` reads them: a `touch`, a file saved with the
+same bytes or a fresh copy of the checkout is no change, whatever `diff.autoRefreshIndex`
+the repo sets, and crapkit's reads leave `.git/index` as they found it.
 With [`inputs`](configuration.md#lane) it covers exactly those paths, literal paths
 from the root with no globs, so a docs commit or an untracked draft elsewhere reruns
 nothing, and a file the command reads that the list leaves out is never checked.

@@ -6,9 +6,13 @@ or edited, and which are new and untracked. Each answer is one git process.
 Asked one after another they cost the sum of all of them; started together they
 cost about the slowest one.
 
-Every read also takes the paths in question as a pathspec. `ls-files --others`
-over a large untracked tree that no lane reads (drafts, output nobody ignored)
-was most of the cost, and none of its answer could change a verdict.
+Every read also takes the paths in question as a pathspec. Listing a large
+untracked tree that no lane reads (drafts, output nobody ignored) was most of
+the cost, and none of its answer could change a verdict.
+
+Staged, unstaged and untracked files come from one `git --no-optional-locks
+status` (gitio.STATUS says why): it compares a touched file's content and
+leaves .git/index alone, so the reads started beside it never meet a rewrite.
 """
 from __future__ import annotations
 
@@ -16,6 +20,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from .errors import GitError
+from .gitio import SHOW_PREFIX, STATUS, status_records
 
 _NAMES = ("--name-only", "--no-renames", "-z")
 
@@ -55,10 +60,7 @@ class ChangeReads:
     concurrent run can rewrite the stamps between two reads of them. With no
     paths nothing can change under them, so no diff or status read starts at
     all. Use it as a context manager: on the way out it waits for every read
-    nobody collected and drops the answer. None is killed: a worktree `git diff`
-    refreshes the index under .git/index.lock when tracked files are stat-dirty,
-    and one killed mid-refresh leaves the lock behind, after which every `git
-    add` and commit in the checkout fails.
+    nobody collected and drops the answer, so no git process outlives it.
     """
 
     def __init__(self, root: Path, commits, paths) -> None:
@@ -79,9 +81,7 @@ class ChangeReads:
             self._diff_read(commit)
         if not self._paths:
             return ()
-        return (self._begin("diff", *_NAMES, "--cached", *self._spec),
-                self._begin("diff", *_NAMES, *self._spec),
-                self._begin("ls-files", "--others", "--exclude-standard", "-z", *self._spec))
+        return self._begin(*SHOW_PREFIX), self._begin(*STATUS, *self._spec)
 
     def _begin(self, *args: str):
         read = _start(self._root, *args)
@@ -126,8 +126,13 @@ class ChangeReads:
         return self._once(("diff", commit), lambda: _names(self._collect(read)) if read else ())
 
     def status_names(self) -> tuple[str, ...]:
-        return self._once("status", lambda: tuple(sorted(
-            {name for read in self._status for name in _names(self._collect(read))})))
+        return self._once("status", self._status_names)
+
+    def _status_names(self) -> tuple[str, ...]:
+        if not self._status:
+            return ()
+        prefix, out = (self._collect(read).decode("utf-8") for read in self._status)
+        return tuple(sorted({path for _, path in status_records(out, prefix)}))
 
     def changed_since(self, commit: str) -> tuple[str, ...]:
         """Committed, staged, unstaged or untracked: every change under the paths."""

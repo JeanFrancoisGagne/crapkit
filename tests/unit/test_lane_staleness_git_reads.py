@@ -2,10 +2,10 @@
 
 `next-item`, `brief` and `explain` ask, per lane, whether files under its scopes
 moved since the artifact's stamp: is the stamp commit behind HEAD, what changed
-in the commits since, what is staged or edited, what is untracked. That was one
-git process after another, and `ls-files --others` listed every untracked file
-in the checkout, a large drafts tree included, to keep only the ones under a
-scope. The reads now start together, and diff and ls-files take the scope paths
+in the commits since, what is staged, edited or untracked. That was one git
+process after another, and `ls-files --others` listed every untracked file in
+the checkout, a large drafts tree included, to keep only the ones under a
+scope. The reads now start together, and diff and status take the scope paths
 of every lane as a pathspec: a lane with no artifact when the reads start can
 have one by the time it is judged.
 """
@@ -92,14 +92,14 @@ def test_every_staleness_read_starts_before_any_is_waited_on(repo, git_spawns):
     assert "start" not in kinds[first_wait:], kinds
 
 
-def test_diff_and_untracked_reads_ask_only_about_lane_scopes(repo, git_spawns):
+def test_diff_and_status_reads_ask_only_about_lane_scopes(repo, git_spawns):
     root, cfg = repo
 
     lane_states(root, cfg)
 
     reads = [argv for kind, argv in git_spawns
-             if kind == "start" and ("diff" in argv or "ls-files" in argv)]
-    assert any("ls-files" in argv for argv in reads)
+             if kind == "start" and ("diff" in argv or "status" in argv)]
+    assert any("status" in argv for argv in reads)
     for argv in reads:
         assert _after(argv, "--") == ["src", "web", "lib"], argv
 
