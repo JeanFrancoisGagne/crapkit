@@ -2,16 +2,14 @@
 
 `crapkit brief pkg/café.py résumé_ü` on Linux under LC_ALL=C PYTHONUTF8=0
 PYTHONCOERCECLOCALE=0 reaches Python as ASCII: each byte of `é` becomes a lone
-surrogate, and the store's sqlite query refuses it with a UnicodeEncodeError
-traceback. That row and the function-name row below are strict xfails: they
-fail today, and the day crapkit reads such an argument back into the bytes the
-shell passed they pass, which strict=True reports as a failure until the
-marker goes.
+surrogate. crapkit restarts itself under `-X utf8` before it reads argv, so the
+store's query gets the name the shell passed and the brief answers. Before that
+restart the row died on a UnicodeEncodeError traceback from sqlite.
 
-The two neighbouring locales answer today and must keep answering: plain
-LC_ALL=C, where Python coerces the locale to UTF-8, and LANG=C.UTF-8. Windows
-hands argv over as UTF-16 and has no C locale to decode it, so these rows run
-on Linux only; the Windows encodings are test_encoding_e2e.py's rows.
+The two neighbouring locales must keep answering too: plain LC_ALL=C, where
+Python coerces the locale to UTF-8, and LANG=C.UTF-8. Windows hands argv over
+as UTF-16 and has no C locale to decode it, so these rows run on Linux only;
+the Windows encodings are test_encoding_e2e.py's rows.
 """
 import os
 
@@ -55,16 +53,11 @@ scopes = ["pkg"]
 """
 
 LOCALES = {
-    # Python decodes argv as ASCII here: the row that raises a traceback.
+    # Python decodes argv as ASCII here: the row crapkit's UTF-8 restart answers.
     "c-no-coercion-no-utf8": {"LC_ALL": "C", "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0"},
     "c-coerced": {"LC_ALL": "C", "PYTHONUTF8": None, "PYTHONCOERCECLOCALE": None},
     "c-utf8": {"LANG": "C.UTF-8", "LC_ALL": None},
 }
-# What the ASCII-locale rows wait for. Drop both markers when they pass.
-ARGV_AS_SURROGATES = pytest.mark.xfail(strict=True, reason=(
-    "under an ASCII locale Python hands each non-ASCII byte of an argument over as a lone "
-    "surrogate, and the store's sqlite query refuses it (UnicodeEncodeError): crapkit does "
-    "not yet read argv back into the bytes the shell passed"))
 
 
 @pytest.fixture(scope="module")
@@ -81,13 +74,13 @@ def measured(tmp_path_factory):
 
 
 @pytest.mark.parametrize("locale", [
-    pytest.param("c-no-coercion-no-utf8", marks=ARGV_AS_SURROGATES),
+    "c-no-coercion-no-utf8",
     "c-coerced",
     "c-utf8",
 ])
 def test_brief_on_a_non_ascii_path_answers_under_every_locale(measured, locale):
-    """The answer names the file git tracks and the function it holds. Under
-    the ASCII locale it is a UnicodeEncodeError traceback today."""
+    """The answer names the file git tracks and the function it holds, under
+    the ASCII locale too."""
     result = _run(measured, "brief", FILE, NAME, env_extra=LOCALES[locale])
 
     assert "Traceback" not in result.stderr, result.stderr
@@ -96,7 +89,6 @@ def test_brief_on_a_non_ascii_path_answers_under_every_locale(measured, locale):
     assert NAME in result.stdout + result.stderr
 
 
-@ARGV_AS_SURROGATES
 def test_brief_reads_a_non_ascii_function_name_under_an_ascii_locale(measured):
     result = _run(measured, "brief", FILE, NAME, env_extra=LOCALES["c-no-coercion-no-utf8"])
 
