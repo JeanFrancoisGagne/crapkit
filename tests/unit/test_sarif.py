@@ -28,6 +28,20 @@ def test_document_shape_and_rule_registration():
             "crapkit/diff-uncovered"} <= rule_ids
 
 
+# The identifier the SARIF 2.1.0 schema document declares for itself: the OASIS
+# errata01 location, which answered HTTP 200 on 2026-09-26. The oasis-tcs/sarif-spec
+# master/Schemata path crapkit used to print answered 404.
+OASIS_SCHEMA = ("https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/"
+                "sarif-schema-2.1.0.json")
+
+
+def test_the_schema_uri_is_where_oasis_publishes_the_schema():
+    """SARIF 2.1.0 errata01 section 3.13.3: `$schema` is an absolute URI from
+    which the schema can be obtained, so a validator that fetches it gets the
+    schema and not a 404."""
+    assert sarif_document([])["$schema"] == OASIS_SCHEMA
+
+
 def test_over_target_results_locate_the_function():
     (res,) = over_target_results([scored(ccn=8, cov=0.0)], {}, 6)
     assert res["ruleId"] == "crapkit/over-target"

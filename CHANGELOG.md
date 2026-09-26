@@ -2,6 +2,16 @@
 
 ## 0.8.1 — unreleased
 
+### A SARIF log names a schema URI that answers
+
+- Every SARIF log `--sarif` writes named its schema at
+  `https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json`,
+  which answers HTTP 404, so a validator that fetches `$schema` failed. SARIF 2.1.0
+  section 3.13.3 asks for a URI the schema can be obtained from. `$schema` is now
+  `https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json`,
+  where OASIS publishes the schema and the id the schema declares for itself. The
+  results, rules and every other field do not change.
+
 ### The churn window ends at HEAD's commit date
 
 - The churn window reaches `churn_window_months` back from HEAD's commit date. It was

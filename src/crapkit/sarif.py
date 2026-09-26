@@ -72,10 +72,16 @@ def diff_uncovered_results(uncovered) -> list[dict]:
             for path, line in uncovered]
 
 
+# Where OASIS publishes the SARIF 2.1.0 schema, and the id the schema declares for
+# itself. SARIF 3.13.3 asks for a URI the schema can be obtained from; the
+# oasis-tcs/sarif-spec master/Schemata path crapkit printed before answers 404.
+SCHEMA_URI = ("https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/"
+              "sarif-schema-2.1.0.json")
+
+
 def sarif_document(results: list[dict]) -> dict:
     return {
-        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/"
-                   "master/Schemata/sarif-schema-2.1.0.json",
+        "$schema": SCHEMA_URI,
         "version": "2.1.0",
         "runs": [{
             "tool": {"driver": {
