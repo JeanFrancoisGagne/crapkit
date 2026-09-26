@@ -60,9 +60,6 @@ def test_uvx_scores_a_go_rust_shell_repo_on_any_interpreter_uv_picks(box, templa
 @cell("lin-uvx-polyglot-start", channel="uvx", harness="none",
       scenario="fresh: the next command init and coverage print under uvx runs as printed", use_cases="uvx start",
       os="linux", image="core", cadence="push")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-4: under uvx, init and coverage print "
-                                       "`crapkit coverage` and `crapkit worklist` as the next command, and no "
-                                       "PATH entry holds `crapkit`")
 def test_the_next_command_uvx_prints_runs_as_printed(box, templates):
     repo = repos.checkout(box, "go-rust-shell", cache=templates)
     init = box.script(installers.fence_commands(README, NOT_PYTHON)[0], cwd=repo, expect=0)

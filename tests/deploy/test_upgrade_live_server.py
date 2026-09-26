@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from kit import state, state_manifest
 from kit.cells import cell
 from kit.mcp_client import McpClient
@@ -35,10 +33,6 @@ def answered(name: str, result: dict) -> str:
     return text
 
 
-@pytest.mark.xfail(
-    strict=True, raises=state.KnownBug,
-    reason="deploy-bug deploy-upgrade-1: a claim taken before the upgrade stops holding a def analysis 11 renames; "
-           "the old server's get_next_item hands the claimed function out again under its new name")
 @cell("lin-up-live-server", channel="pip venv", harness="spec client holding 0.7.6 `crapkit mcp`",
       scenario="upgrade while serving: coverage, prune, seed; old server answers or names the restart; "
                "no sqlite error, no lost rows",
@@ -64,5 +58,5 @@ def test_lin_up_live_server(box, templates, candidate):
     state.kept(box, repo, source)
     state_manifest.check(box, before, state_manifest.take(repo))
     item = json.loads(texts["get_next_item"]).get("item") or {}
-    state.known_bug(not state.same_function(item, source.facts["claimed"]), "deploy-upgrade-1",
-                    f"the old server handed out the claimed function as {item.get('function')!r}")
+    assert not state.same_function(item, source.facts["claimed"]), (
+        f"the old server handed out the function a claim holds, as {item.get('function')!r}")

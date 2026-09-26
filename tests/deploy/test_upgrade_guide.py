@@ -27,10 +27,6 @@ OLD = state.source_version("0.7.6")
 PIP = "pip in the active environment"
 PIP_EXTRA = "pip with the Python coverage extra"
 LEGACY_CHURN, CHURN = ".crapkit/churn-cache.json", ".crapkit/churn-cache-v2.json"
-CLAIM_LOST = pytest.mark.xfail(
-    strict=True, raises=state.KnownBug,
-    reason="deploy-bug deploy-upgrade-1: a claim taken before the upgrade stops holding a def analysis 11 "
-           "renames; next-item hands the claimed function out again under its new name")
 
 
 def install_old(box, source, python: str, requirement: str) -> None:
@@ -70,7 +66,6 @@ def walk_from_0_7_6(box, templates, candidate, python: str, prepare=state.nothin
       scenario="upgrade from 0.7.6 state: guide literally; retention keys as user edit; --reuse-unchanged as a "
                "separate non-guide step; review = marks diff equals named prunes; runs/claims/overrides kept; verify OK",
       use_cases="upgrade guide, ratchet lifecycle", os="linux", image="core", cadence="push")
-@CLAIM_LOST
 def test_lin_up_pip_0_7_6(box, templates, candidate):
     source, repo = walk_from_0_7_6(box, templates, candidate, "3.12")
 
@@ -81,7 +76,6 @@ def test_lin_up_pip_0_7_6(box, templates, candidate):
       scenario="upgrade from 0.7.6 state on the nightly Pythons", use_cases="upgrade guide",
       os="linux", image="core", cadence="nightly")
 @pytest.mark.parametrize("python", ["3.11", "3.13"])
-@CLAIM_LOST
 def test_lin_up_pip_0_7_6_other_pythons(box, templates, candidate, python):
     source, repo = walk_from_0_7_6(box, templates, candidate, python)
 
@@ -101,7 +95,6 @@ def crlf_checkout(box, repo) -> bytes:
 @cell("win-up-pip-0.7.6", channel="pip venv", harness="none",
       scenario="upgrade: guide; autocrlf=true CRLF marks left alone", use_cases="upgrade guide",
       os="windows", image=None, cadence="push")
-@CLAIM_LOST
 def test_win_up_pip_0_7_6(box, templates, candidate):
     checkout = {}
 

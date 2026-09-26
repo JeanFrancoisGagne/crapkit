@@ -17,9 +17,6 @@ from kit.cells import cell
 PACKET = "deploy-git"
 UPGRADE_DOC = "docs/upgrading.md"
 OLD = "0.7.6"
-BRANCH_SWITCH = ("deploy-bug deploy-git-4: after a passing verify on one branch, verify on another exits 4 "
-                 "and blames a rebase or amend: its baseline is the other branch's run, which is not in this "
-                 "branch's history")
 PS_ROUTE2 = ("deploy-bug deploy-git-6: README Route 2 prints only an sh block; pasted into PowerShell the "
              "heredoc does not parse, no hook is written and the next commit is ungated")
 
@@ -77,7 +74,6 @@ def test_the_driver_merges_two_burn_downs_and_refuses_mixed_stamps(box, template
     stamp_refusal(box, repo)
 
 
-@pytest.mark.xfail(strict=True, reason=BRANCH_SWITCH)
 @cell("lin-merge-driver", channel="merge driver", harness="git 2.47",
       scenario="fresh: docs/ratchet.md lines; clean merge; different stamps refused", use_cases="ratchet merge",
       os="linux", image="cells", cadence="push")
