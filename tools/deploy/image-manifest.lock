@@ -5641,6 +5641,7 @@ claude-2.1.138 2.1.138 (Claude Code)
 claude-2.1.139 2.1.139 (Claude Code)
 codex codex-cli 0.156.1
 codex-0.121.0 codex-cli 0.121.0
+codex-0.131.0 codex-cli 0.131.0
 cursor-agent 2026.09.23-86fc751
 aider aider 0.86.2
 amp 0.0.1790265644-gf7438f (released 2026-09-24T16:00:44.000Z)
@@ -6458,6 +6459,13 @@ codex-0.121.0/node_modules/@openai/codex-linux-arm64 0.121.0-linux-arm64 sha512-
 codex-0.121.0/node_modules/@openai/codex-linux-x64 0.121.0-linux-x64 sha512-vlpNJXIqss800J+32Vy7TUZzv31n61b45OLxmsVQGFkTNLJcjFrj9jDUC7I62eC4F16gLioilefNfv4CdJQOEw==
 codex-0.121.0/node_modules/@openai/codex-win32-arm64 0.121.0-win32-arm64 sha512-m88q4f3XI5npn1t6OG0nWGHWWAjO5FgjRwxh4hdujbLO6t9CiCNfhfPZIOSsoATbrCNwLC+6S77m3cjbNToPNg==
 codex-0.121.0/node_modules/@openai/codex-win32-x64 0.121.0-win32-x64 sha512-Fp0ecVOyM+VcBi/y4HVvRzhifO9YqRiHzhV3rhtAppC7flh22WPguLC4kmvXYAR0p3RPzbo35M2CedWnkOT+cw==
+codex-0.131.0 0.131.0 sha512-5/fNFAotnPaNSX1jGAAGgWk65HGZupWPnka+DzXdoNzl78RGw0eGpOjpowF+dtPRTEvdwt0U8qoptUjtefitBQ==
+codex-0.131.0/node_modules/@openai/codex-darwin-arm64 0.131.0-darwin-arm64 sha512-e4EZ7XjK1zrkW65nZdhCqQFVKd/zt/of26w4L32wcfibzKE15/Lw2i3FGTD9ufUUqVzF+gowu/lEiBRvDoh21w==
+codex-0.131.0/node_modules/@openai/codex-darwin-x64 0.131.0-darwin-x64 sha512-BkFwUVU+yJhw5a85p1oagiSjkRvBs9Xp1b1q1Qbvg4Y9Chtatj4SjI7HRjH5uespNs/Wnh48cMnTsxkAILqlBw==
+codex-0.131.0/node_modules/@openai/codex-linux-arm64 0.131.0-linux-arm64 sha512-I12Ou5I5oR/nfUyMJ/D95OMm83HoXMBHdl+4YrPay/XGd9KkyMhvZxp9Es/h9x/xt8yiBIk+k0Ehtr093r8AFw==
+codex-0.131.0/node_modules/@openai/codex-linux-x64 0.131.0-linux-x64 sha512-Fj9P7h3iBgjAQKzoEyUkb1Q8QMVLqaf62UzlL1jYeDhIzbDMI/gaV0tOackIGXPcfguzzORJC1g5pD9SMWqU5g==
+codex-0.131.0/node_modules/@openai/codex-win32-arm64 0.131.0-win32-arm64 sha512-aGXsk8GYNFCjHYH61mVG0PulheBq6ZxZWM2BLYAJabzGarzRQpPknc60mx8mSm93BebjPkX0Wpf+0qInBPbF0w==
+codex-0.131.0/node_modules/@openai/codex-win32-x64 0.131.0-win32-x64 sha512-RlIRs0hi6xIaBXWFhiPTPlz+Dfibc3pXrnVXjJtpbeYcNyBOO+SIMMVuQUswpz3RnJpsxA70dQA+05hKYraKhA==
 ## npm /opt/harness-full
 @ai-sdk/amazon-bedrock 5.0.93 sha512-1s/G59ue787s4gBdjtbw1MH8olrg/1rW3z8dgFPuy8lzhI5ON6aGcdRxfXrxan+xApnKC4mJEu/LBw+8yuaWYw==
 @ai-sdk/anthropic 4.0.62 sha512-+3jlcfQ5yNlsbfhlWx36iKq6bEPISFz5crDaRsHOq6dWW8a9YkKiWDGahOBwenL++Pg3tqipinwFXoOoF4hAVQ==
