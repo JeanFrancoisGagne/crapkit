@@ -2,6 +2,24 @@
 
 ## 0.8.1 — unreleased
 
+### `explain --history` returns each commit message as git stored it
+
+- A body line that was `\x02` ended its commit's record there, and a body line starting
+  with `\x01` opened a commit that does not exist. With fewer than three words after the
+  `\x01`, `explain --history` exited 1 with a `ValueError` traceback. A body with no final
+  newline came back empty. explain framed every record with those two characters, and a
+  commit message can hold them. It now asks `git log -L` for the commits' names alone
+  and reads their messages with NUL between the fields, the one byte a message cannot
+  hold.
+- A `\r` in a subject or body, and a form feed, `\x1c` or `\x85` in a body, came back in
+  `--json` as a line break: git's output was read in text mode and split with
+  `str.splitlines`. They now come back as committed. The text output still starts a new
+  indented line at each of them, so a `\r` cannot move the cursor back over the indent.
+- A function in a file that is not UTF-8, or a repo whose `i18n.logOutputEncoding` names
+  another encoding, made `explain --history` fail with a traceback. explain no longer
+  reads the span's hunks, and asks git for the messages in UTF-8.
+- Scores, marks and the JSON field names do not change.
+
 ### Every refused file is counted and named, once per run
 
 - A file no reader can tokenize is named on stderr under its own path, whatever another

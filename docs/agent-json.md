@@ -1185,7 +1185,7 @@ How much debt is open, how much was repaid, and whether the configured policy is
 | `claims --json` | Above. |
 | `digest` | **Never JSON.** Plain lines, and silent when nothing changed. |
 | `report` | No payload of its own. It writes one self-contained HTML page to `.crapkit/report.html` (or `--out PATH`, repo-relative, or an absolute path you name) and prints that path on stdout, rendering the `worklist` and `trend` payloads above at their defaults. Read those two instead of parsing the page. |
-| `explain` | Plain lines by default. `--json` emits the same content as one sorted-keys object with `schema` 1: the score per run, the ratchet mark, and under `--history` the commits that touched the function, each carrying its message `body` alongside its sha. `NAME` takes a start line as of 0.4.5, the same form `brief` takes. |
+| `explain` | Plain lines by default. `--json` emits the same content as one sorted-keys object with `schema` 1: the score per run, the ratchet mark, and under `--history` the commits that touched the function, newest first and at most 10, each a `{sha, date, subject, body}` object. `subject` and `body` are git's `%s` and `%b` as the commit stores them, control characters and `\r` included; `body` drops only the newlines at either end. `NAME` takes a start line as of 0.4.5, the same form `brief` takes. |
 
 ### Read commands that write
 

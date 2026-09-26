@@ -15,6 +15,8 @@ from .errors import GitError, ToolError
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _LOG_HEADER = re.compile(r"^\0(-?\d+)\n", re.MULTILINE)
+_LINE_LOG_HEADER = re.compile(rb"^\0([0-9a-f]{40}|[0-9a-f]{64})$", re.MULTILINE)
+_MESSAGE_FORMAT = "--format=%h%x00%ad%x00%s%x00%b"
 
 # Every path this module hands out is joined against root-relative rows, because
 # `git ls-files` answers relative to the cwd. Diffs do not: git names their files
@@ -81,13 +83,25 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False,
 
 
 def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False) -> str:
+    res = _checked(root, argv, named, binary=binary)
+    return res.stdout.decode("utf-8") if binary else res.stdout
+
+
+def _checked(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *,
+             binary: bool = False) -> subprocess.CompletedProcess:
     """`named` is what the error says ran — the injected flags are crapkit's
     business, not the caller's."""
     res = _spawn(root, argv, binary=binary)
     if res.returncode != 0:
         error = res.stderr.decode("utf-8", "replace") if binary else res.stderr
         raise GitError(f"git {' '.join(named)} failed in {root}: {error.strip()}")
-    return res.stdout.decode("utf-8") if binary else res.stdout
+    return res
+
+
+def _git_bytes(root: Path, *args: str) -> bytes:
+    """stdout as git wrote it, for records framed by bytes that a text decode
+    would rewrite (\\r) or reject (a file's own encoding)."""
+    return _checked(root, (*_RELATIVE, *args), args, binary=True).stdout
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
@@ -643,6 +657,37 @@ def file_log_patches(root: Path, rel_path: str) -> list[tuple[int, str]]:
     out = _git(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at",
                "-p", *_PATCH, "--text", "--", rel_path, binary=True)
     return _history_patches(out)
+
+
+def line_commits(root: Path, rel_path: str, start: int, end: int, limit: int) -> list[str]:
+    """The full names of the newest `limit` commits that changed lines
+    start..end of one file (`git log -L`), newest first.
+
+    The walk names commits and nothing else. -L prints each commit's hunks after
+    its header in the file's own bytes, and -s drops them only on a git that
+    honors it with -L. A hunk line starts with its +, - or space indicator, so a
+    whole line that is NUL and an object name can only be a header.
+    """
+    out = _git_bytes(root, "log", f"-L{start},{end}:{rel_path}", "-s", "--format=%x00%H",
+                     f"--max-count={limit}")
+    return [name.decode("ascii") for name in _LINE_LOG_HEADER.findall(out)]
+
+
+def commit_messages(root: Path, names: list[str]) -> list[tuple[str, ...]]:
+    """(abbreviated name, author date as YYYY-MM-DD, subject, body) per named
+    commit, in the order named. Subject and body are git's %s and %b.
+
+    A commit message can hold any byte but NUL, so NUL ends every field and -z
+    ends every record: a body line of \\x01 or \\x02, a \\r, a form feed or a
+    missing final newline stays text. Asked for as UTF-8 whatever the repo's
+    i18n.logOutputEncoding says, and decoded field by field.
+    """
+    if not names:
+        return []
+    out = _git_bytes(root, "log", "--no-walk=unsorted", "-z", "--date=short", "--encoding=UTF-8",
+                     _MESSAGE_FORMAT, *names, "--")
+    fields = [field.decode("utf-8", "replace") for field in out.split(b"\0")]
+    return [tuple(fields[i:i + 4]) for i in range(0, len(fields) - 1, 4)]
 
 
 def _history_patches(out: str) -> list[tuple[int, str]]:
