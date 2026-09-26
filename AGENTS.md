@@ -225,14 +225,18 @@ and binds to the environment the repo pins:
 - crapkit routes each file you name to the scope whose `paths` entry matches deepest,
   substitutes `{files}` with that scope's files (each double-quoted, in the order you
   passed them), and runs one command per scope, scopes in name order.
-- A file only routes if it sits under a scope's `paths`. Keep test files inside a scope
-  path if you want to name them here; `[exclude] globs` still keeps them out of scoring.
+- A file only routes if it sits under a scope's `paths`, or in a test directory (next
+  section). Keep test files inside a scope path if you want to name them here;
+  `[exclude] globs` still keeps them out of scoring.
 
 ### Several scopes, tests in a top-level tests/
 
 A test file outside every scope routes to the single scope that declares a template. With
 two templated scopes there is no single owner and `crapkit test-scoped tests/test_stats.py`
-exits 3. Naming a source file routes fine, and then `{files}` hands pytest a source path to
+exits 3. A test file here is one under a `test`, `tests` or `__tests__` directory, in any
+case, the directories the scored corpus drops on its own. A test name is not enough:
+`tools/test_helper.py` outside every scope and every test directory is source no scope
+claims, and naming it exits 3. Naming a source file routes fine, and then `{files}` hands pytest a source path to
 collect tests from: no tests ran, runner exit 5, crapkit exit 1.
 
 Drop `{files}` for those scopes. A template without it runs exactly as written, so the

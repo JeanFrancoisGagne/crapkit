@@ -16,6 +16,18 @@
   field. See [the portable baseline's first
   line](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/portable-records.md#the-portable-baselines-first-line).
 
+### `test-scoped` reads a test file the way the scored corpus does
+
+- A file outside every scope runs under the one templated scope only from a `test`,
+  `tests` or `__tests__` directory, in any case. `test-scoped` also took a name,
+  `test_*.py`, `*.test.*` or `*.spec.*`, as a test, so `tools/test_helper.py`, which
+  the scored corpus reads as source, ran the only template's command on a file no scope
+  owns. It now exits 3: `tools/test_helper.py belongs to no declared scope, and only a
+  file under a test, tests or __tests__ directory runs without one`. Move the file under
+  a scope's `paths` or into a test directory to run it.
+- A test file outside every scope when no scope declares a template now says so, where
+  it said the file belonged to no declared scope.
+
 ### Coverage lands on the function that owns it
 
 - The istanbul reader places each counter by line and column: a statement counts from a

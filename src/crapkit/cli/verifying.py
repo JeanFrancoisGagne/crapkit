@@ -15,7 +15,7 @@ from ..errors import ConfigError, CrapkitError, ToolError
 from ..invariants import STORED, UNSETTLED, check_rows, check_verdict
 from ..invocation import _self
 from ..store import SnapshotStore
-from ..universe import owning_scope, path_matchers
+from ..universe import in_test_dir, owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
                       _ratchet_key_version, _repo_out_path, _repo_relative, _stand, _write_tsv, repo_text)
@@ -880,14 +880,24 @@ _AMBIGUOUS_TEST = (
 
 
 def _route_unowned(path: str, templates: dict) -> str:
-    """Test directories sit outside every scope by design, so a test file routes
-    to the templated scope — unambiguously when there is exactly one."""
-    if _is_test_path(path) and len(templates) == 1:
-        return next(iter(templates))
-    if _is_test_path(path) and templates:
-        raise ConfigError(_AMBIGUOUS_TEST.format(path=path, n=len(templates),
-                                                 names=", ".join(sorted(templates))))
-    raise ConfigError(f"{path} belongs to no declared scope")
+    """Test directories sit outside every scope by design, so a file in one routes
+    to the templated scope, unambiguously when there is exactly one. A test name
+    elsewhere is source to the scored corpus and routes nowhere: calling
+    tools/test_helper.py a test once ran the only template on a file no scope owns."""
+    if not in_test_dir(path):
+        raise ConfigError(f"{path} belongs to no declared scope, and only a file under a "
+                          "test, tests or __tests__ directory runs without one")
+    if len(templates) != 1:
+        raise ConfigError(_no_single_owner(path, templates))
+    return next(iter(templates))
+
+
+def _no_single_owner(path: str, templates: dict) -> str:
+    """Why a file in a test directory outside every scope has no template to run it."""
+    if not templates:
+        return (f"{path} is a test file outside every scope, and no scope declares a "
+                "[crapkit.scoped_tests] template")
+    return _AMBIGUOUS_TEST.format(path=path, n=len(templates), names=", ".join(sorted(templates)))
 
 
 def _group_files_by_scope(files, scope_paths: dict, templates: dict,

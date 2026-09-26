@@ -88,8 +88,9 @@ exist for any agent that ever works this repo.
 
 A `{files}` template on a scope whose tests live outside its `paths` is what springs it.
 `init` no longer writes one there and `doctor` fails one it finds, but a hand-written
-config can still carry it. A test file that lives outside every scope's `paths` routes to
-the single scope that declares a template. With two templated scopes there is no single
+config can still carry it. A test file that lives outside every scope's `paths`, under a
+`test`, `tests` or `__tests__` directory, routes to the single scope that declares a
+template. With two templated scopes there is no single
 owner, and `crapkit test-scoped tests/test_stats.py` exits 3. Naming a source file instead
 routes fine and then hands the runner a source path to collect tests from: no tests ran,
 runner exit 5, crapkit exit 1.

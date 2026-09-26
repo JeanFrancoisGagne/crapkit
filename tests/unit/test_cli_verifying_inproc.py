@@ -796,11 +796,27 @@ def test_a_failing_runner_reports_its_own_exit_code_under_crapkits(repo, capsys)
     assert "scoped tests for 'src' failed (runner exit 3)" in err, err
 
 
-def test_a_test_file_outside_every_scope_routes_to_the_only_templated_scope(repo, capsys):
-    """Test directories sit outside every scope by design."""
-    code, _, err = run(["test-scoped", "tests/app.test.ts"], repo, capsys)
+@pytest.mark.parametrize("path", ["tests/app.test.ts", "Tests/AppTests.swift",
+                                  "e2e/__tests__/flow.ts", "tools/test/run.sh"])
+def test_a_test_file_outside_every_scope_routes_to_the_only_templated_scope(repo, capsys, path):
+    """Test directories sit outside every scope by design. A test, tests or
+    __tests__ component in any case is the one rule the scored corpus drops a
+    test directory by."""
+    code, _, err = run(["test-scoped", path], repo, capsys)
 
     assert (code, err) == (0, "")
+
+
+@pytest.mark.parametrize("path", ["tools/test_helper.py", "tools/x.spec.py", "lib/app.test.ts"])
+def test_a_test_name_outside_a_test_directory_is_source_no_scope_claims(repo, capsys, path):
+    """The scored corpus reads such a file as source, which leaves it only
+    through an exclude glob, so no scope's runner owns it. Routing it on its
+    name ran the only templated scope's command on a file that scope never owned."""
+    code, _, err = run(["test-scoped", path], repo, capsys)
+
+    assert code == 3
+    assert (f"{path} belongs to no declared scope, and only a file under a test, tests or "
+            "__tests__ directory runs without one") in err, err
 
 
 def test_a_test_file_two_templated_scopes_could_own_names_both_routes_out(repo, capsys):
