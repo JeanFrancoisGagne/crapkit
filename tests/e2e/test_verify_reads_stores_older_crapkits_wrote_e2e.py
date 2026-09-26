@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 
 import hang_guard
+import process_table
 from conftest import child_env, cli_runner, git_commit_all, git_init_repo
 from crapkit.store import SnapshotStore
 
@@ -98,8 +99,9 @@ def write_as(writer: str, repo: Path, tmp_path_factory, *args: str) -> None:
     else:
         env = child_env({"PYTHONPATH": str(release_src(writer, tmp_path_factory)),
                          "CRAPKIT_OVERRIDE_REASON": None})
-        done = hang_guard.run([sys.executable, "-m", "crapkit", *args], cwd=repo, env=env,
-                              text=True, encoding="utf-8", errors="replace")
+        with process_table.hold(naming=False):
+            done = hang_guard.run([sys.executable, "-m", "crapkit", *args], cwd=repo, env=env,
+                                  text=True, encoding="utf-8", errors="replace")
     assert done.returncode == 0, f"{writer}: crapkit {' '.join(args)}\n{done.stdout}{done.stderr}"
 
 

@@ -19,6 +19,7 @@ import pytest
 from conftest import child_env, git_commit_all, git_init_repo, run_cli
 from hang_guard import CHILD_HOLD, exited, next_line
 from legacy_locale import latin1_env
+import process_table
 
 SUITE_BIN = str(Path(sys.executable).parent)
 
@@ -266,15 +267,18 @@ OWNER_LOCALES = [
 @pytest.fixture
 def host_process(request):
     """A process on the host, unrelated to the repo, named with these bytes.
-    Yields once /proc says the kernel kept the bytes the row expects."""
+    Yields once /proc says the kernel kept the bytes the row expects. It holds
+    the host's process table the while, so no release older than 0.8.1, whose
+    owner such a name stops, runs in another worker then (tests/process_table.py)."""
     name, kept = request.param
-    process = subprocess.Popen([sys.executable, "-c", NAMED, name.hex()], stdout=subprocess.PIPE)
-    try:
-        assert bytes.fromhex(next_line(process).decode().strip()) == kept + b"\n"
-        yield kept
-    finally:
-        process.kill()
-        exited(process)
+    with process_table.hold(naming=True):
+        process = subprocess.Popen([sys.executable, "-c", NAMED, name.hex()], stdout=subprocess.PIPE)
+        try:
+            assert bytes.fromhex(next_line(process).decode().strip()) == kept + b"\n"
+            yield kept
+        finally:
+            process.kill()
+            exited(process)
 
 
 @LINUX_ONLY

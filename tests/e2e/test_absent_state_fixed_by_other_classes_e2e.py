@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 
 import hang_guard
+import process_table
 from conftest import child_env, git, git_commit_all, git_init_repo, run_cli
 
 CRAPKIT_TREE = Path(__file__).resolve().parents[2]
@@ -436,7 +437,8 @@ def test_stamps_written_by_0_4_15_hold_no_refusal_and_one_real_run_restores_it(t
                               env=child_env(old_env), text=True)
     assert imported.stdout.strip() == "0.4.15", imported.stdout + imported.stderr
     repo = committed(tmp_path, REFUSAL_FILES)
-    measured_then_dead(repo, **old)
+    with process_table.hold(naming=False):
+        measured_then_dead(repo, **old)
     stamps = json.loads(stamps_path(repo).read_text(encoding="utf-8"))
     assert "refused_mtime_ns" not in stamps[REFUSED_KEY], "0.4.15 records no refusal"
 
