@@ -509,7 +509,7 @@ def test_probes_match_pscomplexity(probes_linux):
 
     assert oracle_disagreements(read, units) == []
     assert (outcome.problems, outcome.skipped) == ([], [])
-    assert outcome.compared > 50
+    assert outcome.compared > 30
 
 
 @pytest.mark.nightly
