@@ -334,13 +334,13 @@ def test_a_ratchet_file_in_any_spelling_is_the_path_git_spells(tmp_path, written
 @pytest.mark.parametrize("written", RATCHET_FILES)
 def test_a_ratchet_file_in_any_spelling_opens_the_marks_and_their_history(tmp_path, written):
     """The two readers: the file on disk, and git's log of it."""
-    from crapkit.gitio import file_log_patches
+    from crapkit.marks_history import marks_history
 
     root = _ratchet_repo(tmp_path / "repo")
     cfg = _load(root, f"[crapkit]\nratchet_file = '{written}'\n")
 
     assert (root / cfg.ratchet_file).is_file()
-    assert len(file_log_patches(root, cfg.ratchet_file)) == 1
+    assert len(marks_history(root, cfg.ratchet_file).patches) == 1
 
 
 @pytest.mark.parametrize("artifact", [*ARTIFACTS, "./backend/cov.json", ".\\backend\\cov.json"])
