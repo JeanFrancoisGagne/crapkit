@@ -739,7 +739,7 @@ At most N batches, sharing no file, with co-changing files kept in the same batc
 per agent session: two sessions working different batches cannot collide in the same file.
 Files go out largest summed `risk` first, a group of co-changing files counting as one, each
 to the batch with the least `risk` so far, and on a tie to the one with fewer entries. That is
-LPT scheduling (longest processing time first), so the heaviest batch carries at most
+LPT scheduling (longest processing time first), so the heaviest batch stays within
 4/3 - 1/(3N) times the heaviest batch of the best split: 7/6 for two batches. Batches come
 highest summed `risk` first, and batches of equal risk in the order of their files.
 
