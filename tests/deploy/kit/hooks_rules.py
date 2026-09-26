@@ -21,6 +21,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -95,9 +96,10 @@ def _fires(profile, handler: Handler, event: str, tool: str, path: str) -> bool:
 
 
 def argv(profile, handler: Handler) -> list[str]:
-    """What the harness spawns: the command, plus `args` only when it keeps them."""
+    """What the harness spawns: the command line as its shell splits it, plus
+    `args` only when it keeps them."""
     kept = handler.entry.get("args", []) if "args" in profile.hooks["fields"] else []
-    return [handler.entry["command"], *kept]
+    return [*shlex.split(handler.entry["command"]), *kept]
 
 
 def problems(profile, spawned: list[str], exit_code: int) -> list[str]:
@@ -109,10 +111,42 @@ def problems(profile, spawned: list[str], exit_code: int) -> list[str]:
     return found
 
 
-def payload(repo: Path, relative: str, tool: str = "Edit") -> dict:
-    """A PostToolUse event for an edit of repo/relative, as Claude Code sends it."""
+def payload(repo: Path, relative: str, tool: str = "Edit", profile=None) -> dict:
+    """A PostToolUse event for an edit of repo/relative, as the profile's
+    harness sends it; Claude Code's shape when it has no dialect of its own."""
     path = str(repo / relative)
-    return {"session_id": "deploy-cell", "transcript_path": str(repo / ".transcript.jsonl"), "cwd": str(repo),
-            "hook_event_name": "PostToolUse", "tool_name": tool,
-            "tool_input": {"file_path": path, "old_string": "", "new_string": ""},
-            "tool_response": {"filePath": path, "success": True}}
+    event = {"session_id": "deploy-cell", "transcript_path": str(repo / ".transcript.jsonl"), "cwd": str(repo),
+             "hook_event_name": "PostToolUse", "tool_name": tool,
+             "tool_input": {"file_path": path, "old_string": "", "new_string": ""},
+             "tool_response": {"filePath": path, "success": True}}
+    return {**event, **DIALECTS[profile.key](path)} if profile is not None and profile.key in DIALECTS else event
+
+
+# Where a harness's PostToolUse event differs from Claude Code's, read off the
+# harness: Copilot CLI 1.0.88 (a captured payload), Cursor 2026.09.23 and
+# VS Code 1.139.0 (their bundles).
+DIALECTS = {
+    "copilot-cli": lambda path: {"tool_name": "Edit", "tool_input": {"path": path, "old_str": "", "new_str": ""},
+                                 "tool_result": {"result_type": "success"}},
+    "cursor": lambda path: {"hook_event_name": "postToolUse", "tool_name": "Write",
+                            "tool_input": {"file_path": path, "content": ""}},
+    "vscode-copilot": lambda path: {"tool_name": "replace_string_in_file",
+                                    "tool_input": {"filePath": path, "oldString": "", "newString": ""}},
+}
+
+
+def heard(profile, step) -> bool:
+    """Whether the advisory went out where the harness hands text to its model.
+    A harness with a dialect of its own reads it as JSON on exit 0: Cursor
+    denies on exit 2, VS Code blocks, and Copilot CLI 1.0.88 shows exit 2's
+    stderr to the user alone (a stub-model session heard only a top-level
+    additionalContext). Claude Code reads exit 2's stderr. True where exit 2 is
+    ignored and no dialect is known, since that harness reads neither."""
+    if profile.key in DIALECTS:
+        return step.exit == 0 and "crapkit advisory" in _json_text(step.stdout)
+    return profile.hooks["exit2"] != "feedback" or (step.exit == 2 and "crapkit advisory" in step.stderr)
+
+
+def _json_text(stdout: str) -> str:
+    """stdout read as the one JSON object a harness parses; a line that is not JSON raises."""
+    return json.dumps(json.loads(stdout or "{}"))

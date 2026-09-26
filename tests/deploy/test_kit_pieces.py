@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from kit import cells, docsnip, gitmirror, pyindex, repos, sandbox, shim, stub_anthropic, stub_openai, wheels
+from kit import cells, docsnip, gitmirror, hooks_rules, profiles, pyindex, repos, sandbox, shim, stub_anthropic, stub_openai, wheels
 from kit.mcp_client import McpClient
 from kit.transcript import Step, Transcript
 
@@ -182,6 +182,26 @@ def test_the_shim_names_the_harness_behind_a_windows_launcher():
     assert parents(table, 40, r"C:\box\shim-bin\crapkit.EXE") == {"ppid": 20, "launcher_pid": 30}
     assert parents(table, 20, "crapkit") == {"ppid": 20}
     assert parents({}, 7, "crapkit") == {"ppid": 7}
+
+
+def test_a_shell_form_hook_spawns_as_its_shell_splits_it_and_each_harness_hears_it_where_it_reads():
+    """The plugin's hook is one shell-form command line. A harness that keeps
+    only `command` still passes its arguments, each harness sends its own
+    PostToolUse shape, and each reads the advisory in one place: Claude Code
+    from exit 2's stderr, Cursor, VS Code and Copilot CLI from JSON on exit 0."""
+    shell_form = hooks_rules.Handler("PostToolUse", "Edit|Write", {"type": "command",
+                                                                  "command": "crapkit claude-hook --protocol 1"})
+    claude, cursor, copilot = (profiles.load(key) for key in ("claude-code", "cursor", "copilot-cli"))
+    assert hooks_rules.argv(cursor, shell_form) == ["crapkit", "claude-hook", "--protocol", "1"]
+    repo = Path("/repo")
+    assert hooks_rules.payload(repo, "a.py", profile=copilot)["tool_input"]["path"] == str(repo / "a.py")
+    assert hooks_rules.payload(repo, "a.py", profile=cursor)["hook_event_name"] == "postToolUse"
+    assert hooks_rules.payload(repo, "a.py", profile=claude)["tool_input"]["file_path"] == str(repo / "a.py")
+    advisory = json.dumps({"additionalContext": "crapkit advisory: grade ccn 9 > 6"})
+    on_stdout = Step(["crapkit"], "/repo", 0, advisory, "", 0.1)
+    on_stderr = Step(["crapkit"], "/repo", 2, "", "crapkit advisory: grade ccn 9 > 6", 0.1)
+    assert [hooks_rules.heard(cursor, on_stdout), hooks_rules.heard(cursor, on_stderr)] == [True, False]
+    assert [hooks_rules.heard(claude, on_stderr), hooks_rules.heard(claude, on_stdout)] == [True, False]
 
 
 def test_the_python_client_reaches_every_tool(box, candidate):

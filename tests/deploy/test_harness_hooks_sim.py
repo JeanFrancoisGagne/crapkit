@@ -9,8 +9,11 @@ ceiling. It then runs each command those handlers spawn, exactly as the
 harness would build it, with the harness's own PostToolUse payload on stdin.
 
 A cell fails when a spawn is a bare `crapkit` (a harness that drops `args`
-runs crapkit's usage on every edit), or when the harness reads the exit 2
-the advisory uses as a reason to block the edit.
+runs crapkit's usage on every edit), when the harness reads the exit 2
+the advisory uses as a reason to block the edit, or when the advisory never
+reaches the place the harness hands text to its model: exit 2's stderr in
+Claude Code, one JSON object on stdout with exit 0 in Cursor, VS Code and
+Copilot CLI. BUGS names a harness whose cell fails on a known deploy bug.
 """
 from __future__ import annotations
 
@@ -26,14 +29,7 @@ PACKET = "deploy-harnesses"
 EDITED = "calc/grade.py"
 # A branch that takes grade() from ccn 8 to ccn 9, over the default ceiling of 6.
 BREACH = ('    return "D"', '    if attempts > 5 and bonus:\n        return "E"\n    return "D"')
-BUGS: dict[str, str] = {
-    "cursor": "deploy-bug deploy-harnesses-2: Cursor's Claude plugin import keeps command and matcher only, so an "
-              "edit spawns 50 bare `crapkit` handlers and Cursor reads their exit 2 as deny",
-    "vscode-copilot": "deploy-bug deploy-harnesses-3: VS Code reads the plugin's hooks.json without args, if or "
-                      "matcher, so every tool call spawns 50 bare `crapkit` handlers whose exit 2 blocks",
-    "copilot-cli": "deploy-bug deploy-harnesses-4: Copilot CLI runs the plugin's 50 hook handlers without their args, "
-                   "so one edit spawns 50 bare `crapkit`, each printing its usage and exiting 2",
-}
+BUGS: dict[str, str] = {}
 
 
 def params() -> list:
@@ -47,8 +43,13 @@ def breach(repo) -> None:
 
 
 def problems(box, repo, profile, fired: list) -> list[str]:
-    return [problem for argv, code in spawn_results(box, repo, profile, fired).items()
-            for problem in hooks_rules.problems(profile, list(argv), code)]
+    return [problem for argv, step in spawn_results(box, repo, profile, fired).items()
+            for problem in [*hooks_rules.problems(profile, list(argv), step.exit), *unheard(profile, step)]]
+
+
+def unheard(profile, step) -> list[str]:
+    return [] if hooks_rules.heard(profile, step) else [
+        f"{profile.name} never hears the advisory: exit {step.exit}, stdout {step.stdout[:80]!r}"]
 
 
 def record_hooks_evidence(record_property, profile) -> None:
@@ -56,13 +57,13 @@ def record_hooks_evidence(record_property, profile) -> None:
     record_property("evidence_inferred", ",".join(inferred) or "none")
 
 
-def spawn_results(box, repo, profile, fired: list) -> dict[tuple, int]:
+def spawn_results(box, repo, profile, fired: list) -> dict[tuple, object]:
     """Each distinct command the fired handlers spawn, run once with the
-    harness's payload on stdin: argv -> exit code."""
-    payload = json.dumps(hooks_rules.payload(repo, EDITED))
+    harness's payload on stdin: argv -> the step."""
+    payload = json.dumps(hooks_rules.payload(repo, EDITED, profile=profile))
     results = {}
     for argv in dict.fromkeys(tuple(hooks_rules.argv(profile, handler)) for handler in fired):
-        results[argv] = box.run(list(argv), cwd=repo, input=payload, note=f"{profile.name} hook spawn").exit
+        results[argv] = box.run(list(argv), cwd=repo, input=payload, note=f"{profile.name} hook spawn")
     return results
 
 

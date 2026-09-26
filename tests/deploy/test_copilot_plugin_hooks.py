@@ -3,10 +3,9 @@
 lin-copilot-plugin-hooks installs the plugin the way Copilot CLI installs any
 marketplace plugin (the GitHub URL answered by the local mirror), lets the
 scripted model edit a Python function over its ceiling once, and counts the
-crapkit processes the shim saw. The plugin's hooks.json is written for Claude
-Code: one handler per file type, each `crapkit` plus `args` and an `if`
-filter. A harness that keeps only `command` runs every handler as a bare
-`crapkit` on every edit.
+crapkit processes the shim saw. The plugin's hooks.json holds one shell-form
+handler, `crapkit claude-hook --protocol 1`, so a harness that keeps only a
+handler's `command` still starts crapkit with its arguments, once per edit.
 
 lin-copilot-cloud-sim does what a repository's Copilot cloud agent does: the
 setup steps install crapkit with the README's pip line, the repository's MCP
@@ -18,10 +17,10 @@ cannot name.
 from __future__ import annotations
 
 import json
+import shlex
 from collections import Counter
 from pathlib import Path
 
-import pytest
 
 from kit import docsnip, gitmirror, hooks_rules, profiles, shim, stub_openai, writers
 from kit.cells import cell
@@ -30,8 +29,6 @@ PACKET = "deploy-harnesses"
 EDITED = "calc/grade.py"
 BREACH = ('    return "D"', '    if attempts > 5 and bonus:\n        return "E"\n    return "D"')
 PLUGIN_LINES = ["copilot plugin marketplace add JeanFrancoisGagne/crapkit", "copilot plugin install crapkit@crapkit"]
-BUG_HOOKS = ("deploy-bug deploy-harnesses-4: Copilot CLI runs the crapkit plugin's 50 hook handlers as bare `crapkit` "
-             "on one edit: each prints its usage and exits 2, and the edit waits for all of them")
 TOOLS = 12
 
 
@@ -60,7 +57,6 @@ def hook_spawns(starts: list[dict]) -> Counter:
     return Counter(tuple(start["argv"][1:]) for start in starts if start["argv"][1:2] != ["mcp"])
 
 
-@pytest.mark.xfail(strict=True, reason=BUG_HOOKS)
 @cell("lin-copilot-plugin-hooks", channel="copilot plugin install", harness="Copilot CLI 1.0.88, stub BYOK",
       scenario="fresh: shim spawn count per edit", use_cases="hook portability", os="linux", image="full",
       cadence="nightly")
@@ -70,7 +66,7 @@ def test_copilot_plugin_hooks(box, templates, candidate, record_property):
     spawns = hook_spawns(edit_once(box, repo))
     record_property("hook_spawns_per_edit", str(sum(spawns.values())))
     box.transcript.attach("hook-spawns", {" ".join(argv) or "(bare)": count for argv, count in spawns.items()})
-    wanted = tuple(hooks_rules.handlers(candidate.staged / "plugin")[0].entry["args"])
+    wanted = tuple(shlex.split(hooks_rules.handlers(candidate.staged / "plugin")[0].entry["command"])[1:])
     assert set(spawns) <= {wanted} and sum(spawns.values()) <= 1, dict(spawns)
 
 
