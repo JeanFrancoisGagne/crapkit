@@ -342,6 +342,46 @@ function genericDeclaration(node) {
   return declared && Boolean(node.typeParameters);
 }
 
+// A JSX opening tag that is a bare name, `<p>` or `<A.B>`, with no attribute.
+const BARE_TAG = /^<[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)*>$/;
+const PLAIN_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const isTag = (node) => ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node);
+const openingOf = (node) => (ts.isJsxElement(node) ? node.openingElement : node);
+const bareTag = (node) => BARE_TAG.test(openingOf(node).getText());
+const lineBreakOnly = (node) => ts.isJsxText(node) && node.containsOnlyTriviaWhiteSpaces &&
+  node.text.includes("\n");
+
+// An attribute `name="v"` or `name={v}` whose name is one plain word: no
+// spread, no value-less attribute, no `data-x` or `ns:x`.
+function plainAttribute(attribute) {
+  const named = ts.isJsxAttribute(attribute) && PLAIN_NAME.test(attribute.name.getText());
+  return named && Boolean(attribute.initializer);
+}
+
+// An opening tag with attributes, a plain word for a name and plain
+// attributes only: `<div className="a" onClick={f}>`.
+function plainAttributedTag(node) {
+  const opening = openingOf(node);
+  const named = PLAIN_NAME.test(opening.tagName.getText()) && !opening.typeArguments;
+  return named && !bareTag(node) && opening.attributes.properties.every(plainAttribute);
+}
+
+const endsAChild = (node) => ts.isJsxExpression(node) || (isTag(node) && plainAttributedTag(node));
+
+// A child tag with attributes that follows a child expression or such a tag
+// and a line break, in an element whose opening tag has plain attributes:
+// `<div a="1">` / `{x}` / `<p b="2">`.
+function childTagLine(node) {
+  const inTaggedParent = isTag(node) && ts.isJsxElement(node.parent) &&
+    plainAttributedTag(node.parent);
+  return inTaggedParent && !bareTag(node) && afterAChild(node.parent.children, node);
+}
+
+function afterAChild(siblings, node) {
+  const at = siblings.indexOf(node);
+  return at >= 2 && lineBreakOnly(siblings[at - 1]) && endsAChild(siblings[at - 2]);
+}
+
 // The shapes crapkit misreads. Each entry: [name, reach, test(node, fn)]. The
 // reach says which functions a shape marks: "own", the function whose own body
 // holds it; "self", the function it is; "tail", every function holding it and
@@ -384,6 +424,8 @@ const SHAPES = [
   ["ternary_call_row", "line", ternaryCallRow],
   // A JSX spread attribute `<div {...props} />`.
   ["jsx_spread", "after", (node) => ts.isJsxSpreadAttribute(node)],
+  // A child tag with attributes after a child expression or tag on its own line.
+  ["jsx_child_tag_line", "after", childTagLine],
   // An optional chain `a?.b` in a .tsx file.
   ["optional_chain_tsx", "own", (node) => node.kind === ts.SyntaxKind.QuestionDotToken &&
     node.getSourceFile().languageVariant === ts.LanguageVariant.JSX &&

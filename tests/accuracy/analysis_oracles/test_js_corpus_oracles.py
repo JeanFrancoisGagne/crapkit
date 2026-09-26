@@ -55,6 +55,7 @@ SHAPES = {
     "generic_declaration": ("D1a", EVERY),
     "ternary_call_row": ("AO-JS-TERNARY-CALL-ROW", (ROW,)),
     "jsx_spread": ("AO-JSX-SPREAD-ROWS", EVERY),
+    "jsx_child_tag_line": ("AO-JSX-CHILD-TAG-LINE", (ROW,)),
     "optional_chain_tsx": ("AO-TSX-OPTIONAL-CHAIN-ND", ("nesting",)),
     "foreign_keyword": ("AO-JS-FOREIGN-KEYWORD", VALUES),
     "paren_type_param": ("AO-TS-PAREN-TYPE-PARAM", EVERY),
@@ -258,6 +259,7 @@ SHAPE_CASES = {
     "ternary_call_row": ("ts/corpus_ternary_call.ts", 5, "rows"),
     "optional_chain_tsx": ("tsx/corpus_optional_chain.tsx", 1, "nesting"),
     "jsx_spread": ("cases/spread.tsx", 1, "rows"),
+    "jsx_child_tag_line": ("cases/child_tag_line.tsx", 1, "end"),
     "foreign_keyword": ("js/corpus_def_param.js", 1, "nesting"),
     "paren_type_param": ("ts/corpus_paren_type.ts", 1, "rows"),
     "overload_signature": ("cases/overloads.ts", 1, "rows"),
@@ -266,9 +268,14 @@ SHAPE_CASES = {
 }
 # A JSX spread probe cannot sit under probes/tsx: the function it misreads is
 # the one after it, and test_metamorphic_source appends one to every probe.
+# Nor can a child tag that drops a line: the appended function moves up too.
 CASES = {
     "cases/spread.tsx": ("export function Card() {\n  return <div {...props} />\n}\n\n"
                          "export function sink(a) {\n  return a\n}\n"),
+    "cases/child_tag_line.tsx": ("export function Card(a) {\n  return (\n"
+                                 "    <div className=\"card\">\n      {a}\n"
+                                 "      <p className=\"body\">text</p>\n    </div>\n  )\n}\n\n"
+                                 "export function sink(b) {\n  return b\n}\n"),
     "cases/typed_initializer.ts": ("export const parse: (e: E) => P = (e) => {\n  if (e) {\n"
                                    "    return 1;\n  }\n  return 0;\n};\n"),
     "cases/get_method.js": ("export const api = {\n  get(k) {\n    return k;\n  },\n};\n"),
