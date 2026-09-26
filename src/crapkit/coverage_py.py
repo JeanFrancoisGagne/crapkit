@@ -152,8 +152,8 @@ def has_regions(data: object) -> bool:
 
 def _file_functions(data: dict) -> list[FnCoverage]:
     """One file's functions, sorted by start line. Ask `has_regions` first: this
-    reads an absent "functions" key as an empty one. `path` names the file in a
-    refusal."""
+    reads an absent "functions" key as an empty one. A refusal names the
+    function; `_read_functions` puts the file's path in front of it."""
     # the "" key is the "(no function)" module-level bucket
     fns = [_fn_coverage(name, fn)
            for name, fn in (data.get("functions") or {}).items() if name]
@@ -208,7 +208,7 @@ def _refuse_branchless(branchless: list[str]) -> None:
         raise ToolError(
             f"coverage.py report measures branches, but {len(branchless)} function(s) carry no "
             f"branch counts ({_sample(branchless)}), so crapkit cannot tell how many of their "
-            "branches ran; regenerate the report with the coverage tool")
+            f"branches ran; {_REGENERATE}")
 
 
 def judge_regions(regionless: list[str], total: int, label: str = "") -> None:

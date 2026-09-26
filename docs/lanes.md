@@ -622,7 +622,7 @@ with none, so a function with no branch counts at all was rewritten by something
 Read from its statements, its coverage moved with nothing said; the report is refused:
 
 ```
-crapkit: lane 'py' FAILED: coverage.py report measures branches, but 1 function(s) carry no branch counts (api/views.py: render), so crapkit cannot tell how many of their branches ran; regenerate the report with the coverage tool
+crapkit: lane 'py' FAILED: coverage.py report measures branches, but 1 function(s) carry no branch counts (api/views.py: render), so crapkit cannot tell how many of their branches ran; regenerate the report with `coverage json`
 ```
 
 Every function in the model already falls back to statement coverage when it holds no

@@ -441,7 +441,7 @@ def test_one_function_with_no_branch_counts_in_a_branch_report_refuses_the_repor
 
     assert ("coverage.py report measures branches, but 1 function(s) carry no branch counts "
             "(pylib/mod.py: guarded), so crapkit cannot tell how many of their branches ran; "
-            "regenerate the report with the coverage tool") == str(raised.value)
+            "regenerate the report with `coverage json`") == str(raised.value)
 
 
 def test_a_report_without_meta_reads_its_branch_counts_as_branch_data(capsys):

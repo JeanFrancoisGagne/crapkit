@@ -272,11 +272,12 @@ function's score reads. A report something else rewrote, such as a hand merge of
 or a format converter, could drop one, and crapkit read the gap as zero: a function that
 ran scored cov 0, or a dropped branch counter moved a function from `add-tests` to `ok`,
 at exit 0. From 0.8.1 the lane fails, so `coverage` and `verify` exit 5. The refusal names
-the report, the file and the function or id, and ends `regenerate the report with the
-coverage tool` for coverage.py, or `regenerate the artifact with the coverage tool, or
-merge shards with one that keeps every counter` for istanbul. A report the coverage tool
-wrote is never refused for this; [what the istanbul parser reads](lanes.md#what-the-istanbul-parser-reads)
-lists each form for both formats.
+the report, the file and the function or id, and ends
+`` regenerate the report with `coverage json` `` for coverage.py, or `regenerate the
+artifact with the coverage tool, or merge shards with one that keeps every counter` for
+istanbul. A report the coverage tool wrote is never refused for this;
+[what the istanbul parser reads](lanes.md#what-the-istanbul-parser-reads) lists each form
+for both formats.
 
 **An unreadable `.crapkit/artifacts.json`.** The record that a lane's last attempt failed
 lives in that file. A file that did not parse, or whose lane entry was not an object, read
