@@ -33,10 +33,11 @@ WHAT IS REPORTED
 CCN CONVENTION
     Conditions counted: `if`, `elseif`, `for`, `foreach`, `while`, `until`,
     `catch`, `trap`, `-and`, `-or`, `-xor`, `?`, PowerShell 7's `&&`, `||`,
-    `??` and `??=`, and one point per `switch` arm. `else` costs nothing, as
-    everywhere else in lizard. `&&` and `||` between pipelines run the right
-    pipeline on the left one's outcome, and `??` evaluates its right side only
-    for a null left one, so each is one decision like `-and`.
+    `??`, `??=`, `?.` and `?[`, and one point per `switch` arm. `else` costs
+    nothing, as everywhere else in lizard. `&&` and `||` between pipelines run
+    the right pipeline on the left one's outcome, `??` evaluates its right
+    side only for a null left one, and `${a}?.Name` reads the member only for
+    a left one that is not null, so each is one decision like `-and`.
 
     `switch` counts per arm, not once for the block. PowerShell writes arms as
     bare patterns with no `case` keyword:
@@ -100,7 +101,7 @@ KEYWORDS IN ANY CASE
 
 TOKENIZER
     The added alternatives are tried ahead of lizard's shared C-family rules,
-    and they exist because eight PowerShell constructs read as something else
+    and they exist because nine PowerShell constructs read as something else
     there. Each is pinned by a test.
       - `<# ... #>` block comment. Left alone, `<` and `#` tokenize apart and
         the comment's keywords and braces all count.
@@ -114,13 +115,18 @@ TOKENIZER
         `"$(Get-Item "x{")"` left a `{` in code and the function around it
         had no row.
       - `'...'` with `''` as the escape, which is PowerShell's, not `\'`.
-      - `$var` and `$script:var` as one token, so a scope-qualified name does
-        not split on its colon.
+      - `$var`, `$script:var`, `$?`, `$ok?` and `${any name}` as one token
+        (about_Variables), so a scope-qualified name does not split on its
+        colon, the `?` in a name is not a ternary, and a braced name's braces
+        and words are not code.
       - `Verb-Noun` as one token, so `Get-ChildItem` is a name rather than a
         subtraction, and `-and`/`-or`/`-Path` as one token, which is what makes
         the logical operators countable at all.
       - `??` and `??=` as one token each. Split, they read as two `?`
         ternaries and cost 2.
+      - `?.` and `?[` as one token each, PowerShell 7.1's null-conditional
+        access. Split, the `?` read as a ternary, which the cognitive column
+        charges as a structure.
       - `:label` as one token, so a labeled loop or switch still starts its
         statement. The colon in `script:Name` has a word before it and stays
         apart.
@@ -210,9 +216,11 @@ _TOKEN_ADDITION = (
     # "double" string, backtick is the escape, a $( ) subexpression taken whole
     r"|\"(?:`.|" + _SUBEXPRESSION + r"|[^\"`])*+\""
     r"|'(?:''|[^'])*'"          # 'single' string, '' is the escape
-    r"|\$[\w:]+"                # $var, $script:var
+    r"|\$\{(?:`.|[^}`])*\}"     # ${any name}, backtick is the escape
+    r"|\$[\w:?]+"               # $var, $script:var, $? and $ok?
     r"|(?<!\w):[A-Za-z_]\w*"    # :label, never the colon in script:Name
     r"|\?\?=?"                  # ?? and ??=, one operator each
+    r"|\?[.\[]"                 # ?. and ?[, null-conditional access
     r"|[A-Za-z_]\w*(?:-\w+)+"   # Verb-Noun, one token
     r"|-\w+"                    # -and, -or, -eq, -Path
 )
@@ -362,8 +370,9 @@ _SUBJECT_ENDS = frozenset({"{", ";", "}"})
 _PAREN_CHANGE = {"(": 1, ")": -1}
 _BRACE_CHANGE = {"{": 1, "}": -1}
 
-# What a bracket does to the depth a param() block is read at.
-_DEPTH_CHANGE = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
+# What a bracket does to the depth a param() block is read at. `?[` is one
+# token, the null-conditional index, and opens a bracket as `[` does.
+_DEPTH_CHANGE = {"(": 1, "[": 1, "?[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
 
 class _ParamBlock:
@@ -647,8 +656,9 @@ class PowerShellReader(CodeReader, ScriptLanguageMixIn):
                               "until", "catch", "trap"}
     # `&&` and `||` are PowerShell 7's pipeline chains and, as the tokenizer
     # spells them, `-and` and `-or`. `??` and `??=` evaluate their right side
-    # only for a null left one.
-    _logical_operators = {"&&", "||", "-xor", "??", "??="}
+    # only for a null left one, and `?.` and `?[` read the member only for a
+    # left one that is not null.
+    _logical_operators = {"&&", "||", "-xor", "??", "??=", "?.", "?["}
     _case_keywords = set()      # arms are counted by position, see the docstring
     _ternary_operators = {"?"}
 

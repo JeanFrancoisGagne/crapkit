@@ -1332,6 +1332,14 @@ each marks file re-seed once.
 - PowerShell 7's pipeline chains `&&` and `||` count one decision each. They counted
   nothing.
 - `??` and `??=` count one decision each. `??` read as two `?` ternaries and cost 2.
+- PowerShell 7.1's null-conditional `${a}?.Name` and `${a}?[0]` count one decision each,
+  as `??` does, and no cognitive complexity. `?[` read as a ternary and cost a
+  cognitive point.
+- A variable name holding a `?` or written in braces reads as one name: `$?`, `$ok?`,
+  `${if}`, `${env:ProgramFiles(x86)}`. `$?` cost a ternary's point in `ccn`, and in
+  cognitive complexity outside parentheses; a keyword in braces counted as that keyword;
+  and the braces of `${env:ProgramFiles(x86)}` in a loop's condition read as the loop's
+  block, so every structure inside the loop scored one nesting level too shallow.
 - `-and` and `-or` nest the way `&&` and `||` do in the C family: the first one in a
   condition adds a level. Each used to add its own, so `if ($a -and $b -or $c)` read
   nesting 3 where TypeScript's `if (a && b || c)` reads 2.

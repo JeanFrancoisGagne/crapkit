@@ -672,6 +672,8 @@ PARAM_BLOCKS = {
     "a default that reads a variable": (
         "function Get-Default {\n    param($Name = $env:USERNAME, $Other)\n    $Name\n}\n", 2),
     "an empty block": ("function Get-None {\n    param()\n    1\n}\n", 0),
+    "a null-conditional index in a default": (
+        "function Get-Index {\n    param($First = ${xs}?[0], $Second)\n    $First\n}\n", 2),
     "a script block's own block": (
         "function Invoke-It {\n    $block = { param($a, $b) $a + $b }\n    & $block 1 2\n}\n", 0),
 }
@@ -896,6 +898,37 @@ def test_null_coalescing_is_one_decision(line, ccn):
     (record,) = analyze_source("probe.ps1", f"function Test-Coalesce($a, $b) {{\n    {line}\n}}\n")
 
     assert record.ccn_std == ccn
+
+
+@pytest.mark.parametrize("line", ["return ${a}?.Name", "return ${a}?[0]"])
+def test_null_conditional_access_is_one_decision_that_opens_nothing(line):
+    """PowerShell 7.1's `?.` and `?[]` read the member only when the braced
+    variable before them is not null (about_Operators): one short-circuit
+    decision, as `??` is, and no structure for the cognitive column. `?[`
+    read as a ternary there and cost a cognitive point."""
+    (record,) = analyze_source("probe.ps1", f"function Get-Safe($a) {{\n    {line}\n}}\n")
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == (2, 0, 0)
+
+
+@pytest.mark.parametrize("body, numbers", [
+    ("git fetch\n    if (-not $?) {\n        exit 1\n    }", (2, 1, 1)),
+    ("git fetch\n    return $?", (1, 0, 0)),
+    ("$ok? = $true\n    return $ok?.ToString()", (1, 0, 0)),
+    ("${if} = 1\n    return ${if}", (1, 0, 0)),
+    ("foreach ($r in @($a, ${env:ProgramFiles(x86)})) {\n        if ($r) {\n"
+     "            return $r\n        }\n    }", (3, 3, 2)),
+])
+def test_a_variable_name_with_a_question_mark_or_braces_is_one_token(body, numbers):
+    """`$?` is the automatic success variable, `?` is a legal character in any
+    variable name (`$ok?`), and `${...}` spells a name with any characters
+    (about_Variables). Split apart, the `?` read as a ternary, a braced
+    keyword as a keyword, and the braces of `${env:ProgramFiles(x86)}` in a
+    loop's condition as the loop's block, so the `if` inside read one level
+    shallower in the cognitive and nesting columns."""
+    (record,) = analyze_source("probe.ps1", f"function Get-Var($a) {{\n    {body}\n}}\n")
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == numbers
 
 
 def test_logical_operators_nest_as_their_c_family_spelling_does():
