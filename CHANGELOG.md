@@ -2,6 +2,28 @@
 
 ## 0.8.1 — unreleased
 
+### The lane guard reads a command the way sh and cmd.exe read it
+
+No score moves and no analysis-version bump. The full-suite guard and `doctor` read these
+lane commands the way the shell that runs them does:
+
+- An operator touching a word still ends the command. `...py.json&& python -m coverage
+  json` is two commands on both shells and was refused naming `python`; `&`, `|` and
+  `||` read the same way, and on sh so does `;` (`;echo done`).
+- A redirection keeps its target when the target is quoted (`>"lane.log"`,
+  `2>"lane err.log"`, and `>'lane.log'` on sh), and leaves the word it touches:
+  `tests>lane.log` hands pytest `tests`. Each of these was refused with exit 3.
+- On Windows the line is read in two passes, cmd.exe's and then the runner's. A quote a
+  caret hands on opens no run for cmd.exe, so `-k ^"x & python -m pytest pylib/unit^"`
+  starts a second, narrowed pytest. That lane loaded and took its coverage from the
+  narrowed run; it now exits 3. The runner reads `\"` as a quote inside its quoted run,
+  so `-k "a\" tests \"b"` is one value and loads.
+- On sh a line break ends the command, a backslash at the end of a line joins it to the
+  next, and a `#` that starts a word starts a comment. cmd.exe runs the first line only,
+  drops carriage returns, lets a quote that never closes take the rest of the line, skips
+  `;`, `,` and `=` before a command or a redirection target, and reads a digit touching
+  `>` as a stream only where a word starts.
+
 ### A portable baseline forgives the failures its run had
 
 - `verify --baseline-tsv` counted a test that already failed at the baseline run as a

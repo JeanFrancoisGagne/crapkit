@@ -66,20 +66,30 @@ on POSIX, cmd.exe on Windows. One reading feeds two readers. The lane guard uses
 decide whether a token narrows the run, and `doctor` uses it to decide which word is the
 runner and which words are files the repo owes.
 
+On Windows the line is read twice, as it is when it runs. cmd.exe reads it first, for
+its commands, carets and redirections, and hands each program the rest. The program then
+splits its line into arguments with the C runtime's rules, which python and node share.
+The two passes disagree about carets and backslashes, and the guard reads both.
+
 | What you write | How it reads |
 |---|---|
 | `-m "not live and not perf"` | One argument. Double quotes are the portable spelling: both shells drop them and hand the runner one token. |
 | `-m 'not live and not perf'` | Five arguments on Windows. cmd.exe has no single-quote rule, so pytest gets `'not`, `live`, `and`, `not`, `perf'` and the lane is refused with a hint. |
 | `-k ^"not slow^"` | One argument. Outside a quoted run cmd.exe drops the caret and hands on the character behind it, so the runner gets `-k "not slow"`. Inside a quoted run the caret stays: `-k "a^b"` reaches the runner with its caret. |
+| `-k ^"x & pytest pylib/unit^"` | Two commands on Windows. The caret hands the quote to the runner but opens no quoted run for cmd.exe, so the `&` starts a second pytest, and that one runs only `pylib/unit`. The lane is refused. |
+| `-k "a\" tests \"b"` | One argument, `a" tests "b`. Inside double quotes `\"` writes a quote. On Windows it is the runner that reads it so; cmd.exe sees the quote close the run, so an `&` between the two `\"` still ends the command. |
 | `--cov-report=json:"cov/py 1.json"` | One argument. A quote opens a quoted run wherever it sits, mid-token included. |
 | `-k "" tests` | Three arguments. An empty pair of quotes writes an empty argument, so `tests` stays the positional it is. Dropping it would slide `tests` onto `-k` and the narrowing lane would load clean. |
-| `pytest --cov && coverage json` | Two commands. `&&`, `\|\|`, `&` and `\|` each start a new one, and every segment that runs the runner is checked on its own. |
-| `pytest --cov > lane.log 2>&1` | The redirections are the shell's; the runner never sees them. A quoted `">"` is an argument and stays. |
-| `pytest --cov; echo done` | On sh the `;` ends the command. To cmd.exe it is an ordinary character, so `echo` and `done` land in pytest's argv and the lane is refused. |
-| a non-breaking space in a value | Not a word break. Words break on space, tab and line endings, the way both shells break them, so a value pasted out of rendered docs stays one token. |
+| `pytest --cov && coverage json` | Two commands. `&&`, `\|\|`, `&` and `\|` each start a new one, blank beside them or not (`py.json&& coverage json` is two commands too), and every segment that runs the runner is checked on its own. |
+| `pytest --cov > lane.log 2>&1` | The redirections are the shell's; the runner never sees them, or their targets, quoted or not (`>"lane log.txt"`). A redirection touching a word leaves that word: `tests>lane.log` hands pytest `tests`. A digit touching `>` names a stream only where a word starts, so `a2>x` hands on `a2`. A quoted `">"` is an argument and stays. |
+| `pytest --cov; echo done` | On sh the `;` ends the command, and so does `;echo done`. To cmd.exe it is an ordinary character, so `echo` and `done` land in pytest's argv and the lane is refused. |
+| a line break | On sh a line break ends the command the way `;` does, and a backslash at the end of a line joins it to the next. cmd.exe runs the first line only. |
+| `--cov # the whole suite` | On sh a `#` that starts a word comments out the rest of the line. To cmd.exe it is text. |
+| a non-breaking space in a value | Not a word break. Both shells break words on space and tab only, so a value pasted out of rendered docs stays one token. |
 
-A command the shell itself would refuse (a quote that never closes) falls back to a
-whitespace split. A rough lint beats a crash at config load.
+A quote that never closes: sh refuses the line, and crapkit reads that quote as an
+ordinary character, because a rough lint beats a crash at config load. cmd.exe runs the
+line, the quoted run takes the rest of it, and crapkit reads it the same way.
 
 ### The refusals, as they print
 
@@ -94,9 +104,10 @@ EXIT=3
 
 The same command in double quotes loads, and so does the caret spelling
 (`-k ^"not slow^"`), the mid-token quote
-(`--cov-report=json:".crapkit/cov/py report.json"`) and the redirected form
-(`... --cov-report=json:.crapkit/cov/py.json > lane.log 2>&1`). All four come back
-`doctor: no problems found`, exit 0.
+(`--cov-report=json:".crapkit/cov/py report.json"`), the redirected form
+(`... --cov-report=json:.crapkit/cov/py.json > lane.log 2>&1`) and the same form with
+the operators touching their words (`...py.json>"lane.log" 2>&1&& python -m coverage
+json`). All five come back `doctor: no problems found`, exit 0.
 
 A second run after `&&` narrows as much as the first, so the segment it sits in is checked
 too:

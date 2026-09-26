@@ -547,7 +547,7 @@ def test_under_sh_a_quoted_semicolon_is_an_argument(monkeypatch):
         [["python", "-m", "pytest", "-k", "a;", "--cov=pylib"]]
 
 
-@pytest.mark.parametrize("shell_is_cmd", [False])
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
 @pytest.mark.parametrize("operator", ["&&", "&", "||", "|"])
 def test_an_operator_touching_a_word_still_ends_the_command(monkeypatch, operator, shell_is_cmd):
     """Both shells end the command at an unquoted `&&` whatever touches it
@@ -574,7 +574,7 @@ def test_under_sh_a_semicolon_touching_the_next_word_ends_the_command(monkeypatc
         [["python", "-m", "pytest", "--cov=pylib"], ["echo", "done"]]
 
 
-@pytest.mark.parametrize("shell_is_cmd", [False])
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
 @pytest.mark.parametrize("tail", ['>"lane.log"', '2>"lane err.log"', '>> "lane.log"'])
 def test_a_redirection_with_a_quoted_target_is_the_shells(monkeypatch, tail, shell_is_cmd):
     """Quoting the target writes a file name with a space in it; the shell still
@@ -593,7 +593,7 @@ def test_under_sh_a_single_quoted_redirection_target_is_the_shells(monkeypatch):
     assert _covpy_lane("python -m pytest --cov=pylib >'lane.log'").command
 
 
-@pytest.mark.parametrize("shell_is_cmd", [False])
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
 def test_a_redirection_touching_the_word_before_it_leaves_that_word(monkeypatch, shell_is_cmd):
     """`pylib/unit>lane.log` hands pytest `pylib/unit` (verified cmd.exe argv:
     `tests>lane.log` -> ["tests"]), so the refusal names the path pytest gets."""
@@ -653,6 +653,42 @@ def test_under_cmd_a_caret_escaped_quote_holds_the_flag_value_together(monkeypat
     assert _covpy_lane(command).command == command
 
 
+def test_under_cmd_a_caret_escaped_quote_opens_no_run_for_cmd_exe(monkeypatch):
+    """cmd.exe hands the program the quote in `^"` but opens no quoted run for
+    itself, so the `&` behind it starts a second pytest (verified cmd.exe argv:
+    ["-k", "x "], then ["pylib/unit"]). Reading one -k value let a lane whose
+    second run narrows load as full-suite coverage."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane('python -m pytest --cov=pylib -k ^"x & python -m pytest pylib/unit^"')
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def test_under_cmd_a_backslash_quote_stays_inside_the_runners_quoted_run(monkeypatch):
+    """The program reads its command line with the C runtime's rules, where `\\"`
+    is a quote inside the run: `-k "a\\" tests \\"b"` hands pytest the one value
+    `a" tests "b` (verified python argv). Ending the run there refused 'tests'."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    assert _covpy_lane('python -m pytest -k "a\\" tests \\"b" --cov=pylib').command
+    assert config.shell_words('pytest -k "a\\\\" tests', cmd=True) == ["pytest", "-k", "a\\", "tests"]
+
+
+def test_under_cmd_a_quote_that_never_closes_runs_to_the_end_of_the_line(monkeypatch):
+    """cmd.exe refuses no unclosed quote: the run takes the rest of the line, and
+    the program reads it the same way (verified argv for `"unclosed a b`:
+    ["unclosed a b"]). The whitespace fallback refused 'pylib/unit', which pytest
+    gets inside the -k value."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    assert _covpy_lane('python -m pytest --cov=pylib -k "unclosed pylib/unit').command
+
+
+def test_under_cmd_only_the_first_line_runs(monkeypatch):
+    """cmd.exe stops at a line feed (verified: `rec a<LF>rec b` starts one rec,
+    with ["a"]), so the second line's words reach no program."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    assert _covpy_lane_basic("python -m pytest --cov=pylib\npython -m pytest pylib/unit").command
+
+
 def test_under_cmd_a_quoted_path_inside_a_flag_value_is_not_a_positional(monkeypatch):
     """cmd.exe hands pytest `--cov-report=json:a b\\py.json`, one argument, so the
     lane runs. Reading the quote as a word boundary refused it and named
@@ -689,8 +725,8 @@ def test_a_quoted_positional_path_still_narrows_a_full_suite_lane():
 
 
 def test_an_unbalanced_quote_falls_back_to_the_whitespace_read():
-    """shlex refuses a command sh would refuse too; the lint still runs on the
-    naive split rather than crashing config load on a ValueError."""
+    """sh refuses a quote that never closes; the lint still runs, reading the
+    quote as an ordinary character, rather than crashing config load."""
     with pytest.raises(ConfigError, match="narrows a full-suite"):
         _covpy_lane("python -m pytest pylib/unit --cov 'unclosed")
 

@@ -40,7 +40,7 @@ def test_a_positional_equal_to_a_configured_testpath_is_not_narrowing(tmp_path):
     assert cfg.lanes[0].full_suite is True, "the lane stays a full-suite lane"
 
 
-@pytest.mark.parametrize("shell_is_cmd", [False])
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
 def test_a_redirection_touching_a_configured_testpath_leaves_the_testpath(tmp_path, monkeypatch,
                                                                           shell_is_cmd):
     """Both shells hand pytest `tests` for `tests>lane.log` (POSIX 2.3; verified

@@ -201,6 +201,14 @@ external services remain outside this proof. See
 [artifact reuse](lanes.md#reusing-artifacts) before choosing an explicit
 saved-artifact read.
 
+The full-suite guard reads a lane command the way the shell that runs it does, operators
+and redirections that touch a word included. Lanes it refused for `py.json&& python -m
+coverage json`, `>"lane.log"` or `tests>lane.log` now load. One Windows shape that loaded
+now exits 3: a caret-escaped quote around an `&`, as in `-k ^"x & python -m pytest
+pylib/unit^"`, because cmd.exe starts a second pytest there and the coverage came from
+its narrowed run. [How a lane command is read](lanes.md#how-a-lane-command-is-read) has
+every rule. No score moves.
+
 `test_retention_days` and `test_retention_count` are ignored. `crapkit doctor` warns
 once for each key a config sets; delete them. Test evidence retention is now the
 development runner's `--retention-days` and `--retention-count`, and

@@ -342,17 +342,56 @@ def test_shell_words_reads_a_quote_that_opens_mid_token_under_both_shells():
         ["pytest", "tests/a b/test_x.py"]
 
 
-def test_shell_words_breaks_words_only_on_space_tab_and_the_line_endings():
-    """cmd.exe splits the command line on space and tab, and 0.4.4's shlex used
-    ' \\t\\r\\n'. str.isspace() is true for U+00A0 and U+000B as well, so a
-    marker expression pasted out of rendered docs split in two and the refusal
-    named a token the operator never typed. Verified cmd.exe argv:
-    `-k not\\xa0slow` -> ["-k", "not\\u00a0slow"] and `-k a\\x0bb` -> ["-k", "a\\u000bb"]."""
+def test_shell_words_breaks_words_only_where_each_shell_does():
+    """Both shells break words on space and tab only. str.isspace() is true for
+    U+00A0 and U+000B as well, so a marker expression pasted out of rendered
+    docs split in two and the refusal named a token the operator never typed.
+    Verified cmd.exe argv: `-k not\\xa0slow` -> ["-k", "not\\u00a0slow"] and
+    `-k a\\x0bb` -> ["-k", "a\\u000bb"]. A line feed ends the command: sh starts
+    the next one behind it, and cmd.exe runs no more of the line. A carriage
+    return is text to sh (dash argv for `a<CR>b`: ["a\\rb"]), and cmd.exe
+    drops it (verified argv: ["ab"])."""
     for cmd in (True, False):
         assert shell_words("pytest -k not\u00a0slow", cmd=cmd) == \
             ["pytest", "-k", "not\u00a0slow"]
         assert shell_words("pytest -k a\u000bb", cmd=cmd) == ["pytest", "-k", "a\u000bb"]
-        assert shell_words("pytest\t-m\tx\r\ny", cmd=cmd) == ["pytest", "-m", "x", "y"]
+    assert shell_segments("pytest\t-m\tx\ny", cmd=False) == [["pytest", "-m", "x"], ["y"]]
+    assert shell_segments("pytest\t-m\tx\ny", cmd=True) == [["pytest", "-m", "x"]]
+    assert shell_words("pytest a\rb", cmd=False) == ["pytest", "a\rb"]
+    assert shell_words("pytest a\rb", cmd=True) == ["pytest", "ab"]
+
+
+def test_under_cmd_a_doubled_quote_inside_a_run_writes_one_quote():
+    """The C runtime's rule, which python.exe builds its argv with (verified argv
+    for `-k "x"" y" b`: ["-k", 'x" y', "b"])."""
+    assert shell_words('pytest -k "x"" y" b', cmd=True) == ["pytest", "-k", 'x" y', "b"]
+    assert shell_words('pytest -k "a""b" c', cmd=True) == ["pytest", "-k", 'a"b', "c"]
+
+
+def test_under_cmd_a_handle_digit_is_the_redirections_only_where_a_word_starts():
+    """cmd.exe reads the digit touching `>` as a handle when a blank, `;`, `,`,
+    `=` or a quote stands before it (verified argv: `a2>x` -> ["a2"], `"a"2>x`
+    -> ["a"], `a;2>x` -> ["a;"], `a 2 >x` -> ["a", "2"], `a 22>x` -> ["a", "22"])."""
+    assert shell_words('pytest a2>x "b"2>x c;2>x 2 >x 22>x', cmd=True) == \
+        ["pytest", "a2", "b", "c;", "2", "22"]
+
+
+def test_under_cmd_a_redirection_target_ends_where_cmd_exe_ends_it():
+    """The target takes quoted runs and ends at a blank, an operator, `;`, `,` or
+    `=` (verified argv: `>x;y b` -> [";y", "b"], and `> "x"y b` -> ["b"] with
+    the file named xy)."""
+    assert shell_words('pytest >x;y b > "x"y c 2>"x y"z d >x>y e', cmd=True) == \
+        ["pytest", ";y", "b", "c", "d", "e"]
+
+
+def test_under_cmd_its_delimiters_are_skipped_before_a_target_and_a_command():
+    """`;`, `,` and `=` are cmd.exe's delimiters as the blanks are (verified argv:
+    `a >;x b` and `a > , x b` -> ["a", "b"], and `rec a && ;;rec b` starts rec
+    with ["b"]). Reading them as text named `;x` a positional and read `;;python`
+    as the program a step starts."""
+    assert shell_words("pytest a >;x b >=y c > , z d", cmd=True) == ["pytest", "a", "b", "c", "d"]
+    assert shell_segments("pytest a && ;, =python -m pytest b", cmd=True) == \
+        [["pytest", "a"], ["python", "-m", "pytest", "b"]]
 
 
 def test_under_sh_only_a_bare_number_touching_a_redirection_is_its_descriptor():
@@ -381,8 +420,11 @@ def test_shell_words_under_sh_reads_single_quotes():
     assert shell_words("pytest -m 'not live'", cmd=False) == ["pytest", "-m", "not live"]
 
 
-def test_shell_words_falls_back_to_the_whitespace_read_on_an_unbalanced_quote():
-    assert shell_words('pytest "unclosed --cov', cmd=True) == ["pytest", '"unclosed', "--cov"]
+def test_shell_words_reads_a_quote_that_never_closes_the_way_each_shell_does():
+    """sh refuses the line, so the lint reads the quote as an ordinary character
+    rather than crash config load. cmd.exe runs it: the run takes the rest of
+    the line (verified argv for `"unclosed a b`: ["unclosed a b"])."""
+    assert shell_words('pytest "unclosed --cov', cmd=True) == ["pytest", "unclosed --cov"]
     assert shell_words("pytest 'unclosed --cov", cmd=False) == ["pytest", "'unclosed", "--cov"]
 
 
