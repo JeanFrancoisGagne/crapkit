@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Callable, NamedTuple
 
 from .invariants import check_rollup, check_totals
-from .score import ScoredRow, grade
+from .score import ScoredRow, grade, over_ceiling
 from .keys import key_names, key_of
 
 # scope -> the ceiling its rows are judged against
@@ -40,7 +40,7 @@ def _ceiling_rule(target: int, scope_targets: dict[str, int] | None) -> _Ceiling
 
 
 def _over_count(rows, ceiling_of: _CeilingOf) -> int:
-    return sum(1 for r in rows if r.crap > ceiling_of(r.scope))
+    return sum(1 for r in rows if over_ceiling(r.crap, ceiling_of(r.scope)))
 
 
 def _totals_by(rows: list[ScoredRow], ceiling_of: _CeilingOf) -> Totals:
@@ -162,14 +162,14 @@ def _regressions(moves: list[_Move]) -> list[_Delta]:
 def _improvements(moves: list[_Move], ceiling_of: _CeilingOf) -> list[_Delta]:
     """Only a function that WAS over its ceiling improves; drift below it is not news."""
     return [(delta, after) for delta, before, after in moves
-            if delta < -0.01 and before.crap > ceiling_of(before.scope)]
+            if delta < -0.01 and over_ceiling(before.crap, ceiling_of(before.scope))]
 
 
 def _appeared(prev_by_key: dict[_Key, ScoredRow], cur_by_key: dict[_Key, ScoredRow],
               ceiling_of: _CeilingOf) -> list[ScoredRow]:
     """Functions the previous run never saw; new code under its ceiling is not news."""
     return [row for key, row in cur_by_key.items()
-            if key not in prev_by_key and row.crap > ceiling_of(row.scope)]
+            if key not in prev_by_key and over_ceiling(row.crap, ceiling_of(row.scope))]
 
 
 def _changes_between(prev: list[ScoredRow], cur: list[ScoredRow],

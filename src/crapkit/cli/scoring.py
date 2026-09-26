@@ -360,11 +360,11 @@ def _over_target_at_zero(members, cfg):
     complexity 2 scores 6 at zero coverage, so no ceiling of 6 can fail it.
     The count carries those; the named lines are the ones worth splitting.
     """
-    from ..score import crap
+    from ..score import crap, over_ceiling
 
     for span in members:
         worst = max(span, key=lambda row: row.ccn)
-        if crap(worst.ccn, 0.0) > cfg.ceiling_of(worst.scope):
+        if over_ceiling(crap(worst.ccn, 0.0), cfg.ceiling_of(worst.scope)):
             yield worst
 
 
@@ -484,11 +484,11 @@ def _coverage_summary(run_id: int, run: _ScoredRun, cfg, shape: _RunShape, db_pa
     """The run's summary, its counts and grade checked against their bounds
     before anything prints it (`invariants.check_summary`)."""
     from ..invariants import check_summary
-    from ..score import grade
+    from ..score import grade, over_ceiling
 
     flags = _flag_counts(run.scored)
     judged = _judged_rows(run.scored, shape.unmeasured)
-    over = sum(1 for r in judged if r.crap > cfg.ceiling_of(r.scope))
+    over = sum(1 for r in judged if over_ceiling(r.crap, cfg.ceiling_of(r.scope)))
     summary = {
         "run_id": run_id, "commit": run.commit, "files": run.corpus.files,
         "functions": len(run.scored), "cache_hits": run.cache_hits,

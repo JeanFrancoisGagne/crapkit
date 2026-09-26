@@ -28,6 +28,7 @@ from .keys import (claim_holds, claim_key, expression_group, expression_reader_c
                    key_names, position,
                    refuse_ambiguous, split_ordinal)
 from .dup import SHINGLE_FORMAT
+from .score import AT_CEILING
 from .snapshot import InventoryRow
 from .worklist import Marks
 from .errors import CrapkitError, ToolError
@@ -386,12 +387,18 @@ def _ceiling_key(target: int, scope_targets: dict[str, int] | None) -> str:
 
     _own_ceilings, not the raw dict. A scope whose target IS the repo target
     changes no answer, and keying on it would split the cache and pay for a
-    second full scan of history for nothing. Nothing else belongs in the key:
-    a run's rows never change after it is written, so within one ceiling a
-    stored number cannot go stale.
+    second full scan of history for nothing. A run's rows never change after it
+    is written, so within one ceiling a stored number goes stale only when the
+    rule that decided it changes, and _ROLLUP_RULES names that rule.
     """
-    return json.dumps([target, _own_ceilings(target, scope_targets)],
+    return json.dumps([_ROLLUP_RULES, target, _own_ceilings(target, scope_targets)],
                       separators=(",", ":"), sort_keys=True)
+
+
+# 2: a CRAP that is exactly its ceiling is not over it (score.over_ceiling).
+# Keys without the number were decided by the plain `crap > ceiling`, which
+# counted CRAP(18, 2/3) = 30.000000000000004 over a target of 30.
+_ROLLUP_RULES = 2
 
 
 # The rollup, cut per (run, scope): run_scope_totals answers it as-is and
@@ -1136,10 +1143,10 @@ class SnapshotStore:
         ceiling = _ceiling_expr(target, scope_targets)
         holes = ",".join("?" * len(run_ids))
         cur = self._conn.execute(
-            f"SELECT f.run_id, i.scope, COUNT(*), SUM(f.crap > {ceiling.expr}), "
+            f"SELECT f.run_id, i.scope, COUNT(*), SUM(f.crap > ({ceiling.expr}) * ?), "
             f"SUM(f.crap) {_JOINED} WHERE f.crap IS NOT NULL AND f.run_id IN ({holes}) "
             "GROUP BY f.run_id, i.scope ORDER BY f.run_id, i.scope",
-            (*ceiling.params, *run_ids))
+            (*ceiling.params, AT_CEILING, *run_ids))
         scored = cur.fetchall()
         # the marker first, so a run that scored nothing still reads as filled
         pending = ([(rid, key, "", 0, 0, 0.0) for rid in run_ids]

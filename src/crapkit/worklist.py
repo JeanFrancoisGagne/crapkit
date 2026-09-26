@@ -26,6 +26,7 @@ from .churn import FileChurn
 from .invariants import check_worklist
 from .snapshot import InventoryRow
 from .keys import claim_key, key_names, key_of, lookup, position
+from .score import over_ceiling
 
 
 HOT_MIN_CCN = 3  # hot promotion reaches no lower than this, whatever the floor
@@ -211,8 +212,13 @@ def _at_ceiling(scored, target: int, scope_targets: dict[str, int] | None) -> se
     names = key_names(scored)
     present = {key_of(names, r) for r in scored}
     unfinished = {key_of(names, r) for r in scored
-                  if r.crap is None or r.crap > ceilings.get(r.scope, target)}
+                  if _unfinished(r, ceilings.get(r.scope, target))}
     return present - unfinished
+
+
+def _unfinished(row, ceiling: int) -> bool:
+    """Unscored, or still over the ceiling."""
+    return row.crap is None or over_ceiling(row.crap, ceiling)
 
 
 def _finished_legacy(scored, done: set) -> set:

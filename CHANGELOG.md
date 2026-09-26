@@ -15,6 +15,20 @@
   touched. The change needs an analysis-version bump, which makes each marks file
   re-seed once.
 
+### A CRAP exactly at its ceiling reads ok
+
+- CRAP(18, 2/3) is exactly 30, and its float is 30.000000000000004. At `target = 30`,
+  the crap4j threshold README recommends, `remedy` said `add-tests`, the run totals and
+  a brief's file totals counted it over target and lowered the grade, `ratchet seed`
+  marked it, `verify`'s gate refused it when an edit touched it, and the digest named it
+  new over ceiling. Every comparison with a ceiling now counts a score within a relative
+  2^-48 of it as the ceiling. Over ccn 1 to 60 and coverage fractions up to 400ths, the
+  float strays at most 5.2 units in its last place from the exact value, and an exact
+  CRAP that is not a whole ceiling misses it by at least 1/64,000,000. `trend` keys its
+  stored rollups on the rule, so its first run after the upgrade counts every run again.
+  Scores do not move. A mark on a function whose CRAP is exactly its ceiling leaves the
+  marks file at the next `verify` that passes and tightens.
+
 ### crapkit stops before it stores or prints a number that breaks its definition
 
 - Every number crapkit writes to the store, the marks file or a report now passes a

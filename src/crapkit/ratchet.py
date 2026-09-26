@@ -21,7 +21,7 @@ from typing import NamedTuple
 from .invariants import check_dump, check_marks_kept
 from .invocation import _self
 from .keys import split_ordinal
-from .score import ScoredRow
+from .score import ScoredRow, over_ceiling
 from .records import decode_record, encode_record, record_lines
 
 _HEADER = "path\tlong_name\tcrap"
@@ -326,7 +326,7 @@ def seed_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: i
     marks = {(e.path, e.long_name): e for e in prior}
     added = tightened = 0
     for key, row in rows_by_key(fresh).items():
-        if row.crap <= ceilings.get(row.scope, target):
+        if not over_ceiling(row.crap, ceilings.get(row.scope, target)):
             continue
         a, t = _seed_mark(marks, key, row.crap)
         added += a
@@ -481,7 +481,7 @@ def _updated_mark(entry: RatchetEntry, row: ScoredRow | None, held: bool,
         # inert (verify checks only present functions). Held is a
         # measurement this run cannot vouch for.
         return entry
-    if row.crap <= ceiling_of(row.scope):
+    if not over_ceiling(row.crap, ceiling_of(row.scope)):
         return None  # fixed for real: below the scope's ceiling needs no mark
     return RatchetEntry(entry.path, entry.long_name, min(entry.crap, round(row.crap, 4)))
 

@@ -836,6 +836,10 @@ The coverage summary counts all four as `measured` / `untested` / `no_lane` / `c
 | `add-tests` | `ccn <= ceiling` and `crap > ceiling` | Cover the branches. |
 | `ok` | `crap <= ceiling` | Nothing. |
 
+The comparison is made on the exact CRAP, not on the float that computes it. CRAP(18, 2/3)
+is exactly 30, and its float is 30.000000000000004; at `target = 30` it reads `ok`. The
+over-target count, the grade, `ratchet seed` and `verify`'s gate judge it the same way.
+
 ### Grade and CRAP load
 
 The grade is the share of functions over their ceiling: `A+` at exactly zero, `A` under

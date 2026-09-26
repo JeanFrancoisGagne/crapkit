@@ -8,6 +8,7 @@ from __future__ import annotations
 from urllib.parse import quote, unquote
 
 from . import __version__
+from .score import over_ceiling
 
 _RULES = (
     {"id": "crapkit/over-target",
@@ -36,7 +37,7 @@ def over_target_results(scored, scope_targets: dict, target: int) -> list[dict]:
     out = []
     for r in scored:
         ceiling = scope_targets.get(r.scope, target)
-        if r.crap <= ceiling:
+        if not over_ceiling(r.crap, ceiling):
             continue
         out.append(_result(
             "crapkit/over-target", "warning", r.path, r.start,

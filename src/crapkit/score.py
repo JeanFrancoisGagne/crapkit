@@ -29,6 +29,21 @@ def crap(ccn: int, cov: float) -> float:
     return ccn * ccn * (uncovered * uncovered * uncovered) + ccn
 
 
+# CRAP(18, 2/3) is 30 exactly, and its double is 30.000000000000004. Over ccn 1 to
+# 60 and every coverage fraction up to 400ths, a CRAP double strays at most 5.2
+# units in its last place from the exact value, while an exact CRAP that is not a
+# whole-number ceiling misses it by at least 1/total^3: 1/64,000,000 at
+# CRAP(1, 399/400). A score within a relative 2^-48 of its ceiling, 16 to 32 units
+# in the ceiling's last place, is the ceiling. The store's rollup SQL multiplies
+# by the same factor.
+AT_CEILING = 1 + 2 ** -48
+
+
+def over_ceiling(score: float, ceiling: int) -> bool:
+    """README's `crap > ceiling`, decided for the exact CRAP rather than its double."""
+    return score > ceiling * AT_CEILING
+
+
 _GRADES = ((0.02, "A"), (0.05, "B"), (0.10, "C"), (0.20, "D"))
 
 
@@ -146,7 +161,7 @@ def remedy(ccn: int, score: float, ceiling: int, shared_span: bool = False) -> s
     and the run after the split says whether tests are still owed."""
     if ccn > ceiling:
         return "decompose"
-    if score <= ceiling:
+    if not over_ceiling(score, ceiling):
         return "ok"
     return "split-lines" if shared_span else "add-tests"
 

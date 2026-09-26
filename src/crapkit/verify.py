@@ -18,7 +18,7 @@ from typing import NamedTuple
 
 from .keys import key_names, key_of
 from .ratchet import RatchetEntry
-from .score import ScoredRow, parse_scored_tsv, scored_tsv_lines
+from .score import ScoredRow, over_ceiling, parse_scored_tsv, scored_tsv_lines
 
 
 def diff_uncovered(changed_ranges: dict, missing: dict,
@@ -248,7 +248,7 @@ def _gate_violations(fresh, changed_ranges, target, scope_targets, dirty,
         GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
                       r.path in dirty, key_of(names, r)[1])
         for r in fresh
-        if r.crap > _ceiling(r, target, scope_targets) and _touched(r, changed_ranges)
+        if over_ceiling(r.crap, _ceiling(r, target, scope_targets)) and _touched(r, changed_ranges)
         and not _within_mark(r, key_of(names, r), marks)
     ]
     gate.sort(key=lambda v: (-v.crap, v.path, v.start))
@@ -282,7 +282,7 @@ def unmarked_over_ceiling(fresh: list[ScoredRow], ratchet: list[RatchetEntry], t
     """
     marks = _marks_of(ratchet)
     rows = [row for key, row in rows_by_key(fresh).items()
-            if row.crap > _ceiling(row, target, scope_targets) and key not in marks]
+            if over_ceiling(row.crap, _ceiling(row, target, scope_targets)) and key not in marks]
     rows.sort(key=lambda r: (-r.crap, r.path, r.start))
     return rows
 
