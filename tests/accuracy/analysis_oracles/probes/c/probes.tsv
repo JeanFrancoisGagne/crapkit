@@ -98,3 +98,7 @@ c-name-variable	shapes.c	count	params	1	C11 sec. 6.9.1: count declares one param
 c-two-ternaries	shapes.c	two_ternaries	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: two conditional operators side by side, neither inside the other	AO-ND-TERNARY-PAIR
 c-two-ternaries	shapes.c	two_ternaries	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two conditional operators at level 0, +1 each	
 c-two-ternaries	shapes.c	two_ternaries	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two conditional operators	
+c-head-array	params.c	head_c	params	1	ISO/IEC 9899:2018 6.7.6.3: one parameter, an array adjusted to a pointer	AO-C-PARAMS-ARRAY
+c-pick-braceless	params.c	pick_c	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the ternary in its braceless body +1 and +1 nesting	AO-COG-BRACELESS-BODY
+c-walk-braceless	params.c	walk_c	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, the if in its braceless body +1 and +1 nesting	AO-COG-BRACELESS-BODY
+c-walk-braceless	params.c	walk_c	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a loop and an if	
