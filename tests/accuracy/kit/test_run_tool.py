@@ -199,7 +199,7 @@ def test_checks_load_with_their_module_and_shard(tmp_path):
     [check] = run_tool.load_checks(checks)
 
     assert (check.key, check.name, check.shard, check.seconds) == ("alpha", "passes", "one", 3)
-    assert check.os == () and check.tiers == ()
+    assert check.os == () and check.tiers == () and check.os_sensitive is False
 
 
 @pytest.mark.parametrize("row, message", [
@@ -208,6 +208,8 @@ def test_checks_load_with_their_module_and_shard(tmp_path):
     ({"name": "x", "pytest": ["a"]}, "declares no seconds"),
     ({"name": "x", "argv": ["b"], "seconds": 1}, "an argv check names its tiers"),
     ({"name": "x", "pytest": ["a"], "seconds": 1, "colour": "red"}, "unknown field colour"),
+    ({"name": "x", "pytest": ["a"], "seconds": 1, "os_sensitive": "yes"},
+     "sets os_sensitive to something other than True or False"),
 ])
 def test_a_malformed_check_is_refused(tmp_path, row, message):
     (tmp_path / "bad.py").write_text(f"SHARD = 's'\nCHECKS = [{row!r}]\n", encoding="utf-8")
@@ -235,6 +237,22 @@ def test_selection_follows_shard_os_and_tier():
     assert run_tool.selected([plain, windows, nightly_argv], "nightly", "one", "win32") == [
         plain, windows, nightly_argv]
     assert run_tool.selected([plain], "push", "two", "linux") == []
+
+
+def test_the_os_sensitive_selection_keeps_only_the_marked_checks():
+    """CI's Windows push job runs `--os-sensitive`: the checks whose answer can
+    change with the OS, and none the Ubuntu job already answered for every OS."""
+    plain = run_tool.Check("k", "plain", "one", 1, pytest=("a",))
+    marked = run_tool.Check("k", "marked", "one", 1, pytest=("b",), os_sensitive=True)
+    linux_only = run_tool.Check("k", "linux", "one", 1, pytest=("c",), os=("linux",),
+                                os_sensitive=True)
+    windows_only = run_tool.Check("k", "windows", "one", 1, pytest=("d",), os=("win32",))
+    checks = [plain, marked, linux_only, windows_only]
+
+    assert run_tool.selected(checks, "push", None, "win32", True) == [marked, windows_only]
+    assert run_tool.selected(checks, "push", None, "win32") == [plain, marked, windows_only]
+    assert run_tool._run_parser().parse_args(["--os-sensitive"]).os_sensitive is True
+    assert run_tool._run_parser().parse_args([]).os_sensitive is False
 
 
 def test_an_argv_check_reads_its_exit_code():

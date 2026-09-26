@@ -625,7 +625,7 @@ run. The store fills missing per-run rollups when `trend` or `report` asks for t
 
 ## Setup
 
-    pip install -e ".[dev]"
+    pip install -e ".[dev,accuracy-push]"
     git config core.hooksPath git-hooks
 
 The dev extra ships `pytest`, `pytest-cov`, `pytest-xdist` and `coverage`. None of the
@@ -645,11 +645,13 @@ xdist is not a convenience either. `tests/fixtures/mini_repo` declares a lane th
 out to `pytest ... -n 0`, and `tests/fixtures/mini_repo_xdist` keeps `pytest ... -n 2` for the one
 test in `test_inventory_e2e.py` about xdist fragments combining. pytest rejects `-n`
 without xdist, `-n 0` included, so either lane dies on an unrecognized `-n` and fails the
-e2e tests that assert it exited 0. CI installs this extra and nothing else, so a pytest
+e2e tests that assert it exited 0. CI's test jobs install this extra and nothing else, so a pytest
 plugin a committed fixture lane needs belongs in it.
 
-The second line arms the complexity gate. Without it your commits pass locally and get
-rejected in review.
+The second line arms the complexity gate on commits and change control on pushes.
+Without it your commits pass locally and get rejected in review. The `accuracy-push`
+extra holds the pinned oracles change control and the calculation-accuracy suite read
+(docs/accuracy.md); without it the pre-push hook stops and prints the install line.
 
 ## Tests
 

@@ -5,7 +5,7 @@ construct they read differently, both values, and a ruling:
 
 - `definition`: crapkit means something else on purpose. The row needs outside
   support (a URL, a paper section, a docs anchor with its #, or the literal
-  `convention_only`, which JF answers before a merge).
+  `convention_only`, which the maintainer answers before a merge).
 - `defect`: crapkit is wrong. The row names its issue, and the test that pins
   it is a strict xfail until the fix lands.
 - `fixed`: a former defect; both values now agree.

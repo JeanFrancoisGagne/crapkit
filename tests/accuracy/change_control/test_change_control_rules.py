@@ -44,6 +44,21 @@ def pure_rules(base: dict, head: dict) -> set[str]:
     return {problem.rule for problem in problems}
 
 
+LEDGER = "tests/accuracy/suite_strength/retro/ledger.tsv"
+LEDGER_HEADER = "id\ttest\tbefore\tfix\tdigest\n"
+
+
+def test_a_replay_re_records_its_ledger_row_and_a_dropped_row_is_lost():
+    """`retro.py run --record` turns a pending row into red and pass under the same
+    (id, test), which adds evidence: B2 holds. A row that leaves the ledger is lost."""
+    pending = {**BASE, LEDGER: LEDGER_HEADER + "R01\ttests/a.py::t\tpending\tpending\t\n"}
+    replayed = {**BASE, LEDGER: LEDGER_HEADER + "R01\ttests/a.py::t\tred\tpass\tab12\n"}
+
+    assert "B2" not in pure_rules(pending, replayed)
+    assert "B2" in pure_rules(pending, {**BASE, LEDGER: LEDGER_HEADER})
+    assert "B2" in pure_rules(replayed, {**BASE, LEDGER: LEDGER_HEADER.replace("id", "bug")})
+
+
 # --- the scenarios -------------------------------------------------------------------------
 
 def _edited_metric_row(tree):

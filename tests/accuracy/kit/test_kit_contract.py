@@ -29,7 +29,10 @@ REPO = TESTS.parent
 TOOLS = REPO / "tools" / "accuracy"
 DATA_DIRS = frozenset({"fixtures", "small", "recorded", "probes", "goldens", "__pycache__",
                        "node_modules"})
-PUSH_BUDGET_SECONDS = 480
+# The plan shares 480 serial seconds among the ten packets; the kit's own push
+# checks (24 s: the contract, the run tool, the lock) come on top of those shares.
+# 504 s is about 2 min at -n 4; the nightly run judges the real job time.
+PUSH_BUDGET_SECONDS = 504
 
 
 def _rel(path: Path) -> str:
@@ -399,14 +402,39 @@ def _run_tool():
     return module
 
 
+def budget_overrun(push: list, budget: float) -> str | None:
+    """None when the push checks fit the budget; otherwise what to do, naming the
+    five slowest checks, which is where seconds come back from."""
+    total = round(sum(check.seconds for check in push), 1)
+    if total <= budget:
+        return None
+    slowest = sorted(push, key=lambda check: -check.seconds)[:5]
+    return (f"push checks declare {total} serial seconds on ubuntu, over the {budget} s budget "
+            f"by {round(total - budget, 1)}; the slowest: "
+            + ", ".join(f"{c.key}: {c.name} {c.seconds}" for c in slowest)
+            + ". Move a check to the nightly tier (\"tiers\": [\"nightly\"] in its "
+              "tools/accuracy/checks row) or make its tests faster")
+
+
+def test_an_overrun_names_the_slowest_checks_and_the_way_back():
+    run = _run_tool()
+    checks = [run.Check("k", name, "s", seconds, pytest=("t",))
+              for name, seconds in (("a", 3), ("b", 5), ("c", 1))]
+
+    assert budget_overrun(checks, 9) is None
+    assert budget_overrun(checks, 8) == (
+        "push checks declare 9 serial seconds on ubuntu, over the 8 s budget by 1; the "
+        "slowest: k: b 5, k: a 3, k: c 1. Move a check to the nightly tier (\"tiers\": "
+        "[\"nightly\"] in its tools/accuracy/checks row) or make its tests faster")
+
+
 def test_declared_push_seconds_fit_the_budget():
     run = _run_tool()
     push = run.selected(run.load_checks(), "push", None, "linux")
-    total = sum(check.seconds for check in push)
 
-    assert total <= PUSH_BUDGET_SECONDS, (
-        f"push checks declare {total} serial seconds on ubuntu; the budget is "
-        f"{PUSH_BUDGET_SECONDS}: " + ", ".join(f"{c.key}: {c.name} {c.seconds}" for c in push))
+    overrun = budget_overrun(push, PUSH_BUDGET_SECONDS)
+
+    assert overrun is None, overrun
 
 
 def _check_targets() -> list[Path]:

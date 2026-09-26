@@ -16,7 +16,7 @@ CHECKS = [
      "pytest": [_CO + "test_ground_truth.py"]},
     {"name": "producers agree, crap4py, parse consistency", "seconds": 3,
      "pytest": [_CO + "test_producers_agree.py", _CO + "test_parse_consistency.py"]},
-    {"name": "streaming, digest, refusals and tree admission", "seconds": 10,
+    {"name": "streaming, digest, refusals and tree admission", "os_sensitive": True, "seconds": 10,
      "pytest": [_CO + "test_adversarial_artifacts.py"]},
     {"name": "coverage join by position, lane metamorphics", "seconds": 9,
      "pytest": [_CO + "test_join.py"]},

@@ -1,7 +1,8 @@
 """Run a tier of the accuracy suite, or one shard of it, and write its receipt.
 
     python tools/accuracy/run.py [--tier push|nightly|weekly|release] [--shard NAME]
-                                 [-n WORKERS] [--receipt PATH] [--checks DIR]
+                                 [--os-sensitive] [-n WORKERS] [--receipt PATH]
+                                 [--checks DIR]
     python tools/accuracy/run.py merge RECEIPT... --out PATH
     python tools/accuracy/run.py image-tag
     python tools/accuracy/run.py kit-goldens --declare ID --kind KIND --reason TEXT
@@ -19,11 +20,18 @@ packet owns:
          "pytest": ["tests/accuracy/analysis_oracles/test_hand_probes.py"]},
         {"name": "PowerShell AST", "seconds": 8, "os": ["win32"],
          "pytest": ["tests/accuracy/analysis_oracles/test_complexity_oracles.py"]},
+        {"name": "decode matrix", "seconds": 2, "os_sensitive": True,
+         "pytest": ["tests/accuracy/analysis_oracles/test_decode_matrix.py"]},
         {"name": "wheel diff", "seconds": 60, "tiers": ["release"],
          "argv": ["python", "tools/accuracy/wheel_diff.py", "--corpus", "small"]},
     ]
 
-`seconds` is the check's declared serial time on ubuntu in the push tier. A
+`seconds` is the check's declared serial time on ubuntu in the push tier.
+`os_sensitive: True` marks a check whose answer can change with the OS (byte
+decoding, path spellings, argv splitting, a shell); `--os-sensitive` runs only
+those, and the checks whose `os` names this platform, which is what CI's
+Windows push job runs, since the rest answer the same on every OS and the
+Ubuntu job already ran them. A
 pytest check names test files or directories, and the tier's markers pick what
 runs inside them (tests/accuracy/kit/tiers.py). One pytest session runs every
 selected pytest check, at -n WORKERS when given, and a check's measured time is
@@ -75,7 +83,7 @@ from accuracy.kit import runlog, tiers  # noqa: E402
 
 CHECKS_DIR = REPO / "tools" / "accuracy" / "checks"
 PINS = REPO / "tools" / "accuracy" / "pins.toml"
-FIELDS = frozenset({"name", "pytest", "argv", "seconds", "os", "tiers"})
+FIELDS = frozenset({"name", "pytest", "argv", "seconds", "os", "tiers", "os_sensitive"})
 EXIT = {"pass": 0, "fail": 1, "infra": 3}
 OS_NAMES = {"win32": "windows", "linux": "linux", "darwin": "macos"}
 # Everything the accuracy image is built from; its tag hashes these.
@@ -117,6 +125,7 @@ class Check:
     argv: tuple = ()
     os: tuple = ()
     tiers: tuple = ()
+    os_sensitive: bool = False
 
 
 @dataclass(frozen=True)
@@ -154,7 +163,13 @@ def _argv_tiers(row: dict) -> str | None:
     return "is an argv check: an argv check names its tiers" if unnamed else None
 
 
-ROW_RULES = (_unknown, _no_seconds, _targets, _node_ids, _argv_tiers)
+def _sensitive_flag(row: dict) -> str | None:
+    if isinstance(row.get("os_sensitive", False), bool):
+        return None
+    return "sets os_sensitive to something other than True or False"
+
+
+ROW_RULES = (_unknown, _no_seconds, _targets, _node_ids, _argv_tiers, _sensitive_flag)
 
 
 def _check(key: str, shard: str, row: dict) -> Check:
@@ -163,7 +178,8 @@ def _check(key: str, shard: str, row: dict) -> Check:
         raise CheckError(f"{key}: check {row.get('name', '?')!r} {problem}")
     return Check(key=key, name=row["name"], shard=shard, seconds=row["seconds"],
                  pytest=tuple(row.get("pytest", ())), argv=tuple(row.get("argv", ())),
-                 os=tuple(row.get("os", ())), tiers=tuple(row.get("tiers", ())))
+                 os=tuple(row.get("os", ())), tiers=tuple(row.get("tiers", ())),
+                 os_sensitive=row.get("os_sensitive", False))
 
 
 def _module(path: Path):
@@ -222,10 +238,19 @@ def _in_tier(check: Check, tier: str) -> bool:
     return not check.tiers or tier in check.tiers
 
 
-def selected(checks: list[Check], tier: str, shard: str | None, platform: str) -> list[Check]:
-    """The checks a tier runs in this shard on this platform."""
-    return [check for check in checks
-            if _in_shard(check, shard) and _on_os(check, platform) and _in_tier(check, tier)]
+def _wanted(check: Check, os_sensitive_only: bool) -> bool:
+    """A check that names its OS is OS-sensitive whether or not it says so: on
+    Windows it runs nowhere else."""
+    return check.os_sensitive or bool(check.os) or not os_sensitive_only
+
+
+def selected(checks: list[Check], tier: str, shard: str | None, platform: str,
+             os_sensitive_only: bool = False) -> list[Check]:
+    """The checks a tier runs in this shard on this platform: only the ones whose
+    answer can change with the OS when `os_sensitive_only` holds."""
+    keeps = (lambda check: _in_shard(check, shard), lambda check: _on_os(check, platform),
+             lambda check: _in_tier(check, tier), lambda check: _wanted(check, os_sensitive_only))
+    return [check for check in checks if all(keep(check) for keep in keeps)]
 
 
 # --- running them -------------------------------------------------------------------
@@ -494,6 +519,9 @@ def _run_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="run.py", description="Run an accuracy tier.")
     parser.add_argument("--tier", choices=tiers.TIERS, default="push")
     parser.add_argument("--shard", help="run only the checks modules whose SHARD is this")
+    parser.add_argument("--os-sensitive", action="store_true",
+                        help="run only the checks whose answer can change with the OS "
+                             "(CI's Windows push job)")
     parser.add_argument("-n", "--workers", type=int, default=0,
                         help="pytest-xdist workers for the pytest session")
     parser.add_argument("--receipt", type=Path, help="where to write the receipt")
@@ -503,7 +531,8 @@ def _run_parser() -> argparse.ArgumentParser:
 
 def _run_main(argv: list[str]) -> int:
     args = _run_parser().parse_args(argv)
-    checks = selected(load_checks(args.checks), args.tier, args.shard, sys.platform)
+    checks = selected(load_checks(args.checks), args.tier, args.shard, sys.platform,
+                      args.os_sensitive)
     saved = run_tier(checks, args.tier, args.shard, args.workers)
     _publish(saved, args.receipt or default_receipt(args.tier, args.shard))
     return EXIT[saved["outcome"]]

@@ -18,6 +18,8 @@ import sys
 from hypothesis import given, strategies as st
 import pytest
 
+import hang_guard
+
 from accuracy.kit import drive, rulings
 from accuracy.kit.settings import process
 from accuracy.verdict_model import model_verdict as model
@@ -210,11 +212,7 @@ def _worker(root: Path, name: str, old: str, new: str) -> subprocess.Popen:
 
 
 def _wait_ready(root: Path, name: str, worker: subprocess.Popen) -> None:
-    import time
-    deadline = time.monotonic() + 60
-    while not (root / f"{name}-ready").exists():
-        assert worker.poll() is None and time.monotonic() < deadline, worker.communicate()
-        time.sleep(0.02)
+    hang_guard.wait_for(root / f"{name}-ready", worker)
 
 
 @pytest.mark.process
@@ -229,9 +227,9 @@ def test_concurrent_writers_keep_every_mark(bare_repo):
     for name, worker in (("first", first), ("second", second)):
         _wait_ready(bare_repo, name, worker)
     (bare_repo / "first-go").touch()
-    assert first.wait(60) == 0, first.communicate()
+    assert hang_guard.exited(first) == 0, first.communicate()
     (bare_repo / "second-go").touch()
-    second.wait(60)
+    hang_guard.exited(second)
 
     marks = model.parse_marks(path.read_bytes().decode("utf-8")).marks
     expected = {("src/x.py", "f( )"): 50, ("src/b.py", "g( )"): 40}

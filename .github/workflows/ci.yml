@@ -120,6 +120,42 @@ jobs:
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: python tools/testing/ci.py --base "$BASE_REF" --join
+      # Calculation accuracy over the same two wheels (docs/accuracy.md), whatever
+      # the join decided: change control judges the diff against the last main
+      # commit whose verdict was green, so a push that skipped CI is still judged;
+      # the wheel diff names every value the candidate moves on the small corpus;
+      # the floor proves the candidate's own lane measured every CLI entry point.
+      # A side that handed off failure.json makes the first two print one skip line.
+      - name: install the accuracy push tier's pinned tools
+        if: ${{ !cancelled() }}
+        run: python -m pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt
+      - name: change control against the last green main commit
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git fetch --quiet origin "+refs/accuracy/green:refs/accuracy/green"; then
+            base=refs/accuracy/green
+          else
+            base="$BASE_REF"
+            echo "no refs/accuracy/green yet: change control judges against the event base"
+          fi
+          python tools/accuracy/change_control.py --base "$base" --measured .crapkit/ci-measure
+      - name: the two wheels on the small corpus
+        if: ${{ !cancelled() }}
+        run: >-
+          python tools/accuracy/wheel_diff.py diff --corpus small
+          --base-wheel .crapkit/ci-measure/base --candidate-wheel .crapkit/ci-measure/candidate
+      - name: the candidate's lane measured every CLI entry point
+        if: ${{ !cancelled() && hashFiles('.crapkit/ci-measure/candidate/cov/py.json') != '' }}
+        env:
+          CRAPKIT_SELF_MEASURE: .crapkit/ci-measure/candidate/cov/py.json
+          CRAPKIT_ACCURACY_TIER: release
+          PYTHONPATH: tests
+        run: >-
+          python -m pytest -q -p no:cacheprovider -p no:randomly
+          tests/accuracy/suite_strength/test_self_measure_floor.py::test_cli_entry_points_measured
       - name: retain the verdict and wheel provenance
         if: always()
         uses: actions/upload-artifact@v4
@@ -130,6 +166,117 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           overwrite: true
+
+  # The calculation-accuracy push tier (docs/accuracy.md): every number, label,
+  # ranking and pass/fail crapkit computes, checked against an outside oracle,
+  # a hand table or a clean-room model. Ubuntu runs every push check; Windows
+  # runs only the checks whose answer can change with the OS (`os_sensitive` in
+  # tools/accuracy/checks): byte decoding, PowerShell's parser, path spellings,
+  # the gates in a temporary repo, argv splitting, printed commands and the
+  # small-corpus exports. Both hand their receipt to accuracy-xplat.
+  accuracy-push:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, select: "", minutes: 10}
+          - {os: windows-latest, select: "--os-sensitive", minutes: 8}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.minutes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # The hash-locked tier, then crapkit from this checkout without its
+      # dependencies: the lock already pins lizard and everything else.
+      - run: python -m pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt
+      - run: python -m pip install --no-deps -e .
+      - id: node
+        uses: actions/cache@v4
+        with:
+          path: tools/accuracy/node/push/node_modules
+          key: node-push-${{ runner.os }}-${{ hashFiles('tools/accuracy/node/push/package-lock.json') }}
+      - if: steps.node.outputs.cache-hit != 'true'
+        run: npm ci --prefix tools/accuracy/node/push --ignore-scripts --no-audit --no-fund
+      - name: the push tier
+        shell: bash
+        run: >-
+          python tools/accuracy/run.py --tier push -n 4 ${{ matrix.select }}
+          --receipt .crapkit/accuracy/receipts/push-${{ runner.os }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: accuracy-push-${{ runner.os }}
+          path: .crapkit/accuracy/receipts/
+          retention-days: 1
+
+  # The small corpus's exports as each OS printed them: ints and labels exactly,
+  # four-decimal floats by their text, full-precision floats within 2 ulp. A
+  # difference names the export, the row and the column.
+  accuracy-xplat:
+    needs: accuracy-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: accuracy-push-*
+          path: receipts
+          merge-multiple: true
+      - run: python tools/accuracy/wheel_diff.py xplat receipts/push-Linux.json receipts/push-Windows.json
+
+  # A push to main whose verdict and accuracy jobs all passed becomes
+  # refs/accuracy/green, the base the next change-control run judges against;
+  # the ref only moves forward along main. A red one opens or updates the one
+  # open `accuracy-red` issue.
+  accuracy-green:
+    needs: [verdict, accuracy-push, accuracy-xplat]
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: move refs/accuracy/green to this commit
+        if: ${{ needs.verdict.result == 'success' && needs.accuracy-push.result == 'success' && needs.accuracy-xplat.result == 'success' }}
+        shell: bash
+        run: |
+          if git fetch --quiet origin "+refs/accuracy/green:refs/accuracy/green" &&
+             ! git merge-base --is-ancestor refs/accuracy/green "$GITHUB_SHA"; then
+            echo "refs/accuracy/green is already past $GITHUB_SHA; it stays"
+            exit 0
+          fi
+          git push --force origin "$GITHUB_SHA:refs/accuracy/green"
+      - name: file the red run under accuracy-red
+        if: ${{ needs.verdict.result != 'success' || needs.accuracy-push.result != 'success' || needs.accuracy-xplat.result != 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: verdict ${{ needs.verdict.result }}, accuracy-push ${{ needs.accuracy-push.result }}, accuracy-xplat ${{ needs.accuracy-xplat.result }}
+        run: |
+          body="main at $GITHUB_SHA: $RESULTS. Run: $RUN_URL"
+          number=$(gh issue list --label accuracy-red --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "accuracy-red: a push to main failed its accuracy verdict" --label accuracy-red --body "$body"
+          fi
 
   # `plugin validate` reads hooks.json and the skill frontmatter, which no Python
   # test can schema-check: a malformed handler fails here with exit 1. The two

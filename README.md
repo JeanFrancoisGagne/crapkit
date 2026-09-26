@@ -167,9 +167,9 @@ from the repo's `node_modules` as they do today. `uv tool install crapkit` or
 the machine has none.
 
 Requires Python 3.11 or newer and Git on PATH. The CLI has one runtime dependency,
-`lizard>=1.24.0`; a package mirror needs both distributions. Install into the environment
-you intend to use, then check `crapkit --version`. The `pip install -e ".[dev]"` under
-[Development](#development) is a different thing: it adds the test extra, for people
+`lizard>=1.24.0,<1.25`; a package mirror needs both distributions. Install into the environment
+you intend to use, then check `crapkit --version`. The `pip install -e ".[dev,accuracy-push]"` under
+[Development](#development) is a different thing: it adds the test extras, for people
 changing crapkit.
 
 Python projects can install `pip install "crapkit[py]"` in their test environment to
@@ -1374,15 +1374,17 @@ with no debt.
 ## Development
 
 ```
-pip install -e ".[dev]"
+pip install -e ".[dev,accuracy-push]"
 git config core.hooksPath git-hooks
 python tools/testing/run.py
 ```
 
-The dev extra includes pytest, pytest-cov, pytest-xdist and coverage.py. The shared
-runner owns the unit and E2E schedule; use `--unit-workers 1` for serial unit
+The dev extra includes pytest, pytest-cov, pytest-xdist and coverage.py; the
+accuracy-push extra holds the pinned oracles of the
+[calculation-accuracy suite](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md).
+The shared runner owns the unit and E2E schedule; use `--unit-workers 1` for serial unit
 reproduction or `--coverage` for combined branch coverage and JUnit. The `git config`
-line arms the complexity gate. See
+line arms the complexity gate on commits and change control on pushes. See
 [CONTRIBUTING.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/CONTRIBUTING.md)
 for development and [the verified implementation report](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/architecture/2026-09-07-implementation/REPORT.md)
 for complete Windows source and Linux wheel results, focused benchmarks and their limits.

@@ -44,7 +44,8 @@ def test_a_row_at_its_ceiling_still_answers_to_the_floor():
 
 def hot_churn() -> dict:
     churn = {f"src/f{i}.py": FileChurn(commits=1, authors=1, weight=0.1) for i in range(8)}
-    churn["src/burning.py"] = FileChurn(commits=30, authors=4, weight=25.0)
+    # 30 commits weigh at most 15: a commit's weight rises to 0.5 at most (README, Risk).
+    churn["src/burning.py"] = FileChurn(commits=30, authors=4, weight=12.0)
     return churn
 
 

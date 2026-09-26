@@ -276,8 +276,9 @@ jobs:
           retention-days: 1
 
   xplat:
-    # Ints exact, floats at the precision crapkit stores: every cell's export
-    # digests must be equal, or the first differing export is named.
+    # Ints and labels exact, four-decimal floats by their text, full-precision
+    # floats within 2 ulp: every cell's exports must agree with the first
+    # cell's, or the first differing export, row and column is named.
     needs: [plan, oracles, windows, macos]
     if: always() && needs.plan.result == 'success' && needs.plan.outputs.mode != 'weekly'
     runs-on: ubuntu-latest
@@ -286,6 +287,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan.outputs.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt
       - uses: actions/download-artifact@v4
         with:
           pattern: receipt-*-corpus
@@ -296,7 +301,7 @@ jobs:
           pattern: receipt-windows-*
           path: receipts
           merge-multiple: true
-      - run: python3 tools/accuracy/run.py xplat receipts/*.json
+      - run: python tools/accuracy/wheel_diff.py xplat receipts/*.json
 
   mutation-diff:
     # Nightly: only the functions changed since the last weekly run, capped at

@@ -26,7 +26,7 @@ CHECKS = [
                 _KIT + "test_kit_docrange.py", _KIT + "test_kit_reach.py"]},
     {"name": "the run tool", "seconds": 1,
      "pytest": [_KIT + "test_run_tool.py", _KIT + "test_run_tool_commands.py"]},
-    {"name": "oracles on a non-ASCII path", "seconds": 0,
+    {"name": "oracles on a non-ASCII path", "os_sensitive": True, "seconds": 0,
      "pytest": [_KIT + "test_oracles_non_ascii.py"]},
     {"name": "the image scripts", "seconds": 2, "os": ["linux"],
      "pytest": [_KIT + "test_kit_image.py"]},

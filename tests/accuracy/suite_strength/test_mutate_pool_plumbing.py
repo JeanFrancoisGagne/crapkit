@@ -40,6 +40,7 @@ from types import SimpleNamespace
 import pytest
 
 from accuracy.kit import rulings
+from hang_guard import HANG_SECONDS
 from crapkit import mutate_pool
 from crapkit.errors import ToolError
 from crapkit.locks import exclusive_lock
@@ -316,7 +317,7 @@ WIDE = 33  # more than ThreadPoolExecutor's default of min(32, cpus + 4) threads
 
 
 def test_every_tree_gets_its_own_thread_at_once(monkeypatch):
-    gate = threading.Barrier(WIDE, timeout=5)
+    gate = threading.Barrier(WIDE, timeout=HANG_SECONDS)
     trees = [Path(f"w{i}") for i in range(WIDE)]
     assert mutate_pool._on_every_tree(lambda root, tree, owner: gate.wait() >= 0, Path("r"),
                                       trees, owner=Owner()) == [True] * WIDE

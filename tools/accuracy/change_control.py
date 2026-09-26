@@ -47,8 +47,9 @@ before it only the in-tree rules do, since no change can be declared yet.
 
 
 - B1 the base's metric-digests.tsv is a prefix of the head's.
-- B2 every row of CHANGES.tsv, bugs.tsv, ledger.tsv, triage.tsv, every retro.tsv
-  and the kit's seed-changes.tsv is still there byte for byte, and no rulings id
+- B2 every row of CHANGES.tsv, bugs.tsv, triage.tsv, every retro.tsv and the
+  kit's seed-changes.tsv is still there byte for byte, every (id, test) row of
+  ledger.tsv is still there (a replay re-records its own row), and no rulings id
   is gone.
 - B3 no floor drops, no floor key is gone, and each added survivor or equivalent
   carries evidence. Added ones are printed.
@@ -162,7 +163,8 @@ RULINGS = "tests/accuracy/*/rulings.tsv"
 RETRO = "tests/accuracy/*/retro.tsv"
 CALCS = "tests/accuracy/*/calcs.tsv"
 BUGS = "tests/accuracy/suite_strength/retro/bugs.tsv"
-GROWING = (CHANGES, SEED_CHANGES, BUGS, "tests/accuracy/suite_strength/retro/ledger.tsv",
+LEDGER = "tests/accuracy/suite_strength/retro/ledger.tsv"
+GROWING = (CHANGES, SEED_CHANGES, BUGS, LEDGER,
            "tests/accuracy/suite_strength/retro/triage.tsv", RETRO)
 FLOORS = "tests/accuracy/**/floors.tsv"
 EVIDENCED = ("tests/accuracy/suite_strength/mutation/survivors.tsv",
@@ -888,20 +890,12 @@ def corpus_dir(tree, name: str) -> Path | None:
     return tree.root / SMALL_CORPUS if isinstance(tree, DirTree) else _materialized(tree)
 
 
-def _counts_dir(tree, name: str) -> Path | None:
-    """The corpus directory when its crapkit.toml exists: the counts table reads
-    the lanes there, and a corpus without one (a seeded test tree) declares none."""
-    directory = corpus_dir(tree, name)
-    configured = directory is not None and (directory / "crapkit.toml").is_file()
-    return directory if configured else None
-
-
 def _counts_of(tree, name: str) -> dict:
     """{(path, start): count rows} for one corpus of the tree, read once per tree."""
     tables = tree.__dict__.setdefault("_counts", {})
     if name not in tables:
-        directory, module = _counts_dir(tree, name), counts_module()
-        usable = module is not None and directory is not None
+        directory, module = corpus_dir(tree, name), counts_module()
+        usable = module is not None and directory is not None and directory.is_dir()
         tables[name] = module.table(directory) if usable else {}
     return tables[name]
 
@@ -1279,8 +1273,17 @@ def rule_b1(diff: Diff) -> list[Problem]:
                     f"-- {DIGESTS}, then declare the move as a new row")]
 
 
+def _kept(path: str, rows_: list[str]) -> list[str]:
+    """What of each row must survive: the whole line, except in the ledger, where
+    `retro.py run --record` rewrites a row's cells (pending to red and pass, a new
+    digest and date) and only its (id, test) key must stay."""
+    if path != LEDGER:
+        return rows_
+    return ["\t".join(row.split("\t")[:2]) for row in rows_]
+
+
 def _lost_rows(path: str, old: list[str], new: list[str]) -> Problem | None:
-    lost = Counter(old[1:]) - Counter(new[1:])
+    lost = Counter(_kept(path, old[1:])) - Counter(_kept(path, new[1:]))
     if new[:1] != old[:1]:
         lost = Counter({f"header {old[0]}": 1})
     if not lost:

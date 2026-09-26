@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.8.1 — unreleased
+
+### crapkit stops before it stores or prints a number that breaks its definition
+
+- Every number crapkit writes to the store, the marks file or a report now passes a
+  check against its documented bound first: a CRAP outside `ccn` to `ccn^2 + ccn`, or
+  other than `ccn^2 + ccn` at coverage 0; a flag or remedy that does not follow the
+  README tables; a mark that rises; a worklist out of risk order; a verify exit that
+  breaks the 6, 7, 8, 9 precedence. A check that fails stops the command with exit 5
+  and error kind `internal`, names the check and the function it caught, and says what
+  was not written. It is a crapkit bug, not a problem in your repo: report the message
+  and `crapkit --version`. See [agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md).
+- A hand-typed mark in `crapkit-ratchet.tsv` with more than four decimals reads as the
+  four-decimal value the file format holds, the value every rewrite of the file already
+  gave it. A mark below any CRAP, such as 0 or -1, is still read and kept as written.
+- lizard is capped below 1.25 (`lizard>=1.24.0,<1.25`). Its readers decide every `ccn`
+  crapkit stores, so a new lizard release can no longer move scores unannounced; a
+  nightly job scores a corpus under the newest lizard so a move is known before the cap
+  is lifted.
+
+### The field definitions say what the code computes
+
+- `docs/agent-json.md`, CONTEXT.md and the MCP output schemas state `cov`'s fallbacks
+  (statement coverage with no branches, invoked-or-not with no statements) and that a
+  Python `and` or `or` adds to `ccn` with no branch arc for coverage to record. They
+  also give `crap`'s formula, when `flag` reads `untested` for a measured function, the
+  half-even rounding of `est_uncovered_paths` and what `target` bounds.
+
+### For contributors
+
+- The calculation-accuracy suite (`tests/accuracy`, [docs/accuracy.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md))
+  checks every calculation against outside tools, hand tables and models written from
+  the docs, on every push and nightly. Install `pip install -e ".[dev,accuracy-push]"`:
+  `git-hooks/pre-push` runs change control, which stops a push that moves a golden or a
+  metric without a declared change.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

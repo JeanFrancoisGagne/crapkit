@@ -5,18 +5,22 @@
 ```
 git clone https://github.com/JeanFrancoisGagne/crapkit
 cd crapkit
-pip install -e ".[dev]"
+pip install -e ".[dev,accuracy-push]"
 git config core.hooksPath git-hooks
 ```
 
-Quote `".[dev]"`: zsh globs the bare form and the install fails before pip sees it.
+Quote `".[dev,accuracy-push]"`: zsh globs the bare form and the install fails before pip
+sees it.
 
 The dev extra includes pytest, pytest-cov and pytest-xdist. Keep all three in
 the test environment: fixture lanes launch their own pytest processes with
 coverage and worker flags. Run the shared test schedule below after setup.
 
-`core.hooksPath` arms the complexity gate on your own commits. Without it your commits
-pass locally and get rejected in review.
+`core.hooksPath` arms the complexity gate on your own commits and change control on
+your pushes. Without it your commits pass locally and get rejected in review. The
+`accuracy-push` extra is what the pre-push hook runs on: the pinned oracles of the
+calculation-accuracy suite ([docs/accuracy.md](docs/accuracy.md)). Without it the hook
+stops the push and prints the install line.
 
 ## Tests
 
@@ -133,17 +137,24 @@ Two gates, and the first one is yours.
 **Before you push.** `git-hooks/pre-commit` refuses the commit on a staged function over
 ccn 6. Then `python -m crapkit verify` on the branch: it reruns the lane, gates the
 functions your diff touched, and checks that no ratchet mark rose and no test that passed
-in the baseline fails now. CI also runs the event-base hook and a complete verdict
-against separate base and candidate wheel installations.
+in the baseline fails now. `git-hooks/pre-push` runs change control on every pushed
+commit and the accuracy checks of each calculation whose module the branch touches;
+a golden or metric that moved without a declared change stops the push with the
+`change_control.py declare` command that records it. CI also runs the event-base hook,
+a complete verdict against separate base and candidate wheel installations, and the
+accuracy push tier.
 
-**In CI** (`.github/workflows/ci.yml`), five jobs. A newer push to a pull request
+**In CI** (`.github/workflows/ci.yml`), eight jobs. A newer push to a pull request
 cancels the run it replaces; every push to main runs to the end.
 
 | Job | Runs | What fails the job |
 |---|---|---|
 | `test` | Editable dev install, console-script check and `python tools/testing/run.py --suite ...` on Python 3.11, 3.12 and 3.13 on Ubuntu and Windows; Ubuntu/Python 3.12 belongs to `dogfood`. An Ubuntu job runs both suites; each Windows suite is a job of its own. | A test failure. |
 | `verdict-measure` | One job per side: `python tools/testing/ci.py --base "$BASE_REF" --measure base` or `--measure candidate` builds and verifies that side's wheel, measures both suites and uploads the coverage evidence, the wheel and its proof. | A build, install or provenance failure. A failing suite still uploads; the join judges it. |
-| `verdict` | `python tools/testing/ci.py --base "$BASE_REF" --join` checks each uploaded wheel against the bytes and commit its proof records, installs it into a fresh venv, proves its source again, transfers the complete baseline ledger and runs `verify --no-tighten`. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict. |
+| `verdict` | `python tools/testing/ci.py --base "$BASE_REF" --join` checks each uploaded wheel against the bytes and commit its proof records, installs it into a fresh venv, proves its source again, transfers the complete baseline ledger and runs `verify --no-tighten`. Then, whatever the join decided: `tools/accuracy/change_control.py` against `refs/accuracy/green`, `tools/accuracy/wheel_diff.py diff` of the two wheels on the small corpus, and the self-measurement floor over the candidate's coverage. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict; a golden, expected value or metric that moved without a declared change; a CLI entry point the candidate's lane never ran. |
+| `accuracy-push` | The calculation-accuracy push tier from the hash-locked `tools/accuracy/requirements-push.txt`: `python tools/accuracy/run.py --tier push -n 4`, every push check on Ubuntu and the `--os-sensitive` ones on Windows. See [docs/accuracy.md](docs/accuracy.md). | A value that departs from its oracle, hand table or model; a strict xfail that passes, which means its bug is fixed and its rulings row must say so. |
+| `accuracy-xplat` | `python tools/accuracy/wheel_diff.py xplat` over the two push receipts: the small corpus's exports as Ubuntu and Windows printed them. | An export that differs: ints and labels exactly, four-decimal floats by their text, full-precision floats beyond 2 ulp. |
+| `accuracy-green` | On a push to main only. When `verdict`, `accuracy-push` and `accuracy-xplat` passed, it moves `refs/accuracy/green` to the commit, the base the next change-control run judges against; otherwise it opens or updates the `accuracy-red` issue. | A ref push or an issue write that GitHub refuses. |
 | `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. | A validation error. |
 | `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on Crapkit. | Action execution errors, a test failure or an event-base complexity breach (`hook-precommit --base "$BASE_REF"`). Its `gate: false` setting leaves score enforcement to `verdict`. |
 

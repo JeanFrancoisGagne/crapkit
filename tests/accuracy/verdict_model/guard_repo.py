@@ -24,6 +24,7 @@ import subprocess
 import sys
 
 from accuracy.kit import drive, repos
+from hang_guard import HANG_SECONDS
 
 COV = "--cov=calc --cov-branch --cov-report=json:.crapkit/cov/py.json"
 PYTEST = "python -m pytest"
@@ -189,7 +190,7 @@ def shell_argvs(root: Path, command: str, runner: str = PYTEST) -> list[list[str
     for code in ("0", "1"):
         env = drive.child_env({"ARGV_OUT": str(out), "ARGV_EXIT": code})
         subprocess.run(swapped, shell=True, cwd=root, env=env, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=60)
+                       stderr=subprocess.DEVNULL, timeout=HANG_SECONDS)
     lines = out.read_text(encoding="utf-8").splitlines() if out.exists() else []
     return [json.loads(line) for line in dict.fromkeys(lines)]
 

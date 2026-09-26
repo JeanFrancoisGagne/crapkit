@@ -14,6 +14,7 @@ import subprocess
 import pytest
 
 from accuracy.kit import oracles
+from hang_guard import HANG_SECONDS
 
 pytestmark = [pytest.mark.process, pytest.mark.platform("linux")]
 IMAGE = oracles.REPO / "tools" / "accuracy" / "image"
@@ -32,7 +33,7 @@ def _install(tmp_path: Path, pins: Path, *tools: str) -> subprocess.CompletedPro
     env = {**os.environ, "ACCURACY_BIN": str(tmp_path / "bin"), "KEEP_DOWNLOADS": "1",
            "ACCURACY_DOWNLOADS": str(tmp_path / "downloads")}
     return subprocess.run(["sh", str(IMAGE / "install-tools.sh"), str(pins), *tools],
-                          capture_output=True, text=True, env=env, timeout=60)
+                          capture_output=True, text=True, env=env, timeout=HANG_SECONDS)
 
 
 @pytest.fixture
@@ -108,7 +109,7 @@ def _venvs(tmp_path: Path) -> Path:
 def _enter(tmp_path: Path, env: dict, *argv: str) -> subprocess.CompletedProcess:
     base = {"PATH": os.environ["PATH"], "ACCURACY_VENVS": str(_venvs(tmp_path))}
     return subprocess.run(["sh", str(IMAGE / "entry.sh"), *argv], cwd=tmp_path,
-                          capture_output=True, text=True, env={**base, **env}, timeout=60)
+                          capture_output=True, text=True, env={**base, **env}, timeout=HANG_SECONDS)
 
 
 def test_the_entry_point_runs_the_command_in_the_cells_venv(tmp_path):

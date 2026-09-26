@@ -273,12 +273,20 @@ def _lane_rows(corpus: Path, lane: dict) -> list[Counts]:
     return istanbul_rows(artifact, "line")
 
 
+def _lanes(corpus: Path) -> list[dict]:
+    """The corpus's [[lane]] tables; none when it holds no crapkit.toml, such as the
+    small corpus of a tree change control seeds with only the files a rule reads."""
+    config = corpus / "crapkit.toml"
+    if not config.is_file():
+        return []
+    return tomllib.loads(config.read_text(encoding="utf-8")).get("lane", [])
+
+
 def table(corpus: Path) -> dict[tuple[str, int], list[Counts]]:
     """{(path, start): rows} over every lane of the corpus's crapkit.toml whose
     command copies a recorded artifact into place."""
-    config = tomllib.loads((corpus / "crapkit.toml").read_text(encoding="utf-8"))
     found: dict[tuple[str, int], list[Counts]] = {}
-    for lane in config.get("lane", []):
+    for lane in _lanes(corpus):
         for row in _lane_rows(corpus, lane):
             found.setdefault((row.path, row.start), []).append(row)
     return found
