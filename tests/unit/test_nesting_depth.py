@@ -156,6 +156,11 @@ BRACE_DEPTHS = {
     # ND 2 for both: ND's token set holds Python's `def`.
     "def.go": ("package p\n\nfunc Default(def int) int {\n\treturn def\n}\n", 0),
     "def.js": ("export function wire(inst, def) {\n  init(inst, def);\n}\n", 0),
+    # ND 2 for both: each statement's `&&` opened a level its `;` left open.
+    "and-statements.js": ("function f(p, q) {\n  get(p) && write('found');\n"
+                          "  get(q) && write('found');\n}\n", 0),
+    "and-then-if.js": ("function f(p) {\n  get(p) && write('found');\n  if (p) {\n"
+                       "    go();\n  }\n}\n", 1),
     # ND 1: the `;` after the initializer closed the if's level.
     "init.go": ("package p\n\nfunc InitAfterIf(a []int) int {\n\tif len(a) == 0 {\n"
                 "\t\treturn 0\n\t}\n\tif n := len(a); n > 1 {\n\t\tfor range a {\n"
