@@ -57,6 +57,11 @@
   the UTC date, a commit on the window's first day can move in or out of churn once, and
   worklist and brief can rank a function differently from 0.8.0 on that machine. Scores
   do not move, and it needs no re-seed of its own: the one re-seed above covers it.
+- Library API: the suite-drop check moved to `crapkit.lane_results.suite_drops(behind,
+  current)`, which walks the trusted runs behind this one. `crapkit.lanes.suite_drops(previous,
+  current)` still answers for the last trusted run and raises a DeprecationWarning; it
+  goes in 0.9.0. See the [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#library-callers).
 
 ### A lane with no test results is not a lane that ran 0 tests or failed none
 

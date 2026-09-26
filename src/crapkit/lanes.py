@@ -21,6 +21,7 @@ import re
 import socket
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import IO, NamedTuple
 
@@ -30,6 +31,7 @@ from .coverage_format import lane_format
 from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .gitpaths import readable, shown
+from . import lane_results
 from .lane_command import launch_spec, pytest_python
 from .plaintext import strip_escapes
 from .procs import CwdMissing, NoProgress, own_processes, run_bounded
@@ -1490,3 +1492,17 @@ def measurement_owner(root: Path, lanes):
     paths = {_output_lock(path) for path in outputs}
     paths.add(root / ".crapkit" / "measurement.lock")
     return own_processes(sorted(paths))
+
+
+# --- 0.8.0's name, kept one release -------------------------------------------
+
+
+def suite_drops(previous: dict, current: dict, *,
+                fraction: float = lane_results.SUITE_DROP_FRACTION) -> list[str]:
+    """0.8.0's suite-drop check, where `previous` was the last trusted run's lane
+    provenance. It warns and answers what `lane_results.suite_drops` answers
+    for that one run; 0.9.0 removes it."""
+    warnings.warn("crapkit.lanes.suite_drops is deprecated and goes in 0.9.0; call "
+                  "crapkit.lane_results.suite_drops(behind, current), where behind returns "
+                  "the trusted runs newest first", DeprecationWarning, stacklevel=2)
+    return lane_results.suite_drops(lambda: [{"lanes": previous}], current, fraction=fraction)

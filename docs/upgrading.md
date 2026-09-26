@@ -446,6 +446,16 @@ MCP clients use the [stdio setup](agent-json.md#mcp-server); skill copies and cu
 hook entries need their own update. Run packet commands as supplied, in the
 environment that owns the intended CLI, to retain literal arguments and exit codes.
 
+## Library callers
+
+Code that imports crapkit's Python modules gets one release of warning before a
+name it calls moves. 0.8.1 moved the suite-drop check into `lane_results`, where it
+walks the trusted runs behind the current one. `crapkit.lanes.suite_drops(previous, current)`
+still answers for one last trusted run's lane provenance and raises a
+DeprecationWarning; call `crapkit.lane_results.suite_drops(behind, current)`, where
+`behind` returns the trusted runs newest first, each with its lane provenance under
+`lanes`. The old name goes in 0.9.0.
+
 ## Windows launcher locks
 
 A running `crapkit.exe mcp` can hold the console launcher open. An upgrade then
