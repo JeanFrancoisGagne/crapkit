@@ -109,7 +109,7 @@ def test_the_envelope_adds_the_refresh_the_packet_spells():
 def test_each_way_the_run_went_stale_gets_its_own_line(fresh, expected):
     lines = _freshness_warnings(fresh, LATEST)
 
-    assert [line.split(" — ")[0] for line in lines] == expected
+    assert [line.split(" - ")[0] for line in lines] == expected
     assert all(line.endswith("coverage`") for line in lines), lines
 
 
@@ -118,7 +118,7 @@ def test_a_git_failure_gets_a_line_quoting_git_instead_of_silence():
 
     assert _freshness_warnings(fresh, LATEST) == [
         "warning: cannot tell which files changed since run 4 scored them, because git "
-        "failed: git diff failed: fatal: index file corrupt — fix what git reports, then "
+        "failed: git diff failed: fatal: index file corrupt - fix what git reports, then "
         f"rerun `{_self()} coverage`"]
 
 

@@ -71,7 +71,7 @@ def test_a_lane_reads_its_results_artifact_in_any_declared_encoding(tmp_path, ra
 def test_the_flake_retest_reads_the_rerun_report_in_any_declared_encoding(tmp_path, raw):
     (tmp_path / "junit.xml").write_bytes(raw)
 
-    assert _retested_passes(tmp_path, LANE, before=None) == PASSED
+    assert _retested_passes(tmp_path, LANE) == PASSED
 
 
 @pytest.mark.parametrize("raw", RAW, ids=IDS)

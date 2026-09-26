@@ -133,7 +133,9 @@ def test_a_cached_record_from_before_the_letters_is_read_again(tmp_path):
 def test_the_advisory_hook_reads_an_edited_utf16_file(tmp_path, encode):
     (tmp_path / "big.py").write_bytes(encode(TANGLED))
 
-    assert [(r.long_name, r.ccn) for r in _records(tmp_path, "big.py")] == [("tangled( a )", 8)]
+    _, records = _records(tmp_path / "big.py", "big.py")
+
+    assert [(r.long_name, r.ccn) for r in records] == [("tangled( a )", 8)]
 
 
 # --- the bytes a mutant is written back into ---------------------------------------

@@ -365,6 +365,12 @@ def test_the_dark_line_note_withholds_only_a_file_whose_bytes_moved(name, tmp_pa
 
     lines = load_uncovered(root, stale_tree.config(root))
 
+    if name == "case-only-git-mv" and (root / REL).exists():
+        # A disk that folds case: the artifact's key takes the case git tracks
+        # the file in now (Q18), and the bytes it measured did not move.
+        assert lines.note_for("src/App.ts") == "", lines.note_for("src/App.ts")
+        assert lines.in_span("src/App.ts", 1, 20) == sorted(DARK)
+        return
     if REL not in truth:
         assert lines.note_for(REL) == "", lines.note_for(REL)
         assert lines.in_span(REL, 1, 20) == sorted(DARK)

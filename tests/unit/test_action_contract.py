@@ -854,28 +854,30 @@ def test_what_a_lane_prints_never_reaches_the_payloads_the_comment_reads(tmp_pat
     assert json.loads((state / "crapkit-comment.json").read_bytes())["body"] == comment
 
 
-@pytest.mark.parametrize("base, expected", [
-    ("the-fork-point", ["README.md"]),
-    ("", []),
-    ("0123456789abcdef0123456789abcdef01234567", []),
+@pytest.mark.parametrize("base, expected, logged", [
+    ("the-fork-point", ["README.md"], "1 changed file(s): README.md"),
+    ("", [], "no base commit on this event: the comment ranks the whole repository"),
+    ("0123456789abcdef0123456789abcdef01234567", [],
+     "the base diff 0123456789a...HEAD failed, so the comment ranks the whole repository: "),
 ], ids=["pull-request", "push-event", "base-not-in-a-shallow-clone"])
-def test_the_changed_files_step_lists_the_diff_or_nothing(tmp_path, base, expected):
+def test_the_changed_files_step_lists_the_diff_or_nothing(tmp_path, base, expected, logged):
     """base.sha renders "" on a push, and a shallow clone lacks the commit it
     names on a pull request. Either way the list is empty, the comment ranks
-    the whole repository, and the step exits 0."""
+    the whole repository, the log says why, and the step exits 0."""
     fork = _two_commit_repo(tmp_path / "repo", {})
     state = tmp_path / "state"
     state.mkdir()
     script = tmp_path / "changed-files.sh"
     script.write_text(_step_named("the changed files")["run"], encoding="utf-8", newline="\n")
-    env = {**os.environ, "CRAPKIT_STATE": state.as_posix(), "BASE_SHA": base.replace("the-fork-point", fork)}
+    env = {**os.environ, "CRAPKIT_STATE": state.as_posix(), "PYTHONPATH": str(ROOT / "src"),
+           "GITHUB_ACTION_PATH": ROOT.as_posix(), "BASE_SHA": base.replace("the-fork-point", fork)}
 
     done = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
                           cwd=tmp_path / "repo", env=env, capture_output=True, text=True, timeout=HANG_SECONDS)
 
     listed = [name for name in (state / "crapkit-changed.txt").read_bytes().decode().split("\0") if name]
     assert (done.returncode, listed) == (0, expected), done.stderr
-    assert done.stdout.strip() == f"{len(expected)} changed file(s)"
+    assert done.stdout.strip().startswith(logged), done.stdout
 
 
 def test_the_comment_step_hands_the_builder_the_base_files():

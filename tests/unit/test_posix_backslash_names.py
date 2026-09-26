@@ -208,11 +208,13 @@ def test_the_actions_nul_framed_list_keeps_a_backslash_name_exactly(tmp_path):
 
 def test_the_action_hands_the_comment_nul_framed_names():
     """The Action writes `git diff --name-only -z` and passes --changed-z, which
-    keeps every name exactly, so the legacy --changed fold never reaches it."""
+    keeps every name exactly, so the legacy --changed fold never reaches it.
+    --changed-error carries git's error when the diff failed, not names."""
     steps = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))["runs"]["steps"]
     body = next(step["run"] for step in steps if step.get("name") == "build the comment")
+    names = [flag for flag in re.findall(r"--changed[\w-]*", body) if flag != "--changed-error"]
 
-    assert re.findall(r"--changed[\w-]*", body) == ["--changed-z"]
+    assert names == ["--changed-z"]
 
 
 @only_posix

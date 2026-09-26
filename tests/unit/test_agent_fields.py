@@ -66,11 +66,28 @@ def _write_marks(repo: Path) -> None:
     (repo / MARKS).write_text(marks, encoding="utf-8", newline="\n")
 
 
+# The payloads that rank one run and say whether it still describes the files.
+_RANKED = {"worklist --json": ("worklist", "--json"), "next-item": ("next-item",),
+           "brief --json": ("brief", "src/app.ts", "knotty", "--json")}
+
+
+def _forget_content(repo: Path) -> None:
+    """Drop every run's content record: the store 0.8.0 wrote held none, so
+    `scored_changes` reads null."""
+    import sqlite3
+    from contextlib import closing
+
+    with closing(sqlite3.connect(repo / ".crapkit" / "crap.sqlite")) as db, db:
+        db.execute("DELETE FROM run_sources")
+
+
 @pytest.fixture()
 def payloads(repo, capsys) -> dict[str, list]:
     """One real payload per declared payload name, from one measured repo.
-    verify runs three times: with no marks anywhere, over its marks file, and
-    with that file deleted, so every nullable field prints both forms."""
+    The ranked payloads run twice, the second time over a run whose content
+    record is gone, as on a run crapkit 0.8.0 wrote. verify runs three times:
+    with no marks anywhere, over its marks file, and with that file deleted,
+    so every nullable field prints both forms."""
     from crapkit.cli.analyses import _mutation_payload
     from crapkit.mutate import Mutant
     from crapkit.mutate_pool import MutantVerdict
@@ -84,6 +101,9 @@ def payloads(repo, capsys) -> dict[str, list]:
            "next-item": [run_json(repo, capsys, "next-item")],
            "brief --json": [run_json(repo, capsys, "brief", "src/app.ts", "knotty", "--json")],
            "ratchet report --json": [run_json(repo, capsys, "ratchet", "report", "--json")]}
+    _forget_content(repo)
+    for name, argv in _RANKED.items():
+        out[name].append(run_json(repo, capsys, *argv))
     (repo / "src" / "b.ts").write_text(ARROW, encoding="utf-8")
     out["rescore --gate --json"] = [run_json(repo, capsys, "rescore", "src/app.ts", "src/b.ts",
                                              "--gate", "--json")]
@@ -116,9 +136,9 @@ def test_the_nullable_fields_print_both_forms(payloads):
     """The verify pair holds the marks file on the tree, then none: each
     nullable field shows its value once and its null once."""
     nullable = [f for f in ADDED if f.nullable]
-    seen = {f.key: _null_forms(payloads, f) for f in nullable}
+    seen = {(f.payload, f.key): _null_forms(payloads, f) for f in nullable}
 
-    assert seen == {f.key: {True, False} for f in nullable}
+    assert seen == {(f.payload, f.key): {True, False} for f in nullable}
 
 
 def _null_forms(payloads: dict, field: AddedField) -> set[bool]:

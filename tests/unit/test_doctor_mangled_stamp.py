@@ -135,10 +135,10 @@ def test_a_stamps_file_that_does_not_parse_draws_a_warn(repo, capsys):
     code, out, _ = _run(["doctor", "--json"], repo, capsys)
 
     assert code == 0
-    assert (".crapkit/artifacts.json cannot be read (it does not parse as JSON), so every lane "
-            "reads as unstamped and `--reuse-artifacts` refuses each lane whose artifact is on "
-            "disk; the next real run of any lane rewrites the file, or delete it to reuse the "
-            "artifacts as they stand") in json.loads(out)["warnings"], out
+    assert (".crapkit/artifacts.json cannot be read (it does not parse as JSON), so crapkit reads "
+            "it as no stamps: --reuse-unchanged reruns every lane and --reuse-artifacts refuses "
+            "every lane's artifact, since it cannot tell a failed attempt's leftover; the next "
+            "lane run writes the file again, or delete it") in json.loads(out)["warnings"], out
 # --- every stamp shape an older crapkit, a hand edit or a torn write leaves ----
 #
 # The same file read by the commands that decide on it: coverage deciding

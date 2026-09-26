@@ -530,8 +530,10 @@ def test_an_unread_file_is_advised_only_when_the_edit_changed_it(ranges, advised
     one; a tracked file whose diff against HEAD is empty holds no change."""
     from crapkit.merge import UnanalyzableFile
 
-    assert claude_hook._unread_change(UnanalyzableFile("why"), ranges) is advised
-    assert claude_hook._unread_change([], ranges) is False
+    unread = claude_hook._unjudged("src/a.ts", UnanalyzableFile("why"), ranges)
+
+    assert unread == (claude_hook._unread_advisory("src/a.ts", "why") if advised else [])
+    assert claude_hook._unjudged("src/a.ts", [], ranges) == []
 # --- every shape of the PostToolUse payload, through the whole subcommand -----
 #
 # A field null, absent, of another type or not UTF-8 either still names the

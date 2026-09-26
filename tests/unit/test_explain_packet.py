@@ -388,14 +388,14 @@ def test_a_span_git_refuses_to_log_names_git_s_error_instead_of_an_empty_list(
     from crapkit import gitio
     from crapkit.errors import GitError
 
-    real = gitio._git
+    real = gitio._git_text
 
     def refuse_log(root, *args, **kw):
         if args and args[0] == "log":
             raise GitError("git log failed: fatal: bad object deadbeef")
         return real(root, *args, **kw)
 
-    monkeypatch.setattr(gitio, "_git", refuse_log)
+    monkeypatch.setattr(gitio, "_git_text", refuse_log)
     entry = _named(_payload(repo, capsys, history=True), "guarded( ")
 
     assert entry["commits"] is None

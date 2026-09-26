@@ -6,11 +6,14 @@ adds an untested `route()` (ccn 8) beside a ratchet-marked `legacy_router()`, wi
 `diff_uncovered_max` of 3. `tests/unit/test_action_contract.py` renders them and
 pins README's "What the comment looks like" fence to that render byte for byte.
 
-crapkit 0.4.15 recorded `verify.json`, as its `tool_versions` says. The five keys
-`verify --json` gained since (`changed_paths`, `forgiven_failures`, `retried_passes`,
-`unmarked_over_target` and `untracked_in_scope`) were added by hand with this pull
-request's values, and the suite fails when verify prints a key this payload
-lacks, so the fence shows what the current release renders.
+crapkit 0.4.15 recorded `verify.json`, as its `tool_versions` says. The keys
+`verify --json` gained since (`changed_paths`, `forgiven_failures`,
+`lanes_without_baseline_results`, `lanes_without_results`, `ratchet_source`,
+`ratchet_source_commit`, `ratchet_source_sha256`, `retried_passes`,
+`unmarked_over_target`, `unread_files`, `unreadable_names` and `untracked_in_scope`)
+were added by hand with this pull request's values, and the suite fails when
+verify prints a key this payload lacks, so the fence shows what the current
+release renders.
 
 Regenerate the fence with:
 

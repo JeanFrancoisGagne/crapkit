@@ -778,6 +778,7 @@ emptying the file cannot let a rise through:
 $ crapkit verify
 warning: crapkit-ratchet.tsv is missing, but commit 8c780bb18da, the newest since the baseline to hold it, has 1 mark(s); verify judged against those and left crapkit-ratchet.tsv as it is. Restore it with `git checkout 8c780bb18da -- crapkit-ratchet.tsv`, or drop the marks of code that is gone with `crapkit ratchet prune`
 verify FAILED @ 3a45b8a9b6c vs baseline 8c780bb18da (1 changed files)
+  changed files: tests/test_m.py
   RATCHET  app/m.py  pick( a , b , c ): 10.75 -> 20.0
   findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
 EXIT=7

@@ -61,7 +61,7 @@ bytes are judged again. Source that lands with an old mtime (a command that ran 
 the window, `cp -p`, `mv`, an unpacked archive) is never judged here; the commit gate
 catches it.
 
-An advisory that says `could not read <file>` or `git could not report what changed in
+An advisory that says `<file> could not be read` or `git could not report what changed in
 <file>` judged nothing in that file. It is not a pass: fix what its second line quotes, the
 reader's reason or git's error, before you trust silence from the hook on that file.
 

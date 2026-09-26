@@ -272,4 +272,4 @@ def test_a_crash_during_a_flake_retest_keeps_every_failure(tmp_path):
     lane = Lane(name="py", command="never runs", artifact="cov.json", parser="istanbul",
                 scopes=("src",), results_artifact="junit.xml")
 
-    assert _retested_passes(tmp_path, lane, before=None) == set()
+    assert _retested_passes(tmp_path, lane) == set()

@@ -71,12 +71,17 @@
    "start": 34
   }
  ],
+ "lanes_without_baseline_results": [],
+ "lanes_without_results": [],
  "new_failures": [],
  "ok": false,
  "overridden": [],
  "ratchet_changes": null,
  "ratchet_regressions": [],
  "ratchet_sha256": "49c55301e67326b1f961d011073011dcc3600c6117b9be767aaf8ad2e6f1f767",
+ "ratchet_source": "tree",
+ "ratchet_source_commit": null,
+ "ratchet_source_sha256": "49c55301e67326b1f961d011073011dcc3600c6117b9be767aaf8ad2e6f1f767",
  "retried_passes": [],
  "run_id": 3,
  "schema": 1,
@@ -85,5 +90,7 @@
   "lizard": "1.24.0"
  },
  "unmarked_over_target": 1,
+ "unread_files": [],
+ "unreadable_names": [],
  "untracked_in_scope": []
 }

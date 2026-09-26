@@ -5,8 +5,10 @@ not exist, a flag whose position is never shown: each one costs a reader a
 failed command and a hunt. Every assertion here compares a documented string
 against the code, the git history or the scaffolder that produces it.
 """
+import json
 import re
 import subprocess
+import sys
 from functools import lru_cache
 from pathlib import Path
 

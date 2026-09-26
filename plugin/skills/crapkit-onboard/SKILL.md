@@ -47,8 +47,8 @@ that does not exist yet and `crapkit` points at a store with no run in it.
 
 The hook already works in a repo with no commit yet: with no HEAD to diff against, it
 judges every function in the edited file, staged or not. When it cannot judge an edit it
-says so, still at exit 2: `could not read PATH` when no reader could parse the file, with
-the reader's reason, and `git could not report what changed in PATH` when git fails, with
+says so, still at exit 2: `PATH could not be read` when no reader could parse the file,
+with the reader's reason on an `UNREAD` line, and `git could not report what changed in PATH` when git fails, with
 git's error.
 
 Fallback for a runtime with no plugin marketplace: copy `plugin/skills/*` from a clone into

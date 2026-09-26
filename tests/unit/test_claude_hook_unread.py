@@ -32,7 +32,7 @@ TS_PROBE = ("export const actions = {\n"
 
 
 def _unread_head(rel: str) -> str:
-    return (f"crapkit advisory: could not read {rel}, so no function in it was judged "
+    return (f"crapkit advisory: {rel} could not be read, so no function in it was judged "
             "(the edit landed; nothing was blocked)")
 
 
@@ -43,8 +43,9 @@ def test_a_python_def_cut_off_at_its_signature_is_named(tmp_path, monkeypatch, c
     code, err = hook(monkeypatch, capsys, edit_event(path))
 
     assert (code, err[0]) == (2, _unread_head("calc/grade.py"))
-    assert err[1].startswith("  calc/grade.py: the Python reader reached no body"), err
-    assert err[2] == claude_hook._UNREAD_NEXT
+    assert err[1].startswith("  UNREAD  calc/grade.py: calc/grade.py: the Python reader reached "
+                             "no body"), err
+    assert err[2] == claude_hook._unread_advisory("calc/grade.py", "why")[2]
 
 
 def test_signal_one_probe_a_refused_arrow_beside_a_breach_is_named(tmp_path, monkeypatch,
@@ -91,7 +92,7 @@ def test_a_path_the_operating_system_refuses_to_read_is_named(tmp_path, monkeypa
     code, err = hook(monkeypatch, capsys, edit_event(repo / "calc" / "odd.py"))
 
     assert (code, err[0]) == (2, _unread_head("calc/odd.py"))
-    assert err[1].startswith("  calc/odd.py: "), err
+    assert err[1].startswith("  UNREAD  calc/odd.py: "), err
 
 
 def test_a_bash_write_of_an_unreadable_file_is_named_once(tmp_path, monkeypatch, capsys):

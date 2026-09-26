@@ -295,22 +295,30 @@ def test_no_page_says_the_hook_writes_nothing():
     assert "nothing in your tree was written" in _prose(_page("AGENTS.md"))
 
 
-def _unjudged_head(what: str) -> str:
+def _unjudged_head(path: str, unread: bool) -> str:
+    """The head line of the block the hook prints for an edit it could not
+    judge: a file no reader could read, or a change set git could not give."""
     hook = _hook()
-    return hook._unjudged_lines(what, "the reason", hook._UNREAD_NEXT)[0]
+    if unread:
+        return hook._unread_advisory(path, "the reason")[0]
+    return hook._unjudged_lines(f"git could not report what changed in {path}", "the reason",
+                                hook._GIT_NEXT)[0]
 
 
-@pytest.mark.parametrize("what", ["could not read calc/grade.py",
-                                  "git could not report what changed in calc/grade.py"])
-def test_agents_quotes_the_head_line_of_an_edit_the_hook_could_not_judge(what):
-    assert f"`{_unjudged_head(what)}`" in _prose(_page("AGENTS.md"))
+@pytest.mark.parametrize("unread", [True, False], ids=["unread", "git-failed"])
+def test_agents_quotes_the_head_line_of_an_edit_the_hook_could_not_judge(unread):
+    path = "src/a.ts" if unread else "calc/grade.py"
+    head = _unjudged_head(path, unread).split(" (the edit landed")[0]
+
+    assert f"`{head}" in _prose(_page("AGENTS.md"))
 
 
 @pytest.mark.parametrize("page", ["CHANGELOG.md", "plugin/skills/crapkit-onboard/SKILL.md"])
 def test_the_pages_name_both_unjudged_advisories_as_the_hook_words_them(page):
     text = _prose(_page(page))
-    for what in ("could not read PATH", "git could not report what changed in PATH"):
-        head = _unjudged_head(what).removeprefix("crapkit advisory: ")
+    for what, unread in (("PATH could not be read", True),
+                         ("git could not report what changed in PATH", False)):
+        head = _unjudged_head("PATH", unread).removeprefix("crapkit advisory: ")
         assert what in text, (page, what)
         assert head.split(" (")[0].startswith(what)
 
@@ -318,7 +326,7 @@ def test_the_pages_name_both_unjudged_advisories_as_the_hook_words_them(page):
 def test_the_unread_next_step_agents_gives_is_the_one_the_hook_prints():
     """AGENTS.md tells an agent to fix what the reason names or exclude the
     file; the hook's own closing line says the same two moves."""
-    closing = _hook()._UNREAD_NEXT
+    closing = _hook()._unread_advisory("src/a.ts", "why")[-1]
 
     assert "[exclude] globs" in closing and "`[exclude] globs`" in _page("AGENTS.md")
 
@@ -407,7 +415,7 @@ def _samples(page: str) -> list[dict]:
 def test_each_next_item_sample_carries_the_envelope_the_command_builds(page, count):
     queue = _queue()
     head = queue._next_head({"id": 1, "commit": "f" * 40}, 0, 0,
-                            queue.RunFreshness(False, []))
+                            queue.RunFreshness(False, []), False)
     samples = _samples(page)
 
     assert len(samples) == count
@@ -430,7 +438,7 @@ def test_the_changelog_quotes_the_worklist_warning_that_names_changed_files(monk
     queue = _queue()
     fresh = queue.RunFreshness(False, ["calc/grade.py", "calc/report.py"])
     (line,) = queue._freshness_warnings(fresh, {"id": 4, "commit": "f" * 40})
-    head = line.removeprefix("warning: ").split(" — ")[0]
+    head = line.removeprefix("warning: ").split(" - rerun")[0]
 
     assert f"`{head}`" in _prose(_release())
 
@@ -690,9 +698,16 @@ def test_a_declared_output_is_gone_while_the_attempt_runs_and_a_leftover_comes_b
 
 # -- docs/upgrading.md: what 0.8.1 changes about freshness ----------------------------
 
+def _upgrading_section(text: str, heading: str) -> str:
+    return text.split(f"\n## {heading}\n", 1)[1].split("\n## ", 1)[0]
+
+
 def _upgrading_freshness() -> str:
+    """What docs/upgrading.md tells a 0.8.0 user about freshness: its own
+    section, and the library callers section that holds the shims."""
     text = _page("docs/upgrading.md")
-    return _prose(text.split("\n## Freshness in 0.8.1\n", 1)[1].split("\n## ", 1)[0])
+    return _prose(_upgrading_section(text, "Freshness in 0.8.1") + "\n"
+                  + _upgrading_section(text, "Library callers"))
 
 
 def test_the_upgrade_notes_name_the_stop_rule_the_shim_and_prune_s_exit():
@@ -953,8 +968,8 @@ def test_an_unreadable_stamp_file_refuses_the_artifact_and_says_why(tmp_path):
     refusal = stamps.read(tmp_path).refusal(".crapkit/cov/py.json")
 
     assert (refusal.kind, refusal.why) == ("unknown", "it does not parse as JSON")
-    assert ("reuse refuses the artifact while the record that would hold its refusal cannot be "
-            "read, and says why") in _prose(_release())
+    assert ("`--reuse-artifacts` refuses a lane while `.crapkit/artifacts.json` cannot be read"
+            in _prose(_release()))
 
 
 # -- what the lane-freshness change hands library callers and git --------------------

@@ -488,7 +488,7 @@ def _span_commits(root: Path, path: str, span) -> dict:
     every line is uncommitted. Raises GitError."""
     from ..gitio import has_commit
 
-    head = _head_span(_worktree_hunks(root, path), *span) if has_commit(root, "HEAD") else None
+    head = _head_span(_worktree_hunks(root, path), span[0], span[1]) if has_commit(root, "HEAD") else None
     if head is None:
         return {"commits": None,
                 "commits_note": (f"{path}:{span[0]}-{span[1]} holds only uncommitted lines, "

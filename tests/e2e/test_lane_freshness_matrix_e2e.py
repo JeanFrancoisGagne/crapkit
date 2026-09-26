@@ -61,6 +61,20 @@ def _brief(root: Path) -> dict:
     return json.loads(res.stdout)
 
 
+def _folded_git_mv(name: str, root: Path) -> bool:
+    """A case-only `git mv` where the filesystem folds case: git now tracks
+    src/App.ts, and a typed path takes the case git tracks the file in (Q18)."""
+    return name == "case-only-git-mv" and (root / REL).exists()
+
+
+def _brief_of_git_s_name(root: Path) -> str:
+    """brief reads the typed src/app.ts as git's src/App.ts, which the run
+    measured under its old name, so it has no row to open until coverage runs."""
+    res = run_cli(root, "brief", REL, "dispatch", "--json")
+    assert res.returncode != 0, res.stdout
+    return res.stderr
+
+
 def _banner(root: Path) -> str:
     res = run_cli(root, "report")
     assert res.returncode == 0, res.stderr
@@ -80,8 +94,13 @@ def _names_all(text: str, truth) -> bool:
 def test_each_reader_names_exactly_the_files_whose_bytes_moved(name, tmp_path):
     root = _prepared(tmp_path, name)
     truth = _truth(name, root)
+    if _folded_git_mv(name, root):
+        assert "in src/App.ts in the latest scored run" in _brief_of_git_s_name(root)
+        packet = {"uncovered_lines": [9]}
+    else:
+        packet = _brief(root)
 
-    packet, banner = _brief(root), _banner(root)
+    banner = _banner(root)
     warning = _lane_lines(run_cli(root, "coverage", "--reuse-artifacts"))
 
     if not truth:

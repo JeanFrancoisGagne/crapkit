@@ -124,7 +124,7 @@ def test_verify_fails_the_probe_and_the_action_counts_it(staged):
     counts = comment_module().verdict_line(payload, res.returncode).splitlines()[-1]
     # big is in the file no reader could read, so no function of it was scored:
     # the one gate finding is the file.
-    assert "1 changed file: 1 gate violation (1 unread file)" in counts, counts
+    assert "1 changed file (`src/a.ts`): 1 gate violation (1 unread file)" in counts, counts
 
 
 def test_the_env_override_refuses_the_probe_and_leaves_the_marks_file_alone(staged):

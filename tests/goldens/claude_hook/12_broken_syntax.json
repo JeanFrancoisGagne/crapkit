@@ -17,12 +17,9 @@
     },
     "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
   },
-  "expect": {
-    "exit": 2,
-    "stderr": [
-      "crapkit advisory: could not read calc/grade.py, so no function in it was judged (the edit landed; nothing was blocked)",
-      "  calc/grade.py: the Python reader reached no body for 1 def(s): calc/grade.py:1 sprawl( n : if n == 1 : n += 1 if n == 2 : n += 2 if n == 3 : n += 3 if n == 4 : n += 4 if n == 5 : n += 5 if n == 6 : n += 6 if n == 7 : n += 7 return n; a def read no further than its signature would score ccn 1 whatever its body holds, so the file is not scored. Check that the file parses (a signature cut off at the end of the file reads this way); if it does, report the signature at https://github.com/JeanFrancoisGagne/crapkit/issues",
-      "the commit gate refuses this file once staged; change what the reason names so a reader can parse the file, or list it under [exclude] globs in crapkit.toml to leave it ungated"
-    ]
-  }
+  "expect": {"exit": 2, "stderr": [
+    "crapkit advisory: calc/grade.py could not be read, so no function in it was judged (the edit landed; nothing was blocked)",
+    "  UNREAD  calc/grade.py: calc/grade.py: the Python reader reached no body for 1 def(s): calc/grade.py:1 sprawl( n : if n == 1 : n += 1 if n == 2 : n += 2 if n == 3 : n += 3 if n == 4 : n += 4 if n == 5 : n += 5 if n == 6 : n += 6 if n == 7 : n += 7 return n; a def read no further than its signature would score ccn 1 whatever its body holds, so the file is not scored. Check that the file parses (a signature cut off at the end of the file reads this way); if it does, report the signature at https://github.com/JeanFrancoisGagne/crapkit/issues",
+    "the commit gate refuses this file once staged; change what the reason names so a reader can parse the file, or list it under [exclude] globs in crapkit.toml to leave it ungated"
+  ]}
 }

@@ -130,9 +130,9 @@ def test_the_rescore_row_quotes_the_tail_rescore_prints_for_coverage_nobody_took
 
 
 def test_the_agents_field_table_names_the_fields_next_item_emits():
-    from crapkit.cli.queue import _next_head
+    from crapkit.cli.queue import RunFreshness, _next_head
 
-    head = _next_head({"id": 1, "commit": "abc"}, 0, 0, False, True)
+    head = _next_head({"id": 1, "commit": "abc"}, 0, 0, RunFreshness(False, []), True)
 
     assert head["shallow"] is True
     for field in ("`shallow`", "`unmeasured`"):

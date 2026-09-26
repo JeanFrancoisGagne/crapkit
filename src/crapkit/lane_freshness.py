@@ -386,11 +386,11 @@ class Freshness:
         if isinstance(changed, GitError):
             return (f"lane {lane.name!r}: git cannot say whether {path} changed since "
                     f"{lane.artifact} measured it ({changed}), so its line numbers there are "
-                    f"withheld — rerun `{_self()} coverage` once git answers")
+                    f"withheld - rerun `{_self()} coverage` once git answers")
         if path not in changed:
             return ""
         return (f"lane {lane.name!r}: {path} changed since {lane.artifact} measured it, so its "
-                f"line numbers there are stale — rerun `{_self()} coverage` to measure it again")
+                f"line numbers there are stale - rerun `{_self()} coverage` to measure it again")
 
     def _changed(self, lane, recorded: dict):
         """The recorded files whose blob id moved, or the GitError that kept git
@@ -527,7 +527,7 @@ def _not_behind(root: Path, commit: str) -> str:
     """git answers "not an ancestor" for a commit this clone does not hold, the
     way a shallow CI checkout with .crapkit/ restored arrives; that is not a
     rewritten history, and it moved no file."""
-    from .gitio import _shallow_fix, has_commit
+    from .gitio import has_commit, shallow_fix
 
     try:
         held = has_commit(root, commit)
@@ -536,14 +536,14 @@ def _not_behind(root: Path, commit: str) -> str:
     if held:
         return f"its artifact was built at {commit[:11]}, which is not behind HEAD"
     return (f"git cannot say which files in its scopes changed since {commit[:11]}, which this "
-            f"clone does not hold{_shallow_fix(root)}")
+            f"clone does not hold{shallow_fix(root)}")
 
 
 def _commit_absent(root: Path, commit: str) -> str:
-    from .gitio import _shallow_fix
+    from .gitio import shallow_fix
 
     return (f"its artifact was built at {commit[:11]}, which this clone does not hold, so git "
-            f"cannot compare its inputs{_shallow_fix(root)}")
+            f"cannot compare its inputs{shallow_fix(root)}")
 
 
 def _artifact_gap(root: Path, lane, stamp: dict) -> str:

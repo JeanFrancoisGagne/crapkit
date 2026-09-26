@@ -48,14 +48,23 @@ ALLOWED = {
         "crapkit's own churn log key; a ValueError reads as a miss",
     ("coupling_cache.py", "_read_doc", "read_text"):
         "crapkit's own coupling cache; a ValueError reads as a miss",
-    ("lanes.py", "read_stamps", "read_text"):
-        "crapkit's own stamp file; a ValueError reads as no stamps",
+    ("lane_stamps.py", "read", "read_text"):
+        "crapkit's own stamp file; a ValueError reads as an unreadable one",
     ("mutate_pool.py", "_temporary_trees", "read_text"):
         "the pool receipt crapkit wrote with json.dumps",
     ("store.py", "_inflate", "decode"):
         "a lane record crapkit encoded as UTF-8 and deflated itself",
     ("cli/admin.py", "_graph_files", "read_text"):
         "git's commit-graph-chain: one hex hash per line",
+    ("cli/claude_hook.py", "judged", "read_text"):
+        "the hex digest claude-hook's session memory wrote; a ValueError reads as not judged",
+    ("cli/claude_hook.py", "_named_git_dir", "read_text"):
+        "the gitdir line git wrote in a .git file; a UnicodeDecodeError turns the session "
+        "memory off, which changes no verdict",
+    ("gitio.py", "_hashed", "decode"):
+        "the hex object ids git hash-object prints",
+    ("gitio.py", "_hashed_alone", "decode"):
+        "the hex object id git hash-object prints",
     ("gitio.py", "_file_text", "read_text"):
         "a ref file git wrote; a UnicodeDecodeError falls back to asking git",
     ("gitio.py", "_patch_sides", "decode"):

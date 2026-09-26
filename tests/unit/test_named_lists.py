@@ -41,6 +41,16 @@ def test_it_takes_any_iterable_of_names():
     assert first_few({"x.py": 1}) == "x.py"
 
 
+def test_a_name_that_is_not_utf8_shows_each_such_byte_as_xnn():
+    r"""A lane's list named such a file through gitpaths.shown before the rule
+    had one home, so no list prints a lone surrogate a console cannot encode;
+    every list keeps that spelling, `\xNN`, the one each other line uses."""
+    name = b"src/b\xe9ta.py".decode("utf-8", "surrogateescape")
+
+    assert first_few([name, "a.py"]) == "src/b\\xe9ta.py, a.py"
+    assert first_few(["src/café.py"]) == "src/café.py"
+
+
 # The shape each copy spelled: src's one line that joins the shown names and
 # counts the rest, the Action comment's tail and the Action step's bash counter.
 _COPIES = (re.compile(r'f"\{shown\} and \{'),

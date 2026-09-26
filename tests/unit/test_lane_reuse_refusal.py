@@ -167,10 +167,19 @@ UNREADABLE_STAMPS = {
 }
 
 
+def _refused_in_the_file_only(root: Path, lane: Lane, sha256: str) -> None:
+    """The refusal in .crapkit/artifacts.json alone, as a stamps file crapkit
+    0.8.0 wrote keeps it: the store holds no copy to answer for it."""
+    path = _stamps_file(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({lane.artifact: {"lane": lane.name, "refused_sha256": sha256}}),
+                    encoding="utf-8")
+
+
 @pytest.mark.parametrize("form", sorted(UNREADABLE_STAMPS))
 def test_a_stamps_file_crapkit_cannot_read_refuses_reuse_and_says_why(tmp_path, form):
     lane = _lane()
-    _refused(tmp_path, lane, _plant(tmp_path, "cov.json", BEFORE))
+    _refused_in_the_file_only(tmp_path, lane, _plant(tmp_path, "cov.json", BEFORE))
     damage, why = UNREADABLE_STAMPS[form]
     damage(tmp_path)
 
@@ -179,8 +188,8 @@ def test_a_stamps_file_crapkit_cannot_read_refuses_reuse_and_says_why(tmp_path, 
 
     message = str(raised.value)
     assert message.startswith(f"lane 'py': .crapkit/artifacts.json cannot be read ({why}"), message
-    assert ("so crapkit cannot tell whether cov.json is the file a failed attempt left; rerun "
-            "the lane (") in message and "--lane py`), or delete .crapkit/artifacts.json to " \
+    assert ("so crapkit cannot tell whether the cov.json on disk is the file a failed attempt "
+            "left; rerun the lane (") in message and "--lane py`), or delete .crapkit/artifacts.json to " \
         "reuse the file as it stands" in message, message
     assert raised.value.exit_code == 5
 

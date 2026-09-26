@@ -30,7 +30,10 @@ class FakeGit:
 
 
 @pytest.fixture()
-def git(monkeypatch) -> FakeGit:
+def git(monkeypatch, tmp_path) -> FakeGit:
+    """tmp_path holds a .git directory, as a clone's root does, so the key's
+    history depth reads git's shallow list off disk and asks git nothing."""
+    (tmp_path / ".git").mkdir()
     fake = FakeGit()
     churn_log._cutoff_at.cache_clear()
     monkeypatch.setattr(churn_log, "_git_lines", fake.lines)

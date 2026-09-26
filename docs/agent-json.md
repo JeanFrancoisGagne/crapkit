@@ -249,8 +249,8 @@ plain `worklist` quotes git's error. Treat `null` as "unknown" and run `commands
 The plain `worklist` prints each case on stderr, and names up to three changed files:
 
 ```
-warning: 2 file(s) changed since run 4 scored them: calc/grade.py, calc/report.py — rerun `crapkit coverage`
-warning: cannot tell which files changed since run 4 scored them, because git failed: <git's error> — fix what git reports, then rerun `crapkit coverage`
+warning: 2 file(s) changed since run 4 scored them: calc/grade.py, calc/report.py - rerun `crapkit coverage`
+warning: cannot tell which files changed since run 4 scored them, because git failed: <git's error> - fix what git reports, then rerun `crapkit coverage`
 ```
 
 `commands.refresh` answers both. Schema 2, planned for crapkit 0.9.0, redefines `stale`
@@ -1474,8 +1474,9 @@ in it is new.
 Since 0.8.1 an edit the hook could not judge exits 2 too, in the same three-line shape. A
 changed file no reader could read used to score as zero functions, and zero records read as
 zero breaches, so a ccn-8 function beside one construct the reader refused passed in
-silence. The head line now says `could not read calc/grade.py, so no function in it was
-judged`, the second line quotes the reader's reason, and the third says what to change. When
+silence. The head line now says `calc/grade.py could not be read, so no function in it was
+judged`, the second line is the commit gate's `UNREAD` line with the reader's reason, and the
+third says the gate refuses the file once staged and what to change. When
 HEAD resolves and git still fails, as with a corrupt index, the head line says `git could
 not report what changed in calc/grade.py`, the second line quotes git's own words (`git diff
 HEAD -- calc/grade.py: fatal: .git/index: index file smaller than expected`), and no function

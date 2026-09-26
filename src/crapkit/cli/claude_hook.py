@@ -112,12 +112,12 @@ def _judge_path(path: Path, memory: _Memory) -> int:
     keyed as typed it matched no scope, so a breach went unadvised, while
     `calc\\Mod.py` read the tracked file as untracked and advised debt the
     edit never touched."""
-    from ..repopath import disk_spelling
+    from ..repopath import tracked_spelling
 
     root = _repo_root(path.parent)
     if root is None or _sequencing(root):
         return 0
-    return _judge(root, disk_spelling(root, path.relative_to(root).as_posix()), memory)
+    return _judge(root, tracked_spelling(root, path.relative_to(root).as_posix()), memory)
 
 
 def _payload(stream) -> dict:
@@ -515,16 +515,21 @@ def _unjudged(rel: str, records: list, ranges) -> list[str]:
                                _GIT_NEXT)
     reason = getattr(records, "reason", None)
     if reason is not None and ranges != []:
-        return _unjudged_lines(f"could not read {rel}", reason, _unread_next())
+        return _unread_advisory(rel, reason)
     return []
 
 
-def _unread_next() -> str:
-    """What the commit gate does with an unread file once staged, and the two
-    ways to clear it, in the words every gate's refusal uses."""
+def _unread_advisory(rel: str, reason: str) -> list[str]:
+    """The advisory for an edited file no reader could read, in the advisory's
+    own voice: the head line says nothing was blocked, the reason is the
+    commit gate's own UNREAD line, and the last line says what that gate will
+    do and how to clear it."""
     from ..merge import UNREAD_ADVICE
 
-    return f"the commit gate refuses this file once staged; {UNREAD_ADVICE}"
+    return [f"crapkit advisory: {rel} could not be read, so no function in it was judged "
+            "(the edit landed; nothing was blocked)",
+            f"  UNREAD  {rel}: {reason}",
+            f"the commit gate refuses this file once staged; {UNREAD_ADVICE}"]
 
 
 def _unjudged_lines(what: str, reason: str, next_step: str) -> list[str]:

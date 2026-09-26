@@ -97,7 +97,7 @@ def test_a_corrupt_index_is_named_and_no_untouched_function_is_listed(tmp_path, 
 def test_a_failed_ls_files_is_named_rather_than_read_as_untracked(tmp_path, monkeypatch):
     """The second read: the diff came back empty, and `git ls-files` failing
     used to mean "untracked, judge every function"."""
-    failed = subprocess.CompletedProcess([], 128, "", "fatal: index file corrupt\n")
+    failed = subprocess.CompletedProcess([], 128, b"", b"fatal: index file corrupt\n")
     monkeypatch.setattr(claude_hook.subprocess, "run", lambda *a, **k: failed)
 
     answer = claude_hook._listed(tmp_path, "calc/grade.py")

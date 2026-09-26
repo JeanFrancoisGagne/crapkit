@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from crapkit import analyze, churn_cache, churn_commits, churn_log, coupling_cache, lanes, mutate_pool
+from crapkit import analyze, churn_cache, churn_commits, churn_log, coupling_cache, lane_stamps, mutate_pool
 
 _PAYLOADS = {
     "null": b"null",
@@ -81,10 +81,11 @@ def test_the_churn_commits_key_line_names_no_key(data):
 def test_an_artifact_stamp_reads_as_no_stamp(tmp_path, data):
     _file(tmp_path, ".crapkit/artifacts.json", data)
 
-    entry = lanes.stamp_for(lanes.read_stamps(tmp_path), "a.json")
+    stamps = lane_stamps.read(tmp_path)
+    entry = stamps.entry("a.json")
 
-    assert (lanes._recorded_seconds(entry), lanes._stamp_commit(entry),
-            lanes._refused_on_disk(entry, tmp_path / "a.json")) == (None, "", False)
+    assert (lane_stamps._recorded_seconds(entry), stamps.commit("a.json"),
+            stamps.refusal("a.json").kind) == (None, "", "")
 
 
 @pytest.mark.parametrize("data", _shapes([{"version": None}, {"version": 1, "workers": None},

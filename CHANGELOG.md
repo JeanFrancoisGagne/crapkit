@@ -156,10 +156,9 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   print `override refused: 1 unread file (PATH: REASON) never qualifies for an override`
   with what to do about the file.
 - The advisory hook (`crapkit claude-hook`) exits 2 when an edit leaves a file no reader
-  can read, with `crapkit advisory: could not read PATH, so no function in it was judged
-  (the edit landed; nothing was blocked)`, the reader's reason, and a last line that says
-  the commit gate refuses the file once staged and what to change. It exited 0 in
-  silence, so an agent learned of the file only when the commit gate refused it. A
+  can read, with `crapkit advisory: PATH could not be read, so no function in it was
+  judged (the edit landed; nothing was blocked)`, an `UNREAD` line and the fix. It exited
+  0 in silence, so an agent learned of the file only when the commit gate refused it. A
   tracked file the edit left unchanged against `HEAD` stays silent. The Action's comment
   counts an unread file among the gate violations (`1 gate violation (1 unread file)`),
   where its count line read `0 gate violations` under a failed gate.
@@ -620,6 +619,12 @@ The exit codes, the lane environment and the files that change on upgrade are in
   `path_prefix = "backend"`, or `BACKEND/pkg/mod.py`, is git's `backend/pkg/mod.py`.
   coverage.py on macOS keeps the case the import system handed it, and the file scored
   untested. An absolute key still fails the lane with the advice to set `relative_files`.
+- After a case-only rename made without `git mv` (Explorer, Finder), the disk lists
+  `App.ts` while git still tracks `app.ts`. A file argument, the advisory hook's edited
+  path and a report's key now take the case git tracks, where they took the listed one:
+  the listed name matched no stored row and no tracked file, so `brief` refused the
+  function and its coverage joined nothing though no byte moved. A name git does not
+  track still takes the case its directories list.
 - `verify` tags a new failure dirty when bun on Windows names its test file with
   backslashes; it read as committed before. The same holds for a JUnit id whose file part
   starts with `./` or is an absolute path inside the checkout, as jest-junit's

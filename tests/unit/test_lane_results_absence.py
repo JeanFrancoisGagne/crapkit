@@ -117,12 +117,17 @@ def counted(repo, capsys):
 
 
 def _real_lane_commands(repo, *, exit_code: int = 0) -> None:
-    """Lane commands that touch their canned artifact, so a run without
-    --reuse-artifacts has a fresh artifact to read. The `unit` lane's command
-    then exits `exit_code`."""
+    """Lane commands that write their canned artifact again, so a run without
+    --reuse-artifacts has a fresh artifact to read. crapkit moves a lane's
+    declared files aside while it runs, so each command copies a saved copy
+    back rather than touch a file that is not there. The `unit` lane's
+    command then exits `exit_code`."""
     text = (repo / "crapkit.toml").read_text(encoding="utf-8")
     for name, code in (("unit", exit_code), ("ui", 0)):
-        script = f"import os, sys; os.utime('coverage/{name}.json'); sys.exit({code})"
+        canned = repo / "coverage" / f"{name}.canned"
+        canned.write_bytes((repo / "coverage" / f"{name}.json").read_bytes())
+        script = (f"import shutil, sys; shutil.copyfile('coverage/{name}.canned', "
+                  f"'coverage/{name}.json'); sys.exit({code})")
         command = json.dumps(f'python -c "{script}"')
         text = text.replace('command = "python -c pass"\nartifact', f"command = {command}\nartifact", 1)
     (repo / "crapkit.toml").write_text(text, encoding="utf-8")

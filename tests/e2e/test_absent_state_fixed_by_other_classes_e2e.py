@@ -12,9 +12,9 @@
 - a coverage.py report missing a member every current producer writes, and an
   istanbul branch record with fewer or more hit counts than its locations.
 
-Every variation runs, the passing ones included. A case whose fix has not
-landed yet is a strict xfail that says what fixes it: when the fix lands the
-test passes, pytest fails the strict xfail, and the marker comes off.
+Every variation runs, the passing ones included. A case whose fix had not
+landed was a strict xfail that said what fixes it; the stamp-freshness work
+landed each of those fixes, and the markers came off.
 """
 from __future__ import annotations
 
@@ -122,10 +122,7 @@ def edited_after_first_commit(tmp_path: Path) -> Path:
 
 
 @pytest.mark.parametrize("build", [
-    pytest.param(staged_before_first_commit, id="staged-before-first-commit", marks=pytest.mark.xfail(
-        strict=True, reason="claude_hook reads the failed `git diff HEAD` of an unborn HEAD as "
-                            "no change to the staged file; it holds once the hook names a failed "
-                            "git question and judges a staged file whole before the first commit")),
+    pytest.param(staged_before_first_commit, id="staged-before-first-commit"),
     pytest.param(untracked_before_first_commit, id="untracked-before-first-commit"),
     pytest.param(edited_after_first_commit, id="edited-after-first-commit"),
 ])
@@ -207,18 +204,11 @@ def test_a_stamped_lane_names_its_dark_lines(tmp_path: Path):
 
 
 # The cause a missing stamp gets is the lane freshness verdict's, which reads the
-# stamp file's explicit states; that work lands with the stamp-freshness fixes
-# (Q33, Q67), not in this tree. Each case is a strict xfail until then.
-_MISSING_STAMP_CAUSE = pytest.mark.xfail(
-    strict=True, reason="the dark-line note still says a lane with no stamp had its files "
-                        "changed; it holds once the stamp module names an absent or mangled "
-                        "stamp as its own cause (Q33, Q67)")
-
-
+# stamp file's explicit states (lane_stamps, Q33, Q67).
 @pytest.mark.parametrize("lose_stamp", [
-    pytest.param(reuse_only, id="reuse-only", marks=_MISSING_STAMP_CAUSE),
-    pytest.param(stamps_deleted, id="stamps-deleted", marks=_MISSING_STAMP_CAUSE),
-    pytest.param(stamp_mangled, id="stamp-mangled", marks=_MISSING_STAMP_CAUSE),
+    pytest.param(reuse_only, id="reuse-only"),
+    pytest.param(stamps_deleted, id="stamps-deleted"),
+    pytest.param(stamp_mangled, id="stamp-mangled"),
 ])
 def test_a_missing_stamp_is_named_and_a_real_run_clears_it(lose_stamp, tmp_path: Path):
     """On a clean tree the note used to read "files in its scopes changed since
@@ -389,10 +379,7 @@ def trusted_run_ids(repo: Path) -> list[int]:
 
 @pytest.mark.parametrize("damage", [
     pytest.param(intact, id="stamps-intact"),
-    pytest.param(file_deleted, id="stamps-file-deleted", marks=pytest.mark.xfail(
-        strict=True, reason="the refusal lives only in .crapkit/artifacts.json, so a deleted "
-                            "file reads as never refused; it holds once the store records each "
-                            "refusal too")),
+    pytest.param(file_deleted, id="stamps-file-deleted"),
     pytest.param(cut_short, id="stamps-file-cut-short-mid-write"),
     pytest.param(entry_not_an_object, id="stamps-entry-not-an-object"),
     pytest.param(top_level_not_an_object, id="stamps-top-level-not-an-object"),

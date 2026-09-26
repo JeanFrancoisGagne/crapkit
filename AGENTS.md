@@ -325,18 +325,14 @@ all. Before the repo's first commit there is no HEAD to diff against, so every f
 the edited file counts as changed.
 
 The same exit 2 comes with a different head line when the hook could not judge the edit.
-`crapkit advisory: could not read calc/grade.py, so no function in it was judged (the edit
-landed; nothing was blocked)` means no reader could parse the file, and the next line
-quotes the reader's reason: fix what it names, or list the file under `[exclude] globs`.
-`crapkit advisory: git could not report what changed in calc/grade.py, so no function in it
-was judged (the edit landed; nothing was blocked)` quotes git's error instead, a corrupt
-index for one. Neither is a clean verdict, and no function was checked.
-
 An edit that leaves a file no reader can read (a TypeScript arrow body the reader refuses,
 a Python def cut off at its signature) gets the same three-line shape, opening
 `crapkit advisory: src/a.ts could not be read, so no function in it was judged`, then an
-`UNREAD` line with the reader's reason and the fix. The commit gate refuses that file once
-staged, so fix what the reason names before you commit.
+`UNREAD` line with the reader's reason and the fix: change what the reason names, or list
+the file under `[exclude] globs`. The commit gate refuses that file once staged, so fix it
+before you commit. `crapkit advisory: git could not report what changed in calc/grade.py,
+so no function in it was judged (the edit landed; nothing was blocked)` quotes git's error
+instead, a corrupt index for one. Neither is a clean verdict, and no function was checked.
 
 An edit event names its file. A `Bash` event names none, so the hook reads the working
 tree instead: the dirty or untracked `*.py` files whose mtime falls inside a 12-second
