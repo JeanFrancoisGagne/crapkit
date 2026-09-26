@@ -124,7 +124,6 @@ def test_route1_pwsh_block_refuses_then_accepts(box, templates):
 
 # --- hooks paths the route does not own -----------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=SILENT_GATE)
 @cell("lin-global-hookspath", channel="Route 1 with global core.hooksPath", harness="git 2.47",
       scenario="fresh: silent skip; does doctor warn", use_cases="commit gate, doctor", os="linux",
       image="cells", cadence="nightly")

@@ -27,8 +27,6 @@ EDITED = "calc/grade.py"
 # A branch that takes grade() from ccn 8 to ccn 9, over the default ceiling of 6.
 BREACH = ('    return "D"', '    if attempts > 5 and bonus:\n        return "E"\n    return "D"')
 BUGS: dict[str, str] = {
-    "codex": "deploy-bug deploy-harnesses-1: Codex registers the plugin's 50 hook handlers without their args, "
-             "so each matched edit spawns a bare `crapkit` that prints its usage and exits 2",
     "cursor": "deploy-bug deploy-harnesses-2: Cursor's Claude plugin import keeps command and matcher only, so an "
               "edit spawns 50 bare `crapkit` handlers and Cursor reads their exit 2 as deny",
     "vscode-copilot": "deploy-bug deploy-harnesses-3: VS Code reads the plugin's hooks.json without args, if or "

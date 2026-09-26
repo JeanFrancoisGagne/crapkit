@@ -26,11 +26,6 @@ OLD_ANALYSIS = 10
 BREACH_PY = state.ROUTE_PY.replace("def route", "def dispatch")
 CLEAN_PY = "def label(n):\n    return str(n)\n"
 TEAM_NOTE = re.compile(r"older (crapkit|release|CLI)", re.I)
-NO_TEAM_NOTE = pytest.mark.xfail(
-    strict=True, raises=state.GuideGap,
-    reason="deploy-bug deploy-upgrade-4 (doc gap): docs/upgrading.md never tells a team to upgrade every clone "
-           "before reseeding; 0.7.6 refuses newer marks and names `crapkit ratchet seed`, which restamps them "
-           "backwards and makes every upgraded teammate's verify refuse")
 
 
 def team_repo(box, templates, candidate):
@@ -107,7 +102,6 @@ def named_fix_restamps(box, repo, candidate) -> None:
     assert f"recorded under [{state.metric(OLD_ANALYSIS)}]" in output(refused), box.transcript.text()
 
 
-@NO_TEAM_NOTE
 @cell("lin-skew-cli", channel="0.7.6 readers of candidate output", harness="git",
       scenario="skew: stamp-11 marks read by 0.7.6 verify, commit hook and merge driver; refusal names the fix",
       use_cases="team version skew", os="linux", image="core", cadence="nightly")

@@ -198,8 +198,6 @@ def listed_only(box, candidate) -> dict:
 
 @cell("lin-codex-plugin-fresh", channel="Codex marketplace, README line via mirror", harness="Codex",
       scenario="fresh: hooks/list 0", use_cases="Codex plugin install", os="linux", image="core", cadence="push")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-plugins-1: Codex loads plugin/hooks/hooks.json, 50 "
-                   "Edit|Write handlers that spawn a bare `crapkit` (their args dropped)")
 def test_codex_loads_no_crapkit_hooks(box, candidate):
     hooks = listed_only(box, candidate)["hooks"]
     box.transcript.attach("codex-hooks", hooks)

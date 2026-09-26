@@ -197,8 +197,6 @@ def _names_user_site(page: str) -> bool:
 @cell("lin-pipuser-path", channel="pip --user", harness="shell",
       scenario="fresh: the docs say where pip --user puts crapkit and what to add to PATH", use_cases="install",
       os="linux", image="core", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-5: neither README nor docs/upgrading.md names "
-                                       "pip --user, where it puts the crapkit launcher, or the PATH entry it needs")
 def test_the_docs_name_the_user_site_launcher_and_its_path(box):
     assert [page for page in USER_SITE_DOCS if _names_user_site(page)]
 
@@ -206,8 +204,6 @@ def test_the_docs_name_the_user_site_launcher_and_its_path(box):
 @cell("win-pipuser-path", channel="pip --user", harness="shell",
       scenario="fresh: the docs say where pip --user puts crapkit.exe and what to add to PATH", use_cases="install",
       os="windows", image=None, cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-5: neither README nor docs/upgrading.md names "
-                                       "pip --user, where it puts the crapkit launcher, or the PATH entry it needs")
 def test_the_docs_name_the_user_site_scripts_dir_on_windows(box):
     assert [page for page in USER_SITE_DOCS if _names_user_site(page)]
 

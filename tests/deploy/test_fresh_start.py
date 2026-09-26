@@ -50,8 +50,6 @@ def test_the_readme_start_on_311_meets_the_container_guard_and_its_documented_ru
 @cell("lin-pip-start-py311", channel="pip venv", harness="none (sh + git)",
       scenario="fresh: doctor names the container guard before coverage refuses", use_cases="doctor",
       os="linux", image="core", cadence="push")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-1: in a container `crapkit doctor` exits 0 "
-                                       "with no WARN, then `crapkit coverage` refuses the python lane with exit 5")
 def test_doctor_warns_about_the_container_guard_before_coverage_refuses(box, templates, candidate):
     installers.pip_extra(box, "3.11")
     repo = repos.checkout(box, "py-pytest", cache=templates)
@@ -222,8 +220,8 @@ def test_the_python_quickstart_prints_what_the_page_prints(box, templates):
     installers.pip_extra(box, "3.13", heading=PY_QUICK)
     repo = quickstart_repo(box, templates)
     _scaffold(box, repo)
-    _doctor_step(box, repo)
     installers.allow_containers_here(repo)
+    _doctor_step(box, repo)
     _run_step(box, repo, "3. Score the repo, and read the queue")
     item = _next_item(box, repo)
     _run_step(box, repo, "5. Seed the ratchet")
@@ -461,8 +459,6 @@ def test_python_310_is_refused_and_uvx_runs_crapkit_on_a_newer_python(box, candi
 @cell("lin-pip-old-python", channel="pip", harness="none",
       scenario="fresh: the README sends a Python 3.10 user to uvx", use_cases="install",
       os="linux", image="core", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-3: README Install says Python 3.11 or newer and "
-                                       "does not tell a 3.10 user that uvx brings its own Python")
 def test_the_readme_sends_a_python_310_user_to_uvx(box):
     _older_than_311(box)
     sentences = re.split(r"(?<=\.)\s+", " ".join(installers.section_prose(README, "Install")))

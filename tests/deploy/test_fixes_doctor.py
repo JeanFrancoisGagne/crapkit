@@ -15,8 +15,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import pytest
-
 from kit import docsnip, gitmirror, repos, wheels
 from kit.cells import cell
 from kit.mcp_client import McpClient
@@ -299,8 +297,5 @@ def test_the_60_second_start_runs_on_python_3_14(box, templates):
 @cell("win-pip-start-py314", channel="pip venv", harness="none (Git Bash)",
       scenario="fresh: the 60-second start on CPython 3.14 on Windows", use_cases="60-second start",
       os="windows", image=None, cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="kit: the Windows wheelhouse holds no cp314 row (coverage 7.16.1 "
-                   "ships only cp312 and cp313 win_amd64 wheels there), so pip offline backtracks "
-                   "to an old crapkit")
 def test_the_60_second_start_runs_on_python_3_14_on_windows(box, templates):
     _sixty_second_start(box, templates, "3.14")

@@ -22,9 +22,6 @@ from kit.cells import cell
 
 PACKET = "deploy-git"
 NOT_PYTHON = "A repo that is not Python"
-UNREACHABLE = ("deploy-bug deploy-git-5: the Route 1 and Route 2 hook runs `python -m crapkit`, which a pipx, "
-               "uv tool or python3-only install cannot reach: git prints `exec: python: not found` and "
-               "refuses every commit, gate or no gate")
 UVX_DRIVER = ("deploy-bug deploy-git-9: docs/ratchet.md's driver line runs `crapkit`, which a uvx user does "
               "not have: git prints `crapkit: not found`, reports a conflict and leaves ours with no markers")
 RELEASE_SH = '''#!/bin/sh
@@ -90,7 +87,6 @@ def gated(box, templates, route) -> Path:
     return repo
 
 
-@pytest.mark.xfail(strict=True, reason=UNREACHABLE)
 @cell("lin-pair-pipx-route1", channel="pipx x Route 1", harness="git 2.47",
       scenario="fresh: the message git shows when the hook cannot reach crapkit", use_cases="commit gate",
       os="linux", image="cells", cadence="nightly")
@@ -101,7 +97,6 @@ def test_pipx_install_feeds_the_route1_gate(box, templates):
     gitsurf.refused_then_accepted(box, repo)
 
 
-@pytest.mark.xfail(strict=True, reason=UNREACHABLE)
 @cell("lin-pair-uvtool-route2", channel="uv tool x Route 2", harness="git 2.47",
       scenario="fresh: the message git shows when the hook cannot reach crapkit", use_cases="commit gate",
       os="linux", image="cells", cadence="nightly")
@@ -112,7 +107,6 @@ def test_uv_tool_install_feeds_the_route2_gate(box, templates):
     gitsurf.refused_then_accepted(box, repo)
 
 
-@pytest.mark.xfail(strict=True, reason=UNREACHABLE)
 @cell("lin-pair-python3-only", channel="pip --user on a python3-only system x Route 1", harness="git 2.47",
       scenario="fresh: the message git shows when the hook cannot reach crapkit", use_cases="commit gate",
       os="linux", image="cells", cadence="nightly")

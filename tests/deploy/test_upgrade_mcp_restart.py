@@ -49,10 +49,6 @@ def old_names_answered(box, repo) -> dict[str, str]:
         return {old: text_of(client.call(old, {})) for old in renames()}
 
 
-@pytest.mark.xfail(
-    strict=True, raises=state.KnownBug,
-    reason="deploy-bug deploy-upgrade-6: a 0.5.x tool name gets `unknown tool 'worklist'` with no pointer to "
-           "list_worklist, so a client allowlist pinned under 0.5.x cannot learn the new name")
 @cell("lin-up-pyextra-0.5.1", channel="pip [py]", harness="spec client, 0.5.x names",
       scenario="upgrade: `worklist` answers with its new name", use_cases="MCP renames",
       os="linux", image="core", cadence="nightly", real_cli=False)
@@ -69,7 +65,7 @@ def test_lin_up_pyextra_0_5_1(box, templates, candidate):
     answers = old_names_answered(box, repo)
     box.transcript.attach("old-tool-names", answers)
     missing = {old: new for old, new in renames().items() if new not in answers[old]}
-    state.known_bug(not missing, "deploy-upgrade-6", f"old names answered without their new name: {missing}")
+    assert not missing, f"old names answered without their new name: {missing}"
 
 
 HELD_FIRST_CALL = pytest.mark.xfail(

@@ -25,13 +25,6 @@ from kit.mcp_client import McpClient
 from kit.state import output
 
 PACKET = "deploy-upgrade"
-NO_PIPX_ROW = pytest.mark.xfail(
-    strict=True, raises=state.GuideGap,
-    reason="deploy-bug deploy-upgrade-2 (doc gap): docs/upgrading.md gives no pipx upgrade line")
-NO_UVX_ROW = pytest.mark.xfail(
-    strict=True, raises=state.GuideGap,
-    reason="deploy-bug deploy-upgrade-3 (doc gap): docs/upgrading.md never says a cached `uvx crapkit` keeps "
-           "running the release it first fetched, nor names `uvx crapkit@latest`")
 SCOPE_COUNT = re.compile(r"scope '([^']+)': (\d+) files?")
 MUTATION_KEYS = 'mutation_command = "python -m pytest -q -x -p no:cacheprovider"\nmutation_workers = 2\n'
 
@@ -67,7 +60,6 @@ def walked_up(box, repo) -> None:
     assert f"crapkit: using crapkit.toml at {repo}" in step.stderr, box.transcript.text()
 
 
-@NO_PIPX_ROW
 @cell("lin-up-pipx-0.4.15", channel="pipx", harness="none",
       scenario="upgrade with `pipx upgrade crapkit`: walk-up config, `**/` counts, mutate-pool reclaimed",
       use_cases="upgrade guide, mutate, clean", os="linux", image="core", cadence="nightly")
@@ -241,7 +233,6 @@ def uvx_across_release(box, templates, candidate, old: str, gaps) -> dict[str, s
     return seen
 
 
-@NO_UVX_ROW
 @cell("lin-up-uvx-n1", channel="uvx against pyindex", harness="none",
       scenario="upgrade: what `uvx crapkit --version` returns under PyPI cache headers; @latest; docs line from this run",
       use_cases="uvx refresh", os="linux", image="core", cadence="nightly")
@@ -290,8 +281,7 @@ WIN_CHANNELS = {"pipx": win_pipx, "uvx": win_uvx, "uv-tool": win_uv_tool}
 @cell("win-pipx-uvx-uvtool", channel="pipx, uvx, uv tool", harness="cmd.exe",
       scenario="fresh + upgrade from 0.7.6; uv tool upgrade while a server holds the exe",
       use_cases="install, launcher lock", os="windows", image=None, cadence="nightly")
-@pytest.mark.parametrize("channel", [pytest.param("pipx", marks=NO_PIPX_ROW), pytest.param("uvx", marks=NO_UVX_ROW),
-                                     "uv-tool"])
+@pytest.mark.parametrize("channel", ["pipx", "uvx", "uv-tool"])
 def test_win_pipx_uvx_uvtool(box, templates, candidate, channel):
     gaps = state.Gaps()
     WIN_CHANNELS[channel](box, templates, candidate, gaps)
