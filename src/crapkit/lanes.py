@@ -1197,10 +1197,6 @@ def _results_provenance(root: Path, lane: Lane, *, reuse_artifact: bool = False)
 SUITE_DROP_FRACTION = 0.1
 
 
-def _tests_total(prov: dict) -> int:
-    return prov.get("tests_total") or 0
-
-
 def suite_drops(previous: dict, current: dict, *,
                 fraction: float = SUITE_DROP_FRACTION) -> list[str]:
     """Lanes whose junit counted far fewer tests than the last trusted run's.
@@ -1213,11 +1209,16 @@ def suite_drops(previous: dict, current: dict, *,
     A tenth is wide enough that deleting a test file does not cry wolf, and
     narrow enough that a dead worker's whole queue cannot hide under it. Both
     arguments are lane-name -> provenance, the shape a run records.
+
+    A lane with no count on either side compares nothing. This run's lane has
+    none when it declares no `results_artifact` or `--reuse-artifacts` could not
+    read one, and the reuse warning already says so; reading that absence as
+    zero once reported a lane that ran nothing as every test short.
     """
     notes = []
     for name, prov in sorted(current.items()):
-        before, now = _tests_total(previous.get(name, {})), _tests_total(prov)
-        if before and now < before * (1 - fraction):
+        before, now = previous.get(name, {}).get("tests_total"), prov.get("tests_total")
+        if before and now is not None and now < before * (1 - fraction):
             notes.append(f"lane {name!r} ran {now} tests, {before - now} fewer than the "
                          f"last trusted run's {before} — check the runner's log for a "
                          "worker that died without reporting it")
