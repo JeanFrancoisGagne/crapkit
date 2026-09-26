@@ -451,6 +451,15 @@ class History(RuleBasedStateMachine):
 
     # --- the portable baseline ---------------------------------------------------------------
 
+    def _copy(self, tag: str) -> vw.Scenario:
+        """A private copy of the repo. A copied file is new to the filesystem,
+        so the copy's index is stat-dirty, and verify's staleness reads race
+        the index rewrite its own `git diff` makes (ruling V12); the copy's
+        index is refreshed so the verdicts compared are not that race's."""
+        copy = self.sc.copy(self.sc.top.parent / f"{self.sc.top.name}-{tag}{next(self.side)}")
+        retention.fresh_index(copy)
+        return copy
+
     def tsv(self):
         """On a copy: the store's baseline emitted as a TSV gives the model's
         verdict on a clone with no store. The record carries no test failures,
@@ -458,7 +467,7 @@ class History(RuleBasedStateMachine):
         defect test_baseline_tsv pins); with none, the whole verdict agrees."""
         if not self._verdict_possible():
             return self.verify()
-        copy = self.sc.copy(self.sc.top.parent / f"{self.sc.top.name}-tsv{next(self.side)}")
+        copy = self._copy("tsv")
         base = self._baseline()
         emitted = copy.run("verify", "--emit-baseline", "b.tsv", "--no-tighten", "--json")
         assert emitted.json()["baseline_run"] == base.id
@@ -482,7 +491,7 @@ class History(RuleBasedStateMachine):
         if self._baseline() is None or self._stamp_refused():
             RECORDS["no record"] += 1
             return
-        copy = self.sc.copy(self.sc.top.parent / f"{self.sc.top.name}-one{next(self.side)}")
+        copy = self._copy("one")
         store = copy.run(*ONE_MEASUREMENT, "--emit-baseline", RECORD)
         record = copy.run(*ONE_MEASUREMENT, "--baseline-tsv", RECORD)
         _discard(copy.top)
