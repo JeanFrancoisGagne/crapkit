@@ -1313,6 +1313,32 @@ analysis-version bump, so each marks file re-seeds once
   with them. The change needs an analysis-version bump, which makes each marks file
   re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-nesting-in-every-language)).
 
+## Unreleased
+
+### PowerShell reads keywords in any case and counts PowerShell 7's operators
+
+These change PowerShell scores, so they need an analysis-version bump, which makes
+each marks file re-seed once.
+
+- A keyword that starts a statement counts in any case, as PowerShell reads it: `IF`,
+  `ForEach`, `ElseIf`, `Default`, `Function`. A capitalized `if` used to count
+  nothing, a capitalized `Default` arm cost a point as if it tested something, and a
+  function declared with `Function` got no row. A keyword word that starts no statement
+  keeps its spelling, so `$xs | ForEach { }` still reads as the ForEach-Object alias
+  and `Out-File -Encoding Default` as an argument.
+- `-And`, `-OR` and `-Xor` count as their lower-case spelling does.
+- PowerShell 7's pipeline chains `&&` and `||` count one decision each. They counted
+  nothing.
+- `??` and `??=` count one decision each. `??` read as two `?` ternaries and cost 2.
+- `-and` and `-or` nest the way `&&` and `||` do in the C family: the first one in a
+  condition adds a level. Each used to add its own, so `if ($a -and $b -or $c)` read
+  nesting 3 where TypeScript's `if (a && b || c)` reads 2.
+- `ccn_mod` counts a switch's arms the way `ccn_std` does. It read one higher for every
+  `switch`, and for every `[switch]` parameter type as well. `ccn` is the smaller of
+  the two columns, so it does not move.
+- A `[switch]` parameter type costs no cognitive complexity. It read as a switch
+  statement: +1, and the block after it counted one level deeper.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

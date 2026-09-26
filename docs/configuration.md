@@ -200,8 +200,10 @@ where bash reads C: there `a ? b : c` counts one in `ccn` and `cognitive`, and t
 of `for ((;;))` is no case arm.
 
 **`powershell` counts one point per `switch` arm**, the way `case` is counted in C, and
-`default` is free. Its keywords are matched case-sensitively as written, so `If (` in code
-counts nothing.
+`default` is free. The arms cost the same in `ccn_mod`, so the gate reads a twelve-arm
+switch as 13, not 2. Keywords count in any case, as PowerShell reads them: `If (` is an
+`if` and `Default` is the free arm. A keyword word that does not start a statement keeps
+its spelling, so `$xs | ForEach { }` is the ForEach-Object alias and costs nothing.
 
 **Pester test files need a glob of your own.** Pester names them `Foo.Tests.ps1`, beside the
 source they test, and no default exclude claims that spelling. `**/*.test.*` does not match

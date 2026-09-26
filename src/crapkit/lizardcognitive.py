@@ -1803,7 +1803,7 @@ def _structure_token(state: _FnState, token: str, is_python: bool) -> None:
         _python_structure(state, token)
     elif token == "guard":
         _guard(state, is_python)
-    elif not _charged_elsewhere(state, token):
+    elif not _charged_elsewhere(state, token) and not _switch_type(state, token):
         _structure(state, token, is_python)
 
 
@@ -1815,6 +1815,11 @@ def _charged_elsewhere(state: _FnState, token: str) -> bool:
         state.for_pending = not implements_for(state.prev)
         return True
     return _loop_tail(state, token)
+
+
+def _switch_type(state: _FnState, token: str) -> bool:
+    """True for PowerShell's `[switch]` parameter type, which is no statement."""
+    return token == "switch" and state.prev == "["
 
 
 def _python_structure(state: _FnState, token: str) -> None:

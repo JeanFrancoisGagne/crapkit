@@ -19,8 +19,11 @@ WHAT IS REPORTED
 
 CCN CONVENTION
     Conditions counted: `if`, `elseif`, `for`, `foreach`, `while`, `until`,
-    `catch`, `trap`, `-and`, `-or`, `-xor`, `?`, and one point per `switch`
-    arm. `else` costs nothing, as everywhere else in lizard.
+    `catch`, `trap`, `-and`, `-or`, `-xor`, `?`, PowerShell 7's `&&`, `||`,
+    `??` and `??=`, and one point per `switch` arm. `else` costs nothing, as
+    everywhere else in lizard. `&&` and `||` between pipelines run the right
+    pipeline on the left one's outcome, and `??` evaluates its right side only
+    for a null left one, so each is one decision like `-and`.
 
     `switch` counts per arm, not once for the block. PowerShell writes arms as
     bare patterns with no `case` keyword:
@@ -40,20 +43,43 @@ CCN CONVENTION
     hand-counted probe, a six-arm switch with a default scores 7, the same as
     the six-branch if/elseif chain doing the same work.
 
+    The arms cost the same in `ccn_mod`. lizard's modified rule adds a point
+    for a `switch` and takes one back per `case`, and a PowerShell arm has no
+    `case`, so the reader sets `_modified_switch = False` and the opener gets
+    no point: the two columns agree, as they do for a Rust `match`. Before,
+    every switch read one higher in `ccn_mod` than in `ccn_std`.
+
     `switch` itself is deliberately NOT a control-flow keyword, and that is
     load-bearing beyond the double count: `[switch]$Force` is how PowerShell
     declares a boolean parameter, and 138 `param()` blocks in the 106-script
     corpus this reader was built against are full of them. Left in the keyword
     set, every advanced function paid a phantom point for its own signature.
+    The cognitive column skips a `switch` right after `[` for the same reason.
 
     `?` stays a ternary operator, as lizard has it everywhere. In PowerShell 7
     it is the ternary; in every version it is also the `Where-Object` alias,
     so `Get-Process | ? { $_.CPU -gt 10 }` costs a point. Both spell a branch,
     so the point is not wrong, only differently earned.
 
+KEYWORDS IN ANY CASE
+    PowerShell keywords and operators are not case-sensitive
+    (about_Language_Keywords), and every rule that reads one matches the
+    lower-case spelling. So the tokenizer hands the rules `if` for `IF`,
+    `function` for `Function` and `default` for `Default`, and `-or` for
+    `-Or`, through `_Spelling`. A keyword word is respelled only where it
+    starts a statement, because only there does PowerShell read it as a
+    keyword: after a pipe `ForEach` is the ForEach-Object alias, and after a
+    parameter `Default` is an argument (`Out-File -Encoding Default`).
+
+    `-and` and `-or` come out as `&&` and `||`. lizard's ND column knows those
+    two by spelling and adds one nesting level for the first of them in a
+    condition. Read as loop words, each `-and` and `-or` added a level of its
+    own, so `if ($a -and $b -or $c)` read nesting 3 where the same condition
+    in TypeScript reads 2.
+
 TOKENIZER
     The added alternatives are tried ahead of lizard's shared C-family rules,
-    and they exist because six PowerShell constructs read as something else
+    and they exist because eight PowerShell constructs read as something else
     there. Each is pinned by a test.
       - `<# ... #>` block comment. Left alone, `<` and `#` tokenize apart and
         the comment's keywords and braces all count.
@@ -72,6 +98,11 @@ TOKENIZER
       - `Verb-Noun` as one token, so `Get-ChildItem` is a name rather than a
         subtraction, and `-and`/`-or`/`-Path` as one token, which is what makes
         the logical operators countable at all.
+      - `??` and `??=` as one token each. Split, they read as two `?`
+        ternaries and cost 2.
+      - `:label` as one token, so a labeled loop or switch still starts its
+        statement. The colon in `script:Name` has a word before it and stays
+        apart.
     The `#` line-comment rule comes from ScriptLanguageMixIn, the same one
     PythonReader uses.
 
@@ -92,11 +123,9 @@ KNOWN LIMITS
       ccn 1.
     - A `$( )` inside a `@" "@` here-string is evaluated and counts nothing:
       the whole here-string is one token.
-    - PowerShell is case-insensitive and this reader is not: `If (` in code
-      counts nothing. Measured over the 106-script corpus, all 29 capitalized
-      `If`, 9 `For` and 1 `WHILE` sit inside a comment or a string, where the
-      tokenizer already discards them, and not one appears in code. A repo
-      that capitalizes its keywords undercounts.
+    - A lower-case keyword that starts no statement still counts as a
+      condition (`Write-Output if`), because lizard's condition counter reads
+      the word alone. Only a capitalized one keeps its spelling there.
     - A here-string is recognized by `@"` and `"@` alone. PowerShell also
       requires the opener to end its line and the terminator to start one;
       this reader does not check either, so `@"` inside an expression opens a
@@ -161,6 +190,8 @@ _TOKEN_ADDITION = (
     r"|\"(?:`.|" + _SUBEXPRESSION + r"|[^\"`])*+\""
     r"|'(?:''|[^'])*'"          # 'single' string, '' is the escape
     r"|\$[\w:]+"                # $var, $script:var
+    r"|(?<!\w):[A-Za-z_]\w*"    # :label, never the colon in script:Name
+    r"|\?\?=?"                  # ?? and ??=, one operator each
     r"|[A-Za-z_]\w*(?:-\w+)+"   # Verb-Noun, one token
     r"|-\w+"                    # -and, -or, -eq, -Path
 )
@@ -168,6 +199,86 @@ _TOKEN_ADDITION = (
 # A subexpression inside a double-quoted token. The escape comes first, so a
 # `` `$( `` stays text, as the string rule above spent it.
 _HOLE = re.compile(r"`.|(" + _SUBEXPRESSION + ")", re.S)
+
+# PowerShell keywords are not case-sensitive (about_Language_Keywords), and
+# every rule that reads one, here and in lizard, matches the lower-case
+# spelling. These are the keywords some rule reads.
+_KEYWORDS = frozenset({
+    "if", "elseif", "else", "for", "foreach", "while", "until", "do", "switch",
+    "default", "catch", "trap", "try", "finally",
+    "function", "filter", "workflow", "configuration", "class", "enum"})
+
+# The logical operators, as the rules read them. lizard's ND column knows `&&`
+# and `||` by spelling and adds one level for the first of them in a
+# condition; under their own spelling each `-and` and `-or` added a level, so
+# `if ($a -and $b -or $c)` read nesting 3 where `if (a && b || c)` reads 2.
+# Both short-circuit, as PowerShell 7's pipeline chains `&&` and `||` do, so
+# the cognitive and cyclomatic rules read the two spellings alike too.
+_OPERATORS = {"-and": "&&", "-or": "||", "-xor": "-xor"}
+
+# What a statement can follow on the same line: `(` opens `$(...)` and
+# `@(...)`, an assignment takes a statement on its right (`$x = switch ...`),
+# and `""` is the start of the file.
+_STATEMENT_OPENERS = frozenset({"", ";", "{", "}", "(", "=", "+=", "-=", "*=", "/=",
+                                "%=", "??="})
+
+# What keeps the next line in the same statement: a backtick escapes the line
+# break, and a pipe hands the next line to a command.
+_CONTINUATIONS = frozenset({"`", "|"})
+
+# A `:label` token, which a loop or a switch statement may follow.
+_LABEL = re.compile(r":[A-Za-z_]")
+
+_BLOCK_COMMENT = "<#"
+_COMMENT_OPENERS = ("#", _BLOCK_COMMENT)
+
+
+def _begins_statement(previous: str, new_line: bool) -> bool:
+    """Whether the token after `previous` is a statement's first word.
+
+    PowerShell reads a keyword only there. Anywhere else the same word is an
+    argument, a member or a hashtable key: `dotnet build --configuration`,
+    `$o.filter`, `git switch main`, `$xs | ForEach { }`.
+    """
+    if previous in _CONTINUATIONS:
+        return False
+    return new_line or previous in _STATEMENT_OPENERS or _LABEL.match(previous) is not None
+
+
+class _Spelling:
+    """The spelling every rule reads: keywords and operators in lower case.
+
+    Sees the raw token stream, whitespace and comments included, so a line
+    break is a token here. A keyword keeps the case it is written in when it
+    does not start a statement, because PowerShell does not read it as a
+    keyword there either.
+    """
+
+    def __init__(self):
+        self.previous = ""       # the last code token, as spelled
+        self.new_line = False    # a line break since then
+
+    def __call__(self, token: str) -> str:
+        if token.isspace():
+            self.new_line = self.new_line or "\n" in token
+            return token
+        spelled = self._spell(token)
+        if not token.startswith(_COMMENT_OPENERS):
+            self.previous, self.new_line = spelled, False
+        return spelled
+
+    def _spell(self, token: str) -> str:
+        lower = token.lower()
+        if lower in _OPERATORS:
+            return _OPERATORS[lower]
+        if lower in _KEYWORDS and _begins_statement(self.previous, self.new_line):
+            return lower
+        return token
+
+
+def _spelled(tokens):
+    spelling = _Spelling()
+    return (spelling(token) for token in tokens)
 
 # Every keyword that declares something with a name and a brace body.
 _FUNC_KEYWORDS = ("function", "filter", "workflow", "configuration")
@@ -277,9 +388,17 @@ class PowerShellReader(CodeReader, ScriptLanguageMixIn):
 
     _control_flow_keywords = {"if", "elseif", "for", "foreach", "while",
                               "until", "catch", "trap"}
-    _logical_operators = {"-and", "-or", "-xor"}
+    # `&&` and `||` are PowerShell 7's pipeline chains and, as the tokenizer
+    # spells them, `-and` and `-or`. `??` and `??=` evaluate their right side
+    # only for a null left one.
+    _logical_operators = {"&&", "||", "-xor", "??", "??="}
     _case_keywords = set()      # arms are counted by position, see the docstring
     _ternary_operators = {"?"}
+
+    # analyze.py's modified column adds a point for a `switch` and takes one
+    # back per `case`. PowerShell arms have no `case`, so the point would stay:
+    # the opener gets none here, and a switch costs its arms in both columns.
+    _modified_switch = False
 
     def __init__(self, context):
         super().__init__(context)
@@ -293,11 +412,12 @@ class PowerShellReader(CodeReader, ScriptLanguageMixIn):
         ScriptLanguageMixIn supplies the `#` line-comment rule (PythonReader
         uses the same one), so comment handling is not written here. Nothing is
         rewritten in the source and nothing is materialized: the subexpressions
-        are opened by a generator over lizard's, so the token stage still yields
-        as it reads, which is what crapkit's two-chain analyze.py depends on
+        are opened by a generator over lizard's, and `_spelled` respells keyword
+        tokens one at a time as they come, so the token stage still yields as it
+        reads, which is what crapkit's two-chain analyze.py depends on
         (tests/unit/test_cognitive_reader_chain.py).
         """
-        return _tokens(source_code, addition, token_class)
+        return _spelled(_tokens(source_code, addition, token_class))
 
 
 def _tokens(source: str, addition: str, token_class):

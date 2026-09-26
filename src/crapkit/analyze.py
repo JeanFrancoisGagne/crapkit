@@ -161,13 +161,16 @@ def _switch_delta(token: str, reader, previous) -> int:
     loop in shell and a name in most languages, so it opens a switch only for
     a reader that sets `_keyword_select`. A `=>` is an arm only for a reader that
     counted it in ccn_std, which `previous`, the token before it, decides.
+    A reader whose switch arms carry no `case` sets `_modified_switch = False`,
+    since no arm would take the opener's point back: PowerShell counts its
+    arms by position.
     """
     if token == "case":
         return -int("case" in reader.conditions or getattr(reader, "_keyword_case", False))
     if token == "=>":
         return -_counted_prong(reader, previous)
     if token == "switch":
-        return int(type(reader).__name__ not in _NO_SWITCH_READERS)
+        return _opens_switch(reader)
     return int(getattr(reader, "_keyword_" + token, False))
 
 
@@ -175,6 +178,13 @@ def _counted_prong(reader, previous) -> int:
     """1 when the reader counted this `=>` as a prong in ccn_std (crapkit.lizardgolike)."""
     counts = getattr(reader, "counts_prong", None)
     return int(counts is not None and counts(previous))
+
+
+def _opens_switch(reader) -> int:
+    """1 when `switch` adds the point its arms each take back: not in a language
+    with no switch statement, nor in one whose arms carry no `case`."""
+    return int(type(reader).__name__ not in _NO_SWITCH_READERS
+               and getattr(reader, "_modified_switch", True))
 
 
 class _ModifiedDelta:

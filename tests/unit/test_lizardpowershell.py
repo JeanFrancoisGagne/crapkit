@@ -15,6 +15,7 @@ import lizard_languages
 import pytest
 
 from crapkit.analyze import analyze_source
+from crapkit.keys import bare_name
 from crapkit.lizardpowershell import PowerShellReader, register
 
 # P1: if + 5 elseif + else. Six decision points, base 1.
@@ -562,14 +563,156 @@ def test_psm1_files_take_the_same_path_as_ps1_files():
     assert record.ccn == P1_CCN
 
 
-def test_the_modified_column_does_not_refund_the_switch_arms():
+def test_the_modified_column_counts_the_switch_arms_as_the_standard_one_does():
     """crapkit takes min(ccn_std, ccn_mod). lizard's modified rule adds a point
-    for a `switch` opener and subtracts one per arm only when the reader claims
-    `case` as a keyword; this reader does not, so the arms are never refunded and
-    the minimum stays the standard column."""
+    for a `switch` opener and takes one back per `case`, and a PowerShell arm has
+    no `case` to take it back. The opener used to get its point anyway, so every
+    switch read one higher in ccn_mod than in ccn_std. Now it gets none: a
+    PowerShell switch costs its arms in both columns, as a Rust match does."""
     (record,) = analyze_source("probe.ps1", P2_SWITCH)
 
-    assert (record.ccn, record.ccn_std, record.ccn_mod) == (P2_CCN, P2_CCN, P2_CCN + 1)
+    assert (record.ccn, record.ccn_std, record.ccn_mod) == (P2_CCN, P2_CCN, P2_CCN)
+
+
+def test_a_switch_parameter_type_costs_nothing_in_any_column():
+    """`[switch]$Force` declares a boolean parameter. The modified column gave
+    the type name the point it gives a switch statement, and the cognitive
+    column charged it +1 and read the function body as the switch's block."""
+    code = ("function Test-SwitchParam([switch]$Force) {\n    if ($Force) {\n"
+            "        return 1\n    }\n    return 0\n}\n")
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.ccn_std, record.ccn_mod, record.cognitive) == (2, 2, 1)
+
+
+# --- keywords and operators in any case -----------------------------------------
+
+MIXED_CASE = """Function Get-Mixed($a, $b, $xs) {
+    If ($a -And $b) {
+        Return 1
+    } ElseIf ($a -Or $b -XOR $a) {
+        Return 2
+    } Else {
+        ForEach ($x In $xs) {
+            While ($x) { $x-- }
+        }
+    }
+    Do { $a = $b } Until ($a)
+    Switch ($a) {
+        1 { 'one' }
+        Default { 'many' }
+    }
+    Try { Get-Item $a } Catch { Return 3 } Finally { $b = 1 }
+    For ($i = 0; $i -lt 3; $i++) { Trap { Continue } }
+}
+"""
+
+
+def _numbers(record):
+    return (record.start, record.end, record.ccn_std, record.ccn_mod, record.cognitive,
+            record.nesting, record.nloc, record.params)
+
+
+def test_the_case_a_keyword_is_written_in_changes_no_number():
+    """PowerShell keywords and operators are not case-sensitive
+    (about_Language_Keywords). The same function written in lower case is the
+    reference: every keyword this reader or lizard reads appears above in
+    another case."""
+    (mixed,) = analyze_source("probe.ps1", MIXED_CASE)
+    (lower,) = analyze_source("probe.ps1", MIXED_CASE.lower())
+
+    assert _numbers(mixed) == _numbers(lower)
+    assert (mixed.long_name.split()[0], mixed.ccn_std) == ("Get-Mixed", 13)
+
+
+def test_an_upper_case_if_is_a_condition():
+    code = "function Test-UpperCase($a) {\n    IF ($a) {\n        RETURN 1\n    }\n    return 0\n}\n"
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == (2, 1, 1)
+
+
+def test_a_capitalized_or_is_a_short_circuit_condition():
+    code = "function Test-CapitalOr($a, $b) {\n    if ($a -Or $b) {\n        return 1\n    }\n    return 0\n}\n"
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert record.ccn_std == 3
+
+
+def test_a_capitalized_default_arm_is_free():
+    code = ("function Get-CapitalDefault($n) {\n    switch ($n) {\n        1 { return 'one' }\n"
+            "        Default { return 'many' }\n    }\n}\n")
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert record.ccn_std == 2
+
+
+def test_a_capitalized_function_keyword_declares_a_function():
+    code = "Function Get-Capital($x) {\n    if ($x) {\n        return 1\n    }\n    return 0\n}\n"
+
+    assert [(bare_name(r.long_name), r.start, r.end, r.ccn_std)
+            for r in analyze_source("probe.ps1", code)] == [("Get-Capital", 1, 6, 2)]
+
+
+def test_a_capitalized_loop_after_a_label_still_counts():
+    """A label is the statement's first token, and the loop keyword follows it."""
+    code = "function Find-First($xs) {\n    :outer ForEach ($x in $xs) {\n        break outer\n    }\n}\n"
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert record.ccn_std == 2
+
+
+def test_a_keyword_word_that_starts_no_statement_keeps_its_spelling():
+    """Only a statement's first word is a keyword to PowerShell. After a pipe,
+    `ForEach` is the ForEach-Object alias, and after a parameter `Default` is
+    an argument; read as keywords they would cost a loop and take the switch's
+    first arm for its default."""
+    code = ("function Get-Names($xs, $n) {\n    $xs | ForEach { $_.Name }\n"
+            "    switch ($n) {\n        1 { Out-File -Encoding Default -FilePath a }\n    }\n}\n")
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.ccn_std, record.cognitive) == (2, 1)
+
+
+# --- PowerShell 7 operators ------------------------------------------------------
+
+def test_pipeline_chain_operators_are_conditions():
+    """`&&` runs the right pipeline only when the left one succeeded and `||`
+    only when it failed (about_Pipeline_Chain_Operators): one decision each."""
+    code = ("function Test-Chain($p) {\n    Get-Item $p && Write-Output 'found'\n"
+            "    Get-Item $p || Write-Output 'missing'\n}\n")
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert record.ccn_std == 3
+
+
+@pytest.mark.parametrize("line, ccn", [
+    ("return $a ?? 0", 2),
+    ("$a ??= 1", 2),
+    ("return $a ?? $b ?? 0", 3),
+])
+def test_null_coalescing_is_one_decision(line, ccn):
+    """`??` evaluates its right side only when the left is null, and `??=`
+    assigns only then (about_Operators): one decision each, where two `?`
+    tokens read as two ternaries."""
+    (record,) = analyze_source("probe.ps1", f"function Test-Coalesce($a, $b) {{\n    {line}\n}}\n")
+
+    assert record.ccn_std == ccn
+
+
+def test_logical_operators_nest_as_their_c_family_spelling_does():
+    """lizard's ND column adds one level for the first `&&` or `||` in a
+    condition, not one per operator. `-and` and `-or` each added a level of
+    their own, so this one condition read nesting 3 where the TypeScript
+    spelling of it reads 2."""
+    ps = ("function Test-Logic($a, $b, $c) {\n    if ($a -and $b -or $c) {\n"
+          "        return 1\n    }\n    return 0\n}\n")
+    ts = ("export function testLogic(a: boolean, b: boolean, c: boolean): number {\n"
+          "  if (a && b || c) {\n    return 1;\n  }\n  return 0;\n}\n")
+    (powershell,) = analyze_source("probe.ps1", ps)
+    (typescript,) = analyze_source("probe.ts", ts)
+
+    assert (powershell.nesting, powershell.ccn_std) == (typescript.nesting, 4)
 
 
 def test_a_six_branch_elseif_chain_gets_the_sonar_cognitive_score():
