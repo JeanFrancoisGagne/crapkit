@@ -603,10 +603,11 @@ nothing. Each of these now gets a line naming the object and the next step:
   crapkit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit).
   The section takes out the hook and the merge driver first, then the files crapkit
   wrote, then the package and the plugins, with each gate route's pieces and each
-  installer's removal line. After `pip uninstall crapkit` alone, the hook keeps judging
-  every commit through `uvx crapkit` on a machine with uv, with whatever release uv has
-  cached or can download, and stops every commit on `No module named crapkit` without
-  uv; every merge of `crapkit-ratchet.tsv` conflicts after the driver's `crapkit: not
+  installer's removal line. After `pip uninstall crapkit` alone, the sh hook keeps
+  judging every commit through `uvx crapkit` on a machine with uv, with whatever release
+  uv has cached or can download, and stops every commit on `No module named crapkit`
+  without uv. The PowerShell hook of Route 1 and the handbook names the launcher pip
+  deletes, so it stops every commit on `No such file or directory`, uv or not. Every merge of `crapkit-ratchet.tsv` conflicts after the driver's `crapkit: not
   found`. README and the handbook say the same where they point at the section.
 - The handbook's Install section names the PEP 668 refusal, the 3.10 route through
   `uvx crapkit`, what each Windows installer does under a live session, and links the

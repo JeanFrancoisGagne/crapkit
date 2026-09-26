@@ -380,10 +380,12 @@ environments. The CLI version alone does not prove an interrupted install finish
 ## Removing crapkit
 
 Take out what calls crapkit before the package. The commit hook and the merge driver
-both run it. After `pip uninstall crapkit` alone, the hook README prints keeps judging
-every commit through `uvx crapkit` on a machine with uv, with whichever crapkit release
-uv has cached or can download, and stops every commit on `No module named crapkit` on a
-machine without uv. Every merge that touches `crapkit-ratchet.tsv` conflicts after the
+both run it. After `pip uninstall crapkit` alone, the sh hook README's Route 1 and
+Route 2 write keeps judging every commit through `uvx crapkit` on a machine with uv, with
+whichever crapkit release uv has cached or can download, and stops every commit on
+`No module named crapkit` on a machine without uv. The PowerShell hook README's Route 1
+and the handbook write names the launcher that `pip uninstall crapkit` deletes, so it
+stops every commit on `No such file or directory`, with uv or without it. Every merge that touches `crapkit-ratchet.tsv` conflicts after the
 driver's `crapkit: not found`.
 
 ### From a repo
@@ -417,7 +419,7 @@ The other routes leave their own pieces:
 
 | Piece | Where it lives | How it goes |
 |---|---|---|
-| Route 1 hook that runs other checks too | `.git/hooks/pre-commit`, per clone | delete its `crapkit hook-precommit` line instead of the file |
+| Route 1 hook that runs other checks too | `.git/hooks/pre-commit`, per clone | delete the lines that run `crapkit hook-precommit` instead of the file: three in the sh form, one in the PowerShell form |
 | Route 2 hook | `githooks/pre-commit` and its `githooks/pre-commit text eol=lf` line in `.gitattributes`, committed; `core.hooksPath`, per clone | `git rm githooks/pre-commit`, delete the line, and `git config --unset core.hooksPath` in each clone |
 | Route 3 hook | the `crapkit-gate` entry in `.pre-commit-config.yaml`, committed | delete the entry; `pre-commit uninstall` when no hook is left |
 | Route 4 and the GitHub Action | your CI workflow, and a committed baseline such as `crapkit-baseline.tsv` | delete the step that installs crapkit and runs `crapkit verify`, or the one that `uses: JeanFrancoisGagne/crapkit`, and `git rm` the baseline |

@@ -361,6 +361,39 @@ def test_route_two_has_a_powershell_form_that_arms_the_gate(tmp_path, shell):
     assert_gated(repo, env, ps_paste(shell, block, repo, env))
 
 
+def launcher_hooks() -> dict[str, str]:
+    """The PowerShell blocks that write the launcher's own path into the hook:
+    README Route 1's, and the two lines of the handbook's Enforcement form that do."""
+    form = next(pre for pre in handbook_pres(ENFORCE) if "Set-Content" in pre)
+    return {"README": readme_fence(ROUTE_ONE, "powershell"),
+            "handbook": "\n".join(line for line in form.splitlines() if "$crapkit" in line)}
+
+
+@WINDOWS
+@pytest.mark.parametrize("page, heading", REMOVAL_PAGES)
+@pytest.mark.parametrize("form", ["README", "handbook"])
+def test_the_removal_text_says_what_a_powershell_hook_does_once_the_launcher_is_gone(tmp_path, form, page,
+                                                                                   heading):
+    """The PowerShell forms write the launcher's own path, and `pip uninstall
+    crapkit` deletes that launcher. Git's sh then stops every commit on
+    `No such file or directory`, with uv installed or not: this hook has no
+    uvx line. The removal text named only the sh hook's two outcomes, so a
+    PowerShell reader with uv expected the gate to keep judging."""
+    bin_dir = shims(tmp_path, python="bare", uvx=True)
+    env = machine(tmp_path, bin_dir, posix=False)
+    repo = adopted(tmp_path, env)
+    armed = ps_paste("powershell", launcher_hooks()[form], repo, env)
+    assert armed.returncode == 0, armed.stderr
+    for launcher in bin_dir.glob("crapkit*"):
+        launcher.unlink()
+
+    committed = commit_breach(repo, env)
+
+    assert committed.returncode != 0 and "No such file or directory" in committed.stderr, committed.stderr
+    assert "crapkit gate:" not in committed.stderr, committed.stderr
+    assert "`No such file or directory`" in removal_claim(page, heading), removal_claim(page, heading)
+
+
 # --- the handbook ------------------------------------------------------------------------
 
 def hook_lines() -> str:
