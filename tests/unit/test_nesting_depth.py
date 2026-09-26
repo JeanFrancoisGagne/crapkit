@@ -224,6 +224,13 @@ BRACE_DEPTHS = {
     "elvis.m": ("int elvis(int a, int b) {\n    return a ?: b;\n}\n", 1),
     "optional.tsx": ("function Badge({ size }: { size?: \"sm\" | \"lg\" }) {\n"
                      "  return <span>{size}</span>\n}\n", 0),
+    # A guard's body ends with its `;`: the block after it is no body of the
+    # guard's, and adds no level (ND read 2 for these, and so did the pass).
+    "guard-sync.java": ("class K {\n  void f(Object o, boolean a, boolean b) {\n    if (a) return;\n"
+                        "    synchronized (o) {\n      if (b) {\n        go();\n      }\n    }\n"
+                        "  }\n}\n", 1),
+    "guard-pool.m": ("void f(int a, int b) {\n    if (a) return;\n    @autoreleasepool {\n"
+                     "        if (b) {\n            go();\n        }\n    }\n}\n", 1),
     # Zig's `else |err| if` links an else-if chain, one level deep.
     "payload-else.zig": ("fn f(x: anyerror!u8, e: anyerror) !void {\n    if (x) |v| {\n"
                          "        use(v);\n    } else |err| if (err != e) return err;\n}\n", 1),

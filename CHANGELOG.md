@@ -1232,15 +1232,23 @@ analysis-version bump, so each marks file re-seeds once
   braces or not, a conditional operator's arms are one, and logical operators, case
   labels, `try`, bare blocks and a `?` with no `:` open none. The [`nesting`
   row](docs/agent-json.md#item-fields) lists what counts in each language.
-- Measured over 21,099 functions in 20 open-source projects: 1,469 of the 6,465
-  functions outside Python move, 1,266 down and 203 up. No Python row moves, and no
-  `ccn` or `cognitive` value moves anywhere. Against an independent tree-sitter reading
-  of Sonar's nesting rules over 3,198 functions in C, C++, Objective-C, Java, Go, Rust,
-  Swift, Zig and shell, crapkit agreed on 2,275 before and 2,942 now. Most of the rest
-  are closures, which open no level in crapkit's reading and one in that oracle's.
-- `nesting` is reported and never gated, so no gate verdict moves with it. The change
-  needs an analysis-version bump, which makes each marks file re-seed once
-  ([upgrading](docs/upgrading.md#next-analysis-version-nesting-in-every-language)).
+- A structure whose body has no braces stops waiting for one at the end of its
+  statement. After `if (a) return;` the next block of any kind, a bare `{`,
+  `synchronized`, `@autoreleasepool` or a lambda's body, read as the `if`'s body, so
+  `cognitive` charged every structure inside it one level of nesting too many, and
+  `nesting` counted the block as a level. A Java method holding `if (a) return;` and
+  then a lambda with one `if` in it read `cognitive` 3 and `nesting` 2; it reads 2
+  and 1.
+- Measured over 21,099 functions in 20 open-source projects: 1,470 of the 6,465
+  functions outside Python move `nesting`, 1,267 down and 203 up, and 9 move
+  `cognitive`, all down. No Python row and no `ccn` value moves. Against an
+  independent tree-sitter reading of Sonar's nesting rules over 3,228 functions in C,
+  C++, Objective-C, Java, Go, Rust, Swift, Zig and shell, crapkit agreed on 2,295
+  before and 2,941 now. Most of the rest are closures, which open no level in
+  crapkit's reading and one in that oracle's.
+- `nesting` and `cognitive` are reported and never gated, so no gate verdict moves
+  with them. The change needs an analysis-version bump, which makes each marks file
+  re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-nesting-in-every-language)).
 
 ## 0.8.0 — 2026-09-23
 

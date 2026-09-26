@@ -414,9 +414,15 @@ below.
   most rows that move go down: a switch reads 1 whatever its case count, and a
   condition's operators add nothing. Rows go up where ND lost a level, as with nested
   loops, an `if` inside an `else`, or a Rust `match`.
-- `nesting` is reported and never gated, so no verdict moves with it. Expect the
-  column to change in `next-item --json`, exports and `brief` on the first run after
-  upgrading; the [`nesting` row](agent-json.md#item-fields) says what opens a level.
+- `cognitive` drops in a function where a guard without braces (`if (a) return;`)
+  comes before a block that is not a structure's, such as a bare `{`,
+  `synchronized`, `@autoreleasepool` or a lambda's body: the structures inside that
+  block no longer pay a level of nesting for the guard. 9 of 21,099 functions in the
+  measuring corpus move.
+- `nesting` and `cognitive` are reported and never gated, so no verdict moves with
+  them. Expect both columns to change in `next-item --json`, exports and `brief` on
+  the first run after upgrading; the [`nesting` row](agent-json.md#item-fields) says
+  what opens a level.
 
 ### Analysis version 11
 

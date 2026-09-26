@@ -271,3 +271,29 @@ NESTED_LOOPS = {
 @pytest.mark.parametrize("name", sorted(NESTED_LOOPS))
 def test_nested_loops_read_six_in_every_block_model(tmp_path, name):
     assert _one(tmp_path, name, NESTED_LOOPS[name]) == 6
+
+
+# A structure whose body has no braces ends with its statement. The pass kept it
+# waiting for a `{` past its `;`, so the next block of any kind (a bare block,
+# `synchronized`, `@autoreleasepool`, a lambda's body) read as the guard's body
+# and charged every structure inside it one level of nesting too many. Each
+# function holds a guard (+1) and one `if` at nesting 0 (+1): Sonar v1.7 App. B.
+GUARD_THEN_BLOCK = {
+    "sync.java": ("class K {\n  void f(Object o, boolean a, boolean b) {\n    if (a) return;\n"
+                  "    synchronized (o) {\n      if (b) {\n        go();\n      }\n    }\n  }\n}\n"),
+    "pool.m": ("void f(int a, int b) {\n    if (a) return;\n    @autoreleasepool {\n"
+               "        if (b) {\n            go();\n        }\n    }\n}\n"),
+    "bare.c": ("void f(int a, int b) {\n    if (a) return;\n    {\n        if (b) {\n"
+               "            go();\n        }\n    }\n}\n"),
+    "lambda.java": ("class K {\n  void f(java.util.List<Integer> xs, boolean a) {\n"
+                    "    if (a) return;\n    xs.forEach(x -> {\n      if (x > 0) {\n"
+                    "        go(x);\n      }\n    });\n  }\n}\n"),
+    "lambda.cpp": ("void f(std::vector<int> v, int a) {\n    if (a) return;\n"
+                   "    std::for_each(v.begin(), v.end(), [&](int x) {\n        if (x) {\n"
+                   "            go(x);\n        }\n    });\n}\n"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(GUARD_THEN_BLOCK))
+def test_a_braceless_guard_leaves_no_level_open_for_the_next_block(tmp_path, name):
+    assert _one(tmp_path, name, GUARD_THEN_BLOCK[name]) == 2
