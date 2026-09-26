@@ -422,8 +422,17 @@ def _hashed_alone(root: Path, paths) -> dict[str, str]:
 
 def has_commit(root: Path, commit: str) -> bool:
     """Whether this clone holds the commit: a shallow clone or a rewritten and
-    collected history does not."""
-    return _spawn(root, ("cat-file", "-e", f"{commit}^{{commit}}")).returncode == 0
+    collected history does not. Raises GitError when git cannot answer.
+
+    `rev-parse --verify --quiet` exits 1 for a name that resolves to no commit
+    and 128 when git itself fails (not a repository, a corrupt object).
+    `cat-file -e` exits 128 for both, so a git failure read as "not held" and
+    a reader sent the operator after a fetch that could not help."""
+    argv = ("rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}")
+    res = _spawn(root, argv)
+    if res.returncode not in (0, 1):
+        raise GitError(f"git {' '.join(argv)} failed in {root}: {res.stderr.strip()}")
+    return res.returncode == 0
 
 
 _SHALLOW_FIX = ("this shallow clone does not hold every commit: set fetch-depth: 0 on the "

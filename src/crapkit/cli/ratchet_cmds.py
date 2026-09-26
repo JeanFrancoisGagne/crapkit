@@ -261,19 +261,33 @@ def _prune_renames(root: Path, runs: list[dict]) -> _Renames:
     to read as "no renames", and a renamed file's marks dropped as repaid debt.
     """
     from ..errors import GitError
-    from ..gitio import has_commit, renamed_paths
+    from ..gitio import renamed_paths
 
     first = runs[0]
     try:
         return _Renames(renamed_paths(root, first["commit"]), first)
     except GitError:
-        if has_commit(root, first["commit"]):
+        if not _git_work_tree(root):
+            print(f"note: {root} is not a git work tree, so prune followed no renames",
+                  file=sys.stderr)
+            return _Renames({}, None)
+        if _held(root, first):
             raise
-    if not _git_work_tree(root):
-        print(f"note: {root} is not a git work tree, so prune followed no renames",
-              file=sys.stderr)
-        return _Renames({}, None)
     return _held_renames(root, runs)
+
+
+def _held(root: Path, run: dict) -> bool:
+    """Whether this clone holds the run's commit. When git cannot answer, prune
+    refuses: read as "not held", the failure sent the reader after a fetch."""
+    from ..errors import GitError
+    from ..gitio import has_commit
+
+    try:
+        return has_commit(root, run["commit"])
+    except GitError as exc:
+        raise GitError(f"ratchet prune: git cannot say whether run {run['id']}'s commit "
+                       f"{run['commit'][:11]} is in this clone ({exc}); fix what git reports, "
+                       f"then run `{_self()} ratchet prune` again; nothing was written") from exc
 
 
 def _git_work_tree(root: Path) -> bool:
@@ -302,13 +316,11 @@ def _held_renames(root: Path, runs: list[dict]) -> _Renames:
 def _oldest_held(root: Path, runs: list[dict]) -> dict | None:
     """The oldest of `runs` whose commit this clone holds, asking git once per
     commit: runs share commits, and a shallow CI clone lacks most of them."""
-    from ..gitio import has_commit
-
     asked: dict[str, bool] = {}
     for run in runs:
         commit = run["commit"]
         if commit not in asked:
-            asked[commit] = has_commit(root, commit)
+            asked[commit] = _held(root, run)
         if asked[commit]:
             return run
     return None

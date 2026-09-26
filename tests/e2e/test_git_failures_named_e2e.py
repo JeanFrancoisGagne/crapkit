@@ -326,6 +326,54 @@ def test_a_store_outside_any_git_work_tree_prunes_and_says_no_rename_was_followe
     assert "is not a git work tree, so prune followed no renames" in res.stderr, res.stderr
 
 
+def corrupt(repo: Path, sha: str) -> None:
+    """Overwrite a commit's loose object with bytes zlib refuses: git holds the
+    commit and cannot read it."""
+    loose = repo / ".git" / "objects" / sha[:2] / sha[2:]
+    loose.chmod(0o644)
+    loose.write_bytes(b"garbage")
+
+
+def test_prune_names_gits_error_when_git_cannot_read_run_1s_commit(tmp_path: Path):
+    """The commit is in the clone and its object is corrupt. has_commit read
+    git's failure as "not held", so prune said the commit was missing and sent
+    the reader after a fetch that could not help."""
+    repo = seeded_then_renamed(tmp_path)
+    assert run_cli(repo, "coverage").returncode == 0
+    anchor = first_run_commit(repo)
+    corrupt(repo, anchor)
+    before = (repo / MARKS).read_bytes()
+
+    res = run_cli(repo, "ratchet", "prune")
+
+    assert res.returncode == 4, res.stdout + res.stderr
+    assert f"git cannot say whether run 1's commit {anchor[:11]} is in this clone" in res.stderr, \
+        res.stderr
+    assert "corrupt" in res.stderr, res.stderr
+    assert "fix what git reports, then run `" in res.stderr, res.stderr
+    assert "nothing was written" in res.stderr, res.stderr
+    assert "is not in this clone" not in res.stderr and "git fetch" not in res.stderr, res.stderr
+    assert (repo / MARKS).read_bytes() == before
+
+
+def test_explain_history_outside_a_git_work_tree_names_gits_error(tmp_path: Path):
+    """has_commit read "not a git repository" as "no commit yet", so explain
+    said the function held only uncommitted lines."""
+    repo = cc_only_repo(tmp_path / "repo", {"src/app.py": tangled("tangle")})
+    assert run_cli(repo, "coverage").returncode == 0
+    copy = tmp_path / "copy"
+    shutil.copytree(repo, copy, ignore=shutil.ignore_patterns(".git"))
+
+    res = run_cli(copy, "explain", "src/app.py", "tangle", "--history", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    fn = json.loads(res.stdout)["functions"][0]
+    assert fn["commits"] is None, fn
+    assert fn["commits_note"].startswith("git cannot read the history of src/app.py:1-"), fn
+    assert "not a git repository" in fn["commits_note"], fn
+    assert "uncommitted" not in fn["commits_note"], fn
+
+
 def test_the_prune_line_names_three_renames_and_counts_the_rest(tmp_path: Path):
     repo = cc_only_repo(tmp_path / "repo", {f"src/m{i}.py": tangled(f"t{i}") for i in range(4)})
     assert run_cli(repo, "coverage").returncode == 0
