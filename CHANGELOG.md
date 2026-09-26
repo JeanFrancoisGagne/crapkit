@@ -4,9 +4,10 @@
 
 ### Upgrading from 0.8.0
 
-- The coverage.py reader and two source reads (a UTF-16 source, and an identifier holding
-  a byte cp1252 leaves undefined; see Text that is not UTF-8 below) move to analysis
-  version 12, so every repo re-seeds its marks once: `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`.
+- The coverage.py reader and two source reads move to analysis version 12: a UTF-16
+  source, and an identifier holding a byte cp1252 leaves undefined (see Text that is not
+  UTF-8 below). Every repo re-seeds its marks once: `crapkit coverage`, then `crapkit
+  ratchet prune`, then `crapkit ratchet seed`.
   When a failed verify pins the baseline, pass the new run to both, `crapkit ratchet prune
   --baseline N` and then `crapkit ratchet seed --baseline N`. Until then `verify` refuses
   the marks as recorded under another metric version. The first `inventory` or `coverage`
@@ -450,7 +451,8 @@ version bump under Upgrading from 0.8.0 above.
   that would save U+FFFD in place of a name (`ratchet seed`, `prune`, `move`, verify's
   tighten, the merge driver) refuses at exit 3 naming the byte, and a UTF-16 file is
   written back as UTF-16 in its own line endings. A past revision in cp1252 or UTF-16 no
-  longer stops `ratchet report`, and a UTF-16 one keeps each mark's entry date.
+  longer stops `ratchet report`, and a UTF-16 one keeps each mark's entry date. verify
+  reads such a revision by the same rule when it stands in for a deleted marks file.
 - `init`'s reads of a `package.json` or `.gitignore` in UTF-16, behind a byte-order mark or
   holding a byte that is not UTF-8 are in the `init` section above.
 - Lane, flake-retest and mutation children start with `PYTHONIOENCODING=utf-8` on every
