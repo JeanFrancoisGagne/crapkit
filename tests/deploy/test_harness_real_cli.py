@@ -51,10 +51,11 @@ def claude_list(box, repo: Path) -> str:
 
 def approve_project_servers(box, repo: Path) -> None:
     """What answering yes to Claude Code's .mcp.json prompt writes: the server
-    name under this project in $CLAUDE_CONFIG_DIR/.claude.json."""
+    name under this project in $CLAUDE_CONFIG_DIR/.claude.json. The project key
+    is the git top in forward slashes, on Windows too, wherever the prompt came."""
     state = Path(box.env["CLAUDE_CONFIG_DIR"]) / ".claude.json"
     data = json.loads(state.read_text(encoding="utf-8"))
-    project = data.setdefault("projects", {}).setdefault(str(repo), {})
+    project = data.setdefault("projects", {}).setdefault(repo.as_posix(), {})
     project.update(enabledMcpjsonServers=["crapkit"], hasTrustDialogAccepted=True)
     state.write_text(json.dumps(data, indent=2), encoding="utf-8")
 

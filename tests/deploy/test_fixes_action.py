@@ -17,7 +17,6 @@ Without the checkout step act's workspace is empty, and every Action run reads
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import stat
 from pathlib import Path

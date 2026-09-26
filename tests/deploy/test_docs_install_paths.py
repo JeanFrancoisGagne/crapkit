@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from docs_support import adopt_measured, install_candidate, user_bin, version_of
-from kit import docsnip, httpstub, pyindex, repos, wheels
+from kit import docsnip, pyindex, repos, wheels
 from kit.cells import cell
 
 PACKET = "deploy-docs"
@@ -160,44 +160,11 @@ def uvx_version(box, *spec: str) -> str:
     return box.run(["uvx", *spec, "--version"], expect=0).stdout.strip()
 
 
-class _HeadersOnly:
-    """A response stream that passes the header block and drops the body."""
-
-    def __init__(self, stream):
-        self.stream, self.sent = stream, False
-
-    def write(self, data: bytes) -> int:
-        if not self.sent:
-            self.stream.write(data)
-        self.sent = True
-        return len(data)
-
-    def flush(self) -> None:
-        self.stream.flush()
-
-
-def _head(handler) -> None:
-    handler.wfile = _HeadersOnly(handler.wfile)
-    try:
-        handler._serve()
-    finally:
-        handler.wfile = handler.wfile.stream
-
-
-def head_without_a_body(monkeypatch) -> None:
-    """kit/httpstub.py answers HEAD with a body on a keep-alive connection. uv asks
-    HEAD before it fetches a wheel, and its next response on that connection then
-    parses as `invalid HTTP version`; one run in 18 failed that way. Until the kit
-    sends no body on HEAD, this cell's index does not either."""
-    monkeypatch.setattr(httpstub._Handler, "do_HEAD", _head)
-
-
 @cell("docs-upgrade-uvx", channel="uvx against a PEP 503 index with PyPI's cache headers", harness="none",
       scenario="upgrade: uvx cached N-1, the index publishes the candidate; what plain `uvx crapkit` answers, and "
                "the uvx row of docs/upgrading.md reaches the candidate",
       use_cases="uvx refresh", os=("linux", "windows"), image="core", cadence="push")
-def test_the_uvx_row_reaches_a_release_plain_uvx_keeps_cached(box, candidate, monkeypatch):
-    head_without_a_body(monkeypatch)
+def test_the_uvx_row_reaches_a_release_plain_uvx_keeps_cached(box, candidate):
     with pyindex.serve([box.toolchain["wheelhouse"]]) as index:
         serve_uvx_from(box, index)
         assert wheels.n_minus_1() in uvx_version(box, "crapkit")

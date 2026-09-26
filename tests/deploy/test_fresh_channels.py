@@ -13,8 +13,6 @@ import os
 import re
 from pathlib import Path
 
-import pytest
-
 from kit import docsnip, gitmirror, installers, repos
 from kit.cells import cell
 from kit.installers import README, NOT_PYTHON, readme_start, said
@@ -161,9 +159,10 @@ def test_a_user_site_launcher_off_path_fails_the_plugin_until_path_names_it(box,
     agreed = box.run(["crapkit", "doctor", "--plugin-root"], expect=0)
 
     assert debian.exit == 1 and "externally-managed-environment" in said(debian)
-    assert "plugin:crapkit:crapkit: crapkit mcp - ✘ Failed to connect" in failed.stdout
+    # The glyph before the status differs by build and OS (✔, ✓, √), so the status alone is read.
+    assert re.search(r"^plugin:crapkit:crapkit: crapkit mcp - \W* ?Failed to connect", failed.stdout, re.M)
     assert "FAIL no `crapkit` on PATH" in doctor.stdout and "pipx install crapkit" in doctor.stdout
-    assert "plugin:crapkit:crapkit: crapkit mcp - ✔ Connected" in connected.stdout
+    assert re.search(r"^plugin:crapkit:crapkit: crapkit mcp - \W* ?Connected", connected.stdout, re.M)
     assert "crapkit doctor: checking" in agreed.stdout and "FAIL" not in agreed.stdout
 
 

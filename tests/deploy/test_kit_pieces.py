@@ -18,7 +18,8 @@ from pathlib import Path
 import pytest
 
 import hang_guard
-from kit import cells, docsnip, gitmirror, hooks_rules, profiles, pyindex, repos, sandbox, shim, stub_anthropic, stub_openai, wheels
+from kit import (cells, docsnip, gitmirror, hooks_rules, httpstub, profiles, pyindex, repos, sandbox, shim,
+                 stub_anthropic, stub_openai, wheels)
 from kit.mcp_client import McpClient
 from kit.transcript import Step, Transcript
 
@@ -138,6 +139,23 @@ def test_the_github_url_clones_the_mirror_and_a_release_moves_main(box, candidat
     clone = box.root / "clone"
     box.run(["git", "clone", "-q", "https://github.com/JeanFrancoisGagne/crapkit", str(clone)], expect=0)
     assert box.run(["git", "rev-parse", "HEAD"], cwd=clone, expect=0).stdout.strip() == old
+
+
+def test_a_head_gets_the_get_s_headers_and_no_body_on_a_kept_connection():
+    import http.client
+
+    with httpstub.Stub(lambda request: httpstub.Reply(200, b"wheel bytes")) as stub:
+        connection = http.client.HTTPConnection(stub.url.removeprefix("http://"))
+        connection.request("HEAD", "/crapkit.whl")
+        head = connection.getresponse()
+        head.read()
+        connection.request("GET", "/crapkit.whl")
+        get = connection.getresponse()
+        body = get.read()
+        connection.close()
+
+    assert head.status == 200 and head.getheader("Content-Length") == "11"
+    assert (get.status, body) == (200, b"wheel bytes")
 
 
 def test_the_index_serves_pip_with_pypis_cache_headers(box, toolchain, candidate):
@@ -354,6 +372,16 @@ def test_the_openai_stub_answers_chat_and_responses():
     assert chat["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "get_next_item"
     assert b"response.completed" in streamed and b'"output_text"' in streamed
     assert len(stub.bodies()) == 2
+
+
+def test_a_red_step_quotes_the_error_under_a_clone_s_progress():
+    progress = "".join(f"Updating files: {n:3d}% ({n}/100)\r" for n in range(100)) * 3
+    step = Step(["git", "clone"], "/w", 128, "", progress + "Updating files: 100% (100/100), done.\r\n"
+                "fatal: unable to checkout working tree\r\n", 1.0)
+
+    text = step.text()
+    assert "fatal: unable to checkout working tree" in text
+    assert text.count("Updating files:") == 1 and "(tail)" not in text
 
 
 # --- repo templates -----------------------------------------------------------------------

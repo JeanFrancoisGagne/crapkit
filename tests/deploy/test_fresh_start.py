@@ -21,7 +21,7 @@ import pytest
 
 from kit import docsnip, installers, repos, wheels
 from kit.cells import cell
-from kit.installers import README, START, Expect, readme_start, said, shape
+from kit.installers import README, Expect, readme_start, said, shape
 
 PACKET = "deploy-channels"
 WINDOWS = os.name == "nt"

@@ -11,10 +11,7 @@ where uv and pip read find-links, so they lock against kit/pyindex.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
-
-import pytest
 
 from kit import installers, pyindex, repos
 from kit.cells import cell

@@ -3,7 +3,9 @@
 pyindex, stub_anthropic and stub_openai are each one handler on top of this:
 the server binds an ephemeral port, serves from a daemon thread, and keeps
 (method, path, headers, body) for every request so a cell asserts on what the
-client actually sent.
+client actually sent. A HEAD gets the headers a GET would, Content-Length
+included, and no body: uv asks HEAD before it fetches a wheel, and a body on a
+keep-alive connection made its next response parse as `invalid HTTP version`.
 
     with Stub(handler) as stub:
         stub.url            # http://127.0.0.1:PORT
@@ -63,7 +65,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header(name, value)
         self.send_header("Content-Length", str(len(reply.body)))
         self.end_headers()
-        self.wfile.write(reply.body)
+        if self.command != "HEAD":
+            self.wfile.write(reply.body)
 
     do_GET = do_POST = do_HEAD = _serve
 

@@ -43,7 +43,16 @@ def exit_text(code: int) -> str:
     return f"{code} (signal {-code})" if code < 0 else str(code)
 
 
+def shown(text: str) -> str:
+    """The text as a terminal leaves it: each line keeps what came after its
+    last carriage return, so a clone's "Updating files:  37%" progress, written
+    over itself thousands of times, no longer fills the tail an error ends."""
+    lines = text.replace("\r\n", "\n").split("\n")
+    return "\n".join(line.rstrip("\r").rsplit("\r", 1)[-1] for line in lines)
+
+
 def _indented(label: str, text: str) -> list[str]:
+    text = shown(text)
     if not text.strip():
         return []
     tail = text[-TAIL:]

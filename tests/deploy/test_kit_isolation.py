@@ -816,8 +816,11 @@ def short_path(path: Path) -> Path:
 
 
 @pytest.mark.skipif(not WINDOWS, reason="8.3 short names exist only on Windows")
-def test_the_windows_sandbox_sits_under_c_dt_in_its_long_form_with_no_tilde(box):
-    assert _normalized(str(box.root)).startswith(_normalized("C:/dt") + os.sep)
+def test_the_windows_sandbox_sits_under_the_run_s_basetemp_in_its_long_form_with_no_tilde(box, tmp_path_factory):
+    """Under the basetemp run.py passed: C:/dt, or CRAPKIT_DEPLOY_BASETEMP when
+    two native runs share a machine."""
+    base = _normalized(str(tmp_path_factory.getbasetemp()))
+    assert _normalized(str(box.root)).startswith(base + os.sep)
     assert box.root == sandbox.long_path(box.root)
     assert [value for value in [str(box.root), *box.env.values(), *box.toolchain["path"]] if "~" in value] == []
 
