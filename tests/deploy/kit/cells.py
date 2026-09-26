@@ -44,6 +44,16 @@ MARKERS = {
 HARNESSES = pytest.StashKey[dict]()
 
 
+def excused(report, item, call) -> None:
+    """A nonblocking cell whose call failed reads as an xfail naming its error,
+    so it is reported and never fails the run, whichever job selected it: the
+    release cadence runs the weekly prerelease and arm64 cells inside jobs
+    that block. A failed setup or teardown still fails, since the kit broke."""
+    if report.when == "call" and report.failed and item.get_closest_marker("nonblocking"):
+        report.outcome = "skipped"
+        report.wasxfail = "nonblocking cell failed: " + call.excinfo.exconly().splitlines()[0][:300]
+
+
 def _split(value: str | tuple | list) -> list[str]:
     if isinstance(value, str):
         return [part.strip() for part in value.replace("+", ",").split(",") if part.strip()]

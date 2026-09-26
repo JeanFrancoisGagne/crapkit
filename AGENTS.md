@@ -713,7 +713,9 @@ python tools/deploy/run.py --native --os windows        # Windows or macOS, afte
 ci.yml runs the push set in `deploy-linux`, `deploy-linux-native`, `deploy-windows` and
 `deploy-action`. deploy.yml runs the nightly, weekly, release and published sets, and runs
 on a pull request only when it changes an install surface or carries the `deploy-full`
-label. `tests/deploy/MAP.toml` maps every documented install command, channel, harness and
+label. Before a release, push the release commit, dispatch the release set with
+`gh workflow run deploy.yml --ref main -f cadence=release` and wait for it to pass:
+`python tools/release/release.py check` refuses until a release-cadence run at HEAD is green. `tests/deploy/MAP.toml` maps every documented install command, channel, harness and
 upgrade source to its cells, and `tests/unit/test_deploy_map.py` fails on a doc fence the
 map does not cover. A new `@cell` goes into the map with its packet, cadence, os and image,
 and into a run that selects it; `tests/unit/test_deploy_map.py` and

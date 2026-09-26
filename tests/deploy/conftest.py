@@ -26,6 +26,12 @@ from kit import cells, sandbox, wheels
 from kit.transcript import Transcript
 
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    cells.excused(outcome.get_result(), item, call)
+
+
 def pytest_addoption(parser):
     group = parser.getgroup("deploy")
     group.addoption("--deploy-cell", action="append", default=[], help="run only this cell id (repeatable)")

@@ -20,6 +20,20 @@ GREEN = {"event": "workflow_dispatch", "displayTitle": "deploy release", "conclu
          "url": "https://github.com/JeanFrancoisGagne/crapkit/actions/runs/1"}
 
 
+def test_the_deploy_workflow_titles_a_dispatched_run_with_the_cadence_the_gate_reads():
+    """Without run-name, gh titles every dispatched run "deploy", and the gate
+    finds no release run however green the release cadence ran."""
+    from pathlib import Path
+
+    import yaml
+
+    workflow = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "deploy.yml"
+    title = yaml.safe_load(workflow.read_text(encoding="utf-8"))["run-name"]
+    shown = title.replace("${{ inputs.cadence || github.event_name }}", "release")
+
+    assert release._release_cadence({**GREEN, "displayTitle": shown})
+
+
 def _git(root, *arguments):
     return subprocess.run(["git", *arguments], cwd=root, check=True, capture_output=True,
                           text=True).stdout.strip()

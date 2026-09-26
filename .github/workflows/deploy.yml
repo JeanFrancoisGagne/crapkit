@@ -16,6 +16,9 @@
 # release set when it carries the deploy-full label; any other pull request
 # runs the scope job alone. Every other job reads the scope job's output.
 name: deploy
+# The title gh lists for each run, "deploy release" for a dispatched release
+# cadence: tools/release/release.py check reads the cadence from it.
+run-name: deploy ${{ inputs.cadence || github.event_name }}
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]

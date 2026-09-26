@@ -384,6 +384,35 @@ def test_a_red_step_quotes_the_error_under_a_clone_s_progress():
     assert text.count("Updating files:") == 1 and "(tail)" not in text
 
 
+def _report(when: str, outcome: str):
+    from types import SimpleNamespace
+    return SimpleNamespace(when=when, outcome=outcome, failed=outcome == "failed")
+
+
+def _item(*markers: str):
+    from types import SimpleNamespace
+    return SimpleNamespace(get_closest_marker=lambda name: name if name in markers else None)
+
+
+def test_a_failed_nonblocking_cell_reads_as_an_xfail_naming_its_error():
+    from types import SimpleNamespace
+    call = SimpleNamespace(excinfo=SimpleNamespace(exconly=lambda: "AssertionError: 3.15 refused\nmore"))
+    failed = _report("call", "failed")
+
+    cells.excused(failed, _item("nonblocking", "weekly"), call)
+
+    assert (failed.outcome, failed.wasxfail) == ("skipped", "nonblocking cell failed: AssertionError: 3.15 refused")
+
+
+def test_a_blocking_cell_or_a_broken_setup_still_fails():
+    for report, item in ((_report("call", "failed"), _item("weekly")),
+                         (_report("setup", "failed"), _item("nonblocking")),
+                         (_report("call", "passed"), _item("nonblocking"))):
+        before = report.outcome
+        cells.excused(report, item, None)
+        assert report.outcome == before and not hasattr(report, "wasxfail")
+
+
 # --- repo templates -----------------------------------------------------------------------
 
 EXPECTED = {"py-pytest": "calc/grade.py", "ts-vitest-only": "package-lock.json", "jest": "package-lock.json",
