@@ -1041,7 +1041,7 @@ which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-b
 
 | Flag | Behavior |
 |---|---|
-| `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp. |
+| `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) until something rewrites it. Warns per lane when files under that lane's scopes changed since the stamp, or when git could not tell. |
 | `--reuse-unchanged` | Reuse a lane only when its stamp proves nothing it reads changed; otherwise run it again. A lane without `inputs` needs the same clean HEAD, unchanged lane settings, `crapkit.toml` bytes, inherited environment and coverage/JUnit bytes. A lane with `inputs` needs its artifact's commit still behind HEAD, no change under those paths, its own lane table and `env` unchanged, and the same coverage/JUnit bytes. A failed attempt that wrote no artifact always reruns. Each lane prints one line saying which it did, and a rerun names the first condition that failed. |
 
 Without `inputs`, automatic reuse covers the whole tracked tree, including tests and

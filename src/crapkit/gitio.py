@@ -299,11 +299,33 @@ def _shallow_fix(root: Path) -> str:
 def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
     """True when `commit` is at or behind `other`; git counts a commit as its own
     ancestor, which is what "at or behind" needs."""
-    try:
-        res = subprocess.run(["git", "merge-base", "--is-ancestor", commit, other],
-                             cwd=root, capture_output=True)
-    except FileNotFoundError as exc:
-        raise GitError("git executable not found") from exc
+    argv = ("merge-base", "--is-ancestor", commit, other)
+    res = _spawn(root, argv, binary=True)
+    failure = f"git {' '.join(argv)} failed in {root}: {res.stderr.decode('utf-8', 'replace').strip()}"
+    return ancestry_answer(root, commit, res.returncode, failure)
+
+
+def ancestry_answer(root: Path, commit: str, code: int, failure: str) -> bool:
+    """`merge-base --is-ancestor`'s exit code as an answer: 0 is yes and 1 is no.
+
+    git exits 128 both for a commit this clone does not hold, which is not
+    behind HEAD, and for a read that failed, which is no answer at all: read as
+    "no", it told next-item that files in a lane's scopes changed on a tree
+    nobody touched. `rev-parse --verify --quiet` tells the two apart, and a
+    failed read raises GitError with `failure`, what git said."""
+    if code in (0, 1):
+        return code == 0
+    if _holds_commit(root, commit):
+        raise GitError(failure)
+    return False
+
+
+def _holds_commit(root: Path, commit: str) -> bool:
+    """Whether this clone holds `commit`: `rev-parse --verify --quiet` exits 1,
+    printing nothing, for an object it does not have."""
+    res = _spawn(root, ("rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}"))
+    if res.returncode > 1:
+        raise GitError(f"git rev-parse --verify {commit} failed in {root}: {res.stderr.strip()}")
     return res.returncode == 0
 
 
@@ -403,6 +425,11 @@ class _Started:
                 text=text, encoding="utf-8" if text else None)
         except FileNotFoundError as exc:
             raise GitError("git executable not found") from exc
+
+    @property
+    def returncode(self) -> int | None:
+        """The exit code once the read was collected, else None."""
+        return self._proc.returncode
 
     def result(self, payload=None):
         out, err = self._proc.communicate(payload)

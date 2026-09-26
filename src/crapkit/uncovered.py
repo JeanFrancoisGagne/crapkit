@@ -179,15 +179,21 @@ def missing_by_path(root: Path, cfg, *, folded: DeadLineFold | None = None) -> d
 
 def _artifact_state(root: Path, lane, scope_paths: dict, git) -> str:
     """What stops this lane's artifact from naming line numbers, or "" when nothing does."""
-    from .lanes import lane_sources_unchanged
+    from .lanes import lane_sources_gap
 
     if not (root / lane.artifact).is_file():
         return f"lane {lane.name!r}: no artifact at {lane.artifact}"
-    if not lane_sources_unchanged(root, lane, scope_paths, git):
-        return (f"lane {lane.name!r}: files in its scopes changed since {lane.artifact} "
-                "was written (uncommitted edits count), so its line numbers are stale — "
-                f"commit or revert them, then rerun `{_self()} coverage`")
-    return ""
+    gap = lane_sources_gap(root, lane, scope_paths, git)
+    return f"lane {lane.name!r}: {gap.why}, {_stale_move(gap.changed)}" if gap else ""
+
+
+def _stale_move(changed: bool) -> str:
+    """The move that clears a stale lane. Only changed files ask for a commit or
+    a revert; any other cause clears with a fresh run."""
+    if changed:
+        return (f"so its line numbers are stale — commit or revert them, "
+                f"then rerun `{_self()} coverage`")
+    return f"so nothing proves its line numbers current — rerun `{_self()} coverage`"
 
 
 def lane_states(root: Path, cfg, git=None) -> list[tuple[str, str]]:

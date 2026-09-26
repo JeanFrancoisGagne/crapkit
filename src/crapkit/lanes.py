@@ -743,16 +743,21 @@ def _warn_stale_artifact(git: GitFacts, lane: Lane, scope_paths: dict | None) ->
     """On reuse: say when the artifact predates changes touching this lane's scopes.
     Uncommitted working-tree edits count — that is the most common way to go stale."""
     commit = _stamp_commit(stamp_for(read_stamps(git.root), lane.artifact))
-    if not commit or not scope_paths:
-        return
+    note = _stale_artifact_note(git, lane, scope_paths, commit) if commit and scope_paths else ""
+    if note:
+        print(f"crapkit: lane {lane.name!r} artifact was built at {commit[:11]}; {note}",
+              file=sys.stderr)
+
+
+def _stale_artifact_note(git: GitFacts, lane: Lane, scope_paths: dict, commit: str) -> str:
+    """The warning's second half, or "" when nothing under the scopes changed.
+    A git read that fails says so: silence would read as a fresh artifact."""
     try:
         changed = _scope_changes(git, lane, scope_paths, commit)
-    except GitError:
-        return
-    if changed:
-        print(f"crapkit: lane {lane.name!r} artifact was built at {commit[:11]}; "
-              f"{len(changed)} file(s) in its scopes changed since (their coverage is stale)",
-              file=sys.stderr)
+    except GitError as exc:
+        return (f"git could not tell which files in its scopes changed after it, so its "
+                f"coverage may be stale ({exc})")
+    return f"{len(changed)} file(s) in its scopes changed since (their coverage is stale)" if changed else ""
 
 
 def _facts(root: Path, git: GitFacts | None) -> GitFacts:
@@ -769,22 +774,42 @@ def _artifact_commit(root: Path, lane: Lane) -> str:
     return _stamp_commit(stamp)
 
 
-def lane_sources_unchanged(root: Path, lane: Lane, scope_paths: dict,
-                           git: GitFacts | None = None) -> bool:
-    """Whether source edits made this artifact's line locations stale.
+class SourcesGap(NamedTuple):
+    """Why nothing proves an artifact's line locations current: `why` names the
+    cause, and `changed` is True only when git named changed files under the
+    lane's scopes, the one cause a commit or a revert settles."""
+    why: str
+    changed: bool = False
+
+
+def lane_sources_gap(root: Path, lane: Lane, scope_paths: dict,
+                     git: GitFacts | None = None) -> SourcesGap | None:
+    """Why source edits may have made this artifact's line locations stale, or
+    None when its stamp proves them current.
 
     Tests, runner settings and environment changes require a new measurement
     but leave source locations intact. This read-side check accepts legacy
     commit stamps and shares Git facts across lanes; it cannot authorize reuse.
+    A git read that fails proves nothing, and says so: read as a change, it
+    told an agent to commit or revert files nobody touched.
     """
     commit = _artifact_commit(root, lane)
     if not commit:
-        return False
-    facts = _facts(root, git)
+        return SourcesGap(_no_commit(root, lane, stamp_for(read_stamps(root), lane.artifact)))
     try:
-        return facts.is_ancestor(commit) and not _scope_changes(facts, lane, scope_paths, commit)
-    except GitError:
-        return False
+        return _sources_moved(_facts(root, git), lane, scope_paths, commit)
+    except GitError as exc:
+        return SourcesGap(f"git could not tell which files in its scopes changed after "
+                          f"{lane.artifact} was written ({exc})")
+
+
+def _sources_moved(facts: GitFacts, lane: Lane, scope_paths: dict, commit: str) -> SourcesGap | None:
+    if not facts.is_ancestor(commit):
+        return SourcesGap(f"{lane.artifact} was built at {commit[:11]}, which is not behind HEAD")
+    if _scope_changes(facts, lane, scope_paths, commit):
+        return SourcesGap(f"files in its scopes changed since {lane.artifact} was written "
+                          "(uncommitted edits count)", changed=True)
+    return None
 
 
 def staleness_reads(root: Path, lanes, scope_paths: dict, git=None):

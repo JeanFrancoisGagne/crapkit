@@ -20,7 +20,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from .errors import GitError
-from .gitio import SHOW_PREFIX, STATUS, status_records
+from .gitio import SHOW_PREFIX, STATUS, ancestry_answer, status_records
 
 _NAMES = ("--name-only", "--no-renames", "-z")
 
@@ -93,13 +93,13 @@ class ChangeReads:
         self._uncollected.discard(read)
         return read.result()
 
-    def _succeeds(self, read) -> bool:
-        """`merge-base --is-ancestor` answers in its exit code alone: 0 is yes, and
-        anything else, a commit this clone does not hold included, is no."""
+    def _succeeds(self, read, commit: str) -> bool:
+        """`merge-base --is-ancestor` answers in its exit code alone, read by
+        gitio.ancestry_answer: a failed read raises GitError, never "no"."""
         try:
             self._collect(read)
-        except GitError:
-            return False
+        except GitError as failure:
+            return ancestry_answer(self._root, commit, read.returncode, str(failure))
         return True
 
     def _ancestor_read(self, commit: str):
@@ -119,7 +119,7 @@ class ChangeReads:
 
     def is_ancestor(self, commit: str) -> bool:
         return self._once(("ancestor", commit),
-                          lambda: self._succeeds(self._ancestor_read(commit)))
+                          lambda: self._succeeds(self._ancestor_read(commit), commit))
 
     def diff_names_since(self, commit: str) -> tuple[str, ...]:
         read = self._diff_read(commit)

@@ -81,6 +81,20 @@ def test_a_commit_this_clone_does_not_hold_is_not_behind_head(repo):
         assert reads.is_ancestor("0" * 40) is False
 
 
+def test_a_failed_ancestry_read_is_no_answer(repo, monkeypatch):
+    """merge-base exits 128 on a commit this clone holds: git could not read
+    the repository, which answers nothing about ancestry."""
+    root, first = repo
+    real = lane_changes._start
+    failing = ("rev-parse", "--verify", "refs/crapkit/no-such-ref")
+    monkeypatch.setattr(lane_changes, "_start", lambda r, *args: real(
+        r, *(failing if args[0] == "merge-base" else args)))
+
+    with ChangeReads(root, (first,), ("src",)) as reads:
+        with pytest.raises(GitError, match="no-such-ref"):
+            reads.is_ancestor(first)
+
+
 def test_a_failed_spawn_waits_for_the_reads_already_started(repo, monkeypatch):
     root, first = repo
     started = []

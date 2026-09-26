@@ -181,7 +181,11 @@ artifact: ...`. The key is opt-in, so a repo whose artifacts answer never emits 
 
 The move differs per flag. On `measured` a lane did speak about the file and its artifact
 has since gone stale: commit or revert the edits, then rerun `crapkit coverage`. Nothing
-rereads the artifact until a run does, so committing alone leaves the lines null. On
+rereads the artifact until a run does, so committing alone leaves the lines null. The
+stale-lane note names its cause, and only files that changed under the lane's scopes ask
+for a commit or a revert. A stamp commit no longer behind HEAD, an artifact no stamp
+records, and a git read that failed each say `so nothing proves its line numbers current`
+and ask for a fresh `crapkit coverage` run; none of them names a changed file. On
 `untested` no test imports the file, so no artifact was ever going to mention it: the whole
 span is dark and the first test is the move, not another `coverage` run. On `cc-only` the
 scope set `coverage_optional`, so no artifact can ever name lines for it and nothing to do

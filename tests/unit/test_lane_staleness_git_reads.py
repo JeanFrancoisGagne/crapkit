@@ -15,8 +15,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from crapkit import gitio, lane_changes, lanes
 from crapkit.config import Lane
-from crapkit.lanes import lane_sources_unchanged, staleness_reads, write_stamps
+from crapkit.errors import GitError
+from crapkit.invocation import _self
+from crapkit.lanes import lane_sources_gap, staleness_reads, write_stamps
 from crapkit.uncovered import lane_states
 from hang_guard import HANG_SECONDS
 
@@ -128,9 +131,9 @@ def test_a_lane_stamped_after_the_reads_started_is_judged_on_its_own_scope(repo)
     with staleness_reads(root, cfg.lanes, cfg.scope_paths) as facts:
         _write(root, lib.artifact, "{}")
         write_stamps(root, {lib.artifact: {"commit": head, "lane": lib.name, "seconds": 1.0}})
-        unchanged = lane_sources_unchanged(root, lib, cfg.scope_paths, facts)
+        gap = lane_sources_gap(root, lib, cfg.scope_paths, facts)
 
-    assert unchanged is False
+    assert gap.changed is True
 
 
 def test_scoped_reads_still_judge_each_lane_by_its_own_scope(repo):
@@ -141,7 +144,9 @@ def test_scoped_reads_still_judge_each_lane_by_its_own_scope(repo):
     states = dict(lane_states(root, cfg))
 
     assert states["src"] == "", "an untracked file outside every scope leaves src fresh"
-    assert "files in its scopes changed" in states["web"]
+    assert states["web"] == ("lane 'web': files in its scopes changed since cov-web.json was "
+                             "written (uncommitted edits count), so its line numbers are stale "
+                             f"\u2014 commit or revert them, then rerun `{_self()} coverage`")
     assert "no artifact" in states["lib"]
 
 
@@ -162,26 +167,85 @@ def _refuse_kill(self):
 
 def test_a_stamp_commit_outside_history_reads_stale_and_kills_no_git_read(repo, monkeypatch):
     """After an amend the verdict stops at the ancestry answer, so the status
-    reads are never collected. A worktree `git diff` refreshes the index under
-    .git/index.lock when tracked files are stat-dirty; killed mid-refresh it
-    leaves the lock behind and every later `git add` or commit fails."""
+    reads are never collected, and none is killed: every git process ends
+    before the command does. No file changed, so the note asks for a fresh
+    run, not a commit."""
     root, cfg = repo
+    stamped = _git(root, "rev-parse", "HEAD").strip()
     _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--amend", "-m", "amended")
     monkeypatch.setattr(subprocess.Popen, "kill", _refuse_kill)
 
     states = dict(lane_states(root, cfg))
 
-    assert "files in its scopes changed" in states["src"]
-    assert "files in its scopes changed" in states["web"]
+    assert states["src"] == (f"lane 'src': cov-src.json was built at {stamped[:11]}, which is not "
+                             "behind HEAD, so nothing proves its line numbers current — rerun "
+                             f"`{_self()} coverage`")
+    assert "not behind HEAD" in states["web"]
     assert not (root / ".git" / "index.lock").exists()
 
 
 def test_without_git_every_stamped_lane_reads_stale(repo, monkeypatch):
-    """No git executable at all: nothing can prove an artifact current."""
+    """No git executable at all: nothing can prove an artifact current, and
+    the note says git could not tell rather than naming a change."""
     root, cfg = repo
     monkeypatch.setenv("PATH", str(root))
 
     states = dict(lane_states(root, cfg))
 
-    assert "files in its scopes changed" in states["src"]
-    assert "files in its scopes changed" in states["web"]
+    for lane in ("src", "web"):
+        assert states[lane].startswith(f"lane '{lane}': git could not tell which files in its "
+                                       f"scopes changed after cov-{lane}.json was written "
+                                       "(git executable not found), so nothing proves"), states
+
+
+# git exits 128 with "fatal: Needed a single revision" for a ref it cannot read,
+# the exit a read gets when git cannot read the repository.
+FAILED_GIT = ("rev-parse", "--verify", "refs/crapkit/no-such-ref")
+
+
+@pytest.mark.parametrize("command", ["merge-base", "diff", "status"])
+def test_a_failed_read_names_no_changed_file(repo, monkeypatch, command):
+    """One read behind the verdict fails on a tree nobody touched. The lines
+    go null, since nothing proved them, and the note says git could not tell:
+    it used to say files in the lane's scopes changed and to commit or revert
+    them."""
+    root, cfg = repo
+    real = lane_changes._start
+    monkeypatch.setattr(lane_changes, "_start", lambda r, *args: real(
+        r, *(FAILED_GIT if command in args[:2] else args)))
+
+    states = dict(lane_states(root, cfg))
+
+    for lane in ("src", "web"):
+        assert states[lane].startswith(f"lane '{lane}': git could not tell which files"), states
+        assert "no-such-ref" in states[lane]
+        assert "changed since" not in states[lane] and "commit or revert" not in states[lane]
+
+
+def test_an_artifact_no_stamp_records_is_named_as_such(repo):
+    """An artifact with no stamp proves nothing about its lines; no file changed."""
+    root, cfg = repo
+    _write(root, cfg.lanes[2].artifact, "{}")
+
+    states = dict(lane_states(root, cfg))
+
+    assert states["lib"] == ("lane 'lib': no stamp records the commit cov-lib.json was built at, "
+                             "so nothing proves its line numbers current — rerun "
+                             f"`{_self()} coverage`")
+
+
+def test_reuse_says_when_git_could_not_tell_whether_an_artifact_is_stale(repo, monkeypatch, capsys):
+    """`--reuse-artifacts` warns about an artifact that predates a change. A
+    failed read used to warn nothing, which reads as a fresh artifact."""
+    root, cfg = repo
+    head = _git(root, "rev-parse", "HEAD").strip()
+
+    def unavailable(*_args):
+        raise GitError("git unavailable")
+
+    monkeypatch.setattr(gitio, "diff_names_since", unavailable)
+    lanes._warn_stale_artifact(gitio.GitFacts(root), cfg.lanes[0], cfg.scope_paths)
+
+    assert capsys.readouterr().err == (
+        f"crapkit: lane 'src' artifact was built at {head[:11]}; git could not tell which "
+        "files in its scopes changed after it, so its coverage may be stale (git unavailable)\n")

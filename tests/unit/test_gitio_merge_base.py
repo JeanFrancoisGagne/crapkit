@@ -64,6 +64,22 @@ def test_ancestry_still_defaults_to_head(forked):
     assert is_ancestor(repo, mid) is True
 
 
+def test_a_commit_this_clone_does_not_hold_is_not_behind_head(forked):
+    repo, _, _, _ = forked
+
+    assert is_ancestor(repo, "0" * 40) is False
+
+
+def test_a_failed_ancestry_read_is_no_answer(forked):
+    """git exits 128 for a commit it lacks and for a read that failed. The
+    second is no answer: read as "no", verify blamed a rewritten history and
+    next-item named changed files on a tree nobody touched."""
+    repo, base, _, _ = forked
+
+    with pytest.raises(GitError, match="merge-base --is-ancestor"):
+        is_ancestor(repo, base, "refs/crapkit/no-such-ref")
+
+
 def test_an_unrelated_history_has_no_merge_base(tmp_path: Path):
     git(tmp_path, "init", "-q", "-b", "main")
     commit(tmp_path, "one")

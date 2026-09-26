@@ -22,7 +22,6 @@ crapkit builds.
 """
 import os
 import subprocess
-import time
 from pathlib import Path
 
 import pytest
@@ -39,9 +38,9 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def _touch(path: Path) -> None:
-    """A new mtime on the same bytes, far enough ahead that no stat cache matches it."""
-    later = time.time() + 120
-    os.utime(path, (later, later))
+    """A new mtime on the same bytes, two minutes ahead, so no stat cache matches it."""
+    later = os.stat(path).st_mtime_ns + 120 * 10**9
+    os.utime(path, ns=(later, later))
 
 
 def _scoped(root: Path) -> tuple:
