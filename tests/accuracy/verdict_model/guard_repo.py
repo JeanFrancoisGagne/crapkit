@@ -14,10 +14,12 @@ PYTEST_ARGS_OUT names: the collection oracle's view of the same command.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import io
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 
@@ -220,3 +222,124 @@ def collected(root: Path, argv: list[str]) -> int | None:
 
 
 WINDOWS = os.name == "nt"
+
+
+# --- the two word-split oracles ----------------------------------------------------------------
+# Two readers outside crapkit split a lane command into the argv of each runner
+# call: shlex for sh, and CommandLineToArgvW, the reader a program started by
+# cmd.exe builds its argv with, after cmd.exe's own pass over the line.
+
+SH_ENDS = frozenset({"&&", "||", "&", "|", ";"})  # POSIX 2.9.3 lists and 2.9.2 pipelines
+SH_REDIRECTIONS = frozenset({"<", ">", ">>", "<&", ">&", "<>", ">|"})  # POSIX 2.7, no heredoc
+
+
+@dataclass(frozen=True)
+class ShToken:
+    """One shlex token. `operator`: sh's punctuation made it, which a quoted
+    `"&&"` never is. `glued`: no blank stands between it and the token before."""
+    text: str
+    operator: bool
+    glued: bool
+
+
+def sh_tokens(command: str) -> list[ShToken]:
+    """shlex.shlex(posix=True, punctuation_chars=True) with whitespace_split on and
+    comments off, as shlex.split sets them. shlex returns the operator `&&` and a
+    quoted `"&&"` as one string, so the first character of each token's text in
+    the line tells them apart: only an operator starts with punctuation."""
+    source = io.StringIO(command)
+    lexer = shlex.shlex(source, posix=True, punctuation_chars=True)
+    lexer.whitespace_split, lexer.commenters = True, ""
+    tokens, start, glued = [], 0, False
+    for text in iter(lexer.get_token, None):
+        first = command[start:].lstrip(lexer.whitespace)[:1]
+        tokens.append(ShToken(text, first in lexer.punctuation_chars, glued))
+        start, glued = _next_start(command, source.tell(), lexer.whitespace)
+    return tokens
+
+
+def _next_start(command: str, read: int, blanks: str) -> tuple[int, bool]:
+    """Where the next token's text starts, and whether it touches the last one.
+    shlex ends a token on a blank, which it consumes, or on a character it
+    pushes back (an operator after a word, a word after an operator)."""
+    pushed_back = read > 0 and command[read - 1] not in blanks
+    return (read - 1 if pushed_back else read), pushed_back
+
+
+def sh_segments(command: str) -> list[list[str]]:
+    """The words of each command on the line, read through shlex: an operator in
+    SH_ENDS starts the next command, and a redirection takes its target word and
+    a glued descriptor number (`2>&1`) out of the argv."""
+    segments: list[list[str]] = [[]]
+    tokens = iter(sh_tokens(command))
+    for token in tokens:
+        if not token.operator:
+            segments[-1].append(token.text)
+        elif token.text in SH_ENDS:
+            segments.append([])
+        else:
+            _redirect(segments[-1], token, tokens)
+    return segments
+
+
+def _redirect(words: list[str], token: ShToken, tokens) -> None:
+    """POSIX 2.7: `[n]op word`. The target is the next token; n is the digits
+    word right before the operator, when nothing stands between them."""
+    assert token.text in SH_REDIRECTIONS, f"the sh oracle does not model {token.text!r}"
+    next(tokens, None)
+    if token.glued and words and words[-1].isdigit():
+        words.pop()
+
+
+# cmd.exe's pass over the line before the program sees it (docs/lanes.md:70-76):
+# a double quote opens or closes a quoted run and stays in the text; outside a
+# run a caret is dropped and hands on the character behind it, and a quote it
+# hands on opens no run for cmd.exe; `&&`, `||`, `&` and `|` end the command; a
+# redirection, with its descriptor digit and its target or `&1`, is taken out.
+_CMD_PASS = re.compile(r'''(?P<run>"[^"]*"?)
+    | \^(?P<escaped>.?)
+    | (?P<ends>&&|\|\||[&|])
+    | (?P<redirect>(?:(?<![^ \t])[0-9])?(?:>>?|<)(?:&[0-9]|[ \t]*(?:"[^"]*"?|[^ \t&|<>"]*)))
+    | (?P<char>.)''', re.X | re.S)
+
+
+def cmd_lines(command: str) -> list[str]:
+    """The command line cmd.exe hands the program of each command on the line."""
+    lines = [""]
+    for part in _CMD_PASS.finditer(command):
+        if part.lastgroup == "ends":
+            lines.append("")
+        elif part.lastgroup != "redirect":
+            lines[-1] += part.group(part.lastgroup)
+    return [line.strip(" \t") for line in lines]
+
+
+def command_line_to_argv(line: str) -> list[str]:
+    """CommandLineToArgvW's words for one command line (win32 only)."""
+    import ctypes
+    from ctypes import wintypes
+
+    shell32, kernel32 = ctypes.WinDLL("shell32"), ctypes.WinDLL("kernel32")
+    shell32.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    shell32.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    count = ctypes.c_int()
+    words = shell32.CommandLineToArgvW(line, ctypes.byref(count))
+    try:
+        return words[:count.value]
+    finally:
+        kernel32.LocalFree(ctypes.cast(words, ctypes.c_void_p))
+
+
+def cmd_segments(command: str) -> list[list[str]]:
+    """The words of each command on the line: cmd.exe's pass, then
+    CommandLineToArgvW on each line it hands a program."""
+    return [command_line_to_argv(line) for line in cmd_lines(command) if line]
+
+
+def runner_argvs(segments: list[list[str]], runner: str) -> list[list[str]]:
+    """The argv of each runner call: the words after the runner's own, one list
+    per call, without repeats, as shell_argvs records them."""
+    head = runner.split()
+    calls = (tuple(words[len(head):]) for words in segments if words[:len(head)] == head)
+    return [list(call) for call in dict.fromkeys(calls)]

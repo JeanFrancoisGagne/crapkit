@@ -273,10 +273,122 @@ def test_narrowed_lane_command_is_not_full_suite(guard):
     _agree(guard, SHLEX + UNKNOWN_FLAG)
 
 
-# --- oracle: the shell's own argv -------------------------------------------------------------
+# --- oracles: the shell's own argv, and the shlex and CommandLineToArgvW splits ----------------
 
 def _runner(lane: g.Lane) -> str:
     return g.VITEST if lane.parser == "istanbul" else g.PYTEST
+
+
+def _split(lane: g.Lane, windows: bool) -> list[list[str]]:
+    """The runner argvs a word-split oracle reads: cmd.exe's pass, then
+    CommandLineToArgvW, for the cmd.exe column; shlex for the sh column."""
+    segments = g.cmd_segments(lane.command) if windows else g.sh_segments(lane.command)
+    return g.runner_argvs(segments, _runner(lane))
+
+
+# The docs' rules, applied to a split. pytest --help (pytest 8.3 to 9.1 with
+# pytest-cov and pytest-xdist): of the options in ROWS' commands, those that
+# read the next word as their value, and those that read none.
+PYTEST_READS_A_VALUE = frozenset({"-k", "-m", "-n", "-o", "-p", "--deselect"})
+PYTEST_READS_NONE = frozenset({"-q", "--cov-branch"})
+# lanes.md:451-457: the 25 vitest options whose next word is their value.
+VITEST_READS_A_VALUE = frozenset({
+    "--config", "--exclude", "--reporter", "-c", "-t", "--coverage.exclude",
+    "--coverage.extension", "--coverage.include", "--coverage.provider", "--coverage.reporter",
+    "--coverage.reportsDirectory", "--diff", "--dir", "--environment", "--globalSetup",
+    "--outputFile", "--pool", "--project", "--root", "--setupFiles", "--shard",
+    "--snapshotEnvironment", "--testNamePattern", "--typecheck.tsconfig", "--workspace"})
+# What lanes.md:458 calls a source suffix: the TypeScript and Node module suffixes.
+SOURCE_SUFFIXES = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
+# lanes.md:801-803: the file pytest reads testpaths from; the first present decides.
+INI_ORDER = ("pytest.ini", ".pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg")
+
+
+def _pytest_takes(flag: str, following: str) -> bool:
+    """lanes.md:774-786: a value option reads the next word; after a flag it
+    does not know, a bare word is that flag's value."""
+    if flag in PYTEST_READS_A_VALUE:
+        return True
+    return _unknown_flag(flag) and _bare_word(following)
+
+
+def _unknown_flag(word: str) -> bool:
+    """A flag pytest --help does not list, with no attached value (`--x=y` holds its own)."""
+    return word.startswith("-") and "=" not in word and word not in PYTEST_READS_NONE
+
+
+def _bare_word(word: str) -> bool:
+    """Not a flag, a path or a node id: lanes.md:785-786, pylib/unit and
+    tests/test_x.py::test_slow outrank the guess."""
+    return not word.startswith("-") and not any(mark in word for mark in ("/", "\\", "::"))
+
+
+def _values(argv: list[str], takes) -> set[int]:
+    """The indexes of the words a flag right before them reads as its value."""
+    return {i + 1 for i in range(len(argv) - 1) if takes(argv[i], argv[i + 1])}
+
+
+def _pytest_positionals(argv: list[str]) -> list[str]:
+    """lanes.md:774-777: the words no flag reads; a key=value word is a value everywhere."""
+    values = _values(argv, _pytest_takes)
+    return [word for i, word in enumerate(argv)
+            if i not in values and not word.startswith("-") and "=" not in word]
+
+
+def _entries(paths) -> set[str]:
+    """lanes.md:804: tests/, ./tests and tests are one entry."""
+    return {path.removeprefix("./").rstrip("/") for path in paths}
+
+
+def _testpaths(lane: g.Lane) -> tuple:
+    return next((lane.testpaths[name] for name in INI_ORDER if name in lane.testpaths), ())
+
+
+def _pytest_refuses(argv: list[str], lane: g.Lane) -> str | None:
+    """lanes.md:798-807: positionals that together name every testpaths entry
+    pass; any other positional narrows the run, and the first is refused."""
+    positionals = _pytest_positionals(argv)
+    if not positionals or _entries(positionals) == _entries(_testpaths(lane)):
+        return None
+    return positionals[0]
+
+
+def _vitest_takes(flag: str, _following: str) -> bool:
+    return flag in VITEST_READS_A_VALUE
+
+
+def _vitest_refuses(argv: list[str], _lane: g.Lane) -> str | None:
+    """lanes.md:442-459: a word no licensed option reads that ends in a source
+    suffix is a file filter; an attached `--flag=./x.ts` is the flag's."""
+    values = _values(argv, _vitest_takes)
+    filters = [word for i, word in enumerate(argv)
+               if i not in values and not word.startswith("-") and word.endswith(SOURCE_SUFFIXES)]
+    return next(iter(filters), None)
+
+
+_REFUSES = {"coveragepy": _pytest_refuses, "istanbul": _vitest_refuses}
+
+
+def _docs_reading(lane: g.Lane, argvs: list[list[str]]) -> str:
+    """The first word the docs' rules refuse in these runner argvs, or ok."""
+    refused = [_REFUSES[lane.parser](argv, lane) for argv in argvs]
+    return next((word for word in refused if word is not None), OK)
+
+
+def _columns(row, word: str) -> dict:
+    """Each reading of the row's verdict, by column. The sh column is read
+    through shlex everywhere; the cmd.exe column through CommandLineToArgvW,
+    on win32 only. crapkit's verdict joins its own platform's column."""
+    sh = {"docs": row[2], "shlex": _docs_reading(row[1], _split(row[1], windows=False))}
+    if not g.WINDOWS:
+        return {"sh": {**sh, "crapkit": word}}
+    cmd = {"docs": row[3], "CommandLineToArgvW": _docs_reading(row[1], _split(row[1], windows=True))}
+    return {"sh": sh, "cmd.exe": {**cmd, "crapkit": word}}
+
+
+def _split_apart(columns: dict) -> dict:
+    """The columns whose readings are not all one word: none is averaged away."""
+    return {name: readings for name, readings in columns.items() if len(set(readings.values())) > 1}
 
 
 @pytest.mark.process
@@ -284,13 +396,78 @@ def _runner(lane: g.Lane) -> str:
 def test_the_refused_word_is_one_the_shell_hands_the_runner(guard, row):
     """Run through sh (POSIX) or cmd.exe (Windows) with the runner swapped for
     an argv recorder: the word crapkit names must reach the runner as a whole
-    argument, and a command crapkit reads as one runner call must start one."""
+    argument, and a command crapkit reads as one runner call must start one.
+    The platform's word-split oracle (shlex; or cmd.exe's pass, stated in the
+    report, then CommandLineToArgvW) must hand the runner the same argvs, and
+    the docs' rules read over each split must name crapkit's word or none."""
     root = guard.root(row[1])
     word = g.verdict(root)
     argvs = g.shell_argvs(root, row[1].command, _runner(row[1]))
 
     assert argvs, "the shell started no runner"
     assert word == OK or any(word in argv for argv in argvs), (word, argvs)
+    split = _split(row[1], g.WINDOWS)
+    assert split == argvs, {"split": split, "shell": argvs, "cmd.exe pass": g.cmd_lines(row[1].command)}
+    assert _split_apart(_columns(row, word)) == {}
+
+
+# The oracles' own worked examples, written from the rules before the oracles
+# ran. sh: POSIX Shell Command Language 2.2 quoting, 2.3 token recognition,
+# 2.7 redirection (a descriptor number touches its operator), 2.9 lists.
+SH_EXAMPLES = {
+    'pytest -m "not live and not perf"': [["pytest", "-m", "not live and not perf"]],
+    "pytest --cov && coverage json": [["pytest", "--cov"], ["coverage", "json"]],
+    'pytest --cov "&&" "|"': [["pytest", "--cov", "&&", "|"]],
+    "pytest --cov=x.json&& coverage json": [["pytest", "--cov=x.json"], ["coverage", "json"]],
+    "pytest --cov > lane.log 2>&1": [["pytest", "--cov"]],
+    "pytest 2 >lane.log": [["pytest", "2"]],
+    "pytest --cov; echo done": [["pytest", "--cov"], ["echo", "done"]],
+    "pytest -k '' tests": [["pytest", "-k", "", "tests"]],
+    "pytest a\\ b": [["pytest", "a b"]],
+}
+# lanes.md:70-76: the line cmd.exe hands each program.
+CMD_EXAMPLES = {
+    'pytest -k ^"not slow^"': ['pytest -k "not slow"'],
+    'pytest -k "a^b"': ['pytest -k "a^b"'],
+    "pytest --cov && coverage json": ["pytest --cov", "coverage json"],
+    'pytest -k "a && b" | more': ['pytest -k "a && b"', "more"],
+    "pytest --cov ^& || x & y": ["pytest --cov &", "x", "y"],
+    "pytest --cov > lane.log 2>&1": ["pytest --cov"],
+    'pytest --cov ">"': ['pytest --cov ">"'],
+    "pytest --cov; echo done": ["pytest --cov; echo done"],
+}
+# CommandLineToArgvW's documented rules: blanks are space and tab, a quote
+# opens or closes a run anywhere, 2n+1 backslashes before a quote write n and
+# a literal quote.
+ARGVW_EXAMPLES = {
+    'pytest -k "" tests': ["pytest", "-k", "", "tests"],
+    "pytest -m 'not live'": ["pytest", "-m", "'not", "live'"],
+    'pytest --cov-report=json:"cov/py 1.json"': ["pytest", "--cov-report=json:cov/py 1.json"],
+    'pytest a\\"b': ["pytest", 'a"b'],
+    "pytest\tpylib/unit x\N{NO-BREAK SPACE}y": ["pytest", "pylib/unit", "x\N{NO-BREAK SPACE}y"],
+}
+
+
+@pytest.mark.nightly
+def test_the_shlex_oracle_reads_sh_s_worked_examples():
+    assert {command: g.sh_segments(command) for command in SH_EXAMPLES} == SH_EXAMPLES
+
+
+@pytest.mark.nightly
+def test_the_cmd_pass_hands_on_the_lines_lanes_md_names():
+    assert {command: g.cmd_lines(command) for command in CMD_EXAMPLES} == CMD_EXAMPLES
+
+
+@pytest.mark.nightly
+@pytest.mark.platform("win32")
+def test_the_argvw_oracle_reads_its_worked_examples():
+    got = {line: g.command_line_to_argv(line) for line in ARGVW_EXAMPLES}
+    assert got == ARGVW_EXAMPLES
+
+
+@pytest.mark.nightly
+def test_the_docs_rules_license_the_25_vitest_options_lanes_md_lists():
+    assert len(VITEST_READS_A_VALUE) == 25
 
 
 @pytest.mark.process
