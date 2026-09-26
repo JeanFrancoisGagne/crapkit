@@ -302,6 +302,10 @@ Swift:
   nothing. A chain after `)` or `]` (`f()?.g`) keeps its 1 and loses the nesting level
   it opened. `params` and `nesting` fall where a comma inside one parameter or a `try`
   counted; neither is in the score.
+- A function whose string interpolation holds a string with a brace in it,
+  `"\(f("{"))"`, is listed; it had no row. A `&&`, `||`, `??` or `?:` inside `\( )`
+  now counts in ccn and cognitive, and an `if` or `for` in the text of a multi-line
+  string no longer does.
 
 Rust:
 

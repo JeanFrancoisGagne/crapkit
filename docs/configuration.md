@@ -319,7 +319,9 @@ McCabe text does: each `a ?? b` is one, and so is each `?` of an optional chain 
 `if case`, a keyword argument label such as `func value(for name: String)`, and an
 optional mark (`(any Error)?`, `[Int]?`, `Int?.self`, and `Empty?.none` or
 `Int?.some(1)`, which name a member of the optional type) are none. A conditional
-operator's `?`, which Swift writes with spaces on both sides, still counts.
+operator's `?`, which Swift writes with spaces on both sides, still counts. The
+expression in a string interpolation, `\( )`, is code and counts like any other; the text
+around it, a multi-line string's included, is not.
 
 ### Scope matching
 

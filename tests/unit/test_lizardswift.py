@@ -565,6 +565,68 @@ def test_a_raw_string_ends_at_as_many_hashes_as_opened_it(raw):
     assert [(r.start, r.end, r.ccn) for r in analyze.analyze_source("case.swift", source)] == [(1, lines, 2)]
 
 
+# --- strings: an interpolation is code, the text around it is not ------------------------------
+#
+# Strings and Characters, String Interpolation: `\( )` in a string literal holds an
+# expression, and that expression can hold a string of its own. lizard's string rule ended
+# the outer string at the inner string's first quote, and read the whole of a string that
+# held no inner one as a single token, so nothing inside `\( )` counted.
+
+TWO_FUNCTIONS = ("func a(x: Int) -> String {{\n    return {literal}\n}}\n\n"
+                 "func b(y: Int) -> Int {{\n    return y\n}}\n")
+
+
+@pytest.mark.parametrize("literal", [r'"\(f("{"))"', r'"\(d["}"] ?? "{")"', r'"\(f(g(h(k("{")))))"',
+                                     '"""\n    \\(f("{"))\n    """'])
+def test_a_string_inside_an_interpolation_hides_no_function(literal):
+    """`"\\(f("{"))"` is one string holding a call. Its `{` read as code, so a ran on
+    past its own `}` and had no row."""
+    source = TWO_FUNCTIONS.format(literal=literal)
+    end = 3 + literal.count("\n")
+
+    assert _rows(source) == [("a x : Int", 1, end), ("b y : Int", end + 2, end + 4)]
+
+
+@pytest.mark.parametrize("literal,decisions", [(r'"\(a && b)"', 1),
+                                               (r'"\(a || b ? 1 : 2)"', 2),
+                                               (r'"\(n ?? "if a")"', 1),
+                                               (r'"\(a) and \(b && c)"', 1),
+                                               ('"""\n    \\(a && b)\n    """', 1),
+                                               (r'#"\#(a && b)"#', 1),
+                                               (r'"\(f("\(a && b)"))"', 1)])
+def test_a_decision_inside_an_interpolation_counts(literal, decisions):
+    """`"\\(a && b)"` decides as `a && b` does (NIST SP 500-235 sec. 4.1). It counted
+    nothing; the `if` in the string `"if a"` still counts nothing."""
+    source = "func f(a: Bool, b: Bool, c: Bool, n: Int?) -> String {\n    return " + literal + "\n}\n"
+
+    assert _counts(source)[:3] == (1 + decisions,) * 3
+
+
+def test_a_logical_operator_inside_an_interpolation_counts_in_cognitive():
+    source = "func f(a: Bool, b: Bool) -> String {\n    return \"\\(a && b)\"\n}\n"
+
+    assert _counts(source)[3] == 1
+
+
+@pytest.mark.parametrize("literal", [r'"\\(a && b)"', r'#"\(a && b)"#', r'"\"if\" \(x) \"for\""',
+                                     '"""\n    say "if" or for\n    """'])
+def test_text_in_a_string_decides_nothing(literal):
+    """An escaped backslash, `\\(` in a raw string, escaped quotes, and quotes in a
+    multi-line string are all text. The multi-line one ended at its fourth `"`, so the
+    `if` after it read as code: ccn 2."""
+    source = "func f(x: Int) -> String {\n    return " + literal + "\n}\n"
+
+    assert _counts(source)[:3] == (1, 1, 1)
+
+
+def test_an_interpolation_over_lines_keeps_every_line():
+    source = ('func f(a: Bool, b: Bool) -> String {\n    let s = """\n        x \\(a &&\n'
+              '            b) y\n        """\n    return s\n}\n\nfunc g() {\n}\n')
+
+    assert [(r.start, r.end, r.nloc, r.ccn) for r in analyze.analyze_source("case.swift", source)] == [
+        (1, 7, 7, 2), (9, 10, 2, 1)]
+
+
 def test_register_raises_when_lizard_resolves_something_else(monkeypatch):
     """A lizard release that stops reading `languages()` out of module globals must
     break loudly here, not measure Swift with the reader that hides functions."""

@@ -75,6 +75,25 @@ these outside its own brackets. Every other `<` compares, spaced or not:
 `1 < 2`, `x<0, b: Int`, `1<<2`, `0..<n`, `{ $0<$1 }`. A `>` closes a clause
 only while a `<` is open, so `x > 0` and `x>0` close nothing.
 
+Strings
+-------
+`\\( )` in a string literal holds an expression, and that expression can hold a
+string of its own: `"\\(d["key"] ?? "none")"`. lizard's string rule ends a string
+at its first unescaped quote, so it ended this one at the quote before `key`,
+read `key` and `none` as code, and a `{` or `}` inside the inner string moved
+the brace count: the function holding it lost its row. A string with no inner
+quote came out as one token, so the `&&` or `??` in its `\\( )` counted nothing.
+
+The tokenizer now takes a string whole with each interpolation inside it,
+including a multi-line string between triple quotes, which lizard read as an
+empty string and then a string ending at the first quote of its text. It then reads each
+`\\( )`, or `\\#( )` in a raw string, again as code, at any depth, and yields
+the text around it as a string token that keeps every newline it held.
+
+KNOWN LIMIT: an interpolation holding parentheses more than four deep, or a
+multi-line string inside an interpolation, does not match; that string reads
+as lizard read it.
+
 What it keeps
 -------------
 Every long name, and with it every ratchet key a function lizard read whole
@@ -98,6 +117,7 @@ drains the token stream, so `.swift` keeps analyze.py's second extension chain.
 """
 from __future__ import annotations
 
+import functools
 import re
 
 from ._pygdefer import deferred_pygments
@@ -125,6 +145,70 @@ _HASH_TOKENS = (r'|(?P<swift_raw>\#+)".*?"(?P=swift_raw)'
 # as Swift Testing names a test. lizard's own pattern takes one word (`default`). A tab
 # is left out, since a name has to fit one field of a tab-separated marks file.
 _RAW_IDENTIFIER = r"`[^`\t\r\n]+`"
+
+
+def _nested(depth: int) -> str:
+    """What an interpolation holds, parentheses up to DEPTH deep: code, an escape such
+    as the `\\` of a key path, a one-line string, and a parenthesized group of the same.
+    Each alternative starts with a different character, so a failed match costs no
+    backtracking."""
+    body = r'[^()"\\]|\\.|"(?:\\.|[^"\\\n])*"'
+    for _ in range(depth):
+        body = r'[^()"\\]|\\.|"(?:\\.|[^"\\\n])*"|\((?:' + body + r')*\)'
+    return body
+
+
+_INTERPOLATED = _nested(4)
+
+
+def _interpolation(hashes: str) -> str:
+    """`\\( )`, or `\\#( )` in a string opened with that many hashes."""
+    return r"\\" + hashes + r"\((?:" + _INTERPOLATED + r")*\)"
+
+
+# String patterns tried before lizard's, which ends a string at its first unescaped
+# quote. A string here takes each interpolation whole, so a quote inside one pairs
+# inside it; a string these cannot match falls through to lizard's rule.
+_STRING_TOKENS = (r'|"""(?:' + _interpolation("") + r'|\\[^(]|[^\\])*?"""'
+                  r'|"(?:' + _interpolation("") + r'|\\[^(]|[^"\\])*"')
+_STRING_START = re.compile(r'#*"')
+
+
+@functools.cache
+def _pieces(hashes: int) -> re.Pattern:
+    """An interpolation (group 1), or any other escape, in a string opened with HASHES hashes."""
+    return re.compile("(" + _interpolation("#" * hashes) + r")|\\" + "#" * hashes + ".", re.S)
+
+
+def _holes(token: str) -> list:
+    """TOKEN's interpolations, when it is a string literal. Every interpolation starts
+    with a backslash, and most tokens hold none, which is the cheapest test to fail."""
+    if "\\" not in token or not (start := _STRING_START.match(token)):
+        return []
+    return [piece for piece in _pieces(len(start.group()) - 1).finditer(token) if piece.group(1)]
+
+
+def _open_interpolations(tokens, addition: str, token_class):
+    for token in tokens:
+        holes = _holes(token)
+        if holes:
+            yield from _interpolated(token, holes, addition, token_class)
+        else:
+            yield token
+
+
+def _interpolated(token: str, holes: list, addition: str, token_class):
+    """TOKEN's interpolations as code, and the text around each as a string token. The
+    text is quoted again so none of it reads as code, and it keeps every newline it held,
+    so lizard's line count sees each one."""
+    start = 0
+    for hole in holes:
+        yield '"' + token[start:hole.start()].strip('#"') + '"'
+        code = hole.group(1)
+        yield from CorrectedSwiftReader.generate_tokens(code[code.index("(") + 1:-1], addition, token_class)
+        start = hole.end()
+    yield '"' + token[start:].strip('#"') + '"'
+
 
 _FAILABLE_INITS = frozenset({"init?", "init!"})
 _IDENTIFIER = re.compile(r"\w+|" + _RAW_IDENTIFIER)
@@ -427,8 +511,12 @@ class CorrectedSwiftReader(_StockSwiftReader):
 
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):
-        return _StockSwiftReader.generate_tokens(
-            source_code, _HASH_TOKENS + "|" + _RAW_IDENTIFIER + addition, token_class)
+        """lizard's tokenizer with Swift's strings, `#` tokens and raw identifiers, every
+        interpolation read as code. A generator over lizard's, so the token stage still
+        yields as it reads."""
+        additions = _HASH_TOKENS + _STRING_TOKENS + "|" + _RAW_IDENTIFIER + addition
+        return _open_interpolations(
+            _StockSwiftReader.generate_tokens(source_code, additions, token_class), addition, token_class)
 
     def preprocess(self, tokens):
         return _read_all(super().preprocess(_comparing_less_thans(_optional_marks(tokens))))

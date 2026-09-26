@@ -997,6 +997,20 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   marks.
 - The same analysis-version bump covers these.
 
+### A Swift interpolation reads as code
+
+- A Swift string holds an expression in `\( )`, and that expression can hold a string of
+  its own: `"\(d["key"] ?? "none")"`. The reader ended the outer string at the inner
+  string's first quote, so the inner string's words read as code, and a `{` or `}` in it
+  moved the brace count: the function holding it had no row. A string with no inner
+  quote came out as one token, so a `&&`, `||`, `??` or `?:` inside its `\( )` counted
+  nothing in ccn or cognitive. A multi-line string between triple quotes ended at the
+  first quote of its text, so an `if` or `for` in the text after it counted.
+- Every `\( )`, and `\#( )` in a raw string, now reads as code, and the text around it
+  reads as a string that keeps its lines. On Alamofire 5's 101 Swift files, ccn rises by
+  1 or 2 on 13 of 1,993 functions, each for a `??` inside `\( )`; no row appears, goes or
+  moves. The same analysis-version bump covers this.
+
 ### A Rust `#` keeps the rest of its line
 
 - The Rust reader read `#` the way lizard's C reader does, as a preprocessor line that
