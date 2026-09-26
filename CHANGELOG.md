@@ -47,8 +47,8 @@
   added each scope's rounded load, so on any Python a run whose three scores add up to
   257.12500000000006 printed 257.12 in `trend` and 257.13 in `coverage`. The rollup now
   stores the whole run's totals beside each scope's, so the first `trend` after the
-  upgrade sums every run again; filling 960,000 scored rows took 6.6 s where it took
-  5.9 s. A run with no scored function prints a load of `0.0`, not `0`. Loads are not
+  upgrade sums every run again; a first fill of 960,000 scored rows takes 6.6 s, up
+  from 5.9 s. A run with no scored function prints a load of `0.0`, not `0`. Loads are not
   stored in the marks file, so nothing re-seeds.
 - `worklist --batches` adds each batch's risk the same way. On Python 3.11 three risks
   that add up to exactly 117.4173 read 117.41729999999998, so a tie with a one-function

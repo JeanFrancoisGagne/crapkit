@@ -112,6 +112,17 @@ def test_the_ceiling_is_part_of_the_key_so_a_new_target_is_not_served_stale(tmp_
     assert loose[1] == totals(rows, target=6, scope_targets={"ui": 40}).over_target
 
 
+def test_the_fill_and_the_cached_read_list_the_scopes_in_one_order(tmp_path):
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    rows = [row._replace(scope=scope) for row, scope in zip(scored(3), ("ui", "api", "core"))]
+    run_id = store.write_run(commit="c0", tool_versions={}, rows=rows, lanes={"unit": {}})
+
+    cold = list(store.run_scope_totals(target=6)[run_id])
+    warm = list(store.run_scope_totals(target=6)[run_id])
+
+    assert cold == warm == ["api", "core", "ui"]
+
+
 def test_a_scope_target_equal_to_the_repo_target_shares_the_key(tmp_path):
     """`{"api": 6}` against target 6 declares nothing, so it must not split the
     cache and pay for a second full scan."""

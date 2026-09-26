@@ -462,7 +462,8 @@ def _whole_and_scopes(by_scope: dict[str, tuple]) -> tuple[tuple, dict[str, tupl
 
 def _run_rollup(scores) -> dict[str, tuple]:
     """One run's (functions, over_target, crap_load) per scope and, under '',
-    for the whole run, from its (run_id, scope, crap, over) rows."""
+    for the whole run, from its (run_id, scope, crap, over) rows. Scopes come
+    back sorted, the order the cached read hands them back in."""
     craps: dict[str, list[float]] = {"": []}
     overs: dict[str, int] = {"": 0}
     for _run_id, scope, crap, over in scores:
@@ -471,7 +472,7 @@ def _run_rollup(scores) -> dict[str, tuple]:
         overs[scope] = overs.get(scope, 0) + over
         overs[""] += over
     return {scope: (len(values), overs[scope], crap_load(values))
-            for scope, values in craps.items()}
+            for scope, values in sorted(craps.items())}
 
 
 def _by_run(rows) -> dict[int, dict[str, tuple]]:
