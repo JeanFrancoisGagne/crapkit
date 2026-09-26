@@ -39,7 +39,7 @@ import pytest
 
 from accuracy.analysis_oracles import analysis_corpora, analysis_tables, analysis_tstests
 from accuracy.analysis_oracles import analysis_tooldiff as tooldiff
-from accuracy.analysis_oracles import analysis_treesitter
+from accuracy.analysis_oracles import analysis_treesitter, ts_shapes_cpp
 from accuracy.analysis_oracles import test_c_family_oracles as cfam
 from accuracy.analysis_oracles.analysis_tooldiff import Tool
 from accuracy.analysis_oracles.oracles import clang_adapters as adapter
@@ -195,6 +195,8 @@ def _compiled(files: dict, headers: dict, root: Path, name: str) -> tuple:
     tooldiff.written({**headers, **files}, root)
     reports = _reports(root, tuple(sorted(files)))
     failed = set().union(*(report.failed for report in reports.values()))
+    cfam._saw_blocks("oclint", files, reports["oclint-depth"])  # AO-*-NOT-COMPILED read these
+    cfam._saw_blocks("tidy", files, reports["tidy-nesting"])
     runlog.note("skipped_files", oracle=f"clang tools {name}: files that do not compile",
                 count=len(failed))
     return {path: data for path, data in files.items() if path not in failed}, failed
@@ -427,4 +429,15 @@ def test_clang_tidy_scores_no_elvis(hand, oracle):
 
 
 def test_every_objc_rule_has_a_hand_case():
-    assert tooldiff.rules(TOOLS) == sorted({*cfam.HAND, *HAND})
+    assert sorted(set(tooldiff.rules(TOOLS))) == sorted({*cfam.HAND, *HAND})
+
+
+def test_no_cpp_tree_misreading_takes_an_objc_method():
+    """ts_shapes_cpp's AO-TREE-* rules hold for c and objc too, where a
+    method_definition has no declarator: a plain method is still a function."""
+    (fn, _, context), = analysis_treesitter.functions("case.m", METHOD_IF.encode())
+    held = [ruling for ruling, languages, _, holds in ts_shapes_cpp.SHAPES
+            if ruling.startswith("AO-TREE-") and "objc" in languages and holds(fn, context)]
+
+    assert fn.type == "method_definition"
+    assert held == []

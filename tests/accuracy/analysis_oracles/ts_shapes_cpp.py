@@ -246,8 +246,9 @@ def macro_definition(fn, context) -> bool:
 
 def no_function_declarator(fn, context) -> bool:
     """AO-TREE-NOT-A-FUNCTION: a `definition` whose declarator has no parameter list (fmt's
-    `struct FMT_API pipe { ... }`, the macro read as the struct's name)."""
-    return _declarator(fn) is None
+    `struct FMT_API pipe { ... }`, the macro read as the struct's name). An Objective-C
+    method_definition has no declarator at all and is a function."""
+    return fn.type == "function_definition" and _declarator(fn) is None
 
 
 # --- crapkit rows at lines tree-sitter lists no function on ---------------------------------------
