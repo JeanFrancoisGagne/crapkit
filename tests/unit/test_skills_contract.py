@@ -404,19 +404,45 @@ def _printed_as_the_page_spells_it(argv: list[str], capsys, places: dict[str, Pa
     return out
 
 
-def test_the_onboard_skill_prints_the_lines_doctor_prints_when_it_finds_no_plugin(tmp_path, monkeypatch,
-                                                                                    capsys):
-    """An agent onboarding matches what doctor printed against these two lines to
-    tell a missing install from a mistyped path. A line doctor rewrote and the
-    page did not matches nothing, and the page's advice goes with it."""
+def _no_plugin_lines(tmp_path, monkeypatch, capsys) -> tuple[str, str]:
+    """What `doctor --plugin-root` prints with empty Claude Code and Codex homes,
+    then with a PATH that is no plugin root, in the pages' placeholders."""
     places = {"CODEX_DIR": tmp_path / "codex", "DIR": tmp_path / "claude" / "plugins",
               "PATH": tmp_path / "not-a-plugin"}
     places["PATH"].mkdir()
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CODEX_HOME", str(places["CODEX_DIR"]))
+    return (_printed_as_the_page_spells_it(["doctor", "--plugin-root"], capsys, places),
+            _printed_as_the_page_spells_it(["doctor", "--plugin-root", str(places["PATH"])], capsys, places))
 
-    no_install = _printed_as_the_page_spells_it(["doctor", "--plugin-root"], capsys, places)
-    no_root = _printed_as_the_page_spells_it(["doctor", "--plugin-root", str(places["PATH"])], capsys, places)
+
+def test_the_onboard_skill_prints_the_lines_doctor_prints_when_it_finds_no_plugin(tmp_path, monkeypatch,
+                                                                                    capsys):
+    """An agent onboarding matches what doctor printed against these two lines to
+    tell a missing install from a mistyped path. A line doctor rewrote and the
+    page did not matches nothing, and the page's advice goes with it."""
+    no_install, no_root = _no_plugin_lines(tmp_path, monkeypatch, capsys)
 
     assert no_install == _onboard_line("crapkit doctor: no installed crapkit plugin under")
     assert no_root == _onboard_line("crapkit doctor: the plugin at PATH has no")
+
+
+def _recover_quote(start: str) -> str:
+    """The recover skill's one quoted line that starts with `start`, rewrapped onto one line."""
+    (quote,) = re.findall(rf'"({re.escape(start)}[^"]*)"', " ".join(_doc(RECOVER_SKILL).split()))
+    return quote
+
+
+@pytest.mark.parametrize("which, start", [(0, "crapkit doctor: no installed crapkit plugin under"),
+                                          (1, "crapkit doctor: the plugin at PATH has no")])
+def test_the_recover_skill_quotes_the_lines_doctor_prints_when_it_finds_no_plugin(which, start, tmp_path,
+                                                                                    monkeypatch, capsys):
+    """The recover skill tells the same two lines apart by their opening clause.
+    A quote that stops inside a clause doctor has since grown, as "under DIR"
+    against "under DIR or CODEX_DIR", reads as if doctor looked in Claude Code's
+    directory alone, and its advice sends a Codex user to pass a path by hand."""
+    printed = _no_plugin_lines(tmp_path, monkeypatch, capsys)[which]
+    quote = _recover_quote(start)
+
+    assert printed.startswith(quote), (quote, printed)
+    assert printed[len(quote):][:1] in {"", ".", ",", ";", ":"}, f"the quote stops mid-clause: {printed}"

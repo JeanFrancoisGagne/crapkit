@@ -1160,6 +1160,36 @@ def test_the_polyglot_workflow_prints_the_doctor_verdict_init_leaves():
     assert printed[-1] == _doctor_verdict(findings)
 
 
+# "two FAILs", "The one <code>WARN</code>": a count of doctor lines in running prose.
+_COUNTED_LINES = re.compile(r"\b(one|two|three|four|five)\s+(FAIL|WARN)s?\b")
+_SMALL_COUNTS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+
+
+def _handbook_prose_after_pre(heading: str) -> str:
+    """The paragraphs under one of the handbook's h3 headings, after its first
+    <pre> and before the next heading, with the markup taken out."""
+    import html
+
+    section = _doc("docs/handbook.html").split(f"<h3>{heading}</h3>", 1)[1].split("<h3>", 1)[0]
+    return html.unescape(re.sub(r"<[^>]+>", "", section.split("</code></pre>", 1)[1]))
+
+
+def test_the_polyglot_workflow_s_prose_counts_the_lines_its_doctor_prints():
+    """The paragraphs under workflow 3 count the FAIL and WARN lines its doctor
+    transcript prints. A merge that keeps an older paragraph beside a newer
+    transcript tells the reader to "read those two FAILs" under a doctor block
+    that prints none, and drops the paragraph on the WARN the block does print."""
+    from collections import Counter
+
+    heading = "3 · Day one on a polyglot repo"
+    printed = _printed_under(_handbook_pre(heading), "crapkit doctor")
+    shown = Counter(line.split()[0] for line in printed if line.startswith(("FAIL", "WARN")))
+    counted = {(level, _SMALL_COUNTS[word])
+               for word, level in _COUNTED_LINES.findall(_handbook_prose_after_pre(heading))}
+
+    assert counted == set(shown.items()), "the prose counts doctor lines the transcript does not print"
+
+
 # --- the README rows an agent picks a command from ---------------------------
 
 def test_the_brief_row_documents_the_packet_and_its_batch_form():
