@@ -51,10 +51,6 @@ function Test-Xor($a, $b) {
     return $a -xor $b
 }
 
-function Test-Coalesce($a) {
-    return $a ?? 0
-}
-
 function Test-UpperCase($a) {
     IF ($a) {
         RETURN 1
