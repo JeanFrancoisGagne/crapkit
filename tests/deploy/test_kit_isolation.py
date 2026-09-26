@@ -692,11 +692,11 @@ def test_each_release_the_clock_skips_still_cannot_start_under_it(box):
 
 # The dynamic loader is the one reader of /etc/ld.so.preload, so an ELF program
 # with no PT_INTERP program header never loads libfaketime and keeps the real
-# clock. kit/clock.py REAL_CLOCK names those programs.
+# clock. kit/clock.py REAL_CLOCK names those programs: the test below walks
+# every directory the images install programs into, in each image a run uses.
 PT_INTERP = 3
-IMAGE_PROGRAMS = ("uv", "uvx", "git", "node", "prek", "runner_python")
-SYSTEM_PROGRAMS = ("/usr/bin/date",)
-CODEX_NATIVE = "node_modules/@openai/codex-linux-*/vendor/*/bin/codex"
+PROGRAM_ROOTS = ("/opt", "/usr/bin", "/usr/local/bin")
+LIBRARY = re.compile(r"\.so(\.|$)|\.node$")
 
 
 def is_elf(path: str) -> bool:
@@ -707,52 +707,92 @@ def is_elf(path: str) -> bool:
         return False
 
 
-def names_a_loader(path: str) -> bool:
-    """Whether the 64-bit little-endian ELF program at `path` names a dynamic loader."""
+def loader(path: str) -> str | None:
+    """The dynamic loader the 64-bit little-endian ELF program at `path` names,
+    or None. The program header table can sit anywhere in the file: in a Node
+    single executable application it sits some 50 MB in."""
     with open(path, "rb") as program:
-        head = program.read(4096)
-    (table,) = struct.unpack_from("<Q", head, 0x20)
-    size, count = struct.unpack_from("<HH", head, 0x36)
-    return PT_INTERP in (struct.unpack_from("<I", head, table + size * index)[0] for index in range(count))
+        head = program.read(64)
+        (table,) = struct.unpack_from("<Q", head, 0x20)
+        size, count = struct.unpack_from("<HH", head, 0x36)
+        program.seek(table)
+        headers = program.read(size * count)
+        for index in range(count):
+            kind, _, offset, _, _, length = struct.unpack_from("<IIQQQQ", headers, size * index)
+            if kind == PT_INTERP:
+                program.seek(offset)
+                return program.read(length).rstrip(b"\0").decode()
+    return None
 
 
-def harness_files(box, pattern: str) -> list[Path]:
-    """`pattern` under the install root of each harness_bin dir."""
-    return [path for directory in box.toolchain.get("harness_bin", []) for path in Path(directory).parent.glob(pattern)]
+def files_under(roots) -> list[str]:
+    """Every file under `roots`, symlinks included, directory symlinks not followed."""
+    return [os.path.join(directory, name) for root in roots for directory, _, names in os.walk(root) for name in names]
 
 
-def image_programs(box) -> set[str]:
-    """The ELF programs of the toolchain, date, the harness commands and the
-    native binary the Codex CLI's launcher starts, symlinks followed."""
-    named = [box.toolchain.get(name) for name in IMAGE_PROGRAMS if box.toolchain.get(name)]
-    candidates = [*named, *SYSTEM_PROGRAMS, *harness_files(box, "bin/*"), *harness_files(box, CODEX_NATIVE)]
-    return {path for path in map(os.path.realpath, candidates) if is_elf(path)}
+def is_program(path: str) -> bool:
+    """An executable ELF file that is no symlink, shared library or Node addon."""
+    return not (os.path.islink(path) or LIBRARY.search(os.path.basename(path))) and os.access(path, os.X_OK) \
+        and is_elf(path)
 
 
-def fake_elf(path: Path, kinds: list[int]) -> str:
-    """A 64-bit ELF header and program headers of these p_type values."""
-    header = b"\x7fELF\x02\x01\x01" + bytes(9) + struct.pack("<HHIQQQIHHHHHH", 2, 62, 1, 0, 64, 0, 0, 64, 56,
-                                                             len(kinds), 0, 0, 0)
-    path.write_bytes(header + b"".join(struct.pack("<I", kind) + bytes(52) for kind in kinds))
+def image_programs(roots=PROGRAM_ROOTS) -> dict[str, str | None]:
+    """Each ELF program under `roots` that can start here -> the loader it names.
+    A musl build names musl's loader, which the Debian images do not hold, so it
+    never starts, and the harness launchers pick the glibc build."""
+    named = {path: loader(path) for path in filter(is_program, files_under(roots))}
+    return {path: found for path, found in named.items() if found is None or os.path.exists(found)}
+
+
+def fake_elf(path: Path, kinds: list[int], interpreter: str = "/lib64/ld-linux-x86-64.so.2", gap: int = 0) -> str:
+    """A 64-bit ELF header, `gap` bytes, program headers of these p_type
+    values, and the interpreter path they point at."""
+    table, text = 64 + gap, interpreter.encode() + bytes(1)
+    header = struct.pack("<4s12sHHIQQQIHHHHHH", b"\x7fELF", bytes([2, 1, 1]), 2, 62, 1, 0, table, 0, 0, 64, 56,
+                         len(kinds), 0, 0, 0)
+    at = table + 56 * len(kinds)
+    headers = b"".join(struct.pack("<IIQQQQQQ", kind, 0, at, 0, 0, len(text), 0, 0) for kind in kinds)
+    path.write_bytes(header + bytes(gap) + headers + text)
     return str(path)
 
 
 def test_a_program_names_a_loader_when_a_program_header_is_its_interpreter(tmp_path):
     pt_load, pt_phdr = 1, 6
     dynamic = fake_elf(tmp_path / "dynamic", [pt_phdr, PT_INTERP, pt_load])
+    musl = fake_elf(tmp_path / "musl", [PT_INTERP], "/lib/ld-musl-x86_64.so.1")
+    far = fake_elf(tmp_path / "sea", [pt_load, PT_INTERP], gap=8192)
     static = fake_elf(tmp_path / "static", [pt_load, pt_load])
     script = fake_release(tmp_path, "@openai/codex") / "claude"
 
-    assert names_a_loader(dynamic) and not names_a_loader(static)
+    assert [loader(dynamic), loader(musl), loader(far), loader(static)] == [
+        "/lib64/ld-linux-x86-64.so.2", "/lib/ld-musl-x86_64.so.1", "/lib64/ld-linux-x86-64.so.2", None]
     assert is_elf(static) and not is_elf(str(script)) and not is_elf(str(tmp_path))
+
+
+@pytest.mark.skipif(WINDOWS, reason="execute bits and symlinks are POSIX")
+def test_the_walk_finds_each_program_that_can_start_once_and_nothing_else(tmp_path):
+    (tmp_path / "vendor").mkdir()
+    glibc = tmp_path / "ld-linux-x86-64.so.2"
+    glibc.write_bytes(b"")
+    dynamic = fake_elf(tmp_path / "dynamic", [PT_INTERP], str(glibc))
+    musl = fake_elf(tmp_path / "vendor" / "musl", [PT_INTERP], "/lib/ld-musl-absent.so.1")
+    static = fake_elf(tmp_path / "vendor" / "rg", [1])
+    marked = [dynamic, musl, static, fake_elf(tmp_path / "libx.so.1", [1]), fake_elf(tmp_path / "addon.node", [1])]
+    fake_elf(tmp_path / "unmarked", [1])
+    for path in marked:
+        os.chmod(path, 0o755)
+    os.symlink(static, tmp_path / "rg")
+
+    assert image_programs([str(tmp_path)]) == {dynamic: str(glibc), static: None}
 
 
 @pytest.mark.skipif(not IN_IMAGE, reason="run.py --faketime moves the clock in the images only")
 def test_the_programs_kit_clock_says_keep_the_real_clock_are_the_ones_that_name_no_loader(box):
-    programs = image_programs(box)
-    wrong = sorted(path for path in programs if names_a_loader(path) == (Path(path).name in clock.REAL_CLOCK))
+    programs = image_programs()
+    wrong = sorted(path for path, found in programs.items()
+                   if (found is None) != (Path(path).name in clock.REAL_CLOCK))
 
-    assert "uv" in {Path(path).name for path in programs}
+    assert os.path.realpath(box.toolchain["uv"]) in programs
     assert wrong == [], (f"{wrong}: each names a dynamic loader while kit/clock.py REAL_CLOCK lists its file name, "
                          "or names none while REAL_CLOCK leaves it out. Make REAL_CLOCK and the program list in the "
                          "kit/clock.py docstring match: under --faketime a program keeps the real clock only when "

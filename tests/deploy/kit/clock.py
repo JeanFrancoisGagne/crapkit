@@ -6,10 +6,16 @@ dynamically linked process in the container starts under libfaketime and
 reads the moved clock, whatever environment the kit or a harness hands it and
 whatever language built it: Goose and prek are Rust binaries linked against
 glibc, and both read the moved clock. A program that names no dynamic loader
-keeps the real clock. REAL_CLOCK names the ones in the images: uv and uvx,
-the Codex CLI's musl binary and Crush, a Go binary. A cell that asserts a
-time reads it through date, git, node or python. Two more things follow for
-a cell:
+keeps the real clock. REAL_CLOCK names each such program the images hold
+under /opt, /usr/bin and /usr/local/bin: uv and uvx; Crush and act, Go
+binaries; the Codex CLI's musl build and the code-mode host, rg and bwrap it
+ships; the rg, cursorsandbox and crepectl the Cursor agent ships; and in the
+gui image, the rg, tgrep and apply-seccomp VS Code ships. test_kit_isolation
+walks those directories in each image a run uses and fails when a program's
+headers and REAL_CLOCK disagree. A musl build that names musl's loader never
+starts at all: the Debian images hold no such loader, and the harness
+launchers pick the glibc build. A cell that asserts a time reads it through
+date, git, node or python. Two more things follow for a cell:
 
   FAKETIME_SHARED  libfaketime writes it into the environment of each process
                    it loads into (the shared memory that keeps a process tree
@@ -33,12 +39,20 @@ import pytest
 
 PRELOAD = Path("/etc/ld.so.preload")
 ADDED_ENV = frozenset({"FAKETIME_SHARED"})
-# The file names of the programs in the images that name no dynamic loader, so
-# /etc/ld.so.preload never reaches them and they keep the real clock. The
-# codex here is the musl binary the Codex CLI's node launcher starts.
-# test_kit_isolation holds each one loader-free and every other program of the
-# toolchain and the harness commands dynamically linked.
-REAL_CLOCK = frozenset({"uv", "uvx", "codex", "crush"})
+# The file names of the programs under /opt, /usr/bin and /usr/local/bin in the
+# images that name no dynamic loader, so /etc/ld.so.preload never reaches them
+# and they keep the real clock. The codex here is the musl binary the Codex
+# CLI's node launcher starts, current and floor releases alike; act is in the
+# ci image, tgrep and apply-seccomp in the gui image. test_kit_isolation walks
+# those directories in each image a run uses and holds each listed program
+# loader-free and every other one dynamically linked.
+REAL_CLOCK = frozenset({
+    "uv", "uvx",                                     # the toolchain
+    "codex", "codex-code-mode-host", "rg", "bwrap",  # the Codex CLI's musl build
+    "cursorsandbox", "crepectl",                     # the Cursor agent (its rg too)
+    "crush", "act",                                  # Go binaries
+    "tgrep", "apply-seccomp",                        # VS Code (its rg too)
+})
 # npm package -> why its pinned release never starts under libfaketime.
 # Measured with `claude --version` in the core image: exit 124 under `timeout`
 # at +0, +1d, +30d and +400d, and with FAKETIME_DONT_FAKE_MONOTONIC=1,
