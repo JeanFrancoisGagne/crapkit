@@ -385,29 +385,18 @@ NAME_REFUSAL = json.dumps({"error": {"exit": 3, "kind": "config", "unread_files"
                            "schema": 1})
 
 
-def test_a_name_the_gate_refused_as_not_utf8_is_a_failed_verdict(monkeypatch, tmp_path):
-    """rescore --gate exits 3 on such a name, as every CLI gate does; check_gate
-    speaks MCP and returns that refusal in its verdict as the unread finding,
-    so an agent reads a gate that failed, not a tool that broke. Each entry
-    takes the shape rescore --gate --json lists, `dirty` included."""
-    _cli_answers(monkeypatch, 3, NAME_REFUSAL, "crapkit: src/caf\\xe9.py is named ...")
-    replies = _serve(monkeypatch, tmp_path, [_call(1, "check_gate", {"path": "src/caf\udce9.py"})])
-
-    call = replies[1]["result"]
-    assert call["isError"] is False, call
-    assert call["structuredContent"] == {"functions": [], "schema": 1, "gate": {
-        "ok": False, "judged": 0, "ceilings": {}, "breaches": [], "untracked": [],
-        "unread_files": [{**UNREAD_NAME, "dirty": True}]}}
-    assert json.loads(call["content"][0]["text"]) == call["structuredContent"]
-
-
 @pytest.mark.parametrize("tool, arguments, stdout", [
     ("get_function_brief", {"path": "src/caf\udce9.py", "name": "f"}, NAME_REFUSAL),
     ("check_gate", {"path": "src/a.py"},
      json.dumps({"error": {"exit": 3, "kind": "config", "message": "no crapkit.toml"}, "schema": 1})),
     ("check_gate", {"path": "src/a.py"}, "not json"),
-], ids=["brief-has-no-verdict", "gate-refusal-naming-no-file", "gate-refusal-not-json"])
+    ("check_gate", {"path": "src/a.py"}, NAME_REFUSAL),
+], ids=["brief-has-no-verdict", "gate-refusal-naming-no-file", "gate-refusal-not-json",
+        "gate-refusal-listing-unread-files"])
 def test_every_other_refusal_stays_a_tool_error(monkeypatch, tmp_path, tool, arguments, stdout):
+    """check_gate decides the verdict on a name that is not UTF-8 before it
+    starts the CLI (test_mcp_results_declare_every_field), so no exit 3 the
+    CLI answers is read as a verdict, `unread_files` or not."""
     _cli_answers(monkeypatch, 3, stdout, "crapkit: refused")
     replies = _serve(monkeypatch, tmp_path, [_call(1, tool, arguments)])
 
