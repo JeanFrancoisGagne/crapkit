@@ -236,6 +236,49 @@ BRACE_DEPTHS = {
                          "        use(v);\n    } else |err| if (err != e) return err;\n}\n", 1),
 }
 
+# A `{` in a structure's header (a composite literal, an initializer list, an
+# array initializer, a lambda, a func literal) is not the structure's body. The
+# pass took the header's first `{` for the body, closed the level at its `}`, and
+# left the real body at the depth outside the structure: each function below,
+# an outer structure holding one more, read nesting 1 and cognitive 2 where it
+# is 2 and 3 (Sonar v1.7 App. B: +1, then +1 and 1 for nesting).
+_INNER_GO = "\t\tif x > t {\n\t\t\tgo1()\n\t\t}\n\t}\n}\n"
+_INNER_C = "        if (x > t) {\n            go();\n        }\n    }\n}\n"
+_FOR_C = "        for (;;) {\n            go();\n        }\n    }\n}\n"
+HEADER_BRACES = {
+    "range.go": "package p\n\nfunc F(t int) {\n\tfor _, x := range []int{1, 2} {\n" + _INNER_GO,
+    "map.go": ("package p\n\nfunc F(t int) {\n\tfor _, x := range map[string]int{\"a\": 1} {\n"
+               + _INNER_GO),
+    # A table-driven test: a struct type's braces, then its literal's, then the body's.
+    "table.go": ("package p\n\nfunc F(t int) {\n\tfor _, x := range []struct {\n\t\tn int\n"
+                 "\t}{\n\t\t{1},\n\t\t{2},\n\t} {\n\t\tif x.n > t {\n\t\t\tgo1()\n\t\t}\n\t}\n}\n"),
+    "index.go": ("package p\n\nfunc F(m map[K]int) {\n\tif v, ok := m[K{1}]; ok {\n"
+                 "\t\tfor v > 0 {\n\t\t\tv--\n\t\t}\n\t}\n}\n"),
+    "init-list.cpp": "void f(int t) {\n    for (auto x : {1, 2, 3}) {\n" + _INNER_C,
+    "brace-init.cpp": ("void f(std::map<K, int> m) {\n    if (m.count(K{1}) > 0) {\n" + _FOR_C),
+    "compound.c": "void f(int t) {\n    if (g((struct S){1, 2})) {\n" + _FOR_C,
+    "array.java": ("class K {\n  void f(int t) {\n    for (int x : new int[]{1, 2}) {\n"
+                   "      if (x > t) {\n        go();\n      }\n    }\n  }\n}\n"),
+    "lambda.java": ("class K {\n  void f(java.util.List<Integer> xs) {\n"
+                    "    if (xs.stream().anyMatch(x -> { return x > 0; })) {\n      for (;;) {\n"
+                    "        go();\n      }\n    }\n  }\n}\n"),
+    "object.ts": ("function f(t: number) {\n  for (const [k, v] of Object.entries({a: 1})) {\n"
+                  "    if (v > t) {\n      go(k);\n    }\n  }\n}\n"),
+    "object.js": "function f() {\n  if (match({a: 1})) {\n    for (;;) {\n      go();\n    }\n  }\n}\n",
+    "block.m": ("void f(NSArray *a) {\n    if ([a indexOfObjectPassingTest:^BOOL(id o, NSUInteger i, "
+                "BOOL *s) { return o != nil; }] != NSNotFound) {\n" + _FOR_C),
+    "closure.swift": ("func f(_ xs: [Int]) {\n    if xs.contains(where: { $0 > 0 }) {\n"
+                      "        for x in xs {\n            go(x)\n        }\n    }\n}\n"),
+    "closure.rs": ("fn f(xs: Vec<i32>) {\n    if xs.iter().any(|x| { *x > 0 }) {\n"
+                   "        for x in xs {\n            go(x);\n        }\n    }\n}\n"),
+    "unsafe.rs": ("fn f(it: &mut I) {\n    while let Some(x) = unsafe { it.next() } {\n"
+                  "        if x > 0 {\n            go();\n        }\n    }\n}\n"),
+    "scriptblock.ps1": ("function F($xs) {\n    if ($xs | Where-Object { $_ -gt 0 }) {\n"
+                        "        foreach ($x in $xs) {\n            go $x\n        }\n    }\n}\n"),
+    "literal.zig": ("fn f(t: u8) void {\n    for ([_]u8{ 1, 2 }) |x| {\n        if (x > t) {\n"
+                    "            go();\n        }\n    }\n}\n"),
+}
+
 
 def _nesting(name: str, code: str) -> int:
     (record,) = analyze_source(name, code)
@@ -379,6 +422,36 @@ def test_a_shell_and_or_list_opens_no_level():
 
 def test_bash_files_read_the_same_depth_as_sh_files():
     assert _nesting("flat.bash", SH_FLAT) == 1
+
+
+@pytest.mark.parametrize("name", sorted(HEADER_BRACES))
+def test_a_brace_in_a_structures_header_is_not_its_body(name):
+    (record,) = analyze_source(name, HEADER_BRACES[name])
+
+    assert (record.nesting, record.cognitive) == (2, 3)
+
+
+def test_a_structure_in_another_structures_header_leaves_its_body_waiting():
+    """A Rust `match` in an `if` condition takes the first `{` for its own body;
+    the `if` still waits for the next one. +1 for the if, +1 for the match in
+    its condition, +2 for the for in its body."""
+    source = ("fn f(x: u8) {\n    if match x { 1 => true, _ => false } {\n"
+              "        for _ in 0..3 {\n            go();\n        }\n    }\n}\n")
+    (record,) = analyze_source("match-in-if.rs", source)
+
+    assert (record.nesting, record.cognitive) == (2, 4)
+
+
+def test_a_match_guard_has_no_body_to_take_the_next_arms_block():
+    """A Rust guard's `if` waited for a `{` and took the block of the next arm
+    that had one, which read one level deep and charged the `if` inside it 3.
+    +1 for the match, +2 for each guard inside it, +2 for the if in the arm."""
+    source = ("fn f(x: u8, y: bool) {\n    match x {\n        1 if y => a(),\n"
+              "        2 if y => a(),\n        _ => {\n            if y {\n                go();\n"
+              "            }\n        }\n    }\n}\n")
+    (record,) = analyze_source("guard.rs", source)
+
+    assert (record.nesting, record.cognitive) == (2, 7)
 
 
 def test_the_agent_json_page_names_where_each_languages_nesting_comes_from():

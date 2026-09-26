@@ -80,6 +80,9 @@ read 4. Two levels the stack itself never holds count toward the depth as
 well: the body of a structure that has no braces (`if (a) return 0;`, see
 `_open_body`), and the arms of a conditional operator, counted once its `:`
 arrives (see `_arms_token`).
+A structure's body is the first `{` at its keyword's own bracket depth, so a
+literal or a lambda inside its header is not; see `_open_brace`,
+`_brace_body` and, for headers without parentheses, `_resolve_reopen`.
 
 Where this extension sits in lizard's chain is load-bearing and differs by
 reader: the python rules read whitespace tokens that lizard's own
@@ -244,7 +247,9 @@ class _Dialect(NamedTuple):
     _signature, _counts_question). `error_sets`: `||` merges two error sets
     (Zig; see _error_set_merge). `conditions`: the reader's condition set,
     read at each `?`, and set from the reader for each file (see
-    LizardExtension.__call__).
+    LizardExtension.__call__). `bare_headers`: a structure's header goes
+    without parentheses, so a literal or a block in it sits at the body's depth
+    (Go, Rust, Swift; see _resolve_reopen).
 
     `counting`: the structures besides `if` that cost +1 and the nesting they
     sit in. `do_loops`: the words that open a loop whose `while` comes after
@@ -292,6 +297,7 @@ class _Dialect(NamedTuple):
     rust: bool = False
     error_sets: bool = False
     conditions: frozenset = _QUESTION
+    bare_headers: bool = False
     counting: frozenset = _COUNTING
     do_loops: frozenset = _DO
     goto: bool = True
@@ -446,10 +452,14 @@ _DIALECTS = {
                           labels=_zig_label, word_ops=_AND_OR, braceless=True, types=_zig_type),
 }
 
-# The rules crapkit's reader fixes add: Rust's own syntax (see _Dialect.rust) and
-# Zig's `||`, which merges error sets. A reader crapkit subclasses reads under
-# the rules of the lizard reader it corrects.
-_DIALECTS.update(dict.fromkeys(("RustReader", "CorrectedRustReader"), _RUST._replace(rust=True)))
+# The rules crapkit's reader fixes add: Rust's own syntax (see _Dialect.rust),
+# the headers without parentheses of Go, Rust and Swift (_Dialect.bare_headers)
+# and Zig's `||`, which merges error sets. A reader crapkit subclasses reads
+# under the rules of the lizard reader it corrects.
+_DIALECTS.update(dict.fromkeys(("RustReader", "CorrectedRustReader"),
+                               _RUST._replace(rust=True, bare_headers=True)))
+_DIALECTS.update({reader: _DIALECTS[reader]._replace(bare_headers=True)
+                  for reader in ("GoReader", "SwiftReader")})
 _DIALECTS["ZigReader"] = _DIALECTS["ZigReader"]._replace(error_sets=True)
 _DIALECTS.update({f"Corrected{stock}": _DIALECTS.get(stock, _DEFAULT_DIALECT)
                   for stock in ("GoReader", "SwiftReader", "ZigReader")})
@@ -607,7 +617,7 @@ class _FnState:
                  "prev", "prev2", "label_check", "dialect", "call_pending", "call",
                  "messages", "runs", "run_break", "word_op", "braces", "closed_do",
                  "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies", "do_tail",
-                 "ended", "questions", "arms", "brace_base", "scopes", "home", "bare_call",
+                 "ended", "questions", "arms", "reopen", "brace_base", "scopes", "home", "bare_call",
                  "shadowed", "importing",
                  "after_group", "own_calls", "closed_call", "signature")
 
@@ -627,7 +637,8 @@ class _FnState:
         self.brace_base = 0      # the stream's brace depth where the function started
         self.line_indent = 0
         self.at_line_start = True
-        self.pending = False     # a counting structure awaits its '{' (braced languages)
+        self.pending = []        # bracket depths of the structures awaiting their '{'
+        self.reopen = False      # a structure's block just closed: see _resolve_reopen
         self.bracket_depth = 0   # brackets of every kind open; see _body_token
         self.questions = []      # bracket depths of `?`s whose `:` has not come
         self.arms = []           # bracket depths of conditional operators past their `:`
@@ -971,6 +982,8 @@ def _close_comprehensions(state: _FnState) -> None:
 
 def _resolve_lookbehinds(state: _FnState, token: str, is_python: bool) -> bool:
     """Signals needing one token of hindsight. True = this token is consumed."""
+    if state.reopen:
+        _resolve_reopen(state, token)
     if state.for_pending:
         _resolve_for(state, token, is_python)
     _resolve_words(state, token)
@@ -1009,7 +1022,7 @@ def _else_body(state: _FnState, token: str) -> None:
     else-if's is the `if`'s, with a header. Zig's `else =>` is a switch's
     default prong, which has no body of an else."""
     if not state.dialect.braceless:
-        state.pending = True
+        state.pending.append(state.bracket_depth)
     elif token == "if":
         state.bodies.append([state.bracket_depth, _FRESH, "if"])
     elif token != "=>":
@@ -1024,6 +1037,25 @@ def _resolve_words(state: _FnState, token: str) -> None:
         _resolve_call(state, token)
     if state.word_op:
         _resolve_word_op(state, token)
+
+
+def _resolve_reopen(state: _FnState, token: str) -> None:
+    """The token after a `}` that closed a structure's block in Go, Rust or Swift.
+
+    Their headers have no parentheses, so a block in a header sits at the depth
+    of the body's `{` and takes the structure's level: a composite literal
+    (`range []int{1, 2} {`), a struct type's fields and then its literal
+    (`range []struct{ n int }{{1}} {`), `unsafe { ... }`, a function literal
+    called in an if's initializer. A `{` or `(` on the same line says the
+    block was such an operand, and the structure waits for its body again,
+    unless another structure in the header is already waiting at that depth
+    (`if match x { ... } {`). A block that was a body ends its line, or goes on
+    with `else` or `catch`.
+    """
+    state.reopen = False
+    depth = state.bracket_depth
+    if token in ("{", "(") and not state.at_line_start and depth not in state.pending[-1:]:
+        state.pending.append(depth)
 
 
 def _resolve_question(state: _FnState, token: str, is_python: bool) -> bool:
@@ -1193,6 +1225,7 @@ def _arms_bracket(state: _FnState, token: str) -> None:
         state.bracket_depth += _BRACKET_DEPTH[token]
     if _BRACKET_DEPTH[token] < 0:
         _forget_arms(state, state.bracket_depth + 1)
+        _forget(state.pending, state.bracket_depth + 1)  # no structure waits past its bracket
 
 
 def _arms_statement(state: _FnState, token: str) -> None:
@@ -1221,6 +1254,14 @@ def _opens_arms(state: _FnState) -> bool:
     return not (state.dialect.shell_blocks or state.dialect.declarator_and and state.brace_depth == 0)
 
 
+def _arm(state: _FnState, _token: str) -> None:
+    """A Rust match arm's `=>`: an `if` before it is the arm's guard, which has
+    no body, so it stops waiting for one. Waiting on, it took the `{` of the
+    next arm with a block for its body, a level no arm opens."""
+    if state.dialect.rust:
+        _forget(state.pending, state.bracket_depth)
+
+
 def _forget(depths: list, depth: int) -> None:
     """Drop the entries at `depth` or deeper, whose statement or bracket ended."""
     while depths and depths[-1] >= depth:
@@ -1228,7 +1269,7 @@ def _forget(depths: list, depth: int) -> None:
 
 
 # The tokens the rules above read, each to the rule that reads it.
-_ARM_STEPS = {":": _colon, **dict.fromkeys(_BRACKET_DEPTH, _arms_bracket),
+_ARM_STEPS = {":": _colon, "=>": _arm, **dict.fromkeys(_BRACKET_DEPTH, _arms_bracket),
               **dict.fromkeys(_ARM_ENDS, _arms_statement)}
 
 
@@ -1582,11 +1623,16 @@ def _brace(state: _FnState, token: str) -> None:
 
 
 def _open_brace(state: _FnState) -> None:
+    """A `{` is a waiting structure's body only at the structure's own bracket
+    depth: one inside its header's brackets (`for (auto x : {1, 2})`,
+    `if (f(() -> { ... }))`) is a literal's or a lambda's. The arms pass (or,
+    where bodies can go without braces, `_body_token`) has already counted this
+    `{`, so the depth outside it is one less."""
     if state.dialect.braceless:
         _brace_body(state)
-    elif state.pending:
+    elif state.pending and state.pending[-1] == state.bracket_depth - 1:
+        state.pending.pop()
         _push(state, state.brace_depth)
-        state.pending = False
     state.braces.append(state.prev in state.dialect.do_loops)
     state.brace_depth += 1
 
@@ -1598,6 +1644,7 @@ def _close_brace(state: _FnState) -> None:
     state.closed_do = state.braces.pop() if state.braces else False
     if state.stack and state.stack[-1] == state.brace_depth:
         state.stack.pop()
+        state.reopen = state.dialect.bare_headers
 
 
 def _declarator_and(state: _FnState, token: str) -> bool:
@@ -2086,7 +2133,7 @@ def _else_token(state: _FnState, token: str, is_python: bool) -> None:
         return
     if state.guard_else:
         state.guard_else = False
-        state.pending = True  # the guard's block, which the guard paid for
+        state.pending.append(state.bracket_depth)  # the guard's block, which the guard paid for
         return
     _else_link(state, token, is_python)
 
@@ -2114,7 +2161,7 @@ def _push_structure(state: _FnState, is_python: bool, token: str = "") -> None:
     elif state.dialect.braceless:
         _open_body(state, token)
     else:
-        state.pending = True
+        state.pending.append(state.bracket_depth)
 
 
 # --- bodies without braces ------------------------------------------------------

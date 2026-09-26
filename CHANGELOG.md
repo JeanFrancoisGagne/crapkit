@@ -1239,13 +1239,24 @@ analysis-version bump, so each marks file re-seeds once
   `nesting` counted the block as a level. A Java method holding `if (a) return;` and
   then a lambda with one `if` in it read `cognitive` 3 and `nesting` 2; it reads 2
   and 1.
-- Measured over 21,099 functions in 20 open-source projects: 1,470 of the 6,465
-  functions outside Python move `nesting`, 1,267 down and 203 up, and 9 move
-  `cognitive`, all down. No Python row and no `ccn` value moves. Against an
+- A `{` in a structure's header is no longer its body. Go's `for _, x := range
+  []string{"a", "b"} {`, a table-driven test's `range []struct{...}{...} {`, C++'s
+  `for (auto x : {1, 2})`, Java's `new int[]{...}`, a destructuring `for (const { a }
+  of xs)`, and a lambda or an object literal passed in a condition each took the
+  header's first `{` for the body, so the real body sat outside the structure: an
+  `if` inside such a loop read `nesting` 1 and cost 1 in `cognitive`, where it is 2
+  and costs 2. The same rule stops a Swift argument label spelled `for` and a
+  PowerShell `[switch]` parameter from turning the function's own body into a
+  level, and a Rust match guard's `if` from taking the next arm's block.
+- Measured over 21,099 functions in 20 open-source projects: 1,486 of the 6,465
+  functions outside Python move `nesting`, 1,290 down and 196 up, and 39 move
+  `cognitive`, 33 down and 6 up. No Python row and no `ccn` value moves. Against an
   independent tree-sitter reading of Sonar's nesting rules over 3,228 functions in C,
   C++, Objective-C, Java, Go, Rust, Swift, Zig and shell, crapkit agreed on 2,295
-  before and 2,941 now. Most of the rest are closures, which open no level in
-  crapkit's reading and one in that oracle's.
+  before and 2,956 now. Most of the rest are closures, which open no level in
+  crapkit's reading and one in that oracle's. Over 24,540 functions in the Go
+  standard library and actionlint, 254 move `nesting` and 264 move `cognitive`, all
+  but one up: the header literals above.
 - `nesting` and `cognitive` are reported and never gated, so no gate verdict moves
   with them. The change needs an analysis-version bump, which makes each marks file
   re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-nesting-in-every-language)).
