@@ -17,6 +17,10 @@ and the suite-drop warning, against docs/lanes.md.
 - coverage warns when a lane ran more than a tenth fewer tests than the last
   trusted run; an absent count compares nothing (The test count is the second
   check; model_verdict.suite_dropped).
+- crapkit's own concurrent git reads leave .git/index as they found it, as
+  `git --no-optional-locks status` does for the same question (V12). Every
+  other check refreshes the index before each crapkit call, so that race
+  cannot fail it.
 
 Each case builds a World (verdict_world), whose lanes write their coverage and
 JUnit from a plan, so a test sets what changed and reads what crapkit decided.
@@ -55,6 +59,34 @@ SAYS = {"no artifact": r"^no artifact at \S+", "wrote none": r"last attempt",
         "head": r"^HEAD is \w+ and its artifact was built at \w+",
         "lane table": r"lane table", "environment": r"^\d+ environment variable\(s\) changed: ",
         "inputs": r"under its inputs", "bytes": r"bytes differ from its stamp"}
+
+
+def _stat_only_checks() -> frozenset:
+    """The checks whose construct is a file with the same bytes and new stat
+    information: they run crapkit on the index as they left it."""
+    return frozenset({test_same_bytes_touch_changes_nothing,
+                      test_crapkit_reads_leave_the_index_alone})
+
+
+@pytest.fixture(autouse=True)
+def _fresh_index_before_crapkit(request, monkeypatch):
+    """`git status` refreshes the index before each crapkit call, as git's own
+    commands keep a checkout's index. On an index with stat-only changes (a
+    copied repo, a file rewritten with the same bytes) the worktree `git diff`
+    among crapkit's concurrent lane reads rewrites .git/index, and on Windows
+    a read that opens it during the rename fails: the lane stamps no proof or
+    reads stale, about once in a hundred runs of a check here (V12,
+    calc-bug verdict-model-8). V12's check pins that race; the others read
+    only their own construct."""
+    if request.function in _stat_only_checks():
+        return
+    run = drive.Driver.run
+
+    def refreshed(self, *args, **kwargs):
+        repos.git(self.root, "status", "--porcelain")
+        return run(self, *args, **kwargs)
+
+    monkeypatch.setattr(drive.Driver, "run", refreshed)
 
 
 def _measured(make_repo, world: vw.World = WORLD, root: str = "") -> vw.Scenario:
@@ -456,6 +488,66 @@ def _claim(reason: str) -> str:
 def _reuse_words(reasons: dict, lines) -> str:
     reused = "reused" if set(reasons.values()) == {""} else "rerun"
     return f"{reused}, lines {'null' if lines is None else 'kept'}"
+
+
+# --- crapkit's own concurrent reads and .git/index -------------------------------------------------
+
+# Lane a proved by its inputs, lane b by the whole tree: the world of the Windows
+# nightly flake of test_lane_inputs_take_the_scope_path_spelling[plain].
+A_INPUTS = replace(WORLD, lane_extra=(("a", 'inputs = ["src"]\n'),))
+
+
+def _stale_read(driver: drive.Driver) -> None:
+    _app_item(driver)
+
+
+def _proof_read(driver: drive.Driver) -> None:
+    result = driver.run("coverage")
+    assert result.code == 0, result.stdout + result.stderr
+
+
+# next-item runs the lane staleness reads; coverage runs the reads that prove each lane.
+OWN_READS = {"next-item": _stale_read, "coverage": _proof_read}
+
+
+def _index_after(sc, read) -> str:
+    """Touch src/app.py (same bytes, a new mtime), run `read`, and say whether
+    .git/index was replaced: git writes a refreshed index to index.lock and
+    renames it over .git/index, which gives the file a new id."""
+    _touch(sc)
+    index = sc.top / ".git" / "index"
+    before = os.stat(index)
+    read()
+    after = os.stat(index)
+    moved = (before.st_ino, before.st_mtime_ns) != (after.st_ino, after.st_mtime_ns)
+    return "index rewritten" if moved else "index untouched"
+
+
+def _status_without_locks(sc) -> None:
+    """Every staged, unstaged or untracked change under the lanes' paths, the
+    question crapkit's lane reads ask, read as git-status(1) tells a read that
+    runs beside other git commands to read it."""
+    repos.git(sc.top, "--no-optional-locks", "status", "--porcelain", "-uall", "--", "src", "lib")
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@rulings.applies("V12")
+@pytest.mark.parametrize("command", sorted(OWN_READS))
+def test_crapkit_reads_leave_the_index_alone(make_repo, command):
+    """git-status(1), Background refresh: writing the refreshed index takes a
+    lock that can make simultaneous git processes fail, so a read run beside
+    them should use --no-optional-locks, which leaves .git/index as it was.
+    crapkit starts its lane reads at once, and on a tree whose src/app.py has
+    the same bytes and a new mtime the worktree `git diff` among them renames
+    index.lock over .git/index while the others open it (git diff takes that
+    lock whatever GIT_OPTIONAL_LOCKS says). On Windows an open that meets the
+    rename fails with 'index file open failed: Permission denied' (exit 128),
+    and the lane reads stale or stamps no proof."""
+    sc = _measured(make_repo, A_INPUTS)
+    crapkit = _index_after(sc, lambda: OWN_READS[command](sc.driver))
+    oracle = _index_after(sc, lambda: _status_without_locks(sc))
+    rulings.pin_ruling("V12", crapkit=crapkit, oracle=oracle)
 
 
 # --- the artifact a failed attempt left behind ----------------------------------------------------
