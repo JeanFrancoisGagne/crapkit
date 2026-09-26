@@ -2,6 +2,19 @@
 
 ## 0.8.1 — unreleased
 
+### Every platform computes the same CRAP
+
+- `crap` cubes `1 - cov` with two products instead of `** 3`. IEEE 754 rounds a product
+  correctly everywhere and leaves `pow()` to each C library, so Windows and Linux gave
+  some scores different last bits. CRAP(36, 53/120) is exactly 261.57225 and printed
+  261.5723 on both, where rounding half to even gives 261.5722. Measured on Windows over
+  ccn 1 to 60 and every coverage fraction up to 240ths, 21 scores print a different 4 dp
+  value: 12 fall by 0.0001 and 9 rise by 0.0001. One prints a different 2 dp value:
+  CRAP(25, 19/50) is exactly 173.955 and now prints 173.96, not 173.95. Marks are
+  stored at 4 dp, so a rise would read as a ratchet regression on a function nobody
+  touched. The change needs an analysis-version bump, which makes each marks file
+  re-seed once.
+
 ### crapkit stops before it stores or prints a number that breaks its definition
 
 - Every number crapkit writes to the store, the marks file or a report now passes a

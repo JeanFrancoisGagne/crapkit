@@ -24,6 +24,16 @@ def test_crap_formula_cubes_the_uncovered_share():
     assert got == {(4, 0.5): 6.0, (7, 0.75): 7.765625}
 
 
+def test_crap_cubes_by_products_so_every_platform_prints_one_score():
+    """IEEE 754 rounds a product correctly everywhere and leaves pow() to each
+    libm. Through `** 3`, Windows UCRT and glibc parted in the last bit on
+    CRAP(2, 26/99), and CRAP(36, 53/120), exactly 261.57225, printed 261.5723
+    on both where the exact value rounds half to even to 261.5722."""
+    assert crap(2, 26 / 99).hex() == "0x1.cd460645bebedp+1"
+    assert crap(36, 53 / 120).hex() == "0x1.05927ef9db22dp+8"
+    assert f"{crap(36, 53 / 120):.4f}" == "261.5722"
+
+
 def test_join_by_span_overlap_flags_measured():
     cov = {"src/a.ts": [FnCoverage("f", 1, 13, True, 4, 3)]}
     (scored,) = score_rows([row()], cov, lane_scopes={"src"})

@@ -21,7 +21,12 @@ from .snapshot import InventoryRow
 
 
 def crap(ccn: int, cov: float) -> float:
-    return ccn * ccn * (1.0 - cov) ** 3 + ccn
+    """ccn^2 * (1 - cov)^3 + ccn, cubed by two products. IEEE 754 rounds a
+    product correctly on every platform and leaves pow() to each libm: through
+    `** 3`, Windows and Linux parted in the last bit on some inputs, and a
+    score on an exact 4 dp tie printed the side pow() fell on."""
+    uncovered = 1.0 - cov
+    return ccn * ccn * (uncovered * uncovered * uncovered) + ccn
 
 
 _GRADES = ((0.02, "A"), (0.05, "B"), (0.10, "C"), (0.20, "D"))
