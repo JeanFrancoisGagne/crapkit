@@ -24,7 +24,6 @@ import shutil
 from pathlib import Path
 
 import hang_guard
-import pytest
 
 from kit import docsnip, gitmirror, shim
 from kit.cells import cell
@@ -205,10 +204,23 @@ def test_codex_loads_no_crapkit_hooks(box, candidate):
     assert hooks == []
 
 
+def _units(text: str) -> list[str]:
+    """Paragraphs and fences, each table row a unit of its own: the rule
+    tests/unit/test_docs_claims_contract.py holds the skill pages to."""
+    units: list[str] = []
+    for block in re.split(r"\n\s*\n", text):
+        rows = block.splitlines()
+        units += rows if rows and all(row.startswith("|") for row in rows) else [block]
+    return units
+
+
 def claude_lines(path: Path) -> list[str]:
-    """The lines of a skill that tell the reader to run `claude plugin` or `claude mcp`."""
-    text = path.read_text(encoding="utf-8")
-    return [line.strip() for line in text.splitlines() if CLAUDE_COMMAND.search(line)]
+    """The units of a skill that show a `claude plugin` or `claude mcp` call with
+    no "Claude Code" in them or in the unit before them: a line a Codex agent
+    would read as its own to run."""
+    units = _units(path.read_text(encoding="utf-8"))
+    return [unit.strip() for before, unit in zip(["", *units], units)
+            if CLAUDE_COMMAND.search(unit) and "Claude Code" not in before + unit]
 
 
 def claude_commands(skills: list[dict]) -> dict[str, list[str]]:
@@ -217,15 +229,16 @@ def claude_commands(skills: list[dict]) -> dict[str, list[str]]:
 
 
 @cell("lin-codex-plugin-fresh", channel="Codex marketplace, README line via mirror", harness="Codex",
-      scenario="fresh: no loaded skill names a `claude` command", use_cases="skills", os="linux", image="core",
-      cadence="push")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-plugins-2: the crapkit-onboard and crapkit-recover skills "
-                   "Codex loads tell a Codex user to run `claude plugin ...`")
+      scenario="fresh: every `claude` command in a skill Codex loads is labelled Claude Code's, with the Codex "
+      "line beside it", use_cases="skills", os="linux", image="core", cadence="push")
 def test_codex_skills_name_no_claude_command(box, candidate):
-    found = claude_commands(listed_only(box, candidate)["skills"])
-    box.transcript.attach("claude-commands", found)
+    skills = listed_only(box, candidate)["skills"]
+    found = claude_commands(skills)
+    box.transcript.attach("unlabelled-claude-commands", found)
 
     assert found == {}
+    texts = [Path(skill["path"]).read_text(encoding="utf-8") for skill in skills]
+    assert [text for text in texts if CLAUDE_COMMAND.search(text) and "codex plugin" not in text] == []
 
 
 @cell("win-codex-plugin", channel="Codex marketplace", harness="Codex",
@@ -335,15 +348,21 @@ def test_codex_upgrades_the_plugin_past_the_cli_at_startup(box, candidate):
 
 
 @cell("lin-codex-autoupgrade", channel="Codex marketplace", harness="Codex",
-      scenario="drift: the repair doctor names for a Codex plugin root is a Codex command",
+      scenario="drift: the CLI upgraded to the candidate, the Codex plugin still at 0.7.6; the candidate's doctor "
+      "says the plugin is behind and names Codex's refresh lines as its repair",
       use_cases="plugin/CLI drift, doctor --plugin-root", os="linux", image="core", cadence="push")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-plugins-3: doctor --plugin-root on a Codex plugin root "
-                   "names `claude plugin install crapkit@crapkit` as the plugin repair")
 def test_codex_drift_repair_is_a_codex_command(box, candidate):
-    _, gap = drifted(box, candidate)
-    plugin_repair = [command for command in gap_repairs(gap.stdout) if not command.startswith("pip ")]
+    """0.7.6's doctor named `claude plugin install` for a Codex root, and it
+    still does wherever the CLI is 0.7.6; from the candidate on, the repair is
+    the harness's own."""
+    repo = plain_repo(box)
+    install_old(box, "0.7.6", repo)
+    upgrade_cli(box)
+    gap = doctor_plugin(box, str(codex_root(box, "0.7.6")), cwd=repo)
+    repairs = re.findall(r"`([^`]+)`", gap.stdout.split("The plugin is behind; update it", 1)[-1])
 
-    assert plugin_repair and all(command.startswith("codex ") for command in plugin_repair)
+    assert gap.exit == 1 and "The plugin is behind" in gap.stdout, gap.stdout
+    assert repairs and all(command.startswith("codex ") for command in repairs), repairs
 
 
 def pin_tools(box, names: list[str]) -> None:

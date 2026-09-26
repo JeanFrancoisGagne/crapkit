@@ -340,6 +340,11 @@ def driver_config() -> str:
     return docsnip.fence(RATCHET_DOC, DRIVER, index=1).text
 
 
+def uvx_driver_config() -> str:
+    """docs/ratchet.md's driver line for a clone that runs crapkit through uvx."""
+    return docsnip.fence(RATCHET_DOC, DRIVER, contains="uvx crapkit ratchet merge").text
+
+
 def commit_attribute(box, repo: Path) -> None:
     """Step 1 of docs/ratchet.md: the .gitattributes line, committed."""
     attributes = repo / ".gitattributes"

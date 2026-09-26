@@ -4,7 +4,8 @@ The README says `uv tool install crapkit` or `pipx install crapkit` "puts a
 `crapkit` command on PATH once, which is what the commit gate ... call[s]",
 and `uvx crapkit` "runs the same commands". The hook Routes 1 and 2 write
 runs the `crapkit` command, then `uvx crapkit`, then `python -m crapkit`,
-whichever it reaches first, and the merge driver line runs `crapkit`. Each
+whichever it reaches first, and the merge driver line runs `crapkit`, or
+`uvx crapkit` in the line docs/ratchet.md gives a uvx clone. Each
 cell installs through one channel, wires one consumer from the docs, and
 commits or merges through git: the gate must refuse a breach, the driver
 must merge.
@@ -17,15 +18,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from kit import docsnip, gitsurf, repos
 from kit.cells import cell
 
 PACKET = "deploy-git"
 NOT_PYTHON = "A repo that is not Python"
-UVX_DRIVER = ("deploy-bug deploy-git-9: docs/ratchet.md's driver line runs `crapkit`, which a uvx user does "
-              "not have: git prints `crapkit: not found`, reports a conflict and leaves ours with no markers")
 RELEASE_SH = '''#!/bin/sh
 stage() {
     case "$1" in
@@ -152,13 +149,13 @@ def uvx_repo(box, templates) -> Path:
     box.run(["git", "commit", "-q", "-m", "adopt crapkit"], cwd=repo, env=box.commit_env(), expect=0)
     gitsurf.commit_attribute(box, repo)
     gitsurf.configure_driver(box, repo)
+    box.script(gitsurf.uvx_driver_config(), cwd=repo, expect=0, note="docs/ratchet.md: the driver a uvx clone sets")
     return repo
 
 
-@pytest.mark.xfail(strict=True, reason=UVX_DRIVER)
 @cell("lin-pair-uvx-merge-driver", channel="uvx x merge driver", harness="git 2.47",
-      scenario="fresh: the message git shows when the driver cannot reach crapkit", use_cases="ratchet merge",
-      os="linux", image="cells", cadence="nightly")
+      scenario="fresh: a uvx clone sets the driver docs/ratchet.md gives it, and git merges two burn-downs "
+      "through it with no crapkit on PATH", use_cases="ratchet merge", os="linux", image="cells", cadence="nightly")
 def test_the_driver_merges_for_a_uvx_user(box, templates):
     repo = uvx_repo(box, templates)
     assert box.which("crapkit") is None
