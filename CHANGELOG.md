@@ -1375,6 +1375,20 @@ each marks file re-seed once.
   `crapkit ratchet prune` to drop marks left under phantom names, then
   `crapkit ratchet seed`.
 
+### Shell keeps a function's whole name
+
+- A function whose name holds `-`, `.` or `:` gets a row under the whole name:
+  `do-thing()`, `function log::info`, `lib.util()`. `name()` was reported under the part
+  after its last separator, so two helpers such as `app-config` and `app-show-config`
+  shared one key, and `function name` got no row at all.
+- A keyword inside a longer word counts nothing: `xcode-select` read as a `select` loop
+  that never closed, so one install helper scored cognitive 34 for a hand count of 10;
+  `wait-for-device` cost a `for` condition; `snapshot-switch` cost a switch in `ccn_mod`.
+- `switch` costs nothing in `ccn_mod`. Shell has no switch statement, and
+  `git switch main` read `ccn_mod` 2.
+- Rows are renamed, so upgrade in the same order as for PowerShell: `crapkit coverage`,
+  `crapkit ratchet prune`, `crapkit ratchet seed`.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

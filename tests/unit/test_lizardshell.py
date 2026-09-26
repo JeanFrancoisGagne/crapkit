@@ -11,6 +11,7 @@ import lizard_languages
 import pytest
 
 from crapkit.analyze import ANALYSIS_VERSION, analyze_source
+from crapkit.keys import bare_name
 from crapkit.lizardshell import ShellReader, register
 
 # base 1, + if, elif, for, &&, ||, while, until
@@ -407,6 +408,38 @@ def test_a_subshell_inside_a_case_arm_still_closes_where_it_should():
         ("pick", 6, 3), ("after", 9, 1)]
 
 
+IF_BODY = '  if [ -n "$1" ]; then\n    echo "$1"\n  fi\n'
+AFTER = 'after() {\n  echo x\n}\n'
+
+
+@pytest.mark.parametrize("header", [
+    "my-func() {", "function my-func {", "function my-func() {",
+    "log::info() {", "function log::info {", "lib.util() {", "function lib.util {",
+])
+def test_a_name_holding_a_dash_a_colon_or_a_dot_is_one_function_name(header):
+    """bash names a function with any word, and `do-thing`, `log::info` and
+    `lib.util` are the usual spellings of a helper library. The name reached
+    the reader split at each `-`, `:` or `.`: `name()` was reported under its
+    last part, so `app-config` and `app-show-config` shared the key `config`,
+    and `function name` got no row at all."""
+    name = header.replace("function ", "").split("(")[0].split(" ")[0]
+    code = f"{header}\n{IF_BODY}}}\n{AFTER}"
+
+    assert [(bare_name(r.long_name), r.start, r.end, r.ccn_std)
+            for r in analyze_source("probe.sh", code)] == [(name, 1, 5, 2), ("after", 6, 8, 1)]
+
+
+@pytest.mark.parametrize("line", ["echo if-then", "run-done", "make fi.o", "echo for.each"])
+def test_a_keyword_inside_a_longer_word_is_not_a_keyword(line):
+    """`if-then`, `run-done` and `fi.o` are single words to the shell. Split at
+    the `-` or `.`, the keyword part counted a condition or closed a block."""
+    code = (f"build() {{\n  for f in a; do\n    {line}\n    if [ -n \"$f\" ]; then\n"
+            "      echo 1\n    fi\n  done\n}\n")
+    (record,) = analyze_source("probe.sh", code)
+
+    assert (record.ccn_std, record.cognitive) == (3, 3)
+
+
 # --- only functions, never top-level code --------------------------------------
 
 REAL_SHAPED = '''#!/usr/bin/env bash
@@ -763,6 +796,14 @@ def test_the_modified_column_does_not_cancel_the_case_arms():
     condition set, so the two columns agree and nothing is silently refunded."""
     (record,) = analyze_source("dispatch.sh", DISPATCH)
     assert (record.ccn_std, record.ccn_mod, record.ccn) == (4, 4, 4)
+
+
+def test_a_switch_word_costs_nothing_in_the_modified_column():
+    """Shell has no `switch` statement, and lizard's modified rule adds a point
+    for every token spelled `switch`: `git switch main` read ccn_mod 2."""
+    (record,) = analyze_source("probe.sh", "go() {\n  git switch main\n}\n")
+
+    assert (record.ccn_std, record.ccn_mod) == (1, 1)
 
 
 def test_bash_files_take_the_same_path_as_sh_files():

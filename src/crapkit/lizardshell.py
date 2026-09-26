@@ -86,7 +86,7 @@ HEREDOCS
     end the body, and code after a form feed on the opener line is still code.
 
 TOKENIZER REPAIRS
-    lizard's shared token pattern is the C family's, and three of its rules read
+    lizard's shared token pattern is the C family's, and four of its rules read
     ordinary shell as something else. Each repair below was found by running this
     reader over the consumer repo's 97 scripts, which hold 475 function headers and
     report 462 (the rest are defined inside heredoc bodies). Each is pinned by a
@@ -100,6 +100,12 @@ TOKENIZER REPAIRS
       - a double-quoted run holding a command substitution that holds quotes ends
         at the wrong quote, and every quote after it pairs off by one (install.sh:
         18 of 153 functions hidden).
+      - a word holding `-`, `.` or `:` splits there. A function named
+        `do-thing`, `log::info` or `lib.util` was reported under its last part,
+        or under no row at all after `function`; and the keyword inside
+        `xcode-select`, `wait-for-device` or `snapshot-switch` counted as a
+        `select` loop, a `for` condition or a switch. An added word token keeps
+        each one whole, as the shell reads it.
     `//` gets an added token for the same reason as `\\x`: it is the `//` of a URL,
     not a C++ line comment.
 
@@ -143,9 +149,6 @@ KNOWN LIMITS
       `?:` in it counts nothing.
     - A function defined inside another function's body is not reported; its braces
       are counted, so the outer function still closes on the right `}`.
-    - A name containing `-` or `.` reaches the reader split into several tokens, so
-      `do-thing() {` is reported under the name `thing`. It is still one function
-      with the right span and ccn.
     - Cognitive complexity for shell is computed by crapkit's language-agnostic
       extension, which reads a block by its words rather than its braces: `if`,
       `case` and the loop keywords open a nesting level, `fi`/`done`/`esac` close
@@ -258,6 +261,9 @@ _AT_WORD = r"(?<![^\s;&|()])"
 #           line to it. Either way the line was gone: the `))` of
 #           `(( 10#$n < 1 ))` and any `&&` after it. _tokens calls lizard
 #           without the mixin's rule.
+#   a-b.c:d one word with a '-', '.' or ':' inside it, as the shell reads it: the
+#           function name `do-thing` or `log::info`, the argument `if-then`.
+_WORD = r"[A-Za-z_][\w.:-]*\w"
 _TOKEN_ADDITION = (
     "|" + _DQ_STRING +
     r"|\$\{(?:[^{}]|\{[^}]*\})*\}"
@@ -267,6 +273,7 @@ _TOKEN_ADDITION = (
     r"|\\."
     r"|" + _AT_WORD + r"\#[^\n]*"
     r"|\w*+\#[^\s;&|()<>\"'`$\\]*+"
+    "|" + _WORD
 )
 
 # A substitution inside a token lizard keeps as text: a double-quoted string or a
@@ -306,7 +313,7 @@ _OPENS = {"ansi": "$'", "single": "'", "double": '"', "arith": "((",
           "arith_command": "((", "sub": "$(", "param": "${", "paren": "(",
           "aparen": "a(", "case": "case"}
 
-_NAME = re.compile(r"[A-Za-z_]\w*")
+_NAME = re.compile(_WORD + r"|[A-Za-z_]")
 
 # Words that can never name a function, so that `if (cmd); then` and
 # `case $x in (a)` cannot look like one.

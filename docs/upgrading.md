@@ -315,9 +315,10 @@ Rust:
 
 ### Next analysis version: shell and PowerShell rows
 
-The release after 0.8.0 moves shell's and PowerShell's numbers, so it raises the
-analysis version and every marks file re-seeds once, with the same three commands as
-version 11 below.
+The release after 0.8.0 moves shell's and PowerShell's numbers and names, so it raises
+the analysis version and every marks file re-seeds once, with the same three commands
+as version 11 below. Prune matters here: some rows are renamed and some phantom rows
+go, and their marks are left under names the run no longer has.
 
 - A shell function's `nesting` reads how deep its blocks go. lizard's ND column closed
   a level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
@@ -359,6 +360,26 @@ version 11 below.
   functions rose by 1 in ccn and 1 or 2 in cognitive, and one by a nesting level.
   Quotes inside the subexpression pair among themselves, so a function that held
   `"$(Get-Item "x{")"` and had no row now has one, and can be over its ceiling.
+- PowerShell keywords count in any case where a statement starts: a capitalized `IF`,
+  `-Or` or `ForEach` now costs what its lower-case spelling costs, and a `Default` arm
+  is free. A keyword word that is a command, an argument or a member costs nothing in
+  any case (`$xs | foreach { }`, `git switch main`), and neither does the `?` in `$?`.
+  PowerShell 7's `&&`, `||`, `??`, `?.` and `?[` count once each. Gated `ccn` can rise
+  or fall.
+- A PowerShell switch arm costs one point whatever its pattern or subject holds, and
+  `ccn_mod` no longer reads one above `ccn_std` for each switch.
+- PowerShell rows appear for `Function Name`, `function script:Name`, `function
+  Get.Name` and a function that followed a stray `configuration` or `filter` word, and
+  the phantom rows those words opened go. A class method's decisions leave the function
+  that declares the class. A function that gains a row, or keeps one and gains
+  decisions, can be over its ceiling and fails the gate the next time its file changes.
+- A shell function whose name holds `-`, `.` or `:` keeps the whole name: `do-thing`
+  read `thing`, and `function log::info` had no row. A keyword inside a longer word,
+  such as `select` in `xcode-select`, counts nothing, so some cognitive scores fall
+  sharply.
+
+See [the per-language gotchas](configuration.md#per-language-gotchas) for what each
+reader counts.
 
 ### Next analysis version: cognitive complexity per language
 
