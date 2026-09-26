@@ -363,3 +363,91 @@ def test_the_long_name_spells_the_reference_as_written():
     (record,) = analyze_source("p.cpp", "void take(Widget&& w, T&&... rest) {\n}\n", note=False)
 
     assert record.long_name == "take( Widget && w , T && ... rest)"
+
+
+# --- a class defined inside a function ------------------------------------------------
+
+LOCAL_CLASS = ("int outer(int a) {\n    struct Local {\n        int twice(int x) {\n"
+               "            if (x) {\n                return 2 * x;\n            }\n"
+               "            return 0;\n        }\n    };\n    return Local().twice(a);\n}\n")
+
+
+@pytest.mark.parametrize("path", ["p.cpp", "p.mm"])
+def test_a_local_class_member_is_a_function_of_its_own(path):
+    """ISO/IEC 14882:2020 [class.local]: a member function defined in a local
+    class is a function definition. lizard read the whole class as outer's
+    body, so twice had no row and its if cost outer 1 ccn and 1 cognitive."""
+    rows = analyze_source(path, LOCAL_CLASS, note=False)
+
+    assert [(r.long_name, r.start, r.end, r.ccn_std, r.cognitive) for r in rows] == [
+        ("outer.Local::twice( int x)", 3, 8, 2, 1), ("outer( int a)", 1, 11, 1, 0)]
+
+
+def test_every_member_of_a_local_class_has_a_row_and_the_rest_stays_with_the_function():
+    """A constructor, an access label, a data member between two members and a
+    class nested in the local one: the members get rows, and the if around the
+    class and the code after it stay outer's."""
+    source = ("int outer(int a) {\n    if (a) {\n        class Local final : public Base {\n"
+              "          public:\n            Local(int v) : v_(v) {}\n            int v_ = 0;\n"
+              "            int twice() const { return v_ ? 2 * v_ : 0; }\n"
+              "            struct In { int one() { return 1; } } in;\n        };\n"
+              "        return Local(a).twice();\n    }\n    return a > 0 ? 1 : 0;\n}\n"
+              "int after(int b) {\n    return b;\n}\n")
+
+    rows = analyze_source("p.cpp", source, note=False)
+
+    assert [(r.long_name.split("(")[0], r.ccn_std) for r in rows] == [
+        ("outer.Local::Local", 1), ("outer.Local::twice", 2), ("outer.Local::In::one", 1),
+        ("outer", 3), ("after", 1)]
+
+
+def test_a_member_of_a_class_local_to_a_member_is_a_function_too():
+    source = ("int outer() {\n    struct A {\n        int f() {\n            struct B {\n"
+              "                int g() { return 1; }\n            };\n"
+              "            return B().g();\n        }\n    };\n    return A().f();\n}\n")
+
+    rows = analyze_source("p.cpp", source, note=False)
+
+    assert [r.long_name for r in rows] == ["outer.A::f.B::g()", "outer.A::f()", "outer()"]
+
+
+NOT_A_LOCAL_CLASS = {  # a class keyword in a body that defines no class
+    "brace-initialized variable": "struct point p = {1, 2};\n    struct point q {3, 4};",
+    "enum class": "enum class E { A = f(1), B };",
+    "sizeof": "int n = sizeof(struct foo) + sizeof(union bar);",
+    "pointer": "struct foo *p = make();",
+    "compound literal": "use((struct foo){ .x = f(1) });",
+    "generic lambda": "auto g = []<class T>(T x) { return x; };",
+    "friend": "friend class Other;",
+}
+
+
+@pytest.mark.parametrize("statement", NOT_A_LOCAL_CLASS.values(), ids=NOT_A_LOCAL_CLASS.keys())
+def test_a_class_keyword_that_defines_no_class_leaves_the_body_whole(statement):
+    source = f"int outer(int a) {{\n    {statement}\n    if (a) {{\n        return 1;\n    }}\n" \
+             "    return 0;\n}\n"
+
+    rows = analyze_source("p.cpp", source, note=False)
+
+    assert [(r.long_name, r.ccn_std, r.cognitive) for r in rows] == [("outer( int a)", 2, 1)]
+
+
+def test_a_local_struct_in_c_holds_no_function_and_costs_nothing():
+    source = ("int outer(int a) {\n    struct pair { int x; int y; } p = {a, 2};\n"
+              "    typedef struct { int z; } Z;\n    if (a) {\n        return p.x;\n    }\n"
+              "    return p.y;\n}\n")
+
+    rows = analyze_source("p.c", source, note=False)
+
+    assert [(r.long_name, r.start, r.end, r.ccn_std, r.cognitive, r.nloc) for r in rows] == [
+        ("outer( int a)", 1, 8, 2, 1, 8)]
+
+
+def test_a_local_class_member_is_named_once_after_its_namespace():
+    """lizard spelled the levels around the function twice: `ns::ns::outer.L::f`."""
+    source = ("namespace ns {\nint outer() {\n    struct L {\n        int f() { return 1; }\n"
+              "    };\n    return L().f();\n}\n}\n")
+
+    rows = analyze_source("p.cpp", source, note=False)
+
+    assert [r.long_name for r in rows] == ["ns::outer.L::f()", "ns::outer()"]

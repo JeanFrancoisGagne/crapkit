@@ -40,6 +40,10 @@ Functions lizard hid, invented or misnamed
 * An Objective-C class extension's instance variables, `@interface E () { int
   _a; }`, read as a function named E, and in a `.m` file any word after a C
   function's parameter list, a prototype's `;` included, named a method.
+* A member function of a class defined inside a function had no row, and the
+  function around the class paid for its decisions (ISO/IEC 14882:2020
+  [class.local]). `_LocalClassBody` reads the class and names the member
+  `outer.Local::twice`, the way lizard names a function nested in another.
 
 The `&&` of a reference
 -----------------------
@@ -119,6 +123,12 @@ _OBJC_HEAD_GROUPS = {"(": "_state_objc_category", "<": "_state_objc_protocols",
 
 # The two declarations that declare no parameter: `(void)` and C's `(...)`.
 _NO_PARAMETER = (["void"], ["..."])
+
+# The keywords that open a class head, and what else a base clause holds besides
+# words: `: public Base<int>, ns::Other`.
+_CLASS_KEYS = frozenset({"struct", "class", "union"})
+_BASE_TOKENS = frozenset({"::", "<", ">", ",", "..."})
+_BRACE_DEPTH = {"{": 1, "}": -1}
 
 
 def declared_parameters(tokens: list[str]) -> int:
@@ -204,6 +214,7 @@ class _CFixes:
         self.crapkit_last_name = None
         self.crapkit_word = None
         self.crapkit_return = 0
+        self.crapkit_head = None
 
     def try_new_function(self, name):
         """Note whether this name follows a return type. The `>` that closes a
@@ -302,6 +313,100 @@ class _CFixes:
     def _state_attribute_arguments(self, _):
         """An attribute's arguments, nested parentheses included."""
 
+    def _state_imp(self, token):
+        """A function's body, where a class may be defined.
+
+        lizard read a body as braces and nothing else, so a member function of a
+        local class had no row and its decisions were charged to the function
+        around it. The class's body is read by a machine of its own, the way the
+        file's global scope is read, and this body resumes after its `}`.
+        """
+        if self._opens_a_local_class(token):
+            outer = self.context.current_function
+            self.sub_state(self.crapkit_class_body(self.context, outer), None, token)
+            return
+        super()._state_imp(token)
+
+    def _opens_a_local_class(self, token) -> bool:
+        """True at the `{` that ends a class head: `struct Local {`."""
+        head, self.crapkit_head = self.crapkit_head, None
+        if head is not None:
+            opened = head.reads(token)
+            self.crapkit_head = head if opened is None else None
+            return bool(opened)
+        if token in _CLASS_KEYS and self.last_token != "enum":
+            self.crapkit_head = _ClassHead()
+        return False
+
+
+class _LocalClassBody:
+    """A local class's body, read to the `}` that closes it.
+
+    Its members are read as the file's global scope is read. Between them the
+    function around the class is current again, so a data member's tokens are
+    not charged to a function that never opened, and neither is the class's
+    closing `}`, which the enclosing function's brace count must see.
+    """
+
+    def __init__(self, context, outer=None):
+        super().__init__(context)
+        self.crapkit_outer = outer
+        self.crapkit_braces = 0
+
+    def _state_global(self, token):
+        self.crapkit_braces += _BRACE_DEPTH.get(token, 0)
+        if self.crapkit_braces == 0:
+            self.statemachine_return()
+            return
+        super()._state_global(token)
+        if self._state == self._state_global:
+            self.context.current_function = self.crapkit_outer
+
+    def try_new_function(self, name):
+        """A member is named `outer.Local::twice`, or `ns::outer.Local::twice`.
+
+        lizard qualifies a name with every level open around it, and the
+        function's own name already holds the levels open around the function,
+        so they were spelled twice: `ns::ns::outer.Local::twice`.
+        """
+        super().try_new_function(name)
+        member = self.context.current_function
+        own = member.name.find(self.crapkit_outer.name + ".")
+        if own > 0:
+            member.name = member.long_name = member.name[own:]
+
+
+class _ClassHead:
+    """The tokens between `struct`, `class` or `union` and a class body's `{`.
+
+    A head holds at most one name, `final`, and a base clause after `:`
+    (ISO/IEC 14882:2020 [class.pre]). Anything else, a second name
+    (`struct point p = {1, 2}`), an operator, or a parenthesis
+    (`sizeof(struct foo)`), makes the keyword part of a declaration or an
+    expression, and the body reads on as lizard reads it.
+    """
+
+    def __init__(self):
+        self.names = 0
+        self.bases = False
+
+    def reads(self, token: str):
+        """True at the `{` that opens the body, False once the tokens cannot be
+        a class head, None while they still can."""
+        if token == "{":
+            return True
+        if self.bases:
+            return None if _is_word(token) or token in _BASE_TOKENS else False
+        return self._reads_the_name(token)
+
+    def _reads_the_name(self, token: str):
+        if token == ":":
+            self.bases = True
+            return None
+        if not _is_word(token):
+            return False
+        self.names += token != "final"
+        return None if self.names <= 1 else False
 
 
 class _ObjCFixes:
@@ -419,6 +524,18 @@ class CFamilyStates(_CFixes, CLikeStates):
 
 class ObjCFamilyStates(_ObjCFixes, _CFixes, ObjCStates):
     """lizard's Objective-C states: its C functions read as C, its methods as methods."""
+
+
+class _CClassBodyStates(_LocalClassBody, CFamilyStates):
+    """A local class in C or C++."""
+
+
+class _ObjCClassBodyStates(_LocalClassBody, ObjCFamilyStates):
+    """A local class in Objective-C++."""
+
+
+CFamilyStates.crapkit_class_body = _CClassBodyStates
+ObjCFamilyStates.crapkit_class_body = _ObjCClassBodyStates
 
 
 class CFamilyNestingStates(CLikeNestingStackStates):

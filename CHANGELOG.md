@@ -807,6 +807,12 @@ version and every repo with those languages re-seeds its marks once (`crapkit co
 - In a `.m` or `.mm` file, a C function's parameter list no longer names a method
   after the word that follows it. A prototype, `int f(int);`, followed by an array
   initializer's braces gave a function named after the array.
+- A member function of a class defined inside a function has a row of its own, named
+  after both, `outer.Local::twice`. lizard read the class as part of the function around
+  it, which paid for the member's decisions: fmt 11.0.2's `compute_width` read ccn 27
+  with no decision of its own and now reads 1, with the 27 on
+  `compute_width.count_code_points::operator ( )`. In four fmt headers 29 members get a
+  row and 6 enclosing functions lose ccn.
 
 ### The `&&` of a C++ reference decides nothing
 

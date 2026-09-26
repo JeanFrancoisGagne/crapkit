@@ -207,7 +207,10 @@ commands as version 11 below.
   or not: `f(int*, char)` reads 2, `f(const int arr[4])` reads 1, and an Objective-C
   method counts its arguments. `params` is reported and never gated.
 - Functions that had no row get one: those after a `<` comparison in a default
-  template argument or a member initializer, which lizard read as a template bracket.
+  template argument or a member initializer, which lizard read as a template bracket,
+  and the member functions of a class defined inside a function. The function around
+  such a class no longer pays for its members' decisions, so its `ccn` and
+  `cognitive` fall.
   A newly listed function over its ceiling fails the gate the next time its file
   changes, and `ratchet seed` marks it.
 - Rows that were not functions go: a declaration whose trailing return type holds
