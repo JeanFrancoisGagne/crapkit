@@ -802,12 +802,15 @@ def _table_rows(section):
     return [re.findall(r"`([^`]+)`", line) for line in section.splitlines() if line.startswith("| `")]
 
 
+def _cache_section(text):
+    return text.split("\n## The GitHub Actions cache\n", 1)[-1].split("\n## ", 1)[0]
+
+
 def guide_cache_rows(text):
     """(job, image, cache): the first three backticked words of each row of the
     guide's table under "## The GitHub Actions cache" that names a job."""
-    section = text.split("\n## The GitHub Actions cache\n", 1)[-1].split("\n## ", 1)[0]
     jobs = MAP["jobs"].keys() | PUSH_JOBS.keys()
-    return {tuple(words[:3]) for words in _table_rows(section) if words[0] in jobs}
+    return {tuple(words[:3]) for words in _table_rows(_cache_section(text)) if words[0] in jobs}
 
 
 def test_the_deploy_guide_says_how_each_job_caches_the_image_it_builds():
@@ -862,3 +865,96 @@ def test_a_job_that_builds_gui_on_a_full_disk_is_caught():
     jobs = {**MAP["jobs"], "nightly-gui": {**MAP["jobs"]["nightly-gui"], "free_disk": False}}
 
     assert crowded_builds(jobs) == ["nightly-gui"]
+
+
+# Compressed bytes from `docker save` of the images one builder built at
+# 9707cc6d on 2026-09-25, and of the Dockerfile stage each image starts with:
+# cells-pre is the first 16 layers of core and ci, core-pre the first 18 of
+# core, full-pre the first 24 of full and gui. The guide's figures for images
+# that build on each other's cached layers come from these, so a figure that
+# counts a shared layer twice, or adds an image's layers to the wrong stage,
+# fails here.
+IMAGE_BYTES = {"core": 1_454_922_334, "ci": 555_781_981, "full": 3_762_100_936, "gui": 4_359_133_961}
+STAGE_BYTES = {"cells-pre": 442_722_398, "core-pre": 1_353_670_817, "full-pre": 3_660_849_466}
+
+
+def megabytes(size):
+    return f"{round(size / 1e6):,} MB"
+
+
+def gigabytes(size):
+    return f"{size / 1e9:.2f} GB"
+
+
+def starts_with(image):
+    """The Dockerfile stage an image adds its own layers to: the -pre stage of
+    the image below it in IMAGE_CHAIN."""
+    return pinsfile.IMAGE_CHAIN[image][-2] + "-pre"
+
+
+def own_bytes(image):
+    return IMAGE_BYTES[image] - STAGE_BYTES[starts_with(image)]
+
+
+def chained_bytes(images):
+    """What the Actions cache holds when core builds every stage and each other
+    image reads the scope that holds the stage it starts with (ci and full
+    read core's, gui reads full's), so it stores only its own layers."""
+    return IMAGE_BYTES["core"] + sum(own_bytes(image) for image in images if image != "core")
+
+
+def _cells(section):
+    return [[cell.strip() for cell in line.strip().strip("|").split("|")]
+            for line in section.splitlines() if line.startswith("| `")]
+
+
+def stage_rows(text):
+    """The cells of each row of the guide's table of what each image starts with."""
+    return {tuple(row) for row in _cells(_cache_section(text)) if row[0].strip("`") in IMAGE_BYTES}
+
+
+def measured_stage_rows():
+    return {(f"`{image}`", megabytes(IMAGE_BYTES[image]),
+             f"`{starts_with(image)}` ({megabytes(STAGE_BYTES[starts_with(image)])})", megabytes(own_bytes(image)))
+            for image in IMAGE_BYTES}
+
+
+def stated_cache_figures(section):
+    """(images, figure) for each figure the guide gives for images built on each
+    other's cached layers: the last column of each row that names two or more
+    images, and the options table's "for all four"."""
+    rows = [(tuple(re.findall(r"`([^`]+)`", row[0])), row[2]) for row in _cells(section) if " and " in row[0]]
+    return rows + [(tuple(IMAGE_BYTES), figure) for figure in re.findall(r"(\d+\.\d\d GB) for all four", section)]
+
+
+def wrong_cache_figures(text):
+    """(images, the figure the guide gives, the figure the layers give) for each
+    stated figure the measured bytes do not give."""
+    return [(images, figure, gigabytes(chained_bytes(images))) for images, figure in
+            stated_cache_figures(_cache_section(text)) if figure != gigabytes(chained_bytes(images))]
+
+
+def test_the_deploy_guide_gives_the_stage_each_image_starts_with_and_its_own_layers_as_measured():
+    assert starts_with("ci") == starts_with("core") == "cells-pre"
+    assert stage_rows(GUIDE.read_text(encoding="utf-8")) == measured_stage_rows()
+
+
+def test_a_stage_row_that_adds_gui_to_the_whole_full_image_is_caught():
+    text = GUIDE.read_text(encoding="utf-8").replace("| `full-pre` (3,661 MB) |", "| `full` (3,762 MB) |")
+
+    assert stage_rows(text) != measured_stage_rows()
+
+
+def test_the_deploy_guide_computes_the_cache_for_images_built_on_each_other_from_their_own_layers():
+    text = GUIDE.read_text(encoding="utf-8")
+
+    assert "for all four" in _cache_section(text)
+    assert wrong_cache_figures(text) == []
+
+
+def test_a_cache_figure_that_counts_the_debian_base_layer_twice_is_caught():
+    four = tuple(IMAGE_BYTES)
+    twice = gigabytes(chained_bytes(four) - 29_830_418)
+    text = GUIDE.read_text(encoding="utf-8").replace(gigabytes(chained_bytes(four)), twice)
+
+    assert wrong_cache_figures(text) == [(four, twice, "4.67 GB")] * 2

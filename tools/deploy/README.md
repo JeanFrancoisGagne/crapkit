@@ -125,7 +125,7 @@ linux/arm64:
 
 | Image | Holds |
 |---|---|
-| `cells` | Debian trixie (snapshot.debian.org), uv, CPython 3.10 (below the floor, for the refusal cell) to 3.14 and the 3.15 prerelease, Node 22, git, pipx, prek, libfaketime, the npm fixture cache, the runner venv, the wheelhouse |
+| `cells` | Debian trixie (snapshot.debian.org), uv, CPython 3.10 (below the floor, for the refusal cell) to 3.14 and the 3.15.0rc2 prerelease, Node 22, git, pipx, prek, libfaketime, the npm fixture cache, the runner venv, the wheelhouse |
 | `cells-arm64` | cells, built for linux/arm64 with the aarch64 binaries and wheel rows (the weekly lin-arm64 cell) |
 | `core` | cells + Claude Code (and floors 2.1.139, 2.1.138), Codex (and floor 0.121.0), the Cursor agent |
 | `full` | core + Gemini CLI, OpenCode, Copilot CLI, Cline, Continue, Crush, Amp, oh-my-pi, Junie, Goose, Aider, both Agent SDKs |
@@ -237,18 +237,31 @@ before it builds (`free_disk = true` in its `tests/deploy/MAP.toml` entry):
 The same test file fails on such a job that does not.
 
 Compressed sizes of the images built at 9707cc6d, read layer by layer from
-`docker save` on 2026-09-25: `core` 1.45 GB, `ci` 0.56 GB, `full` 3.76 GB,
-`gui` 4.36 GB. `gui` is `full` plus 0.70 GB, `full` is `core`'s first 18
-layers (1.35 GB) plus 2.41 GB, and `ci` is `cells` plus 0.11 GB. What the
-cache would hold, as the distinct blobs of the images each built with
-`--no-cache` (first column) and of the images one builder built on each
-other's layers (second column, with `full`'s first 18 layers taken as
-`core`'s):
+`docker save` on 2026-09-25. Each is about 50 MB larger than in the 2026-09-24
+table above: between the two measurements every image gained the 3.15.0rc2
+prerelease and the wheelhouse gained rows (c3a85e1b, 1e557df6). Each image is a
+stage of the Dockerfile that another image also holds, plus its own layers:
+
+| Image | Compressed | Starts with | Its own layers |
+|---|---|---|---|
+| `core` | 1,455 MB | `cells-pre` (443 MB) | 1,012 MB |
+| `ci` | 556 MB | `cells-pre` (443 MB) | 113 MB |
+| `full` | 3,762 MB | `core-pre` (1,354 MB) | 2,408 MB |
+| `gui` | 4,359 MB | `full-pre` (3,661 MB) | 698 MB |
+
+What the cache would hold. The first column is measured: the distinct blobs of
+the images each built with `--no-cache`, the way separate jobs build them. The
+second is computed from the table above for images that build on each other's
+cached layers, with `ci` and `full` reading `core`'s scope and `gui` reading
+`full`'s: `core`, plus the own layers of each other image.
 
 | Cached | Each job builds every stage itself | Each image builds on the cached layers below it |
 |---|---|---|
 | `core` and `ci`, as today | 1.98 GB | 1.57 GB |
-| `core`, `ci`, `full` and `gui` | 10.04 GB | 4.64 GB |
+| `core`, `ci`, `full` and `gui` | 10.04 GB | 4.67 GB |
+
+`tests/unit/test_deploy_workflows.py` holds the measured bytes and fails when
+a row of either table here no longer matches them.
 
 ### Why `full` and `gui` build cold
 
@@ -265,7 +278,7 @@ whether the cold builds stay. The other ways to cache the two images:
 |---|---|
 | Push `full` and `gui` to a private GHCR package | GitHub's Packages billing page lists Container registry storage and transfer as free for now. A login and push step on main, `packages: read` on pull request jobs, and a pull request from a fork cannot pull a private package |
 | Raise the repository's Actions cache limit past 10 GB | Pay-as-you-go storage since 2025-11-20, on a Pro, Team or Enterprise account |
-| Build each image on the cached layers below it: `full` reads `core`'s scope, `gui` reads `full`'s | 4.64 GB for all four. `run.py` passes one scope per image today. `nightly-linux-full` and `nightly-gui` start together, so a first `gui` run finds no `full` scope and stores its own copy of `full`'s layers |
+| Build each image on the cached layers below it: `ci` and `full` read `core`'s scope, `gui` reads `full`'s | 4.67 GB for all four, computed in the second column above, not measured. `run.py` passes one scope per image today. `nightly-linux-full` and `nightly-gui` start together, so a first `gui` run finds no `full` scope and stores its own copy of `full`'s layers |
 
 ## Changing a pin
 
