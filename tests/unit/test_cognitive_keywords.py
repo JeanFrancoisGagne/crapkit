@@ -100,6 +100,11 @@ STRUCTURES = [  # (label, path, source, Sonar value)
      "                return 1\n    return 0\n", 3),
     ("Python match over lines", "a.py",
      "def f(n, m):\n    match (n,\n           m):\n        case (1, 2):\n            return 1\n", 1),
+    ("Python case guard sits inside its match", "a.py",
+     "def d(v):\n    match v:\n        case int() if v < 0:\n            return 1\n        case _:\n"
+     "            return 0\n", 3),
+    ("Rust arm guard sits inside its match", "a.rs",
+     "fn d(v: i32) -> i32 {\n    match v {\n        x if x < 0 => 1,\n        _ => 0,\n    }\n}\n", 3),
 ]
 
 

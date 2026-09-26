@@ -1142,7 +1142,9 @@ and missed some that were. Each rule now reads the language it is in:
   Structures a language spells its own way cost nothing before and now cost what a loop,
   an `if` or a `switch` costs: Swift's `repeat` and `guard`, Rust's `loop`, Go's
   `select`, PowerShell's `trap` and a Python `match` statement. `match` is a soft
-  keyword, so `match = re.match(p, s)` still costs nothing.
+  keyword, so `match = re.match(p, s)` still costs nothing. A Python case guard's
+  `if` now sits one level inside its `match`, so a match with one guarded case at the
+  top of a function reads 3 where it read 1, as a Rust match with a guard reads.
 - A `while` right after a `}` is a do-while's tail only when a `do` (Swift: `repeat`)
   opened that block. A loop after an `if` block or a Python dict literal cost nothing.
 - A `break` or `continue` costs +1 only with a label as the language spells one:

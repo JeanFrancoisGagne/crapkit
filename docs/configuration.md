@@ -282,7 +282,10 @@ The cognitive column charges a Rust `match` like a `switch`: +1 plus the nesting
 in, arms free. The two columns therefore say different things about one block on purpose.
 The 7-arm match above is ccn 7 and cognitive 1: seven ways through it, one decision to
 read. A Python match statement costs the same. `match` is a soft keyword there, so the
-rule reads the statement, not the word: `match = re.match(p, s)` costs nothing. Rust keeps its own set in both reported columns too:
+rule reads the statement, not the word: `match = re.match(p, s)` costs nothing. A guard
+on an arm or a case (`x if x < 0 =>`, `case int() if v < 0:`) costs what an `if` one
+level inside the match costs: +2 in a match at the top of a function. Rust keeps its own
+set in both reported columns too:
 `loop` is charged as a loop and opens a nesting level, `?` is neither an increment nor
 a level (an early return, or the relaxed bound in `?Sized`), and `catch`, `switch`,
 `foreach`, `case` and `def` are names. The nesting column is lizard's, and it still
