@@ -622,6 +622,28 @@ def test_a_declaring_word_that_declares_nothing_opens_nothing(line):
     assert _rows(code) == [("Invoke-Build", 1, 6, 2), ("Get-Next", 8, 10, 1)]
 
 
+@pytest.mark.parametrize("statement, ccn", [
+    ("filter status --short", 2),        # a name, then an argument where a body belongs
+    ("configuration Release 'x64'", 2),
+    ("param", 2),                        # no block after it: a command named param
+    ("switch;", 2),                      # a switch that ends before its body
+    ("if ($x) { switch }", 3),
+    ("switch ($x) { 1 { switch } 2 { 'b' } 3 { 'c' } }", 5),
+])
+def test_an_unfinished_declaration_param_or_switch_costs_the_rows_around_it_nothing(statement, ccn):
+    """PowerShell's parser rejects each of these but `param`, which it reads
+    as a command, and crapkit still reads the file: the function around the
+    statement keeps its row, its one parameter and its decisions (the `if`
+    after it, and every arm of an outer switch), and the next function
+    starts where it is written."""
+    code = ("function Invoke-Build($x) {\n    " + statement + "\n    if ($x) {\n        return 1\n"
+            "    }\n    return 0\n}\n\nfunction Get-Next($y) {\n    return $y\n}\n")
+    rows = [(bare_name(r.long_name), r.start, r.end, r.ccn_std, r.params)
+            for r in analyze_source("probe.ps1", code)]
+
+    assert rows == [("Invoke-Build", 1, 7, ccn, 1), ("Get-Next", 9, 11, 1, 1)]
+
+
 CLASS_IN_FUNCTION = """function Get-WithClass($x) {
     class Holder {
         [int] Pick([int]$y) {
