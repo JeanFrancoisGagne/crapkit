@@ -2,6 +2,16 @@
 
 ## 0.8.1 — unreleased
 
+### Two refused files with the same bytes are counted and named as two
+
+- A file no reader can tokenize is named on stderr under its own path, whatever another
+  file holds. A cold run reads identical bytes once and hands the result to every copy,
+  and through 0.8.0 a refusal went along with it: two refused files with the same bytes,
+  such as a vendored copy or two stubs cut off at the same signature, printed `1 file(s)
+  could not be tokenized` and named only the first path. Each copy of a refused file is
+  now read under its own path, so the count and the names match the files. Scores do not
+  change.
+
 ### A lone CR no longer hides a changed function from the gates
 
 - git's diff ends a line at LF only, and crapkit's reader, like Python and coverage.py,

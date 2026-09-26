@@ -946,7 +946,7 @@ def analyze_jobs(
     chunksize: int = 32,
     hashes: dict[str, str] | None = None,
     worker_budget: int = 0,
-    note_twins: bool = True,
+    notes: bool = True,
 ) -> dict[str, list[FunctionRecord]]:
     """Run lizard over (abs_path, rel_path) jobs, pooled once there are enough.
 
@@ -954,8 +954,8 @@ def analyze_jobs(
     different scales: an inventory feeds thousands of files and wants fat
     chunks, a hook feeds a commit's worth and needs each job dealt to a
     different worker (a chunksize above the job count leaves one worker doing
-    all of them, serially, after paying for the pool). NOTE_TWINS=False leaves
-    the twin-key note to a caller that notes more paths than these jobs.
+    all of them, serially, after paying for the pool). NOTES=False leaves the
+    twin-key and refusal notes to a caller that notes more paths than these jobs.
     """
     worker, inputs = _job_inputs(jobs, hashes)
     with _pool_for(jobs, pool_threshold, workers, worker_budget, chunksize) as pool:
@@ -964,9 +964,9 @@ def analyze_jobs(
     # The parent says things; a worker only measures. A spawned child's stderr
     # never saw `_reconfigure_streams`, so a note printed from analyze_one
     # reached a UTF-8 reader in the legacy codepage on Windows (#31).
-    if note_twins:
+    if notes:
         _note_twin_files(fresh)
-    _note_unanalyzable(fresh)
+        _note_unanalyzable(fresh)
     return fresh
 
 
@@ -1039,14 +1039,34 @@ def _miss_origins(misses: list[str], identities: dict[str, str]) -> dict[str, st
     return {path: origins.setdefault(identities[path], path) for path in misses}
 
 
+def _refused_copies(origins: dict[str, str], parsed: dict) -> list[str]:
+    """The paths whose bytes a refused origin shares.
+
+    A refusal's reason names the path it was read under, and it travels with
+    no rows to re-stamp, so a copy handed the origin's refusal was named as the
+    origin, and two refused files printed as one. Each copy is read again under
+    its own path. Refusals are rare; a vendored tree of copies costs one parse
+    per copy, which is what a refused file costs anyway.
+    """
+    return [path for path, origin in origins.items()
+            if path != origin and isinstance(parsed[origin], UnanalyzableFile)]
+
+
 def _analyze_misses(root: Path, misses: list[str], identities: dict, hashes: dict,
                     workers, worker_budget: int) -> dict:
+    def parse(paths) -> dict:
+        jobs = [(str(root / path), path) for path in paths]
+        return analyze_jobs(jobs, workers=workers, hashes=hashes, worker_budget=worker_budget,
+                            notes=False)
+
     origins = _miss_origins(misses, identities)
-    jobs = [(str(root / path), path) for path in dict.fromkeys(origins.values())]
-    parsed = analyze_jobs(jobs, workers=workers, hashes=hashes, worker_budget=worker_budget,
-                          note_twins=False)
+    parsed = parse(dict.fromkeys(origins.values()))
+    copies = _refused_copies(origins, parsed)
+    parsed.update(parse(copies))
+    origins.update(zip(copies, copies))
     records = {path: _rows_for(path, parsed[origin]) for path, origin in origins.items()}
     _note_twin_files(records)
+    _note_unanalyzable(records)
     return records
 
 
