@@ -91,7 +91,7 @@ def write(plan, lane, root="."):
 
 def retest(plan, lane, root="."):
     import os
-    rerun = [dict(test, failed=test["name"] not in plan["retest_pass"])
+    rerun = [dict(test, failed="%s::%s" % (test["classname"], test["name"]) not in plan["retest_pass"])
              for test in plan["tests"] if test["failed"]]
     with open(os.path.join(root, ".crapkit", "cov", "%s-junit.xml" % lane), "w",
               encoding="utf-8") as handle:
@@ -135,6 +135,12 @@ exec(compile(_WRITERS, GEN, "exec"), _GEN)
 def report(files: dict) -> dict:
     """A coverage.py 7.16 JSON report holding `files`: {path key: [region, ...]}."""
     return _GEN["report"](files)
+
+
+def rerun(plans: dict, lane: str, root: Path) -> None:
+    """Write `lane`'s rerun JUnit under root/.crapkit/cov, as its retest_command does."""
+    (root / ".crapkit" / "cov").mkdir(parents=True, exist_ok=True)
+    _GEN["retest"](plans[lane], lane, str(root))
 
 
 @dataclass(frozen=True)
@@ -228,7 +234,7 @@ class World:
         return next(f for f in self.functions[scope] if f.name == name)
 
     def with_test(self, test: Test) -> "World":
-        kept = tuple(t for t in self.tests if t.name != test.name)
+        kept = tuple(t for t in self.tests if t.id != test.id)
         return replace(self, tests=kept + (test,))
 
 
@@ -307,7 +313,7 @@ def _lane_plan(world: World, lane: str, scope: str) -> dict:
     return {"files": {FILES[scope]: regions} if regions else {}, "tests": _junit_tests(tests),
             "fail": lane in world.failing_lanes, "junit": lane not in world.no_junit,
             "raw": dict(world.raw_junit).get(lane),
-            "retest_pass": sorted(t.name for t in tests if t.id in world.retest_pass),
+            "retest_pass": sorted(t.id for t in tests if t.id in world.retest_pass),
             "freeze_log": dict(world.frozen_log).get(lane)}
 
 

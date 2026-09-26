@@ -17,6 +17,7 @@ verify's JSON with the model. The property test draws the whole shape.
 from __future__ import annotations
 
 from dataclasses import replace
+from xml.etree import ElementTree
 
 from hypothesis import given, strategies as st
 import pytest
@@ -172,6 +173,45 @@ def test_dirty_failures_drop_a_retried_pass(clean, tmp_path, retried):
     new = sorted(expected(BASE, fresh).new)
     assert (payload["new_failures"], payload["dirty_failures"]) == \
         (new, model.dirty_failures(new, {"tests/test_a.py"}))
+
+
+# --- the world's own rerun ----------------------------------------------------------------------
+
+def _rerun_results(fresh: vw.World, lane: str, root) -> dict:
+    """{test id: failed?} in the JUnit the world's retest_command writes for `lane`."""
+    vw.rerun(vw.plan(fresh), lane, root)
+    cases = ElementTree.parse(root / ".crapkit" / "cov" / f"{lane}-junit.xml").iter("testcase")
+    return {f"{case.get('classname')}::{case.get('name')}": case.find("failure") is not None
+            for case in cases}
+
+
+def test_the_world_s_rerun_passes_only_the_listed_ids(tmp_path):
+    """A rerun passes a failed test only when its id, classname::name, is in
+    retest_pass: a test of the same name in another module still fails."""
+    fresh = world({("b", "t2", ""): True, ("b", "t2", SHARED): True}, {"b"}, {"tests.shared::t2"})
+
+    assert _rerun_results(fresh, "b", tmp_path) == {"tests.test_b::t2": True, "tests.shared::t2": False}
+
+
+def test_the_world_keeps_one_test_name_in_two_modules():
+    """with_test replaces the test of the same id, not every test of that name."""
+    both = BASE.with_test(vw.Test("t2", lane="b", module=SHARED)).with_test(vw.Test("t2", lane="b"))
+
+    assert [test.id for test in both.tests if test.name == "t2"] == ["tests.shared::t2", "tests.test_b::t2"]
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_a_rerun_pass_in_one_module_leaves_the_same_name_new(clean, tmp_path):
+    """The shape the property test drew on Windows and Linux (Windows seed
+    25453015425846708203250584874946972796): lane b fails tests.test_b::t2 and
+    only tests.shared::t2 passes a rerun, so tests.test_b::t2 stays new and
+    verify exits 8 (lanes.md#flake-retest: a failure drops out only when its
+    own rerun passed)."""
+    fresh = world({("b", "t2", ""): True, ("b", "t2", SHARED): False}, {"a", "b"}, {"tests.shared::t2"})
+
+    assert got(verify_after(clean, tmp_path / "r", BASE, fresh)) == model.Failures(
+        ("tests.test_b::t2",), (), ())
 
 
 # --- property -----------------------------------------------------------------------------------
