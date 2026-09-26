@@ -222,7 +222,10 @@ same three commands as version 11 below.
   element with a braced default, and a Java field's anonymous class.
 - Rows named after an attribute take the function's name: `__attribute__((noinline))`,
   `API_AVAILABLE( ios(10))`, or `)` for an Objective-C method, and Java rows named
-  after an annotation with arguments, `InlineMe( replacement = ...)`. A Java method
+  after an annotation with arguments, `InlineMe( replacement = ...)`. A member of a
+  class declared with an export macro or an attribute, `class Q_CORE_EXPORT QString`
+  or `class __declspec(dllexport) Foo`, reads `QString::size`, where it read
+  `Q_CORE_EXPORTQString::size`, or had no class in its name. A Java method
   inside a method's anonymous or local class reads `A::go.run()`, where it read
   `A::A::go.run()`. The name is a new ratchet key, and so is the long name of a
   function after one whose default argument holds a parenthesized `<`:

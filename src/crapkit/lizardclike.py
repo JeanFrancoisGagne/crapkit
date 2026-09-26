@@ -44,6 +44,12 @@ Functions lizard hid, invented or misnamed
   function around the class paid for its decisions (ISO/IEC 14882:2020
   [class.local]). `_LocalClassBody` reads the class and names the member
   `outer.Local::twice`, the way lizard names a function nested in another.
+* A class head holding an attribute with arguments, `struct alignas(16) Vec {`
+  or `class __declspec(dllexport) Foo {`, read as a function named after the
+  attribute whose body was the class, and its members lost the class from
+  their names. An export macro, `class Q_CORE_EXPORT QString {`, named them
+  `Q_CORE_EXPORTQString::size`. `_ClassHead` reads a head at every scope, and
+  `_head_name` takes the class's name from it.
 
 The `&&` of a reference
 -----------------------
@@ -80,6 +86,8 @@ reader lizard falls back to for a suffix no reader declares. analyze.py calls it
 at module scope, so a pool worker registers in its own interpreter.
 """
 from __future__ import annotations
+
+import itertools
 
 from ._pygdefer import deferred_pygments
 
@@ -128,6 +136,9 @@ _NO_PARAMETER = (["void"], ["..."])
 # words: `: public Base<int>, ns::Other`.
 _CLASS_KEYS = frozenset({"struct", "class", "union"})
 _BASE_TOKENS = frozenset({"::", "<", ">", ",", "..."})
+
+# What ends a class's name in its head: lizard's own list.
+_NAME_ENDS = frozenset({"<", ":", "final", "[", "extends", "implements"})
 _BRACE_DEPTH = {"{": 1, "}": -1}
 
 
@@ -261,6 +272,8 @@ class _CFixes(ParameterCount):
         self.crapkit_word = None
         self.crapkit_return = 0
         self.crapkit_head = None
+        self.crapkit_class = None
+        self.crapkit_held = []
 
     def try_new_function(self, name):
         """Note whether this name follows a return type. The `>` that closes a
@@ -339,6 +352,37 @@ class _CFixes(ParameterCount):
     def _state_attribute_arguments(self, _):
         """An attribute's arguments, nested parentheses included."""
 
+    def _state_global(self, token):
+        """`struct`, `class` and `union` open a head, read before lizard sees it."""
+        if token in _CLASS_KEYS and self.last_token != "enum":
+            self.crapkit_class, self.crapkit_held = _ClassHead(), [token]
+            self._state = self._state_class_head
+        else:
+            super()._state_global(token)
+
+    def _state_class_head(self, token):
+        """A class head, dropped at its `{`, which then reads as lizard reads it.
+
+        lizard read `struct alignas(16) Vec {` as a function named alignas whose
+        body was the class. Tokens that turn out to be no class head, `struct S
+        *make(int x) {`, are read again the way lizard reads them.
+        """
+        opened = self.crapkit_class.reads(token)
+        if opened is None:
+            self.crapkit_held.append(token)
+            return
+        held, self.crapkit_held = self.crapkit_held, []
+        self._state = self._state_global
+        if opened:
+            self._state(token)
+        else:
+            self._read_again(held + [token])
+
+    def _read_again(self, tokens: list[str]) -> None:
+        super()._state_global(tokens[0])  # the keyword, as lizard reads it
+        for token in tokens[1:]:
+            self(token)
+
     def _state_imp(self, token):
         """A function's body, where a class may be defined.
 
@@ -397,25 +441,50 @@ class _LocalClassBody:
 class _ClassHead:
     """The tokens between `struct`, `class` or `union` and a class body's `{`.
 
-    A head holds at most one name, `final`, and a base clause after `:`
-    (ISO/IEC 14882:2020 [class.pre]). Anything else, a second name
-    (`struct point p = {1, 2}`), an operator, or a parenthesis
-    (`sizeof(struct foo)`), makes the keyword part of a declaration or an
-    expression, and the body reads on as lizard reads it.
+    A head holds at most one name, `final`, attributes (`[[maybe_unused]]`,
+    and a word with arguments: `alignas(16)`, `__attribute__((packed))`) and a
+    base clause after `:` (ISO/IEC 14882:2020 [class.pre]). Anything else, a
+    second name (`struct point p = {1, 2}`), an operator, or a parenthesis
+    after anything but a word (`sizeof(struct foo)`), makes the keyword part of
+    a declaration or an expression, and the body reads on as lizard reads it.
     """
 
     def __init__(self):
         self.names = 0
         self.bases = False
+        self.attribute = 0  # brackets open in an attribute
+        self.word = None    # the last word, counted as a name unless `(` follows it
 
     def reads(self, token: str):
         """True at the `{` that opens the body, False once the tokens cannot be
         a class head, None while they still can."""
+        if self._in_an_attribute(token):
+            return None
+        if self._count_the_word() > 1:
+            return False
         if token == "{":
             return True
         if self.bases:
-            return None if _is_word(token) or token in _BASE_TOKENS else False
+            return _in_a_base_clause(token)
         return self._reads_the_name(token)
+
+    def _in_an_attribute(self, token: str) -> bool:
+        """`[` opens an attribute, and so does a `(` after a word before the name."""
+        if self.attribute or token == "[" or self._word_takes_arguments(token):
+            self.word = None
+            self.attribute += _BRACKET_DEPTH.get(token, 0)
+            return True
+        return False
+
+    def _word_takes_arguments(self, token: str) -> bool:
+        """`alignas(16)` or `EXPORT(x)`, where `struct S f(void)` is a function."""
+        return token == "(" and self.word is not None and self.names == 0
+
+    def _count_the_word(self) -> int:
+        if self.word is not None:
+            self.names += self.word != "final"
+            self.word = None
+        return self.names
 
     def _reads_the_name(self, token: str):
         if token == ":":
@@ -423,8 +492,12 @@ class _ClassHead:
             return None
         if not _is_word(token):
             return False
-        self.names += token != "final"
-        return None if self.names <= 1 else False
+        self.word = token
+        return None
+
+
+def _in_a_base_clause(token: str):
+    return None if _is_word(token) or token in _BASE_TOKENS else False
 
 
 class _ObjCFixes:
@@ -564,6 +637,7 @@ class CFamilyNestingStates(CLikeNestingStackStates):
     def __init__(self, context):
         super().__init__(context)
         self.crapkit_template = None
+        self.crapkit_word = None
 
     def _template_declaration(self, token):
         if self.crapkit_template is None:
@@ -571,6 +645,46 @@ class CFamilyNestingStates(CLikeNestingStackStates):
         if self.crapkit_template.closes(token):
             self.crapkit_template = None
             self._state = self._state_global
+
+    def _read_namespace(self, token):
+        """A word in a class head waits one token: a `(` after it makes it an
+        attribute, `alignas(16)`, `__declspec(dllexport)` or a macro, whose
+        arguments are skipped. lizard stopped reading the head at that `(`, and
+        the class's members lost the class from their names."""
+        if _is_word(token):
+            self.crapkit_word = token
+            self._state = self._read_head_word
+        else:
+            super()._read_namespace(token)
+
+    def _read_head_word(self, token):
+        if token == "(":
+            self.next(self._read_head_attribute, token)
+            return
+        super()._read_namespace(self.crapkit_word)
+        self._state(token)
+
+    @CodeStateMachine.read_inside_brackets_then("()", "_read_namespace")
+    def _read_head_attribute(self, _):
+        """An attribute's arguments, nested parentheses included."""
+
+    @CodeStateMachine.read_until_then(")({;")
+    def _read_namespace_name(self, token, saved):
+        """lizard's reading of a head's name, with `_head_name`'s spelling."""
+        self._state = self._state_global
+        if token == "{":
+            self.context.add_namespace(_head_name(saved))
+
+
+def _head_name(tokens: list[str]) -> str:
+    """The class name in a head's tokens: the ones before the first of
+    `_NAME_ENDS`, from the last word that follows another word. lizard joined
+    them all, so an export macro spelled `Q_CORE_EXPORTQString`; `a::B` keeps
+    its qualifier."""
+    name = list(itertools.takewhile(lambda token: token not in _NAME_ENDS, tokens))
+    start = max((i for i in range(1, len(name))
+                 if _is_word(name[i - 1]) and _is_word(name[i])), default=0)
+    return "".join(name[start:])
 
 
 # --- the `&&` that declares a reference --------------------------------------------

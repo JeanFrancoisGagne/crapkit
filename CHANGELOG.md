@@ -813,6 +813,13 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   with no decision of its own and now reads 1, with the 27 on
   `compute_width.count_code_points::operator ( )`. In four fmt headers 29 members get a
   row and 6 enclosing functions lose ccn.
+- A class head holding an attribute or a macro keeps the class in its members' names.
+  `struct alignas(16) Vec {` and `class __declspec(dllexport) Foo {` read as a function
+  named after the attribute, whose body was the class, and an export macro spelled
+  every member `Q_CORE_EXPORTQString::size` or `testing::GTEST_API_Test::SetUpTestSuite`.
+  They read `QString::size` and `testing::Test::SetUpTestSuite`, a new ratchet key: 194
+  rows in Qt 6.7's qstring.h and 60 in GoogleTest 1.14's gtest.h change name and
+  nothing else.
 
 ### Java methods that were hidden, invented or misnamed
 

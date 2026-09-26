@@ -451,3 +451,52 @@ def test_a_local_class_member_is_named_once_after_its_namespace():
     rows = analyze_source("p.cpp", source, note=False)
 
     assert [r.long_name for r in rows] == ["ns::outer.L::f()", "ns::outer()"]
+
+
+ATTRIBUTED_HEADS = ["struct [[maybe_unused]] Local", "struct alignas(16) Local",
+                    "struct __attribute__((packed)) Local", "struct __declspec(align(16)) Local"]
+
+
+@pytest.mark.parametrize("head", ATTRIBUTED_HEADS)
+def test_an_attribute_in_a_local_class_head_names_no_class(head):
+    """[dcl.attr.grammar]: an attribute between the class key and the name is
+    part of the head, and neither it nor its arguments is a second name."""
+    source = (f"int outer(int a) {{\n    {head} {{\n        int twice(int x) {{\n"
+              "            if (x) {\n                return 2 * x;\n            }\n"
+              "            return 0;\n        }\n    };\n    return Local().twice(a);\n}\n")
+
+    rows = analyze_source("p.cpp", source, note=False)
+
+    assert [(r.long_name, r.ccn_std) for r in rows] == [("outer.Local::twice( int x)", 2),
+                                                       ("outer( int a)", 1)]
+
+
+CLASS_HEADS = {  # a class head at file scope: the long name of its member
+    "struct alignas(16) Vec {\n  float dot() const { return 1; }\n};\n": "Vec::dot() const",
+    "class __declspec(dllexport) Foo {\n public:\n  int f(int a) { return a; }\n};\n":
+        "Foo::f( int a)",
+    "struct __attribute__((packed)) P {\n  int f() { return 1; }\n};\n": "P::f()",
+    'class FMT_SO_VISIBILITY("default") error : public base {\n  int f() { return 1; }\n};\n':
+        "error::f()",
+    "class Q_CORE_EXPORT QString final : public Base {\n  int size() const { return 0; }\n};\n":
+        "QString::size() const",
+    "class FOO_API a::B {\n  int f() { return 1; }\n};\n": "a::B::f()",
+    "struct S *make(int x) {\n  return 0;\n}\n": "make( int x)",
+    "struct S make(int x) {\n  return s;\n}\n": "make( int x)",
+    "namespace a::b {\nint f() { return 1; }\n}\n": "a::b::f()",
+}
+
+
+@pytest.mark.parametrize("source", CLASS_HEADS, ids=["alignas", "declspec", "gnu attribute",
+                                                     "attribute macro", "export macro",
+                                                     "export macro, qualified name",
+                                                     "returns a pointer", "returns a struct",
+                                                     "nested namespace"])
+def test_a_class_is_named_after_its_name_whatever_its_head_holds(source):
+    """[class.pre]: the class name is the last name in the head. lizard's class
+    tracker stopped at the first `(`, so `alignas(16)` or `__declspec(dllexport)`
+    dropped the class from its members' names, and joined every word it read, so
+    an export macro spelled `Q_CORE_EXPORTQString::size`."""
+    (record,) = analyze_source("p.cpp", source, note=False)
+
+    assert record.long_name == CLASS_HEADS[source]
