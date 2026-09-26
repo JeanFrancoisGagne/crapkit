@@ -1359,7 +1359,9 @@ Lanes are subprocesses, so this is a thread pool: it moves wall time only. Above
 starts the lane that took longest last time first (its duration rides along in the artifact
 stamp), prints `lane 'x' started` and `finished` to stderr, and folds results back in
 **declaration** order regardless of who finished. The run scores byte-identically to a
-serial one.
+serial one. A lane with no recorded run, because its artifact was reused or `.crapkit/` was
+cleaned, is placed by the time its `results_artifact` JUnit report claims, the figure
+`doctor --tune` costs it by. A lane with neither starts after the measured ones.
 
 Every reuse decision is taken up front on one thread, before any lane starts, because a lane
 command writes to the working tree and deciding lane by lane would let one lane's output

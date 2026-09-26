@@ -16,6 +16,16 @@ No score changes.
   order could pass. On an unchanged store a file can move to another batch; no score
   moves.
 
+### Parallel lanes start in the order doctor --tune costs them
+
+- Under `max_parallel_lanes` above 1, a lane with no recorded run, because its artifact
+  was reused or `.crapkit/` was cleaned, starts by the time its `results_artifact` JUnit
+  report claims. It read as 0 s and started last, while `doctor --tune` costed it by that
+  report: lanes of 5, 5 and 10 s on two slots took 15 s where `doctor --tune` said 10.
+  Lane results still merge in declaration order, so no score moves.
+- `doctor --tune` no longer ends in a traceback on a JUnit report that is not UTF-8. Such
+  a report, like one that is not XML, gives its lane no duration.
+
 ### A command crapkit prints for the reader to paste runs in Git Bash and PowerShell
 
 - When `python -m crapkit` started crapkit, every next step and refusal names the

@@ -445,8 +445,9 @@ note app/core.py (181 bytes) skipped: over max_file_bytes
 ## Tuning the parallelism knobs
 
 `doctor --tune` reads this machine's cpu count and whatever lane durations are already
-recorded in `.crapkit/artifacts.json`, and prints paste-ready lines. It writes nothing and
-runs nothing:
+recorded in `.crapkit/artifacts.json`, or, for a lane with none, the time its
+`results_artifact` JUnit report claims, and prints paste-ready lines. It writes nothing
+and runs nothing:
 
 ```
 $ crapkit doctor --tune
@@ -458,12 +459,15 @@ mutation_workers = 6
 # lane cost: 1.2s serial -> ~1.2s across 1 lane slot(s)
 ```
 
-The cost line needs at least one recorded lane duration. With none it says so and the
-suggestion comes from the cpu count alone. The suggestion never proposes more lane slots
-than there are lanes, and it stays at 1 while one `coveragepy` lane deletes and combines
-another's coverage.py data files, as a lane left on `.coverage` does to a lane on
-`.coverage.b` in the same directory: a `# held at 1:` line names them and the `COVERAGE_FILE`
-each lane needs ([lanes.md](lanes.md#running-lanes-in-parallel)).
+The cost line needs at least one lane duration. With none it says so and the suggestion
+comes from the cpu count alone. Its estimate assumes the order a parallel run starts lanes
+in, longest first, and the two read each lane's duration the same way. A report that is
+not UTF-8 or not XML gives its lane no duration and stops neither command. The suggestion
+never proposes more lane slots than there are lanes, and it stays at 1 while one
+`coveragepy` lane deletes and combines another's coverage.py data files, as a lane left on
+`.coverage` does to a lane on `.coverage.b` in the same directory: a `# held at 1:` line
+names them and the `COVERAGE_FILE` each lane needs
+([lanes.md](lanes.md#running-lanes-in-parallel)).
 
 ---
 

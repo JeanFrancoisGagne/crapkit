@@ -15,7 +15,7 @@ from pathlib import Path
 from .. import __version__, config
 from ..config import load_config_text
 from ..doctor import Finding
-from ..errors import ConfigError, GitError, ToolError
+from ..errors import ConfigError, GitError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self, shell_arg
 from ..lane_command import (LaunchSpec, first_word, install_python, launch_spec, pytest_head,
@@ -1242,35 +1242,12 @@ def _emit_doctor(root: Path, cfg, findings: list[Finding], as_json: bool) -> Non
     _print_findings(findings)
 
 
-def _junit_seconds(path: Path) -> float | None:
-    from ..junitparse import suite_seconds
-
-    if not path.is_file():
-        return None
-    try:
-        return suite_seconds(path.read_text(encoding="utf-8"))
-    except ToolError:
-        return None
-
-
-def _lane_seconds(root: Path, lane, stamps: dict) -> float | None:
-    """What this lane costs, best signal first: the duration its own run
-    recorded, found the way the start order finds it, else the wall time its
-    junit report claims. None means this lane has never left a cost signal on
-    disk — which is not the same as costing 0."""
-    from ..lanes import recorded_seconds
-
-    recorded = recorded_seconds(stamps, lane)
-    if recorded is not None:
-        return recorded
-    return _junit_seconds(root / lane.results_artifact) if lane.results_artifact else None
-
-
 def _lane_durations(root: Path, cfg) -> tuple[float, ...]:
-    from ..lanes import read_stamps
+    """Each measured lane's cost, read the way the start order reads it."""
+    from ..lanes import lane_seconds, read_stamps
 
     stamps = read_stamps(root)
-    measured = [_lane_seconds(root, lane, stamps) for lane in cfg.lanes]
+    measured = [lane_seconds(root, stamps, lane) for lane in cfg.lanes]
     return tuple(s for s in measured if s is not None)
 
 

@@ -722,20 +722,48 @@ def _named_seconds(stamps: dict, name: str) -> float | None:
 def recorded_seconds(stamps: dict, lane: Lane) -> float | None:
     """How long this lane took the last time it actually ran, or None when no
     stamp records it. The declared artifact is the exact record; the lane name
-    is the fallback that survives a rename. The start order and doctor --tune
-    both read this, so the two cannot disagree about a renamed artifact."""
+    is the fallback that survives a rename."""
     exact = _recorded_seconds(stamps.get(lane.artifact))
     return exact if exact is not None else _named_seconds(stamps, lane.name)
 
 
+def _junit_seconds(path: Path) -> float | None:
+    """The wall seconds a JUnit report claims, or None when there is no report
+    or it cannot be read: not UTF-8, not XML, not a file."""
+    from .junitparse import suite_seconds
+
+    try:
+        return suite_seconds(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, ToolError):
+        return None
+
+
+def lane_seconds(root: Path, stamps: dict, lane: Lane) -> float | None:
+    """What this lane costs, best signal first: the duration its own run
+    recorded, else the wall time its JUnit report claims. A lane whose artifact
+    was reused, or whose stamps were cleaned, has only the report. None means
+    the lane left no cost signal on disk, which is not the same as costing 0.
+
+    The start order and doctor --tune both read this, so the order a parallel
+    run starts its lanes in is the order doctor --tune's estimate assumes."""
+    recorded = recorded_seconds(stamps, lane)
+    if recorded is not None or not lane.results_artifact:
+        return recorded
+    return _junit_seconds(root / lane.results_artifact)
+
+
 def lane_order(root: Path, lanes: list[Lane]) -> list[Lane]:
-    """Longest recorded lane first: with lanes running concurrently the makespan
-    is the slowest lane, so starting it last wastes exactly its own duration.
-    Sorting is stable, so unrecorded lanes and ties keep declaration order.
-    A recorded duration only ever changes WHICH lane starts first — results are
-    merged in declaration order regardless, so it cannot move a score."""
+    """Longest lane first, by `lane_seconds`: with lanes running concurrently the
+    makespan is the slowest lane, so starting it last wastes exactly its own
+    duration. Read as 0 s, a lane that never ran here but had a JUnit report
+    started last: lanes of 5, 5 and 10 s on two slots took 15 s where doctor
+    --tune said 10. Sorting is stable, so unmeasured lanes and ties keep
+    declaration order. A duration only ever changes WHICH lane starts first:
+    results are merged in declaration order regardless, so it cannot move a
+    score. A report that cannot be read leaves its lane unmeasured, since this
+    runs ahead of every parallel coverage run."""
     stamps = read_stamps(root)
-    return sorted(lanes, key=lambda lane: -(recorded_seconds(stamps, lane) or 0.0))
+    return sorted(lanes, key=lambda lane: -(lane_seconds(root, stamps, lane) or 0.0))
 
 
 def _lane_matchers(lane: Lane, scope_paths: dict) -> tuple[ScopeMatch, ...]:

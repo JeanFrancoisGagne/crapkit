@@ -70,6 +70,39 @@ def test_a_lane_no_stamp_ever_named_is_still_unmeasured(tmp_path):
     assert [l.name for l in lane_order(tmp_path, LANES)] == ["unit", "ui", "py"]
 
 
+def _reported(tmp_path, name: str, report: str) -> Lane:
+    """A lane with a JUnit report on disk and no stamp: its artifact was reused,
+    or the stamps were cleaned, so it never recorded a run here."""
+    (tmp_path / f"{name}.xml").write_text(report, encoding="utf-8")
+    return Lane(name=name, command="", artifact=f"{name}.json", parser="istanbul",
+                scopes=("src",), results_artifact=f"{name}.xml")
+
+
+def test_a_lane_that_never_ran_here_starts_by_the_seconds_its_junit_report_claims(tmp_path):
+    """doctor --tune costs such a lane off its JUnit report and predicts LPT. The
+    start order read it as 0 s and started it last: lanes of 5, 5 and 10 s on two
+    slots took 15 s where doctor --tune promised 10."""
+    declared = [_reported(tmp_path, name, f'<testsuite time="{seconds}"/>')
+                for name, seconds in (("a", 5.0), ("b", 5.0), ("c", 10.0))]
+    assert [l.name for l in lane_order(tmp_path, declared)] == ["c", "a", "b"]
+
+
+def test_a_recorded_run_outranks_the_junit_report_of_the_same_lane(tmp_path):
+    write_stamps(tmp_path, {"a.json": {"commit": "a", "lane": "a", "seconds": 1.0}})
+    declared = [_reported(tmp_path, "a", '<testsuite time="900"/>'),
+                _reported(tmp_path, "b", '<testsuite time="60"/>')]
+    assert [l.name for l in lane_order(tmp_path, declared)] == ["b", "a"]
+
+
+def test_an_unreadable_junit_report_leaves_its_lane_unmeasured(tmp_path):
+    """The start order runs ahead of every parallel coverage run, so a report it
+    cannot read costs the lane its place, never the run."""
+    declared = [_reported(tmp_path, "cut", '<testsuite time="9"'), _reported(tmp_path, "latin", ""),
+                _lane("none"), _reported(tmp_path, "read", '<testsuite time="3"/>')]
+    (tmp_path / "latin.xml").write_bytes('<testsuite name="é" time="9"/>'.encode("latin-1"))
+    assert [l.name for l in lane_order(tmp_path, declared)] == ["read", "cut", "latin", "none"]
+
+
 def _outcome(marker: str) -> LaneOutcome:
     return LaneOutcome({"src/a.ts": [marker]}, {"scopes": ["src"]}, {})
 
