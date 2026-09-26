@@ -98,7 +98,7 @@ def session(box, repo: Path, writes: list[dict], marker: str, claude: str = "cla
     model = Model(box, writes, marker, str(repo / "calc" / "grade.py"))
     with stub_anthropic.serve(model) as stub:
         box.run([claude, "-p", "make the change", "--permission-mode", "bypassPermissions"], cwd=repo, expect=0,
-                env={"ANTHROPIC_BASE_URL": stub.url, "ANTHROPIC_API_KEY": "sk-ant-stub"})
+                env=stub_anthropic.claude_env(stub.url))
     return stub.bodies()
 
 

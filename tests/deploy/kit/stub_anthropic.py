@@ -14,7 +14,7 @@ request body and the turn number:
         return {"tool_use": {"name": "Read", "input": {"file_path": "calc.py"}}}
 
     with stub_anthropic.serve(script) as stub:
-        ...
+        box.run(["claude", "-p", "..."], env=stub_anthropic.claude_env(stub.url))
         stub.bodies()      # every /v1/messages body, oldest first
 """
 from __future__ import annotations
@@ -22,6 +22,18 @@ from __future__ import annotations
 import json
 
 from kit.httpstub import Reply, Request, Stub
+
+# Claude Code -p with a base URL that is not Anthropic's can send its first
+# request while a plugin's MCP server is still connecting, and that request
+# offers no crapkit tool. Through the shim's second Python start it did in 4
+# of 6 runs; waiting up to 5 s for the servers at startup made it 5 of 5.
+STARTUP_WAIT = {"CLAUDE_CODE_MCP_STARTUP_WAIT_MS": "5000"}
+
+
+def claude_env(url: str, key: str = "sk-ant-stub") -> dict[str, str]:
+    """What `claude -p` needs to talk to a stub at `url`: the URL, any key, and
+    the startup wait that lets MCP servers connect before the first request."""
+    return {"ANTHROPIC_BASE_URL": url, "ANTHROPIC_API_KEY": key, **STARTUP_WAIT}
 
 
 def _turn(script, body: dict, number: int) -> dict:

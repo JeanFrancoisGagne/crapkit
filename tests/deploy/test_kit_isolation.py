@@ -161,7 +161,8 @@ def test_the_runner_venv_never_reaches_the_sandbox_path(box):
 
 ALLOWED = (set(sandbox.OS_MINIMUM[os.name]) | set(sandbox.REDIRECTED) | set(sandbox.QUIET)
            | {"PATH", "UV_PYTHON_INSTALL_DIR", "UV_PYTHON_DOWNLOADS", "npm_config_cache", "LANG", "LC_ALL", "TZ",
-              "PIP_CONFIG_FILE", "UV_OFFLINE", "UV_NO_INDEX", "UV_FIND_LINKS", "HOMEDRIVE", "HOMEPATH"})
+              "PIP_CONFIG_FILE", "UV_OFFLINE", "UV_NO_INDEX", "UV_FIND_LINKS", "HOMEDRIVE", "HOMEPATH",
+              "CLAUDE_CODE_GIT_BASH_PATH"})
 # What a runner or a developer's shell may export that a user's shell does not.
 LEAKS = {"PYTHONHASHSEED": "0", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "leak", "VIRTUAL_ENV": "leak",
          "PIP_INDEX_URL": "http://leak.invalid/simple", "UV_INDEX_URL": "http://leak.invalid/simple",
@@ -891,6 +892,11 @@ REACHES_THE_MACHINE = {
                                               "ends the process group once Zed.log holds a line: box.run waits for the "
                                               "child to exit, and Zed runs until its window closes. The Popen call "
                                               "passes box.env and box.resolve(argv[0]), so Zed still runs in the sandbox"),
+    "test_kit_isolation.py": ({"hang_guard.run"}, "under run.py --faketime, the clock test starts each release "
+                                                  "kit/clock.py skips: box.run resolves argv[0] through "
+                                                  "clock.skip_unstartable and would skip the very probe. It passes "
+                                                  "box.env and the sandbox root, so the release still runs in the "
+                                                  "sandbox"),
 }
 
 

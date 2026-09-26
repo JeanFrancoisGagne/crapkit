@@ -260,10 +260,16 @@ def _os_minimum() -> dict[str, str]:
 
 def _toolchain_env(toolchain: Toolchain) -> dict[str, str]:
     """The pinned tools, plus a fixed locale and zone where POSIX reads them.
-    Windows keeps its own code page: the cp1252 console is a user's reality."""
+    Windows keeps its own code page: the cp1252 console is a user's reality.
+    On Windows, Claude Code runs hooks in the bash.exe of Git for Windows under Program Files
+    and puts that Git's directories first on the hook's PATH, whatever Git the
+    PATH holds, unless CLAUDE_CODE_GIT_BASH_PATH names a bash: it names the
+    pinned PortableGit's, so a hook cell runs the same Git on every machine."""
     env = {"PATH": os.pathsep.join(toolchain["path"]), "UV_PYTHON_INSTALL_DIR": toolchain["python_install_dir"],
            "UV_PYTHON_DOWNLOADS": "never", "npm_config_cache": toolchain["npm_cache"]}
-    return env if WINDOWS else {**env, "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC"}
+    if WINDOWS:
+        return {**env, "CLAUDE_CODE_GIT_BASH_PATH": toolchain["bash"]}
+    return {**env, "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC"}
 
 
 def _offline_env(root: Path, find_links: list[str]) -> dict[str, str]:

@@ -202,7 +202,7 @@ def offered_tools(box, cwd: Path, claude: str = "claude") -> list[str]:
     Messages stub, which answers with text and records the request."""
     with stub_anthropic.serve([{"text": "done"}]) as stub:
         box.run([claude, "-p", "list your tools"], cwd=cwd, expect=0,
-                env={"ANTHROPIC_BASE_URL": stub.url, "ANTHROPIC_API_KEY": "sk-ant-stub"})
+                env=stub_anthropic.claude_env(stub.url))
     return [tool["name"] for tool in stub.bodies()[0].get("tools", [])]
 
 
