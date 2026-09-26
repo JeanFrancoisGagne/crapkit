@@ -247,7 +247,10 @@ out, in a file whose `fnMap` lists others beside a `statementMap`, reads `exclud
 `crap = ccn`, remedy `ok` or `decompose`, because no test can move its number. Through
 0.8.0 it read `untested` with `add-tests` advice no test could follow. The statements are
 the proof that an instrumenter wrote the entry: a hand-built entry with `fnMap` alone
-cannot say what it left out, so a function missing from it stays `untested`.
+cannot say what it left out, so a function missing from it stays `untested`. A nested
+function a hint drops sits inside its encloser's span and reads the encloser's number, not
+`excluded`: jest's `v8` provider and c8 also leave out a nested callback V8 never compiled,
+so a missing nested function cannot be told from an uncalled one.
 
 The outer object is keyed by path. crapkit strips the crapkit root off an absolute key and
 takes any other key as it stands, so root-relative keys work too. `path_prefix` is
@@ -603,6 +606,7 @@ case the message was written for: `coverage.py report has no function regions fo
 its 40 file(s) — needs coverage >= 7.6`. That verdict is read before the branch-data one, so
 a report missing both is told its coverage is too old rather than sent to add `--cov-branch`,
 which a coverage that old would not fix.
+
 ### Where a function's region starts
 
 coverage.py 7.6 added the per-function regions crapkit joins on, and 7.13.1 added each
@@ -621,11 +625,12 @@ no test called read as tested as the function around it.
 
 `# pragma: no cover` on a def line, or an `exclude_lines` or `exclude_also` pattern that
 takes every statement in a function, leaves coverage.py a region with no statements and
-its lines under `excluded_lines`. coverage.py's default patterns also exclude a stub whose
-body is `...`. That function reads `excluded`: `crap = ccn`, remedy `ok` or `decompose`.
+its lines under `excluded_lines`. From coverage.py 7.10.1 the default patterns also exclude
+a stub whose body is `...`, such as a `Protocol` method. That function reads `excluded`:
+`crap = ccn`, remedy `ok` or `decompose`.
 A pattern that takes some statements and leaves others, such as a `raise
 NotImplementedError` line, excludes those lines and the function is measured on the rest.
-Through 0.8.0 an excluded function read `untested`, `crap = ccn^2 + ccn`, with `add-tests`
+Through 0.8.0 an excluded function read cov 0, `crap = ccn^2 + ccn`, with `add-tests`
 advice no test could follow.
 
 ### `--continue-on-collection-errors`

@@ -29,19 +29,20 @@
   of the same analysis-version bump.
 - A new flag, `excluded`, marks a function its coverage tool was told to leave out:
   `# pragma: no cover` or an exclude pattern that takes every statement in it under
-  coverage.py, `/* istanbul ignore next */` or `/* v8 ignore next */` under istanbul. It
-  scores `crap = ccn` and its remedy is `ok` or `decompose`, the way a `cc-only` function
-  scores. It read `untested` at `crap = ccn^2 + ccn` with `add-tests`, advice no test
-  could follow, and a large one sat over the ceiling for good. istanbul drops an ignored
-  function from `fnMap`, so a function missing from the `fnMap` of an instrumented file,
-  one with statements, that lists others reads `excluded` as well. A file with no `fnMap`
-  entries, or a hand-built entry with no statements, keeps reading `untested`. rescore
-  keeps an excluded function excluded, and a one-line def under `# pragma: no cover`
-  reads `excluded` rather than taking the def-line floor. The coverage summary counts
-  the flag as `excluded` (JSON) and `N excluded` (text), the MCP schemas list it, and
-  the README's Flags table explains it. Excluded functions fall from `ccn^2 + ccn` to
-  `ccn`, so marks tighten at the next ratchet update; this is part of the same
-  analysis-version bump.
+  coverage.py (from coverage.py 7.10.1 its default patterns take a stub whose body is
+  `...`), `/* istanbul ignore next */` or `/* v8 ignore next */` under istanbul. It
+  scores `crap = ccn` and its remedy is `ok` or `decompose`, the way a `cc-only`
+  function scores. It read cov 0, flagged `untested` or `measured`, at
+  `crap = ccn^2 + ccn` with `add-tests`, advice no test could follow, and a large one
+  sat over the ceiling for good. istanbul drops an ignored function from `fnMap`, so a
+  function missing from the `fnMap` of an instrumented file, one with statements, that
+  lists others reads `excluded` as well. A file with no `fnMap` entries, or a hand-built
+  entry with no statements, keeps reading `untested`. rescore keeps an excluded function
+  excluded, and a one-line def under `# pragma: no cover` reads `excluded` rather than
+  taking the def-line floor. The coverage summary counts the flag as `excluded` (JSON)
+  and `N excluded` (text), the MCP schemas list it, and the README's Flags table
+  explains it. Excluded functions fall from `ccn^2 + ccn` to `ccn`, so marks tighten at
+  the next ratchet update; this is part of the same analysis-version bump.
 
 ### Every platform computes the same CRAP
 

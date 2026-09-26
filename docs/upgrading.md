@@ -99,11 +99,12 @@ re-seeds once, with the same three commands as version 11 below:
   encloser's. See [where a function's region
   starts](lanes.md#where-a-functions-region-starts).
 - A function coverage.py or istanbul was told to leave out (`# pragma: no cover`,
-  `istanbul ignore next`, `v8 ignore next`) reads the new flag `excluded` at
-  `crap = ccn`, where it read `untested` at `ccn^2 + ccn`. Its remedy turns from
-  `add-tests` to `ok` or `decompose`. A client that checks `flag` against the four
-  older values, or reads the coverage summary's four counts, should accept `excluded`
-  too. See [flags](../README.md#flags-why-a-coverage-number-is-missing).
+  `istanbul ignore next`, `v8 ignore next`, and from coverage.py 7.10.1 a stub whose
+  body is `...`) reads the new flag `excluded` at `crap = ccn`, where it read cov 0 at
+  `ccn^2 + ccn`. Its remedy turns from `add-tests` to `ok` or `decompose`. A client that
+  checks `flag` against the four older values, or reads the coverage summary's four
+  counts, should accept `excluded` too. See
+  [flags](../README.md#flags-why-a-coverage-number-is-missing).
 
 ### Analysis version 11
 

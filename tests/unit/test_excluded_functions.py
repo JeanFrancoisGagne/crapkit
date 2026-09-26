@@ -3,7 +3,7 @@
 A `# pragma: no cover` def, an `/* istanbul ignore next */` or `/* v8 ignore
 next */` function: the producer leaves it out on purpose, so no test can move
 its number. It scores crap = ccn, the way a coverage_optional scope does, and
-its remedy can only be ok or decompose. Scored as untested it read
+its remedy can only be ok or decompose. Scored at cov 0 it read
 crap = ccn^2 + ccn with add-tests advice no test could satisfy.
 """
 from crapkit.cli.scoring import _bucket_text, _flag_counts
