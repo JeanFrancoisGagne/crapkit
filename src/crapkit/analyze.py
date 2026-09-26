@@ -21,6 +21,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     from lizard_languages import get_reader_for as _lizard_reader_for
     from lizard_languages.python import PythonReader as _PythonReader
 
+    from .lizardclike import register as _register_clike
     from .lizardgolike import register as _register_golike
     from .lizardlinecomment import register as _register_line_comments
     from .lizardpowershell import register as _register_powershell
@@ -41,25 +42,27 @@ from .keys import bare_name
 # on it: `.rs` resolves to a reader that counts no `match` arm (lizard #494),
 # `.py` to one that ends a def inside a signature that runs past its first `)`
 # (crapkit #72), `.go` and `.zig` to one that reads a function type as a
-# function, and `.sh` and `.ps1` resolve to nothing at all, which lizard
-# answers with CLikeReader rather than a failure. The Java, Swift and
-# JavaScript-family readers stay lizard's, but their `//` comment runs on into
-# the next line after a backslash, as only C's does. All six registrations
-# belong HERE, at the module scope of the module a ProcessPoolExecutor child
-# imports, or spawned workers measure with the readers lizard shipped and report
-# plausible wrong numbers.
+# function, the C family's suffixes to readers that leave out unnamed and
+# array parameters and every Objective-C argument, and `.sh` and `.ps1`
+# resolve to nothing at all, which lizard answers with CLikeReader rather than
+# a failure. The Java, Swift and JavaScript-family readers stay lizard's, but
+# their `//` comment runs on into the next line after a backslash, as only C's
+# does. All seven registrations belong HERE, at the module scope of the module
+# a ProcessPoolExecutor child imports, or spawned workers measure with the
+# readers lizard shipped and report plausible wrong numbers.
 #
 # lizardshell and lizardpowershell already register themselves on import, and
-# lizardrust, lizardpython, lizardgolike and lizardlinecomment deliberately do
-# not (rebinding a name in another package's namespace is not something an
-# import should do quietly). Calling all six keeps the wiring readable in one
-# place and costs nothing: each is idempotent.
+# lizardrust, lizardpython, lizardgolike, lizardlinecomment and lizardclike
+# deliberately do not (rebinding a name in another package's namespace is not
+# something an import should do quietly). Calling all seven keeps the wiring
+# readable in one place and costs nothing: each is idempotent.
 _register_rust()
 _register_shell()
 _register_powershell()
 _register_python()
 _register_golike()
 _register_line_comments()
+_register_clike()
 
 _POOL_THRESHOLD = 16
 
@@ -443,6 +446,13 @@ def _nesting_depth(rel_path: str, fn) -> int:
     return getattr(fn, "max_nesting_depth", 0) or 0
 
 
+def _parameter_count(fn) -> int:
+    """The count a crapkit reader kept (lizardclike's `crapkit_params`), else one
+    per parameter name lizard read."""
+    count = getattr(fn, "crapkit_params", None)
+    return len(fn.parameters) if count is None else count
+
+
 def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
     """One function's numbers, checked against their documented bounds before
     anything can store them (`invariants.check_record`)."""
@@ -457,7 +467,7 @@ def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
         ccn_mod=mod,
         ccn=min(std, mod),
         nloc=fn.nloc,
-        params=len(fn.parameters),
+        params=_parameter_count(fn),
         nesting=_nesting_depth(rel_path, fn),
         cognitive=getattr(fn, "cognitive_complexity", 0) or 0,
         occurrence=occurrence,

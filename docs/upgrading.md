@@ -197,6 +197,20 @@ some JavaScript and TypeScript coverage move:
   coverage of one function went to a neighbor, so `cov`, CRAP and the uncovered lines
   `verify` checks a diff against move for JavaScript and TypeScript functions in such
   files. A function that reads less covered now can go over its ceiling.
+### Next analysis version: C, C++ and Objective-C rows
+
+The release after 0.8.0 reads the C family's parameters in a new way, so it raises
+the analysis version and every marks file re-seeds once, with the same three commands
+as version 11 below.
+
+- `params` counts each declaration in a C, C++ or Objective-C parameter list, named
+  or not: `f(int*, char)` reads 2, `f(const int arr[4])` reads 1, and an Objective-C
+  method counts its arguments. `params` is reported and never gated.
+- A function after one whose default argument holds a parenthesized `<`, such as
+  `f(bool b = (1 < 2))`, reads its own parameters again and prints its long name with
+  spaces, `g( int a , int c)` where it read `g(int a,int c)`. That is a new ratchet
+  key: `ratchet prune` drops the old mark and `ratchet seed` marks the function under
+  the new name if it is over its ceiling.
 
 ### Analysis version 11
 

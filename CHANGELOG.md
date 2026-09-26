@@ -763,6 +763,26 @@ lane commands the way the shell that runs them does:
   ccn 5 at none both score 30, but the floats read 29.999999999999996 and 30.0, so
   `next-item` handed out the function in the quieter file first and a bare twin name
   picked the later twin.
+## Unreleased
+
+C, C++ and Objective-C rows move, so the release that ships this raises the analysis
+version and every repo with those languages re-seeds its marks once (`crapkit coverage`,
+`crapkit ratchet prune`, `crapkit ratchet seed`).
+
+### The C family counts every parameter a function declares
+
+- `params` counts each declaration in the parameter list. lizard named a parameter
+  after the last word of its declaration and left it out when that word was not a
+  name: `f(int*, char)` read 1, `f(const int arr[4])` and `f(const int (&arr)[4])` read
+  0, `main(int argc, char *argv[])` read 1, and `g(void (*r)())` read 0. `(void)` and a
+  lone `...` still declare none.
+- An Objective-C method counts its arguments: `- (int)pairFor:(int)a to:(int)b` reads
+  2, where every method read 0.
+- A `<` inside a parenthesized default argument, `f(bool b = (1 < 2))`, no longer
+  breaks the functions after it. lizard left its bracket stack one deep, so every later
+  function in the file read `params` 0 and printed its long name without spaces,
+  `g(int a,int c)`. Those functions now read `g( int a , int c)`, a new ratchet key.
+- `params` is reported and never gated, and no other long name changes.
 
 ## 0.8.0 — 2026-09-23
 

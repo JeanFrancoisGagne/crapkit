@@ -797,7 +797,7 @@ Its module scope imports stdlib only, because every edit on the machine pays for
 it never opens the snapshot store. Opening an older store can still migrate it, and
 a per-edit hook has no reason to read or change snapshot state.
 
-Eight reader modules sit beside the core, all registered in `analyze.py`'s
+Nine reader modules sit beside the core, all registered in `analyze.py`'s
 `deferred_pygments()` block:
 
 | Module | What it does |
@@ -807,6 +807,7 @@ Eight reader modules sit beside the core, all registered in `analyze.py`'s
 | `lizardlinecomment.py` | ends a `//` comment at its line in lizard's Java, Swift and JavaScript-family readers, where lizard spliced the next line after a trailing backslash as only C does; Go, Zig and Rust take its `LINE_COMMENT` in their own tokenizers |
 | `lizardpython.py` | reads a Python def's signature to its body colon, where lizard ended some defs inside their signature (crapkit #72) |
 | `lizardgolike.py` | Go and Zig readers that end a signature where the language does, so a function type opens no function, a result type's braces are not the body, and a parameter's own type holds no parameters; `peek` sees each raw token before any counter (`analyze._ReaderLookahead`) |
+| `lizardclike.py` | C, C++ and Objective-C readers under lizard's own class names, which count every declared parameter, unnamed and array ones and Objective-C arguments included |
 | `lizardshell.py` | a shell reader, because lizard ships none and answers `.sh` with `CLikeReader` instead of an error |
 | `lizardpowershell.py` | a PowerShell reader, same reason, plus a cp1252 decode fallback |
 | `lizardtypescript.py` | separates JavaScript and TypeScript expression arrows at commas and preserves their source spans; refuses unresolved TypeScript angle syntax; blanks the template-literal characters lizard's tokenizer misreads, such as a nested template's backticks, before a JavaScript-family reader sees the file |
