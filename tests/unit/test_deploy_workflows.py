@@ -958,3 +958,78 @@ def test_a_cache_figure_that_counts_the_debian_base_layer_twice_is_caught():
     text = GUIDE.read_text(encoding="utf-8").replace(gigabytes(chained_bytes(four)), twice)
 
     assert wrong_cache_figures(text) == [(four, twice, "4.67 GB")] * 2
+
+
+# run.py caches with mode=min, which BuildKit documents as "only export layers
+# for the resulting image": a scope holds every layer of its image, the stages
+# its FROM lines chain through included, and none of the stages it copies files
+# from with COPY --from. ci and full reading core's scope finds the stages they
+# start with only because of that, so the guide's gloss must say it, and must
+# not call it the image's own layers, which the stage table uses for the layers
+# an image adds to the stage it starts with.
+DOCKERFILE = ROOT / "tests" / "deploy" / "docker" / "Dockerfile"
+
+
+def dockerfile_stages(text):
+    """{stage: (what it is FROM, the stages it copies files from)}."""
+    stages = {}
+    for line in text.splitlines():
+        if match := re.match(r"FROM (\S+) AS (\S+)", line):
+            stages[match[2]] = (match[1], set())
+        elif match := re.match(r"COPY --from=(\S+)", line):
+            stages[list(stages)[-1]][1].add(match[1])
+    return stages
+
+
+STAGES = dockerfile_stages(DOCKERFILE.read_text(encoding="utf-8"))
+
+
+def built_on(image):
+    """The stages an image's FROM lines chain through, itself included."""
+    chain = [image]
+    while STAGES[chain[-1]][0] in STAGES:
+        chain.append(STAGES[chain[-1]][0])
+    return set(chain)
+
+
+def copied_from(image):
+    """The stages an image, or a stage it is built on, copies files from."""
+    return set().union(*(STAGES[stage][1] for stage in built_on(image))) - built_on(image)
+
+
+def _stage_names(text):
+    return {word for word in re.findall(r"`([^`]+)`", text) if word in STAGES}
+
+
+def min_mode_gloss(text):
+    """What the guide's paragraph on mode=min says core's scope holds: the
+    stages it names before "leaves out", those it names after, the size it
+    gives, and whether it says "own layers"."""
+    gloss = next(part for part in _cache_section(text).split("\n\n") if "`mode=min`" in part)
+    exported, _, left_out = gloss.partition("leaves out")
+    return {"exported": _stage_names(exported), "left out": _stage_names(left_out),
+            "size": re.findall(r"[\d,]+ MB", exported), "own layers": "own layers" in gloss}
+
+
+def min_mode_scope(image="core"):
+    return {"exported": built_on(image), "left out": copied_from(image),
+            "size": [megabytes(IMAGE_BYTES[image])], "own layers": False}
+
+
+def test_the_deploy_guide_says_mode_min_caches_every_layer_of_the_image_and_no_stage_it_copies_from():
+    assert built_on("core") == {"base", "cells-pre", "core-pre", "core"}
+    assert copied_from("core") == {"uv", "node", "runner", "npm-fixtures", "harness-core", "wheelhouse"}
+    assert {starts_with("ci"), starts_with("full")} <= built_on("core")
+    assert starts_with("gui") in built_on("full")
+    assert min_mode_gloss(GUIDE.read_text(encoding="utf-8")) == min_mode_scope()
+
+
+def test_a_gloss_that_calls_what_mode_min_caches_the_images_own_layers_is_caught():
+    text = GUIDE.read_text(encoding="utf-8")
+    gloss = next(part for part in _cache_section(text).split("\n\n") if "`mode=min`" in part)
+    old = ("`--cache gha` makes BuildKit read and write an image's layers in the GitHub\n"
+           "Actions cache, under `scope=crapkit-deploy-<image>` with `mode=min` (the\n"
+           "image's own layers, not those of the stages that feed it).")
+
+    assert min_mode_gloss(text.replace(gloss, old)) == {"exported": set(), "left out": set(), "size": [],
+                                                        "own layers": True}

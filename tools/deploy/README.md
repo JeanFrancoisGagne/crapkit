@@ -196,12 +196,19 @@ upgraded to the candidate under `--network none`) takes 8 to 27 s.
 ## The GitHub Actions cache
 
 `--cache gha` makes BuildKit read and write an image's layers in the GitHub
-Actions cache, under `scope=crapkit-deploy-<image>` with `mode=min` (the
-image's own layers, not those of the stages that feed it). A failed write never
-fails the build. BuildKit 0.33 stores each layer blob once, keyed by its digest,
-and uses the scope only to name the list of an image's blobs. Two images share
-a stored layer only when their builds made the same blob, so a job that builds
-a stage on its own runner stores it again even when another job cached it.
+Actions cache, under `scope=crapkit-deploy-<image>` with `mode=min`, which
+BuildKit documents as "only export layers for the resulting image". A scope
+holds every layer of its image and no other. For `core`, 1,455 MB as measured
+below, that is the Debian image and the layers of `base`, `cells-pre`,
+`core-pre` and `core`. It leaves out the stages the image copies files from
+with `COPY --from` (`uv`, `node`, `runner`, `npm-fixtures`, `harness-core` and
+`wheelhouse`), apart from the files each copy writes into a layer of the image.
+
+A failed write never fails the build. BuildKit 0.33 stores each layer blob
+once, keyed by its digest, and uses the scope only to name the list of an
+image's blobs. Two images share a stored layer only when their builds made the
+same blob, so a job that builds a stage on its own runner stores it again even
+when another job cached it.
 
 GitHub gives a repository 10 GB of Actions cache. Past it, GitHub keeps the
 new entry and evicts the least recently used ones; it also drops any entry
@@ -241,7 +248,8 @@ Compressed sizes of the images built at 9707cc6d, read layer by layer from
 `docker save` on 2026-09-25. Each is about 50 MB larger than in the 2026-09-24
 table above: between the two measurements every image gained the 3.15.0rc2
 prerelease and the wheelhouse gained rows (c3a85e1b, 1e557df6). Each image is a
-stage of the Dockerfile that another image also holds, plus its own layers:
+stage of the Dockerfile that another image also holds, plus its own layers,
+the ones it adds to that stage:
 
 | Image | Compressed | Starts with | Its own layers |
 |---|---|---|---|
@@ -254,7 +262,9 @@ What the cache would hold. The first column is measured: the distinct blobs of
 the images each built with `--no-cache`, the way separate jobs build them. The
 second is computed from the table above for images that build on each other's
 cached layers, with `ci` and `full` reading `core`'s scope and `gui` reading
-`full`'s: `core`, plus the own layers of each other image.
+`full`'s: `core`, plus the own layers of each other image. A scope holds every
+layer of its image, so `core`'s holds `cells-pre` and `core-pre`, and `full`'s
+holds `full-pre`.
 
 | Cached | Each job builds every stage itself | Each image builds on the cached layers below it |
 |---|---|---|
