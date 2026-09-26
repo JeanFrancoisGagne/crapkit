@@ -347,11 +347,16 @@ def test_a_switch_counts_its_arms_whatever_its_subject_holds(subject):
     ("        1 { 'one' }\n        { $_ -gt 5 } { 'big' }\n        'x' { 'x' }\n", 4),
     ("        1 { 'one' }; default { 'many' }\n", 2),
     ("        { $_ } { 'truthy' }; { -not $_ } { 'falsy' }\n", 3),
+    ("        (1 + 1) { 'two' }\n        default { 'other' }\n", 2),
+    ("        $m.Max { 'max' }\n        $m.Min { 'min' }\n        default { 'mid' }\n", 3),
+    ("        $m.default { 'the default value' }\n        $m['if'] { 'keyed' }\n", 3),
+    ("        (default) { 'runs a command named default' }\n        default { 'other' }\n", 2),
 ])
 def test_an_arm_counts_once_whatever_its_pattern_is(arms, ccn):
     """An arm is a pattern and the block it runs (about_Switch). A pattern may be
     a script block, and its own braces opened directly in the switch body like
-    the block's, so a script-block arm counted twice."""
+    the block's, so a script-block arm counted twice. A pattern of several
+    tokens is one arm, and only its first token can make it the default arm."""
     assert _only(_switch("($n)", arms)).cyclomatic_complexity == ccn
 
 
