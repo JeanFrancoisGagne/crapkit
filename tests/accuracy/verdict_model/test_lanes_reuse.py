@@ -361,6 +361,49 @@ def test_same_bytes_touch_changes_nothing(make_repo, case):
     rulings.pin_ruling("V7", crapkit=said, oracle="reused, lines kept" if clean else "changed")
 
 
+def _fail_status_once(monkeypatch) -> list:
+    """Make the first git status read under a lane's inputs fail, as a full disk
+    or a git process that cannot start makes it fail; the list records the
+    paths of each read that failed."""
+    changes = importlib.import_module("crapkit.lane_changes")
+    original, failed = changes.ChangeReads.status_names, []
+
+    def status_names(self):
+        if failed:
+            return original(self)
+        failed.append(self._spec[1:])
+        raise changes.GitError("git exited 128: forced at the seam")
+
+    monkeypatch.setattr(changes.ChangeReads, "status_names", status_names)
+    return failed
+
+
+@pytest.mark.process
+@rulings.applies("V10")
+def test_a_git_failure_while_stamping_claims_no_uncommitted_change(make_repo, monkeypatch):
+    """docs/lanes.md, Reusing artifacts: a rerun names the first condition that
+    failed. git's status read fails once while a lane's inputs are proved, on a
+    tree `git status` reads clean. That lane reruns, since nothing proved it,
+    and the other is reused; the rerun sentence must not claim uncommitted
+    changes the tree never had."""
+    sc = vw.Scenario.build(make_repo, INPUTS)
+    failed = _fail_status_once(monkeypatch)
+    assert sc.run("coverage").code == 0
+    monkeypatch.undo()
+    lane = next(name for name, paths in SCOPES.items() if paths == failed[0])
+    clean = repos.git(sc.top, "--no-optional-locks", "status", "--porcelain") == ""
+    reasons = _reasons(sc)
+    said = [_claim(reasons.pop(lane)), *map(_claim, reasons.values())]
+    rulings.pin_ruling("V10", crapkit=", then ".join(said),
+                       oracle="rerun, other cause, then reused" if clean else "tree changed")
+
+
+def _claim(reason: str) -> str:
+    if not reason:
+        return "reused"
+    return "rerun, uncommitted changes" if "uncommitted" in reason else "rerun, other cause"
+
+
 def _reuse_words(reasons: dict, lines) -> str:
     reused = "reused" if set(reasons.values()) == {""} else "rerun"
     return f"{reused}, lines {'null' if lines is None else 'kept'}"
