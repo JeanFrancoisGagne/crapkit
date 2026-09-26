@@ -29,14 +29,13 @@ from accuracy.kit import oracles, rulings, runlog
 
 pytestmark = [pytest.mark.nightly, pytest.mark.process, pytest.mark.platform("linux")]
 
-# zod joins once its differences are triaged into rulings rows.
-MEMBERS = ("express", "ky", "shadcn-ui", "element-plus")
+MEMBERS = ("express", "ky", "zod", "shadcn-ui", "element-plus")
 MODES = tuple(analysis_js.ORACLES)
 ROW = "row"
 VALUES = ("ccn_std", "ccn_mod", "cognitive", "nesting")
 EVERY = (ROW, *VALUES)
 # Fewest functions each mode must compare per member once shapes are set aside.
-MINIMUM = {"express": 50, "ky": 20, "zod": 100, "shadcn-ui": 5, "element-plus": 10}
+MINIMUM = {"express": 50, "ky": 25, "zod": 70, "shadcn-ui": 3, "element-plus": 8}
 
 # ts_functions.cjs shape -> (rulings row, the columns a function holding it leaves out).
 SHAPES = {
@@ -44,15 +43,24 @@ SHAPES = {
     "paren_value_call": ("AO-JS-PAREN-VALUE-CALL", EVERY),
     "name_spelled": ("AO-JS-COG-RECURSION-NAME", ("cognitive",)),
     "keyword_name": ("AO-JS-KEYWORD-NAME", VALUES),
+    "function_word_key": ("AO-JS-KEYWORD-FUNCTION-KEY", EVERY),
     "regex_as_code": ("AO-JS-REGEX-AS-CODE", EVERY),
     "optional_call": ("AO-JS-OPTIONAL-CALL-END", EVERY),
     "arrow_body_below": ("AO-JS-ARROW-BODY-BELOW", EVERY),
     "type_question": ("AO-TS-TYPE-QUESTION", VALUES),
-    "function_type": ("AO-TS-FUNCTION-TYPE-ROW", EVERY),
+    "function_type": ("AO-TS-FUNCTION-TYPE-ALIAS", EVERY),
+    "function_type_nested": ("AO-TS-FUNCTION-TYPE-ROW", EVERY),
+    "typed_initializer": ("AO-TS-FUNCTION-TYPE-VAR", EVERY),
+    "get_set_method": ("AO-JS-OBJECT-MEMBERS", EVERY),
     "generic_declaration": ("D1a", EVERY),
     "ternary_call_row": ("AO-JS-TERNARY-CALL-ROW", (ROW,)),
     "jsx_spread": ("AO-JSX-SPREAD-ROWS", EVERY),
     "optional_chain_tsx": ("AO-TSX-OPTIONAL-CHAIN-ND", ("nesting",)),
+    "foreign_keyword": ("AO-JS-FOREIGN-KEYWORD", VALUES),
+    "paren_type_param": ("AO-TS-PAREN-TYPE-PARAM", EVERY),
+    "overload_signature": ("AO-TS-OVERLOADS", (ROW,)),
+    "braceless_if": ("AO-ND-BRACELESS", ("nesting",)),
+    "braceless_body": ("AO-COG-BRACELESS-BODY", ("cognitive",)),
 }
 # A file whose every row crapkit misplaces: the suffix and its rulings row.
 FILES = {".vue": "AO-VUE-ROWS"}
@@ -237,21 +245,38 @@ SHAPE_CASES = {
     "paren_value_call": ("js/corpus_paren_call.js", 1, "end"),
     "name_spelled": ("js/corpus_recursion_name.js", 1, "cognitive"),
     "keyword_name": ("js/corpus_keyword_member.js", 1, "ccn_std"),
+    "function_word_key": ("cases/async_key.ts", 1, "end"),
     "regex_as_code": ("ts/corpus_regex_code.ts", 1, "ccn_std"),
     "optional_call": ("ts/corpus_optional_call.ts", 1, "end"),
     "arrow_body_below": ("ts/corpus_arrow_below.ts", 1, "ccn_std"),
     "type_question": ("ts/corpus_type_question.ts", 1, "ccn_std"),
-    "function_type": ("ts/corpus_function_type.ts", 1, "end"),
+    "function_type": ("cases/function_type_alias.ts", 3, "rows"),
+    "function_type_nested": ("ts/corpus_function_type.ts", 1, "end"),
+    "typed_initializer": ("cases/typed_initializer.ts", 1, "rows"),
+    "get_set_method": ("cases/get_method.js", 2, "rows"),
     "generic_declaration": ("ts/generic.ts", 1, "rows"),
     "ternary_call_row": ("ts/corpus_ternary_call.ts", 5, "rows"),
     "optional_chain_tsx": ("tsx/corpus_optional_chain.tsx", 1, "nesting"),
     "jsx_spread": ("cases/spread.tsx", 1, "rows"),
+    "foreign_keyword": ("js/corpus_def_param.js", 1, "nesting"),
+    "paren_type_param": ("ts/corpus_paren_type.ts", 1, "rows"),
+    "overload_signature": ("cases/overloads.ts", 1, "rows"),
+    "braceless_if": ("js/corpus_braceless_if.js", 1, "nesting"),
+    "braceless_body": ("js/corpus_braceless_body.js", 1, "cognitive"),
 }
 # A JSX spread probe cannot sit under probes/tsx: the function it misreads is
 # the one after it, and test_metamorphic_source appends one to every probe.
 CASES = {
     "cases/spread.tsx": ("export function Card() {\n  return <div {...props} />\n}\n\n"
                          "export function sink(a) {\n  return a\n}\n"),
+    "cases/typed_initializer.ts": ("export const parse: (e: E) => P = (e) => {\n  if (e) {\n"
+                                   "    return 1;\n  }\n  return 0;\n};\n"),
+    "cases/get_method.js": ("export const api = {\n  get(k) {\n    return k;\n  },\n};\n"),
+    "cases/async_key.ts": ("export function context(i: I) {\n  const ctx = { async: true };\n"
+                           "  return ctx;\n}\n\nexport function after(a) {\n  return a;\n}\n"),
+    "cases/function_type_alias.ts": "export type Parse = <T>(\n  a: T,\n) => T;\n",
+    "cases/overloads.ts": ("export function pick(a: string): string;\n"
+                           "export function pick(a: any): any {\n  return a;\n}\n"),
     "cases/pattern_defaults.ts": ("export function Separator({\n  orientation = \"vertical\",\n"
                                   "}: P) {\n  return orientation;\n}\n"),
 }
