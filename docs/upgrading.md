@@ -117,8 +117,13 @@ every marks file re-seeds once, with the same three commands as version 11 below
 - A `||` or `&&` with no operand before it is no operator. `move || n`, `f(|| 0)` and
   `|&&x|` cost nothing in ccn, cognitive or nesting.
 - A let-else counts one decision in ccn, like the `if let` it replaces.
+- `?` costs nothing in cognitive or nesting and keeps its 1 in ccn.
+- `loop` is a loop in cognitive and nesting.
+- `catch`, `switch`, `foreach`, `case` and `def` are names, not structures.
 - A parameter typed `&&T` reads `& &` in the function's long name, so that function
   takes a new ratchet key. Prune drops the old one.
+- In Python and shell, a name spelled `switch` no longer adds to ccn_mod. The gated
+  ccn is unchanged.
 
 ### Analysis version 11
 

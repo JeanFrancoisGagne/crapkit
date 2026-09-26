@@ -197,7 +197,16 @@ class CorrectedRustReader(_StockRustReader):
     """
 
     # pylint: disable=too-few-public-methods
-    _control_flow_keywords = _StockRustReader._control_flow_keywords - {"match", "where"}
+    _control_flow_keywords = _StockRustReader._control_flow_keywords - {"match", "where", "catch"}
+
+    # The tokens lizard's nesting column (lizard_ext/lizardnd.py) opens a level
+    # on, which it takes from a reader's `loops` before its own default. That
+    # default is C's: it holds `?`, which Rust spells for error propagation and
+    # `?Sized`, and `case`, `def`, `catch`, `foreach` and `try`, which Rust code
+    # uses as names (`for case in cases`), and it lacks `loop`. `match` stays
+    # out as upstream has it: lizard opens a level per `case`, and a Rust match
+    # has none.
+    loops = frozenset({"if", "for", "while", "loop", "&&", "||"})
 
     def __init__(self, context):
         super().__init__(context)

@@ -14,10 +14,12 @@ Three language-specific rules:
   * in C/C++ and Objective-C/C++ a `&&` before the function's opening brace
     declares an rvalue reference rather than deciding anything, and costs
     nothing. See `_declarator_and`.
-  * in Rust a `match` is a switch and is charged as one, +1 and +nesting with
-    the arms free. It is read only for the Rust readers because `match` is a
-    soft keyword in Python, where the same spelling is an ordinary identifier.
-    See `_counting_match`.
+  * Rust keeps its own structures. `match` is a switch and `loop` a loop, each
+    +1 and +nesting with the arms free, and `catch`, `switch`, `foreach`, `do`
+    and `except` name nothing. `?` is no ternary: it returns early on an error
+    or relaxes a bound, and neither is an increment. These rules are read only
+    for the Rust readers because `match` is a soft keyword in Python and the
+    rest are keywords elsewhere. See `_counting`.
   * in shell a block is delimited by words, not by braces or by indent: `if`
     and `case` open, `fi`, `done` and `esac` close, and `do`, `then` and `in`
     only introduce the body of a structure already charged. See
@@ -26,7 +28,9 @@ Three language-specific rules:
 A Python def's signature never counts. Its body starts at the token after the
 `:` that closes the signature at bracket depth 0, so `def f(x, y): return 1 if
 x and y else 2` reads cognitive 2 like its two-line form, and a signature over
-several lines reads like the same signature on one. See `_signature_token`.
+several lines reads like the same signature on one. See `_signature_token`. A
+Rust fn's signature never counts either: it is every token before the body's
+`{`, so a `for<'a>` binder in a where clause is no loop. See `_signature`.
 
 Attribution follows lizard's function splitting (a nested arrow's tokens are
 the arrow's), exactly as ccn is attributed today. Ternary branches do not
@@ -72,11 +76,18 @@ _RUN_RESETS = frozenset({";", ",", "{", "}"})
 # lose a real one.
 _DECLARATOR_READERS = frozenset({"CLikeReader", "ObjCReader"})
 
-# The readers whose `match` is Rust's switch: lizard's own, and crapkit's
-# subclass of it. Exact names for the same reason `_DECLARATOR_READERS` uses
-# them — the discriminator is the language, and an issubclass test would also
-# catch anything a later lizard derives from RustReader for another one.
-_MATCH_READERS = frozenset({"RustReader", "CorrectedRustReader"})
+# The Rust readers: lizard's own, and crapkit's subclass of it. Exact names for
+# the same reason `_DECLARATOR_READERS` uses them: the discriminator is the
+# language, and an issubclass test would also catch anything a later lizard
+# derives from RustReader for another one.
+_RUST_READERS = frozenset({"RustReader", "CorrectedRustReader"})
+
+# Rust's structures, in place of `_COUNTING`. `match` is Rust's switch and
+# `loop` its unconditional loop, and neither is in `_COUNTING`: `match` is a
+# soft keyword in Python and `loop` a name elsewhere. `catch`, `foreach`, `do`,
+# `except` and `switch` are left out because Rust names nothing with them, so a
+# method `.switch()` or a variable `catch` read as a structure.
+_RUST_COUNTING = frozenset({"for", "while", "loop", "match"})
 
 # The reader whose blocks are delimited by words. Exact name for the same reason
 # the two sets above use exact names: the discriminator is the language.
@@ -116,12 +127,12 @@ class _FnState:
     __slots__ = ("total", "stack", "max_depth", "brace_depth", "line_indent",
                  "at_line_start", "pending", "else_pending", "question_pending",
                  "bool_op", "name", "recursed", "body_started", "signature_depth",
-                 "prev", "label_check", "c_family", "match_kw", "is_shell")
+                 "prev", "label_check", "c_family", "is_rust", "is_shell")
 
-    def __init__(self, name: str, c_family: bool = False, match_kw: bool = False,
+    def __init__(self, name: str, c_family: bool = False, is_rust: bool = False,
                  is_shell: bool = False):
         self.c_family = c_family
-        self.match_kw = match_kw
+        self.is_rust = is_rust
         self.is_shell = is_shell
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
@@ -155,7 +166,7 @@ class LizardExtension:
         states: dict[object, _FnState] = {}
         reader_name = type(reader).__name__
         is_python = reader_name.lower().startswith("python")
-        flags = (reader_name in _DECLARATOR_READERS, reader_name in _MATCH_READERS,
+        flags = (reader_name in _DECLARATOR_READERS, reader_name in _RUST_READERS,
                  reader_name in _SHELL_READERS)
         last = None
         for token in tokens:
@@ -292,8 +303,7 @@ def _push(state: _FnState, entry) -> None:
 
 
 def _consume(state: _FnState, token: str, is_python: bool) -> None:
-    if _in_signature(state, is_python):
-        _signature_token(state, token)
+    if _signature(state, token, is_python):
         return
     if token in _RUN_RESETS:
         state.bool_op = None
@@ -306,8 +316,20 @@ def _consume(state: _FnState, token: str, is_python: bool) -> None:
     _keywords(state, token, is_python)
 
 
-def _in_signature(state: _FnState, is_python: bool) -> bool:
-    return is_python and not state.body_started
+def _signature(state: _FnState, token: str, is_python: bool) -> bool:
+    """True for a token of a def's or fn's signature, which never counts.
+
+    A Python signature runs to the colon `_signature_token` looks for. A Rust
+    one is every token before the body's `{`: brace depth 0 in a function lizard
+    has already named, the region `_declarator_and` reads for C++. A `for<'a>`
+    binder in a where clause read there as a loop, +1, and the level it left
+    pending opened on the body's `{`, so every structure in the body cost 1
+    more.
+    """
+    if is_python and not state.body_started:
+        _signature_token(state, token)
+        return True
+    return state.is_rust and state.brace_depth == 0 and token != "{"
 
 
 def _signature_token(state: _FnState, token: str) -> None:
@@ -382,7 +404,7 @@ def _keywords(state: _FnState, token: str, is_python: bool) -> None:
         _if_token(state, is_python)
     elif token in _ELSE_KEYWORDS:
         _else_token(state, token, is_python)
-    elif token in _COUNTING or _counting_match(state, token):
+    elif _counting(state, token):
         _structure_token(state, token, is_python)
     else:
         _jumps_and_recursion(state, token, is_python)
@@ -422,19 +444,20 @@ def _shell_close(state: _FnState) -> None:
         state.stack.pop()
 
 
-def _counting_match(state: _FnState, token: str) -> bool:
-    """True for a Rust `match`, which is a switch and is charged as one.
+def _counting(state: _FnState, token: str) -> bool:
+    """True for a loop or condition charged +1 and the nesting it sits in.
 
-    Not in `_COUNTING`, because that set is read by every language and `match`
-    is a soft keyword in Python: `match = re.match(...)` would cost a point and
-    open a block that never closes. The reader decides, the way it decides
-    whether a `&&` is a declarator.
+    Rust reads `_RUST_COUNTING`, every other brace or indent language
+    `_COUNTING`. A Rust `match` is a switch and is charged as one; it stays out
+    of `_COUNTING` because `match` is a soft keyword in Python, where `match =
+    re.match(...)` would cost a point and open a block that never closes. The
+    reader decides, the way it decides whether a `&&` is a declarator.
 
     The block itself pays +1 and the nesting it sits in; the arms pay nothing,
     exactly as a C `case` pays nothing. Rust's cyclomatic column counts the arms
     instead, so the two columns say different things about one block on purpose.
     """
-    return token == "match" and state.match_kw
+    return token in (_RUST_COUNTING if state.is_rust else _COUNTING)
 
 
 def _structure_token(state: _FnState, token: str, is_python: bool) -> None:
@@ -445,7 +468,10 @@ def _structure_token(state: _FnState, token: str, is_python: bool) -> None:
 
 def _jumps_and_recursion(state: _FnState, token: str, is_python: bool) -> None:
     if token == "?":
-        state.question_pending = True
+        # A C ternary, a Swift optional or a Kotlin elvis waits one token to be
+        # told apart. Rust's `?` is none of them: it returns early on an error or
+        # relaxes a `?Sized` bound, and an early return is no increment.
+        state.question_pending = not state.is_rust
     elif token in ("break", "continue"):
         state.label_check = not is_python
     elif token == "goto":

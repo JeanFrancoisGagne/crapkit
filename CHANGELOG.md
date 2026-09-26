@@ -2,20 +2,34 @@
 
 ## 0.8.1 — unreleased
 
-### Rust reads its signatures, closures and let-else as Rust
+### Rust reads its own syntax, not C's
 
-- A Rust signature decides nothing. A `where` clause, a `?Sized` bound and a
-  `for<'a>` binder each added 1 to ccn; the body's `{` now sets the function back to
-  its base of 1. A `||` or `&&` with no operand before it is no operator: `move || n`
-  and `unwrap_or_else(|| 0)` open a closure with no parameters, and `|&&x|` takes a
-  double reference. Each cost 1 in ccn, 1 in cognitive and usually a nesting level,
-  and each now costs nothing. A let-else counts the one decision its `if let` twin
-  counts. Measured over 229 files of a Rust workspace: ccn rises in 184 of 3,523 rows
-  and falls in 208, cognitive falls in 205, and nesting falls in 115 and rises by 1 in
-  2, where lizard's nesting column pairs the next `{` differently once the false `||`
-  is gone. A parameter typed `&&T` now reads `& &` in the function's long name, so
-  that function's ratchet key changes; the workspace has none. The change needs an
-  analysis-version bump, which makes each marks file re-seed once
+- A Rust signature decides nothing. A `where` clause, a `?Sized` bound and a `for<'a>`
+  binder each added 1 to ccn; the body's `{` now sets the function back to its base of
+  1, and cognitive reads nothing before it.
+- A `||` or `&&` with no operand before it is no operator. `move || n` and
+  `unwrap_or_else(|| 0)` open a closure with no parameters, and `|&&x|` takes a double
+  reference. Each cost 1 in ccn, 1 in cognitive and usually a nesting level, and now
+  costs nothing.
+- A let-else counts one decision in ccn, the one its `if let` twin counts.
+- `?` is no increment in cognitive and opens no nesting level: it returns early on an
+  error, or relaxes a bound in `?Sized`. It keeps its 1 in ccn.
+- `loop` is a loop: +1 and the nesting it sits in, in cognitive, and a level in
+  nesting. The `if` inside a `loop` cost 1 where the same `if` inside a `while` cost 2.
+- `catch`, `switch`, `foreach`, `case` and `def` are names in Rust, not keywords. A
+  method `.catch()` cost 1 in ccn, in cognitive and in nesting, `.switch()` 1 in
+  ccn_mod and in cognitive, and a loop variable named `case` a nesting level each time
+  it appeared.
+- Measured over 229 files of a Rust workspace: ccn rises in 184 of 3,523 rows and falls
+  in 208, cognitive falls in 989 and rises in 27, and nesting falls in 861 and rises
+  in 8. Every rise in cognitive or nesting holds a `loop`.
+- A parameter typed `&&T` now reads `& &` in the function's long name, so that
+  function's ratchet key changes; the workspace has none.
+- In Python and shell, a name spelled `switch` no longer adds 1 to ccn_mod. Neither
+  language has a switch statement, and `def pick(switch): return switch` read ccn_mod
+  3. Over 43,771 standard-library and site-packages files, 205 Python rows fall. The
+  gated ccn takes the lower of the two columns and moves in none.
+- The change needs an analysis-version bump, which makes each marks file re-seed once
   ([upgrading](docs/upgrading.md#next-analysis-version-rust-rows)).
 
 ### The lane guard reads a command the way sh and cmd.exe read it

@@ -111,18 +111,27 @@ ANALYSIS_VERSION = 11  # A Python def is named by its name token and names each 
 # anything else runs, so the common token pays one frozenset lookup.
 _SWITCH_TOKENS = frozenset({"switch", "match", "case"})
 
+# The readers of the languages crapkit admits that have no `switch` statement.
+# lizard's modified extension adds 1 for every `switch` token whatever the
+# language, so a Python parameter or a Rust method named `switch` read as a
+# block: `def pick(switch): return switch` scored ccn_mod 3. Exact class names,
+# the discriminator lizardcognitive uses for the same reason.
+_NO_SWITCH_READERS = frozenset({"PythonReader", "PythonSignatureReader", "RustReader",
+                                "CorrectedRustReader", "ShellReader"})
+
 
 def _switch_delta(token: str, reader) -> int:
     """+1 for a switch-like block opener, -1 for one of its arms.
 
     `match` and `case` are soft keywords in Python: the same spelling is an
     identifier elsewhere, so the reader's own flags decide, exactly as lizard's
-    modified extension decides.
+    modified extension decides. `switch` is a name in the languages that have
+    no switch statement.
     """
     if token == "case":
         return -int("case" in reader.conditions or getattr(reader, "_keyword_case", False))
     if token == "switch":
-        return 1
+        return int(type(reader).__name__ not in _NO_SWITCH_READERS)
     return int(getattr(reader, "_keyword_match", False))
 
 
