@@ -18,6 +18,7 @@ scored) is checked under crapkit's reader and under lizard's stock reader,
 which is what runs once crapkit's corrected reader retires.
 """
 import re
+import sys
 
 import pytest
 
@@ -101,13 +102,30 @@ def test_qualified_names_match_ast(src_corpus, src_inventory):
     assert _differences(src_corpus.files, src_inventory, _names) == {}
 
 
+# The first Python whose grammar holds each version-gated shape, from the
+# PEP's Python-Version header: 695 type parameters 3.12, 750 t-strings and
+# 758 unparenthesized except 3.14.
+SHAPE_NEEDS = {"pep695": (3, 12), "pep750_tstring": (3, 14), "pep758_except": (3, 14)}
+
+
+def shapes_too_new(version: tuple) -> list[str]:
+    return sorted(name for name, needs in SHAPE_NEEDS.items() if version < needs)
+
+
 def test_shapes_the_running_python_rejects_are_counted():
-    """A 3.14 shape on an older Python is left out, never compared; on 3.14 it
-    is compared like any other."""
+    """A shape newer than the running Python is left out, never compared; on
+    a Python that has its syntax it is compared like any other. Exactly the
+    shapes the PEPs date after the running Python are rejected."""
     rejected = analysis_shapes.rejected_shapes()
     runlog.note("skipped_files", oracle="ast-shapes", count=len(rejected))
 
-    assert set(rejected) <= {"pep750_tstring", "pep758_except"}
+    assert rejected == shapes_too_new(sys.version_info[:2])
+
+
+def test_the_shape_dates_follow_the_peps():
+    assert shapes_too_new((3, 11)) == ["pep695", "pep750_tstring", "pep758_except"]
+    assert shapes_too_new((3, 13)) == ["pep750_tstring", "pep758_except"]
+    assert shapes_too_new((3, 14)) == []
 
 
 NAME_CASES = {"AO-PY-NAME-CLASS": ("shapes/methods.py", "method"),
@@ -158,8 +176,11 @@ NET_SHAPES = ("issue72", "annotated_return", "pep695", "three_deep", "one_line_d
 
 
 def _net_files() -> dict[str, str]:
+    """The net shapes the running Python parses: ast finds each cut point, so a
+    shape newer than the interpreter (pep695 on 3.11) is left to the others."""
     shapes = analysis_shapes.py_shape_files()
-    return {f"shapes/{name}.py": shapes[f"shapes/{name}.py"] for name in NET_SHAPES}
+    paths = (f"shapes/{name}.py" for name in NET_SHAPES)
+    return {path: shapes[path] for path in paths if path in shapes}
 
 
 @pytest.mark.parametrize("reader", sorted(READERS))
