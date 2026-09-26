@@ -1015,7 +1015,7 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
 ### Shell reads the depth of its blocks and the commands inside its strings
 
 The shell changes below need an analysis-version bump, which makes each marks file
-re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-shell-rows)).
+re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-shell-and-powershell-rows)).
 
 - A shell function's `nesting` is how deep its blocks go. lizard's ND column closed a
   level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
@@ -1032,6 +1032,16 @@ re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-shell-rows)).
   NLOC. Measured on a large consumer repo's 1,263 shell functions: 131 rise in ccn, by
   1 to 7, and 4 lose 4 to 29 NLOC of heredoc body. A function the rise puts over its
   ceiling fails the gate the next time its file changes.
+
+### PowerShell reads the expression inside a quoted subexpression
+
+- A `-and`, `-or`, `if` or loop inside a `$( )` subexpression in a double-quoted
+  string counts. `"$($a -and $b)"` read ccn 1 and reads 2 now, as `$($a -and $b)`
+  does. The string rule also takes the subexpression whole, so the quotes inside it
+  pair among themselves: `"$(Get-Item "x{")"` ended at its second quote, left a `{`
+  in code, and the function around it had no row. On a large consumer repo 6 of 339
+  PowerShell functions rise by 1 and no span moves. It shares the shell changes'
+  analysis-version bump.
 
 ## 0.8.0 — 2026-09-23
 

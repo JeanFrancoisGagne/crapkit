@@ -403,6 +403,59 @@ def test_keywords_inside_a_plain_string_are_not_conditions():
     assert _only(code).cyclomatic_complexity == 1
 
 
+def test_quotes_inside_a_subexpression_pair_among_themselves():
+    """`"$(Get-Item "x{")"` is one string. Ended at its second quote, it left
+    `x{` in code, the `{` never closed, and function A had no row at all."""
+    code = ('function A {\n  $v = "$(Get-Item "x{")"\n}\n\n'
+            'function B {\n  if ($x) { 2 }\n}\n')
+
+    assert [(f.name, f.start_line, f.end_line, f.cyclomatic_complexity)
+            for f in _functions(code)] == [("A", 1, 3, 1), ("B", 5, 7, 2)]
+
+
+# --- code inside a string: a $( ) subexpression in "..." -----------------------
+#
+# `"$($a -and $b)"` evaluates `$a -and $b`. The quotes make its value text; they
+# do not make the expression text. Each line holds one decision inside the
+# subexpression and reads what the same expression reads written bare.
+
+SUBEXPRESSIONS = {
+    "an -and": ('$x = "$($a -and $b)"', "$x = $($a -and $b)"),
+    "text around it": ('$x = "v: $($a -or $b) end"', "$x = $($a -or $b)"),
+    "an if": ('$x = "$(if ($a) { 1 })"', "$x = $(if ($a) { 1 })"),
+    "one inside another": ('$x = "$(G "$($a -and $b)")"', "$x = $(G $($a -and $b))"),
+}
+
+
+def _columns(line):
+    (record,) = analyze_source("hole.ps1", "function F {\n  " + line + "\n}\n")
+    return record.ccn_std, record.ccn, record.cognitive, record.nesting
+
+
+@pytest.mark.parametrize("quoted, bare", SUBEXPRESSIONS.values(), ids=SUBEXPRESSIONS.keys())
+def test_a_subexpression_inside_a_string_counts_what_it_counts_bare(quoted, bare):
+    """NIST SP 500-235 sec. 4.1: the decision counts wherever its expression
+    sits, so ccn_std is 2 in both spellings."""
+    assert (_columns(quoted), _columns(quoted)[0]) == (_columns(bare), 2)
+
+
+def test_a_backtick_escaped_subexpression_is_text():
+    """`` "`$($a -and $b)" `` prints `$($a -and $b)` and evaluates nothing."""
+    assert _columns('$x = "`$($a -and $b)"')[:2] == (1, 1)
+
+
+def test_a_subexpression_in_single_quotes_is_text():
+    assert _columns("$x = '$($a -and $b)'")[:2] == (1, 1)
+
+
+def test_a_subexpression_over_two_lines_keeps_every_later_line_number():
+    code = ('function A {\n  $x = "$($a -and\n    $b)"\n}\n\n'
+            'function B {\n  return 1\n}\n')
+    spans = [(r.start, r.end, r.ccn) for r in analyze_source("two.ps1", code)]
+
+    assert spans == [(1, 4, 2), (6, 8, 1)]
+
+
 # --- the declaration spellings -------------------------------------------------
 
 def test_a_function_with_no_parameter_list_is_reported():

@@ -309,10 +309,11 @@ Rust:
   listed; it had no row. A decision or a brace after a raw string (`r#"..."#`), a raw
   identifier (`r#type`) or an attribute on the same line now counts.
 
-### Next analysis version: shell rows
+### Next analysis version: shell and PowerShell rows
 
-The release after 0.8.0 moves shell's numbers, so it raises the analysis version and
-every marks file re-seeds once, with the same three commands as version 11 below.
+The release after 0.8.0 moves shell's and PowerShell's numbers, so it raises the
+analysis version and every marks file re-seeds once, with the same three commands as
+version 11 below.
 
 - A shell function's `nesting` reads how deep its blocks go. lizard's ND column closed
   a level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
@@ -326,6 +327,10 @@ every marks file re-seeds once, with the same three commands as version 11 below
   no ccn and no NLOC. On a large consumer repo 131 of 1,263 shell functions rose by 1
   to 7. A function the rise puts over its ceiling fails the gate the next time its
   file changes.
+- A PowerShell expression inside a `$( )` subexpression in a double-quoted string
+  counts: `"$($a -and $b)"` reads ccn 2 where it read 1. Quotes inside the
+  subexpression pair among themselves, so a function that held
+  `"$(Get-Item "x{")"` and had no row now has one, and can be over its ceiling.
 
 ### Analysis version 11
 

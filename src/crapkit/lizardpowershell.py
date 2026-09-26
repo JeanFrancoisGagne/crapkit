@@ -62,7 +62,10 @@ TOKENIZER
         contributes neither.
       - `"..."` with the backtick as the escape, not the backslash. lizard's
         rule ends a string at a backslash-escaped quote and every quote after
-        it pairs off by one.
+        it pairs off by one. The rule also takes a `$( )` subexpression whole,
+        so `"$(Join-Path "a" "b")"` is one string: ended at its second quote,
+        `"$(Get-Item "x{")"` left a `{` in code and the function around it
+        had no row.
       - `'...'` with `''` as the escape, which is PowerShell's, not `\'`.
       - `$var` and `$script:var` as one token, so a scope-qualified name does
         not split on its colon.
@@ -72,7 +75,17 @@ TOKENIZER
     The `#` line-comment rule comes from ScriptLanguageMixIn, the same one
     PythonReader uses.
 
+SUBEXPRESSIONS INSIDE STRINGS
+    `"$($a -and $b)"` evaluates `$a -and $b`: the quotes make its value text,
+    not the expression. Once the string rule above has matched a double-quoted
+    string whole, every `$( )` in it is tokenized again as code, so its `-and`,
+    `-or`, `if` and loops count the way they count written bare, at any depth.
+    The text around a subexpression stays one string token. A `` `$( `` is
+    escaped and stays text, and a single-quoted string expands nothing.
+
 KNOWN LIMITS
+    - A `$( )` inside a `@" "@` here-string is evaluated and counts nothing:
+      the whole here-string is one token.
     - PowerShell is case-insensitive and this reader is not: `If (` in code
       counts nothing. Measured over the 106-script corpus, all 29 capitalized
       `If`, 9 `For` and 1 `WHILE` sit inside a comment or a string, where the
@@ -103,10 +116,17 @@ REGISTRATION
 """
 from __future__ import annotations
 
+import re
+
 import lizard_languages
 from lizard_languages.code_reader import CodeReader, CodeStateMachine
 from lizard_languages.golike import GoLikeStates
 from lizard_languages.script_language import ScriptLanguageMixIn
+
+# A `$( )` subexpression, up to three levels of parens deep. Its own quotes pair
+# among themselves inside the string rule below; deeper, and the rule falls back
+# to ending the string at the first inner quote, as it always did.
+_SUBEXPRESSION = r"\$\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"
 
 # Extra alternatives for lizard's shared token pattern, tried ahead of it.
 # Order matters only among alternatives that can start at the same character:
@@ -115,12 +135,17 @@ _TOKEN_ADDITION = (
     r"|<\#[\s\S]*?\#>"          # <# block comment #>
     r"|@\"[\s\S]*?\"@"          # @" here-string "@
     r"|@'[\s\S]*?'@"            # @' here-string '@
-    r"|\"(?:`.|[^\"`])*\""      # "double" string, backtick is the escape
+    # "double" string, backtick is the escape, a $( ) subexpression taken whole
+    r"|\"(?:`.|" + _SUBEXPRESSION + r"|[^\"`])*\""
     r"|'(?:''|[^'])*'"          # 'single' string, '' is the escape
     r"|\$[\w:]+"                # $var, $script:var
     r"|[A-Za-z_]\w*(?:-\w+)+"   # Verb-Noun, one token
     r"|-\w+"                    # -and, -or, -eq, -Path
 )
+
+# A subexpression inside a double-quoted token. The escape comes first, so a
+# `` `$( `` stays text, as the string rule above spent it.
+_HOLE = re.compile(r"`.|(" + _SUBEXPRESSION + ")", re.S)
 
 # Every keyword that declares something with a name and a brace body.
 _FUNC_KEYWORDS = ("function", "filter", "workflow", "configuration")
@@ -244,16 +269,46 @@ class PowerShellReader(CodeReader, ScriptLanguageMixIn):
 
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):
-        """lizard's shared tokenizer plus PowerShell's own rules.
+        """lizard's shared tokenizer plus PowerShell's own rules, with every
+        subexpression inside a double-quoted string read as code.
 
         ScriptLanguageMixIn supplies the `#` line-comment rule (PythonReader
         uses the same one), so comment handling is not written here. Nothing is
-        rewritten in the source and nothing is materialized: the token stage
-        stays the single generator lizard built, which is what crapkit's
-        two-chain analyze.py depends on (tests/unit/test_cognitive_reader_chain.py).
+        rewritten in the source and nothing is materialized: the subexpressions
+        are opened by a generator over lizard's, so the token stage still yields
+        as it reads, which is what crapkit's two-chain analyze.py depends on
+        (tests/unit/test_cognitive_reader_chain.py).
         """
-        return ScriptLanguageMixIn.generate_common_tokens(
-            source_code, _TOKEN_ADDITION + addition, token_class)
+        return _tokens(source_code, addition, token_class)
+
+
+def _tokens(source: str, addition: str, token_class):
+    """lizard's shared tokenizer with PowerShell's rules, every subexpression opened."""
+    return _open_holes(ScriptLanguageMixIn.generate_common_tokens(
+        source, _TOKEN_ADDITION + addition, token_class), addition, token_class)
+
+
+def _open_holes(tokens, addition: str, token_class):
+    for token in tokens:
+        if token[:1] == '"' and "$(" in token:
+            yield from _hole_tokens(token, addition, token_class)
+        else:
+            yield token
+
+
+def _hole_tokens(token: str, addition: str, token_class):
+    """TOKEN's subexpressions as code, and the text around each as a string token.
+
+    The text is quoted again so none of it reads as a word, a brace or a comment,
+    and it keeps every newline it held, so lizard's line count sees each one.
+    """
+    start = 0
+    for hole in _HOLE.finditer(token):
+        if hole.group(1):
+            yield '"' + token[start:hole.start()].strip('"') + '"'
+            yield from _tokens(hole.group(1), addition, token_class)
+            start = hole.end()
+    yield '"' + token[start:].strip('"') + '"'
 
 
 # Captured before register() wraps it, so a test can ask what lizard shipped.
