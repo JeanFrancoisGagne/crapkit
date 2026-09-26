@@ -134,7 +134,7 @@ def test_onboard_skill_fences_in_page_order(box, candidate, templates):
     followed = {f"{ONBOARD}:{block.line}": follow(box, repo, block, names) for block in blocks}
     box.transcript.attach("fences", followed)
 
-    assert len(blocks) == 6
+    assert len(blocks) == 7
     assert differing(followed) == dict.fromkeys(followed, [])
 
 
@@ -291,7 +291,7 @@ def claude_offers(box, repo: Path) -> str:
     """Every request body `claude -p` sent the Messages stub, as one text."""
     with stub_anthropic.serve([{"text": "done"}]) as stub:
         box.run(["claude", "-p", "which skills do you have"], cwd=repo, expect=0,
-                env={"ANTHROPIC_BASE_URL": stub.url, "ANTHROPIC_API_KEY": "sk-ant-stub"})
+                env=stub_anthropic.claude_env(stub.url))
     return json.dumps(stub.bodies())
 
 

@@ -163,23 +163,27 @@ def fences(page: str, base: Path | None = None) -> list[Fence]:
     return html_fences(page, text) if page.endswith(".html") else markdown_fences(page, text)
 
 
-def fence(page: str, heading: str, *, index: int = 0, contains: str | None = None,
+def fence(page: str, heading: str, *, index: int = 0, contains: str | None = None, lang: str | None = None,
           base: Path | None = None) -> Fence:
-    """The index-th fence under `heading` whose text holds `contains`."""
+    """The index-th fence under `heading` whose text holds `contains` and whose
+    info string is `lang`. A page can quote a refusal that names a key above
+    the fence that sets it, so a reader of the setting names its language."""
     under = [block for block in fences(page, base) if block.heading == heading]
-    matching = _holding(under, contains)
+    matching = _holding(under, contains, lang)
     if index >= len(matching):
-        raise _missing(page, heading, index, contains, under)
+        raise _missing(page, heading, index, contains, under, lang)
     return matching[index]
 
 
-def _holding(blocks: list[Fence], contains: str | None) -> list[Fence]:
-    return [block for block in blocks if contains is None or contains in block.text]
+def _holding(blocks: list[Fence], contains: str | None, lang: str | None = None) -> list[Fence]:
+    return [block for block in blocks
+            if (contains is None or contains in block.text) and (lang is None or block.lang == lang)]
 
 
-def _missing(page: str, heading: str, index: int, contains: str | None, under: list[Fence]) -> DocSnipError:
+def _missing(page: str, heading: str, index: int, contains: str | None, under: list[Fence],
+             lang: str | None = None) -> DocSnipError:
     found = f"{len(under)} fence(s) under it" if under else "no such heading"
-    wanted = f" holding {contains!r}" if contains else ""
+    wanted = (f" holding {contains!r}" if contains else "") + (f" in {lang}" if lang else "")
     return DocSnipError(f"{page} > {heading}: no fence #{index}{wanted} ({found})")
 
 

@@ -359,7 +359,9 @@ class Gaps:
 
 
 def guide_commands(heading: str, *, contains: str | None = None) -> list[str]:
-    return docsnip.commands(docsnip.fence(GUIDE, heading, contains=contains))
+    """The lines of the guide's `sh` fence under `heading`: a message the page
+    quotes sits in an indented block above it and is nothing to type."""
+    return docsnip.commands(docsnip.fence(GUIDE, heading, contains=contains, lang="sh"))
 
 
 def guide_span(text: str, body: str | None = None) -> str:
@@ -706,11 +708,6 @@ class KnownBug(AssertionError):
     so any other failed assertion in it still fails the cell."""
 
 
-def known_bug(holds: bool, bug: str, message: str) -> None:
-    if not holds:
-        raise KnownBug(f"{bug}: {message}")
-
-
 class Bugs(Gaps):
     """Reported deploy bugs a cell met; raised last, as KnownBug, so every
     other check in the cell still ran."""
@@ -730,9 +727,9 @@ def claim_holds(box, repo: Path, source: Source) -> None:
     """The function the old CLI claimed is not handed to the next session,
     under its old name or the one the new reader gives it."""
     item = handed_out(box, repo)
-    known_bug(not same_function(item, source.facts["claimed"]), "deploy-upgrade-1",
-              f"claimed under {source.version} as {source.facts['claimed']['function']!r}, "
-              f"handed out again as {item.get('function')!r}")
+    assert not same_function(item, source.facts["claimed"]), (
+        f"claimed under {source.version} as {source.facts['claimed']['function']!r}, "
+        f"handed out again as {item.get('function')!r}")
 
 
 def kept(box, repo: Path, source: Source, launcher: tuple[str, ...] = ("crapkit",)) -> None:

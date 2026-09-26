@@ -26,7 +26,7 @@ from pathlib import Path
 import hang_guard
 import pytest
 
-from kit import gitmirror, shim
+from kit import docsnip, gitmirror, shim
 from kit.cells import cell
 from kit.mcp_client import McpClient
 from test_claude_plugin import (TOOLS, cli_venv, doctor_plugin, github, harness_on_path, measured_repo, old_lines,
@@ -261,17 +261,24 @@ def install_old(box, version: str, cwd: Path) -> gitmirror.Mirror:
     return mirror
 
 
+def codex_guide() -> list[str]:
+    """docs/upgrading.md's Codex fence under "Plugin and MCP clients"; the
+    Claude Code fences beside it go to Claude Code users."""
+    return docsnip.commands(docsnip.fence("docs/upgrading.md", "Plugin and MCP clients",
+                                          contains="codex plugin marketplace remove"))
+
+
 def guide_lines(box) -> list[str]:
     """docs/upgrading.md's Codex lines, PATH filled with the installed copy the
     listing names, as the page says to."""
-    lines = page_lines("Plugin and MCP clients", index=1, page="docs/upgrading.md")
+    lines = codex_guide()
     root = codex_root(box, codex_version(box) or "")
     return [line.replace(" PATH", f' "{root}"') if line.endswith(" PATH") else line for line in lines]
 
 
 def run_guide(box, cwd: Path, expect: int | None = 0) -> list:
     """The Codex lines in page order; the doctor line is built after the refresh."""
-    lines = page_lines("Plugin and MCP clients", index=1, page="docs/upgrading.md")
+    lines = codex_guide()
     steps = run_lines(box, lines[:-1], cwd=cwd, expect=expect)
     return steps + run_lines(box, guide_lines(box)[-1:], cwd=cwd, expect=expect)
 

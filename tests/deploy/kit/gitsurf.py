@@ -126,11 +126,12 @@ def refusal() -> tuple[str, str, str]:
 
 def container_refusal() -> str:
     """docs/lanes.md#containers: the line a coverage.py lane prints in a container."""
-    return docsnip.fence(LANES_DOC, "Containers", index=0).text.strip()
+    return docsnip.fence(LANES_DOC, "Containers", contains="container_ok", lang="").text.strip()
 
 
 def container_key() -> str:
-    return docsnip.fence(LANES_DOC, "Containers", index=1).text.strip()
+    """docs/lanes.md#containers: the toml line that lets a lane run in a container."""
+    return docsnip.fence(LANES_DOC, "Containers", lang="toml").text.strip()
 
 
 # --- installing crapkit ------------------------------------------------------------------
@@ -154,30 +155,25 @@ def allow_container_lane(repo: Path) -> None:
 
 
 def start_lines() -> list[str]:
-    """The 60-second start after the install and the `cd`: init to git add."""
+    """The 60-second start after the install and the `cd`: init to the commit
+    and the verify that ends it."""
     lines = docsnip.commands(docsnip.fence(README, START))
     return [line for line in lines if line.startswith(("crapkit ", "git "))]
 
 
-def adopt_commit() -> str:
-    """docs/ratchet.md's adoption checklist names the commit the start leaves out."""
-    lines = docsnip.commands(docsnip.fence(RATCHET_DOC, "Adoption checklist"))
-    return next(line for line in lines if line.startswith("git commit"))
-
-
 def adopt(box, repo: Path, *, guard: bool = False) -> None:
-    """The 60-second start in `repo`, committed. In a container, `guard=True`
-    first asserts the coverage.py lane's refusal and then applies the
-    documented fix; otherwise the fix goes in right after init."""
+    """The 60-second start in `repo`, committed by its own `git commit` line
+    and ended by its verify. In a container, `guard=True` first asserts the
+    coverage.py lane's refusal and then applies the documented fix; otherwise
+    the fix goes in right after init."""
     for line in start_lines():
         _start_step(box, repo, line, guard)
-    box.script(adopt_commit(), cwd=repo, env=box.commit_env(), expect=0)
 
 
 def _start_step(box, repo: Path, line: str, guard: bool) -> None:
     if line == "crapkit coverage" and guard:
         _refused_in_container(box, repo, line)
-    box.script(line, cwd=repo, expect=0)
+    box.script(line, cwd=repo, env=box.commit_env() if line.startswith("git commit") else None, expect=0)
     if line == "crapkit init" and not guard:
         keyed_in_container(repo)
 
@@ -436,16 +432,40 @@ def committed_marks(box, repo: Path, ref: str = "HEAD") -> str:
     return "\n".join("  ".join(line.split("\t")) for line in text.splitlines())
 
 
-def assert_driver_refused(step, ours: str, theirs: str) -> None:
-    """docs/ratchet.md's refusal with this merge's two stamps in its brackets,
-    then git's own conflict lines, as the page prints them."""
-    fence = docsnip.fence(RATCHET_DOC, DRIVER, contains="ratchet merge refused")
+UNSTAMPED = "[unstamped]"
+
+
+def _analysis(stamp: str) -> int:
+    return int(re.search(r"crapkit-analysis=(\d+)", stamp)[1])
+
+
+def _newer_side(ours: str, theirs: str) -> tuple[str, str]:
+    """("ours" or "theirs", its stamp): the side whose analysis version is higher."""
+    return ("ours", ours) if _analysis(ours) > _analysis(theirs) else ("theirs", theirs)
+
+
+def expected_refusal(ours: str, theirs: str) -> list[str]:
+    """docs/ratchet.md's refusal for a merge of these two stamps, filled in: the
+    example that asks to re-seed either side when one carries no stamp, else the
+    one that names the newer side and the metric to re-seed under."""
+    uncompared = UNSTAMPED in (ours, theirs)
+    fence = docsnip.fence(RATCHET_DOC, DRIVER, contains="re-baseline one side" if uncompared else "is newer")
     lines = docsnip.outputs(fence)[0][1].splitlines()
     first = re.sub(r"ours is \[[^]]*\] and theirs is \[[^]]*\]",
                    lambda _: f"ours is {ours} and theirs is {theirs}", lines[0])
+    if not uncompared:
+        side, stamp = _newer_side(ours, theirs)
+        first = re.sub(r"(ours|theirs) is newer, so with a crapkit that measures \[[^]]*\]",
+                       lambda _: f"{side} is newer, so with a crapkit that measures {stamp}", first)
+    return [first, *lines[1:]]
+
+
+def assert_driver_refused(step, ours: str, theirs: str) -> None:
+    """docs/ratchet.md's refusal with this merge's two stamps filled in, then
+    git's own conflict lines where the page prints them."""
     said = step.stdout + step.stderr
     assert step.exit == 1, said
-    assert [line for line in [first, *lines[1:]] if line not in said] == [], said
+    assert [line for line in expected_refusal(ours, theirs) if line not in said] == [], said
 
 
 def stamp(repo: Path) -> str:

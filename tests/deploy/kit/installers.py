@@ -115,10 +115,7 @@ def inline(page: str, heading: str, prefix: str) -> str:
 
 def container_rule() -> str:
     """The TOML line docs/lanes.md#containers gives a lane a container may run."""
-    blocks = [block for block in docsnip.fences(LANES) if block.heading == CONTAINERS and block.lang == "toml"]
-    if not blocks:
-        raise docsnip.DocSnipError(f"{LANES} > {CONTAINERS}: no toml fence")
-    return blocks[0].text.strip()
+    return docsnip.fence(LANES, CONTAINERS, lang="toml").text.strip()
 
 
 # --- the container rule ----------------------------------------------------------
@@ -469,15 +466,12 @@ def bare(line: str) -> str:
 
 
 def readme_start(box, repo: Path, want: Expect = Expect()) -> dict[str, object]:
-    """The README's 60-second start after its install line, then the verify its
-    prose says establishes the first passing verdict. `cd your-repo` is the
-    cell's cwd."""
+    """The README's 60-second start after its install line, through the commit
+    and the verify that end it; the verify gives the first passing verdict.
+    `cd your-repo` is the cell's cwd."""
     steps = {}
     for line in fence_commands(README, START)[1:]:
         if not line.startswith("cd "):
             steps[line] = _step_rule(line)(box, repo, line, want)
-    box.run(["git", "commit", "-q", "-m", "adopt crapkit"], cwd=repo, env=box.commit_env(), expect=0)
-    verify = inline(README, START, "crapkit verify")
-    steps[verify] = box.script(verify, cwd=repo, expect=0)
-    assert said(steps[verify]).startswith("verify OK")
+    assert said(steps["crapkit verify"]).startswith("verify OK")
     return steps
