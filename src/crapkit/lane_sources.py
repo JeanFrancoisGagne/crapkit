@@ -20,7 +20,10 @@ one it does not track, and one flagged skip-worktree or assume-unchanged is
 hashed. The trade: git decides "unchanged" from the index's stat cache, so a
 same-size edit whose old modification time was put back (`cp -p`, `tar -x`,
 `rsync -t`) keeps the index's id. That is a named limit until the cost of
-hashing every file is measured.
+hashing every file is measured. It holds on Windows, where the change time is
+the creation time, and under `core.trustctime=false`. On Linux and macOS git's
+default stat check also compares the change time, which no copy puts back, so
+git sees the edit once the change time moves a second past the one it recorded.
 
 `watch` records and compares through `record` too: its first poll records every
 watched file's id, and each later poll asks again only for the files whose

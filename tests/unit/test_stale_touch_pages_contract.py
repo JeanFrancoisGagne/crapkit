@@ -756,6 +756,27 @@ def test_a_touch_after_restoring_an_old_mtime_lets_git_read_the_content(tmp_path
             "content") in _upgrading_freshness()
 
 
+
+_WHERE_THE_LIMIT_HOLDS = (
+    "holds on Windows, where the change time is the creation time, and under "
+    "`core.trustctime=false`",
+    "git sees the edit once the change time moves a second past the one it recorded",
+)
+
+
+@pytest.mark.parametrize("page", ["CHANGELOG.md", "docs/upgrading.md", "docs/lanes.md",
+                                  "docs/ratchet.md", "src/crapkit/lane_sources.py"])
+def test_each_page_that_names_the_same_size_limit_says_where_git_holds_it(page):
+    """On Linux and macOS git's stat check also compares the change time, which
+    no copy puts back, to the second; the same-size-new-ctime row in
+    tests/unit/stale_tree.py measures every reader naming the edit there, and
+    the same-size-one-tick row measures the limit under core.trustctime=false.
+    A page that states the limit with no OS reads as true where git sees it."""
+    text = _prose(_release() if page == "CHANGELOG.md" else _page(page))
+
+    for phrase in _WHERE_THE_LIMIT_HOLDS:
+        assert phrase in text, (page, phrase)
+
 # -- S12, S13: explain reads the run's lines, not HEAD's ------------------------------
 
 def _reports():

@@ -810,6 +810,10 @@ whose old modification time was put back (two writes inside one clock tick, or a
 keeps times) reads as unchanged to verify's changed files and its committed/dirty split, to
 `rescore --gate`, to the commit hook's re-stage note and to the files `mutate` copies into its
 workers, the same way `git status` and `git add` miss it until the file's mtime moves again.
+This holds on Windows, where the change time is the creation time, and under
+`core.trustctime=false`. On Linux and macOS git's default stat check also compares the change
+time, which no copy puts back, so git sees the edit once the change time moves a second past
+the one it recorded.
 
 Comparison happens at the precision the mark is stored at (four decimals). `cov` is a
 division, so long decimals are routine and an unrounded compare would wedge an unchanged

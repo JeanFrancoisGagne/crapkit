@@ -341,6 +341,8 @@ writes:
 | What | 0.8.0 | 0.8.1 | Action |
 |---|---|---|---|
 | A file a scope takes whose name git holds in bytes that are not UTF-8 | every command exited 1 with a traceback | `inventory`, `coverage`, `verify`, `doctor`, `watch` and `hook-precommit` exit 3 naming the file and `git mv`; a name no scope takes is a warning, listed in `unreadable_names` under `--json` | Rename the file to UTF-8 ([file paths](configuration.md#file-paths-and-root-discovery)) |
+| A `rescore` or `rescore --gate` argument naming a file whose name is not UTF-8 | ended with a traceback | exit 3 with the rename sentence when a scope takes the file; when no scope takes it, one `crapkit: left out` line on stderr, exit 0, and the gate judges 0 | Rename a scoped file to UTF-8. A script that expected a refusal for an unscoped one reads the stderr line |
+| The `check_gate` MCP tool on a `path` whose name is not UTF-8 | `isError: true` with a Python traceback | a verdict: `gate.ok` false, `judged` 0 and the file in `gate.unread_files` when a scope takes it; `gate.ok` true, `judged` 0 and `unread_files` `[]` when none does; `baseline_run`, `baseline_commit` and `note` as in every verdict | Read `gate.unread_files` where the client caught the error |
 | An untracked file named in bytes that are not UTF-8 under a lane's `inputs` | `coverage` exited 1 with a traceback | `coverage --reuse-unchanged` reruns the lane, as for any other new file | None |
 | A POSIX locale that is not UTF-8 (`LANG=en_US.ISO-8859-1`) | a path with an accent named no file, so `coverage` skipped it as missing | `crapkit` restarts itself once as `python -X utf8`; lane and mutation children keep your locale and environment, and a coverage.py key the child spelled in the locale's encoding reads back as the file it names | None ([file paths](configuration.md#file-paths-and-root-discovery)) |
 | Lane, flake-retest and mutation children | wrote in their locale's encoding (cp1252 on most Windows machines), so a test printing an emoji failed under crapkit and passed in a terminal | start with `PYTHONIOENCODING=utf-8` on every OS, over any value inherited from the shell | A child that must write another encoding sets it in the lane's `env` (`env = { PYTHONIOENCODING = "cp1252" }`), which crapkit leaves alone ([lanes](lanes.md#a-python-child-writes-its-log-in-utf-8)) |
@@ -456,9 +458,13 @@ mtime. crapkit's analysis cache and `watch` compare the mtime and size before th
 read a file, and git answers "unchanged" from its index's stat data for lane reuse,
 verify's changed files and its split of committed and dirty findings, `rescore --gate`,
 the commit hook's note that a staged file differs from the working tree, and the files
-`mutate` copies into its workers. `touch` the files after restoring them that way, and
-every reader compares their content. 0.9.0 measures what hashing every file costs
-before it changes this.
+`mutate` copies into its workers. git's part of the limit holds on Windows, where the
+change time is the creation time, and under `core.trustctime=false`. On Linux and macOS
+git's default stat check also compares the change time, which no copy puts back, so git
+sees the edit once the change time moves a second past the one it recorded; the
+analysis cache and `watch` still miss it there. `touch` the files after restoring them
+that way, and every reader compares their content. 0.9.0 measures what hashing every
+file costs before it changes this.
 
 **claude-hook writes one directory.** Its `Bash` fallback records the bytes each
 advisory judged under `.git/crapkit/claude-hook/<session_id>/`, one directory per
@@ -472,10 +478,16 @@ file's marks as repaid. 0.8.1 reads renames from the oldest run whose commit the
 clone holds, and when a marked file left the checkout before that run it exits 4
 before writing anything, naming the commit and the `git fetch` that brings it back.
 Run prune in a clone that holds the store's first commit, or run that fetch first.
+When git cannot say whether a run's commit is in the clone at all, as with a corrupt
+object, prune also exits 4 before writing anything, quotes git's error and says to fix
+what git reports and run prune again; 0.8.0 read that failure as "nothing was renamed"
+too.
 
 **verify names a baseline commit the clone never fetched.** It still exits 4. It
 now says `baseline commit ... is not in this clone` and names the `git fetch origin`
-that brings the commit, where it blamed a rebase or an amend.
+that brings the commit, where it blamed a rebase or an amend. When git cannot say
+whether the clone holds the commit (a corrupt object), verify exits 4 with git's error
+instead of the fetch.
 
 ## Plugin and MCP clients
 

@@ -1129,7 +1129,11 @@ git's own diff skips three kinds of edit, and reuse does not: a file flagged
 edit inside a submodule whose `.gitmodules` entry says `ignore = dirty`. A same-size
 edit whose old modification time was put back (`cp -p`, `tar -x`, `rsync -t`) passes
 git's stat check, and reuse trusts that check: it is a named limit until the cost of
-hashing every file on every run is measured. Run `crapkit coverage` after such a copy.
+hashing every file on every run is measured. The limit holds on Windows, where the change
+time is the creation time, and under `core.trustctime=false`. On Linux and macOS git's
+default stat check also compares the change time, which no copy puts back, so git sees
+the edit once the change time moves a second past the one it recorded. Run `crapkit
+coverage` after such a copy.
 An entry that matches no tracked file, and no untracked file outside `.gitignore`,
 hides every change behind it, so `doctor` fails on it and names the entry.
 Measurements made while their proof did not hold (a dirty tree, or dirty inputs)
@@ -1239,7 +1243,7 @@ measured it. A file the lane itself writes under its scopes while it runs, such 
 git's index is the fast path: a tracked file its worktree diff calls unchanged holds the
 id the index records, and only the rest is hashed. So a same-size edit whose old
 modification time was put back keeps the index's id and is not seen: the same named
-limit as reuse, until hashing every file is measured.
+limit as reuse, on the same OSes and settings, until hashing every file is measured.
 
 A stamp written by crapkit 0.8.0 or older holds no `blobs`. It is judged the old way
 until the next `crapkit coverage` replaces it: git's diff since the stamp's commit,

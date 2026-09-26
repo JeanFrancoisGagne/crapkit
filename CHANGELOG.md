@@ -402,11 +402,20 @@ writes nothing.
   naming the file, the field and the JSON type it holds, and says to regenerate the
   artifact: ``src/app.ts: `s` holds null, not an object``. That covers an istanbul file
   entry, `fnMap`, `f`, `s`, `b` or a `statementMap` entry, and a coverage.py file entry,
-  `executed_lines` or `missing_lines`. Each printed a Python error such as `argument of
-  type 'NoneType' is not iterable`. An istanbul `fnMap` entry with no `decl.start.line`,
+  `executed_lines`, `missing_lines`, `functions` or `contexts`. Each printed a Python error
+  such as `argument of type 'NoneType' is not iterable`, and an empty `functions` list
+  read as a report without branch data. An entry of `missing_lines` that is not an
+  integer, such as `"5"`, exits 5 naming the file, the field and the entry's index; the
+  dead-line read took it for a line that matched none. The dead-line and contexts
+  refusals name the artifact too. An istanbul `fnMap` entry with no `decl.start.line`,
   as istanbul 0.x wrote, names the file and the entry where the line held only `'decl'`.
 - A non-finite count such as `NaN` in either format names the artifact and says to
   regenerate it, where the line said `unparseable coverage artifact` and named no file.
+- The coverage.py wrong-tree refusal no longer says to set `path_prefix`. `path_prefix`
+  only prepends, so it cannot rebase another checkout's paths, and a lane that set it had
+  already taken the step. The refusal now says to rerun the lane here instead of reusing a
+  report copied from another checkout. A lane scoped to the root is named as `(.)` in the
+  paths its scopes declare.
 
 ### Text that is not UTF-8
 
@@ -439,7 +448,9 @@ version bump under Upgrading from 0.8.0 above.
   in the new `unreadable_names` field. An untracked one is a change like any other:
   `coverage --reuse-unchanged` reused a lane whose `inputs` held a new or edited
   Latin-1 file with `measurement inputs unchanged`, where the same file under a UTF-8
-  name reran it. `claude-hook` read the working tree's names leniently, so a Bash-written
+  name reran it. `verify` lists such an untracked name under `untracked_in_scope`, each
+  byte that is not UTF-8 spelled `\xNN`, and exits 0 as for any file nobody added.
+  `claude-hook` read the working tree's names leniently, so a Bash-written
   file named in Latin-1 under a scope named no file on disk and its breach passed with no
   advisory; it now exits 2 with an advisory naming the file and the rename.
 - Under `--json`, the error object of each such refusal lists every refused file in a new
@@ -536,6 +547,13 @@ version bump under Upgrading from 0.8.0 above.
   plugin manifest is read as Claude Code reads it: a byte that is not UTF-8 as U+FFFD, no
   longer a missing plugin.json, and a byte-order mark as the error `claude plugin
   validate` gives it.
+- A file behind a big-endian UTF-16 mark (`fe ff`) is refused as big-endian, in the JSON
+  and coverage artifact refusals and in `init`'s `.gitignore` line, and `doctor` notes it
+  that way. Every message named it the PowerShell 5.1 Out-File default, which writes
+  `ff fe`.
+- The Action builds its comment when git's error for a failed base diff, or a saved
+  `--changed` list, holds a byte that is not UTF-8: the byte reads as U+FFFD. The step
+  ended with a UnicodeDecodeError and posted nothing.
 - `doctor` prints a note, exit code unchanged, for a scoped source that opens with a
   UTF-16 byte-order mark, which git diffs as binary, and for an `i18n.commitEncoding`
   that is not UTF-8, under which git labels the UTF-8 bytes Git for Windows writes with
@@ -725,6 +743,9 @@ The exit codes, the lane environment and the files that change on upgrade are in
 - A failed `digest --alert` quotes what `alert_command` printed, as the override's
   refusal does, and says the digest above was not alerted. It used to name only the
   exit code.
+- A failed alert command that printed nothing is refused with `(exit N) and printed
+  nothing` in `hook-precommit`, `verify --override` and `digest --alert`, where the
+  refusal quoted an empty string.
 
 ### CI, tests and release tooling
 
@@ -770,6 +791,10 @@ The exit codes, the lane environment and the files that change on upgrade are in
   an uncommitted edit is fresh at once, and reverting that edit now withholds the lines,
   where git called the tree clean and the old lines were served against the reverted
   file.
+- On Linux and macOS a file at the checkout top whose name starts with a double quote is
+  stamped with its own blob id. It was stamped with the blob of the name git unquoted
+  (`"a".ts` read as `a`), so lane reuse missed an edit to it, and a name like `"d` made
+  every lane read `git cannot say`.
 - The dead lines crapkit folds out of a lane's artifact for diff coverage are cached by the
   artifact's sha256. The key was its path, modification time and size, so an artifact
   rewritten with the same size under its old time served the lines of bytes it no longer
@@ -812,7 +837,11 @@ The exit codes, the lane environment and the files that change on upgrade are in
   and its split of committed and dirty findings, `rescore --gate`, the commit hook's note
   that a staged file differs from the working tree, and the files `mutate` copies into its
   workers. git answers "unchanged" from its index's stat data, as `git status` and `git
-  add` do, and crapkit trusts that answer rather than read every file on every run. The
+  add` do, and crapkit trusts that answer rather than read every file on every run. That
+  part of the limit holds on Windows, where the change time is the creation time, and
+  under `core.trustctime=false`. On Linux and macOS git's default stat check also
+  compares the change time, which no copy puts back, so git sees the edit once the change
+  time moves a second past the one it recorded. The
   analysis cache and `watch` compare the modification time and size the same way, and the
   analysis cache also misses a symlink re-pointed to a same-size target with the same
   time. `touch` the files after restoring them, and every reader compares their content.
@@ -941,6 +970,15 @@ The exit codes, the lane environment and the files that change on upgrade are in
   before writing anything: `run 1's commit 35f524b3f89 is not in this clone, so git
   cannot say whether src/old.py was renamed or deleted`, then the fetch that brings the
   commit back, or `ratchet move` when no remote holds it.
+- When git cannot tell whether a run's commit is in the clone, as with a corrupt object,
+  `ratchet prune` exits 4 before writing anything and `verify` exits 4, each quoting
+  git's error and saying to fix what git reports. Lane reuse quotes git's error too, and
+  so does `explain --history`, outside a git work tree as well. They said the commit was
+  missing and pointed at a fetch, or, in `explain --history`, that the function held only
+  uncommitted lines.
+- `ratchet prune` outside a git work tree says it dropped the marks of every file that
+  left, renamed or not, and to run it in the git checkout to keep a renamed file's
+  marks. The note named no action.
 - The prune line names the renames it followed, up to three:
   `followed 1 rename(s) (calc/grade.py -> calc/grading.py)`.
 - `verify` names the files behind its count, on a line under the verdict: the first three,
@@ -989,8 +1027,12 @@ The exit codes, the lane environment and the files that change on upgrade are in
 
 - `watch` rescores a file when its bytes change, not when its mtime moves. A touch, or an
   editor saving the same bytes, printed `--- changed: src/app.ts` and ran a rescore that
-  labeled the file's coverage STALE; now a file whose mtime moved is read and compared
-  with the content recorded for it, and nothing prints. Each poll lists the files your
+  labeled the file's coverage STALE; now a file whose mtime moved is read and its git blob
+  id compared with the one recorded for it, the id a lane stamp records, and nothing
+  prints. So a line-ending rewrite git stores as the same blob, such as a CRLF checkout
+  under `core.autocrlf=true`, rescores nothing either. When git cannot give the ids,
+  `watch` names git's error once, keeps the content recorded before and asks again on the
+  next poll. Each poll lists the files your
   scopes claim again, tracked or not yet added, so a file created while `watch` runs is
   rescored; the list used to come from `git ls-files` once, at start. When git cannot
   list them, `watch` keeps polling the last list and says so once, quoting git and ending
