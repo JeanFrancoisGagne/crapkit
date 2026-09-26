@@ -36,7 +36,10 @@ Functions lizard hid, invented or misnamed
 * An attribute between a parameter list and the body took the function's
   name: `int run(int a) __attribute__((noinline)) {` read `__attribute__`, and
   an Objective-C method with `API_AVAILABLE(ios(10))` read `)`, started on the
-  attribute's line and counted the body's first `)` as recursion.
+  attribute's line and counted the body's first `)` as recursion. A word read
+  that way must follow the list of a function with a return type, and
+  `decltype`, `typeof` and the rest of `_NOT_A_NAME` never name one, so
+  `constexpr decltype(auto) f(int a)` stays f.
 * An Objective-C class extension's instance variables, `@interface E () { int
   _a; }`, read as a function named E, and in a `.m` file any word after a C
   function's parameter list, a prototype's `;` included, named a method.
@@ -80,6 +83,9 @@ Accepted, documented, not solved
   is lost. One bare word, or `override` and `final`, reads right.
 * A function returning a pointer to a member function, `int (S::*pick(int
   k))(int)`, still takes lizard's name, `int( S :: * pick(int k))( int)`.
+* A macro with arguments between a specifier and the function's name, `static
+  EXPORT(x) f(int a)`, reads as a function named EXPORT with an attribute: the
+  shape is the one `int run(int) __attribute__((cold))` has.
 
 Registration
 ------------
@@ -128,6 +134,11 @@ _TYPE_ENDS = frozenset({"*", "&", "&&", ">"})
 
 # The words lizard itself reads after a parameter list.
 _DECLARATOR_WORDS = frozenset({"const", "throw", "throws", "noexcept"})
+
+# Words with arguments that spell a type or an attribute and never name a
+# function: `decltype(auto) f(int a)` declares f.
+_NOT_A_NAME = frozenset({"decltype", "typeof", "__typeof__", "__typeof", "_Atomic",
+                         "alignas", "_Alignas", "__declspec", "__attribute__", "__attribute"})
 
 # C++'s virt-specifiers, which only ever follow a member function's parameter list.
 _VIRT_SPECIFIERS = frozenset({"override", "final"})
@@ -379,9 +390,12 @@ class _CFixes(ParameterCount):
 
     def try_new_function(self, name):
         """Note whether this name follows a return type. The `>` that closes a
-        `template <...>` head ends no type: what follows it opens the declaration."""
+        `template <...>` head ends no type: what follows it opens the declaration.
+        `decltype` and the other words of `_NOT_A_NAME` take arguments but name
+        no function, so the word after their `)` is read as lizard reads it."""
         after_head = self.crapkit_last_name == "template"
-        self.crapkit_typed = _ends_a_type(self.last_token) and not after_head
+        self.crapkit_typed = (_ends_a_type(self.last_token) and not after_head
+                              and name not in _NOT_A_NAME)
         self.crapkit_last_name = name
         super().try_new_function(name)
 

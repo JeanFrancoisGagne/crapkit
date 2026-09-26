@@ -206,15 +206,26 @@ UNCHANGED = {  # source: the one long name lizard already gave it
         "parse( T & ctx)",
     "template <typename T>\nJSON_HEDLEY_NON_NULL(1)\nvoid grisu2(T* buf) {\n}\n": "grisu2( T * buf)",
     "static __attribute__((unused)) int f(int a)" + BODY: "f( int a)",
+    "constexpr decltype(auto) iter_move(const It& it)" + BODY: "iter_move( const It & it)",
+    "static decltype(x) f(int a)" + BODY: "f( int a)",
+    "const decltype(x)& f(int a)" + BODY: "f( int a)",
+    "struct S {\n  friend constexpr decltype(auto) g(const S& s) { return 1; }\n};\n":
+        "S::g( const S & s)",
+    "static __typeof__(x) f(int a)" + BODY: "f( int a)",
 }
 
 
 @pytest.mark.parametrize("source", UNCHANGED, ids=["macro line", "template head", "hedley macro",
-                                                   "prefix attribute"])
+                                                   "prefix attribute", "decltype(auto)",
+                                                   "static decltype", "const decltype",
+                                                   "friend decltype", "typeof"])
 def test_a_word_and_parentheses_before_a_declaration_stay_where_lizard_put_them(source):
     """A word with arguments is an attribute only right after the parameter list
     of a function that has a return type. Before a declaration it keeps lizard's
-    reading, which is what keeps these four named right."""
+    reading, which is what keeps these named right. `decltype(auto)` reads like
+    a function with a return type, `constexpr`, and a list, `(auto)`, so the
+    function's own name after it read as an attribute and the row was named
+    `decltype( auto)`; decltype and typeof name no function."""
     (record,) = analyze_source("p.cpp", source, note=False)
 
     assert record.long_name == UNCHANGED[source]
