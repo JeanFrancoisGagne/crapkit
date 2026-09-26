@@ -14,11 +14,12 @@ version bump, and an edit that lands while crapkit hashes the file
 version-bump check first shows the cache is read (poisoned entries under the
 current fingerprint come back), so a pass is not a cache nobody consulted.
 Records the reader before whole template literals wrote (R45, stamped
-`cache=5`) read cold too.
+`cache=5`) read cold too; the nightly state machine mixes them with the other
+changes and counts the steps that held.
 
-Self-diff: the cache file crapkit streams one entry at a time equals, byte for
-byte, json.dumps(document, sort_keys=True) of the same document, and holds the
-records the same run exported.
+Self-diff: after every step of the scripted walk, the cache file crapkit
+streams one entry at a time equals, byte for byte, json.dumps(document,
+sort_keys=True) of the same document, and holds the records that run exported.
 """
 from __future__ import annotations
 
@@ -28,6 +29,7 @@ import json
 import os
 from pathlib import Path
 import re
+from typing import NamedTuple
 
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
@@ -207,48 +209,6 @@ def test_a_cache_from_the_reader_before_whole_templates_reads_cold(tmp_path):
     assert warm.run().rows == cold_run.rows
 
 
-# --- the streamed save against the whole-document dump -------------------------------------------
-
-def _document_dump(raw: bytes) -> bytes:
-    """What json.dumps(document, sort_keys=True) writes for the same document:
-    the whole-document form the streamed writer must reproduce byte for byte
-    (src/crapkit/analyze.py _write_entries)."""
-    return json.dumps(json.loads(raw.decode("utf-8")), sort_keys=True).encode("utf-8")
-
-
-# FunctionRecord's first twelve columns: the export's columns after `scope`, in its order.
-RECORD = ("path", "long_name", "start", "end", "ccn_std", "ccn_mod", "ccn", "nloc", "params",
-          "nesting", "cognitive", "occurrence")
-
-
-def _entries_as_rows(save: bytes, root: Path) -> list:
-    """Every cached record, after checking its entry key ends in the SHA-256 of
-    the bytes its path holds (README: cached by content hash)."""
-    rows = []
-    for key, records in json.loads(save)["entries"].items():
-        for record in records:
-            digest = hashlib.sha256((root / record[0]).read_bytes()).hexdigest()
-            assert key.endswith(":" + digest), (key, record[0])
-            rows.append(tuple(record[: len(RECORD)]))
-    return sorted(rows)
-
-
-def test_the_streamed_cache_equals_the_whole_document_dump(warmed):
-    """A cold save, then a save after an edit and a second language: each holds
-    one entry per distinct reader and content, in the dump's exact bytes, and
-    the records the run exported."""
-    saves = [(warmed.root / CACHE).read_bytes()]
-    warmed.write("a.py", _edit(SMALL["a.py"], 3))
-    warmed.write("d.js", TWO_LANGUAGES)
-    warmed.write("d.ts", TWO_LANGUAGES)
-    measured = warmed.run()
-    saves.append((warmed.root / CACHE).read_bytes())
-    assert [len(json.loads(save)["entries"]) for save in saves] == [3, 5]
-    assert saves == [_document_dump(save) for save in saves]
-    exported = sorted(tuple(row[column] for column in RECORD) for row in measured.rows)
-    assert _entries_as_rows(saves[-1], warmed.root) == exported
-
-
 # --- equal bytes under two readers (R30) --------------------------------------------------------
 
 # An unparenthesized arrow body with `<` before a comma: a comparison in
@@ -293,12 +253,80 @@ def _walk(warm: Warm) -> list:
             ("revert", lambda: warm.write("a.py", SMALL["a.py"]))]
 
 
-def test_warm_equals_cold_after_every_step(tmp_path):
-    warm = Warm(SMALL, tmp_path / "warm")
-    warm.run()
-    for step, (name, change) in enumerate(_walk(warm)):
+class Step(NamedTuple):
+    name: str
+    rows: tuple  # the warm run's
+    cold_rows: tuple
+    save: bytes  # .crapkit/cache.json after the warm run
+    digests: dict  # path -> SHA-256 of the bytes it holds
+
+
+def _step(name: str, warm: Warm, measured, cold_run) -> Step:
+    digests = {path: hashlib.sha256(data.encode("utf-8") if isinstance(data, str) else data)
+               .hexdigest() for path, data in warm.files.items() if path != "crapkit.toml"}
+    return Step(name, measured.rows, cold_run.rows, (warm.root / CACHE).read_bytes(), digests)
+
+
+@pytest.fixture(scope="module")
+def walked(tmp_path_factory):
+    """Every step of the walk, the repo's first run (a cold one) included."""
+    work = tmp_path_factory.mktemp("walk")
+    warm = Warm(SMALL, work / "warm")
+    first = warm.run()
+    steps = [_step("first run", warm, first, first)]
+    for number, (name, change) in enumerate(_walk(warm)):
         change()
-        assert warm.run().rows == _cold_of(warm, tmp_path / f"cold{step}").rows, name
+        measured = warm.run()
+        steps.append(_step(name, warm, measured, _cold_of(warm, work / f"cold{number}")))
+    return steps
+
+
+def test_warm_equals_cold_after_every_step(walked):
+    for step in walked:
+        assert step.rows == step.cold_rows, step.name
+
+
+# --- self-diff: the streamed save against the whole-document dump -------------------------------
+
+def _document_dump(raw: bytes) -> bytes:
+    """What json.dumps(document, sort_keys=True) writes for the same document:
+    the whole-document form the streamed writer must reproduce byte for byte
+    (src/crapkit/analyze.py _write_entries)."""
+    return json.dumps(json.loads(raw.decode("utf-8")), sort_keys=True).encode("utf-8")
+
+
+# FunctionRecord's first twelve columns: the export's columns after `scope`, in its order.
+RECORD = ("path", "long_name", "start", "end", "ccn_std", "ccn_mod", "ccn", "nloc", "params",
+          "nesting", "cognitive", "occurrence")
+
+
+def _entries_as_rows(save: bytes, digests: dict) -> list:
+    """Every cached record, after checking its entry key ends in the SHA-256 of
+    the bytes its path holds (README: cached by content hash)."""
+    rows = []
+    for key, records in json.loads(save)["entries"].items():
+        for record in records:
+            assert key.endswith(":" + digests[record[0]]), (key, record[0])
+            rows.append(tuple(record[: len(RECORD)]))
+    return sorted(rows)
+
+
+def _distinct_inputs(digests: dict) -> int:
+    """One entry per reader and content: the README language a suffix names,
+    with the bytes' hash."""
+    return len({(analysis_inventory.SUFFIX_LANGUAGE[Path(path).suffix], digest)
+                for path, digest in digests.items()})
+
+
+def test_the_streamed_cache_equals_the_whole_document_dump(walked):
+    """After every step of the walk, the cache crapkit wrote one entry at a time
+    is the dump's exact bytes, holds one entry per reader and content, and
+    holds the records that run exported."""
+    for step in walked:
+        exported = sorted(tuple(row[column] for column in RECORD) for row in step.rows)
+        assert step.save == _document_dump(step.save), step.name
+        assert len(json.loads(step.save)["entries"]) == _distinct_inputs(step.digests), step.name
+        assert _entries_as_rows(step.save, step.digests) == exported, step.name
 
 
 # --- the state machine (nightly) --------------------------------------------------------------------
@@ -306,9 +334,17 @@ def test_warm_equals_cold_after_every_step(tmp_path):
 PATHS = ("a.py", "b.ts", "c.go", "d.js", "d.ts", "e/f.py")
 
 
+KINDS = ("edit", "touch", "rename", "two languages", "version bump", "older template cache",
+         "warm equals cold")
+
+
 class CacheMachine(RuleBasedStateMachine):
-    """Edits, touches, renames, equal bytes in two languages and version bumps,
-    in any order; after each, the warm repo's rows equal a cold run's."""
+    """Edits, touches, renames, equal bytes in two languages, version bumps and
+    records from the reader before whole template literals, in any order; after
+    each, the warm repo's rows equal a cold run's. `seen` counts each rule and
+    each step that held, across every example of a run."""
+
+    seen: dict = {}
 
     def __init__(self):
         super().__init__()
@@ -319,35 +355,49 @@ class CacheMachine(RuleBasedStateMachine):
         self.warm.run()
         self.steps = 0
 
+    def _saw(self, kind: str) -> None:
+        CacheMachine.seen[kind] = CacheMachine.seen.get(kind, 0) + 1
+
     @rule(number=st.integers(0, 9))
     def edit(self, number):
+        self._saw("edit")
         self.warm.write("a.py", _edit(self.warm.files["a.py"], number))
 
     @rule(path=st.sampled_from(PATHS))
     def touch(self, path):
+        self._saw("touch")
         if path in self.warm.files:
             self.warm.write(path, self.warm.files[path])
 
     @rule(target_path=st.sampled_from(("moved/c.go", "c.go", "e/c.go")))
     def rename(self, target_path):
+        self._saw("rename")
         current = next((path for path in self.warm.files if path.endswith("c.go")), None)
         if current is not None and current != target_path:
             self.warm.move(current, target_path)
 
     @rule()
     def two_languages(self):
+        self._saw("two languages")
         self.warm.write("d.js", TWO_LANGUAGES)
         self.warm.write("d.ts", TWO_LANGUAGES)
 
     @rule()
     def version_bump(self):
+        self._saw("version bump")
         _rewrite_cache(self.warm.root, _bump)
+
+    @rule()
+    def older_template_cache(self):
+        self._saw("older template cache")
+        _rewrite_cache(self.warm.root, lambda cache: (_folded(cache), _older_stamp(cache)))
 
     @invariant()
     def warm_equals_cold(self):
         self.steps += 1
         cold_rows = _cold_of(self.warm, self.base / f"m{self.number}-cold{self.steps}").rows
         assert self.warm.run().rows == cold_rows
+        self._saw("warm equals cold")
 
 
 CacheMachine.TestCase.settings = process
@@ -355,5 +405,9 @@ CacheMachine.TestCase.settings = process
 
 @pytest.mark.nightly
 def test_cache_machine(tmp_path, monkeypatch):
+    """Prints each rule's count and the steps that held (-s shows it)."""
     monkeypatch.setenv("CRAPKIT_CACHE_MACHINE_DIR", str(tmp_path))
+    CacheMachine.seen = {}
     CacheMachine.TestCase().runTest()
+    print(f"cache machine: {json.dumps(CacheMachine.seen, sort_keys=True)}")
+    assert sorted(CacheMachine.seen) == sorted(KINDS)

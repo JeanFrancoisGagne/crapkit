@@ -182,30 +182,40 @@ def _gated(stdout: str) -> dict[str, list[tuple]]:
     return {path: sorted(rows, key=lambda row: row[1]) for path, rows in found.items()}
 
 
-def _hook(root: Path, dirs: tuple, spawn: bool = False) -> dict[str, list[tuple]]:
+def _staged(root: Path, paths: tuple, spawn: bool = False) -> tuple[int, dict]:
+    """hook-precommit's exit code and gated rows with only `paths` staged."""
     repos.git(root, "reset", "-q")
-    repos.git(root, "add", *dirs)
+    repos.git(root, "add", *paths)
     done = drive.Driver(root, spawn=spawn).run("hook-precommit")
-    assert done.code == 6, done.stdout + done.stderr
-    return _gated(done.stdout)
+    return done.code, _gated(done.stdout)
 
 
-def _new_repo(files: dict, top: Path) -> Path:
-    root = analysis_inventory.build({"crapkit.toml": HOOK_CONFIG}, top)
-    for path, data in files.items():
-        (root / path).parent.mkdir(parents=True, exist_ok=True)
-        (root / path).write_bytes(data)
-    return root
+def _gate(root: Path, paths: tuple, spawn: bool = False) -> dict[str, list[tuple]]:
+    code, gated = _staged(root, paths, spawn)
+    assert code == 6, gated
+    return gated
+
+
+# `x = 1` sits after a lone CR: git line 1, reader and Python line 2. The edit is
+# on `target`'s def line, git line 8, reader line 9.
+LONE_CR = (b"# note\rx = 1\n" b"def first(a):\n    if a:\n        return 1\n    return 2\n\n\n"
+           b"def target(b):\n    if b:\n        return 1\n    return 2\n")
 
 
 @pytest.fixture(scope="module")
 def hook_arms(tmp_path_factory):
     """{arm: {path: gated rows}}. All 16 files staged take the temp tree, spawned,
     since that arm can reach the analysis pool; each language's 8 alone take
-    the in-memory blob."""
-    root = _new_repo(HOOK_FILES, tmp_path_factory.mktemp("hook") / "repo")
-    return {"temp tree": _hook(root, ("py", "ps1"), spawn=True),
-            "blob": {**_hook(root, ("py",)), **_hook(root, ("ps1",))}}
+    the in-memory blob. Then an edit to the committed m.py, staged alone."""
+    root = analysis_inventory.build({"crapkit.toml": HOOK_CONFIG, "m.py": LONE_CR},
+                                    tmp_path_factory.mktemp("hook") / "repo")
+    for path, data in HOOK_FILES.items():
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_bytes(data)
+    arms = {"temp tree": _gate(root, ("py", "ps1"), spawn=True),
+            "blob": {**_gate(root, ("py",)), **_gate(root, ("ps1",))}}
+    (root / "m.py").write_bytes(LONE_CR.replace(b"def target(b):", b"def target(b, c=0):"))
+    return {**arms, "lone CR edit": _staged(root, ("m.py",))[1]}
 
 
 @pytest.mark.parametrize("lang", sorted(HOOK_TEXTS))
@@ -229,21 +239,8 @@ def test_a_new_cr_only_file_gates_every_function(hook_arms, lang):
     rulings.pin_ruling("AO-HOOK-CR-ONLY", crapkit=len(gated), oracle=len(HOOK_HAND[lang]))
 
 
-# `x = 1` sits after a lone CR: git line 1, reader and Python line 2. The edit is
-# on `target`'s def line, git line 8, reader line 9.
-LONE_CR = (b"# note\rx = 1\n" b"def first(a):\n    if a:\n        return 1\n    return 2\n\n\n"
-           b"def target(b):\n    if b:\n        return 1\n    return 2\n")
-
-
 @rulings.applies("AO-HOOK-LONE-CR-SHIFT")
-def test_an_edit_below_a_lone_cr_gates_the_edited_function(tmp_path):
-    root = _new_repo({}, tmp_path / "repo")
-    (root / "m.py").write_bytes(LONE_CR)
-    repos.git(root, "add", "m.py")
-    repos.git(root, "commit", "-q", "-m", "m", date=repos.EPOCH)
-    (root / "m.py").write_bytes(LONE_CR.replace(b"def target(b):", b"def target(b, c=0):"))
-    repos.git(root, "add", "m.py")
-    done = drive.Driver(root).run("hook-precommit")
-    gated = [row[0] for row in _gated(done.stdout).get("m.py", [])]
+def test_an_edit_below_a_lone_cr_gates_the_edited_function(hook_arms):
+    gated = [row[0] for row in hook_arms["lone CR edit"].get("m.py", [])]
     rulings.pin_ruling("AO-HOOK-LONE-CR-SHIFT", crapkit=",".join(gated) or "none",
                        oracle="target")
