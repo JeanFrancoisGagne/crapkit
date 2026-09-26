@@ -15,7 +15,7 @@ counts and `default` does not:
 A match with 6 conditional arms and a `_` arm scores 7, the same as the
 equivalent if/else-if/else chain. An exhaustive match of 7 non-wildcard arms
 scores 8, the same as 7 ifs with no else. lizard's other Rust conditions (if,
-for, while, &&, ||, ?) still count, with three corrections where the stock
+for, while, &&, ||, ?) still count, with four corrections where the stock
 reader read a Rust token as the C token of the same spelling:
 
   * a let-else's `else` counts one. It runs when the pattern does not match,
@@ -33,6 +33,13 @@ reader read a Rust token as the C token of the same spelling:
     reader splits such a pair into its two characters before any column reads
     it, so ccn, cognitive and nesting all see the `|x|` or `&x` they already
     read as nothing. A parameter typed `&&T` spells `& &` in its long name.
+  * a `for` that is no loop decides nothing, in a body too. Rust spells three
+    things `for`: a loop, a `for<'a>` binder, which has a `<` right after it,
+    and the `for` of `impl Trait for Type`, which has the trait's name or the
+    `>` of its arguments right before it. A loop starts a statement or an
+    expression, so no name stands before one. The `?` of a `?Sized` bound is
+    no decision either, wherever it stands. `RustDecisionStates` takes back
+    the point lizard counted for each.
 
 Three more corrections decide which functions exist and what they declare, in
 `CorrectedRustStates`: a signature that reaches a `;` or a `}` before any `{`
@@ -49,10 +56,11 @@ Accepted, documented, not solved
 * `?` error propagation stays counted: upstream puts it in
   `_ternary_operators`, and this reader inherits that as measured rather than
   changing two things at once. tests/unit/test_lizardrust.py pins it at +1.
-* lizard's nesting column reads the `for` of a `for<'a>` binder as a loop, one
-  level where there is none. It reads keywords with no context around them,
-  and gluing the binder into one token would break the `<`/`>` count lizard
-  uses to skip a generic parameter list. test_rust_cognitive_nesting.py pins it.
+* lizard's nesting column reads the `for` of a `for<'a>` binder, and of an
+  `impl Trait for Type` inside a function, as a loop, one level where there is
+  none. It reads keywords with no context around them, and gluing the binder
+  into one token would break the `<`/`>` count lizard uses to skip a generic
+  parameter list. test_rust_cognitive_nesting.py and test_rust_for.py pin it.
 * `ccn_mod` (analyze.py's modified column) is unchanged, so a Rust match now
   costs the same in both columns. lizard's modified pass keys off
   `reader._keyword_match`, which upstream never sets for Rust; setting it here
@@ -123,6 +131,10 @@ _OPERAND_TAIL = frozenset(")]}?_\"'")
 # The two operators Rust also writes as a pair of one-character tokens.
 _PAIRS = frozenset({"||", "&&"})
 
+# Two code tokens that declare, where lizard counted the first as a decision:
+# a `for<'a>` binder and a `?Sized` bound.
+_DECLARING_PAIRS = frozenset({("for", "<"), ("?", "Sized")})
+
 # What a bracket inside a signature does to its type depth. Parentheses are
 # counted apart, by the state machine that reads the parameter list. In that
 # list a `{` also opens a struct pattern's fields, `Point { x, y }: Point`;
@@ -136,6 +148,20 @@ def _ends_operand(token: str | None) -> bool:
     if not token or token in _NO_VALUE_KEYWORDS:
         return False
     return token[-1].isalnum() or token[-1] in _OPERAND_TAIL
+
+
+def implements_for(previous: str | None) -> bool:
+    """Whether a `for` right after `previous` is the `for` of `impl Trait for
+    Type`, which is no loop.
+
+    The trait's name or the `>` closing its arguments stands before that
+    `for`. A loop starts a statement or an expression, so what stands before a
+    loop's is a `;`, a brace, an attribute's `]`, a `=`, a label's `:` or an
+    arm's `=>`, never a name.
+    """
+    if previous == ">":
+        return True
+    return _ends_operand(previous) and (previous[0].isalpha() or previous[0] == "_")
 
 
 def _code_token(token: str, previous: str | None) -> str | None:
@@ -163,11 +189,13 @@ def split_operator_pairs(tokens):
 
 
 class RustDecisionStates(CodeStateMachine):
-    """The decisions Rust spells without a keyword lizard counts.
+    """The decisions Rust spells without a keyword lizard counts, and the
+    tokens lizard counts that decide nothing in Rust.
 
     One condition per match arm, wildcard arms free, and one per let-else.
     An `else` is a let-else's unless a `}` stands before it (see the module
-    docstring).
+    docstring). lizard's count loses one for each `for` that is no loop and
+    for the `?` of each `?Sized`, wherever they stand.
 
     Runs as a parallel state of the reader, next to the RustStates machine that
     finds functions, and reports through the same `context.add_condition()` hook
@@ -185,12 +213,22 @@ class RustDecisionStates(CodeStateMachine):
             return
         if self._decides(token):
             self.context.add_condition()
+        elif self._declares(token):
+            self.context.add_condition(-1)
         self.previous_code_token = token
 
     def _decides(self, token: str) -> bool:
         if token == _ARM:
             return self.previous_code_token != _WILDCARD
         return token == "else" and self.previous_code_token != "}"
+
+    def _declares(self, token: str) -> bool:
+        """A token that takes back a condition lizard counted: the `for` of an
+        implementation, the `<` that makes the `for` before it a binder, and
+        the `Sized` that makes the `?` before it a relaxed bound."""
+        if token == "for":
+            return implements_for(self.previous_code_token)
+        return (self.previous_code_token, token) in _DECLARING_PAIRS
 
 
 def _join_comma(fn) -> None:

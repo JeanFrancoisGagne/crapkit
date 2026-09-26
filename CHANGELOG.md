@@ -7,6 +7,14 @@
 - A Rust signature decides nothing. A `where` clause, a `?Sized` bound and a `for<'a>`
   binder each added 1 to ccn; the body's `{` now sets the function back to its base of
   1, and cognitive reads nothing before it.
+- A `for` that is no loop decides nothing in a function's body either. Rust spells three
+  things `for`: a loop, a `for<'a>` binder, which has a `<` right after it, and the
+  `for` of `impl Trait for Type`, which has a name or a `>` right before it. A trait
+  implemented inside a function, the way a test defines the stub it needs, cost that
+  function 1 in ccn and 1 plus its nesting in cognitive, a binder in a `let`'s type the
+  same, and the `?` of a `?Sized` bound on such an item 1 in ccn. Each now costs nothing
+  in those two columns. The nesting column is lizard's and still reads such a `for` as
+  a level.
 - A `||` or `&&` with no operand before it is no operator. `move || n` and
   `unwrap_or_else(|| 0)` open a closure with no parameters, and `|&&x|` takes a double
   reference. Each cost 1 in ccn, 1 in cognitive and usually a nesting level, and now
@@ -31,10 +39,12 @@
   struct pattern's `Point { x, y }`, parts no parameters. The long name keeps its
   spelling.
 - Measured over 229 files of a Rust workspace: ccn rises in 184 of 3,523 rows and falls
-  in 206, cognitive falls in 987 and rises in 27, and nesting falls in 861 and rises
+  in 215, cognitive falls in 993 and rises in 27, and nesting falls in 861 and rises
   in 8. Every rise in cognitive or nesting holds a `loop`. Six rows of bodiless
   signatures are gone, three functions get the row they never had, and `params` falls
-  in 8.
+  in 8. Four test functions that implement a trait in their body fall in ccn and
+  cognitive. Six more rows fall where lizard's tokenizer reads a raw string's quoted
+  contents as code, and a word `for` in that text counted as a loop.
 - A parameter typed `&&T` now reads `& &` in the function's long name, so that
   function's ratchet key changes; the workspace has none.
 - In Python and shell, a name spelled `switch` no longer adds 1 to ccn_mod. Neither

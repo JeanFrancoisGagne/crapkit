@@ -340,7 +340,8 @@ and that run is the baseline `worklist`, `next-item`, `ratchet seed` and `verify
 Three readers are crapkit's own. lizard ships none for shell or PowerShell, so crapkit
 counts their functions itself. Its Rust reader scores a 7-arm `match` as ccn 2 (filed as
 lizard #494), so crapkit counts each non-wildcard arm like a C `case`. It also reads a
-Rust signature, a closure's empty `||` and a let-else the way Rust means them (see
+Rust signature, a closure's empty `||`, a let-else and a `for` that is no loop the way
+Rust means them (see
 [per-language
 gotchas](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#per-language-gotchas)),
 and retires each correction the day upstream fixes it. The cognitive column charges a

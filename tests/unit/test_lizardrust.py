@@ -232,7 +232,7 @@ def test_stock_reader_scores_the_seven_arm_match_two():
     assert ccn(EXHAUSTIVE_MATCH, StockRustReader) == {"classify": 2}
 
 
-# The three corrections beside the arm rule, as the stock reader reads them.
+# The four corrections beside the arm rule, as the stock reader reads them.
 LET_ELSE = """
 fn let_else(a: Option<i32>) -> i32 {
     let Some(n) = a else { return 0; };
@@ -252,20 +252,33 @@ fn maybe_sized<P: AsRef<str> + ?Sized>(p: &P) -> usize {
 }
 """
 
+IMPL_IN_A_BODY = """
+fn stub() -> Guard {
+    impl Drop for Guard {
+        fn drop(&mut self) {}
+    }
+    Guard
+}
+"""
+
 
 def test_stock_reader_reads_rust_tokens_as_c_tokens():
-    """The retirement pins for the let-else, operator and signature rules.
+    """The retirement pins for the let-else, operator, signature and `for` rules.
 
     Stock misses the let-else decision (1, hand count 2), reads the empty
-    closure's `||` as a logical or (2, hand count 1) and counts the `?` of a
-    `?Sized` bound (2, hand count 1). Drop a rule when its line here fails.
+    closure's `||` as a logical or (2, hand count 1), counts the `?` of a
+    `?Sized` bound (2, hand count 1) and reads the `for` of a trait
+    implemented inside a function as a loop (2, hand count 1). Drop a rule
+    when its line here fails.
     """
     assert ccn(LET_ELSE, StockRustReader) == {"let_else": 1}
     assert ccn(EMPTY_CLOSURE, StockRustReader) == {"empty_closure": 2}
     assert ccn(MAYBE_SIZED, StockRustReader) == {"maybe_sized": 2}
+    assert ccn(IMPL_IN_A_BODY, StockRustReader) == {"drop": 1, "stub": 2}
     assert ccn(LET_ELSE, CorrectedRustReader) == {"let_else": 2}
     assert ccn(EMPTY_CLOSURE, CorrectedRustReader) == {"empty_closure": 1}
     assert ccn(MAYBE_SIZED, CorrectedRustReader) == {"maybe_sized": 1}
+    assert ccn(IMPL_IN_A_BODY, CorrectedRustReader) == {"drop": 1, "stub": 1}
 
 
 def test_register_makes_lizard_resolve_rs_to_the_corrected_reader():

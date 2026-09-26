@@ -17,9 +17,11 @@ Three language-specific rules:
   * Rust keeps its own structures. `match` is a switch and `loop` a loop, each
     +1 and +nesting with the arms free, and `catch`, `switch`, `foreach`, `do`
     and `except` name nothing. `?` is no ternary: it returns early on an error
-    or relaxes a bound, and neither is an increment. These rules are read only
-    for the Rust readers because `match` is a soft keyword in Python and the
-    rest are keywords elsewhere. See `_counting`.
+    or relaxes a bound, and neither is an increment. A `for` is a loop unless
+    a `<` follows it (a `for<'a>` binder) or the trait's name or `>` before
+    it makes it the `for` of `impl Trait for Type`; see `_resolve_for`. These
+    rules are read only for the Rust readers because `match` is a soft keyword
+    in Python and the rest are keywords elsewhere. See `_counting`.
   * in shell a block is delimited by words, not by braces or by indent: `if`
     and `case` open, `fi`, `done` and `esac` close, and `do`, `then` and `in`
     only introduce the body of a structure already charged. See
@@ -50,6 +52,8 @@ owns that placement.
 The whitepaper's worked examples in tests/unit/test_cognitive.py are the spec.
 """
 from __future__ import annotations
+
+from .lizardrust import implements_for
 
 _COUNTING = frozenset({"if", "for", "foreach", "while", "do", "catch", "except", "switch"})
 
@@ -127,7 +131,7 @@ class _FnState:
     __slots__ = ("total", "stack", "max_depth", "brace_depth", "line_indent",
                  "at_line_start", "pending", "else_pending", "question_pending",
                  "bool_op", "name", "recursed", "body_started", "signature_depth",
-                 "prev", "label_check", "c_family", "is_rust", "is_shell")
+                 "prev", "label_check", "for_pending", "c_family", "is_rust", "is_shell")
 
     def __init__(self, name: str, c_family: bool = False, is_rust: bool = False,
                  is_shell: bool = False):
@@ -150,6 +154,7 @@ class _FnState:
         self.signature_depth = 0   # brackets open in that signature
         self.prev = ""
         self.label_check = False  # just saw break/continue
+        self.for_pending = False  # Rust only: just saw a `for` that may be a binder's
 
 
 class LizardExtension:
@@ -253,6 +258,8 @@ def _python_dedent(state: _FnState) -> None:
 
 def _resolve_lookbehinds(state: _FnState, token: str, is_python: bool) -> bool:
     """Signals needing one token of hindsight. True = this token is consumed."""
+    if state.for_pending:
+        _resolve_for(state, token, is_python)
     if state.question_pending:
         _resolve_question(state, token, is_python)
     if state.label_check:
@@ -269,6 +276,14 @@ def _resolve_question(state: _FnState, token: str, is_python: bool) -> None:
     state.question_pending = False
     if token not in (".", ":", ")"):  # optional chaining / optional type / trailing
         state.total += 1 + _nesting(state, is_python)
+
+
+def _resolve_for(state: _FnState, token: str, is_python: bool) -> None:
+    """A Rust `for` charged a token late: with a `<` after it, it is a
+    `for<'a>` binder, which names a lifetime and loops over nothing."""
+    state.for_pending = False
+    if token != "<":
+        _structure(state, "for", is_python)
 
 
 def _resolve_label(state: _FnState, token: str) -> None:
@@ -463,6 +478,11 @@ def _counting(state: _FnState, token: str) -> bool:
 def _structure_token(state: _FnState, token: str, is_python: bool) -> None:
     if token == "while" and state.prev == "}":
         return  # the closing half of do-while; the do already paid
+    if token == "for" and state.is_rust:
+        # A binder's `for` shows at the next token (_resolve_for), and an
+        # implementation's at the one before it.
+        state.for_pending = not implements_for(state.prev)
+        return
     _structure(state, token, is_python)
 
 

@@ -114,6 +114,9 @@ every marks file re-seeds once, with the same three commands as version 11 below
 
 - A signature decides nothing. A `where` clause, a `?Sized` bound and a `for<'a>`
   binder no longer add to ccn.
+- A `for<'a>` binder and the `for` of `impl Trait for Type` are no loop in ccn or
+  cognitive inside a function's body too, and a `?Sized` bound adds no ccn anywhere. A
+  test function that implements a trait for its stub falls by 1 or more.
 - A `||` or `&&` with no operand before it is no operator. `move || n`, `f(|| 0)` and
   `|&&x|` cost nothing in ccn, cognitive or nesting.
 - A let-else counts one decision in ccn, like the `if let` it replaces.
