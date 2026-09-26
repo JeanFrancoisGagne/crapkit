@@ -339,9 +339,12 @@ and that run is the baseline `worklist`, `next-item`, `ratchet seed` and `verify
 
 Three readers are crapkit's own. lizard ships none for shell or PowerShell, so crapkit
 counts their functions itself. Its Rust reader scores a 7-arm `match` as ccn 2 (filed as
-lizard #494), so crapkit counts each non-wildcard arm like a C `case` and retires the
-override the day upstream fixes it. The cognitive column charges that same block once,
-the way Sonar charges a `switch`. The Rust and shell readers count each `match` or `case` arm in the modified column too, so both columns agree and the arms are gated: a seven-arm `match` gates at `ccn` 8, where lizard's modified count, and so the gated `ccn`, of a C `switch` with seven cases is 2.
+lizard #494), so crapkit counts each non-wildcard arm like a C `case`. It also reads a
+Rust signature, a closure's empty `||` and a let-else the way Rust means them (see
+[per-language
+gotchas](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#per-language-gotchas)),
+and retires each correction the day upstream fixes it. The cognitive column charges a
+`match` once, the way Sonar charges a `switch`. The Rust and shell readers count each `match` or `case` arm in the modified column too, so both columns agree and the arms are gated: a seven-arm `match` gates at `ccn` 8, where lizard's modified count, and so the gated `ccn`, of a C `switch` with seven cases is 2.
 
 Expression arrows in arrays and argument lists are measured separately. In TypeScript,
 wrap an arrow body in parentheses when it contains `<` before a comma, such as

@@ -2,6 +2,22 @@
 
 ## 0.8.1 — unreleased
 
+### Rust reads its signatures, closures and let-else as Rust
+
+- A Rust signature decides nothing. A `where` clause, a `?Sized` bound and a
+  `for<'a>` binder each added 1 to ccn; the body's `{` now sets the function back to
+  its base of 1. A `||` or `&&` with no operand before it is no operator: `move || n`
+  and `unwrap_or_else(|| 0)` open a closure with no parameters, and `|&&x|` takes a
+  double reference. Each cost 1 in ccn, 1 in cognitive and usually a nesting level,
+  and each now costs nothing. A let-else counts the one decision its `if let` twin
+  counts. Measured over 229 files of a Rust workspace: ccn rises in 184 of 3,523 rows
+  and falls in 208, cognitive falls in 205, and nesting falls in 115 and rises by 1 in
+  2, where lizard's nesting column pairs the next `{` differently once the false `||`
+  is gone. A parameter typed `&&T` now reads `& &` in the function's long name, so
+  that function's ratchet key changes; the workspace has none. The change needs an
+  analysis-version bump, which makes each marks file re-seed once
+  ([upgrading](docs/upgrading.md#next-analysis-version-rust-rows)).
+
 ### The lane guard reads a command the way sh and cmd.exe read it
 
 No score moves and no analysis-version bump. The full-suite guard and `doctor` read these

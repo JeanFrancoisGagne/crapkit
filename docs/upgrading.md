@@ -107,6 +107,19 @@ re-seeds once, with the same three commands as version 11 below:
   counts, should accept `excluded` too. See
   [flags](../README.md#flags-why-a-coverage-number-is-missing).
 
+### Next analysis version: Rust rows
+
+The release after 0.8.0 moves Rust's numbers, so it raises the analysis version and
+every marks file re-seeds once, with the same three commands as version 11 below.
+
+- A signature decides nothing. A `where` clause, a `?Sized` bound and a `for<'a>`
+  binder no longer add to ccn.
+- A `||` or `&&` with no operand before it is no operator. `move || n`, `f(|| 0)` and
+  `|&&x|` cost nothing in ccn, cognitive or nesting.
+- A let-else counts one decision in ccn, like the `if let` it replaces.
+- A parameter typed `&&T` reads `& &` in the function's long name, so that function
+  takes a new ratchet key. Prune drops the old one.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or

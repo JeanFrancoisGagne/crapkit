@@ -2,12 +2,15 @@
 
 Every number below was counted by hand from the snippet above it, never read off
 a run. The convention under test: base 1, plus one per match arm whose pattern is
-not the bare wildcard, plus lizard's existing conditions (if, for, while, where,
-&&, ||, ?). `match` itself costs nothing.
+not the bare wildcard, plus lizard's existing conditions (if, for, while, &&, ||,
+?). `match` itself costs nothing, and neither does `where`: a signature decides
+nothing (tests/unit/test_rust_decisions.py).
 
-test_stock_reader_scores_the_seven_arm_match_two is the retirement signal. It
-pins the upstream defect, so it fails the day lizard fixes #494; that is when
-src/crapkit/lizardrust.py gets deleted rather than repaired.
+test_stock_reader_scores_the_seven_arm_match_two is the retirement signal for
+the arm rule. It pins the upstream defect, so it fails the day lizard fixes
+#494. test_stock_reader_reads_rust_tokens_as_c_tokens does the same for the
+other corrections. Drop a correction when its pin fails, and delete
+src/crapkit/lizardrust.py once every pin fails rather than repairing it.
 """
 import lizard
 import lizard_languages
@@ -128,7 +131,8 @@ fn spread(n: i32) -> i32 {
 }
 """
 
-# `where` stays a condition, as upstream has it. Hand count: 1 + 1 = 2.
+# Upstream counts `where` as a condition. It bounds a type and decides nothing.
+# Hand count: 1.
 WHERE_BOUND = """
 fn generic<T>(v: T) -> T where T: Clone {
     v
@@ -206,10 +210,11 @@ def test_wildcard_split_across_lines_is_still_free():
     assert ccn(WILDCARD_ACROSS_LINES, CorrectedRustReader) == {"spread": 2}
 
 
-def test_dropping_match_leaves_the_other_keywords_counting():
-    assert ccn(WHERE_BOUND, CorrectedRustReader) == {"generic": 2}
-    assert "match" not in CorrectedRustReader._build_conditions()
-    assert {"if", "for", "while", "where"} <= CorrectedRustReader._build_conditions()
+def test_dropping_match_and_where_leaves_the_other_keywords_counting():
+    assert ccn(WHERE_BOUND, StockRustReader) == {"generic": 2}
+    assert ccn(WHERE_BOUND, CorrectedRustReader) == {"generic": 1}
+    assert not {"match", "where"} & CorrectedRustReader._build_conditions()
+    assert {"if", "for", "while"} <= CorrectedRustReader._build_conditions()
 
 
 def test_macro_rules_arms_count_too():
@@ -225,6 +230,42 @@ def test_stock_reader_scores_the_seven_arm_match_two():
     """
     assert ccn(MATCH_WITH_WILDCARD, StockRustReader) == {"classify": 2}
     assert ccn(EXHAUSTIVE_MATCH, StockRustReader) == {"classify": 2}
+
+
+# The three corrections beside the arm rule, as the stock reader reads them.
+LET_ELSE = """
+fn let_else(a: Option<i32>) -> i32 {
+    let Some(n) = a else { return 0; };
+    n
+}
+"""
+
+EMPTY_CLOSURE = """
+fn empty_closure(n: i32) -> Box<dyn Fn() -> i32> {
+    Box::new(move || n)
+}
+"""
+
+MAYBE_SIZED = """
+fn maybe_sized<P: AsRef<str> + ?Sized>(p: &P) -> usize {
+    p.as_ref().len()
+}
+"""
+
+
+def test_stock_reader_reads_rust_tokens_as_c_tokens():
+    """The retirement pins for the let-else, operator and signature rules.
+
+    Stock misses the let-else decision (1, hand count 2), reads the empty
+    closure's `||` as a logical or (2, hand count 1) and counts the `?` of a
+    `?Sized` bound (2, hand count 1). Drop a rule when its line here fails.
+    """
+    assert ccn(LET_ELSE, StockRustReader) == {"let_else": 1}
+    assert ccn(EMPTY_CLOSURE, StockRustReader) == {"empty_closure": 2}
+    assert ccn(MAYBE_SIZED, StockRustReader) == {"maybe_sized": 2}
+    assert ccn(LET_ELSE, CorrectedRustReader) == {"let_else": 2}
+    assert ccn(EMPTY_CLOSURE, CorrectedRustReader) == {"empty_closure": 1}
+    assert ccn(MAYBE_SIZED, CorrectedRustReader) == {"maybe_sized": 1}
 
 
 def test_register_makes_lizard_resolve_rs_to_the_corrected_reader():

@@ -228,8 +228,12 @@ error is inflation only: it can cost a refactor that was not needed, never hide 
 
 **`rust`, `shell` and `powershell` run on crapkit's own readers.** lizard has neither a shell
 nor a PowerShell reader, and its Rust reader scores a 7-arm `match` as ccn 2 (filed upstream
-as lizard #494), so crapkit counts each non-wildcard arm the way C counts a `case`. The Rust
-module retires itself the day upstream fixes it.
+as lizard #494), so crapkit counts each non-wildcard arm the way C counts a `case`. Where
+lizard reads a Rust token as the C token of the same spelling, crapkit reads it as Rust: a
+signature decides nothing, so a `where` clause, a `?Sized` bound and a `for<'a>` binder
+add nothing to ccn; a `||` or `&&` with no operand before it (`move || n`, `|&&x|`) is no
+operator in any column; and a let-else is one decision. Each correction retires the day
+upstream fixes its defect.
 
 The cognitive column charges a Rust `match` like a `switch`: +1 plus the nesting it sits
 in, arms free. The two columns therefore say different things about one block on purpose.

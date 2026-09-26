@@ -14,8 +14,25 @@ counts and `default` does not:
 
 A match with 6 conditional arms and a `_` arm scores 7, the same as the
 equivalent if/else-if/else chain. An exhaustive match of 7 non-wildcard arms
-scores 8, the same as 7 ifs with no else. Everything else lizard counts for Rust
-(if, for, while, where, &&, ||, ?) is untouched.
+scores 8, the same as 7 ifs with no else. lizard's other Rust conditions (if,
+for, while, &&, ||, ?) still count, with three corrections where the stock
+reader read a Rust token as the C token of the same spelling:
+
+  * a let-else's `else` counts one. It runs when the pattern does not match,
+    the decision an `if let` makes. An if-else's `else` always follows the `}`
+    of its if block, and a let-else's never can (the Rust Reference refuses a
+    let-else whose expression ends in `}`), so the token before `else` tells
+    the two apart.
+  * a signature decides nothing. Everything from `fn` to the body's `{` only
+    declares: a `where` clause, a `?Sized` bound, a `for<'a>` binder. The
+    body's `{` sets the function back to its base of 1, the way lizard's C
+    reader confirms a function at its body, and `where` leaves the keyword set
+    for the items it bounds outside a signature.
+  * a `||` or `&&` with no operand before it is no operator. `move || n` opens
+    a closure with no parameters and `|&&x|` takes a double reference. The
+    reader splits such a pair into its two characters before any column reads
+    it, so ccn, cognitive and nesting all see the `|x|` or `&x` they already
+    read as nothing. A parameter typed `&&T` spells `& &` in its long name.
 
 Accepted, documented, not solved
 --------------------------------
@@ -55,9 +72,10 @@ The contract for the caller (analyze.py owns the wiring):
 
 Retirement
 ----------
-tests/unit/test_lizardrust.py pins the stock reader's wrong answer. It fails on
-the lizard release that fixes #494. Delete this module then, along with the
-`register()` call, rather than repairing it.
+tests/unit/test_lizardrust.py pins the stock reader's wrong answers, one per
+correction, and each pin fails on the lizard release that fixes its defect. Drop
+a correction when its pin fails. Once every pin fails, delete this module along
+with the `register()` call rather than repairing it.
 """
 from __future__ import annotations
 
@@ -76,9 +94,62 @@ _WILDCARD = "_"
 # Any filename picks the reader; the file is never opened.
 _PROBE = "crapkit_registration_probe.rs"
 
+# The Rust Reference's keywords, strict and reserved, less the five that can end
+# an operand: self, Self, true, false and the `await` of `.await`. A `||` or
+# `&&` right after one of these has no left operand.
+_NO_VALUE_KEYWORDS = frozenset("""
+    abstract as async become box break const continue crate do dyn else enum
+    extern final fn for gen if impl in let loop macro match mod move mut override
+    priv pub ref return static struct super trait try type typeof unsafe unsized
+    use virtual where while yield
+""".split())
 
-class MatchArmStates(CodeStateMachine):
-    """One condition per match arm, wildcard arms free.
+# The last character of a token that can end an operand, beside the word
+# characters of a name or a number: a closing bracket, the `?` of error
+# propagation, a name's trailing `_`, a string or char literal's quote.
+_OPERAND_TAIL = frozenset(")]}?_\"'")
+
+# The two operators Rust also writes as a pair of one-character tokens.
+_PAIRS = frozenset({"||", "&&"})
+
+
+def _ends_operand(token: str | None) -> bool:
+    """Whether `token` can end the left operand of a binary operator."""
+    if not token or token in _NO_VALUE_KEYWORDS:
+        return False
+    return token[-1].isalnum() or token[-1] in _OPERAND_TAIL
+
+
+def _code_token(token: str, previous: str | None) -> str | None:
+    """The last code token once `token` is read: whitespace and comments leave it."""
+    if token.isspace() or token.startswith(("//", "/*")):
+        return previous
+    return token
+
+
+def split_operator_pairs(tokens):
+    """Each `||` and `&&` with no operand before it, as its two characters.
+
+    lizard's tokenizer reads `||` and `&&` greedily, so `move || n` and
+    `|&&x|` carried a logical operator that ccn, cognitive and nesting all
+    counted. A binary operator needs a left operand; without one the `||` is
+    a closure's empty parameter list and the `&&` two borrows.
+    """
+    previous = None
+    for token in tokens:
+        if token in _PAIRS and not _ends_operand(previous):
+            yield from token
+        else:
+            yield token
+        previous = _code_token(token, previous)
+
+
+class RustDecisionStates(CodeStateMachine):
+    """The decisions Rust spells without a keyword lizard counts.
+
+    One condition per match arm, wildcard arms free, and one per let-else.
+    An `else` is a let-else's unless a `}` stands before it (see the module
+    docstring).
 
     Runs as a parallel state of the reader, next to the RustStates machine that
     finds functions, and reports through the same `context.add_condition()` hook
@@ -94,25 +165,48 @@ class MatchArmStates(CodeStateMachine):
     def _state_global(self, token):
         if token == "\n":
             return
-        if token == _ARM and self.previous_code_token != _WILDCARD:
+        if self._decides(token):
             self.context.add_condition()
         self.previous_code_token = token
+
+    def _decides(self, token: str) -> bool:
+        if token == _ARM:
+            return self.previous_code_token != _WILDCARD
+        return token == "else" and self.previous_code_token != "}"
+
+
+class CorrectedRustStates(RustStates):
+    """lizard's RustStates, with a signature that decides nothing.
+
+    The conditions counted between `fn` and the body's `{` came from tokens
+    that only declare, so the `{` sets the function back to its base of 1.
+    """
+
+    def _expect_function_impl(self, token):
+        if token == "{":
+            self.context.current_function.cyclomatic_complexity = 1
+        super()._expect_function_impl(token)
 
 
 class CorrectedRustReader(_StockRustReader):
     """lizard's RustReader with the match rule of lizard #494 replaced.
 
-    Subtracting `match` from the inherited keyword set (rather than restating
-    the set) keeps every other keyword upstream counts, including ones a later
-    lizard adds.
+    Subtracting from the inherited keyword set (rather than restating the set)
+    keeps every other keyword upstream counts, including ones a later lizard
+    adds.
     """
 
     # pylint: disable=too-few-public-methods
-    _control_flow_keywords = _StockRustReader._control_flow_keywords - {"match"}
+    _control_flow_keywords = _StockRustReader._control_flow_keywords - {"match", "where"}
 
     def __init__(self, context):
         super().__init__(context)
-        self.parallel_states = [RustStates(context), MatchArmStates(context)]
+        self.parallel_states = [CorrectedRustStates(context), RustDecisionStates(context)]
+
+    @staticmethod
+    def generate_tokens(source_code, addition="", token_class=None):
+        return split_operator_pairs(
+            _StockRustReader.generate_tokens(source_code, addition, token_class))
 
 
 def register() -> None:
