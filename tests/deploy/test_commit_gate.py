@@ -13,6 +13,7 @@ import json
 import re
 from pathlib import Path
 
+import pytest
 
 from kit import docsnip, gitmirror, gitsurf, repos, wheels
 from kit.cells import cell
@@ -88,13 +89,34 @@ def out_file_variant(box, repo: Path, shell: str) -> None:
     """The same hook written with Out-File, the form the README warns about:
     when the file opens with a byte-order mark git cannot spawn it, and doctor
     says so; when it does not, the gate still refuses."""
-    block = docsnip.fence(gitsurf.README, gitsurf.ROUTE1, index=1).text.splitlines()
-    value = re.search(r'-Value (".*")$', block[1])[1]
-    box.script(f"{block[0]}\n{value} | Out-File .git/hooks/pre-commit\n", shell=shell, cwd=repo, expect=0)
+    block = docsnip.fence(gitsurf.README, gitsurf.ROUTE1, index=1).text
+    box.script(out_file_script(block), shell=shell, cwd=repo, expect=0)
     gitsurf.breach(repo)
     if (repo / ".git/hooks/pre-commit").read_bytes()[:2] in (b"\xff\xfe", b"\xef\xbb"):
         return bom_refusal(box, repo)
     gitsurf.assert_refused(gitsurf.commit(box, repo))
+
+
+def out_file_script(block: str) -> str:
+    """The README's PowerShell block with its last line, the Set-Content write,
+    turned into Out-File to the same path. Every line before it runs as printed."""
+    *setup, write = block.splitlines()
+    path, value = re.search(r'-Path (\S+) .*-Value (".*")$', write).groups()
+    return "\n".join([*setup, f"{value} | Out-File {path}", ""])
+
+
+@pytest.mark.kit
+def test_the_out_file_variant_runs_the_readme_block_with_only_its_write_changed():
+    """The PowerShell block of Route 1 finds the hook's path in its own line
+    before the Set-Content line. Read at fixed line numbers, the variant took
+    that line for the write, and win-gate-route1-pwsh and -ps51 stopped on a
+    TypeError before writing any hook."""
+    block = docsnip.fence(gitsurf.README, gitsurf.ROUTE1, index=1).text.splitlines()
+    script = out_file_script("\n".join(block)).splitlines()
+
+    assert script[:-1] == block[:-1]
+    assert re.fullmatch(r'".*" \| Out-File \S+', script[-1]), script[-1]
+    assert script[-1].split()[-1] == re.search(r"-Path (\S+)", block[-1])[1]
 
 
 def bom_refusal(box, repo: Path) -> None:
