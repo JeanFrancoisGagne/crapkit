@@ -23,11 +23,20 @@
   marked it, `verify`'s gate refused it when an edit touched it, and the digest named it
   new over ceiling. Every comparison with a ceiling now counts a score within a relative
   2^-48 of it as the ceiling. Over ccn 1 to 60 and coverage fractions up to 400ths, the
-  float strays at most 5.2 units in its last place from the exact value, and an exact
+  float strays no more than 5.2 units in its last place from the exact value, and an exact
   CRAP that is not a whole ceiling misses it by at least 1/64,000,000. `trend` keys its
   stored rollups on the rule, so its first run after the upgrade counts every run again.
   Scores do not move. A mark on a function whose CRAP is exactly its ceiling leaves the
   marks file at the next `verify` that passes and tightens.
+
+### `est_uncovered_paths` rounds the exact product
+
+- `next-item` and `brief` round `(1 - cov) * ccn` half to even on the exact product
+  rather than on its float. (1 - 5/12) * 6 is exactly 3.5 and now reads 4; the float
+  was 3.4999999999999996 and read 3. Over ccn 1 to 40 and coverage fractions up to
+  120ths, 127 of the 820 exact halves move by 1. The number is not stored, so nothing
+  re-seeds. `docs/agent-json.md`, AGENTS.md and the MCP output schemas now say half to
+  even, where they gave a bare `round()` that reads as half up.
 
 ### crapkit stops before it stores or prints a number that breaks its definition
 

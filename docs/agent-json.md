@@ -132,7 +132,7 @@ $ crapkit next-item
 | `target` | int | This scope's effective ceiling: the highest CRAP a function may carry, and so also the highest `ccn`, since CRAP never falls below `ccn`. A scope's own `target` overrides the `[crapkit]` one. |
 | `commits`, `authors` | int | Churn for the file in the window. |
 | `est_splits` | int | `0` when `ccn <= target`, else `ceil(ccn / target)`. Roughly how many functions this needs to become. |
-| `est_uncovered_paths` | int | `(1 - cov) * ccn`, rounded half to even: 2.5 reads 2 and 3.5 reads 4. Decision paths no test walks. |
+| `est_uncovered_paths` | int | `(1 - cov) * ccn`, rounded half to even on the exact product: 2.5 reads 2 and 3.5 reads 4. Decision paths no test walks. |
 | `uncovered_lines` | array or **null** | See below. |
 | `uncovered_lines_note` | string | Present **only** when `uncovered_lines` is null. |
 

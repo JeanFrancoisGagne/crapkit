@@ -13,6 +13,7 @@ shells. The packet keeps the existing `brief --json` field types.
 from __future__ import annotations
 
 import base64
+from fractions import Fraction
 import os
 import re
 import shlex
@@ -198,9 +199,22 @@ def budget(row, ceiling: int) -> dict:
     catch it. `invariants.check_budget` reads both against their definitions.
     """
     estimate = {"est_splits": 0 if row.ccn <= ceiling else -(-row.ccn // ceiling),
-                "est_uncovered_paths": max(0, round((1 - row.cov) * row.ccn))}
+                "est_uncovered_paths": _uncovered_paths(row.ccn, row.cov)}
     check_budget(row, ceiling, estimate)
     return estimate
+
+
+# cov arrives as the double of covered / total. Two fractions whose denominators
+# are at most 10**7 differ by at least 1e-14, and the double sits within 6e-17 of
+# its fraction, so limit_denominator hands the fraction back for any such total.
+_COVERAGE_DENOMINATOR = 10 ** 7
+
+
+def _uncovered_paths(ccn: int, cov: float) -> int:
+    """round((1 - cov) * ccn), half to even, on the exact product. The doubles
+    put (1 - 5/12) * 6, exactly 3.5, at 3.4999999999999996, and round() of that
+    said 3."""
+    return max(0, round((1 - Fraction(cov).limit_denominator(_COVERAGE_DENOMINATOR)) * ccn))
 
 
 # The flags of rows no coverage artifact joins: the scope has no lane, or asks

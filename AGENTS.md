@@ -418,7 +418,7 @@ Act on these fields:
 |---|---|
 | `remedy` | `decompose` splits the function, `split-lines` moves it off a line it shares with another function or with its own `def`, `add-tests` covers it, `ok` needs nothing |
 | `est_splits` | pieces a decomposition needs: `0` when `ccn <= target`, else `ceil(ccn / target)` |
-| `est_uncovered_paths` | decision paths no test walks: `round((1 - cov) * ccn)` |
+| `est_uncovered_paths` | decision paths no test walks: `(1 - cov) * ccn` rounded half to even, so 2.5 reads 2 and 3.5 reads 4 |
 | `uncovered_lines` | the exact line numbers to cover |
 | `target` | the scope's ceiling; ccn above it cannot be saved by coverage |
 | `function` | pass verbatim to `brief` and `claims release` |
