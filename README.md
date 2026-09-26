@@ -578,7 +578,7 @@ hook there, and with no `crapkit.toml` at the top the gate runs in each crapkit 
 that owns a staged file and names paths from the top (`packages/api/app/m.py`). A commit
 that stages nothing under any `crapkit.toml`, a docs-only commit or any commit in a repo
 armed before `crapkit init`, passes with one note on stderr. To pin the gate to one root
-instead, end each `hook-precommit` line of the hook body below with `--repo packages/api`,
+instead, end each `hook-precommit` line of the hook below with `--repo packages/api`,
 as in `exec python -m crapkit hook-precommit --repo packages/api`, and Route 3 adds
 `args: [--repo, packages/api]` under `id: crapkit-gate`. Route 4's `crapkit verify` takes
 `--repo packages/api`.

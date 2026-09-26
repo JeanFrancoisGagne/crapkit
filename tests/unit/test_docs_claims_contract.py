@@ -339,8 +339,13 @@ def test_the_gate_section_says_a_set_hooks_path_moves_every_hook():
     assert "`.husky/pre-commit`" in section, "husky repos add the line to husky's own hook"
 
 
-# The two lines README's hook body is made of, as a block writes each one.
+# The lines README's hook body is made of, as a block writes each one. Decision
+# (f): the crapkit launcher first, then uvx, so a pipx, uv tool or uvx install
+# reaches the gate. `exec python -m crapkit` alone refused every commit on a
+# machine whose PATH has no `python` (Debian, Ubuntu) and on every pipx or uv
+# tool install, whose interpreter is not the one on PATH.
 HOOK_BODY = ("command -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit",
+             "command -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit",
              "exec python -m crapkit hook-precommit")
 FENCE_NAMES = {"sh": "sh", "powershell": "PowerShell", "yaml": "YAML"}
 
@@ -417,19 +422,10 @@ def test_route_two_creates_the_directory_it_writes_into():
     block = _route_two()
     assert "mkdir -p githooks" in block
     assert block.index("mkdir -p githooks") < block.index("githooks/pre-commit <<")
-    assert HOOK_BODY in block, "no script body to write"
+    assert all(line in block for line in HOOK_BODY), "no script body to write"
 
 
 # --- one hook body on every page that writes one ------------------------------
-
-# Decision (f): the crapkit launcher first, so a pipx, uv tool or uvx install
-# reaches the gate. `exec python -m crapkit` alone refused every commit on a
-# machine whose PATH has no `python` (Debian, Ubuntu) and on every pipx or uv
-# tool install, whose interpreter is not the one on PATH.
-HOOK_BODY = ("if command -v crapkit >/dev/null 2>&1; then exec crapkit hook-precommit; fi\n"
-             "if command -v uvx >/dev/null 2>&1; then exec uvx crapkit hook-precommit; fi\n"
-             "exec python -m crapkit hook-precommit\n")
-
 
 def _handbook_hook() -> str:
     """The script the handbook's printf writes, with printf's \\n expanded."""
@@ -446,7 +442,7 @@ def _handbook_hook() -> str:
     pytest.param(_handbook_hook, id="handbook"),
 ])
 def test_every_printed_sh_hook_calls_the_crapkit_launcher_first(written):
-    assert "#!/bin/sh\n" + HOOK_BODY in written()
+    assert "#!/bin/sh\n" + "".join(f"{line}\n" for line in HOOK_BODY) in written()
 
 
 def test_the_gate_section_names_the_order_the_hook_tries():
