@@ -2,6 +2,27 @@
 
 ## 0.8.1 — unreleased
 
+Go and Zig functions are read to where their signature ends. The release that ships
+this raises the analysis version, so every Go or Zig repo re-seeds its marks once.
+
+### Go and Zig signatures end where the language ends them
+
+- A function type no longer opens a function. After a package-level `var hooks
+  []func()` the next Go function had no row. A local `var cb func(int) error`, or
+  Zig's `const cb: *const fn (u8) void = &f;`, took the enclosing function's next
+  block as its body: an anonymous row held that block's `if`, and the function lost
+  it from `ccn`, `cognitive` and `nesting`. A Zig `extern fn` prototype took the next
+  function's body the same way, and that function had no row.
+- A function whose result type holds braces spans its body: Go's `struct{ a int }`,
+  Zig's `struct { usize, usize }`, `error{Oops}!u8` and `union(enum) {...}`. It ended
+  on its signature line at ccn 1.
+- A package-level Go literal with a result, `var f = func(a int) error {...}`, is an
+  anonymous function like the literal without one. It had no row.
+- `params` counts a parameter of function type once, where `f func(int, string)
+  error` and Zig's `lessThan: fn (T, T) bool` read 2, and counts a parameter whose
+  type ends in a brace, where `v interface{}` read 0. Long names do not change, so
+  marks keep their keys.
+
 ### Rust reads its own syntax, not C's
 
 - A Rust signature decides nothing. A `where` clause, a `?Sized` bound and a `for<'a>`

@@ -241,6 +241,15 @@ pattern parts no parameters, and a parameter that binds a pattern, `[a, b]: [u8;
 counts once. Each correction retires the day upstream
 fixes its defect.
 
+**`go` and `zig` run on subclasses of lizard's readers.** lizard reads a function type as a
+function: after `var hooks []func()` the next Go function had no row, and a local `var cb
+func(int) error` took the enclosing function's next `if` block as its own body. crapkit ends
+a signature where the language does: at its body's `{`, at a `,` `;` `=` or closing bracket
+that belongs to the code around it, at a Go line break where the spec inserts a semicolon,
+and at a Zig `fn (`, which is always a type. A result type's braces (`struct{ a int }`,
+`error{Oops}!u8`) are not the body, and a parameter of function type, `f func(int, string)
+error`, counts once.
+
 The cognitive column charges a Rust `match` like a `switch`: +1 plus the nesting it sits
 in, arms free. The two columns therefore say different things about one block on purpose.
 The 7-arm match above is ccn 7 and cognitive 1: seven ways through it, one decision to

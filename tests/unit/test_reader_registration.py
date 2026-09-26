@@ -23,6 +23,8 @@ import sys
 import pytest
 
 from crapkit import analyze
+from crapkit.lizardgolike import CorrectedGoReader, CorrectedZigReader
+from crapkit.lizardgolike import register as register_golike
 from crapkit.lizardpowershell import PowerShellReader
 from crapkit.lizardpowershell import register as register_powershell
 from crapkit.lizardrust import CorrectedRustReader
@@ -33,7 +35,8 @@ from crapkit.universe import LANGUAGE_EXTENSIONS
 
 # The suffix each crapkit-owned reader must answer to, and the reader itself.
 CRAPKIT_READERS = {".rs": CorrectedRustReader, ".sh": ShellReader, ".bash": ShellReader,
-                   ".ps1": PowerShellReader, ".psm1": PowerShellReader}
+                   ".ps1": PowerShellReader, ".psm1": PowerShellReader,
+                   ".go": CorrectedGoReader, ".zig": CorrectedZigReader}
 
 
 def _get_reader_for(name: str):
@@ -60,6 +63,7 @@ def test_registering_all_three_again_in_any_order_appends_nothing():
     before = languages()
 
     for _ in range(2):
+        register_golike()
         register_powershell()
         register_shell()
         register_rust()
@@ -112,9 +116,10 @@ def test_a_spawned_child_importing_analyze_resolves_all_three():
     registrations ride the import rather than this process's history."""
     probe = ("import crapkit.analyze;"
              "from lizard_languages import get_reader_for as g;"
-             "print([g('p' + s).__name__ for s in ('.rs', '.sh', '.ps1')])")
+             "print([g('p' + s).__name__ for s in ('.rs', '.sh', '.ps1', '.go', '.zig')])")
 
     out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True,
                          check=True).stdout
 
-    assert "['CorrectedRustReader', 'ShellReader', 'PowerShellReader']" in out
+    assert ("['CorrectedRustReader', 'ShellReader', 'PowerShellReader', "
+            "'CorrectedGoReader', 'CorrectedZigReader']") in out

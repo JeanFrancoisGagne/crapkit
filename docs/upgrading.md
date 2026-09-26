@@ -133,6 +133,20 @@ every marks file re-seeds once, with the same three commands as version 11 below
 - In Python and shell, a name spelled `switch` no longer adds to ccn_mod. The gated
   ccn is unchanged.
 
+### Go and Zig signatures (next analysis version)
+
+The next release reads Go and Zig signatures to where the language ends them, and
+raises the analysis version for it. A function type such as `var cb func(int) error`
+no longer opens a function, so the function around it gets back the block the type
+took and its `ccn` can rise; the anonymous row that held the block goes away. A
+function that had no row, one after a package-level function type or a Zig `extern
+fn` prototype, is listed, and one whose result type holds braces reads its whole body.
+Either can be over its ceiling and fails the gate the next time its file changes.
+`params` moves for parameters of function type or with a braced type. Long names do
+not change, so no mark changes key. Re-seed once: `crapkit coverage`, `crapkit ratchet
+prune`, then `crapkit ratchet seed`. Prune drops the marks of the anonymous rows that
+go away.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or

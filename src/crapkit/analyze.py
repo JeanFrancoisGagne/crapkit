@@ -21,6 +21,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     from lizard_languages import get_reader_for as _lizard_reader_for
     from lizard_languages.python import PythonReader as _PythonReader
 
+    from .lizardgolike import register as _register_golike
     from .lizardpowershell import register as _register_powershell
     from .lizardpython import register as _register_python
     from .lizardrust import register as _register_rust
@@ -38,21 +39,23 @@ from .keys import bare_name
 # lizard picks a reader by extension off a hardcoded list, and none of these is
 # on it: `.rs` resolves to a reader that counts no `match` arm (lizard #494),
 # `.py` to one that ends a def inside a signature that runs past its first `)`
-# (crapkit #72), and `.sh` and `.ps1` resolve to nothing at all, which lizard
-# answers with CLikeReader rather than a failure. All four belong HERE, at the
+# (crapkit #72), `.go` and `.zig` to one that reads a function type as a
+# function, and `.sh` and `.ps1` resolve to nothing at all, which lizard
+# answers with CLikeReader rather than a failure. All five belong HERE, at the
 # module scope of the module a ProcessPoolExecutor child imports, or spawned
 # workers measure with the readers lizard shipped and report plausible wrong
 # numbers.
 #
 # lizardshell and lizardpowershell already register themselves on import, and
-# lizardrust and lizardpython deliberately do not (rebinding a name in another
-# package's namespace is not something an import should do quietly). Calling
-# all four keeps the wiring readable in one place and costs nothing: each is
-# idempotent.
+# lizardrust, lizardpython and lizardgolike deliberately do not (rebinding a
+# name in another package's namespace is not something an import should do
+# quietly). Calling all five keeps the wiring readable in one place and costs
+# nothing: each is idempotent.
 _register_rust()
 _register_shell()
 _register_powershell()
 _register_python()
+_register_golike()
 
 _POOL_THRESHOLD = 16
 
@@ -153,6 +156,27 @@ class _ModifiedDelta:
                 fn = context.current_function
                 delta = _switch_delta(token, reader)
                 fn.modified_delta = getattr(fn, "modified_delta", 0) + delta
+            yield token
+
+
+class _ReaderLookahead:
+    """Hand the reader each raw token before any extension counts it.
+
+    lizard's extensions see a token before the reader's state machine does, so a
+    reader that learns from a token that the function it opened was never one
+    (a Go or Zig function type: crapkit.lizardgolike) learns it after that
+    token's condition, nesting and line went to the wrong function. A reader
+    with a `peek` method gets the token here first, newlines and comments
+    included. Every other reader pays one attribute read per file.
+    """
+
+    def __call__(self, tokens, reader):
+        peek = getattr(reader, "peek", None)
+        if peek is None:
+            yield from tokens
+            return
+        for token in tokens:
+            peek(token)
             yield token
 
 
@@ -312,7 +336,8 @@ def _chain(cognitive_index: int) -> list:
     """
     extensions = lizard.get_extensions(["ND"])
     extensions.insert(cognitive_index, _Cognitive())
-    return [_TypeScriptExpressions(), *extensions, _ModifiedDelta(), _PythonBodies(), _CreationOrder()]
+    return [_TypeScriptExpressions(), _ReaderLookahead(), *extensions, _ModifiedDelta(), _PythonBodies(),
+            _CreationOrder()]
 
 
 # Two chains, built once per process each, not once per file: 14k files paid 14k

@@ -347,6 +347,11 @@ gotchas](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configurati
 and retires each correction the day upstream fixes it. The cognitive column charges a
 `match` once, the way Sonar charges a `switch`. The Rust and shell readers count each `match` or `case` arm in the modified column too, so both columns agree and the arms are gated: a seven-arm `match` gates at `ccn` 8, where lizard's modified count, and so the gated `ccn`, of a C `switch` with seven cases is 2.
 
+Go and Zig read through crapkit's subclasses of lizard's readers, which end a signature
+where the language does. A function type such as `var cb func(int) error` opens no
+function, a result type's braces are not the body, and a parameter of function type counts
+once.
+
 Expression arrows in arrays and argument lists are measured separately. In TypeScript,
 wrap an arrow body in parentheses when it contains `<` before a comma, such as
 `x => (pair<T,U>(x))` or `x => (x < 0)`. Without that delimiter, analysis refuses

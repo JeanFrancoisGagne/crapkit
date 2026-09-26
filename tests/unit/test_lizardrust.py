@@ -309,4 +309,4 @@ def test_register_raises_when_lizard_resolves_something_else(monkeypatch):
 def test_other_languages_keep_their_readers():
     register()
     assert lizard.get_reader_for("a.java").__name__ == "JavaReader"
-    assert lizard.get_reader_for("a.go").__name__ == "GoReader"
+    assert lizard.get_reader_for("a.swift").__name__ == "SwiftReader"

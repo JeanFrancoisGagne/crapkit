@@ -2,8 +2,9 @@
 
 Each is admitted the way Rust was — `SUPPORTED_LANGUAGES` plus
 `LANGUAGE_EXTENSIONS` — because lizard already ships a reader for each and the
-probe battery hand-counted every one of them against its reader. No new reader,
-no chain placement, no default exclude.
+probe battery hand-counted every one of them against its reader. No chain
+placement and no default exclude; Zig reads through crapkit.lizardgolike's
+subclass of lizard's reader, which ends a signature where Zig ends it.
 
 What the battery found per language is pinned below: Vue scores the `<script>`
 block and nothing else, Objective-C names a method by its selector, Java refunds
@@ -137,7 +138,7 @@ def test_every_claimed_suffix_resolves_to_the_reader_it_was_graded_on():
 
     assert resolved == {".m": "ObjCReader", ".mm": "ObjCReader",
                         ".vue": "VueReader", ".java": "JavaReader",
-                        ".zig": "ZigReader"}
+                        ".zig": "CorrectedZigReader"}
 
 
 def test_sources_join_a_scope_that_declares_their_language():
