@@ -4,8 +4,9 @@
                           server fails to connect, an edit hears nothing, and doctor names the install
                           that fixes both
     lin-plugin-floors     the README plugin lines on each harness floor pins.toml names: Claude Code
-                          2.1.139 advises an edit; on 2.1.138 the exec-form args are dropped and the
-                          model reads crapkit's usage error after every edit; Codex 0.121.0
+                          2.1.139 and 2.1.138 each advise an edit once, since the plugin's one hook
+                          is shell form and passes no args for 2.1.138 to drop, and doctor
+                          --plugin-root names no floor on 2.1.138; Codex 0.121.0
 
 A floor runs under its plain command name: a sandbox bin directory first on
 PATH holds `claude` (or `codex`) pointing at the floor binary, so the README
@@ -27,7 +28,6 @@ from test_claude_plugin import (CLAUDE, TOOLS, cli_venv, doctor_plugin, github, 
 from test_codex_plugin import CodexSession, codex_version
 
 PACKET = "deploy-plugins"
-USAGE = "crapkit: error: the following arguments are required: command"
 # A Go function over the ceiling of 6 (ccn 10), in the go scope `uvx crapkit init` writes.
 GO_BREACH = """package main
 
@@ -154,27 +154,28 @@ def test_claude_code_floor_advises_an_edit(box, candidate, templates):
 
 
 @cell("lin-plugin-floors", channel="plugins", harness=f"Claude Code {BELOW}",
-      scenario=f"fresh: what a Claude Code {BELOW} user sees after an edit: crapkit's usage error, once per edit",
+      scenario=f"fresh: a Claude Code {BELOW} user gets the advisory after an edit: the shell-form hook "
+               "passes no args for it to drop",
       use_cases="plugin install", os="linux", image="core", cadence="nightly")
-def test_below_the_floor_the_model_reads_a_usage_error(box, candidate, templates):
+def test_below_the_args_floor_the_shell_form_hook_advises_an_edit(box, candidate, templates):
     repo = claude_on_floor(box, candidate, templates, BELOW)
-    result = run_case(box, repo, write_turns(repo)["write-new"], USAGE)
-    bare = [start["argv"][1:] for start in shim.starts(box) if start["argv"][1:] not in (["mcp"], ["--version"])]
+    result = run_case(box, repo, write_turns(repo)["write-new"], advisory("calc/big.py"))
+    hooks = [start["argv"][1:] for start in shim.starts(box) if start["argv"][1:] not in (["mcp"], ["--version"])]
 
-    assert bare == [[]]
+    assert hooks == [["claude-hook", "--protocol", "1"]]
     assert result["advisories"] == 1
 
 
 @cell("lin-plugin-floors", channel="plugins", harness=f"Claude Code {BELOW}",
-      scenario=f"fresh: doctor --plugin-root warns on Claude Code {BELOW}, below the {FLOOR} the hooks need",
+      scenario=f"fresh: doctor --plugin-root on Claude Code {BELOW} names no {FLOOR} floor: the plugin's "
+               "shell-form hook passes no args",
       use_cases="doctor --plugin-root", os="linux", image="core", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason=f"deploy-bug deploy-plugins-4: on Claude Code {BELOW} the plugin's hooks spawn a "
-                   f"bare `crapkit` after every edit, and doctor --plugin-root exits 0 without naming the {FLOOR} floor")
-def test_doctor_warns_below_the_claude_code_floor(box, candidate, templates):
+def test_doctor_names_no_floor_for_the_shell_form_hook(box, candidate, templates):
     repo = claude_on_floor(box, candidate, templates, BELOW)
     doctor = doctor_plugin(box, cwd=repo)
+    box.transcript.attach("doctor-plugin-root", {"exit": doctor.exit, "stdout": doctor.stdout})
 
-    assert doctor.exit == 1 and FLOOR in doctor.stdout
+    assert doctor.exit == 0 and FLOOR not in doctor.stdout, doctor.stdout
 
 
 CODEX_FLOOR = floors("codex")[0]

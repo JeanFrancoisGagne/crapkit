@@ -7,13 +7,15 @@
 - Codex keeps crapkit-onboard out of the model's context (agents/openai.yaml)
   and still lists the two working skills.
 - Claude Code's own validator still accepts the plugin and the marketplace.
-- `doctor --plugin-root` names a Claude Code below 2.1.139 and says nothing at
-  2.1.139 or the pinned release.
+- `doctor --plugin-root` says nothing about the plugin's one shell-form hook on
+  Claude Code 2.1.138, 2.1.139 or the pinned release, and names a Claude Code
+  below 2.1.139 for a plugin whose hooks pass `args`, as 0.8.0's did.
 """
 from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 from pathlib import Path
 
@@ -221,9 +223,12 @@ def test_claude_code_on_windows_still_validates_the_plugin_strictly(box, candida
 
 
 def _claude_at(box, package: str) -> Path:
-    """A directory holding only `claude`, the given Claude Code release."""
+    """A directory holding only `claude`, the given Claude Code release; the
+    same directory for a second call with that release."""
     binary = harness_package(box, package) / "bin" / "claude.exe"
     directory = box.root / f"{package}-bin"
+    if directory.exists():
+        return directory
     directory.mkdir()
     if WINDOWS:
         (directory / "claude.cmd").write_text(f'@"{binary}" %*\r\n', encoding="utf-8")
@@ -232,14 +237,14 @@ def _claude_at(box, package: str) -> Path:
     return directory
 
 
-def _plugin_doctor(box, candidate, package: str | None = None) -> tuple[int, str]:
-    """doctor --plugin-root on the candidate's plugin tree, with the Claude Code
-    release `package` first on PATH, or the pinned one."""
+def _plugin_doctor(box, candidate, package: str | None = None, plugin: Path | None = None) -> tuple[int, str]:
+    """doctor --plugin-root on the candidate's plugin tree, or `plugin`, with the
+    Claude Code release `package` first on PATH, or the pinned one."""
     claude = _claude_at(box, package) if package else None
     env = {"PATH": os.pathsep.join([str(claude), box.env["PATH"]])} if claude else None
     box.run([box.which("claude") if claude is None else str(next(claude.iterdir())), "--version"],
             expect=0)
-    step = box.run(["crapkit", "doctor", "--plugin-root", str(candidate.staged / "plugin")], env=env)
+    step = box.run(["crapkit", "doctor", "--plugin-root", str(plugin or candidate.staged / "plugin")], env=env)
     return step.exit, step.stdout + step.stderr
 
 
@@ -248,17 +253,35 @@ def _candidate_and_claude(box) -> None:
     harnesses_on_path(box)
 
 
+def _exec_form_plugin(box, candidate) -> Path:
+    """The candidate's plugin with its hook written the way 0.8.0 wrote it: the
+    command's first word in `command` and the rest in `args`, the field
+    Claude Code below 2.1.139 drops."""
+    plugin = box.root / "plugin-exec-form"
+    shutil.copytree(candidate.staged / "plugin", plugin)
+    hooks = plugin / "hooks" / "hooks.json"
+    declared = json.loads(hooks.read_text(encoding="utf-8"))
+    for group in declared["hooks"]["PostToolUse"]:
+        for handler in group["hooks"]:
+            handler["command"], *handler["args"] = shlex.split(handler["command"])
+    hooks.write_text(json.dumps(declared, indent=2) + "\n", encoding="utf-8")
+    return plugin
+
+
 def _floor_cells(box, candidate):
     _candidate_and_claude(box)
-    below_exit, below = _plugin_doctor(box, candidate, "claude-code-2.1.138")
+    shipped = _plugin_doctor(box, candidate, "claude-code-2.1.138")
+    below_exit, below = _plugin_doctor(box, candidate, "claude-code-2.1.138", _exec_form_plugin(box, candidate))
 
+    assert shipped == (0, ""), shipped
     assert below_exit == 1, below
     assert "Claude Code 2.1.138 (" in below and "predates 2.1.139" in below
     assert "`claude update`" in below
 
 
 @cell("lin-plugin-floor-doctor", channel="pip venv + the plugin tree", harness="Claude Code 2.1.138",
-      scenario="fresh: doctor --plugin-root names a Claude Code below 2.1.139 and exits 1",
+      scenario="fresh: doctor --plugin-root is silent on Claude Code 2.1.138 for the shipped shell-form hook, "
+               "and names 2.1.139 and exits 1 for a plugin whose hooks pass args",
       use_cases="doctor --plugin-root", os="linux", image="core", cadence="push")
 def test_doctor_names_a_claude_code_below_the_args_floor(box, candidate):
     _floor_cells(box, candidate)
