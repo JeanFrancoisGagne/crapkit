@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from accuracy.analysis_oracles import ts_shapes_cpp, ts_shapes_swift
+from accuracy.analysis_oracles import ts_shapes_cpp, ts_shapes_objc, ts_shapes_swift
 from accuracy.analysis_oracles.oracles import treesitter_cognitive as cognitive
 from accuracy.analysis_oracles.oracles import treesitter_counters as counters
 
@@ -848,6 +848,8 @@ SHAPES = [
     Shape("AO-COG-RECURSION-NAME-C", C_FAMILY, COGNITIVE, name_not_called),
     Shape("AO-C-DIRECTIVE-NLOC", C_FAMILY, NLOC, lambda fn, c: has_type(fn, c, {"preproc_call"})),
     Shape("AO-CPP-TEMPLATE-DEFAULT-LESS", _all("cpp"), EVERY, after_template_less),
+    *[Shape(ruling, _all(*languages), columns, holds)
+      for ruling, languages, columns, holds in ts_shapes_objc.RULES],
     # Swift
     Shape("AO-SWIFT-IF-CASE", _all("swift"), ("ccn_std",), case_condition),
     Shape("AO-SWIFT-IF-CASE-ND", _all("swift"), NESTING, case_condition),
@@ -890,6 +892,18 @@ def swift_extra_line(context: Context, start: int) -> bool:
     return init_expression_line(context, start) or ts_shapes_swift.extra_line(context, start)
 
 
+def objc_extra_line(context: Context, start: int) -> bool:
+    """An instance-variable block's phantom row (AO-OBJC-IVAR-BLOCK), or a row that
+    starts on a trailing attribute's line (AO-TRAILING-ATTRIBUTE)."""
+    return ivar_block_line(context, start) or ts_shapes_objc.extra_line(context, start)
+
+
+def cpp_extra_line(context: Context, start: int) -> bool:
+    """A row ts_shapes_cpp explains (AO-CPP-DECLTYPE-BRACE, AO-TREE-DECLARATION-ERROR),
+    or one that starts on a trailing attribute's line (AO-TRAILING-ATTRIBUTE)."""
+    return ts_shapes_cpp.extra_row(context, start) or ts_shapes_objc.extra_line(context, start)
+
+
 EXTRA_ROWS = {"go": _loose_line, "rust": signature_line, "java": java_extra_line,
-              "objc": ivar_block_line, "swift": swift_extra_line,
-              "cpp": ts_shapes_cpp.extra_row}
+              "objc": objc_extra_line, "swift": swift_extra_line,
+              "c": ts_shapes_objc.extra_line, "cpp": cpp_extra_line}

@@ -63,4 +63,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_shell_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
     {"name": "Swift ccn against SwiftLint", "seconds": 40,
      "pytest": [_PACKET + "test_swift_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "Objective-C against OCLint, clang-tidy and tree-sitter", "seconds": 60,
+     "pytest": [_PACKET + "test_objc_oracles.py"], "tiers": ["nightly"]},
 ]
