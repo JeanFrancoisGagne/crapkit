@@ -88,7 +88,9 @@ _OPERAND_ENDS = frozenset({")", "]", "}", ">", "?", "+", "-", "this", "await"})
 # name (`Foo &&x`) and spaces a connective on both sides, and a connective needs
 # a right operand, which `)`, `,`, `>`, `;`, `=` and a pack's `... args` cannot
 # start (`Foo(Foo&&)`, `static_cast<T&&>(x)`, `Args&&... args`). A fold,
-# `(ts && ...)`, joins operands and keeps its mutant.
+# `(ts && ...)`, joins operands and keeps its mutant. C files share the `cpp`
+# label, so a C `ok&& ready` loses its mutant too: a missed mutant in a layout
+# clang-format never writes, never a kill no test made.
 _REFERENCE_LANGUAGES = frozenset({"cpp", "objectivec"})
 _REFERENCES = re.compile(r"(?<=[\w>])&&(?=\s)|(?<=\s)&&(?=\w)|&&(?=\s*(?:[),>;=\]}]|\.\.\.\s*\w))")
 # A C++ cast names its target type in angles, so `static_cast<T&&>` holds no comparison.

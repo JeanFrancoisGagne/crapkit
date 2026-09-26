@@ -23,12 +23,13 @@
   and Swift's `static func <` grew `static func <=`), and it read the type argument in
   `static_cast<T&&>(x)` as two comparisons. None of these compiles, so each counted as
   a kill no test made. They now make no mutant. A connective after an operand,
-  including one that starts a rustfmt continuation line, still makes its own. After a
-  C++ type name the layout decides: a `&&` hugged to one side (`Foo&& x`, `Foo &&x`) or
-  followed by `)`, `,` or `>` is a reference, and one spaced on both sides or on
-  neither (`a && b`, `a&&b`) is a connective, so a reference written `Foo && x` still
-  makes a mutant. Kill rates on Rust, C++ and Swift files can fall. No CRAP score
-  changes.
+  including one that starts a rustfmt continuation line, still makes its own. `mutate`
+  cannot tell a type name from any other name, so in C, C++ and Objective-C files the
+  layout decides after a name: a `&&` hugged to one side (`Foo&& x`, `Foo &&x`,
+  `ok&& ready`) or followed by `)`, `,` or `>` is a reference and makes no mutant, and
+  one spaced on both sides or on neither (`a && b`, `a&&b`) is a connective, so a
+  reference written `Foo && x` still makes a mutant. Kill rates on Rust, C, C++,
+  Objective-C and Swift files can fall. No CRAP score changes.
 
 ### `mutate` flips Zig's `and` and `or`, and leaves its `||` alone
 
