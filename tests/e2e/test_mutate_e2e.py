@@ -3,6 +3,7 @@
 back byte-identical whatever happened."""
 import json
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -397,6 +398,16 @@ def _no_result_repo(root: Path, mode: str) -> Path:
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True, capture_output=True)
     commit(root, "-A")
     return root
+
+
+@pytest.mark.parametrize("mode", [mode for mode in _NO_RESULT if mode != "timeout"])
+def test_a_mode_whose_suite_must_finish_hands_crapkit_the_hang_bound(tmp_path: Path, mode: str):
+    """Only the timeout mode is about its deadline. A short one on any other
+    mode reads a slow suite on a loaded machine as timed out, and the text scan
+    in test_loaded_machine_waits.py cannot tell which mode a literal serves."""
+    config = tomllib.loads((_no_result_repo(tmp_path, mode) / "crapkit.toml").read_text(encoding="utf-8"))
+
+    assert config["crapkit"]["mutation_timeout_seconds"] == HANG_SECONDS
 
 
 def _progress_lines(stderr: str) -> list[str]:
