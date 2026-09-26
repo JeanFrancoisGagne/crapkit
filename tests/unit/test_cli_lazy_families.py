@@ -13,6 +13,8 @@ subcommand still reaches its handler, and the public entry point stays lazy.
 import argparse
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -111,6 +113,24 @@ def test_a_path_as_the_first_argument_names_the_repo_flag(arg, capsys):
     assert code == 2
     assert "--repo" in err
     assert "invalid choice" not in err
+
+
+WINDOWS_PATHS = [r"C:\work\app", r"C:\my repos\app"] if os.name == "nt" else []
+
+
+@pytest.mark.parametrize("arg", ["my repos/app", "./a b/c", "/home/a b/app", *WINDOWS_PATHS])
+def test_the_command_a_path_refusal_prints_keeps_the_path_one_argument(arg, capsys):
+    r"""The refusal prints `inventory --repo <the path>`. Printed as it came, a
+    path holding a space reached crapkit as two arguments from every shell, and
+    Git Bash read `C:\work\app` as `C:workapp`. sh's reading of the printed
+    word is Git Bash's, and on Windows cmd.exe and PowerShell read a word of
+    forward slashes and quoted segments the same way."""
+    from crapkit.cli import main
+
+    main([arg])
+
+    printed = re.search(r"e\.g\. `[^`]* inventory --repo (.+?)` ", capsys.readouterr().err)
+    assert [Path(word) for word in shlex.split(printed.group(1))] == [Path(arg)]
 
 
 def test_a_misspelled_subcommand_is_still_argparses_error():

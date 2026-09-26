@@ -20,6 +20,10 @@
   a space; PowerShell, pwsh and Git Bash can.
 - On POSIX an interpreter path that needs quoting goes in single quotes, so sh no longer
   expands a `$` or a backtick inside it.
+- `crapkit <path>` is refused with the command to run instead, `crapkit inventory --repo
+  <path>`, and the path went into that command as it came: a space split it into two
+  arguments in every shell, and Git Bash read the backslashes of `C:\work\app` as
+  escapes. The path is now quoted the same way as the interpreter.
 
 ### A SARIF log names a schema URI that answers
 

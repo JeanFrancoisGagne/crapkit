@@ -16,7 +16,9 @@ skipped.
 from __future__ import annotations
 
 import base64
+import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -146,3 +148,23 @@ def test_a_quoted_segment_in_the_interpreter_path_runs_in_every_shell(shell, tmp
 
     assert '"with space"' in line
     assert _paste(shell, line, tmp_path) == (0, '["coverage"]'), line
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_the_repo_path_a_refusal_prints_reaches_crapkit_as_one_argument(shell, tmp_path,
+                                                                        monkeypatch, capsys):
+    """`crapkit <path>` is refused with the command to run instead, `... inventory
+    --repo <path>`. The path printed as it came split at its space in every
+    shell."""
+    from crapkit.cli import main
+
+    monkeypatch.setattr(sys, "argv", [str(Path("crapkit") / "__main__.py")])
+    repo = tmp_path / "my repos" / "app"
+    main([str(repo)])
+    line = re.search(r"e\.g\. `([^`]+)`", capsys.readouterr().err).group(1)
+
+    code, printed = _paste(shell, line, tmp_path)
+
+    assert code == 0, line
+    command, flag, path = json.loads(printed)
+    assert (command, flag, Path(path)) == ("inventory", "--repo", repo)
