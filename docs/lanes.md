@@ -228,10 +228,15 @@ artifact:
 
 | Key | What crapkit does with it |
 |---|---|
-| `fnMap` | The function list. Every entry needs `decl.start.line`. `loc.end.line` closes the span and falls back to the start line. A missing `name` reads as `(anonymous)`. |
+| `fnMap` | The function list. Every entry needs `decl.start.line`. A function's span runs from `decl.start` to `loc.end`, and `loc.end` falls back to the end of the start line. Its body starts at `loc.start`, which falls back to `decl.start`. A missing `name` reads as `(anonymous)`. |
 | `f` | Call counts per `fnMap` id. |
-| `branchMap` and `b` | Branch coverage. Each branch counts against the innermost function whose span holds its `loc.start.line`. This is the function's coverage whenever it has one branch. |
-| `statementMap` and `s` | The fallback for a function with no branch in its span, and the only source of the uncovered lines `verify` measures a diff against. |
+| `branchMap` and `b` | Branch coverage. Each branch counts against the innermost function whose span holds its `loc.start`. A default parameter's arm sits between the name and the body, so it is the function's; a ternary that opens ahead of an arrow on the same line counts for the code around the arrow. This is the function's coverage whenever it has one branch. |
+| `statementMap` and `s` | The fallback for a function with no branch in its span. Each statement counts against the innermost function whose body holds its `start`. For `const f = (x) => x * 2` istanbul writes one statement for the declaration, which starts ahead of the arrow's body and runs when the declaration does, and one for the body. The first counts for the code around the arrow, so an arrow no test calls reads 0. Statements are also the only source of the uncovered lines `verify` measures a diff against. |
+
+Positions compare the line first, then the column. A column the producer leaves out, or
+writes as null, stands for the whole line: the first column at a start, the last at an end.
+When several functions hold a position, the innermost is the one over the fewest lines,
+then the one that starts later, then the one `fnMap` lists first.
 
 A function with neither a branch nor a statement in its span scores on `f` alone: 1.0 when
 it was called, 0.0 when it was not.

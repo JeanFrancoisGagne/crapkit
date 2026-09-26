@@ -2,6 +2,23 @@
 
 ## 0.8.1 — unreleased
 
+### Coverage lands on the function that owns it
+
+- The istanbul reader places each counter by line and column: a statement counts from a
+  function's body on, a branch from its declaration on. For `const f = (x) => x * 2`
+  istanbul writes a statement for the declaration, which starts ahead of the arrow's body
+  and runs at import. It counted for the arrow, so an arrow no test called read 0.5 under
+  vitest (v8 and istanbul providers), nyc and Jest. It now counts for the code around the
+  arrow, and the arrow reads 0. A ternary or `&&` that opens ahead of a callback on the
+  same line, as in `if (ok && list.some((x) => x.ready))`, moves from the callback to the
+  function around it. Under raw v8-to-istanbul output (c8, Jest's v8 provider) the line
+  that opens an indented method or arrow counts for the code around it, so an uncalled
+  class method reads 0 where it read 1/6. Over a 658-function artifact from a large
+  consumer repo, 12 functions change coverage: 5 rise and 7 fall. A fall raises CRAP on
+  a function nobody edited, so the change needs an analysis-version bump, which makes
+  each marks file re-seed once. [What the istanbul parser
+  reads](docs/lanes.md#what-the-istanbul-parser-reads) states the rule.
+
 ### Every platform computes the same CRAP
 
 - `crap` cubes `1 - cov` with two products instead of `** 3`. IEEE 754 rounds a product

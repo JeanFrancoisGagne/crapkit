@@ -81,6 +81,20 @@ where it read 3. `crap_load` adds the scores exactly and rounds once, so a load 
 stored run again, once; on a store of about a million scored rows that takes a few
 seconds.
 
+### The next analysis version
+
+The next release moves the analysis version once more, because coverage now lands on
+the function that owns it. Scores move on functions nobody edited, so every marks file
+re-seeds once, with the same three commands as version 11 below:
+
+- Under an istanbul lane a counter is placed by line and column. A statement counts
+  from a function's body on and a branch from its declaration on. The statement
+  istanbul writes for `const f = (x) => ...` runs at import and starts ahead of the
+  arrow's body, so it now counts for the code around the arrow: an arrow no test calls
+  reads 0 where it read 0.5. A ternary or `&&` that opens ahead of a callback on its
+  line moves from the callback to the function around it. See [what the istanbul parser
+  reads](lanes.md#what-the-istanbul-parser-reads).
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or

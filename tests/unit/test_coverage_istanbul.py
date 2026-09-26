@@ -84,3 +84,77 @@ def test_branches_attach_to_the_innermost_containing_function():
         "nested cb owns line-22 branches; invoked-fallback 1.0 hides its untaken arms"
     assert by_name["handler"].branches_total == 2 and by_name["handler"].coverage == 0.5, \
         "the handler keeps only its own branches, not the callback's"
+
+
+def _at(line, column):
+    return {"line": line, "column": column}
+
+
+def _range(start, end):
+    return {"start": _at(*start), "end": _at(*end)}
+
+
+# function outer(values) {                        1
+#   const double = (value) => value * 2;         2
+#   return values.map(double);                   3
+# }                                              4
+# const arrow = (value) => value * 2;            5
+DECLARED_ARROWS = {"C:/repo/src/arrows.js": {
+    "fnMap": {
+        "0": {"name": "outer", "decl": _range((1, 9), (1, 14)), "loc": _range((1, 23), (4, None))},
+        "1": {"name": "(anonymous_1)", "decl": _range((2, 17), (2, 18)), "loc": _range((2, 28), (2, 37))},
+        "2": {"name": "(anonymous_2)", "decl": _range((5, 14), (5, 15)), "loc": _range((5, 25), (5, 34))},
+    },
+    "f": {"0": 1, "1": 0, "2": 0},
+    "statementMap": {
+        "0": _range((2, 8), (2, 37)), "1": _range((2, 28), (2, 37)), "2": _range((3, 2), (3, 28)),
+        "3": _range((5, 14), (5, 34)), "4": _range((5, 25), (5, 34)),
+    },
+    "s": {"0": 1, "1": 0, "2": 1, "3": 1, "4": 0},
+    "branchMap": {}, "b": {},
+}}
+
+
+def test_an_arrows_declaration_counter_belongs_to_the_code_around_the_arrow():
+    """istanbul counts `const f = (x) => ...` with a statement that starts
+    before the arrow's body and runs when the declaration does, at import for
+    a module-level arrow. It is the enclosing code's statement: an arrow no
+    test calls reads 0, never 0.5."""
+    by_start = {fn.start: fn for fn in parse_istanbul(json.dumps(DECLARED_ARROWS),
+                                                     repo_root="C:/repo")["src/arrows.js"]}
+
+    assert [(fn.name, fn.statements_total, fn.statements_covered, fn.coverage)
+            for _, fn in sorted(by_start.items())] == [
+        ("outer", 2, 2, 1.0), ("(anonymous_1)", 1, 0, 0.0), ("(anonymous_2)", 1, 0, 0.0)]
+
+
+# function choose(flag = false) {                 1
+#   return flag ? (x) => x : null;               2
+# }                                              3
+CHOSEN_ARROW = {"C:/repo/src/choose.js": {
+    "fnMap": {
+        "0": {"name": "choose", "decl": _range((1, 9), (1, 15)), "loc": _range((1, 30), (3, None))},
+        "1": {"name": "(anonymous_1)", "decl": _range((2, 16), (2, 17)), "loc": _range((2, 23), (2, 24))},
+    },
+    "f": {"0": 1, "1": 0},
+    "statementMap": {"0": _range((2, 2), (2, 32)), "1": _range((2, 23), (2, 24))},
+    "s": {"0": 1, "1": 0},
+    "branchMap": {
+        "0": {"type": "default-arg", "loc": _range((1, 16), (1, 28)),
+              "locations": [_range((1, 23), (1, 28))]},
+        "1": {"type": "cond-expr", "loc": _range((2, 9), (2, 31)),
+              "locations": [_range((2, 16), (2, 24)), _range((2, 27), (2, 31))]},
+    },
+    "b": {"0": [1], "1": [1, 0]},
+}}
+
+
+def test_a_branch_that_opens_before_a_function_on_its_line_is_the_enclosers():
+    """The ternary starts before the arrow it can return, and it is taken or
+    not whether the arrow is ever called. A default parameter's arm sits
+    between a function's name and its body, and it stays the function's."""
+    by_name = {fn.name: fn for fn in parse_istanbul(json.dumps(CHOSEN_ARROW),
+                                                    repo_root="C:/repo")["src/choose.js"]}
+
+    assert (by_name["choose"].branches_total, by_name["choose"].branches_covered) == (3, 2)
+    assert (by_name["(anonymous_1)"].branches_total, by_name["(anonymous_1)"].coverage) == (0, 0.0)
