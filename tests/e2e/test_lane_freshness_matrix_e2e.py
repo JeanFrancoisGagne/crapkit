@@ -8,7 +8,10 @@ agent and the MCP tool read), `report` (the banner a published page carries),
 (the reuse proof, for a lane without and with `inputs`). The truth is the
 content: a reader names exactly the files whose git blob id moved, and stays
 silent when none did. A same-size edit under a restored modification time is
-the named limit every reader shares (docs/lanes.md), pinned here as silence.
+the named limit every reader shares (docs/lanes.md) where git judges a file by
+its mtime and size: pinned here as silence under core.trustctime=false, and on
+Windows under git's defaults. Linux and macOS give the edit a new change time,
+and there every reader names the file.
 
 The loops these rows port: c01 to c07, c28, shape-1 to shape-3, history-1,
 history-8 and history-9 (lane freshness); c10, c11, c23 and history-3 (a
@@ -126,6 +129,7 @@ WHOLE_TREE.update({
     "renormalize-crlf-blob": REL, "case-only-git-mv": "src/App.ts",
     "shallow-clone-scope-changed": "HEAD is", "shallow-clone-scope-unchanged": "HEAD is",
     "amend-message-only": "HEAD is", "sibling-commit-same-scope-bytes": "HEAD is",
+    "same-size-new-ctime": "".join(EVENTS["same-size-new-ctime"].moved),
 })
 WITH_INPUTS = {**WHOLE_TREE, "amend-message-only": "", "sibling-commit-same-scope-bytes": "",
                "shallow-clone-scope-changed": "which this clone does not hold",
@@ -173,13 +177,15 @@ scopes = ["src"]
 DIRTY = "(the working tree has uncommitted changes, so every lane that lists no `inputs` reruns)"
 PARTIAL = {"norefresh-control": False, "touch": False, "touch-norefresh": False,
            "crlf-touch-norefresh": False, "same-size-one-tick": False,
-           "content-change": True, "add-in-scope": True, "mode-change-staged": True}
+           "content-change": True, "add-in-scope": True, "mode-change-staged": True,
+           "same-size-new-ctime": bool(EVENTS["same-size-new-ctime"].moved)}
 
 
 @pytest.mark.parametrize("name", sorted(PARTIAL))
 def test_a_partial_run_hints_a_dirty_tree_only_when_git_holds_a_change(name, tmp_path):
     """same-size-one-tick is the named limit: git's stat cache calls the file
-    clean, and so does the hint."""
+    clean, and so does the hint. same-size-new-ctime is dirty where git sees
+    the new change time (Linux, macOS)."""
     event = EVENTS[name]
     root = stale_tree.build(tmp_path / "repo", gitcfg=event.gitcfg, attrs=event.attrs,
                             app=event.app)

@@ -237,6 +237,13 @@ def _same_size_one_tick(root: Path) -> None:
     os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
 
 
+def _same_size_new_ctime(root: Path) -> None:
+    """The same edit once the clock has passed the second of the file's
+    change time, which git records in its index and compares to the second."""
+    time.sleep(max(0.0, int((root / REL).stat().st_ctime) + 1.05 - time.time()))
+    _same_size_one_tick(root)
+
+
 def _content(root: Path) -> None:
     write(root / REL, APP_TS + "\nexport function extra(y: number): number { return y; }\n")
 
@@ -315,10 +322,18 @@ EVENTS = {event.name: event for event in (
           lambda root: (git(root, "checkout", "-q", "-b", "alt", "HEAD"),
                         write(root / "NOTES.md", "two\n"), git(root, "add", "-A"),
                         git(root, "commit", "-q", "--amend", "-m", "sibling")) and None),
-    # A same-size edit under the old mtime keeps the index's blob id: git's
-    # stat cache calls the file unchanged, the named limit of the content
-    # record's fast path. The readers stay silent, and this row pins it.
-    Event("same-size-one-tick", _same_size_one_tick),
+    # A same-size edit under the old mtime keeps the index's blob id where git
+    # judges a file by its mtime and size: git's stat cache calls the file
+    # unchanged, the named limit of the content record's fast path. Windows
+    # judges so by default, since the change time git reads there is the
+    # creation time; core.trustctime=false makes Linux and macOS judge the
+    # same, so the readers stay silent on every OS and this row pins it.
+    Event("same-size-one-tick", _same_size_one_tick, gitcfg={"core.trustctime": "false"}),
+    # The same edit under git's defaults, a second after the change time git
+    # recorded: Linux and macOS give the write a new change time, git reads
+    # the bytes and every reader names the file. Windows keeps the creation
+    # time, so the limit holds there.
+    Event("same-size-new-ctime", _same_size_new_ctime, moved=() if os.name == "nt" else (REL,)),
     # Under core.autocrlf=false the bytes a commit would take are a new blob.
     Event("autocrlf-false-crlf-bytes",
           lambda root: (git(root, "config", "core.autocrlf", "false"), _crlf_bytes(root)) and None,

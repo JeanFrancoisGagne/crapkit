@@ -120,10 +120,12 @@ def test_a_flagged_file_edited_on_disk_is_hashed_not_read_from_the_index(tmp_pat
 def test_a_same_size_edit_under_the_old_mtime_keeps_the_index_id(tmp_path):
     """The named limit of the fast path: git's stat cache calls the file
     unchanged, so the record keeps the index's id while hash-object gives
-    another. Hashing every file would close it; that cost is measured first."""
+    another. Hashing every file would close it; that cost is measured first.
+    core.trustctime=false keeps git to mtime and size on Linux and macOS, as
+    on Windows, so the edit's new change time does not decide the row."""
     from crapkit.lane_sources import record
 
-    root = _repo(tmp_path, {"src/a.ts": "case 1\n"})
+    root = _repo(tmp_path, {"src/a.ts": "case 1\n"}, gitcfg={"core.trustctime": "false"})
     path = root / "src/a.ts"
     stat = path.stat()
     path.write_bytes(b"case 7\n")
