@@ -54,7 +54,11 @@ does:
 
 A comma inside one parameter's type or default, as in `pair: (Int, Int)`,
 `(A, B) -> Void` or `[1, 2]`, no longer counts as another parameter, and `try`
-opens no nesting level: it marks an expression that can throw, not a block.
+opens no nesting level: it marks an expression that can throw, not a block. A
+`<` spaced on both sides (`1 < 2`, `1 << 2`) compares; only one glued to the
+type before it opens a generic clause (`Set<Int>`). A `>` closes a clause only
+while a `<` is open, so `x > 0` and `x>0` close nothing, and a `)`, `]` or `}`
+closes any `<` left open inside it (`{ $0<$1 }`).
 
 What it keeps
 -------------
@@ -77,6 +81,7 @@ drains the token stream, so `.swift` keeps analyze.py's second extension chain.
 from __future__ import annotations
 
 import re
+from itertools import groupby
 
 from ._pygdefer import deferred_pygments
 
@@ -106,14 +111,20 @@ _WORD = re.compile(r"\w+")
 _LABEL_WORDS = frozenset({"if", "for", "while", "catch", "guard", "case"})
 _CASE_CONDITIONS = frozenset({"if", "guard", "while", "for", ","})
 
-# What a bracket does to the depth a parameter list is read at: the list's own
-# parentheses make 1, and a comma deeper than that is inside one parameter.
-_PARAMETER_DEPTH = {"(": 1, "[": 1, "{": 1, "<": 1, ")": -1, "]": -1, "}": -1, ">": -1}
+# Each bracket a parameter list opens, and the token that closes it. A comma with more
+# than the list's own `(` open is inside one parameter.
+_CLOSERS = {"(": ")", "[": "]", "{": "}", "<": ">"}
 
 
 class _Name(str):
     """A declaration word the source uses as a name. Same value, so it counts and
     names as before; CorrectedSwiftStates opens nothing for it."""
+
+
+class _Operator(str):
+    """A `<` the source uses as an operator (`a < b`, `1 << 2`), not to open a generic
+    clause. Same value, so it counts and names as before; the parameter list opens
+    nothing for it."""
 
 
 class _Plain(str):
@@ -217,6 +228,37 @@ def _optional_marks(tokens):
         previous = token
 
 
+def _is_infix(before: list[str], run: list[str], after: list[str]) -> bool:
+    """A run of `<` with whitespace on both sides, the way Swift writes `a < b` and
+    `1 << 2`. A generic clause's `<` is glued to the type before it. A `>` gets no
+    such test, and could not: the `>` that ends a clause written over several lines
+    stands on its own line, and `_nest` closes nothing for a `>` with no `<` open."""
+    return run[0] == "<" and before[-1].isspace() and after[0].isspace()
+
+
+def _infix_less_thans(tokens) -> list[str]:
+    """The raw tokens, each `<` of an infix operator an `_Operator`. The tokenizer
+    splits `<<` into two tokens, so a run of `<` is one operator."""
+    runs = [list(run) for _, run in groupby(tokens, key=lambda token: token == "<")]
+    edges = [[""]] + runs + [[""]]
+    read = []
+    for before, run, after in zip(edges, runs, edges[2:]):
+        read.extend([_Operator(token) for token in run] if _is_infix(before, run, after) else run)
+    return read
+
+
+def _nest(opened: list[str], token: str) -> None:
+    """Track the brackets open in a parameter list, as the closers they wait for. A
+    closer closes back to its opener, and with it any `<` left open inside, which
+    compared rather than opened; a `>` with no `<` open closes nothing."""
+    if isinstance(token, _Operator):
+        return
+    if token in _CLOSERS:
+        opened.append(_CLOSERS[token])
+    elif token in opened:
+        del opened[len(opened) - 1 - opened[::-1].index(token):]
+
+
 def _add_parameter(fn, token: str, inside: bool) -> None:
     """lizard's FunctionInfo.add_parameter, except that a comma inside one parameter
     continues it. The long name is spelled the same either way."""
@@ -232,7 +274,7 @@ class CorrectedSwiftStates(_StockSwiftStates):
 
     def __init__(self, context):
         super().__init__(context)
-        self.parameter_depth = 0
+        self.parameter_brackets: list[str] = []
 
     def _state_global(self, token):
         if isinstance(token, _Name) or token == "type":
@@ -249,10 +291,11 @@ class CorrectedSwiftStates(_StockSwiftStates):
     @CodeStateMachine.read_inside_brackets_then("()", "_expect_function_impl")
     def _function_dec(self, token):
         if token == "(" and self.br_count == 1:
-            self.parameter_depth = 0
-        self.parameter_depth += _PARAMETER_DEPTH.get(token, 0)
+            self.parameter_brackets = []
+        _nest(self.parameter_brackets, token)
         if token not in "()":
-            _add_parameter(self.context.current_function, _spelled(token), self.parameter_depth > 1)
+            inside = len(self.parameter_brackets) > 1
+            _add_parameter(self.context.current_function, _spelled(token), inside)
 
 
 class CorrectedSwiftReader(_StockSwiftReader):
@@ -275,7 +318,7 @@ class CorrectedSwiftReader(_StockSwiftReader):
         return _StockSwiftReader.generate_tokens(source_code, _HASH_TOKENS + addition, token_class)
 
     def preprocess(self, tokens):
-        return _read_all(super().preprocess(_optional_marks(tokens)))
+        return _read_all(super().preprocess(_infix_less_thans(_optional_marks(tokens))))
 
 
 def register() -> None:

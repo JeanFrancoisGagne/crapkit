@@ -375,7 +375,33 @@ def test_a_comma_inside_one_parameter_counts_no_parameter(parameters, count):
     assert row.long_name.count(",") == parameters.count(",")
 
 
-@pytest.mark.parametrize("body,depth", [("try first()\n    try second()", 0),
+@pytest.mark.parametrize("parameters", ["a: Bool = 1 < 2, b: Int",
+                                        "a: Int = 1 << 2, b: Int",
+                                        "a: Int = y >> 1, b: (Int, Int)",
+                                        "a: Bool = x > 0, b: (Int, Int)",
+                                        "by less: (Int, Int) -> Bool = { $0 < $1 }, limit: Int",
+                                        "a: Bool = x>0, b: (Int, Int)",
+                                        "by less: (Int, Int) -> Bool = { $0<$1 }, limit: Int",
+                                        "a: Bool = x >= 0, b: (Int, Int)",
+                                        "a: Set<Int> = Set<Int>(), b: (Int, Int)",
+                                        "a: [String: Int] = Dictionary<String, Int>(), b: Int",
+                                        "a: Result<Int, Error >, b: Int",
+                                        "a: () -> Result<\n        Int,\n        Error,\n    > = { .success(1) },"
+                                        "\n    b: (Int, Int)"])
+def test_a_comparison_in_a_default_value_opens_no_bracket(parameters):
+    """Lexical Structure, Operators: `1 < 2` has whitespace on both sides of `<`, so it
+    compares, while `Set<Int>` opens a generic argument clause. Every `<` and `>` in the
+    list counted as a bracket, so `1 < 2, b` read as one parameter and `x > 0` closed a
+    bracket no `<` had opened. A `>` closes a clause only when a `<` is open, spaced or
+    on its own line, and a `}` closes the `<` of `{ $0<$1 }` that no `>` did."""
+    source = f"func f({parameters}) {{\n    show(1)\n}}\n"
+    row = analyze.analyze_source("case.swift", source)[0]
+
+    assert row.params == 2
+    assert row.long_name.count("<") == parameters.count("<")
+
+
+@pytest.mark.parametrize("body,depth",[("try first()\n    try second()", 0),
                                         ("try? first()\n    try! second()", 0),
                                         ("if a {\n        try first()\n        try second()\n    }", 1)])
 def test_a_try_expression_opens_no_nesting_level(body, depth):
