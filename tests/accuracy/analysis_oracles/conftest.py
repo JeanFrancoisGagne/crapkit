@@ -7,8 +7,10 @@ equivalence and oracle tests all read one run:
 - `probe_inventory`: every probe file under probes/;
 - `src_inventory` and `src_unparsed_inventory`: crapkit's own source tree,
   as written and after ast.unparse;
-- `stdlib_inventory` and `stdlib_unparsed_inventory`: the running Python's
-  standard library (nightly tests only);
+- `stdlib_corpus`, `stdlib_inventory` and `stdlib_unparsed_inventory`:
+  CPython's Lib at the tag the full corpus pins for the running Python
+  (member cpython-<major>.<minor>; nightly tests only). A corpus without that
+  member fails the test, naming the folder it looked for;
 - `py_shape_inventory`: the named Python shapes of analysis_shapes;
 - `measure_set(files, launch=PLAIN)`: any other file set, measured once per
   session under that launch;
@@ -76,8 +78,11 @@ def src_unparsed_inventory(src_unparsed, tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def stdlib_corpus():
-    return analysis_corpora.stdlib_sources()
+def stdlib_corpus(full_corpus):
+    try:
+        return analysis_corpora.stdlib_sources(full_corpus)
+    except analysis_corpora.CorpusMissing as missing:
+        pytest.fail(str(missing), pytrace=False)
 
 
 @pytest.fixture(scope="session")

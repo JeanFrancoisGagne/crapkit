@@ -4,8 +4,8 @@ nloc: oracles/tokenize_nloc.py counts the lines a code token covers, with the
 documented transforms (a standalone triple-quoted string is not code, a
 nested def's body counts on its own row). params: py_ast_oracle's count of
 the parameters a def declares (the Python reference 8.7). Both run over
-crapkit's own source on push and the running Python's standard library
-nightly; the defs a known defect shape covers (py_line_shapes) are set aside
+crapkit's own source on push and CPython's Lib at the running Python's pinned
+tag nightly; the defs a known defect shape covers (py_line_shapes) are set aside
 under its rulings id and counted.
 
 Two relations hold whatever the counts are: nloc lies between 0 and the span's
@@ -27,7 +27,8 @@ def _nloc_outcome(corpus, measured) -> analysis_pydiff.Outcome:
     for path, data in corpus.files.items():
         _nloc_file(outcome, path, data.decode("utf-8"), measured)
     runlog.note("skipped_files", oracle="tokenize nloc: defs set aside",
-                count=sum(outcome.set_aside.values()))
+                count=sum(outcome.set_aside.values()), compared=outcome.compared,
+                misses=len(outcome.differing))
     return outcome
 
 
@@ -67,7 +68,8 @@ def _params_outcome(corpus, measured) -> analysis_pydiff.Outcome:
     for path, data in corpus.files.items():
         _params_file(outcome, path, py_ast_oracle.normalized(data.decode("utf-8")), measured)
     runlog.note("skipped_files", oracle="ast params: defs set aside",
-                count=sum(outcome.set_aside.values()))
+                count=sum(outcome.set_aside.values()), compared=outcome.compared,
+                misses=len(outcome.differing))
     return outcome
 
 

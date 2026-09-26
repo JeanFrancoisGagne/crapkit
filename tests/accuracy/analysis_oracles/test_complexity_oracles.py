@@ -4,8 +4,8 @@ Python: radon 6.0.1 and mccabe 0.7.0 count McCabe's decisions off the ast
 (oracles/radon_mccabe.py). Each place a tool counts differently from crapkit's
 documented reading is a named transform and a rulings row, pinned here by one
 hand case with the tool's raw value and crapkit's. The differential runs over
-crapkit's own source on push and the running Python's standard library
-nightly, on the ast.unparse form (a layout difference is test_metamorphic_source's
+crapkit's own source on push and CPython's Lib at the running Python's pinned
+tag nightly, on the ast.unparse form (a layout difference is test_metamorphic_source's
 business); a def holding a shape crapkit misreads is set aside under its
 rulings id and counted.
 
@@ -52,7 +52,8 @@ def _differential(tool: str, corpus, measured, oracle) -> analysis_pydiff.Outcom
     outcome = analysis_pydiff.compare(corpus.files, measured, "ccn_std", TOOLS[tool],
                                       py_defect_shapes.CCN)
     runlog.note("skipped_files", oracle=f"{tool}: defs set aside",
-                count=sum(outcome.set_aside.values()))
+                count=sum(outcome.set_aside.values()), compared=outcome.compared,
+                misses=len(outcome.differing))
     return outcome
 
 

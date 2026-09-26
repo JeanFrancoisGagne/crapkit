@@ -3,9 +3,10 @@
 The standard library's ast is the Python reader's outside oracle
 (oracles/py_ast_oracle.py): which defs a file holds, the line each starts and
 ends on, and its name. Three corpora are read: crapkit's own source tree
-(every function, push), the named shapes of analysis_shapes (push), and the
-running interpreter's standard library (nightly, one Lib per Python cell). A
-file ast rejects is left out and counted in the run log, never compared.
+(every function, 2,145 of 2,145, push), the named shapes of analysis_shapes
+(push), and CPython's Lib at the tag the full corpus pins for the running
+Python (member cpython-<major>.<minor>, nightly, one run per Python). A file
+ast rejects is left out and counted in the run log, never compared.
 
 crapkit's name for a Python def is documented, not PEP 3155's __qualname__:
 classes are left out and each enclosing def is named once
@@ -16,9 +17,11 @@ The unread-def net (a file cut inside a def's signature is refused, never
 scored) is checked under crapkit's reader and under lizard's stock reader,
 which is what runs once crapkit's corrected reader retires.
 """
+import re
+
 import pytest
 
-from accuracy.analysis_oracles import analysis_inventory, analysis_shapes
+from accuracy.analysis_oracles import analysis_corpora, analysis_inventory, analysis_shapes
 from accuracy.analysis_oracles.oracles import py_ast_oracle
 from accuracy.kit import rulings, runlog
 
@@ -59,15 +62,25 @@ def _names(rows: list[tuple]) -> list[tuple]:
     return rows
 
 
+# ast's def count over src/crapkit, the same from the program's base commit
+# (901c6986) on. A src change that adds or drops a def moves it on purpose:
+# recount with py_ast_oracle.functions and change it in the same commit.
+SRC_DEFS = 2145
+
+
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
     """Every def ast finds in crapkit's source and in the shapes is one row
-    spanning the def line to its body's last line, and no other row exists."""
-    runlog.note("skipped_files", oracle="ast", count=len(src_corpus.rejected))
+    spanning the def line to its body's last line, and no other row exists:
+    2,145 of 2,145 on crapkit's source."""
     shapes = analysis_shapes.py_shape_files()
+    misses = _differences(src_corpus.files, src_inventory, _spans)
+    ast_defs = sum(map(len, map(_ast_rows, src_corpus.files.values())))
+    runlog.note("skipped_files", oracle="ast", count=len(src_corpus.rejected), defs=ast_defs,
+                misses=len(misses))
 
-    assert _differences(src_corpus.files, src_inventory, _spans) == {}
+    assert misses == {}
     assert _differences(shapes, py_shape_inventory, _spans) == {}
-    assert len(src_inventory.rows) == sum(map(len, map(_ast_rows, src_corpus.files.values())))
+    assert (src_corpus.rejected, ast_defs, len(src_inventory.rows)) == ((), SRC_DEFS, SRC_DEFS)
 
 
 @pytest.mark.parametrize("path", SHAPES)
@@ -164,10 +177,43 @@ def test_unread_def_net_under_both_readers(reader, measure_set):
     assert [path for path in cuts if measured.in_file(path)] == []
 
 
-# --- nightly: the running interpreter's standard library ------------------------------------
+# --- CPython Lib at one pinned tag per Python -------------------------------------------------
+
+def test_stdlib_sources_read_the_running_pythons_member(tmp_path):
+    """The member named for the running Python is read, under its own prefix;
+    another Python's member is not, and a file ast rejects is counted."""
+    member = analysis_corpora.cpython_member(analysis_corpora.running_minor())
+    files = {f"{member}/Lib/pkg/a.py": "def f():\n    return 1\n",
+             f"{member}/Lib/bad.py": "def f(:\n", f"{member}/Lib/test/t.py": "x = 1\n",
+             "cpython-3.0/Lib/other.py": "y = 1\n"}
+    for name, text in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_bytes(text.encode("utf-8"))
+
+    corpus = analysis_corpora.stdlib_sources(tmp_path)
+
+    assert sorted(corpus.files) == [f"{member}/Lib/pkg/a.py"]
+    assert corpus.rejected == (f"{member}/Lib/bad.py",)
+
+
+def test_a_missing_cpython_member_names_the_folder_looked_for(tmp_path):
+    looked = tmp_path / "cpython-3.99" / "Lib"
+
+    with pytest.raises(analysis_corpora.CorpusMissing, match=re.escape(str(looked))):
+        analysis_corpora.stdlib_sources(tmp_path, "3.99")
+
 
 @pytest.mark.nightly
 def test_stdlib_spans_and_names_match_ast(stdlib_corpus, stdlib_inventory):
-    runlog.note("skipped_files", oracle="ast-stdlib", count=len(stdlib_corpus.rejected))
+    """Every def ast finds in the pinned Lib is one row with ast's span and
+    name. The run log carries the member, the files and defs read, the
+    misses and the files ast rejected, once per Python."""
+    misses = _differences(stdlib_corpus.files, stdlib_inventory, _names)
+    member = analysis_corpora.cpython_member(analysis_corpora.running_minor())
+    runlog.note("skipped_files", oracle=f"ast-stdlib {member}", count=len(stdlib_corpus.rejected),
+                files=len(stdlib_corpus.files),
+                defs=sum(map(len, map(_ast_rows, stdlib_corpus.files.values()))),
+                misses=len(misses))
 
-    assert _differences(stdlib_corpus.files, stdlib_inventory, _names) == {}
+    assert misses == {}
+    assert len(stdlib_corpus.files) > 90

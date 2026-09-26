@@ -2,8 +2,10 @@
 
 - crapkit_sources(): every .py file of crapkit's own source tree at this
   checkout (2,145 functions at the commit the plan counted);
-- stdlib_sources(): the running interpreter's standard library, one tag per
-  Python, nightly only;
+- stdlib_sources(root): CPython's Lib at the tag the full corpus pins for the
+  running Python (member cpython-<major>.<minor>, e.g. v3.13.15 for 3.13),
+  nightly only. The installed Lib is never read: its patch level and the
+  files a distribution ships vary by machine;
 - unparsed(): the same files after ast.unparse, which puts every bracketed
   expression on one line. A layout difference is its own check
   (test_metamorphic_source), so the counters compare on this form.
@@ -16,7 +18,7 @@ import ast
 from dataclasses import dataclass
 import os
 from pathlib import Path
-import sysconfig
+import sys
 
 REPO = Path(__file__).resolve().parents[3]
 SOURCE = REPO / "src" / "crapkit"
@@ -51,15 +53,6 @@ def _collect(root: Path, prefix: str, skip=()) -> Corpus:
 
 def crapkit_sources() -> Corpus:
     return _collect(SOURCE, "crapkit")
-
-
-# Directories under Lib that are not the library itself: installed packages,
-# and trees named like a test directory, which crapkit's universe excludes.
-STDLIB_SKIP = ("site-packages", "test", "tests", "idle_test", "__pycache__")
-
-
-def stdlib_sources() -> Corpus:
-    return _collect(Path(sysconfig.get_paths()["stdlib"]), "stdlib", STDLIB_SKIP)
 
 
 # The full corpus (tools/accuracy/corpus.py builds it): one directory per
@@ -130,3 +123,36 @@ def member_files(root: Path, member: str, suffixes: tuple) -> dict:
     return {path.relative_to(folder).as_posix(): path.read_bytes()
             for path in sorted(folder.rglob("*"))
             if path.is_file() and path.suffix.lower() in suffixes}
+
+
+# --- CPython Lib, one pinned tag per Python ---------------------------------------------------
+
+# Trees named like a test directory, which crapkit's universe excludes. The
+# corpus subset holds none today; the skip keeps a wider subset honest.
+STDLIB_SKIP = ("test", "tests", "idle_test", "__pycache__")
+
+
+def running_minor() -> str:
+    return f"{sys.version_info.major}.{sys.version_info.minor}"
+
+
+def cpython_member(minor: str) -> str:
+    return f"cpython-{minor}"
+
+
+def cpython_lib(root: Path, minor: str) -> Path:
+    """The Lib folder of corpus member cpython-<minor>, or CorpusMissing naming
+    the folder that was looked for."""
+    lib = root / cpython_member(minor) / "Lib"
+    if not lib.is_dir():
+        raise CorpusMissing(f"no CPython Lib for Python {minor} at {lib}; the full corpus "
+                            f"pins one Lib per Python 3.11 to 3.14 (`{FETCH}`)")
+    return lib
+
+
+def stdlib_sources(root: Path, minor: str | None = None) -> Corpus:
+    """CPython's Lib at the tag the corpus pins for `minor` (the running Python's
+    by default), named cpython-<minor>/Lib/<path>. ast is the running Python's,
+    so a file it rejects is left out and counted."""
+    minor = minor or running_minor()
+    return _collect(cpython_lib(root, minor), f"{cpython_member(minor)}/Lib", STDLIB_SKIP)

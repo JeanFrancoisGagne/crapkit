@@ -9,8 +9,8 @@ Python has two outside readings:
   checks crapkit. Each convention where complexipy and crapkit part is a
   rulings row with a hand case holding complexipy's raw value and crapkit's.
 
-The differentials read crapkit's own source on push and the standard library
-nightly, on the ast.unparse form. A def holding a shape crapkit misreads is set
+The differentials read crapkit's own source on push and CPython's Lib at the
+running Python's pinned tag nightly, on the ast.unparse form. A def holding a shape crapkit misreads is set
 aside under its defect's rulings id (py_defect_shapes.COGNITIVE) and counted;
 a def complexipy reads in a way the paper does not is set aside for complexipy.
 """
@@ -37,7 +37,8 @@ def _sonar_differential(files: dict, measured, outcome=None) -> analysis_pydiff.
 
 
 def _note(name: str, outcome: analysis_pydiff.Outcome) -> None:
-    runlog.note("skipped_files", oracle=name, count=sum(outcome.set_aside.values()))
+    runlog.note("skipped_files", oracle=name, count=sum(outcome.set_aside.values()),
+                compared=outcome.compared, misses=len(outcome.differing))
 
 
 def test_python_cognitive_matches_the_sonar_counter(src_unparsed, src_unparsed_inventory,
@@ -104,7 +105,9 @@ def test_complexipy_agrees_with_the_counter(src_unparsed, oracle):
 @pytest.mark.nightly
 def test_complexipy_agrees_with_the_counter_on_the_stdlib(stdlib_unparsed, oracle):
     oracle("complexipy")
-    problems, _ = _complexipy_problems(stdlib_unparsed.files)
+    problems, compared = _complexipy_problems(stdlib_unparsed.files)
+    runlog.note("skipped_files", oracle="complexipy on the stdlib",
+                count=len(stdlib_unparsed.rejected), compared=compared, misses=len(problems))
 
     assert problems == []
 

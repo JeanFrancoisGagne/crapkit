@@ -46,6 +46,9 @@ def test_python_depth_matches_model(src_unparsed, src_unparsed_inventory, py_sha
 @pytest.mark.nightly
 def test_python_depth_matches_model_on_the_stdlib(stdlib_unparsed, stdlib_unparsed_inventory):
     outcome = _model_differential(stdlib_unparsed.files, stdlib_unparsed_inventory)
+    runlog.note("skipped_files", oracle="depth model on the stdlib: defs set aside",
+                count=sum(outcome.set_aside.values()), compared=outcome.compared,
+                misses=len(outcome.differing))
 
     assert outcome.differing == []
 
