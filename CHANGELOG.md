@@ -37,6 +37,19 @@
   that reads churn after upgrading walks the window once more. Scores and marks do not
   change.
 
+### A comment is one line per LF
+
+- lizard counted a comment's lines with `str.splitlines`, which also ends a line at a
+  vertical tab, a form feed, `\x1c`, `\x1d`, `\x1e`, U+0085, U+2028 and U+2029. A
+  comment holding one of them moved every function below it down one line per
+  character, in every language. `brief`, `worklist` and the gates named lines the
+  function does not sit on, and a span moved onto the next function joined that
+  function's coverage: a function its tests call scored its uncalled neighbour's 0%. A
+  comment now counts one line per LF.
+- Those functions' spans, coverage and CRAP change, so this release raises the analysis
+  version and every marks file re-seeds once. See the [upgrade
+  guide](docs/upgrading.md#next-analysis-version-a-comment-is-one-line-per-lf).
+
 ### Every refused file is counted and named, once per run
 
 - A file no reader can tokenize is named on stderr under its own path, whatever another

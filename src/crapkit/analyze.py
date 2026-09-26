@@ -344,6 +344,40 @@ class _PythonBodies:
         signatures.finish()  # after lizard's own end-of-file pops, which run upstream
 
 
+# Where str.splitlines ends a line and the source does not. decode_source has
+# already turned every CR into an LF, so LF is the only line end left.
+_NOT_LINE_ENDS = dict.fromkeys(map(ord, "\x0b\x0c\x1c\x1d\x1e\x85  "), " ")
+
+
+class _LineEndComments:
+    """What lizard's comment_counter asks of a reader, with a comment's
+    characters that str.splitlines breaks at, and the source does not, read
+    as spaces.
+
+    comment_counter charges a comment one line per str.splitlines line. A
+    comment holding a form feed, a \\x1c or a U+2028 pushed every function
+    below it down a line, and a span pushed onto the next function joined that
+    function's coverage. Code tokens count LF alone; now comments do too.
+    """
+
+    __slots__ = ("_reader",)
+
+    def __init__(self, reader) -> None:
+        self._reader = reader
+
+    @property
+    def context(self):
+        return self._reader.context
+
+    def get_comment_from_token(self, token):
+        comment = self._reader.get_comment_from_token(token)
+        return comment if comment is None else comment.translate(_NOT_LINE_ENDS)
+
+
+def _comment_counter(tokens, reader):
+    return lizard.comment_counter(tokens, _LineEndComments(reader))
+
+
 def _chain(cognitive_index: int) -> list:
     """lizard's standard extensions with cognitive spliced in at one index.
 
@@ -351,8 +385,11 @@ def _chain(cognitive_index: int) -> list:
     it has to sit for Python: `preprocessing` strips the whitespace tokens the
     python indent rules read, and behind it a 6-branch function scores 6 instead
     of 10. The delta comes last either way, where the modified pass used to sit.
+    lizard's comment_counter goes behind `_LineEndComments`; `index` raises on a
+    lizard that no longer lists it.
     """
     extensions = lizard.get_extensions(["ND"])
+    extensions[extensions.index(lizard.comment_counter)] = _comment_counter
     extensions.insert(cognitive_index, _Cognitive())
     return [_TypeScriptExpressions(), _ReaderLookahead(), *extensions, _ModifiedDelta(), _PythonBodies(),
             _CreationOrder()]

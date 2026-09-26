@@ -193,6 +193,21 @@ the same three commands as version 11 below.
   move for JavaScript and TypeScript functions in such files. A function that reads
   less covered now can go over its ceiling.
 
+### Next analysis version: a comment is one line per LF
+
+The release after 0.8.0 moves the line numbers of functions that sit below certain
+comments, so it raises the analysis version and every marks file re-seeds once, with
+the same three commands as version 11 below.
+
+- lizard counted a comment's lines with Python's `str.splitlines`, which also ends a
+  line at a vertical tab, a form feed, `\x1c`, `\x1d`, `\x1e`, U+0085, U+2028 and
+  U+2029. A comment holding one of them moved every function below it down one line
+  per character. A comment now counts one line per LF, the way the compiler, git and
+  the editor count it.
+- Every such function's `start` and `end` move up to the lines it sits on. Coverage
+  joins onto the span, so a function the move had pushed onto its neighbour's lines
+  now reads its own coverage and its own CRAP.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or
