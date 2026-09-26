@@ -264,6 +264,7 @@ lin-call-continue = { packet = "deploy-harnesses", cadence = "nightly", os = "li
 lin-call-copilot = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "full" }
 lin-call-crush = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "full" }
 lin-call-junie = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "full" }
+lin-call-gemini = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "full" }
 lin-copilot-plugin-hooks = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "full" }
 lin-copilot-cloud-sim = { packet = "deploy-harnesses", cadence = "nightly", os = "linux", image = "full", real_cli = false }
 # nightly, Linux, in crapkit-deploy:ci (act) and :gui (xvfb)
@@ -650,7 +651,7 @@ vscode-copilot = ["lin-vscode-electron", "lin-profiles-sim", "lin-hooks-sim"]
 copilot-cli = ["lin-copilot-cli", "lin-call-copilot", "lin-copilot-plugin-hooks", "win-real-cli"]
 copilot-cloud-agent = ["lin-copilot-cloud-sim"]
 kiro = ["lin-profiles-sim", "calibrate-all"]
-gemini-cli = ["lin-gemini", "win-real-cli"]
+gemini-cli = ["lin-gemini", "lin-call-gemini", "win-real-cli"]
 opencode = ["lin-opencode", "lin-call-opencode", "win-real-cli"]
 goose = ["lin-goose", "lin-call-goose"]
 amp = ["lin-amp"]

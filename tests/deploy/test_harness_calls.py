@@ -1,11 +1,14 @@
 """lin-call-*: a real harness makes crapkit tool calls with crapkit's largest
 answers, and the cell reads the tool result the harness hands its model.
 
-The model is the scripted stub (kit/stub_openai.py or kit/stub_anthropic.py).
+The model is the scripted stub (kit/stub_openai.py, kit/stub_anthropic.py or
+kit/stub_gemini.py).
 It calls get_next_item, then get_function_brief on a 300-line function, then
 list_worklist for the top 50, and records every request body. The repo holds
 62 functions, 61 of them over the worklist floor, so both large answers are
-as long as a real repo's.
+as long as a real repo's. Gemini CLI adds a wait_for_previous boolean to every
+MCP tool it shows its model and passes it on in the call, so the Gemini model
+sets it, as Gemini's own model does.
 
 A result reaches the model whole, or, where the harness moves a long result
 to a file and hands the model the path, whole in that file at the moment the
@@ -35,7 +38,10 @@ CALLS = [("get_next_item", {}), ("get_function_brief", {"path": BIG, "name": "bi
 CELLS = {"claude-code": ("lin-call-claude", "core"), "opencode": ("lin-call-opencode", "full"),
          "goose": ("lin-call-goose", "full"), "cline": ("lin-call-cline", "full"),
          "continue": ("lin-call-continue", "full"), "copilot-cli": ("lin-call-copilot", "full"),
-         "crush": ("lin-call-crush", "full"), "junie": ("lin-call-junie", "full")}
+         "crush": ("lin-call-crush", "full"), "junie": ("lin-call-junie", "full"),
+         "gemini-cli": ("lin-call-gemini", "full")}
+# Keys a harness's own model adds to each call, which the harness forwards to crapkit.
+CLIENT_ARGS = {"gemini-cli": {"wait_for_previous": False}}
 BUGS = {"cline": "deploy-bug deploy-harnesses-5: Cline keeps 8,000 characters of a tool result and cuts the "
                  "middle out, so a Cline model gets neither get_function_brief on a 300-line function nor "
                  "list_worklist top 50 whole"}
@@ -133,7 +139,8 @@ def call_cell(key: str):
         answers = expected(box, repo)
         record_property("payload_chars", sizes(answers))
         saved = SavedFiles()
-        script, bodies, _ = profiles.stub_session(box, repo, key, CALLS, watch=saved)
+        calls = [(tool, {**arguments, **CLIENT_ARGS.get(key, {})}) for tool, arguments in CALLS]
+        script, bodies, _ = profiles.stub_session(box, repo, key, calls, watch=saved)
         results = profiles.tool_results(bodies)
         box.transcript.attach("tool-results", results)
         box.transcript.attach("saved-files", saved.summary())

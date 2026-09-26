@@ -42,7 +42,7 @@ from pathlib import Path
 
 import hang_guard
 from e2e import repo_templates
-from kit import clock, repos, shim, stub_anthropic, stub_openai, wheels, writers
+from kit import clock, repos, shim, stub_anthropic, stub_gemini, stub_openai, wheels, writers
 from kit.transcript import Step
 
 PROFILES = Path(__file__).resolve().parents[1] / "profiles"
@@ -406,8 +406,21 @@ def doc_server(box, repo: Path, key: str) -> writers.Server:
 
 
 def offered_tools(body: dict) -> list[str]:
-    """The tool names a model request offers, in any of the three API shapes."""
-    return [tool.get("name") or tool.get("function", {}).get("name", "") for tool in body.get("tools") or []]
+    """The tool names a model request offers, in any of the four API shapes."""
+    return [name for tool in body.get("tools") or [] for name in _tool_names(tool)]
+
+
+def _tool_names(tool: dict) -> list[str]:
+    """One entry of a request's tools: a Gemini group of functionDeclarations,
+    or one tool named at the top or under `function`."""
+    if "functionDeclarations" in tool:
+        return [declaration.get("name", "") for declaration in tool["functionDeclarations"]]
+    return [tool.get("name") or tool.get("function", {}).get("name", "")]
+
+
+# How each API asks for a tool call: the turn key a stub reads, and the field of its arguments.
+CALL_SHAPES = {"openai": ("tool_call", "arguments"), "anthropic": ("tool_use", "input"),
+               "gemini": ("function_call", "args")}
 
 
 class ToolCall:
@@ -439,9 +452,8 @@ class ToolCall:
         return next((name for name in names if crapkit_tool(name) == self.pending[0][0]), None)
 
     def _call(self, name: str, arguments: dict) -> dict:
-        if self.kind == "openai":
-            return {"tool_call": {"name": name, "arguments": arguments}}
-        return {"tool_use": {"name": name, "input": arguments}}
+        turn, field = CALL_SHAPES[self.kind]
+        return {turn: {"name": name, field: arguments}}
 
     def crapkit_tools(self) -> list[str]:
         return [name for name in self.offered if crapkit_tool(name)]
@@ -477,17 +489,29 @@ def _anthropic_results(item: dict) -> list[str]:
     return [text for block in blocks for text in _texts(block.get("content"))]
 
 
+def _gemini_results(item: dict) -> list[str]:
+    """The functionResponse parts of a Gemini content: the tool's `output`
+    text where the response holds one, else the response as JSON."""
+    responses = [part["functionResponse"].get("response") for part in item.get("parts") or []
+                 if isinstance(part, dict) and "functionResponse" in part]
+    return [answer["output"] if isinstance(answer, dict) and isinstance(answer.get("output"), str)
+            else json.dumps(answer) for answer in responses]
+
+
 def _result_of(item: dict) -> list[str]:
-    """A tool result in a chat message, a Responses input item or an Anthropic block."""
+    """A tool result in a chat message, a Responses input item, an Anthropic
+    block or a Gemini content."""
     if item.get("role") == "tool":
         return _texts(item.get("content"))
     if item.get("type") == "function_call_output":
         return _texts(item.get("output"))
+    if "parts" in item:
+        return _gemini_results(item)
     return _anthropic_results(item)
 
 
 def _items(body: dict) -> list[dict]:
-    listed = body.get("messages") or body.get("input")
+    listed = body.get("messages") or body.get("input") or body.get("contents")
     return _dicts(listed) if isinstance(listed, list) else []
 
 
@@ -630,10 +654,28 @@ def session_junie(box, repo: Path, url: str):
     return ["junie", "--skip-update-check", "--model", "custom:stub", PROMPT], {}
 
 
+GEMINI_MODEL = "gemini-2.5-flash"
+
+
+def session_gemini(box, repo: Path, url: str):
+    """gemini -p on the Gemini API stub. gemini-api-key auth sends the key to
+    GOOGLE_GEMINI_BASE_URL (a base URL alone selects gateway auth, and -p then
+    exits 41); the folder is trusted as a user trusts it at the prompt."""
+    doc_server(box, repo, "gemini-cli")
+    settings = box.home / ".gemini" / "settings.json"
+    data = json.loads(settings.read_text(encoding="utf-8")) if settings.is_file() else {}
+    data.setdefault("security", {}).setdefault("auth", {})["selectedType"] = "gemini-api-key"
+    _write_json(settings, data)
+    return (["gemini", "-m", GEMINI_MODEL, "-p", PROMPT],
+            {"GOOGLE_GEMINI_BASE_URL": url, "GEMINI_API_KEY": "stub-placeholder", "GEMINI_CLI_TRUST_WORKSPACE": "true"})
+
+
 SESSIONS = {"claude-code": ("anthropic", session_claude), "opencode": ("openai", session_opencode),
             "goose": ("openai", session_goose), "cline": ("openai", session_cline),
             "continue": ("openai", session_continue), "copilot-cli": ("openai", session_copilot),
-            "crush": ("openai", session_crush), "junie": ("openai", session_junie)}
+            "crush": ("openai", session_crush), "junie": ("openai", session_junie),
+            "gemini-cli": ("gemini", session_gemini)}
+STUBS = {"openai": stub_openai.serve, "anthropic": stub_anthropic.serve, "gemini": stub_gemini.serve}
 
 
 # A Cline task in its default backend (auto) finds no hub, runs locally and
@@ -666,7 +708,7 @@ def stub_session(box, repo: Path, key: str, calls: list[tuple[str, dict]], watch
     Returns the script (what was offered and called), every request body and the run's step."""
     kind, configure = SESSIONS[key]
     script = ToolCall(kind, calls, watch)
-    serve = stub_openai.serve if kind == "openai" else stub_anthropic.serve
+    serve = STUBS[kind]
     with serve(script) as stub:
         argv, env = configure(box, repo, stub.url)
         step = box.run(argv, cwd=repo, env=env, note=f"{key} against the {kind} stub")

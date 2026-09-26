@@ -19,7 +19,7 @@ import pytest
 
 import hang_guard
 from kit import (cells, docsnip, gitmirror, hooks_rules, httpstub, profiles, pyindex, repos, sandbox, shim,
-                 stub_anthropic, stub_openai, wheels)
+                 stub_anthropic, stub_gemini, stub_openai, wheels)
 from kit.mcp_client import McpClient
 from kit.transcript import Step, Transcript
 
@@ -372,6 +372,35 @@ def test_the_openai_stub_answers_chat_and_responses():
     assert chat["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "get_next_item"
     assert b"response.completed" in streamed and b'"output_text"' in streamed
     assert len(stub.bodies()) == 2
+
+
+def test_the_gemini_stub_calls_the_offered_tool_answers_json_checks_and_counts():
+    declared = {"contents": [], "tools": [{"functionDeclarations": [{"name": "crapkit__get_next_item"},
+                                                                    {"name": "read_file"}]}]}
+    script = profiles.ToolCall("gemini", [("get_next_item", {"wait_for_previous": False})])
+    with stub_gemini.serve(script) as stub:
+        first = json.loads(_post(stub.url + "/v1beta/models/m:generateContent", declared))
+        check = json.loads(_post(stub.url + "/v1beta/models/m:generateContent",
+                                 {"generationConfig": {"responseMimeType": "application/json"}}))
+        streamed = _post(stub.url + "/v1beta/models/m:streamGenerateContent?alt=sse", declared)
+        count = json.loads(_post(stub.url + "/v1beta/models/m:countTokens", {}))
+
+    call = first["candidates"][0]["content"]["parts"][0]["functionCall"]
+    assert call == {"name": "crapkit__get_next_item", "args": {"wait_for_previous": False}}
+    assert json.loads(check["candidates"][0]["content"]["parts"][0]["text"])["next_speaker"] == "user"
+    assert b'"text": "done"' in streamed and count == {"totalTokens": 10}
+    assert len(stub.bodies()) == 2 and script.crapkit_tools() == ["crapkit__get_next_item"]
+
+
+def test_a_gemini_function_response_is_read_back_as_the_tool_s_text():
+    answer = {"item": {"path": "calc/grade.py"}}
+    body = {"contents": [{"role": "user", "parts": [{"text": "go"}]},
+                         {"role": "model", "parts": [{"functionCall": {"name": "crapkit__get_next_item", "args": {}}}]},
+                         {"role": "user", "parts": [{"functionResponse": {"name": "crapkit__get_next_item",
+                                                                          "response": {"output": json.dumps(answer)}}}]}]}
+
+    (text,) = profiles.tool_results([body])
+    assert profiles.result_json(text) == answer
 
 
 def test_a_red_step_quotes_the_error_under_a_clone_s_progress():
