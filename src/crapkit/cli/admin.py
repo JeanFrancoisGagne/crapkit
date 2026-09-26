@@ -1861,12 +1861,21 @@ def _no_crapkit_on_path() -> str:
             "plugin at the environment holding it." + where)
 
 
+# The README's install lines: Claude Code's sparse, Codex's also pinned to the
+# tag of this CLI's release, since an unpinned Codex marketplace follows main
+# and moves the plugin past the CLI at the next Codex start.
 _INSTALL_PLUGIN = (
-    "Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit`, "
-    "then `claude plugin install crapkit@crapkit`; Codex with `codex plugin marketplace add "
-    "https://github.com/JeanFrancoisGagne/crapkit.git`, then `codex plugin add crapkit@crapkit`. "
-    "For a plugin kept anywhere else, pass --plugin-root PATH."
+    "Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit "
+    "--sparse .claude-plugin plugin`, then `claude plugin install crapkit@crapkit`; Codex with "
+    "`{codex_add}`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, "
+    "pass --plugin-root PATH."
 )
+
+
+def _install_plugin() -> str:
+    from ..doctor import CODEX_MARKETPLACE_ADD
+
+    return _INSTALL_PLUGIN.format(codex_add=CODEX_MARKETPLACE_ADD.format(version=__version__))
 
 
 def _name_found_root(found: _Found, looked_in: str) -> None:
@@ -1930,7 +1939,7 @@ def _doctor_plugin(plugin_root: str) -> int:
     """
     found = _resolve_plugin_root(plugin_root)
     if not found.roots:
-        print(f"crapkit doctor: no installed crapkit plugin under {found.looked_in}. {_INSTALL_PLUGIN}")
+        print(f"crapkit doctor: no installed crapkit plugin under {found.looked_in}. {_install_plugin()}")
         return 1
     for each in found.roots:
         _name_found_root(each, found.looked_in)

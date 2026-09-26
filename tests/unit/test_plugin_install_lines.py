@@ -107,7 +107,8 @@ def _stamped() -> dict[str, int]:
 
 def test_the_release_rewrites_every_codex_ref_a_page_prints():
     pinned = f"--ref v{_version()}"
-    printed = {name: _doc(name).count(pinned) for name in PAGES if pinned in _doc(name)}
+    pages = dict.fromkeys([*PAGES, *_stamped()])
+    printed = {name: _doc(name).count(pinned) for name in pages if pinned in _doc(name)}
 
     assert printed and printed == _stamped()
 

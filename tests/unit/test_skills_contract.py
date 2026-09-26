@@ -26,7 +26,9 @@ AUTO_SKILLS = (CRAPKIT_SKILL, RECOVER_SKILL)
 # A command mention is a code span or a command line, never prose: "a repo
 # crapkit measures" is English, `crapkit worklist --top 5` is a call.
 _SPAN = re.compile(r"`([^`\n]+)`")
-_CALL = re.compile(r"^\$?\s*(?:python -m )?crapkit\s+([a-z][a-z0-9-]*)(.*)$")
+# A subcommand followed by a colon is the start of a line crapkit printed
+# (`crapkit doctor: ...`), not a call.
+_CALL = re.compile(r"^\$?\s*(?:python -m )?crapkit\s+([a-z][a-z0-9-]*)(?![a-z0-9:-])(.*)$")
 _FLAG = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]*)")
 # Path shapes: anything with a slash in it, and bare source filenames.
 _SLASHED = re.compile(r"(?<![\w./-])(?:[\w.-]+/)+[\w.*-]+")
@@ -103,6 +105,7 @@ def test_the_pages_print_calls_at_all():
 
 def test_prose_that_merely_names_crapkit_is_not_read_as_a_call():
     assert _CALL.match("a repo crapkit measures") is None
+    assert _CALL.match("crapkit doctor: no installed crapkit plugin under DIR") is None
     assert _CALL.match("$ crapkit verify --base main").groups() == ("verify", " --base main")
 
 

@@ -48,7 +48,8 @@ def _tree(tmp_path: Path, version: str = "0.5.1", heading: str = "0.5.2") -> Pat
         (root / "docs" / page).write_text(_codex_add(version) * lines, encoding="utf-8")
     onboard = root / "plugin" / "skills" / "crapkit-onboard" / "SKILL.md"
     onboard.parent.mkdir(parents=True)
-    onboard.write_text(_codex_add(version), encoding="utf-8")
+    onboard.write_text(_codex_add(version) * 2, encoding="utf-8")
+    (root / "docs" / "agent-json.md").write_text(_codex_add(version), encoding="utf-8")
     for manifest in (".claude-plugin", ".codex-plugin"):
         (root / "plugin" / manifest / "plugin.json").write_text(
             json.dumps({"name": "crapkit", "version": version}, indent=2) + NL, encoding="utf-8")
@@ -69,7 +70,7 @@ def test_the_table_names_every_surface_a_release_touches():
     assert files == {"pyproject.toml", "src/crapkit/__init__.py", "README.md",
                      "plugin/.claude-plugin/plugin.json", "plugin/.codex-plugin/plugin.json",
                      "server.json", "docs/adoption.md", "docs/upgrading.md", "docs/handbook.html",
-                     "plugin/skills/crapkit-onboard/SKILL.md"}
+                     "plugin/skills/crapkit-onboard/SKILL.md", "docs/agent-json.md"}
 
 
 def test_check_passes_on_a_tree_whose_surfaces_agree(tmp_path):

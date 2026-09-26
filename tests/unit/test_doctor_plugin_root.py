@@ -343,9 +343,11 @@ def test_no_path_and_no_install_is_one_line_naming_where_it_looked(tmp_path, cap
     assert lines[0] == (
         f"crapkit doctor: no installed crapkit plugin under {tmp_path / 'plugins'} or "
         f"{tmp_path / 'codex'}. Claude Code installs it with `claude plugin marketplace add "
-        "JeanFrancoisGagne/crapkit`, then `claude plugin install crapkit@crapkit`; Codex with "
-        "`codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git`, then "
-        "`codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, pass --plugin-root PATH.")
+        "JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin`, then `claude plugin install "
+        "crapkit@crapkit`; Codex with `codex plugin marketplace add "
+        f"https://github.com/JeanFrancoisGagne/crapkit.git --ref v{CLI} --sparse .claude-plugin "
+        "--sparse plugin`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere "
+        "else, pass --plugin-root PATH.")
 
 
 def test_no_path_and_no_claude_code_install_checks_codex_s_cache(tmp_path, capsys, monkeypatch):

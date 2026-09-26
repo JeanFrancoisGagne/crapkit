@@ -1220,7 +1220,7 @@ directories and both harnesses' install lines and exits 1:
 
 ```
 $ crapkit doctor --plugin-root
-crapkit doctor: no installed crapkit plugin under ...\.claude\plugins or ...\.codex. Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit`, then `claude plugin install crapkit@crapkit`; Codex with `codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, pass --plugin-root PATH.
+crapkit doctor: no installed crapkit plugin under ...\.claude\plugins or ...\.codex. Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin`, then `claude plugin install crapkit@crapkit`; Codex with `codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, pass --plugin-root PATH.
 ```
 
 (The absolute path is elided; the line prints it in full.)

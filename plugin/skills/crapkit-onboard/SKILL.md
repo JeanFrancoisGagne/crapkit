@@ -48,7 +48,7 @@ line you get depends on how you asked. Both exit 1.
 With no path, the search looks in Claude Code's plugin directory, then Codex's, and names
 the commands that fix it:
 
-    crapkit doctor: no installed crapkit plugin under DIR or CODEX_DIR. Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit`, then `claude plugin install crapkit@crapkit`; Codex with `codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, pass --plugin-root PATH.
+    crapkit doctor: no installed crapkit plugin under DIR or CODEX_DIR. Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin`, then `claude plugin install crapkit@crapkit`; Codex with `codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, pass --plugin-root PATH.
 
 With a PATH you typed that holds no `.claude-plugin/plugin.json` at or under it, the line
 names the path and where to point instead:
