@@ -23,7 +23,7 @@ from typing import Callable, Iterable, NamedTuple
 # `retried_passes`. A verify run an older crapkit stored kept such an id in its
 # `failures` and named it nowhere else, so its list cannot say which failures
 # the run really carried.
-RETRIED_PASSES_SINCE = (0, 8, 0)
+_RETRIED_PASSES_SINCE = (0, 8, 0)
 
 SUITE_DROP_FRACTION = 0.1
 
@@ -85,7 +85,13 @@ def lists_failures(prov: dict) -> bool:
 
 def results_of(run: dict, name: str) -> LaneResults:
     """Lane `name`'s record in a stored run, the 0.7.x rule applied."""
-    return read_results(run["lanes"].get(name, {}), failures_trusted=not retries_unrecorded(run))
+    return read_results(run["lanes"].get(name, {}), failures_trusted=not _retries_unrecorded(run))
+
+
+def distrusted_list(run: dict, name: str) -> bool:
+    """Whether a stored run holds a failure list for lane `name` that no verdict
+    may forgive from: one a crapkit older than 0.8.0 wrote for a verify run."""
+    return _retries_unrecorded(run) and lists_failures(run["lanes"].get(name, {}))
 
 
 def _counted(run: dict, name: str) -> bool:
@@ -96,12 +102,12 @@ def _failures_recorded(run: dict, name: str) -> bool:
     return results_of(run, name).failures is not None
 
 
-def retries_unrecorded(run: dict) -> bool:
+def _retries_unrecorded(run: dict) -> bool:
     """A verify run stored by a crapkit that kept retried passes among its failures."""
     return run.get("kind") == "verify" and _older_than(run.get("tool_versions", {}).get("crapkit"))
 
 
-def _older_than(version: str | None, floor: tuple[int, ...] = RETRIED_PASSES_SINCE) -> bool:
+def _older_than(version: str | None, floor: tuple[int, ...] = _RETRIED_PASSES_SINCE) -> bool:
     """A version string with no number in it is not known to be older."""
     parts = re.findall(r"\d+", version or "")[:3]
     return bool(parts) and tuple(map(int, parts)) < floor

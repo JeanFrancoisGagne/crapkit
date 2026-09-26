@@ -249,3 +249,67 @@ def test_failure_ids_holds_every_lanes_list():
     provenance = {"py": {"failures": ["t::a"]}, "js": {"failures": ["s::b"]}, "go": {}}
 
     assert failure_ids(provenance) == {"t::a", "s::b"}
+
+
+# --- the interface: the names callers use, imported once --------------------------
+
+import ast  # noqa: E402
+
+_MODULE = _ROOT / "src" / "crapkit" / "lane_results.py"
+
+
+def _public_names(tree: ast.Module) -> set[str]:
+    """The top-level functions, classes and constants a caller could import."""
+    names = {node.name for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+    names |= {target.id for node in tree.body if isinstance(node, ast.Assign)
+              for target in node.targets if isinstance(target, ast.Name)}
+    return {name for name in names if not name.startswith("_")}
+
+
+def _returned_records(tree: ast.Module) -> set[str]:
+    """The names public functions return: a record type is interface without an importer."""
+    return {ast.unparse(node.returns) for node in tree.body
+            if isinstance(node, ast.FunctionDef) and not node.name.startswith("_") and node.returns}
+
+
+def test_every_public_lane_results_name_has_a_caller_outside_it():
+    """arch-15 narrows lane_results to the names its callers use. A name nobody
+    outside the module reads is its own detail and stays private; a record a
+    public function returns is interface whoever names it."""
+    tree = ast.parse(_MODULE.read_text(encoding="utf-8"))
+    outside = "\n".join(path.read_text(encoding="utf-8") for path in _python_files())
+    unused = sorted(name for name in _public_names(tree) - _returned_records(tree)
+                    if not re.search(rf"\b{name}\b", outside))
+
+    assert unused == []
+
+
+def test_verifying_imports_lane_results_once_at_module_level():
+    """cli/verifying read lane_results through a local import in each of eleven
+    functions; one module import lists what verify reads in one place."""
+    path = _ROOT / "src" / "crapkit" / "cli" / "verifying.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+               and (node.module == "lane_results"
+                    or any(alias.name == "lane_results" for alias in node.names))]
+
+    assert len(imports) == 1 and imports[0] in tree.body
+
+
+@pytest.mark.parametrize(("shape", "distrusted"), [
+    ("verify-written-by-0.7.6", True),
+    ("verify-with-a-retried-pass", False),
+    ("verify-by-a-dev-build", False),
+    ("junit-parsed", False),
+    ("no-results-artifact", False),
+])
+def test_a_list_a_baseline_holds_but_cannot_forgive_from(tmp_path, shape, distrusted):
+    """verify says why it passed over a baseline's own failure list: the run
+    held one written before retried passes were named apart, or it held none."""
+    from crapkit.lane_results import distrusted_list
+
+    (run,) = stored(tmp_path, shape)
+
+    assert distrusted_list(run, "py") is distrusted
+    assert distrusted_list(run, "renamed") is False
