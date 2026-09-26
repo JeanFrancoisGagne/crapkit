@@ -28,8 +28,12 @@ def _scores(version: str, mode: str) -> dict[str, tuple]:
     rows = build_inventory_rows({"s": analyze_source("probe.py", source, note=False)})
     report = RECORDED / f"coverage-{version}-{mode}.json"
     per_file = parse_coveragepy_both_file(report, path_prefix="")[0]
-    return {row.long_name: (row.cov, row.crap, row.flag)
+    return {row.long_name: ((row.cov, row.crap), row.flag)
             for row in score_rows(rows, per_file, lane_scopes={"s"})}
+
+
+def _differ(named: dict, found: dict, part: int) -> set[str]:
+    return {name for name in named if found[name][part] != named[name][part]}
 
 
 @pytest.mark.parametrize("mode", ["branch", "statement"])
@@ -40,10 +44,7 @@ def test_a_report_with_no_start_line_scores_each_function_as_one_that_names_it(m
     keeps between crap 1 and 2. Every other function scores as under 7.16.1."""
     named, found = _scores("7.16.1", mode), _scores("7.10.6", mode)
 
-    moved = {name for name in named if found[name][:2] != named[name][:2]}
-    relabelled = {name for name in named if found[name][2] != named[name][2]}
-
     assert len(named) == 53
-    assert moved == {"nested_doc_then_one.doc_only( )"}
-    assert relabelled == {"only_doc( )"}
-    assert found["only_doc( )"][2] == "untested" and named["only_doc( )"][2] == "measured"
+    assert _differ(named, found, 0) == {"nested_doc_then_one.doc_only( )"}
+    assert _differ(named, found, 1) == {"only_doc( )"}
+    assert (found["only_doc( )"][1], named["only_doc( )"][1]) == ("untested", "measured")

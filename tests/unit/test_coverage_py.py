@@ -292,19 +292,24 @@ def test_a_region_of_one_line_starts_where_its_arcs_return():
         "only_nested": (126, 126), "only_nested.lone": (127, 127)}
 
 
+def _without_arcs(report):
+    """The same report as `coverage json` writes it for a run without --branch."""
+    functions = report["files"]["m.py"]["functions"]
+    bare = {name: {key: value for key, value in fn.items() if not key.endswith("_branches")}
+            for name, fn in functions.items()}
+    return {"meta": {"version": "7.6.0"}, "files": {"m.py": {"functions": bare}}}
+
+
 def test_a_nested_region_of_one_line_with_no_arcs_starts_on_the_statement_ahead():
     """A report with no branch data lists no arc. Nested, the region starts on
     the statement ahead: the encloser spans the def and would win the join.
     add, a one-line def, then starts on its encloser's line before it, where
     no other function starts."""
-    functions = ONE_LINE_REGIONS["files"]["m.py"]["functions"]
-    bare = {name: {key: value for key, value in fn.items() if not key.endswith("_branches")}
-            for name, fn in functions.items()}
-    report = {"meta": {"version": "7.6.0"}, "files": {"m.py": {"functions": bare}}}
+    bare, with_arcs = _starts(_without_arcs(ONE_LINE_REGIONS)), _starts(ONE_LINE_REGIONS)
 
-    assert _starts(report)["host.add"] == (111, 112)
-    assert {name: span for name, span in _starts(report).items() if name != "host.add"} == {
-        name: span for name, span in _starts(ONE_LINE_REGIONS).items() if name != "host.add"}
+    assert bare.pop("host.add") == (111, 112)
+    with_arcs.pop("host.add")
+    assert bare == with_arcs
 
 
 def _excluded_region(executed, excluded, start_line=None):
