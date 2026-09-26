@@ -60,35 +60,101 @@ def _region_lines(fn: dict) -> list[int]:
             *(fn.get("excluded_lines") or ())]
 
 
+def _is_exit(arc: object) -> bool:
+    return isinstance(arc, list) and len(arc) == 2 and type(arc[1]) is int and arc[1] < 0
+
+
+def _returns_to(fn: dict) -> set[int]:
+    """The lines a region's branch arcs return to. coverage.py writes a return
+    as an arc to minus the first line of the code that returns: a def
+    statement, a class body, or a lambda or generator on its own line. A
+    report with no branch data lists no arc."""
+    arcs = [*(fn.get("executed_branches") or ()), *(fn.get("missing_branches") or ())]
+    return {-arc[1] for arc in arcs if _is_exit(arc)}
+
+
+def _one_line_start(fn: dict, first: int, ahead: int, holder: str) -> int:
+    """Where a region of one line that opens no other function starts.
+
+    It is a one-line def, whose def statement is that line, or a def whose
+    body is that one statement, with its def statement on `ahead`. At module
+    level the region starts on its line: no other region spans the def to
+    win the join, and `ahead` can be the def line of a function whose region
+    holds no line. Nested, it starts on `ahead`, because its encloser's
+    region spans the def and would win the join, unless its arcs return to
+    its own line and not to `ahead`: a one-line def."""
+    returns = _returns_to(fn)
+    if holder == "" or (first in returns and ahead not in returns):
+        return first
+    return ahead
+
+
+def _enclosers(names) -> set[str]:
+    """Every dotted name some region is nested in, a class's included."""
+    return {name[:dot] for name in names for dot, char in enumerate(name) if char == "."}
+
+
 class _Statements:
     """Every statement line in one file with the region that holds it, to find
     a def statement in a report that names no start_line.
 
     coverage.py wrote start_line from 7.13.1. Before it, a region's lines
-    begin at its body, and the def statement sits in the region around it:
-    a nested def whose def opens its encloser's body put the encloser's
-    region on the nested def's line, and the join handed the nested def the
-    encloser's number. A one-line def holds its own def statement."""
+    begin at its body, and the def statement sits in the region around it,
+    the nearest one that encloses the def: a nested def whose def opens its
+    encloser's body put the encloser's region on the nested def's line, and
+    the join handed the nested def the encloser's number.
+
+    A one-line def's line sits in its own region alone, so the statement
+    ahead of it belongs to other code, and the one-line defs that open a body
+    hold the lines between that body and its def statement."""
 
     def __init__(self, regions: dict) -> None:
         held = sorted((line, name) for name, fn in regions.items() for line in _region_lines(fn))
         self.lines = [line for line, _ in held]
         self.holders = [name for _, name in held]
+        self.names = set(regions)
+        self.enclosers = _enclosers(regions)
 
-    def def_line(self, name: str, first: int) -> int:
-        """The statement just ahead of the body when the code around `name`
-        holds it: the module, or a region `name` is nested in."""
-        at = bisect.bisect_left(self.lines, first) - 1
-        if at < 0:
+    def def_line(self, name: str, fn: dict, lines: list[int]) -> int:
+        """The statement ahead of the body, past the one-line defs nested at
+        its top, when the region around `name` holds it."""
+        first = min(lines)
+        at = self._ahead_of_nested(name, first)
+        if at < 0 or self.holders[at] != self._around(name):
             return first
-        holder = self.holders[at]
-        return self.lines[at] if holder == "" or name.startswith(holder + ".") else first
+        if len(set(lines)) > 1 or name in self.enclosers:
+            return self.lines[at]
+        return _one_line_start(fn, first, self.lines[at], self.holders[at])
+
+    def _ahead_of_nested(self, name: str, first: int) -> int:
+        at = bisect.bisect_left(self.lines, first) - 1
+        while at >= 0 and self.holders[at].startswith(name + "."):
+            at -= 1
+        return at
+
+    def _around(self, name: str) -> str:
+        """The nearest region `name` is nested in, or "" for the module. A
+        class is no region, so a method's is the function around its class."""
+        head = name.rpartition(".")[0]
+        while head and head not in self.names:
+            head = head.rpartition(".")[0]
+        return head
+
+    def nested_lines(self, name: str) -> list[int]:
+        """The lines of the regions nested in `name`: a def whose body is
+        one-line defs holds no line itself, and sits just ahead of theirs."""
+        prefix = name + "."
+        return [line for line, holder in zip(self.lines, self.holders)
+                if holder.startswith(prefix)]
 
 
 def _region_start(name: str, fn: dict, lines: list[int], statements: _Statements) -> int:
+    """The def line: named from 7.13.1, found before it. A def with no line
+    and nothing nested in it, a docstring and no statement, has no place."""
     if fn.get("start_line"):
         return fn["start_line"]
-    return statements.def_line(name, min(lines)) if lines else 0
+    placed = lines or statements.nested_lines(name)
+    return statements.def_line(name, fn, placed) if placed else 0
 
 
 def _fn_coverage(name: str, fn: dict, statements: _Statements) -> FnCoverage:

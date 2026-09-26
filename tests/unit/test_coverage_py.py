@@ -169,32 +169,66 @@ def _region(executed, missing, branches=(0, 0)):
                         "num_branches": branches[0], "covered_branches": branches[1]}}
 
 
-# coverage.py 7.10.6 over (no start_line: a region starts where its lines do):
-# 62 def outer(flag):           72 def wrap(items):            85 def one_line(value): return value + 1
-# 63     def inner(value):      73     total = len(items)
-# 64         if value: ...      74     def each(item):
-# 67     if flag: ...           75         return item + total
-#                               76     return [each(i) for i in items]
+# coverage.py 7.10.6 over (no start_line: a region starts where its lines do).
+# A one-line def's line sits in its own region only, and a def with nothing
+# but a docstring holds no line at all:
+# 62 def outer(flag):           72 def wrap(items):            83 LIMIT = 3
+# 63     def inner(value):      73     total = len(items)      85 def one_line(value): return value + 1
+# 64         if value: ...      74     def each(item):         88 def opens(flag):
+# 67     if flag: ...           75         return item + total 89     def never(v): return v
+#                               76     return [each(i) for i in items]  90     if flag: ...
+# 95 def only_doc():            97 def after_doc(v): return v
+# 96     """Nothing but a docstring."""
 NO_START_LINE = {"meta": {"branch_coverage": True, "version": "7.10.6"}, "files": {"m.py": {
     "functions": {
-        "": _region([1, 62, 72, 85], []),
+        "": _region([1, 62, 72, 83, 88, 95], []),
         "outer": _region([63, 67, 69], [68], branches=(2, 1)),
         "outer.inner": _region([], [64, 65, 66], branches=(2, 0)),
         "wrap": _region([73, 74, 76], []),
         "wrap.each": _region([], [75]),
         "one_line": _region([85], [], branches=(2, 2)),
+        "opens": _region([90, 91, 92], [], branches=(2, 2)),
+        "opens.never": _region([89], [], branches=(2, 1)),
+        "only_doc": _region([], []),
+        "after_doc": _region([97], [], branches=(2, 1)),
     }}}}
 
 
 def test_a_region_with_no_start_line_starts_on_its_def_statement():
     """Before 7.13.1 a region names no start_line and its lines begin at the
     body. The def statement is the statement just ahead of the body, held by
-    the code around the function; a one-line def holds its own."""
+    the code around the function, past the one-line defs that open the body.
+    A one-line def holds its own def statement, and a def with no line has
+    no place."""
     per_file = parse_coveragepy(json.dumps(NO_START_LINE), path_prefix="")
 
     assert {fn.name: (fn.start, fn.end) for fn in per_file["m.py"]} == {
         "outer": (62, 69), "outer.inner": (63, 66), "wrap": (72, 76), "wrap.each": (74, 75),
-        "one_line": (85, 85)}
+        "one_line": (85, 85), "opens": (88, 92), "opens.never": (89, 89),
+        "only_doc": (0, 0), "after_doc": (97, 97)}
+
+
+def test_a_function_whose_body_opens_with_a_one_line_def_joins_its_own_region():
+    """never's line sits in never's region alone. Read as a def statement ahead
+    of a body, the module line before it put never on opens's def line, and
+    opens started on its second body line: the join handed opens never's 1 of
+    2 branches. A one-line def after a def with no line took that def's line
+    the same way."""
+    from crapkit.score import score_rows
+    from crapkit.snapshot import InventoryRow
+
+    rows = [InventoryRow("s", "m.py", name, start, end, 2, 2, 2, 3, 1, 1)
+            for name, start, end in (("one_line( value )", 85, 85), ("opens( flag )", 88, 92),
+                                     ("opens.never( v )", 89, 89), ("only_doc( )", 95, 96),
+                                     ("after_doc( v )", 97, 97))]
+    per_file = parse_coveragepy(json.dumps(NO_START_LINE), path_prefix="")
+
+    scored = score_rows(rows, per_file, lane_scopes={"s"})
+
+    assert [(row.long_name, row.cov, row.flag) for row in scored] == [
+        ("one_line( value )", 0.0, "untested"), ("opens( flag )", 1.0, "measured"),
+        ("opens.never( v )", 0.0, "untested"), ("only_doc( )", 0.0, "untested"),
+        ("after_doc( v )", 0.0, "untested")]
 
 
 def test_a_nested_def_joins_its_own_region_in_a_report_with_no_start_line():
@@ -214,6 +248,63 @@ def test_a_nested_def_joins_its_own_region_in_a_report_with_no_start_line():
     assert [(row.long_name, row.cov) for row in scored] == [
         ("outer( flag )", 0.5), ("outer.inner( value )", 0.0),
         ("wrap( items )", 1.0), ("wrap.each( item )", 0.0)]
+
+
+# coverage.py 7.6.0 over (no start_line), with the arcs a region lists; a
+# return is an arc to minus the first line of the code that returns:
+# 110 def host(items):                      120 def with_gen(items):
+# 111     base = len(items)                 121     def pick(xs):
+# 112     def add(v): return v + base       122         return any(x for x in xs)
+# 113     def each(item):                   123     return pick(items)
+# 114         return item + base            126 def only_nested():
+# 115     return [add(each(i)) for i in items]  127     def lone(v): return v
+ONE_LINE_REGIONS = {"meta": {"branch_coverage": True, "version": "7.6.0"}, "files": {"m.py": {
+    "functions": {
+        "": _region([1, 110, 120, 126], []),
+        "host": _region([111, 113, 115], []),
+        "host.add": {**_region([112], [], branches=(2, 2)),
+                     "executed_branches": [[112, 113], [112, -112]]},
+        "host.each": _region([114], []),
+        "with_gen": _region([121, 123], []),
+        "with_gen.pick": {**_region([122], [], branches=(3, 3)),
+                          "executed_branches": [[122, -121], [122, 122], [122, -122]]},
+        "only_nested": _region([], []),
+        "only_nested.lone": {**_region([127], [], branches=(2, 1)),
+                             "executed_branches": [[127, -126]],
+                             "missing_branches": [[127, -127]]},
+    }}}}
+
+
+def _starts(report):
+    return {fn.name: (fn.start, fn.end)
+            for fn in parse_coveragepy(json.dumps(report), path_prefix="")["m.py"]}
+
+
+def test_a_region_of_one_line_starts_where_its_arcs_return():
+    """A region of one line that opens no other is a one-line def, or a def
+    whose body is that one statement. add's arcs return to its own line: a
+    one-line def. each lists no arc, and its encloser's region spans its def,
+    so it starts on the statement ahead. pick's line holds a generator, whose
+    return goes to that line too, and pick's own return goes to its def."""
+    assert _starts(ONE_LINE_REGIONS) == {
+        "host": (110, 115), "host.add": (112, 112), "host.each": (113, 114),
+        "with_gen": (120, 123), "with_gen.pick": (121, 122),
+        "only_nested": (126, 126), "only_nested.lone": (127, 127)}
+
+
+def test_a_nested_region_of_one_line_with_no_arcs_starts_on_the_statement_ahead():
+    """A report with no branch data lists no arc. Nested, the region starts on
+    the statement ahead: the encloser spans the def and would win the join.
+    add, a one-line def, then starts on its encloser's line before it, where
+    no other function starts."""
+    functions = ONE_LINE_REGIONS["files"]["m.py"]["functions"]
+    bare = {name: {key: value for key, value in fn.items() if not key.endswith("_branches")}
+            for name, fn in functions.items()}
+    report = {"meta": {"version": "7.6.0"}, "files": {"m.py": {"functions": bare}}}
+
+    assert _starts(report)["host.add"] == (111, 112)
+    assert {name: span for name, span in _starts(report).items() if name != "host.add"} == {
+        name: span for name, span in _starts(ONE_LINE_REGIONS).items() if name != "host.add"}
 
 
 def _excluded_region(executed, excluded, start_line=None):
@@ -244,10 +335,12 @@ def test_a_region_whose_every_statement_is_excluded_is_marked_excluded():
     """coverage.py keeps the region of a `# pragma: no cover` def, and of a
     stub whose body is `...`, with no statements and its lines excluded.
     7.10.6 also lists the excluded lines a call ran as executed. A region
-    that keeps any statement is measured as before."""
-    for report in (_pragma_report("7.16.1", [], (92, 97)),
-                   _pragma_report("7.10.6", [93, 94], (None, None))):
+    that keeps any statement is measured as before. With no start_line the
+    stub, a module-level def with a body of one line, starts on that line."""
+    for report, stub_start in ((_pragma_report("7.16.1", [], (92, 97)), 97),
+                               (_pragma_report("7.10.6", [93, 94], (None, None)), 98)):
         fns = parse_coveragepy(json.dumps(report), path_prefix="")["m.py"]
 
         assert [(fn.name, fn.start, fn.end, fn.excluded) for fn in fns] == [
-            ("excluded", 92, 95, True), ("stub", 97, 98, True), ("partly", 99, 102, False)]
+            ("excluded", 92, 95, True), ("stub", stub_start, 98, True),
+            ("partly", 99, 102, False)]

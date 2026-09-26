@@ -611,15 +611,34 @@ which a coverage that old would not fix.
 
 coverage.py 7.6 added the per-function regions crapkit joins on, and 7.13.1 added each
 region's `start_line`. A report from 7.6 up to 7.13.0 names no start line, and a region's
-lines begin at its body. crapkit then takes the def statement as the region's start: the
-last statement ahead of the body, when the module or a function the region is nested in
-holds it. A one-line def holds its own def statement, so it starts where its body does.
+lines begin at its body. crapkit then finds each def statement from the lines alone:
+
+- A def statement sits in the region of the nearest function around the def, or in the
+  module's for a top-level def or a method of a top-level class. The region starts on
+  the last statement ahead of its body when that region holds it. One-line defs that
+  open the body hold the lines in between, and crapkit reads past them.
+- A one-line def's line sits in its own region alone, so the statement ahead of it
+  belongs to other code. A region of one line that no other region nests in is a
+  one-line def, or a def whose body is one statement. At module level it starts on its
+  line: no region around it spans the def, so either way it joins its own region.
+  Nested, it starts on the statement ahead, because the region around it spans the def
+  and would win the join, unless its branch arcs show a one-line def. coverage.py writes
+  a return as an arc to minus the first line of the code that returns, and a one-line
+  def's arcs return to its own line and not to the statement ahead.
+- A def whose body holds nothing but one-line defs has no line of its own, and starts on
+  the statement ahead of theirs.
+- A def with no statement, a docstring and nothing else, has no line in the report and so
+  no place. At module level it reads `untested` at cov 0, the number its region holds.
+  Nested in another function, it takes a neighbour's number: the function around it, or
+  in a report with no branch data a one-line def right after it. Its ccn is 1, so its
+  crap stays between 1 and 2. A report from coverage.py 7.13.1 or later places it.
 
 Through 0.8.0 such a region started at its first body line. A nested def whose def opened
 its encloser's body shared a start line with the encloser's region, and a nested def
 further down overlapped the encloser's region by one line more than its own, which lacked
 the def line. Either way the join handed the nested def the encloser's number, so a helper
-no test called read as tested as the function around it.
+no test called read as tested as the function around it. A def whose body held nothing but
+one-line defs read the first one's number.
 
 ### A function coverage.py excludes
 

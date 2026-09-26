@@ -24,9 +24,15 @@
   overlapped the encloser's region by one line more than its own, which lacked the def
   line. The join handed the nested def the encloser's number, and a helper no test
   called read 0.5 where it reads 0. A region with no `start_line` now starts on its def
-  statement, the last statement ahead of its body that the module or its encloser
-  holds. Nested defs measured by those coverage.py versions change score, which is part
-  of the same analysis-version bump.
+  statement, the last statement ahead of its body that the region around it holds,
+  past the one-line defs that open the body. A one-line def keeps its own line: at
+  module level always, nested when its branch arcs return to that line. A def whose
+  body holds nothing but one-line defs read the first one's number, and now starts
+  ahead of them. Probed with coverage.py 7.6.0, 7.10.6 and 7.13.0 against 7.16.1,
+  which names `start_line`, every function joins the region 7.16.1 gives it, except a
+  nested def with nothing but a docstring, which those reports do not place.
+  Nested defs measured by those coverage.py versions change score, which is part of
+  the same analysis-version bump.
 - A new flag, `excluded`, marks a function its coverage tool was told to leave out:
   `# pragma: no cover` or an exclude pattern that takes every statement in it under
   coverage.py (from coverage.py 7.10.1 its default patterns take a stub whose body is
