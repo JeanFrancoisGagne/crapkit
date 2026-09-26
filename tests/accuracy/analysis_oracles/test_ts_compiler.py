@@ -10,7 +10,9 @@ per file, each reporting the first place crapkit and the compiler part:
 - params: how many parameters it declares.
 
 Push reads the probe files and the named shapes of analysis_shapes; nightly
-reads every JavaScript, TypeScript and Vue member of the full corpus. A file
+reads every JavaScript, TypeScript and Vue file of the full corpus that
+crapkit scores (docs/configuration.md: a path with a component named test,
+tests or __tests__, or one opening on a dot, leaves the corpus first). A file
 whose first difference is a recorded defect is a strict xfail on its rulings
 row; a difference crapkit makes on purpose is a definition row.
 """
@@ -22,7 +24,7 @@ import pytest
 from accuracy.analysis_oracles import (analysis_corpora, analysis_js, analysis_shapes,
                                        analysis_tables)
 from accuracy.analysis_oracles.oracles import node_oracles
-from accuracy.kit import oracles, runlog
+from accuracy.kit import oracles, rulings, runlog
 
 pytestmark = pytest.mark.process
 SUFFIXES = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".vue")
@@ -122,7 +124,45 @@ def test_sibling_arrows_are_separate_functions(measured, compiled):
     assert Counter(row["start"] for row in rows)[1] == Counter(fn.start for fn in fns)[1] == 2
 
 
+# --- a switch whose last case ends in a bare return (calc-bug analysis-oracles-160) ---------------
+
+SWITCH_RETURN = ("function kind(c) {\n  switch (c) {\n    case 1:\n      return 'one'\n"
+                 "    default:\n      return 'many'\n  }\n}\n\nfunction after() {\n  return 1\n}\n")
+AFTER_LINE = 10
+
+
+@rulings.applies("AO-JS-SWITCH-RETURN")
+def test_a_switch_ending_in_a_bare_return_closes_its_function(oracle, measure_set, tmp_path):
+    """ECMA-262 sec. 15.2: after is a function declaration of its own."""
+    oracle("typescript")
+    files = {"cases/switch_return.js": SWITCH_RETURN}
+    paths = node_oracles.write(files, tmp_path)
+    compiled = node_oracles.functions(oracles.node_modules("push"), tmp_path, paths)
+    rows = measure_set(files).in_file("cases/switch_return.js")
+
+    rulings.pin_ruling("AO-JS-SWITCH-RETURN",
+                       crapkit=sum(row["start"] == AFTER_LINE for row in rows),
+                       oracle=sum(fn.start == AFTER_LINE for fn in compiled))
+
+
 # --- nightly: the full corpus -----------------------------------------------------------------
+
+TEST_DIRECTORIES = {"test", "tests", "__tests__"}
+
+
+def scored(path: str) -> bool:
+    """Whether crapkit's corpus keeps `path` (docs/configuration.md "[exclude]")."""
+    folders = path.split("/")[:-1]
+    return not any(part.lower() in TEST_DIRECTORIES or part.startswith(".") for part in folders)
+
+
+@pytest.mark.parametrize("path, kept", [
+    ("src/a.ts", True), ("src/testing/a.ts", True), ("latest/a.ts", True),
+    ("src/.eslintrc.js", True), ("src/test/a.ts", False), ("src/Tests/a.ts", False),
+    ("pkg/__tests__/a.tsx", False), (".github/gen.js", False), ("src/.hidden/a.ts", False)])
+def test_scored_follows_the_documented_exclusions(path, kept):
+    assert scored(path) is kept
+
 
 def _differences_in(measured, compiled, path: str) -> tuple:
     rows, fns = measured.in_file(path), analysis_js.in_file(compiled, path)
@@ -141,11 +181,15 @@ def _corpus_differences(measured, compiled) -> dict:
 
 @pytest.mark.nightly
 def test_corpus_declarations_and_spans_match_the_compiler(oracle, measure_set, tmp_path):
-    """Every JS, TS and Vue file of the full corpus, reported file by file with
-    its first difference; the files a defect covers are counted, not hidden:
-    the assertion names every file whose difference no rulings row records."""
+    """Every JS, TS and Vue file of the full corpus that crapkit scores, reported
+    file by file with its first difference; the files a defect covers are
+    counted, not hidden: the assertion names every file whose difference no
+    rulings row records."""
     oracle("typescript")
-    files = analysis_corpora.corpus_files(SUFFIXES)
+    every = analysis_corpora.corpus_files(SUFFIXES)
+    files = {path: data for path, data in every.items() if scored(path)}
+    runlog.note("skipped_files", oracle="typescript: test and dot directories",
+                count=len(every) - len(files))
     paths = node_oracles.write(files, tmp_path)
     compiled = node_oracles.functions(oracles.node_modules("push"), tmp_path, paths)
     differences = _corpus_differences(measure_set(files), compiled)

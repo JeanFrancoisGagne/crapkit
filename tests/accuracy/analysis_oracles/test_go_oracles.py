@@ -160,3 +160,27 @@ def test_each_go_rule_is_pinned_by_a_hand_case(ruling_id, hand, oracle):
 
 def test_every_go_rule_has_a_hand_case():
     assert tooldiff.rules(TOOLS) == sorted(HAND)
+
+
+# --- AO-REVIVE-SWEEP: revive's report names its limit, so depth takes one process per level -------
+
+# Hand value: a for holding an if holding an if nests three control structures deep.
+DEEP = ("package p\n\nfunc F(a []int) int {\n\tfor i := 0; i < len(a); i++ {\n\t\tif a[i] > 0 {\n"
+        "\t\t\tif a[i] > 5 {\n\t\t\t\treturn i\n\t\t\t}\n\t\t}\n\t}\n\treturn 0\n}\n")
+
+
+def test_revive_names_its_limit_so_depth_takes_one_process_per_level(oracle, tmp_path,
+                                                                     monkeypatch):
+    oracle("revive")
+    (tmp_path / "deep.go").write_text(DEEP, encoding="utf-8")
+    limits = []
+    real = go_adapters.revive_reports
+    monkeypatch.setattr(go_adapters, "revive_reports",
+                        lambda root, paths, limit: limits.append(limit) or real(root, paths, limit))
+
+    at_zero = go_adapters.revive_lines(tmp_path, ["deep.go"], 0)
+    depths = go_adapters.revive_depths(tmp_path, ["deep.go"], {("deep.go", 3): 12})
+
+    assert at_zero and {named for _, _, named in at_zero} == {0}
+    assert depths == {("deep.go", 3): 3}
+    assert limits == [0, 1, 2, 3]
