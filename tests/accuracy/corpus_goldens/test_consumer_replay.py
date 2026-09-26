@@ -181,8 +181,8 @@ def test_the_replay_scores_the_recording_and_runs_no_lane(recorded, tmp_path, ca
 def test_an_undeclared_move_fails_and_a_declared_one_passes(recorded, tmp_path, monkeypatch,
                                                             capsys):
     base = wheels.zipped(tmp_path / "base.whl")
-    planted = wheels.zipped(tmp_path / "planted.whl", wheels.CRAP_PLANT)
-    declared = {"HEAD": set(), "v-declared": {"CRAP score"}}
+    planted = wheels.zipped(tmp_path / "planted.whl", wheels.COGNITIVE_PLANT)
+    declared = {"HEAD": set(), "v-declared": {"Cognitive complexity"}}
     monkeypatch.setattr(wheel_diff, "declared_since", declared.__getitem__)
 
     undeclared = _replay(recorded, tmp_path / "a", base, planted, "--declared-since", "HEAD")
@@ -190,9 +190,11 @@ def test_an_undeclared_move_fails_and_a_declared_one_passes(recorded, tmp_path, 
     passed = _replay(recorded, tmp_path / "b", base, planted, "--declared-since", "v-declared")
 
     assert (undeclared, passed) == (1, 0)
-    assert printed[:3] == ["1 value(s) moved on the consumer repository", "  CRAP score: 1",
-                           "  src/h.py k( a , b ) crap: 12.0 -> 12.5"]
-    assert printed[-1] == "no CHANGES row since the previous tag names ['CRAP score']"
+    moved = "  src/h.py k( a , b ) cognitive: 2 -> 3"  # in inventory.tsv and scored.tsv
+    assert printed[:4] == ["2 value(s) moved on the consumer repository",
+                           "  Cognitive complexity: 2", moved, moved]
+    assert printed[-1] == ("no CHANGES row since the previous tag names "
+                           "['Cognitive complexity']")
 
 
 @replayed

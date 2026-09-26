@@ -220,15 +220,31 @@ def test_a_key_listed_twice_is_held_to_its_higher_mark():
     inv.check_marks_kept([mark(5.0), mark(8.0)], [mark(5.0), mark(8.0)], adds=False)
 
 
-@pytest.mark.parametrize("value", [8.0, 66.0714, 1.0001, 12345.6789])
+# 0.0 and -2.0 are marks no CRAP reaches, which only a hand edit writes: crapkit
+# keeps them as the file holds them, so they are not a crapkit bug.
+@pytest.mark.parametrize("value", [8.0, 66.0714, 1.0001, 12345.6789, 0.0, -2.0])
 def test_a_four_decimal_mark_dumps(value):
     inv.check_dump([mark(value)])
 
 
-@pytest.mark.parametrize("value", [8.00001, 0.0, -2.0, float("inf"), float("nan"), 1 / 3])
+@pytest.mark.parametrize("value", [8.00001, float("inf"), float("nan"), 1 / 3])
 def test_a_mark_the_file_cannot_hold_stops_the_dump(value):
     text = stopped(inv.check_dump, [mark(value)])
     assert "held at four decimals" in text and inv.MARKS_KEPT in text
+
+
+@pytest.mark.parametrize("typed, read", [("1.00005", 1.0001), ("9.87654", 9.8765),
+                                         ("7", 7.0), ("-1", -1.0)])
+def test_a_hand_typed_mark_reads_at_the_four_decimals_the_file_holds(typed, read):
+    """docs/ratchet.md#what-a-mark-is: CRAP to four decimals. A mark typed with more
+    reads as what the next write gives it, so a move or a prune of such a file
+    passes the dump check instead of stopping as an internal bug."""
+    from crapkit.ratchet import dump_ratchet, load_ratchet
+
+    (entry,) = load_ratchet(f"path\tlong_name\tcrap\nsrc/a.py\tf( x )\t{typed}\n")
+
+    assert entry.crap == read
+    assert dump_ratchet([entry], stamp="").endswith(f"\t{read:.4f}\n")
 
 
 def test_an_unstamped_file_still_dumps():

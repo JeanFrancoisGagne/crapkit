@@ -304,8 +304,10 @@ def check_marks_kept(prior, marks, *, adds: bool) -> None:
 
 
 def four_places(mark: float) -> bool:
-    """A mark as the file holds it: finite, positive, and CRAP to four decimals."""
-    return math.isfinite(mark) and mark > 0 and float(f"{mark:.4f}") == mark
+    """A mark as the file holds it: finite, at four decimals. Not a bound on its
+    size: a hand-typed mark below any CRAP (0, -1) is read and written back as it
+    stands, and every mark crapkit computes comes from a row check_rows passed."""
+    return math.isfinite(mark) and float(f"{mark:.4f}") == mark
 
 
 def check_dump(entries) -> None:
@@ -313,7 +315,7 @@ def check_dump(entries) -> None:
     began = perf_counter_ns()
     for e in entries:
         if not four_places(e.crap):
-            _stop("a mark must be a finite positive number held at four decimals",
+            _stop("a mark must be a finite number held at four decimals",
                   f"{e.path}\t{e.long_name} (mark {e.crap!r})", MARKS_KEPT)
     _spent("dump", began)
 

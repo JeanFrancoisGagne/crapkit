@@ -114,12 +114,13 @@ class Fn:
 
 @st.composite
 def scenarios(draw):
-    """Up to 8 files, some without churn, each with up to 4 functions."""
+    """Up to 8 files, some without churn, each with up to 4 functions. A file's
+    weight stays inside the README's Risk rule, at most 0.5 per commit: crapkit's
+    runtime guard stops a worklist whose churn breaks it."""
     count = draw(st.integers(1, 8))
     commits = draw(st.lists(st.integers(0, 6), min_size=count, max_size=count))
-    weights = draw(st.lists(st.integers(1, 3000), min_size=count, max_size=count))
-    churn = {f"src/f{n}.py": production.file_churn(c, 1, w / 1000)
-             for n, (c, w) in enumerate(zip(commits, weights)) if c > 0}
+    churn = {f"src/f{n}.py": production.file_churn(c, 1, draw(st.integers(1, 500 * c)) / 1000)
+             for n, c in enumerate(commits) if c > 0}
     fns = []
     for n in range(count):
         for k in range(draw(st.integers(1, 4))):

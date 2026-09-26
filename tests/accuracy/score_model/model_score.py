@@ -10,7 +10,7 @@ doc: README.md:817-845 sha256=37c50a8de99d5249e9b6f68956332cacd268340c56525ae17e
 doc: README.md:846-878 sha256=a5ad841c6db8ba40f62dca771cae0b6b472691749715b4ac5652e5eccd3ad0f1
 doc: README.md:800-800 sha256=f2641c8c17668dbee44078a26ce35b9f5c91431c698439fed9d6e877733c218a
 doc: README.md:804-805 sha256=86556191ce5d4702e23629a9537e7c8481e04c41d7a1c7b190db74f76bba5c12
-doc: docs/agent-json.md:113-137 sha256=2b7c9002c0b78366c02c30b8f85e7b409494dc1ac234c3ae8276b805acba2277
+doc: docs/agent-json.md:113-137 sha256=a5de32dcbd86433a5660d15ff6c472c3862f432d074ba4bcdc3a11bb81acab8e
 doc: docs/agent-json.md:190-227 sha256=d36083d295330ee4109e0b2bfc627f8988117f490148d067e5750dc8b1a7c685
 doc: docs/agent-json.md:478-483 sha256=263d2c6d9e4cddf07af5869c4db0f7a8c421ad4b9cb9c4abf1ecbccdba1acb4f
 doc: docs/agent-json.md:618-707 sha256=a2fab3c2de01100cfde062809b6970ca7587cc4f9a793792fe572de115a033c7
@@ -75,7 +75,7 @@ def est_splits(ccn: int, ceiling: int) -> int:
 
 
 def est_uncovered_paths(ccn: int, cov: Fraction) -> int:
-    """round((1 - cov) * ccn), ties to even (rulings D10), on the exact value."""
+    """(1 - cov) * ccn rounded half to even (agent-json.md, rulings D10), on the exact value."""
     return int(exact.half_even((1 - Fraction(cov)) * ccn, 0))
 
 

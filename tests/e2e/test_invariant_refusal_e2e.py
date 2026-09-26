@@ -251,7 +251,7 @@ def test_a_mark_the_file_cannot_hold_stops_the_dump(repo: Path, monkeypatch):
     monkeypatch.setattr(ratchet, "prune_ratchet",
                         lambda prior, fresh: ([e._replace(crap=e.crap + 0.00001) for e in prior], 0))
     done = run_cli(repo, "ratchet", "prune")
-    stopped(done, "a mark must be a finite positive number held at four decimals")
+    stopped(done, "a mark must be a finite number held at four decimals")
     assert "The marks file was not rewritten." in done.stderr
     unchanged(repo, *before)
 

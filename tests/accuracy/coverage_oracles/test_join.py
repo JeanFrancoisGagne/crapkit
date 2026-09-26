@@ -200,14 +200,60 @@ def _corpus_rows(run) -> list[Scored]:
                    float(row["cov"]), row["flag"]) for row in rows]
 
 
+# Small-corpus files that carry a reader defect on purpose, each a past bug's
+# shape: a .vue function's row starts on its <script> block's line count, not the
+# file's (AO-VUE-LINES, CG1), `function f<T>` gets no row (D1a), and a regular
+# expression holding a backtick hides the functions after it (D1c). Their artifact
+# functions land on no row because the rows are wrong, not the join. While
+# CO-READER-JOIN is a defect the corpus join sets these files aside and pins them
+# in a test of their own; once the row reads fixed they rejoin the whole corpus.
+READER_JOIN = "CO-READER-JOIN"
+READER_DEFECT_FILES = ("src/web/Counter.vue", "src/web/generic.ts", "src/web/templates.ts")
+
+
+def _in_test_directory(path: str) -> bool:
+    """docs/configuration.md#exclude: a path with a component `test`, `tests` or
+    `__tests__`, in any case, leaves the corpus before anything is scored."""
+    return any(part.lower() in ("test", "tests", "__tests__") for part in path.split("/"))
+
+
+def _corpus_functions(run) -> list:
+    """Every artifact function in a file the corpus scores: a recorded js lane also
+    measured src/web/__tests__, which no row can stand for."""
+    return [fn for rows in counts_table.table(run.root).values() for fn in rows
+            if not _in_test_directory(fn.path)]
+
+
+def _kept(items: list, aside: bool) -> list:
+    """Every item, or every item outside the reader-defect files while `aside` holds."""
+    return [item for item in items if not (aside and item.path in READER_DEFECT_FILES)]
+
+
+def _set_aside(items: list) -> list:
+    return [item for item in items if item.path in READER_DEFECT_FILES]
+
+
 @pytest.mark.process
 def test_counts_table_joins_every_measured_corpus_row(measured_corpus):
-    table = counts_table.table(measured_corpus.root)
-    functions = [fn for rows in table.values() for fn in rows]
-    rows = _corpus_rows(measured_corpus)
+    aside = rulings.load()[READER_JOIN].ruling == "defect"
+    functions = _kept(_corpus_functions(measured_corpus), aside)
+    rows = _kept(_corpus_rows(measured_corpus), aside)
 
     assert functions and any(row.flag == "measured" for row in rows)
     assert join_findings(functions, rows) + _floor_findings(rows) == []
+
+
+@rulings.applies(READER_JOIN)
+@pytest.mark.process
+def test_reader_defect_files_join_their_artifact_functions(measured_corpus):
+    """The set-aside files: each function the recorded istanbul fnMap holds lands on
+    its own row once the TypeScript and Vue readers are fixed."""
+    functions = _set_aside(_corpus_functions(measured_corpus))
+    rows = _set_aside(_corpus_rows(measured_corpus))
+    findings = join_findings(functions, rows) + _floor_findings(rows)
+
+    assert functions and rows
+    rulings.pin_ruling(READER_JOIN, crapkit=f"{len(findings)} findings", oracle="0 findings")
 
 
 # --- metamorphic: lanes in any order, in parallel, twice -------------------------------------------

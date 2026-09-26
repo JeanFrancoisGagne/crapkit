@@ -44,9 +44,9 @@ PLAN_FLOORS = {
                               "tools/accuracy/retro.py", "tools/accuracy/mutation.py",
                               "tools/accuracy/run.py"}),
 }
-# Floor paths another packet's tools fill. Each entry goes once its file is here.
-LANDING = {"tools/accuracy/change_control.py": "the change-control packet",
-           "tools/accuracy/wheel_diff.py": "the corpus-goldens packet"}
+# Floor paths another packet's tools fill, each until its file is here. Empty since
+# change_control.py and wheel_diff.py landed with their packets.
+LANDING: dict[str, str] = {}
 KILLED = {"killed", "caught by type check"}
 
 

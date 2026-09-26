@@ -206,10 +206,13 @@ def _is_skippable(line: str) -> bool:
 
 
 def _finite_mark(text: str) -> float:
+    """The mark as the file holds it, at four decimals: a hand-typed mark with more
+    reads as the number the next write gives it (a tie rounds as round() rounds
+    the double), so every mark in memory is one `dump_ratchet` writes unchanged."""
     mark = float(text)
     if not math.isfinite(mark):
         raise ValueError("ratchet mark must be finite")
-    return mark
+    return float(f"{mark:.4f}")
 
 
 def _read_mark(line: str, number: int) -> RatchetEntry:

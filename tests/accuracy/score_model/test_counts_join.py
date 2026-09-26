@@ -16,7 +16,7 @@ import tomllib
 
 import pytest
 
-from accuracy.kit import exact, surfaces
+from accuracy.kit import exact, rulings, surfaces
 from accuracy.score_model import cases, model_score
 from accuracy.score_model.oracles import coverage_counts
 
@@ -38,6 +38,20 @@ def _counts(root) -> dict[tuple[str, int], coverage_counts.Counts]:
 
 def _rows(corpus) -> list[dict]:
     return surfaces.read_tsv(corpus.outputs.joinpath("scored.tsv").read_text(encoding="utf-8"))[1]
+
+
+# src/web/Counter.vue carries a reader defect on purpose: a .vue function's row
+# starts on its <script> block's line count, not the file's (AO-VUE-LINES, CG1),
+# so its rows join no artifact function. While SM-VUE-JOIN is a defect the joins
+# below set the file aside and pin it in a test of its own; once the row reads
+# fixed the file rejoins them.
+VUE_JOIN = "SM-VUE-JOIN"
+VUE_FILE = "src/web/Counter.vue"
+
+
+def _joined_rows(corpus) -> list[dict]:
+    aside = rulings.load()[VUE_JOIN].ruling == "defect"
+    return [row for row in _rows(corpus) if not (aside and row["path"] == VUE_FILE)]
 
 
 def _ratio(counts: coverage_counts.Counts) -> Fraction:
@@ -109,7 +123,7 @@ def _problems(rows: list[dict], counts: dict) -> list[str]:
 
 
 def test_every_scored_row_matches_its_artifact_counts(scored_corpus):
-    rows = _rows(scored_corpus)
+    rows = _joined_rows(scored_corpus)
 
     assert rows, "the corpus scored no row"
     assert _problems(rows, _counts(scored_corpus.root)) == []
@@ -118,12 +132,23 @@ def test_every_scored_row_matches_its_artifact_counts(scored_corpus):
 def test_every_measured_row_joins_by_start_line(scored_corpus):
     """The join is by (path, start): a measured row whose start no artifact
     function shares is how a span join hands a row its neighbour's number."""
-    rows, counts = _rows(scored_corpus), _counts(scored_corpus.root)
+    rows, counts = _joined_rows(scored_corpus), _counts(scored_corpus.root)
     measured = [row for row in rows if row["flag"] == "measured"]
 
     assert measured
     assert [row["long_name"] for row in measured
             if (row["path"], int(row["start"])) not in counts] == []
+
+
+@rulings.applies(VUE_JOIN)
+def test_vue_rows_match_their_artifact_counts(scored_corpus):
+    """The set-aside file: each .vue row joins the counts the recorded istanbul
+    fnMap holds at its start once the Vue reader numbers file lines."""
+    rows = [row for row in _rows(scored_corpus) if row["path"] == VUE_FILE]
+    problems = _problems(rows, _counts(scored_corpus.root))
+
+    assert rows
+    rulings.pin_ruling(VUE_JOIN, crapkit=f"{len(problems)} problems", oracle="0 problems")
 
 
 def _four_places(row: dict, counts: dict, ties: dict) -> tuple[str, str]:

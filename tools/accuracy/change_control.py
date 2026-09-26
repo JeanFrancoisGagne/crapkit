@@ -888,12 +888,20 @@ def corpus_dir(tree, name: str) -> Path | None:
     return tree.root / SMALL_CORPUS if isinstance(tree, DirTree) else _materialized(tree)
 
 
+def _counts_dir(tree, name: str) -> Path | None:
+    """The corpus directory when its crapkit.toml exists: the counts table reads
+    the lanes there, and a corpus without one (a seeded test tree) declares none."""
+    directory = corpus_dir(tree, name)
+    configured = directory is not None and (directory / "crapkit.toml").is_file()
+    return directory if configured else None
+
+
 def _counts_of(tree, name: str) -> dict:
     """{(path, start): count rows} for one corpus of the tree, read once per tree."""
     tables = tree.__dict__.setdefault("_counts", {})
     if name not in tables:
-        directory, module = corpus_dir(tree, name), counts_module()
-        usable = module is not None and directory is not None and directory.is_dir()
+        directory, module = _counts_dir(tree, name), counts_module()
+        usable = module is not None and directory is not None
         tables[name] = module.table(directory) if usable else {}
     return tables[name]
 

@@ -4,8 +4,8 @@
   csv module, over Hypothesis tables with changed, dropped and added rows.
 - metamorphic: swapping base and candidate mirrors every move.
 - hand: two wheels zipped from this checkout's crapkit, the candidate with
-  one planted change (CRAP gains 0.5 at ccn 3), run on a two-function repo:
-  the planted value is the only move.
+  one planted change (cognitive complexity gains 1 at ccn 3), run on a
+  two-function repo: the planted value is the only move, in both exports.
 - hand: a side that handed off failure.json skips with one line and exit 0;
   a PyPI wheel whose bytes miss PyPI's sha256 refuses; the xplat rule's
   ulp cases, worked from math.ulp.
@@ -152,7 +152,7 @@ def test_the_declared_calcs_must_equal_the_moved_ones():
 # --- sides ------------------------------------------------------------------------------
 
 def _wheel(dest: Path, planted: bool) -> Path:
-    return wheels.zipped(dest, wheels.CRAP_PLANT if planted else None)
+    return wheels.zipped(dest, wheels.COGNITIVE_PLANT if planted else None)
 
 
 def _tiny(tmp_path: Path) -> Path:
@@ -174,7 +174,8 @@ def test_a_planted_change_is_the_only_move(tmp_path):
     moves = wheel_diff.diff_exports(*exports)
 
     assert [(m.export, m.path, m.long_name, m.column, m.old, m.new, m.calc) for m in moves] == [
-        ("scored.tsv", "src/a.py", "g( x )", "crap", "12.0", "12.5", "CRAP score")]
+        (export, "src/a.py", "g( x )", "cognitive", "2", "3", "Cognitive complexity")
+        for export in ("inventory.tsv", "scored.tsv")]
 
 
 @pytest.mark.process

@@ -201,12 +201,15 @@ def test_impossible_counts_refuse_istanbul(pair):
 
 # --- which tree an artifact measured -----------------------------------------------------------
 
-DRIVE = ("C:/", "C:\\", "d:/")
+def _drive_lettered(path: str) -> bool:
+    """`C:/...`, `e:/...` or either with a backslash: docs/lanes.md reads a path on any
+    drive letter as absolute."""
+    return len(path) > 2 and path[0].isascii() and path[0].isalpha() and path[1:3] in (":/", ":\\")
 
 
 def _escapes(path: str) -> bool:
     """Absolute in either spelling, or climbing out of the tree."""
-    return path.startswith(("/", "../")) or path[:3] in DRIVE or path[:3].lower() in DRIVE
+    return path.startswith(("/", "../")) or _drive_lettered(path)
 
 
 def _under(root: Path, path: str) -> bool:
