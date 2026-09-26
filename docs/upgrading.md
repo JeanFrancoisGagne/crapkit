@@ -197,28 +197,36 @@ some JavaScript and TypeScript coverage move:
   coverage of one function went to a neighbor, so `cov`, CRAP and the uncovered lines
   `verify` checks a diff against move for JavaScript and TypeScript functions in such
   files. A function that reads less covered now can go over its ceiling.
-### Next analysis version: C, C++ and Objective-C rows
 
-The release after 0.8.0 reads the C family's functions and parameters in new ways, so
-it raises the analysis version and every marks file re-seeds once, with the same three
-commands as version 11 below.
+### Next analysis version: C, C++, Objective-C and Java rows
 
-- `params` counts each declaration in a C, C++ or Objective-C parameter list, named
-  or not: `f(int*, char)` reads 2, `f(const int arr[4])` reads 1, and an Objective-C
-  method counts its arguments. `params` is reported and never gated.
+The release after 0.8.0 reads the functions and parameters of the C family and Java in
+new ways, so it raises the analysis version and every marks file re-seeds once, with the
+same three commands as version 11 below.
+
+- `params` counts each declaration in a C, C++, Objective-C or Java parameter list,
+  named or not: `f(int*, char)` reads 2, `f(const int arr[4])` and Java's
+  `main(String args[])` read 1, and an Objective-C method counts its arguments.
+  `params` is reported and never gated.
 - Functions that had no row get one: those after a `<` comparison in a default
   template argument or a member initializer, which lizard read as a template bracket,
   and the member functions of a class defined inside a function. The function around
   such a class no longer pays for its members' decisions, so its `ccn` and
-  `cognitive` fall.
-  A newly listed function over its ceiling fails the gate the next time its file
-  changes, and `ratchet seed` marks it.
+  `cognitive` fall. In Java, methods get rows after an annotated local variable, an
+  enum constant with a body or an annotation element with a default, and inside a
+  constant's body or an interface field's anonymous class. A newly listed function
+  over its ceiling fails the gate the next time its file changes, and `ratchet seed`
+  marks it.
 - Rows that were not functions go: a declaration whose trailing return type holds
-  braces, and an Objective-C instance-variable block.
+  braces, an Objective-C instance-variable block, a Java enum constant, an annotation
+  element with a braced default, and a Java field's anonymous class.
 - Rows named after an attribute take the function's name: `__attribute__((noinline))`,
-  `API_AVAILABLE( ios(10))`, or `)` for an Objective-C method. The name is a new
-  ratchet key, and so is the long name of a function after one whose default argument
-  holds a parenthesized `<`: `g( int a , int c)` where it read `g(int a,int c)`.
+  `API_AVAILABLE( ios(10))`, or `)` for an Objective-C method, and Java rows named
+  after an annotation with arguments, `InlineMe( replacement = ...)`. A Java method
+  inside a method's anonymous or local class reads `A::go.run()`, where it read
+  `A::A::go.run()`. The name is a new ratchet key, and so is the long name of a
+  function after one whose default argument holds a parenthesized `<`:
+  `g( int a , int c)` where it read `g(int a,int c)`.
   `ratchet prune` drops the old mark and `ratchet seed` marks the function under its
   new name if it is over its ceiling.
 - A C++ `&&` that declares a reference costs nothing: `for (auto&& x : r)`,

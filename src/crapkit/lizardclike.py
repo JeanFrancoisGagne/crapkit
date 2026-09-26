@@ -199,7 +199,54 @@ def _ends_a_type(token: str | None) -> bool:
     return token is not None and (_is_word(token) or token in _TYPE_ENDS)
 
 
-class _CFixes:
+def name_levels_once(context) -> None:
+    """Spell the levels around a function nested in another one once.
+
+    lizard qualifies a new function's name with every level open around it,
+    and a function's own name already holds the levels open around that
+    function, so they were spelled twice: `ns::ns::outer.Local::twice`, or in
+    Java `A::A::go.run`. The name now starts at the enclosing function's.
+    """
+    fn, outer = context.current_function, context.last_function
+    if outer is None:
+        return
+    own = fn.long_name.find(outer.name + ".")
+    if own > 0:
+        fn.name = fn.long_name = fn.long_name[own:]
+
+
+class ParameterCount:
+    """A parameter list whose declarations are counted, for any lizard state
+    machine built on CLikeStates: C, C++, Objective-C and Java. It takes the
+    arguments of the machine it extends: Java's class-body states take three."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.crapkit_list = []
+
+    def _state_dec(self, token):
+        """lizard's parameter list, whose declarations are counted here.
+
+        The count lands on the function current at the list's closing
+        parenthesis as `crapkit_params`, which analyze._record reads ahead of
+        lizard's names, and the nesting the list opened is forgotten there.
+        lizard's own `bracket_stack` is emptied at each list's opening
+        parenthesis: a `<` that never closed in an earlier list left it one
+        deep, and every later function in the file read its parameters as
+        nested tokens.
+        """
+        if self.br_count == 0:
+            self.bracket_stack, self.crapkit_list = [], []
+        else:
+            self.crapkit_list.append(token)
+        super()._state_dec(token)
+        if self.br_count == 0:
+            fn = self.context.current_function
+            fn.crapkit_params = declared_parameters(self.crapkit_list[:-1])
+            _forget_the_parameters(fn)
+
+
+class _CFixes(ParameterCount):
     """What the C family's function states read differently from lizard's.
 
     Each override hands every token it does not claim to lizard's own state,
@@ -208,7 +255,6 @@ class _CFixes:
 
     def __init__(self, context):
         super().__init__(context)
-        self.crapkit_list = []
         self.crapkit_template = None
         self.crapkit_typed = False
         self.crapkit_last_name = None
@@ -223,26 +269,6 @@ class _CFixes:
         self.crapkit_typed = _ends_a_type(self.last_token) and not after_head
         self.crapkit_last_name = name
         super().try_new_function(name)
-
-    def _state_dec(self, token):
-        """lizard's parameter list, whose declarations are counted here.
-
-        The count lands on the function current at the list's closing
-        parenthesis as `crapkit_params`, which analyze._record reads ahead of
-        lizard's names, and the nesting the list opened is forgotten there. lizard's own `bracket_stack` is emptied at each list's
-        opening parenthesis: a `<` that never closed in an earlier list left it
-        one deep, and every later function in the file read its parameters as
-        nested tokens.
-        """
-        if self.br_count == 0:
-            self.bracket_stack, self.crapkit_list = [], []
-        else:
-            self.crapkit_list.append(token)
-        super()._state_dec(token)
-        if self.br_count == 0:
-            fn = self.context.current_function
-            fn.crapkit_params = declared_parameters(self.crapkit_list[:-1])
-            _forget_the_parameters(fn)
 
     def _state_template_in_name(self, token):
         """A template argument list in a name, read to its own closing `>`.
@@ -363,17 +389,9 @@ class _LocalClassBody:
             self.context.current_function = self.crapkit_outer
 
     def try_new_function(self, name):
-        """A member is named `outer.Local::twice`, or `ns::outer.Local::twice`.
-
-        lizard qualifies a name with every level open around it, and the
-        function's own name already holds the levels open around the function,
-        so they were spelled twice: `ns::ns::outer.Local::twice`.
-        """
+        """A member is named `outer.Local::twice`, or `ns::outer.Local::twice`."""
         super().try_new_function(name)
-        member = self.context.current_function
-        own = member.name.find(self.crapkit_outer.name + ".")
-        if own > 0:
-            member.name = member.long_name = member.name[own:]
+        name_levels_once(self.context)
 
 
 class _ClassHead:

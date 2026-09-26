@@ -765,9 +765,9 @@ lane commands the way the shell that runs them does:
   picked the later twin.
 ## Unreleased
 
-C, C++ and Objective-C rows move, so the release that ships this raises the analysis
-version and every repo with those languages re-seeds its marks once (`crapkit coverage`,
-`crapkit ratchet prune`, `crapkit ratchet seed`).
+C, C++, Objective-C and Java rows move, so the release that ships this raises the
+analysis version and every repo with those languages re-seeds its marks once (`crapkit
+coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
 
 ### The C family counts every parameter a function declares
 
@@ -813,6 +813,31 @@ version and every repo with those languages re-seeds its marks once (`crapkit co
   with no decision of its own and now reads 1, with the 27 on
   `compute_width.count_code_points::operator ( )`. In four fmt headers 29 members get a
   row and 6 enclosing functions lose ccn.
+
+### Java methods that were hidden, invented or misnamed
+
+- An annotation with arguments on a local variable, `@SuppressWarnings("unchecked") int
+  x = (int) o;`, no longer hides every method after the one that holds it. lizard read
+  the arguments with the counter the method body kept its braces in and never saw them
+  close. In 13 files of Guava 33.2.1, Gson 2.11.0, Commons Lang 3.14.0 and JUnit
+  5.10.2, 451 methods that had no row now have one, most of them after an annotated
+  local: Futures.java listed 2 of its 61.
+- A second annotation with arguments, `@Deprecated @InlineMe(...) int inlined(int n)`,
+  no longer names the row: lizard dropped the token after a bare annotation, so the row
+  read `InlineMe( replacement = ...)`, and `@Deprecated record P(int x) {...}` read as a
+  method named P that hid the record's methods. These rows take their real name, a new
+  ratchet key.
+- An enum constant with a body, `ONE() { int value(int n) {...} }`, is no method, and the
+  methods its body declares have rows. The same holds for an anonymous class created in
+  a field of a top-level interface, which read as a method named after its type.
+- An annotation element's default, `String[] alternate() default {};`, is no body. A
+  braced default read as one, and any other default ran on to the next `{` in the file
+  and hid what followed.
+- A method of an anonymous or local class inside a method is named with its class once:
+  `A::go.run()`, where it read `A::A::go.run()`. The name is a new ratchet key.
+- `params` counts `String args[]`, which read 0.
+- A parameter list opens no nesting level, as in C++: a wildcard `?` that lizard read
+  as a conditional, `BiFunction<? super K, ? super @Nullable V, ...>`, read one level.
 
 ### The `&&` of a C++ reference decides nothing
 
