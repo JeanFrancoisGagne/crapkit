@@ -27,7 +27,7 @@ config = '''
 
 # How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
 [spawn]
-cwd = "workspace"
+cwd = "launch"
 env = "inherit"
 resolve = "execvp"
 windows = "cross-spawn"
@@ -44,7 +44,7 @@ client_name = "opencode"
 [limits]
 output_tokens = 0
 tool_prefix = "crapkit_"
-startup_seconds = 0
+startup_seconds = 30
 
 # What it does with the plugin's hooks/hooks.json.
 [hooks]
@@ -83,11 +83,11 @@ autoupgrade = true
 "initialize.client_name" = "observed"
 "limits.output_tokens" = "inferred"
 "limits.tool_prefix" = "observed"
-"limits.startup_seconds" = "inferred"
+"limits.startup_seconds" = "source"
 "hooks.loads" = "docs"
 "hooks.manifest" = "docs"
 "hooks.fields" = "docs"
 "hooks.events" = "docs"
 "hooks.matcher" = "docs"
 "hooks.exit2" = "docs"
-sources = ["calibrate.py: shim record of `opencode mcp list` in crapkit-deploy:full", "https://opencode.ai/docs/mcp-servers (mcp.<name>.type local, command array)", "OpenCode plugins are JavaScript modules; it reads no Claude hooks.json"]
+sources = ["calibrate.py: shim record of `opencode mcp list` in crapkit-deploy:full", "https://opencode.ai/docs/mcp-servers (mcp.<name>.type local, command array)", "OpenCode plugins are JavaScript modules; it reads no Claude hooks.json", "live calibration 2026-09-25: the server starts in the directory opencode was started in: from repo/calc it ran in repo/calc while opencode.json sat in the repo root", "live calibration 2026-09-25: connect timeout 30000 ms in the code (the docs say 5000): stubs answering at 3, 8 and 25 s connected, 35 s failed", "live calibration 2026-09-25: `opencode mcp list` runs in a fresh home with no provider and no login, under --network none too", "live calibration 2026-09-25: crapkit mcp wrote 0 bytes of stderr across one call of every tool and a bad call, so the pipe OpenCode never reads cannot fill", "live calibration 2026-09-25: every tools/call carries _meta.progressToken and OpenCode sends notifications/cancelled after each result; crapkit sends no progress, so the SDK's 60 s call timeout is never reset", "live calibration 2026-09-25: the server's environment gains AGENT=1, OPENCODE=1 and OPENCODE_PID; on Windows the npm .cmd launcher adds DP0 and PROMPT", "live calibration 2026-09-25: the docs/agent-json.md mcpServers block as opencode.json, or merged into the global config, gives 'No MCP servers configured', exit 0"]

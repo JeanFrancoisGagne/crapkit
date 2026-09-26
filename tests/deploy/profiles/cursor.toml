@@ -53,7 +53,7 @@ manifest = ""
 fields = ["type", "command", "timeout", "matcher"]
 events = ["PostToolUse"]
 matcher = "mapped"
-exit2 = "deny"
+exit2 = "ignored"
 
 # The pinned CLI a real cell runs; pins_key "" means no headless check exists.
 [real_cli]
@@ -91,6 +91,6 @@ autoupgrade = true
 "hooks.fields" = "source"
 "hooks.events" = "source"
 "hooks.matcher" = "source"
-"hooks.exit2" = "docs"
-sources = ["calibrate.py: shim record of `cursor-agent mcp list-tools` in crapkit-deploy:core (env: HOME LC_CTYPE PATH)", "cursor-agent dist-package/index.js: the Claude hook converter keeps type, command, matcher and timeout; Edit maps to Write", "https://cursor.com/docs/agent/hooks (exit 2 denies)"]
+"hooks.exit2" = "observed"
+sources = ["calibrate.py: shim record of `cursor-agent mcp list-tools` in crapkit-deploy:core (env: HOME LC_CTYPE PATH)", "cursor-agent dist-package/index.js: the Claude hook converter keeps type, command, matcher and timeout; Edit maps to Write", "https://cursor.com/docs/agent/hooks (exit 2 denies)", "live calibration 2026-09-25: `agent mcp list` prints plain lines with stdin at /dev/null ('crapkit: ready' or 'not loaded (needs approval)'); mcp list, enable and list-tools need no login and work under --network none; `agent plugin marketplace list` needs a login", "live calibration 2026-09-25: the CLI leaves ${workspaceFolder}, ${userHome}, ${workspaceFolderBasename} and ${/} literal; only ${NAME}, ${env:NAME} and ${NAME:-default} with upper-case names expand, from Cursor's own environment", "live calibration 2026-09-25: `cwd` works in a project .cursor/mcp.json too, not only in a plugin's mcp.json", "live calibration 2026-09-25: the server starts in the workspace directory (where agent ran, or --workspace); a parent .cursor/mcp.json does not move it; the environment is the SDK's filtered list plus LC_CTYPE=C.UTF-8, LANG and LC_ALL dropped", "live calibration 2026-09-25: initialize: clientInfo {Cursor, 1.0.0} and only elicitation {form: {}}; no roots, sampling, tasks or extensions", "live calibration 2026-09-25: a project entry stays unloaded until `agent mcp enable`; approvals live in ~/.cursor/projects/<path-slug>/mcp-approvals.json as '<name>-<16 hex>', so an edited entry needs approval again", "live calibration 2026-09-25: an imported Claude plugin: mcp commands do not see its server; the hook converter keeps command, timeout and matcher, drops args, if, async and asyncRewake, maps Edit to Write and runs in the plugin's install path; exit 2 on postToolUse is recorded as 'blocked' and shown to nobody ([hooks] exit2 = ignored)", "live calibration 2026-09-25: a server that fails to start has its stderr appended to the CLI's error ('MCP error -32000: Connection closed; stderr: usage: crapkit ...')", "live calibration 2026-09-25: `agent mcp list-tools` starts crapkit once or twice, at random"]
 manual = ["lin-cursor-claude-import settles whether the agent imports an installed Claude plugin by default"]

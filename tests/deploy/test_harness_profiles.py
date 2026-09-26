@@ -274,6 +274,25 @@ def test_calibrate_drift_names_each_differing_field():
 
 
 @pytest.mark.kit
+def test_a_launch_directory_profile_agrees_with_a_start_in_the_repo():
+    """calibrate-all starts each harness in the repo, where the directory it was
+    started in and the workspace are one; a start elsewhere still differs."""
+    launch = {**PROFILE, "spawn": {**PROFILE["spawn"], "cwd": "launch"}}
+
+    assert calibrate.drift(launch, observation()) == []
+    assert calibrate.drift(launch, observation(spawn__cwd="home")) == ["spawn.cwd: profile 'launch', observed 'home'"]
+
+
+@pytest.mark.kit
+def test_a_launch_rule_starts_the_sim_server_where_the_harness_started(tmp_path):
+    class Box:
+        home = tmp_path / "home"
+
+    launch = profiles.Profile("sim", {"spawn": {"cwd": "launch"}})
+    assert profiles.launch_cwd(launch, None, Box(), tmp_path / "repo") == tmp_path / "repo"
+
+
+@pytest.mark.kit
 def test_calibrate_dump_reads_back_as_toml():
     seen = observation(limits__tool_prefix=None)
     assert tomllib.loads(calibrate.dump(seen)) == {**seen, "limits": {}}

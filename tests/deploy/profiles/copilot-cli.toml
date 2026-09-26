@@ -29,10 +29,11 @@ config = '''
 
 # How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
 [spawn]
-cwd = "workspace"
+cwd = "launch"
 env = "inherit"
 resolve = "execvp"
 windows = "cross-spawn"
+plugin_cwd = "plugin"
 
 # What it sends first, and the client a sim cell drives crapkit with.
 [initialize]
@@ -78,6 +79,7 @@ autoupgrade = true
 "spawn.env" = "observed"
 "spawn.resolve" = "observed"
 "spawn.windows" = "inferred"
+"spawn.plugin_cwd" = "observed"
 "initialize.client" = "inferred"
 "initialize.sdk" = "inferred"
 "initialize.protocol" = "observed"
@@ -92,4 +94,4 @@ autoupgrade = true
 "hooks.events" = "observed"
 "hooks.matcher" = "observed"
 "hooks.exit2" = "observed"
-sources = ["calibrate.py: shim record of `copilot -p` on the OpenAI stub (server/discover 2026-07-28, then initialize 2025-11-25)", "`copilot help providers` (BYOK needs no GitHub login)", "lin-copilot-plugin-hooks: after `copilot plugin install crapkit@crapkit`, one `edit` of a Python file spawned 50 bare `crapkit` processes, each exiting 2 with its usage printed to the user; the edit landed after 29 s", "lin-call-copilot: a 28 KB tool result reaches the model as 'Output too large to read at once (28.0 KB). Saved to: $TMP/<n>-copilot-tool-output-<id>.txt' with a 500-character preview; the file holds the whole result"]
+sources = ["calibrate.py: shim record of `copilot -p` on the OpenAI stub (server/discover 2026-07-28, then initialize 2025-11-25)", "`copilot help providers` (BYOK needs no GitHub login)", "lin-copilot-plugin-hooks: after `copilot plugin install crapkit@crapkit`, one `edit` of a Python file spawned 50 bare `crapkit` processes, each exiting 2 with its usage printed to the user; the edit landed after 29 s", "lin-call-copilot: a 28 KB tool result reaches the model as 'Output too large to read at once (28.0 KB). Saved to: $TMP/<n>-copilot-tool-output-<id>.txt' with a 500-character preview; the file holds the whole result", "live calibration 2026-09-25: the server gets the whole parent environment plus COPILOT_* session names, GIT_CONFIG_COUNT=1 with safe.bareRepository=explicit, NODEFAULTCURRENTDIRECTORYINEXEPATH=1 and PYTHONUNBUFFERED=1", "live calibration 2026-09-25: user-config and workspace .mcp.json servers start in the directory copilot was started in; plugin servers start in the plugin's install directory ([spawn] plugin_cwd)", "live calibration 2026-09-25: server/discover (2026-07-28) first, -32601 taken, then initialize 2025-11-25 with sampling and elicitation {form, url} and no roots", "live calibration 2026-09-25: `copilot mcp get` reads config only (no spawn) and works under COPILOT_OFFLINE=true with no token and under --network none", "live calibration 2026-09-25: a hand-written .mcp.json entry without tools and type loads, and `mcp get` shows tools [\"*\"]", "live calibration 2026-09-25: a plugin server gets PLUGIN_ROOT, COPILOT_PLUGIN_ROOT and CLAUDE_PLUGIN_ROOT, not PLUGIN_DATA; hooks get CLAUDE_PLUGIN_DATA, COPILOT_PLUGIN_DATA, CLAUDE_PROJECT_DIR and COPILOT_PROJECT_DIR", "live calibration 2026-09-25: plugin hooks.json keeps command and drops args and if, and every entry runs per edit (PowerShell on Windows, cwd the plugin root); .claude/settings.json hooks keep the whole command string, cwd the repo; the payload is Claude-shaped (PostToolUse, tool_name 'Edit') with tool_input {path, old_str, new_str}", "live calibration 2026-09-25: the model gets each result's text plus the structuredContent JSON after a blank line (get_next_item 1073 characters against 567 in OpenCode), which counts toward COPILOT_LARGE_OUTPUT_THRESHOLD_BYTES (20480)", "live calibration 2026-09-25: a project .mcp.json loads in -p mode at the repo root with GITHUB_COPILOT_PROMPT_MODE_WORKSPACE_MCP=true, and from repo/calc only with COPILOT_ALLOW_ALL=true", "live calibration 2026-09-25: an isError text reaches the model prefixed \"MCP server 'crapkit': \"", "live calibration 2026-09-25: Windows: the first command's package extraction into COPILOT_CACHE_HOME took 64 to 324 s in fresh sandboxes (Linux 5 to 8 s); kit/profiles.py copilot_package extracts once per worker"]

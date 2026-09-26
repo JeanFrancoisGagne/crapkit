@@ -37,6 +37,10 @@ CELL = "calibrate-all"
 # (under [seen]) is evidence for a reader, never compared.
 COMPARED = {"spawn": ("cwd", "env"), "initialize": ("protocol", "discover_first", "client_name"),
             "limits": ("tool_prefix",)}
+# The calibrate-all cell starts every harness in the repo, so a start there
+# reads as "workspace"; a profile whose server starts where the harness was
+# started ("launch") agrees with it.
+SAME_START = {("spawn", "cwd", "launch"): "workspace"}
 # No pinned release: installed at their newest, on the network, and never blocking.
 LATEST_ONLY = ("kiro", "qwen-code", "windsurf")
 # A simulated harness that runs a pinned CLI another profile already calibrates.
@@ -54,13 +58,19 @@ def _settled(profile: dict, section: str, field: str, seen) -> bool:
     return seen is not None and pinned is not None and not skipped
 
 
+def _expected(profile: dict, section: str, field: str):
+    """What an observation shows for the profile's value (SAME_START)."""
+    value = profile[section][field]
+    return SAME_START.get((section, field, value), value)
+
+
 def drift(profile: dict, observed: dict) -> list[str]:
     """section.field: profile value -> observed value, for each field that differs."""
     lines = []
     for section, fields in COMPARED.items():
         for field in fields:
             seen = observed.get(section, {}).get(field)
-            if _settled(profile, section, field, seen) and profile[section][field] != seen:
+            if _settled(profile, section, field, seen) and _expected(profile, section, field) != seen:
                 lines.append(f"{section}.{field}: profile {profile[section][field]!r}, observed {seen!r}")
     return lines
 

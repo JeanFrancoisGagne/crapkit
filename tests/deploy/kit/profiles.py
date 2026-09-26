@@ -36,14 +36,13 @@ import re
 import shlex
 import socket
 import subprocess
-import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 import hang_guard
 from e2e import repo_templates
-from kit import clock, repos, sandbox, shim, stub_anthropic, stub_openai, wheels, writers
+from kit import clock, repos, shim, stub_anthropic, stub_openai, wheels, writers
 from kit.transcript import Step
 
 PROFILES = Path(__file__).resolve().parents[1] / "profiles"
@@ -122,8 +121,11 @@ def _heading_problem(profile: Profile) -> list[str]:
 
 
 # --- how a harness starts the server ---------------------------------------------------
-# [spawn] cwd: workspace (the repo), home, root (the filesystem root), config
-# (the config's own cwd, else home). env: inherit, sdk-default (the MCP
+# [spawn] cwd: workspace (the repo), launch (the directory the harness was
+# started in: a sim cell starts every harness in the repo, a user in a
+# subdirectory gets the subdirectory), home, root (the filesystem root), config
+# (the config's own cwd, else home); plugin_cwd, where set, is where a plugin's
+# server starts instead (plugin: its install directory). env: inherit, sdk-default (the MCP
 # TypeScript SDK's getDefaultEnvironment), allowlist (env_allow, or
 # env_allow_windows on Windows). resolve / windows: execvp and cross-spawn
 # (PATH, with PATHEXT on Windows), createprocess (PATH, .exe only), cwd-first
@@ -154,7 +156,7 @@ def launch_cwd(profile: Profile, server, box, repo: Path) -> Path:
         for token in WORKSPACE_TOKENS:
             spelled = spelled.replace(token, str(repo))
         return Path(spelled)
-    return {"workspace": repo, "home": box.home, "root": Path(repo.anchor), "config": box.home}[rule]
+    return {"workspace": repo, "launch": repo, "home": box.home, "root": Path(repo.anchor), "config": box.home}[rule]
 
 
 def _folded(name: str) -> str:
@@ -833,12 +835,7 @@ INSTALL_SECONDS = 900
 
 def bounded(box, argv: list[str], env: dict, note: str) -> Step:
     """Run argv under INSTALL_SECONDS, not the hang bound, and record it in the transcript."""
-    started = time.monotonic()
-    done = hang_guard.run([box.resolve(argv[0]), *argv[1:]], cwd=box.root, env={**box.env, **env},
-                          timeout=INSTALL_SECONDS)
-    step = Step(argv, str(box.root), done.returncode, sandbox.decode(done.stdout), sandbox.decode(done.stderr),
-                round(time.monotonic() - started, 2), note)
-    return box.transcript.add(step)
+    return box.run(argv, cwd=box.root, env=env, note=note, bound=INSTALL_SECONDS)
 
 
 def _install(box, key: str) -> Step:
