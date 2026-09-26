@@ -988,11 +988,11 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   and the function had no row. A raw string (`r#"..."#`), a raw identifier (`r#type`) or
   an attribute before code on the same line lost that code too, with any decision or
   brace in it. An attribute's `#[` and the whole of a raw string or raw identifier are
-  now one token each, and the rest of the line reads as code. Swift's raw strings, and
-  both readers' raw strings opened with two to four hashes, end where their own hashes
-  close them. ripgrep's 13 files in the accuracy corpus hold no such line and read the
-  same; a repo that writes `#[test] fn t() {` gains a row per such function. The same
-  analysis-version bump covers this.
+  now one token each, and the rest of the line reads as code. A raw string in Swift or
+  Rust ends where as many hashes as opened it close it, however many. ripgrep's 13
+  files in the accuracy corpus hold no such line and read the same; a repo that writes
+  `#[test] fn t() {` gains a row per such function. The same analysis-version bump
+  covers this.
 
 ## 0.8.0 — 2026-09-23
 

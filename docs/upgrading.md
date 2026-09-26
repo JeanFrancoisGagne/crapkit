@@ -300,9 +300,9 @@ Swift:
 
 Rust:
 
-- A function with an attribute on its own line, `#[inline] fn f() {`, is listed; it had
-  no row. A decision or a brace after a raw string (`r#"..."#`), a raw identifier
-  (`r#type`) or an attribute on the same line now counts.
+- A function with an attribute on the same line as its `fn`, `#[inline] fn f() {`, is
+  listed; it had no row. A decision or a brace after a raw string (`r#"..."#`), a raw
+  identifier (`r#type`) or an attribute on the same line now counts.
 
 ### Analysis version 11
 

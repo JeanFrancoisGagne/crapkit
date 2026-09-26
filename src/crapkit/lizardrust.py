@@ -78,8 +78,7 @@ the rest of their line the same way, and with it any decision or brace there.
 `generate_tokens` reads a raw string or a raw identifier as one token and an
 attribute's `#[` or `#![` as one token, so the attribute's contents and the
 code after it read as code. A raw string ends at a quote followed by as many
-hashes as opened it, for one to four; one opened with more still ends at its
-first `"` and hash.
+hashes as opened it, however many.
 
 Registration
 ------------
@@ -141,10 +140,10 @@ _ARM = "=>"
 _WILDCARD = "_"
 
 # Tried before lizard's `#`, which takes the rest of the line: a raw string, over
-# lines too, closed by as many hashes as opened it; a raw identifier; an
-# attribute's `#[` or `#![`.
-_RAW_STRINGS = "".join(r'|b?r\#{%d}".*?"\#{%d}' % (n, n) for n in (4, 3, 2, 1))
-_HASH_TOKENS = _RAW_STRINGS + r"|r\#\w+|\#!?\["
+# lines too, closed by as many hashes as opened it, however many; a raw
+# identifier; an attribute's `#[` or `#![`. The group is named so it cannot clash
+# with a group number in lizard's own pattern.
+_HASH_TOKENS = r'|b?r(?P<rust_raw>\#+)".*?"(?P=rust_raw)|r\#\w+|\#!?\['
 
 # Any filename picks the reader; the file is never opened.
 _PROBE = "crapkit_registration_probe.rs"

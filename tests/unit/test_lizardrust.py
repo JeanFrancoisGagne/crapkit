@@ -338,7 +338,8 @@ def test_an_attribute_on_the_function_line_keeps_the_function(attribute):
 
 
 @pytest.mark.parametrize("construct", ['let s = r#"a "quoted" b"#;', 'let s = br##"a"#b"##;',
-                                       "let r#type = 1;", "#[allow(unused)] let x = 1;"])
+                                       'let s = r#####"a"####b"#####;', "let r#type = 1;",
+                                       "#[allow(unused)] let x = 1;"])
 def test_a_hash_construct_keeps_the_decision_after_it(construct):
     """The Rust Reference, Tokens: a raw string and a raw identifier are one token, and
     an attribute ends at its `]`. The `if` after one on its line was lost."""

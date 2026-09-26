@@ -97,11 +97,12 @@ _PROBE = "crapkit_registration_probe.swift"
 
 # Token patterns tried before lizard's `#`, which would take the rest of the line.
 # A raw string first, one line or three quotes over several, closed by as many
-# hashes as opened it; then any `#` word except a compiler directive, which stays
-# one token to the end of its line so the `&&` in `#if DEBUG && TRACE` still
-# decides nothing.
-_HASH_TOKENS = ("".join(r'|\#{%d}".*?"\#{%d}' % (n, n) for n in (4, 3, 2, 1))
-                + r"|\#(?!(?:if|elseif|else|endif|sourceLocation|warning|error)\b)\w+")
+# hashes as opened it, however many; then any `#` word except a compiler
+# directive, which stays one token to the end of its line so the `&&` in
+# `#if DEBUG && TRACE` still decides nothing. The group is named so it cannot
+# clash with a group number in lizard's own pattern.
+_HASH_TOKENS = (r'|(?P<swift_raw>\#+)".*?"(?P=swift_raw)'
+                r"|\#(?!(?:if|elseif|else|endif|sourceLocation|warning|error)\b)\w+")
 
 _FAILABLE_INITS = frozenset({"init?", "init!"})
 _WORD = re.compile(r"\w+")

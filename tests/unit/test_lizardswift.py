@@ -412,10 +412,10 @@ def test_a_try_expression_opens_no_nesting_level(body, depth):
     assert _counts(source)[4] == depth
 
 
-@pytest.mark.parametrize("raw", ['##"a"#b"##', '#"""\n    { if\n    """#'])
+@pytest.mark.parametrize("raw", ['##"a"#b"##', '#"""\n    { if\n    """#', '#####"a"####b"#####'])
 def test_a_raw_string_ends_at_as_many_hashes_as_opened_it(raw):
     """Strings and Characters, Extended String Delimiters: `##"a"#b"##` is one string,
-    and a raw string over lines holds no code."""
+    and a raw string over lines holds no code. Swift sets no limit on the hashes."""
     source = f"func f(a: Bool) -> String {{\n    let s = {raw}; if a {{ return s }}\n    return \"\"\n}}\n"
     lines = source.count("\n")
 
