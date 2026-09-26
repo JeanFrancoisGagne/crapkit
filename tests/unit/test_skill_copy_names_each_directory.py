@@ -43,7 +43,11 @@ def _pages_with_the_fallback() -> list[str]:
     pages = ["README.md", "AGENTS.md", "docs/handbook.html",
              *(p.relative_to(ROOT).as_posix() for p in ROOT.glob("docs/*.md")),
              *(p.relative_to(ROOT).as_posix() for p in ROOT.glob("plugin/skills/*/*.md"))]
-    return sorted(page for page in pages if FALLBACK in _text(page) and page != PER_AGENT)
+    return sorted(page for page in pages if _gives_the_fallback(page))
+
+
+def _gives_the_fallback(page: str) -> bool:
+    return page != PER_AGENT and FALLBACK in _text(page)
 
 
 def test_the_list_below_holds_every_page_that_gives_the_fallback():
