@@ -139,13 +139,29 @@ def _fn_coverage(name: str, fn: object) -> FnCoverage:
 
 
 def _line_list(name: str, fn: dict, key: str) -> list[int]:
-    """A region's executed or missing lines: a list of line numbers when the
-    key is there, as coverage.py writes it."""
+    """A region's or a file's executed or missing lines: a list of line numbers
+    when the key is there, as coverage.py writes it. `name` is the function or
+    the file the refusal names."""
     lines = fn.get(key, [])
-    if not isinstance(lines, list) or not all(type(line) is int for line in lines):
+    if not isinstance(lines, list):
         raise ValueError(f"{name}: {key} holds {json_kind(lines)}, not a list of line numbers; "
                          f"{_REGENERATE}")
+    _require_entries(name, key, lines, lambda line: type(line) is int, "a line number")
     return lines
+
+
+def _require_entries(name: str, key: str, entries: list, fits, what: str) -> None:
+    """The first entry of a list that `fits` refuses, named by its index. A
+    "5" read as a line matched no line, so it was a dead line nobody could see."""
+    bad = next((index for index, entry in enumerate(entries) if not fits(entry)), None)
+    if bad is not None:
+        raise ValueError(f"{name}: {key}[{bad}] holds {_entry_kind(entries[bad])}, not {what}; "
+                         f"{_REGENERATE}")
+
+
+def _entry_kind(value: object) -> str:
+    """json_kind, with a float told apart from the integer a line number is."""
+    return "a decimal number" if type(value) is float else json_kind(value)
 
 
 def has_regions(data: object) -> bool:
@@ -161,12 +177,14 @@ def has_regions(data: object) -> bool:
 
 
 def _file_functions(data: dict) -> list[FnCoverage]:
-    """One file's functions, sorted by start line. Ask `has_regions` first: this
-    reads an absent "functions" key as an empty one. A refusal names the
-    function; `_read_functions` puts the file's path in front of it."""
+    """One file's functions, sorted by start line. Ask `has_regions` first. A
+    refusal names the function or the field; `_read_functions` puts the file's
+    path in front of it."""
+    functions = data["functions"]
+    if not isinstance(functions, dict):
+        raise ValueError(f"functions holds {json_kind(functions)}, not an object; {_REGENERATE}")
     # the "" key is the "(no function)" module-level bucket
-    fns = [_fn_coverage(name, fn)
-           for name, fn in (data.get("functions") or {}).items() if name]
+    fns = [_fn_coverage(name, fn) for name, fn in functions.items() if name]
     return sorted(fns, key=lambda f: f.start)
 
 
@@ -232,13 +250,33 @@ def judge_regions(regionless: list[str], total: int, label: str = "") -> None:
           f"are skipped and the rest of the report is scored", file=sys.stderr)
 
 
-def _line_contexts(raw: dict) -> dict[int, list[str]]:
+def _line_contexts(path: str, data: object) -> dict[int, list[str]]:
+    """line -> test ids from one file entry's "contexts", an object coverage.py
+    writes from a line number to the context names that ran it."""
+    raw = _file_entry(path, data).get("contexts", {})
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path}: contexts holds {json_kind(raw)}, not an object; {_REGENERATE}")
     out = {}
     for line, contexts in raw.items():
-        tests = sorted({c.split("|")[0] for c in contexts if c})
+        tests = _context_tests(path, line, contexts)
         if tests:
-            out[int(line)] = tests
+            out[_context_line(path, line)] = tests
     return out
+
+
+def _context_tests(path: str, line: str, contexts: object) -> list[str]:
+    key = f"contexts[{line!r}]"
+    if not isinstance(contexts, list):
+        raise ValueError(f"{path}: {key} holds {json_kind(contexts)}, not a list of context "
+                         f"names; {_REGENERATE}")
+    _require_entries(path, key, contexts, lambda name: isinstance(name, str), "a context name")
+    return sorted({c.split("|")[0] for c in contexts if c})
+
+
+def _context_line(path: str, line: str) -> int:
+    if not (line.isascii() and line.isdigit()):
+        raise ValueError(f"{path}: contexts key {line!r} is not a line number; {_REGENERATE}")
+    return int(line)
 
 
 # --- path keys ---------------------------------------------------------------
@@ -298,7 +336,7 @@ class _Files:
     def add(self, prefix: str, raw_path: str, data: object) -> None:
         self.total += 1
         path = measured_key(prefix, raw_path)
-        self.dead[path] = set(_file_entry(path, data).get("missing_lines", ()))
+        self.dead[path] = _dead_lines(path, data)
         if not has_regions(data):
             self.regionless.append(raw_path)
             return
@@ -306,6 +344,12 @@ class _Files:
         branchless = _branchless(path, data)
         self.branchless += branchless
         self.branch_counted += len(self.per_file[path]) - len(branchless)
+
+
+def _dead_lines(path: str, data: object) -> set[int]:
+    """The lines one file entry says never ran, refused by the file's name
+    when the entry or its missing_lines is not the shape coverage.py writes."""
+    return set(_line_list(path, _file_entry(path, data), "missing_lines"))
 
 
 def _file_entry(path: str, data: object) -> dict:
@@ -363,7 +407,8 @@ def _coveragepy_missing(w, prefix: str) -> dict[str, set[int]]:
     out: dict[str, set[int]] = {}
     for key, value, kind in covstream.walk_report(w, "files"):
         if kind == "sub":
-            out[measured_key(prefix, key)] = set(value.get("missing_lines", ()))
+            path = measured_key(prefix, key)
+            out[path] = _dead_lines(path, value)
     return out
 
 
@@ -372,7 +417,7 @@ def parse_coveragepy_missing_file(path: Path | str, *, path_prefix: str,
     """Per measured file, the lines coverage.py reports as never run."""
     prefix = lane_prefix(path_prefix)
     missing, _ = covstream.read_walk(
-        path, lambda w: _coveragepy_missing(w, prefix), _BAD_REPORT, chunk)
+        path, lambda w: _coveragepy_missing(w, prefix), f"{_BAD_REPORT} {path}", chunk)
     return missing
 
 
@@ -380,7 +425,7 @@ def _coveragepy_contexts(w, prefix: str, source_path: str, spell: Callable[[str]
     selected = {}
     for key, value, kind in covstream.walk_report(w, "files"):
         if kind == "sub" and spell(measured_key(prefix, key)) == source_path:
-            selected = _line_contexts(value.get("contexts", {}))
+            selected = _line_contexts(source_path, value)
     return selected
 
 
@@ -396,7 +441,8 @@ def parse_coveragepy_contexts_file(path: Path | str, *, path_prefix: str,
     `spell` turns a measured key into git's spelling before the compare."""
     prefix = lane_prefix(path_prefix)
     selected, _ = covstream.read_walk(
-        path, lambda w: _coveragepy_contexts(w, prefix, source_path, spell), _BAD_REPORT, chunk)
+        path, lambda w: _coveragepy_contexts(w, prefix, source_path, spell),
+        f"{_BAD_REPORT} {path}", chunk)
     return selected
 
 

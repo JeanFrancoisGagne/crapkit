@@ -80,6 +80,11 @@ def _pyfn(doc: dict) -> dict:
     return _py(doc)["functions"]["f"]
 
 
+def _file_field(field: str, value):
+    """An edit that sets one field of the control's coverage.py file entry."""
+    return lambda doc: _py(doc).update({field: value})
+
+
 def _lane(fmt: str) -> Lane:
     return Lane(name="l", command="x", artifact="cov.json", parser=fmt, scopes=("src",),
                 path_prefix="")
@@ -312,6 +317,29 @@ REFUSED = [
      ["start_line must be a line number"]),
     ("coveragepy", "covered-over-total", lambda d: _pyfn(d)["summary"].update(covered_lines=9),
      ["covered_lines exceeds num_statements"]),
+    ("coveragepy", "executed_lines-a-string-entry",
+     lambda d: _pyfn(d).update(executed_lines=["2", 3]),
+     ["src/a.py: f: executed_lines[0] holds a string, not a line number"]),
+    ("coveragepy", "executed_lines-a-float-entry",
+     lambda d: _pyfn(d).update(executed_lines=[2, 3.0]),
+     ["src/a.py: f: executed_lines[1] holds a decimal number, not a line number"]),
+    *[("coveragepy", f"file-missing_lines-{shape}", _file_field("missing_lines", value), words)
+      for shape, value, words in [
+          ("null", None, ["src/a.py: missing_lines holds null, not a list of line numbers"]),
+          ("a-number", 5, ["src/a.py: missing_lines holds a number, not a list"]),
+          ("a-string", "5", ["src/a.py: missing_lines holds a string, not a list"]),
+          ("an-object", {"5": 1}, ["src/a.py: missing_lines holds an object, not a list"]),
+          ("a-string-entry", ["5"],
+           ["src/a.py: missing_lines[0] holds a string, not a line number"]),
+          ("a-null-entry", [5, None], ["src/a.py: missing_lines[1] holds null"]),
+          ("a-boolean-entry", [True], ["src/a.py: missing_lines[0] holds a boolean"])]],
+    *[("coveragepy", f"functions-{shape}", _file_field("functions", value), words)
+      for shape, value, words in [
+          ("a-list", ["f"], ["src/a.py: functions holds an array, not an object"]),
+          ("an-empty-list", [], ["src/a.py: functions holds an array, not an object"]),
+          ("a-string", "f", ["src/a.py: functions holds a string, not an object"]),
+          ("an-empty-string", "", ["src/a.py: functions holds a string, not an object"]),
+          ("a-number", 0, ["src/a.py: functions holds a number, not an object"])]],
 ]
 
 
@@ -322,7 +350,56 @@ def test_a_needed_field_in_the_wrong_shape_refuses_the_artifact(tmp_path, fmt, e
 
     _holds(text, words)
     assert any(fix in text for fix in FIXES), text
-    assert "NoneType" not in text and "not iterable" not in text, text
+    for python_error in ("NoneType", "not iterable", "has no attribute"):
+        assert python_error not in text, text
+
+
+# The dead-line read and the contexts read take one file entry at a time on
+# walks of their own, so a file-level field is refused on each of them too.
+FILE_LEVEL = {
+    "file-entry-null": (lambda d: d["files"].update({"src/a.py": None}),
+                        "src/a.py: the file entry holds null"),
+    "missing_lines-null": (_file_field("missing_lines", None), "src/a.py: missing_lines holds null"),
+    "missing_lines-a-number": (_file_field("missing_lines", 5),
+                               "src/a.py: missing_lines holds a number"),
+    "missing_lines-a-string-entry": (_file_field("missing_lines", ["5"]),
+                                     "src/a.py: missing_lines[0] holds a string"),
+}
+
+
+@pytest.mark.parametrize("shape", list(FILE_LEVEL))
+def test_the_dead_line_read_refuses_a_file_level_field_naming_the_file(tmp_path, shape):
+    edit, words = FILE_LEVEL[shape]
+    artifact = tmp_path / "cov.json"
+    artifact.write_bytes(_bytes(tmp_path, "coveragepy", edit))
+
+    with pytest.raises(ToolError) as refused:
+        coverage_format._FORMATS["coveragepy"].missing(_lane("coveragepy"), tmp_path, artifact)
+
+    _holds(str(refused.value), ["cov.json", words, REGENERATE])
+
+
+CONTEXTS = {
+    "contexts-null": (None, "src/a.py: contexts holds null, not an object"),
+    "contexts-a-list": (["test_f"], "src/a.py: contexts holds an array, not an object"),
+    "line-contexts-null": ({"2": None}, "src/a.py: contexts['2'] holds null, not a list"),
+    "line-contexts-a-string": ({"2": "test_f"}, "src/a.py: contexts['2'] holds a string"),
+    "a-context-a-number": ({"2": [7]}, "src/a.py: contexts['2'][0] holds a number, not a context name"),
+    "line-not-a-number": ({"two": ["test_f"]}, "src/a.py: contexts key 'two' is not a line number"),
+}
+
+
+@pytest.mark.parametrize("shape", list(CONTEXTS))
+def test_the_contexts_read_refuses_a_field_of_the_wrong_shape_naming_the_file(tmp_path, shape):
+    value, words = CONTEXTS[shape]
+    artifact = tmp_path / "cov.json"
+    artifact.write_bytes(_bytes(tmp_path, "coveragepy", _file_field("contexts", value)))
+
+    with pytest.raises(ToolError) as refused:
+        coverage_format._FORMATS["coveragepy"].contexts(_lane("coveragepy"), tmp_path, artifact,
+                                                        "src/a.py")
+
+    _holds(str(refused.value), ["cov.json", words, REGENERATE])
 
 
 # --- what each format reads as it means it -----------------------------------------
