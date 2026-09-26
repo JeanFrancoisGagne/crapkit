@@ -17,8 +17,8 @@ version stays 11, so no repo re-seeds.
 - Restart each MCP session after the upgrade. A 0.8.0 server does not notice the new
   files under it; from 0.8.1 on, a server that outlives an upgrade says so on every call.
 - An MCP client that negotiates `2024-11-05` or `2025-03-26` no longer gets
-  `structuredContent`, which those revisions do not define; the text carries the same
-  object. An answer longer than 7,500 characters carries `truncated`, and its `full`
+  `structuredContent`, or an `outputSchema` in `tools/list`, which those revisions do not
+  define; the text carries the same object. An answer longer than 7,500 characters carries `truncated`, and its `full`
   command prints the whole answer from the CLI.
 
 ### Agents
@@ -432,7 +432,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   schema declares the field.
 - `structuredContent` goes only to a client that negotiated `2025-06-18`, the revision
   that defines it. A `2024-11-05` client such as Cline got the answer twice, which
-  doubled what it cut.
+  doubled what it cut. `tools/list` lists `outputSchema` to the same clients only, since a
+  client on the TypeScript SDK 1.12 offers `2025-03-26` and fails a call to a tool whose
+  listed schema its result does not fill.
 - A Windows command line printed by crapkit writes a long flag such as `--top` bare, as
   cmd.exe and PowerShell both pass it on.
 

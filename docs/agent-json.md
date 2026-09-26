@@ -1535,8 +1535,8 @@ A dependency-free stdio MCP server: JSON-RPC 2.0, one message per line. The hand
 negotiates the protocol revision: a client's offer of `2025-06-18`, `2025-03-26` or
 `2024-11-05` is spoken verbatim, and anything else gets `2025-06-18`, the newest this
 server implements. Read-only, and declared so: every tool carries `readOnlyHint`,
-`idempotentHint` and `destructiveHint: false` annotations, a `title` and an `outputSchema`
-whose fields are described one by one, `initialize` returns `instructions` naming the
+`idempotentHint` and `destructiveHint: false` annotations, a `title` and, for a
+`2025-06-18` client, an `outputSchema` whose fields are described one by one, `initialize` returns `instructions` naming the
 two-command prerequisite and the four tools a session starts with, and a tool whose text
 is a JSON object also carries it parsed as `structuredContent`. Every tool shells to the CLI's own surface, so the MCP
 view cannot drift from what the CLI reports, and nothing here writes a baseline, a
@@ -1664,7 +1664,9 @@ can serve several checkouts.
 Results arrive as MCP text content, and every tool's text is the payload of the CLI's
 `--json` form: parse it, or read `structuredContent`, which carries the same object parsed
 whenever the call exited 0 and the client negotiated `2025-06-18`, the revision that defines
-the field. A client on `2024-11-05` or `2025-03-26` gets the text alone.
+the field. A client on `2024-11-05` or `2025-03-26` gets the text alone, and `tools/list`
+lists no `outputSchema` to it: a client that holds a result to a listed schema, such as one
+on the TypeScript SDK 1.12, would find no `structuredContent` to check.
 
 One answer is 7,500 characters or shorter, counted as the text takes them inside a client's
 JSON of the result. Cline keeps 8,000 characters of that JSON and cuts the middle out, and a

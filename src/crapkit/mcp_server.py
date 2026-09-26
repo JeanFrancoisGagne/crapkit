@@ -1542,23 +1542,28 @@ def _schema(tool: dict) -> dict:
     return schema
 
 
-def _listing_entry(tool: dict) -> dict:
+def _listing_entry(tool: dict, structured: bool = True) -> dict:
     """One tool as `tools/list` serves it. `title` and `outputSchema` appear only
     when the table declares them: a null title or an empty object would read as
     a defect to a client that grades definitions, and the wire form stays what
-    earlier clients saw when a tool carries neither."""
+    earlier clients saw when a tool carries neither. `outputSchema` also needs a
+    `structured` session, one whose revision defines structuredContent."""
     entry = {"name": tool["name"], "description": tool["description"],
              "annotations": dict(_ANNOTATIONS), "inputSchema": _schema(tool)}
     if tool.get("title"):
         entry["title"] = tool["title"]
-    if tool.get("output"):
+    if structured and tool.get("output"):
         entry["outputSchema"] = {"type": "object",
                                  "properties": {**tool["output"], "truncated": _TRUNCATED}}
     return entry
 
 
-def tool_listing() -> list[dict]:
-    return [_listing_entry(t) for t in TOOLS]
+def tool_listing(structured: bool = True) -> list[dict]:
+    """Every tool as `tools/list` serves it. A session on a revision older than
+    2025-06-18 gets no outputSchema: those revisions define no structuredContent
+    to hold to one, and the TypeScript SDK 1.12, which offers 2025-03-26, fails
+    every call to a tool that lists a schema and returns none."""
+    return [_listing_entry(t, structured) for t in TOOLS]
 
 
 def _flag_values(value) -> list:
@@ -1959,13 +1964,18 @@ class _Session:
         self.capable = isinstance(capabilities, dict) and "roots" in capabilities
         self.revision = _negotiated(params)
 
+    @property
+    def structured(self) -> bool:
+        """Whether this session's revision defines structuredContent and outputSchema."""
+        return self.revision in _STRUCTURED_REVISIONS
+
     def run_cli(self, tool: dict, arguments: dict, repo, *, owner=None) -> dict:
         """A call's answer in the shape this session's revision defines:
         structuredContent is a 2025-06-18 field, and a client on an older one
         that serializes the whole result (Cline speaks 2024-11-05) carried the
         answer twice."""
         result = _run_cli(tool, arguments, repo, owner=owner)
-        if self.revision in _STRUCTURED_REVISIONS:
+        if self.structured:
             return result
         return {key: value for key, value in result.items() if key != "structuredContent"}
 
@@ -2211,7 +2221,7 @@ def _initialize_result(params: dict, session: _Session) -> dict:
 # The methods that need no repo, keyed as the wire spells them. ping answers
 # the empty object the spec asks for, so a client's keepalive is not -32601.
 _METHODS = {"initialize": _initialize_result,
-            "tools/list": lambda params, session: {"tools": tool_listing()},
+            "tools/list": lambda params, session: {"tools": tool_listing(session.structured)},
             "ping": lambda params, session: {}}
 
 # The notifications on which a server whose start directory serves nothing

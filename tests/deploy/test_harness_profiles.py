@@ -104,10 +104,17 @@ def handshake(client: McpClient, profile) -> dict:
     return client.initialize(init["protocol"], client=init["client_name"] or "sim")
 
 
-def assert_calls(client: McpClient, profile) -> None:
+def answer_of(result: dict, revision: str) -> dict:
+    """A call's object from its text. structuredContent carries it too on
+    2025-06-18 and is absent on an older revision, which does not define it."""
+    assert ("structuredContent" in result) == (revision == NEWEST), sorted(result)
+    return json.loads(result["content"][0]["text"])
+
+
+def assert_calls(client: McpClient, profile, revision: str) -> None:
     item = client.call("get_next_item", {})
     assert not item["isError"], item["content"][0]["text"]
-    assert item["structuredContent"]["item"]["path"] == "calc/grade.py"
+    assert answer_of(item, revision)["item"]["path"] == "calc/grade.py"
     worklist = client.call("list_worklist", {"top": 50})
     text = worklist["content"][0]["text"]
     assert not worklist["isError"] and json.loads(text)
@@ -122,7 +129,7 @@ def drive_python(profile, started: profiles.Launch, box, candidate) -> None:
         assert info["protocolVersion"] == expected_protocol(profile.initialize["protocol"])
         assert info["serverInfo"] == {"name": "crapkit", "version": candidate.version}
         assert len(client.tools()) == TOOLS
-        assert_calls(client, profile)
+        assert_calls(client, profile, info["protocolVersion"])
 
 
 def drive_sdk(profile, server: writers.Server, started: profiles.Launch, box, templates, candidate) -> None:

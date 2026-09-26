@@ -180,6 +180,30 @@ def test_a_2025_06_18_client_keeps_structured_content(monkeypatch, tmp_path):
     assert result["structuredContent"] == {"runs": [], "schema": 1}
 
 
+def _listed_to(offered: str, tmp_path) -> list[dict]:
+    """What tools/list answers a session that offered `offered` at initialize."""
+    session = mcp_server._Session(tmp_path)
+    mcp_server._initialize_result({"protocolVersion": offered, "capabilities": {}}, session)
+    return mcp_server._METHODS["tools/list"]({}, session)["tools"]
+
+
+@pytest.mark.parametrize("offered", ["2024-11-05", "2025-03-26"])
+def test_a_client_before_2025_06_18_is_listed_no_output_schema(tmp_path, offered):
+    """The TypeScript SDK 1.12 offers 2025-03-26 and fails a call to a listed
+    outputSchema with "has an output schema but did not return structured content"."""
+    listed = _listed_to(offered, tmp_path)
+
+    assert len(listed) == len(TOOLS)
+    assert [entry["name"] for entry in listed if "outputSchema" in entry] == []
+
+
+def test_a_2025_06_18_client_is_listed_every_output_schema(tmp_path):
+    listed = _listed_to("2025-06-18", tmp_path)
+
+    assert listed == tool_listing()
+    assert [entry["name"] for entry in listed if "outputSchema" in entry]
+
+
 def test_an_error_text_is_never_cut(monkeypatch, tmp_path):
     long = "x" * (3 * ANSWER_CHARS)
     monkeypatch.setattr(mcp_server, "run_owned",
