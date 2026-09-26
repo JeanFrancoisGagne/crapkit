@@ -398,6 +398,55 @@ def test_a_git_failure_while_stamping_claims_no_uncommitted_change(make_repo, mo
                        oracle="rerun, other cause, then reused" if clean else "tree changed")
 
 
+# git exits 128 with "fatal: Needed a single revision" for a ref it cannot
+# read, the exit a repository read that cannot complete gives
+FAILED_GIT = ("rev-parse", "--verify", "refs/crapkit/no-such-ref")
+
+
+def _fail_reads(monkeypatch, command: str) -> list:
+    """Make every staleness read that runs `git <command>` exit 128, as git
+    does when it cannot read the repository; the list records each."""
+    changes = importlib.import_module("crapkit.lane_changes")
+    original = changes._start
+    failed: list = []
+
+    def start(root, *args):
+        if args[0] != command:
+            return original(root, *args)
+        failed.append(args)
+        return original(root, *FAILED_GIT)
+
+    monkeypatch.setattr(changes, "_start", start)
+    return failed
+
+
+@pytest.mark.process
+@rulings.applies("V11")
+@pytest.mark.parametrize("command", ["merge-base", "diff"])
+def test_a_failed_staleness_read_claims_no_changed_file(make_repo, monkeypatch, command):
+    """agent-json.md, uncovered_lines_note: the stale-lane note says files in
+    the lane's scopes changed since its artifact was written. The git reads
+    behind that verdict fail after a commit that touched only notes.txt:
+    the lines may go null, since nothing proved them, but the note must not
+    claim a change git status and git diff do not show."""
+    sc = _measured(make_repo)
+    _docs_commit(sc)
+    failed = _fail_reads(monkeypatch, command)
+    item = _app_item(sc.driver)
+    monkeypatch.undo()
+    assert failed, f"no staleness read ran git {command}"
+    clean = repos.git(sc.top, "--no-optional-locks", "status", "--porcelain") == ""
+    rulings.pin_ruling("V11", crapkit=_note_claim(item),
+                       oracle="null, other cause" if clean else "tree changed")
+
+
+def _note_claim(item: dict) -> str:
+    if item["uncovered_lines"] is not None:
+        return "lines kept"
+    return "null, names changed files" if "changed since" in item["uncovered_lines_note"] \
+        else "null, other cause"
+
+
 def _claim(reason: str) -> str:
     if not reason:
         return "reused"
