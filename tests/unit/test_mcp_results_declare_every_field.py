@@ -139,7 +139,7 @@ def test_check_gates_verdict_on_a_name_that_is_not_utf8_carries_every_key_a_verd
 
 
 def test_check_gate_never_hands_a_name_that_is_not_utf8_to_the_cli(scored, monkeypatch):
-    """A Windows venv launcher hands a lone surrogate on argv to the child as
+    """A uv-built venv's launcher on Windows hands a lone surrogate on argv to the child as
     U+FFFD, so the child looked up src/caf\ufffd.ts, a file nobody named, and
     answered isError true with `does not exist`. The server decides the
     verdict itself, and no word it spawns holds the name."""
@@ -152,6 +152,21 @@ def test_check_gate_never_hands_a_name_that_is_not_utf8_to_the_cli(scored, monke
 
     assert result["isError"] is False, result["content"][0]["text"][-600:]
     assert [word for argv in spawned for word in argv if not readable(word)] == []
+
+
+def test_the_changelog_names_the_windows_python_that_read_the_name_as_ufffd():
+    """Only a uv-built venv's launcher hands the CLI a lone surrogate as one
+    U+FFFD. Under a plain CPython, pipx or `python -m venv` install on Windows,
+    0.8.0 answered with the same traceback it gave on Linux, so a line saying
+    every Windows install got `does not exist` names a symptom most never saw."""
+    changelog = (Path(__file__).resolve().parents[2] / "CHANGELOG.md").read_text(encoding="utf-8")
+    start = changelog.index("\n## 0.8.1 ")
+    release = " ".join(changelog[start:changelog.index("\n## ", start + 1)].split())
+
+    assert "On Windows it answered `isError: true`" not in release
+    assert ("Under a uv-built venv on Windows, whose launcher hands the CLI such a name as "
+            r"one U+FFFD, it answered `isError: true` with `src/caf\ufffd.ts does not exist`"
+            ) in release
 
 
 @pytest.mark.parametrize("name", ["docs/caf\udce9.md", "tools/caf\udce9.ts"],

@@ -319,7 +319,7 @@ def _check_gate_reply(repo: Path, path: str) -> dict:
 
 def test_check_gate_answers_such_a_name_with_a_failed_verdict(tmp_path):
     """check_gate answered isError true with the exit-3 error object: no
-    verdict, no finding. On Windows it answered `src/caf\ufffd.py does not
+    verdict, no finding. Under a uv-built venv on Windows it answered `src/caf\ufffd.py does not
     exist`, because the child it spawned read the name off argv as U+FFFD. It
     speaks MCP, so it returns the gate's refusal as a verdict that fails, with
     the name in unread_files and the baseline every verdict names."""

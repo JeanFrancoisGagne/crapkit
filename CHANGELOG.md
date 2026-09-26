@@ -459,9 +459,10 @@ version bump under Upgrading from 0.8.0 above.
   whose name is not UTF-8 with a verdict, `gate.ok` false, `judged` 0 and the file in
   `gate.unread_files` with `dirty` true, the entry shape `rescore --gate --json` lists,
   plus the `baseline_run`, `baseline_commit` and `note` every verdict carries, where 0.8.0
-  answered `isError: true` with a Python traceback. On Windows it answered `isError: true`
-  with `src/caf\ufffd.ts does not exist`, because the CLI it started read the name off its
-  command line as U+FFFD; the server now decides this verdict without starting the CLI.
+  answered `isError: true` with a Python traceback, on Windows too. Under a uv-built venv
+  on Windows, whose launcher hands the CLI such a name as one U+FFFD, it answered
+  `isError: true` with `src/caf\ufffd.ts does not exist`. The server now decides this
+  verdict without starting the CLI.
 - A `rescore` or `rescore --gate` argument naming a file whose name is not UTF-8 and that
   no scope takes is left out with one `crapkit: left out` line on stderr, and the gate
   judges 0, as `hook-precommit` does for the same staged file. It exited 3 with the
