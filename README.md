@@ -476,9 +476,7 @@ directory but no compatible marketplace can copy `plugin/skills/*` into it inste
 `~/.claude/skills` for Claude Code, `$CODEX_HOME/skills` (`~/.codex/skills` by default)
 for Codex, `~/.gemini/skills` for Gemini CLI. Gemini CLI lists `crapkit-onboard` to its
 model with the other two; `gemini skills disable crapkit-onboard --scope user` takes it out
-once the repo is adopted. Other MCP clients use the
-[stdio setup](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#mcp-server)
-or their section of [Wiring crapkit into your agent](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md).
+once the repo is adopted.
 
 ### Other agents
 

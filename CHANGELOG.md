@@ -52,23 +52,12 @@ version stays 11, so no repo re-seeds.
   agents take PATH from the login shell (Zed, VS Code launched from the desktop), that Qwen
   Code starts no server from a project file, and that Junie writes `.output.txt` and
   `.output.json` into the repository.
-- The plugin ships a Codex manifest whose `hooks` is empty. Codex 0.156.1 read Claude
-  Code's `hooks/hooks.json` and listed its 50 handlers as PostToolUse hooks that each ran
-  a bare `crapkit`, which exits 2 with its usage. Codex also offers `crapkit-onboard` to
-  the model only when you name it.
 - The README names the Codex floor: the plugin lines need Codex 0.131.0. Beside a plugin
   from 0.8.0, whose hooks pass `args`, `crapkit doctor --plugin-root` names a Claude Code
   below 2.1.139, the first release that reads them.
-- The onboard and recover skills label each `claude plugin` command as Claude Code's and
-  give the Codex command beside it.
-- An MCP call to a tool name 0.6.0 renamed answers with the new name, as in
-  `unknown tool 'worklist': renamed list_worklist in 0.6.0`.
 
 ### Install
 
-- README Install says what to run when pip refuses with `externally-managed-environment`
-  (Debian 12, Ubuntu 23.04 and later, Homebrew, uv's Pythons): `pipx install crapkit`,
-  `uv tool install crapkit`, or a venv.
 - The commit-gate hook README Route 1 and Route 2 and the handbook write calls the
   `crapkit` launcher first, then `uvx crapkit`, then `python -m crapkit`, so it reaches a
   pipx, uv tool or uvx install. The old hook ran `python -m crapkit`, which none of those
@@ -86,12 +75,6 @@ version stays 11, so no repo re-seeds.
 
 ### Doctor
 
-- A coverage.py lane inside a container gets a WARN from `crapkit doctor` before the first
-  `crapkit coverage` refuses it with exit 5. `docs/lanes.md` names the environments that
-  count: devcontainers, Codespaces, CI jobs in a container and cloud agents such as Codex
-  cloud.
-- A crapkit hook that `core.hooksPath` sends git away from, and pre-commit run in CI over
-  an empty index, each get a WARN: both passed every commit without judging it.
 - The onboard and recover skills print the lines `crapkit doctor --plugin-root` prints when
   it finds no plugin. With no path it names Claude Code's plugin directory and then
   Codex's, and a path that holds no `.claude-plugin/plugin.json` gets a line that says
@@ -99,11 +82,6 @@ version stays 11, so no repo re-seeds.
 - The handbook's polyglot workflow shows the WARN doctor prints for the `ui` scope, whose
   vitest line `init` writes commented out, and the closing line that counts it.
 
-### GitHub Action
-
-- A `working-directory` input runs every crapkit step from the directory holding
-  `crapkit.toml`, for a monorepo whose crapkit root sits below the repository top. At the
-  top, coverage found no `crapkit.toml` and the gate failed with exit 3.
 ### The advisory hook runs in every agent that loads the plugin
 
 - The plugin's hook is one shell command, `crapkit claude-hook --protocol 1`, where it
@@ -149,7 +127,7 @@ version stays 11, so no repo re-seeds.
   Code's and give the Codex line beside it. Codex installs the same two skills, and an
   agent there that followed either one was told to run `claude plugin install`, a
   command a machine with only Codex does not have. The onboarding skill's pointer for
-  every other agent goes to the MCP server setup.
+  every other agent goes to the block that agent's own config file takes.
 - The recover skill's row for a plugin that drifted from the CLI names each agent's
   refresh lines, the ones the README runs after an upgrade. Its old line, `claude plugin
   install crapkit@crapkit`, only answers that the plugin is already installed, and the

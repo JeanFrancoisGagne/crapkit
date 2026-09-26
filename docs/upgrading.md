@@ -434,7 +434,7 @@ The other routes leave their own pieces:
 | uvx | `uv cache clean crapkit`, which drops the releases uvx cached; a Route 1 or Route 2 hook left in place fetches crapkit again at the next commit |
 | the Claude Code plugin | `claude plugin uninstall crapkit@crapkit`, then `claude plugin marketplace remove crapkit` |
 | the Codex plugin | `codex plugin remove crapkit@crapkit`, then `codex plugin marketplace remove crapkit` |
-| another MCP client | delete the `crapkit` server entry from its config ([stdio setup](agent-json.md#mcp-server)) |
+| another MCP client | delete the `crapkit` server entry from its config ([its section](harnesses.md)) |
 
 Remove the plugins with the package. Both plugins start the bare `crapkit` command, so
 with the package gone and the Claude Code plugin still installed, `claude mcp list`

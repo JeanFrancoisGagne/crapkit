@@ -11,6 +11,7 @@ Gemini CLI 0.61.0 reads a skill's name and description and nothing else, so it
 lists crapkit-onboard to its model beside the two skills meant for it. The
 only way to take it out is its own settings, which the same paragraph names.
 """
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -42,11 +43,23 @@ def _pages_with_the_fallback() -> list[str]:
     pages = ["README.md", "AGENTS.md", "docs/handbook.html",
              *(p.relative_to(ROOT).as_posix() for p in ROOT.glob("docs/*.md")),
              *(p.relative_to(ROOT).as_posix() for p in ROOT.glob("plugin/skills/*/*.md"))]
-    return sorted(page for page in pages if FALLBACK in _text(page))
+    return sorted(page for page in pages if FALLBACK in _text(page) and page != PER_AGENT)
 
 
 def test_the_list_below_holds_every_page_that_gives_the_fallback():
     assert _pages_with_the_fallback() == sorted(PAGES)
+
+
+# docs/harnesses.md gives no fallback: the row of each agent that loads skills
+# names the directory that agent reads, Continue's and Zed's among them.
+PER_AGENT = "docs/harnesses.md"
+
+
+def test_each_agent_row_that_copies_the_skills_names_its_directory():
+    rows = [line for line in _text(PER_AGENT).splitlines() if FALLBACK in line]
+
+    assert rows, "the harness page names no skills copy"
+    assert [row for row in rows if not re.search(r"`[^`]*skills`", row)] == []
 
 
 @pytest.mark.parametrize("page", PAGES)
