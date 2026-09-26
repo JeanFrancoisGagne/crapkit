@@ -15,6 +15,10 @@ stamped no proof on a tree nobody touched.
 `git --no-optional-locks status` answers the same question, compares content
 whatever diff.autoRefreshIndex says, and leaves .git/index as it found it.
 
+Only a patch carries line numbers, so verify, rescore, mutate and the advisory
+hook still read one with `git diff`. Those reads turn diff.autoRefreshIndex off:
+git then prints no patch for a same-bytes file and writes nothing back.
+
 The checkout holds CRLF under `core.autocrlf=true` while the blob holds LF: a
 check that compared raw bytes instead of going through git would read every
 such file as changed. Real git processes, because the bug lives in the argv
@@ -26,8 +30,8 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.cli.claude_hook import _porcelain
-from crapkit.gitio import status_names, unstaged_paths
+from crapkit.cli.claude_hook import _diff_proc, _porcelain
+from crapkit.gitio import diff_since, status_names, unstaged_paths
 from crapkit.lane_changes import ChangeReads
 from hang_guard import HANG_SECONDS
 
@@ -116,6 +120,44 @@ def test_the_advisory_hooks_status_read_leaves_the_index_alone(tmp_path):
 
     assert _porcelain(tmp_path) == ""
     assert _index_state(tmp_path) == before
+
+
+def _hook_patch(root: Path) -> str:
+    read = _diff_proc(root, "src/a.ts")
+    try:
+        return read.result()
+    finally:
+        read.close()
+
+
+PATCHES = {"diff_since": lambda root: diff_since(root, "HEAD"),
+           "the advisory hook's diff": _hook_patch}
+
+
+@pytest.mark.parametrize("reader", sorted(PATCHES))
+def test_a_patch_read_leaves_the_index_as_it_found_it(tmp_path, reader):
+    """verify, rescore and mutate read the worktree patch through diff_since,
+    and the hook reads one file's patch beside the agent's own git commands. A
+    plain `git diff` refreshes a touched file's index entry and writes the
+    index back, --no-optional-locks or not."""
+    _commit_one_crlf_file(tmp_path)
+    _touch(tmp_path / "src" / "a.ts")
+    before = _index_state(tmp_path)
+
+    assert PATCHES[reader](tmp_path) == ""
+    assert _index_state(tmp_path) == before
+
+
+@pytest.mark.parametrize("reader", sorted(PATCHES))
+def test_a_patch_read_still_carries_an_edit(repo, reader):
+    """With the stat refresh off, a same-bytes file prints no patch and new
+    bytes still do."""
+    _touch(repo / "src" / "a.ts")
+    assert PATCHES[reader](repo) == ""
+
+    (repo / "src" / "a.ts").write_bytes(b"export const a = 2;\r\n")
+
+    assert "\n+export const a = 2;" in PATCHES[reader](repo)
 
 
 def test_status_names_each_kind_of_change_from_a_root_below_the_top(tmp_path):

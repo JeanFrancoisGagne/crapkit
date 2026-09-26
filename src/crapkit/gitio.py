@@ -466,12 +466,20 @@ def start_read(root: Path, *args: str) -> _Started:
     return _Started(root, args, text=False, stdin=False)
 
 
+# Only a patch carries line numbers, so verify, rescore, mutate and the advisory
+# hook read one with `git diff`. Against the worktree that diff refreshes the stat
+# cache of a file whose bytes did not change and writes the index back, whatever
+# GIT_OPTIONAL_LOCKS says: the rewrite STATUS exists to avoid, here beside
+# crapkit's own reads and the agent's git commands. With the refresh off git
+# still compares the content, prints no patch for that file and writes nothing.
+_PATCH_READ = ("-c", "diff.autoRefreshIndex=false", "--literal-pathspecs", "diff")
+
+
 def _source_diff_args(basis: tuple[str, ...], paths: tuple[str, ...], *,
                       force_text: bool = False) -> tuple[str, ...]:
     # Source body bytes need no character decoding to count hunk lines.
     text = ("--text",) if force_text else ()
-    return ("--literal-pathspecs", "diff", *basis,
-            *_PATCH, *text, "--", *paths)
+    return (*_PATCH_READ, *basis, *_PATCH, *text, "--", *paths)
 
 
 def _binary_source_path(record: str, extensions: tuple[str, ...]) -> str | None:
@@ -486,7 +494,7 @@ def _binary_source_paths(root: Path, basis: tuple[str, ...],
     from .universe import LANGUAGE_EXTENSIONS
 
     extensions = tuple(ext for group in LANGUAGE_EXTENSIONS.values() for ext in group)
-    records = _git_paths(root, "--literal-pathspecs", "diff", *basis, "--numstat", "-z",
+    records = _git_paths(root, *_PATCH_READ, *basis, "--numstat", "-z",
                          "--no-renames", "--no-ext-diff", "--no-textconv", "--", *paths)
     return tuple(path for record in records if (path := _binary_source_path(record, extensions)))
 
