@@ -6,6 +6,7 @@ rounding that said 3. Over ccn 1 to 40 and totals up to 120 in lowest terms,
 127 of the 820 exact halves landed on the wrong side that way.
 """
 from fractions import Fraction
+from itertools import product
 from math import gcd
 
 from crapkit.packet import budget
@@ -29,12 +30,16 @@ def test_exact_halves_round_to_the_even_neighbour():
     assert paths(7, 1, 2) == 4
 
 
+def is_exact_half(ccn: int, covered: int, total: int) -> bool:
+    """covered/total is in lowest terms and (1 - covered/total) * ccn is a whole
+    number and a half."""
+    return gcd(covered, total) == 1 and 2 * (total - covered) * ccn % (2 * total) == total
+
+
 def exact_halves() -> list[tuple[int, int, int]]:
-    """(ccn, covered, total), total up to 120 in lowest terms, where (1 - covered/total) * ccn
-    is a whole number and a half."""
-    return [(ccn, covered, total) for ccn in range(1, 41) for total in range(1, 121)
-            for covered in range(total + 1)
-            if gcd(covered, total) == 1 and 2 * (total - covered) * ccn % (2 * total) == total]
+    """(ccn, covered, total) over ccn 1 to 40 and totals up to 120, every exact half."""
+    return [(ccn, covered, total) for ccn, total in product(range(1, 41), range(1, 121))
+            for covered in range(total + 1) if is_exact_half(ccn, covered, total)]
 
 
 def test_every_exact_half_on_the_grid_rounds_to_even():

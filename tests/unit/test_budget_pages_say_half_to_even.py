@@ -13,23 +13,36 @@ PAGES = ("README.md", "AGENTS.md", "CONTEXT.md", "docs/*.md", "docs/*.html",
          "plugin/skills/*/SKILL.md")
 
 
+def _gives_the_formula(line: str) -> bool:
+    return "est_uncovered_paths" in line and "(1 - cov)" in line
+
+
+def _formula_lines(page: Path) -> list[str]:
+    lines = page.read_bytes().decode("utf-8").splitlines()
+    return [f"{page.relative_to(ROOT).as_posix()}:{number}: {line.strip()}"
+            for number, line in enumerate(lines, 1) if _gives_the_formula(line)]
+
+
 def _defining_lines() -> list[str]:
     pages = sorted({page for pattern in PAGES for page in ROOT.glob(pattern)})
-    return [f"{page.relative_to(ROOT).as_posix()}:{number}: {line.strip()}"
-            for page in pages
-            for number, line in enumerate(page.read_bytes().decode("utf-8").splitlines(), 1)
-            if "est_uncovered_paths" in line and "(1 - cov)" in line]
+    return [line for page in pages for line in _formula_lines(page)]
+
+
+def _children(node) -> list:
+    if isinstance(node, dict):
+        return list(node.values())
+    return list(node) if isinstance(node, (list, tuple)) else []
+
+
+def _own_description(node) -> list[str]:
+    own = node.get("est_uncovered_paths") if isinstance(node, dict) else None
+    return [own["description"]] if isinstance(own, dict) else []
 
 
 def _schema_descriptions(node) -> list[str]:
     """The description of every est_uncovered_paths property under `node`."""
-    if isinstance(node, (list, tuple)):
-        return [text for item in node for text in _schema_descriptions(item)]
-    if not isinstance(node, dict):
-        return []
-    own = node.get("est_uncovered_paths")
-    found = [own["description"]] if isinstance(own, dict) else []
-    return found + [text for value in node.values() for text in _schema_descriptions(value)]
+    return _own_description(node) + [text for child in _children(node)
+                                      for text in _schema_descriptions(child)]
 
 
 def test_every_page_that_gives_the_formula_says_half_to_even():
