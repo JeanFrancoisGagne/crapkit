@@ -152,6 +152,38 @@ _POWERSHELL_LEADS = frozenset({"", ";", "|", "&", "(", "{", "=", "return", "in",
 _QUESTION = frozenset({"?"})
 
 
+# How the token after a break or continue reads as a label (see _resolve_label).
+# A line break in between ends the jump first (see _line_event), so in Go and
+# Swift the `case` after a bare `break` is no label.
+def _any_label(token: str) -> bool:
+    """A reader outside the table: any token that does not end the statement."""
+    return token not in (";", "}", ")")
+
+
+def _named_label(token: str) -> bool:
+    """`break outer`: Java, JavaScript, Go, Swift, PowerShell. A comma or a
+    value is none."""
+    return token[:1].isalpha() or token[:1] == "_"
+
+
+def _rust_label(token: str) -> bool:
+    """`break 'outer`. `break n` returns a value from a `loop`, and a match
+    arm's `continue,` jumps nowhere."""
+    return token.startswith("'")
+
+
+def _zig_label(token: str) -> bool:
+    """`break :blk value`. A prong's `continue,` jumps nowhere."""
+    return token == ":"
+
+
+def _shell_label(token: str) -> bool:
+    """Shell has no labels. It spells the same jump `break 2`, a count of
+    enclosing loops to leave, and a bare `break` is followed by whatever the
+    loop is followed by, a `fi` or a `done`."""
+    return token.isdigit()
+
+
 class _Dialect(NamedTuple):
     """What one language's tokens mean to the rules below.
 
@@ -164,7 +196,8 @@ class _Dialect(NamedTuple):
 
     `counting`: the structures besides `if` that cost +1 and the nesting they
     sit in. `do_loops`: the words that open a loop whose `while` comes after
-    its block. `goto`: the language has a goto, which costs +1.
+    its block. `goto`: the language has a goto, which costs +1. `labels`:
+    whether the token after a break or continue is a label.
     `declarator_and`: a `&&` before the body's brace declares an rvalue
     reference (C, C++, Objective-C++). `shell_blocks`: blocks are delimited
     by words (shell).
@@ -186,6 +219,7 @@ class _Dialect(NamedTuple):
     counting: frozenset = _COUNTING
     do_loops: frozenset = _DO
     goto: bool = True
+    labels: object = _any_label
     declarator_and: bool = False
     shell_blocks: bool = False
     messages: bool = False
@@ -205,37 +239,40 @@ class _Dialect(NamedTuple):
 # for the same reason: the discriminator is the language. A reader absent from the
 # table reads under the defaults.
 _DEFAULT_DIALECT = _Dialect()
-_RUST = _Dialect(counting=_RUST_COUNTING, do_loops=frozenset(), goto=False, rust=True)
+_RUST = _Dialect(counting=_RUST_COUNTING, do_loops=frozenset(), goto=False, labels=_rust_label)
 _PYTHON = _Dialect(counting=_PYTHON_COUNTING, do_loops=frozenset(), goto=False, word_ops=_AND_OR,
                    openers=_PYTHON_OPENERS, closers=_PYTHON_CLOSERS)
-_JAVASCRIPT = _Dialect(counting=_C_FAMILY_COUNTING, goto=False)
+_JAVASCRIPT = _Dialect(counting=_C_FAMILY_COUNTING, goto=False, labels=_named_label)
 _DIALECTS = {
     "CLikeReader": _Dialect(counting=_C_FAMILY_COUNTING, declarator_and=True, word_ops=_AND_OR,
                             elvis=True, overloads=True),
     "ObjCReader": _Dialect(counting=_C_FAMILY_COUNTING, declarator_and=True, messages=True,
                            word_ops=_AND_OR, elvis=True, overloads=True),
-    "JavaReader": _Dialect(counting=_C_FAMILY_COUNTING, goto=False, overloads=True),
+    "JavaReader": _Dialect(counting=_C_FAMILY_COUNTING, goto=False, labels=_named_label,
+                           overloads=True),
     "JavaScriptReader": _JAVASCRIPT,
     "TypeScriptReader": _JAVASCRIPT,
     "TSXReader": _JAVASCRIPT,
     "VueReader": _JAVASCRIPT,
-    "GoReader": _Dialect(counting=_GO_COUNTING, do_loops=frozenset()),
+    "GoReader": _Dialect(counting=_GO_COUNTING, do_loops=frozenset(), labels=_named_label),
     "SwiftReader": _Dialect(counting=_SWIFT_COUNTING, do_loops=frozenset({"repeat"}), goto=False,
-                            overloads=True),
+                            labels=_named_label, overloads=True),
     "RustReader": _RUST,
     "CorrectedRustReader": _RUST,
-    "ShellReader": _Dialect(shell_blocks=True, command_leads=_SHELL_LEADS),
-    "PowerShellReader": _Dialect(counting=_POWERSHELL_COUNTING, goto=False,
+    "ShellReader": _Dialect(labels=_shell_label, shell_blocks=True, command_leads=_SHELL_LEADS),
+    "PowerShellReader": _Dialect(counting=_POWERSHELL_COUNTING, goto=False, labels=_named_label,
                                  command_leads=_POWERSHELL_LEADS, fold_case=True,
                                  word_ops=_POWERSHELL_OPS),
     "PythonReader": _PYTHON,
     "PythonSignatureReader": _PYTHON,
     "ZigReader": _Dialect(counting=_ZIG_COUNTING, do_loops=frozenset(), goto=False,
-                          word_ops=_AND_OR),
+                          labels=_zig_label, word_ops=_AND_OR),
 }
 
-# A reader crapkit subclasses reads under the rules of the lizard reader it
-# corrects, and Zig's `||` merges error sets under either.
+# The rules crapkit's reader fixes add: Rust's own syntax (see _Dialect.rust) and
+# Zig's `||`, which merges error sets. A reader crapkit subclasses reads under
+# the rules of the lizard reader it corrects.
+_DIALECTS.update(dict.fromkeys(("RustReader", "CorrectedRustReader"), _RUST._replace(rust=True)))
 _DIALECTS["ZigReader"] = _DIALECTS["ZigReader"]._replace(error_sets=True)
 _DIALECTS.update({f"Corrected{stock}": _DIALECTS.get(stock, _DEFAULT_DIALECT)
                   for stock in ("GoReader", "SwiftReader", "ZigReader")})
@@ -415,6 +452,7 @@ def _line_event(state: _FnState, token: str) -> None:
     first real token of the line arrives."""
     if "\n" in token:
         _match_line_ends(state)
+        state.label_check = False  # a jump's label stands on its line
         state.at_line_start = True
         state.run_break = _may_end_statement(state)
         state.line_indent = len(token) - token.rfind("\n") - 1
@@ -558,9 +596,11 @@ def _resolve_for(state: _FnState, token: str, is_python: bool) -> None:
 
 
 def _resolve_label(state: _FnState, token: str) -> None:
+    """A break or continue costs +1 only when it jumps to a label, and the
+    token after it says whether it does, as `_Dialect.labels` reads it."""
     state.label_check = False
-    if _is_label(state, token):
-        state.total += 1  # break/continue TO A LABEL
+    if state.dialect.labels(token):
+        state.total += 1
 
 
 def _resolve_call(state: _FnState, token: str) -> None:
@@ -585,20 +625,6 @@ def _resolve_word_op(state: _FnState, token: str) -> None:
     op, state.word_op = state.word_op, None
     if token != ":":
         _bool_op(state, op)
-
-
-def _is_label(state: _FnState, token: str) -> bool:
-    """Whether the token after a break/continue names something to jump to.
-
-    Shell has no labels. It spells the same jump `break 2`, a count of enclosing
-    loops to leave, and a bare `break` is followed by whatever the loop is
-    followed by. Without the digit test every `break` before a `fi` or a `done`
-    read as a label, and a loop-with-break scored one more in shell than the
-    same loop scored in TypeScript.
-    """
-    if state.dialect.shell_blocks:
-        return token.isdigit()
-    return token not in (";", "}", ")") and bool(token.strip())
 
 
 def _nesting(state: _FnState, is_python: bool) -> int:
