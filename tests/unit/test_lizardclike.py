@@ -220,6 +220,82 @@ def test_a_word_and_parentheses_before_a_declaration_stay_where_lizard_put_them(
     assert record.long_name == UNCHANGED[source]
 
 
+NEXT = "int g(void) {\n  return 1;\n}\n"
+
+NESTED_DECLARATORS = {  # label: (path, source, rows as (long name, start, params)), by hand
+    "returns a function pointer": (
+        "p.c", "int (*get(int k))(int) {\n  if (k) {\n    return 0;\n  }\n  return 0;\n}\n" + NEXT,
+        [("get( int k)", 1, 1), ("g()", 7, 0)]),
+    "signal": ("p.c", "void (*signal(int sig, void (*func)(int)))(int) {\n  return func;\n}\n",
+               [("signal( int sig ,(*func)(int))", 1, 2)]),
+    "qualified name": ("p.cpp", "int (*S::get(int k))(int) {\n  return 0;\n}\n",
+                       [("S::get( int k)", 1, 1)]),
+    "member": ("p.cpp", "struct S {\n  int (*get(int k))(int) { return 0; }\n};\n",
+               [("S::get( int k)", 2, 1)]),
+    "const member": ("p.cpp", "struct S {\n  int (*get(int k) const)(int) { return 0; }\n};\n",
+                     [("S::get( int k) const", 2, 1)]),
+    "const pointer": ("p.c", "int (*const get(int k))(int) {\n  return 0;\n}\n",
+                      [("get( int k)", 1, 1)]),
+    "pointer to array": ("p.c", "int (*rows(int n))[4] {\n  return 0;\n}\n",
+                         [("rows( int n)", 1, 1)]),
+    "reference to array": ("p.cpp", "const int (&row(int n))[4] {\n  return t[n];\n}\n",
+                           [("row( int n)", 1, 1)]),
+    "two levels": ("p.c", "void (*(*pick(int k))(double))(char) {\n  return 0;\n}\n",
+                   [("pick( int k)", 1, 1)]),
+    "pointer return type": ("p.c", "char *(*get(void))(void) {\n  return 0;\n}\n" + NEXT,
+                            [("get()", 1, 0), ("g()", 4, 0)]),
+    "reference return type": ("p.cpp", "Foo& (*get())() {\n  return 0;\n}\n",
+                              [("get()", 1, 0)]),
+    "block": ("p.m", "static void (^make(int k))(int) {\n  return nil;\n}\n" + NEXT,
+              [("make( int k)", 1, 1), ("g()", 4, 0)]),
+    "parenthesized name": ("p.cpp", "int (min)(int a, int b) {\n  return a < b ? a : b;\n}\n",
+                           [("min( int a , int b)", 1, 2)]),
+    "parenthesized member": (
+        "p.cpp", "struct L {\n  static constexpr int (max)() noexcept { return 1; }\n};\n",
+        [("L::max()", 2, 0)]),
+    "name built by a macro": ("p.c", "static int TEMPLATE(push)(int a) {\n  return a;\n}\n",
+                              [("push( int a)", 1, 1)]),
+}
+
+
+@pytest.mark.parametrize("path,source,rows", NESTED_DECLARATORS.values(),
+                         ids=NESTED_DECLARATORS.keys())
+def test_a_nested_declarator_names_the_function_it_declares(path, source, rows):
+    """ISO/IEC 9899:2018 6.7.6.3 and [dcl.fct]: in `int (*get(int k))(int)` the
+    identifier is get and its parameters are the list beside it; `(int)` belongs
+    to the return type. lizard named such a function after its return type, `int(
+    * get(int k))( int)`, whose bare name is `int`, and read none at all after a
+    return type ending in `*`. A name in parentheses, `(min)`, names the function
+    the list after it declares."""
+    records = analyze_source(path, source, note=False)
+
+    assert [(r.long_name, r.start, r.params) for r in records] == rows
+
+
+def test_a_nested_declarator_charges_its_body_to_the_function_it_names():
+    """The row is the one the same body gets under `int get(int k)`."""
+    nested = "int (*get(int k))(int) {\n  if (k) {\n    return get(k - 1);\n  }\n  return 0;\n}\n"
+    plain = "int get(int k) {\n  if (k) {\n    return get(k - 1);\n  }\n  return 0;\n}\n"
+
+    (row,) = analyze_source("p.c", nested, note=False)
+    (same,) = analyze_source("p.c", plain, note=False)
+
+    assert row == same
+
+
+NOT_A_FUNCTION = ("int (*fp)(int);\nint (*tab[4])(int) = {0};\n"
+                  "void (*signal(int, void (*)(int)))(int);\nint x = a * (b + c);\n"
+                  "int y = a * (b)(c);\nstatic int (max)(int a);\n" + NEXT)
+
+
+def test_pointers_prototypes_and_products_declare_no_function():
+    """A function pointer, an array of them, a prototype and an expression in an
+    initializer read as they did: no row, and the function after them keeps its."""
+    records = analyze_source("p.c", NOT_A_FUNCTION, note=False)
+
+    assert [(r.long_name, r.start) for r in records] == [("g()", 7)]
+
+
 INSTANCE_VARIABLES = {
     "class extension": "@interface Extension () {\n    int _first;\n    int _second;\n}\n@end\n",
     "extension adopting a protocol": "@interface Adopting () <NSCopying> {\n    int _phase;\n"

@@ -50,6 +50,14 @@ Functions lizard hid, invented or misnamed
   their names. An export macro, `class Q_CORE_EXPORT QString {`, named them
   `Q_CORE_EXPORTQString::size`. `_ClassHead` reads a head at every scope, and
   `_head_name` takes the class's name from it.
+* A function whose declarator sits in parentheses was named after its return
+  type (ISO/IEC 9899:2018 6.7.6.3, ISO/IEC 14882:2020 [dcl.fct]). `int
+  (*get(int k))(int)`, a function returning a function pointer, read `int( *
+  get(int k))( int)` and counted the returned type's parameters, and after a
+  return type ending in `*`, `char *(*get(void))(void)`, lizard read no function.
+  A name in parentheses, `T (max)()`, read `T( max)()`; so did a name a macro
+  builds, `STRINGLIB(find)(...)`. `nested_declarator` finds the name and the
+  list beside it, and the rest of the declarator is read as return type.
 
 The `&&` of a reference
 -----------------------
@@ -70,6 +78,8 @@ Accepted, documented, not solved
 * A bare word between a parameter list and the body followed by a second one,
   `int f() NOINLINE COLD {`, still reads the way lizard reads it: the function
   is lost. One bare word, or `override` and `final`, reads right.
+* A function returning a pointer to a member function, `int (S::*pick(int
+  k))(int)`, still takes lizard's name, `int( S :: * pick(int k))( int)`.
 
 Registration
 ------------
@@ -141,6 +151,22 @@ _BASE_TOKENS = frozenset({"::", "<", ">", ",", "..."})
 _NAME_ENDS = frozenset({"<", ":", "final", "[", "extends", "implements"})
 _BRACE_DEPTH = {"{": 1, "}": -1}
 
+# What stands between a nested declarator's `(` and the name it declares:
+# `(*get(int k))`, `(*const get())`, `(&row(int n))`, Objective-C's `(^make(int k))`.
+_POINTER_OPS = frozenset({"*", "&", "&&", "^", "const", "volatile"})
+
+# What may follow that function's own parameter list inside the parentheses:
+# `int (*get(int k) const)(int)`. lizard spells each of these into a long name.
+_LIST_QUALIFIERS = frozenset({"const", "&", "&&"})
+
+# The tokens that end a return type before a nested declarator's `(` at file
+# scope, where lizard reads no function: `char *(*get(void))(void)`.
+_POINTER_ENDS = frozenset({"*", "&", "&&"})
+
+# What opens one part of the rest of a return type after a nested declarator:
+# `(int)` in `int (*get(int k))(int)`, `[4]` in `int (*rows(int n))[4]`.
+_SUFFIX_OPENERS = frozenset({"(", "["})
+
 
 def declared_parameters(tokens: list[str]) -> int:
     """How many parameters a list declares, given the tokens between its parentheses."""
@@ -187,6 +213,79 @@ class _TemplateBrackets:
         if self.parens == 0:
             self.angles += _ANGLE_DEPTH.get(token, 0)
         return self.angles <= 0
+
+
+def nested_declarator(tokens: list[str]):
+    """The name, parameters and qualifiers of the function a nested declarator declares.
+
+    `int (*get(int k))(int)` declares get, a function of `int k` returning a
+    pointer to a function of `int` (ISO/IEC 9899:2018 6.7.6.3, ISO/IEC
+    14882:2020 [dcl.fct]). Given the tokens inside the first parentheses,
+    `* get ( int k )`, this returns (["get"], ["int", "k"], []). None for
+    anything else, such as the function pointer `* fp` or the array `* tab [ 4 ]`.
+    """
+    ops = sum(1 for _ in itertools.takewhile(_POINTER_OPS.__contains__, tokens))
+    if ops in (0, len(tokens)):
+        return None
+    if tokens[ops] == "(":
+        return _declarator_in_group(tokens[ops:])
+    return _named_function(tokens[ops:])
+
+
+def _declarator_in_group(tokens: list[str]):
+    """`( * pick ( int k ) ) ( double )`: a declarator nested once more, then
+    only lists and bounds of the return type."""
+    inside, after = _split_group(tokens)
+    if inside is None or not _only_suffixes(after):
+        return None
+    return nested_declarator(inside)
+
+
+def _named_function(tokens: list[str]):
+    """`get ( int k )`, or `S :: get ( int k ) const`: a name, then its list."""
+    size = _qualified_name_length(tokens)
+    params, after = _split_group(tokens[size:])
+    if size == 0 or params is None or not _LIST_QUALIFIERS.issuperset(after):
+        return None
+    return tokens[:size], params, after
+
+
+def _split_group(tokens: list[str]):
+    """The tokens inside a leading `( ... )` and the ones after it, or (None,
+    None) when the tokens open no group or it never closes."""
+    depth = 0
+    for i, token in enumerate(tokens):
+        depth += _PAREN_DEPTH.get(token, 0)
+        if depth <= 0:
+            return (tokens[1:i], tokens[i + 1:]) if depth == 0 and token == ")" else (None, None)
+    return None, None
+
+
+def _only_suffixes(tokens: list[str]) -> bool:
+    """`( double )`, `[ 4 ]`, one after another, and nothing else."""
+    depth = 0
+    for token in tokens:
+        if depth == 0 and token not in _SUFFIX_OPENERS:
+            return False
+        depth += _BRACKET_DEPTH.get(token, 0)
+    return depth == 0
+
+
+def _qualified_name_length(tokens: list[str]) -> int:
+    """How many leading tokens spell a name, `get` or `S :: get`; 0 for none."""
+    size = 0
+    while size < len(tokens) and _extends_the_name(tokens[size], size):
+        size += 1
+    return size if size % 2 else 0
+
+
+def _extends_the_name(token: str, position: int) -> bool:
+    return token == "::" if position % 2 else _is_word(token)
+
+
+def _is_a_name(tokens: list[str]) -> bool:
+    """`max` or `std :: max`, and nothing more."""
+    return bool(tokens) and _qualified_name_length(tokens) == len(tokens)
 
 
 def _forget_the_parameters(fn) -> None:
@@ -274,6 +373,9 @@ class _CFixes(ParameterCount):
         self.crapkit_head = None
         self.crapkit_class = None
         self.crapkit_held = []
+        self.crapkit_named = []
+        self.crapkit_suffix = 0
+        self.crapkit_declarator = []
 
     def try_new_function(self, name):
         """Note whether this name follows a return type. The `>` that closes a
@@ -352,13 +454,88 @@ class _CFixes(ParameterCount):
     def _state_attribute_arguments(self, _):
         """An attribute's arguments, nested parentheses included."""
 
+    def _state_dec(self, token):
+        """lizard's parameter list, then what the list turned out to hold."""
+        super()._state_dec(token)
+        if self.br_count == 0:
+            self._read_declarator(self.crapkit_list[:-1])
+
+    def _read_declarator(self, tokens: list[str]) -> None:
+        """A list that holds a nested declarator, `(*get(int k))`, declares the
+        function it names. A list that holds only a name, `(max)`, names the
+        function whose list follows it. lizard named both after their return
+        type: `int( * get(int k))( int)`, `int( max)( int a)`."""
+        nested = nested_declarator(tokens)
+        if nested is not None:
+            self._declare(*nested)
+        elif _is_a_name(tokens):
+            self.crapkit_named = tokens
+            self._state = self._state_after_a_name
+
+    def _state_after_a_name(self, token):
+        self._state = self._state_dec_to_imp
+        if token == "(":
+            self._start_function(self.crapkit_named)
+        self._state(token)
+
+    def _declare(self, name: list[str], params: list[str], qualifiers: list[str]) -> None:
+        """The function a nested declarator names, with its own list read the
+        way any list is; the rest of the declarator belongs to its return type."""
+        self._start_function(name)
+        for token in ("(", *params, ")"):
+            self._state(token)
+        for qualifier in qualifiers:
+            self.context.add_to_long_function_name(" " + qualifier)
+        self.crapkit_suffix = 0
+        self._state = self._state_return_suffix
+
+    def _start_function(self, name: list[str]) -> None:
+        """A function named `get` or `S :: get`, from the line its declaration starts on."""
+        start = self.context.current_function.start_line or self.context.current_line
+        self.try_new_function(name[0])
+        self.context.current_function.start_line = start
+        for token in name[1:]:
+            self._state(token)
+        self.crapkit_typed = True
+
+    def _state_return_suffix(self, token):
+        """`(int)` in `int (*get(int k))(int)`, or `[4]`: lists and bounds of the
+        return type, which declare nothing. What follows is read as what follows
+        any parameter list."""
+        if self.crapkit_suffix == 0 and token not in _SUFFIX_OPENERS:
+            self._state = self._state_dec_to_imp
+            self._state(token)
+            return
+        self.crapkit_suffix += _BRACKET_DEPTH.get(token, 0)
+
     def _state_global(self, token):
-        """`struct`, `class` and `union` open a head, read before lizard sees it."""
+        """`struct`, `class` and `union` open a head, read before lizard sees it,
+        and so does a `(` after `*` or `&`, which may open a nested declarator."""
         if token in _CLASS_KEYS and self.last_token != "enum":
             self.crapkit_class, self.crapkit_held = _ClassHead(), [token]
             self._state = self._state_class_head
+        elif token == "(" and self.last_token in _POINTER_ENDS:
+            self.crapkit_declarator = [token]
+            self._state = self._state_pointer_declarator
         else:
             super()._state_global(token)
+
+    def _state_pointer_declarator(self, token):
+        """A group after `*` or `&`, held to its `)`: `char *(*get(void))(void)`
+        declares get, where lizard read no function at all. A group that is no
+        declarator, `a * (b + c)`, and a `;` or `}` before the group closes,
+        send the tokens back to be read the way lizard reads them."""
+        held = self.crapkit_declarator
+        held.append(token)
+        inside, _ = _split_group(held)
+        if inside is None and token not in (";", "}"):
+            return
+        self._state = self._state_global
+        nested = None if inside is None else nested_declarator(inside)
+        if nested is None:
+            self._read_again(held)
+        else:
+            self._declare(*nested)
 
     def _state_class_head(self, token):
         """A class head, dropped at its `{`, which then reads as lizard reads it.

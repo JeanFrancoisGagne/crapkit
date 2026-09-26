@@ -210,16 +210,17 @@ same three commands as version 11 below.
   `params` is reported and never gated.
 - Functions that had no row get one: those after a `<` comparison in a default
   template argument or a member initializer, which lizard read as a template bracket,
-  and the member functions of a class defined inside a function. The function around
-  such a class no longer pays for its members' decisions, so its `ccn` and
-  `cognitive` fall. In Java, methods get rows after an annotated local variable, an
-  enum constant with a body or an annotation element with a default, and inside a
-  constant's body, an interface field's anonymous class, or a record or interface
-  declared in a method, whose `ccn` falls the same way. A method whose anonymous or
-  local class ended on a field or an abstract method gets its row back under its own
-  name, with the class's field lines in its `nloc`. A Java text block is one string,
-  so a `{` or an `&&` between two quotes in its text is no longer code that hides the
-  next method or adds to `ccn`. A newly listed function
+  a function returning a function pointer after a return type that ends in `*` or
+  `&`, `char *(*get(void))(void)`, and the member functions of a class defined inside
+  a function. The function around such a class no longer pays for its members'
+  decisions, so its `ccn` and `cognitive` fall. In Java, methods get rows after an
+  annotated local variable, an enum constant with a body or an annotation element
+  with a default, and inside a constant's body, an interface field's anonymous class,
+  or a record or interface declared in a method, whose `ccn` falls the same way. A
+  method whose anonymous or local class ended on a field or an abstract method gets
+  its row back under its own name, with the class's field lines in its `nloc`. A Java
+  text block is one string, so a `{` or an `&&` between two quotes in its text is no
+  longer code that hides the next method or adds to `ccn`. A newly listed function
   over its ceiling fails the gate the next time its file changes, and `ratchet seed`
   marks it.
 - Rows that were not functions go: a declaration whose trailing return type holds
@@ -231,7 +232,11 @@ same three commands as version 11 below.
   after an annotation with arguments, `InlineMe( replacement = ...)`. A member of a
   class declared with an export macro or an attribute, `class Q_CORE_EXPORT QString`
   or `class __declspec(dllexport) Foo`, reads `QString::size`, where it read
-  `Q_CORE_EXPORTQString::size`, or had no class in its name. A Java method
+  `Q_CORE_EXPORTQString::size`, or had no class in its name. A C-family function whose
+  declarator sits in parentheses takes its own name: `int (*get(int k))(int)` reads
+  `get( int k)`, where it read `int( * get(int k))( int)`, `static constexpr T
+  (max)()` reads `max()`, where it read `T( max)()`, and a name a macro builds,
+  `STRINGLIB(find)(...)`, reads `find(...)`. A Java method
   inside a method's anonymous or local class reads `A::go.run()`, where it read
   `A::A::go.run()` or took the name of a class declared before the method. A Java
   method inside an enum, an interface or a record carries its name, `A::F::g()` where

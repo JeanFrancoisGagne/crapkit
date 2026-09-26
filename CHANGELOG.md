@@ -820,6 +820,15 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   They read `QString::size` and `testing::Test::SetUpTestSuite`, a new ratchet key: 194
   rows in Qt 6.7's qstring.h and 60 in GoogleTest 1.14's gtest.h change name and
   nothing else.
+- A function whose declarator sits in parentheses is named after itself. A function
+  returning a function pointer, `int (*get(int k))(int)`, read `int( * get(int k))(
+  int)`, whose bare name is `int`, and counted its return type's parameters: SQLite
+  3.46's `unixDlSym` read `params` 0 for its 3. After a return type ending in `*` or
+  `&`, `char *(*get(void))(void)`, lizard read no function at all. A name in
+  parentheses, `static constexpr T (max)() noexcept`, read `T( max)`, and a name built
+  by a macro, `STRINGLIB(find)(const STRINGLIB_CHAR *str, ...)`, read `STRINGLIB`. They
+  read `get`, `max` and `find`, a new ratchet key: 94 rows in the MSVC STL's `<limits>`
+  and `<random>` and 24 in CPython 3.13's stringlib change name and nothing else.
 
 ### Java methods that were hidden, invented or misnamed
 
