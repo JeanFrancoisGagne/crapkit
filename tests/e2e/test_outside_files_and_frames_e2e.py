@@ -122,11 +122,12 @@ def test_doctor_tune_reads_a_junit_report_in_any_declared_encoding(tmp_path, var
     assert "doctor --tune" in res.stdout
 
 
-# --- a lane's coverage report: covstream's strict decoder -------------------
+# --- a lane's coverage report: repotext's JSON kind, a chunk at a time ---------
 #
 # utf8-author-shape-13 and -boundary-20. A report crapkit cannot decode is a
 # lane refusal that names the lane, exit 5, never a traceback; a raw UTF-8 key
-# naming src/café.* is a report.
+# naming src/café.* is a report, and so is one behind a UTF-8 byte-order mark,
+# which the JSON kind reads past as it does for every JSON file.
 
 COV_LANE = b'''import json, os, sys
 from pathlib import Path
@@ -154,7 +155,7 @@ COV_SOURCES = {"coveragepy": ("python", ".py", b"def f(x):\n    return x\n"),
                "istanbul": ("typescript", ".ts", b"export function f(a: number) { return a; }\n")}
 
 COV_ROWS = [(parser, variant, code) for parser in COV_SOURCES
-            for variant, code in (("bom", 5), ("utf16", 5), ("latin1-path-key", 5),
+            for variant, code in (("bom", 0), ("utf16", 5), ("latin1-path-key", 5),
                                   ("raw-utf8-path", 0), ("ascii", 0))]
 
 

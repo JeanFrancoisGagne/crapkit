@@ -161,3 +161,29 @@ def test_a_file_no_commit_touched_has_no_history(tmp_path):
     read = marks_history(tmp_path, MARKS)
 
     assert (read.patches, read.first, read.renamed_from) == ([], None, None)
+
+
+# A past revision reads by the marks file's own rule (Q20) and is never refused:
+# the file it came from may be gone, so "save it as UTF-8" names nothing the
+# user can open. The newest revision here holds the 10.0 mark in each encoding.
+PAST_ENCODINGS = [
+    pytest.param(lambda text: b"\xff\xfe" + text.encode("utf-16-le"), id="utf16-le-out-file"),
+    pytest.param(lambda text: b"\xfe\xff" + text.encode("utf-16-be"), id="utf16-be"),
+    pytest.param(lambda text: text.encode("utf-8") + b"# caf\xe9\n", id="cp1252-byte"),
+    pytest.param(lambda text: b"\xef\xbb\xbf" + text.encode("utf-8"), id="utf8-bom"),
+]
+
+
+@pytest.mark.parametrize("saved", PAST_ENCODINGS)
+def test_the_stand_in_reads_a_revision_in_any_encoding_the_marks_file_takes(tmp_path, saved):
+    git(tmp_path, "init", "-q", "-b", "main")
+    base = commit_file(tmp_path, "README", "r\n", "base", "2026-01-01T12:00:00+00:00")
+    (tmp_path / MARKS).write_bytes(saved(marks(10.0)))
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-q", "-m", "saved elsewhere", date="2026-02-01T12:00:00+00:00")
+    commit_file(tmp_path, MARKS, None, "delete", "2026-03-01T12:00:00+00:00")
+
+    commit, committed = newest_committed_marks(tmp_path, base, MARKS)
+
+    assert commit == git(tmp_path, "rev-parse", "HEAD~1")
+    assert [(e.path, e.long_name, e.crap) for e in committed.entries] == [("src/a.py", "hot( n )", 10.0)]

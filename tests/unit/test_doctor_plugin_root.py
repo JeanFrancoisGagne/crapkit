@@ -503,7 +503,9 @@ def _records(recorded: str) -> dict:
         "top-level-list": ([], "cache"),
         "not-json": ("{not json", "cache"),
         "empty-file": ("", "cache"),
-        "utf8-bom-before-v2": ("﻿" + json.dumps(v2), "recorded"),
+        # Claude Code parses the file with Node's JSON.parse, which refuses a
+        # byte-order mark, so it cannot follow the record either.
+        "utf8-bom-before-v2": ("﻿" + json.dumps(v2), "cache"),
     }
 
 
