@@ -23,6 +23,19 @@ this raises the analysis version, so every Go or Zig repo re-seeds its marks onc
   type ends in a brace, where `v interface{}` read 0. Long names do not change, so
   marks keep their keys.
 
+### Switch prongs and select count as the switch they belong to
+
+- A Zig switch's `else =>` and `_ =>` prongs no longer count as a case, as `default`
+  does not in C. A switch of two prongs and an `else` read `ccn_std` 4 and now reads
+  3, and its cognitive `else` +1 is gone: `else =>` is the switch's default, not an
+  else.
+- `ccn_mod` reads a Zig switch once, where it added the switch without taking its
+  prongs back and read above `ccn_std`, and a Go `select` once, where each `case`
+  took a point off and the `select` added none. `ccn` is the smaller column, so a
+  Zig function with a switch of three prongs and an `else` reads 2 where it read 4,
+  and a Go function with a `select` of two cases and a default reads 2 where it read
+  1 and can now be over its ceiling.
+
 ### Rust reads its own syntax, not C's
 
 - A Rust signature decides nothing. A `where` clause, a `?Sized` bound and a `for<'a>`

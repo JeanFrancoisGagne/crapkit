@@ -142,8 +142,12 @@ took and its `ccn` can rise; the anonymous row that held the block goes away. A
 function that had no row, one after a package-level function type or a Zig `extern
 fn` prototype, is listed, and one whose result type holds braces reads its whole body.
 Either can be over its ceiling and fails the gate the next time its file changes.
-`params` moves for parameters of function type or with a braced type. Long names do
-not change, so no mark changes key. Re-seed once: `crapkit coverage`, `crapkit ratchet
+`params` moves for parameters of function type or with a braced type. A Zig switch
+reads as one decision in `ccn`, the smaller of the two columns, where it read one per
+prong and one more for `else =>`, so a Zig function with a switch reads lower. A Go
+`select` with a case reads one decision where it read none, so its function reads
+one higher and can go over its ceiling. Long names do not change, so no mark
+changes key. Re-seed once: `crapkit coverage`, `crapkit ratchet
 prune`, then `crapkit ratchet seed`. Prune drops the marks of the anonymous rows that
 go away.
 

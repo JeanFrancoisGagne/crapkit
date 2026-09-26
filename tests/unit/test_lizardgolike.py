@@ -18,6 +18,7 @@ import lizard
 import pytest
 
 from crapkit.analyze import analyze_source
+from crapkit.keys import bare_name
 from crapkit.lizardgolike import register
 
 
@@ -27,7 +28,7 @@ def rows(path: str, source: str) -> list[tuple]:
 
 
 def the_one(path: str, source: str, name: str):
-    (record,) = [r for r in analyze_source(path, source) if r.long_name.split()[0] == name]
+    (record,) = [r for r in analyze_source(path, source) if bare_name(r.long_name) == name]
     return record
 
 
@@ -315,3 +316,85 @@ def test_register_raises_when_lizard_resolves_something_else(monkeypatch):
     monkeypatch.setattr(lizard, "get_reader_for", lambda _name: None)
     with pytest.raises(RuntimeError, match="did not take: lizard resolves 'go' to no reader"):
         register()
+
+
+# --- switch prongs and select: ccn_std and ccn_mod ----------------------------------
+
+GO_SELECT = """package p
+
+func Pick(c, d chan int) int {
+\tselect {
+\tcase x := <-c:
+\t\treturn x
+\tcase y := <-d:
+\t\treturn y
+\tdefault:
+\t\treturn 0
+\t}
+}
+"""
+
+
+def columns(path: str, source: str, name: str) -> tuple:
+    record = the_one(path, source, name)
+    return record.ccn_std, record.ccn_mod, record.ccn, record.cognitive
+
+
+def test_a_go_select_counts_once_under_the_modified_rule():
+    """The Go spec calls select the switch over channel operations, and lizard's
+    -m counts a switch with all its cases as one decision. Two cases and a
+    default: ccn_std 1 + 2 = 3, ccn_mod 1 + 1 = 2. It read 1, because each case
+    took a point off and the select added none."""
+    assert columns("p.go", GO_SELECT, "Pick")[:3] == (3, 2, 2)
+
+
+def test_select_is_a_switch_only_where_the_reader_says_so():
+    """A shell `select` is a loop and a Python `select` is a name."""
+    shell = "pick() {\n  select x in a b; do\n    echo \"$x\"\n  done\n}\n"
+    python = "def pick(select):\n    select = select + 1\n    return select\n"
+
+    for path, source, name in (("a.sh", shell, "pick"), ("a.py", python, "pick")):
+        std, mod, _, _ = columns(path, source, name)
+        assert mod == std, path
+
+
+ZIG_SWITCH_ELSE = """pub fn pick(k: i32) i32 {
+    switch (k) {
+        1 => return 10,
+        2 => return 20,
+        else => return 0,
+    }
+}
+"""
+
+
+def test_a_zig_else_prong_is_the_default_and_counts_nothing():
+    """NIST SP 500-235 sec. 4.1 counts a switch's case labels with the default
+    excluded: two prongs, ccn_std 3. -m reads the switch once, ccn_mod 2. Sonar
+    charges the switch +1 and nothing for its prongs, cognitive 1. It read 4, 5
+    and 2: the `else =>` counted as a prong, -m added the switch without taking
+    the prongs back, and the cognitive pass read the `else` as an else."""
+    assert columns("a.zig", ZIG_SWITCH_ELSE, "pick") == (3, 2, 2, 1)
+
+
+def test_every_zig_default_prong_spelling_is_free():
+    """`_ =>` over a non-exhaustive enum and `inline else =>` reach what no
+    other prong matched, the way `else =>` does."""
+    for default in ("_ => return 0,", "inline else => return 0,"):
+        source = ZIG_SWITCH_ELSE.replace("else => return 0,", default)
+
+        assert columns("a.zig", source, "pick")[:3] == (3, 2, 2), default
+
+
+def test_a_zig_prong_counts_once_whatever_it_matches():
+    """An exhaustive switch of three prongs, one of them two items and one a
+    range: 1 + 3 = 4, and -m reads 2."""
+    source = """fn grade(n: u8) u8 {
+    return switch (n) {
+        0, 1 => 1,
+        2...9 => 2,
+        10...255 => 3,
+    };
+}
+"""
+    assert columns("a.zig", source, "grade")[:3] == (4, 2, 2)

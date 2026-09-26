@@ -110,9 +110,10 @@ ANALYSIS_VERSION = 11  # A Python def is named by its name token and names each 
 #                          cognitive condition, and source bytes decode utf-8
 #                          then cp1252 instead of by machine locale
 
-# The three tokens lizard's modified rule reacts to. Membership is checked before
-# anything else runs, so the common token pays one frozenset lookup.
-_SWITCH_TOKENS = frozenset({"switch", "match", "case"})
+# The tokens the modified rule reacts to: lizard's three, Go's `select`, and the
+# `=>` of a Zig switch prong. Membership is checked before anything else runs,
+# so the common token pays one frozenset lookup.
+_SWITCH_TOKENS = frozenset({"switch", "match", "case", "select", "=>"})
 
 # The readers of the languages crapkit admits that have no `switch` statement.
 # lizard's modified extension adds 1 for every `switch` token whatever the
@@ -123,19 +124,30 @@ _NO_SWITCH_READERS = frozenset({"PythonReader", "PythonSignatureReader", "RustRe
                                 "CorrectedRustReader", "ShellReader"})
 
 
-def _switch_delta(token: str, reader) -> int:
+def _switch_delta(token: str, reader, previous) -> int:
     """+1 for a switch-like block opener, -1 for one of its arms.
 
     `match` and `case` are soft keywords in Python: the same spelling is an
     identifier elsewhere, so the reader's own flags decide, exactly as lizard's
     modified extension decides. `switch` is a name in the languages that have
-    no switch statement.
+    no switch statement. `select` is Go's switch over channel operations, a
+    loop in shell and a name in most languages, so it opens a switch only for
+    a reader that sets `_keyword_select`. A `=>` is an arm only for a reader that
+    counted it in ccn_std, which `previous`, the token before it, decides.
     """
     if token == "case":
         return -int("case" in reader.conditions or getattr(reader, "_keyword_case", False))
+    if token == "=>":
+        return -_counted_prong(reader, previous)
     if token == "switch":
         return int(type(reader).__name__ not in _NO_SWITCH_READERS)
-    return int(getattr(reader, "_keyword_match", False))
+    return int(getattr(reader, "_keyword_" + token, False))
+
+
+def _counted_prong(reader, previous) -> int:
+    """1 when the reader counted this `=>` as a prong in ccn_std (crapkit.lizardgolike)."""
+    counts = getattr(reader, "counts_prong", None)
+    return int(counts is not None and counts(previous))
 
 
 class _ModifiedDelta:
@@ -151,11 +163,13 @@ class _ModifiedDelta:
 
     def __call__(self, tokens, reader):
         context = reader.context
+        previous = None
         for token in tokens:
             if token in _SWITCH_TOKENS:
                 fn = context.current_function
-                delta = _switch_delta(token, reader)
+                delta = _switch_delta(token, reader, previous)
                 fn.modified_delta = getattr(fn, "modified_delta", 0) + delta
+            previous = token
             yield token
 
 

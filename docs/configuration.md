@@ -223,8 +223,10 @@ Two more things before you point a scope at C code:
 HTML attributes to lizard and contribute nothing, so a component whose branching lives in its
 template reports only what its methods do.
 
-**`zig` reads one point high on `switch`.** It counts the `else` prong as one more case. The
-error is inflation only: it can cost a refactor that was not needed, never hide one that was.
+**`zig` counts each `switch` prong but the default**, the way C counts each `case` but
+`default`: `else =>` and `_ =>` are free, and `1, 2 =>` is one prong. The modified column
+reads the switch once, as it does a C `switch`. A Go `select` is Go's switch over channel
+operations and reads once there too.
 
 **`rust`, `shell` and `powershell` run on crapkit's own readers.** lizard has neither a shell
 nor a PowerShell reader, and its Rust reader scores a 7-arm `match` as ccn 2 (filed upstream
@@ -248,7 +250,7 @@ a signature where the language does: at its body's `{`, at a `,` `;` `=` or clos
 that belongs to the code around it, at a Go line break where the spec inserts a semicolon,
 and at a Zig `fn (`, which is always a type. A result type's braces (`struct{ a int }`,
 `error{Oops}!u8`) are not the body, and a parameter of function type, `f func(int, string)
-error`, counts once.
+error`, counts once. The Zig reader also counts switch prongs, as the paragraph above says.
 
 The cognitive column charges a Rust `match` like a `switch`: +1 plus the nesting it sits
 in, arms free. The two columns therefore say different things about one block on purpose.

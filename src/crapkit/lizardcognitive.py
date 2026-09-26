@@ -265,11 +265,23 @@ def _resolve_lookbehinds(state: _FnState, token: str, is_python: bool) -> bool:
     if state.label_check:
         _resolve_label(state, token)
     if state.else_pending:
-        state.else_pending = False
-        state.pending = True
-        # else-if: the else already paid the flat +1; this if only opens the block
-        return token == "if"
+        return _resolve_else(state, token)
     return False
+
+
+def _resolve_else(state: _FnState, token: str) -> bool:
+    """The token after a brace language's `else`. True = this token is consumed.
+
+    An else-if: the else already paid the flat +1, and the `if` only opens the
+    block. `else =>` is the default prong of a Zig switch, which the switch's
+    +1 already covers, so the +1 the `else` paid goes back and nothing opens.
+    """
+    state.else_pending = False
+    if token == "=>":
+        state.total -= 1
+        return False
+    state.pending = True
+    return token == "if"
 
 
 def _resolve_question(state: _FnState, token: str, is_python: bool) -> None:

@@ -84,10 +84,21 @@ _ENDERS = frozenset({",", ";", "=", ":=", ")", "]", "}"})
 # opened: the only ones a token can end it in.
 _TAIL = frozenset({"_function_name", "_expect_function_dec", "_expect_function_impl"})
 
+# The prongs a Zig switch takes when no other prong matches: `else =>`, and
+# `_ =>` over a non-exhaustive enum. NIST SP 500-235 sec. 4.1 counts a switch's
+# case labels with the default excluded, as lizard counts a C `case` and not
+# `default`.
+_DEFAULT_PRONGS = frozenset({"else", "_"})
+
 # Go keywords that can end a line inside a type without a semicolon following:
 # the spec inserts one only after an identifier, a literal, a closing bracket and
 # four statement keywords, none of which is a type's.
 _GO_TYPE_KEYWORDS = frozenset({"chan", "func", "interface", "map", "struct"})
+
+
+def counted_prong(previous) -> bool:
+    """Whether a Zig prong's `=>` is a decision, from the token before it."""
+    return previous not in _DEFAULT_PRONGS
 
 
 def _is_line_break(token: str) -> bool:
@@ -234,6 +245,21 @@ class ZigSignatureStates(_SignatureStates):
         return opens_type or super()._ended_by(token)
 
 
+class _ProngStates(CodeStateMachine):
+    """One condition per Zig switch prong, the default prong free.
+
+    lizard's ZigReader counts every `=>` through its condition set, `else =>`
+    included, so a switch of two prongs and an else read ccn 4. This runs beside
+    the signature states and reports through the hook lizard's own condition
+    counter uses. `last_token` is the code token before the `=>`: the reader
+    never sees a newline, so a prong spread over lines reads the same.
+    """
+
+    def _state_global(self, token):
+        if token == "=>" and counted_prong(self.last_token):
+            self.context.add_condition()
+
+
 class _Lookahead:
     """The reader half of analyze._ReaderLookahead: pass a raw token to the
     signature that is open, if one is."""
@@ -245,9 +271,11 @@ class _Lookahead:
 
 
 class CorrectedGoReader(_Lookahead, _StockGoReader):
-    """lizard's GoReader with its signatures read to where Go ends them."""
+    """lizard's GoReader with its signatures read to where Go ends them, and
+    `select` read as the switch it is by analyze's modified rule."""
 
     # pylint: disable=too-few-public-methods
+    _keyword_select = True
 
     def __init__(self, context):
         super().__init__(context)
@@ -256,14 +284,19 @@ class CorrectedGoReader(_Lookahead, _StockGoReader):
 
 
 class CorrectedZigReader(_Lookahead, _StockZigReader):
-    """lizard's ZigReader with its signatures read to where Zig ends them."""
+    """lizard's ZigReader with its signatures read to where Zig ends them and
+    its switch prongs counted with the default free."""
 
     # pylint: disable=too-few-public-methods
+    # `=>` counts through _ProngStates, which can tell the default prong from
+    # the others; analyze's modified rule asks `counts_prong` the same question.
+    _ternary_operators = set()
+    counts_prong = staticmethod(counted_prong)
 
     def __init__(self, context):
         super().__init__(context)
         context.crapkit_header = None
-        self.parallel_states = [ZigSignatureStates(context)]
+        self.parallel_states = [ZigSignatureStates(context), _ProngStates(context)]
 
 
 # Any filename picks the reader; the file is never opened.
