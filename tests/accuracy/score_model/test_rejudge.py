@@ -219,8 +219,10 @@ def test_stale_flag_follows_head(make_repo):
 @pytest.mark.nightly
 @pytest.mark.process
 def test_regrowth_history_counts_every_run_kind(make_repo):
-    """R129, R130: agent-json.md:483: one pair for every stored run that scored
-    the function, whatever the run's kind: inventory, full and partial runs."""
+    """agent-json.md:483: one pair for every stored run that scored the
+    function, whatever the run's kind: inventory, full and partial runs. No
+    past bug: the two commits that pinned this (a15a4a0, e5b07a5) changed tests
+    only, and history counted every run kind before them."""
     built, cli = _cli(make_repo)
     for argv in (("inventory",), ("coverage",), ("coverage", "--lane", "a")):
         assert cli.run(*argv).code == 0

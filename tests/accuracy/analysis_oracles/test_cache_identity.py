@@ -159,7 +159,9 @@ def test_version_bump_reads_cold(field, warmed, tmp_path):
         cache["fp"] = re.sub(rf"(^|;){field}=([^;]*)", rf"\g<1>{field}=\g<2>-older", cache["fp"])
     _rewrite_cache(warmed.root, bump)
     assert warmed.run().rows == _cold_of(warmed, tmp_path / "cold").rows
-    assert warmed.cache_hits() == len(SMALL)
+    # One hit per file the repo holds: a retro replay cuts SMALL to the languages
+    # its commit reads (CRAPKIT_ACCURACY_LANGUAGES), and a normal run keeps all three.
+    assert warmed.cache_hits() == len(analysis_inventory.retro_tree(SMALL))
 
 
 def test_a_torn_cache_file_reads_cold(warmed, tmp_path):

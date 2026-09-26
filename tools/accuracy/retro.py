@@ -1,7 +1,7 @@
 """Replay every past calculation bug's check on the commit before its fix and on the fix.
 
     python tools/accuracy/retro.py run ID...|all [--record] [--python 3.12]
-    python tools/accuracy/retro.py nightly --slice-of 7 [--day N]
+    python tools/accuracy/retro.py nightly --slice-of 7 [--day N] [--platform-only]
     python tools/accuracy/retro.py release
     python tools/accuracy/retro.py digest NODE_ID
     python tools/accuracy/retro.py stale
@@ -19,9 +19,13 @@ A replay adds a worktree at each commit, builds a venv there with uv (the
 commit's crapkit, no dependencies, plus the lizard release it was built
 against and the test runner the accuracy suite pins, which crapkit's own
 children start), and runs the check from this tree with CRAPKIT_ACCURACY_PYTHON
-pointing at that venv, so kit.drive spawns the old crapkit, and with the
-directory that venv imports crapkit from first on the check's PYTHONPATH, so a
-check that calls crapkit in its own process reads the old crapkit too. A probe runs with
+pointing at that venv, so kit.drive spawns the old crapkit, and with that
+crapkit first on the check's PYTHONPATH, so a check that calls crapkit in its
+own process reads the old crapkit too. For a wheel install that entry is a copy
+of crapkit alone (import_root): the rest of the venv's site-packages would
+reach every python the check starts.
+CRAPKIT_ACCURACY_CHECKOUT names the commit's worktree, where a check finds the
+files a wheel does not carry, such as the Action's action.yml. A probe runs with
 the venv's interpreter directly, with the worktree as its argument.
 
 The verdict is strict. Before counts as red only when the check fails on an
@@ -86,6 +90,9 @@ RUNNER = ("pytest==9.1.1", "pytest-cov==7.1.0", "coverage==7.16.1")
 OUTCOMES_ENV = "CRAPKIT_RETRO_OUTCOMES"
 BUNDLE_ENV = "CRAPKIT_RETRO_BUNDLE"
 PYTHON_ENV = "CRAPKIT_ACCURACY_PYTHON"
+# The commit's checkout: a check that runs files beside the package (action.yml,
+# tools/action/comment.py) reads them there, since a wheel install carries only src/.
+CHECKOUT_ENV = "CRAPKIT_ACCURACY_CHECKOUT"
 COLLECT_ALL_ENV = "CRAPKIT_ACCURACY_COLLECT_ALL"
 # The switches a bugs.tsv env cell may set for its check: the analysis-oracles packet
 # cuts its file set to the languages an older crapkit read, and names the root scope
@@ -160,8 +167,12 @@ def write_table(path: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
 
 
 # A replay's evidence quotes the paths it failed on. The tables name those paths by
-# role, never by the user, drive or temp directory of the machine that replayed.
-LOCAL_PATHS = ((re.compile(r"""[^\s'"]*pytest-of-[^\s'"\\/]+[\\/]+pytest-\d+"""), "<tmp>"),
+# role, never by the user, drive or temp directory of the machine that replayed. The
+# folders under the work directory are the commit's worktree (its 12-hex name) and
+# its venvs (`<sha>-venv-...`), wherever CRAPKIT_RETRO_WORK put them.
+LOCAL_PATHS = ((re.compile(r"""(?:[A-Za-z]:)?(?:[\\/]{1,2}[^\s'"\\/]+)+?"""
+                           r"""(?=[\\/]{1,2}[0-9a-f]{12}(?:-venv-[\w.-]+)?[\\/])"""), "<work>"),
+               (re.compile(r"""[^\s'"]*pytest-of-[^\s'"\\/]+[\\/]+pytest-\d+"""), "<tmp>"),
                (re.compile(r"""(?:[A-Za-z]:)?[\\/]+(?:Users|home)[\\/]+[^\s'"\\/]+"""),
                 "<home>"))
 
@@ -478,6 +489,32 @@ def crapkit_root(interpreter: Path) -> str:
     return done.stdout.strip()
 
 
+ALONE = "retro-crapkit"  # beside a venv's site-packages: its crapkit and nothing else
+
+
+def import_root(interpreter: Path) -> str:
+    """The directory the check's PYTHONPATH takes the commit's crapkit from. A wheel
+    puts crapkit in site-packages beside pytest, pytest-cov and lizard, and that
+    folder on PYTHONPATH reaches every python the check starts: a bare venv then
+    imports pytest_cov, and init prints no install note. So the check gets a copy
+    of crapkit and its dist-info in a folder of their own."""
+    root = Path(crapkit_root(interpreter))
+    return str(_alone(root)) if root.name == "site-packages" else str(root)
+
+
+def _alone(site_packages: Path) -> Path:
+    """crapkit and its dist-info copied out of `site-packages`, once per venv."""
+    alone = site_packages.parent / ALONE
+    if not (alone / "crapkit").is_dir():
+        staging = alone.with_name(ALONE + ".partial")
+        shutil.rmtree(staging, ignore_errors=True)
+        for entry in [site_packages / "crapkit", *site_packages.glob("crapkit-*.dist-info")]:
+            shutil.copytree(entry, staging / entry.name)
+        shutil.rmtree(alone, ignore_errors=True)
+        os.replace(staging, alone)
+    return alone
+
+
 def _switch(word: str) -> tuple[str, str]:
     name, equals, value = word.partition("=")
     if not equals or name not in SWITCHES:
@@ -491,10 +528,12 @@ def switches(env: str) -> dict[str, str]:
     return dict(map(_switch, env.split()))
 
 
-def _pytest_env(interpreter: Path, outcomes: Path, root: str = "", env: str = "") -> dict:
+def _pytest_env(interpreter: Path, outcomes: Path, root: str = "", env: str = "",
+                tree: Path | None = None) -> dict:
     paths = [root, str(REPO / "tests"), str(REPO / "tools" / "accuracy"), *_inherited_paths()]
-    return {**os.environ, **switches(env), PYTHON_ENV: str(interpreter), OUTCOMES_ENV: str(outcomes),
-            COLLECT_ALL_ENV: "1", "PYTHONDONTWRITEBYTECODE": "1",
+    checkout = {CHECKOUT_ENV: str(tree)} if tree else {}
+    return {**os.environ, **switches(env), **checkout, PYTHON_ENV: str(interpreter),
+            OUTCOMES_ENV: str(outcomes), COLLECT_ALL_ENV: "1", "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONPATH": os.pathsep.join(filter(None, paths))}
 
 
@@ -505,15 +544,16 @@ def _rootdir(test: str) -> Path:
     return REPO if path == REPO or REPO in path.parents else path.parent
 
 
-def replay_node(test: str, interpreter: Path, env: str = "") -> list[dict]:
+def replay_node(test: str, interpreter: Path, env: str = "", tree: Path | None = None) -> list[dict]:
     """Run one node id of this tree against `interpreter`'s crapkit, under the row's
-    env switches; one record per item."""
+    env switches, with `tree`, the commit's checkout, named in CHECKOUT_ENV; one
+    record per item."""
     with tempfile.TemporaryDirectory(prefix="crapkit-retro-") as scratch:
         outcomes = Path(scratch) / "outcomes.jsonl"
         outcomes.touch()
         argv = [sys.executable, "-m", "pytest", test, "-q", "-p", "no:cacheprovider",
                 "-p", "no:randomly", "-p", "retro", "--rootdir", _rootdir(test)]
-        _run(argv, env=_pytest_env(interpreter, outcomes, crapkit_root(interpreter), env))
+        _run(argv, env=_pytest_env(interpreter, outcomes, import_root(interpreter), env, tree))
         return item_outcomes(_read(outcomes).splitlines())
 
 
@@ -566,7 +606,7 @@ def _records(bug: Bug, sha: str, python: str, site: Site) -> list[dict]:
     tree = worktree(sha, site)
     if bug.probe:
         return _probe_records(RETRO / "probes" / bug.probe, tree, python, site)
-    return replay_node(bug.test, build_venv(tree, python, site), bug.env)
+    return replay_node(bug.test, build_venv(tree, python, site), bug.env, tree)
 
 
 def replay(bug: Bug, python: str, site: Site = Site()) -> tuple[Outcome, Outcome]:
@@ -786,9 +826,17 @@ def _public(bugs: list[dict]) -> list[dict]:
     return [row for row in bugs if replayable_here(row) and not _bundle(row)]
 
 
+def _names_its_platform(row: dict) -> bool:
+    """A row that replays on one OS only: that OS's nightly cell takes it, since
+    the Linux retro job replays every `any` row."""
+    return row["platform"] != "any"
+
+
 def _nightly(args) -> int:
     bugs, ledger = _load()
     public = _public(bugs)
+    if args.platform_only:
+        public = list(filter(_names_its_platform, public))
     day = datetime.date.today().toordinal() if args.day is None else args.day
     chosen = _union(stale(public, ledger), weekly_slice(public, args.slice_of, day))
     return _replay_rows(chosen, ledger, args.python)
@@ -833,6 +881,9 @@ def _parser() -> argparse.ArgumentParser:
     nightly = sub.add_parser("nightly")
     nightly.add_argument("--slice-of", type=int, default=7)
     nightly.add_argument("--day", type=int)
+    nightly.add_argument("--platform-only", action="store_true",
+                         help="replay only the rows whose platform is this OS (a Windows or "
+                              "macOS cell); the Linux job replays the `any` rows")
     sub.add_parser("release")
     digest_p = sub.add_parser("digest")
     digest_p.add_argument("test")

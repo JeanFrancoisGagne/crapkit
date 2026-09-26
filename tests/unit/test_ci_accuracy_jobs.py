@@ -10,6 +10,7 @@ parser of the script it calls, with every `${{ matrix.* }}` filled.
 from pathlib import Path
 import runpy
 import shlex
+import tomllib
 
 import yaml
 
@@ -17,6 +18,7 @@ from test_ci_parallel_jobs import CI, arguments, rendered, step
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN_TOOL = runpy.run_path(str(ROOT / "tools/accuracy/run.py"))
+RETRO_TOOL = runpy.run_path(str(ROOT / "tools/accuracy/retro.py"))
 LOCK = "tools/accuracy/requirements-push.txt"
 RUNNER_OS = {"ubuntu-latest": "Linux", "windows-latest": "Windows"}
 
@@ -91,6 +93,29 @@ def test_the_nightly_cells_compare_their_exports_by_the_same_rule():
     xplat = _jobs("accuracy.yml")["xplat"]
 
     assert step(xplat, "run", "python tools/accuracy/wheel_diff.py xplat") is not None
+
+
+def _retro_args(job: dict):
+    """The retro.py command a job runs (inside `docker run` or not), parsed by
+    retro.py's own parser."""
+    (run,) = [item["run"] for item in job["steps"] if "tools/accuracy/retro.py" in str(item.get("run", ""))]
+    command = run[run.index("python tools/accuracy/retro.py"):]
+    return arguments(RETRO_TOOL["_parser"]().parse_args, command, "tools/accuracy/retro.py")
+
+
+def test_the_windows_nightly_cell_replays_the_past_bugs_the_image_cannot():
+    """The retro job replays in the Linux image, where no Windows row runs: the
+    Windows cell replays those rows, with the uv release pins.toml names."""
+    jobs = _jobs("accuracy.yml")
+    windows = jobs["windows"]
+    setup = step(windows, "uses", "astral-sh/setup-uv@")
+    pins = tomllib.loads((ROOT / "tools/accuracy/pins.toml").read_text(encoding="utf-8"))
+    linux, native = _retro_args(jobs["retro"]), _retro_args(windows)
+
+    assert (linux.command, linux.platform_only) == ("nightly", False)
+    assert (native.command, native.platform_only, native.slice_of) == ("nightly", True, 7)
+    assert f"uv {setup['with']['version']}" == pins["oracle"]["uv"]["version_line"]
+    assert setup["if"] == step(windows, "run", "python tools/accuracy/retro.py")["if"]
 
 
 def _verdict_steps() -> tuple[list, int]:

@@ -246,6 +246,14 @@ jobs:
       - run: npm ci --prefix tools/accuracy/node/push --ignore-scripts --no-audit --no-fund
       # The checks whose os list names win32, plus every check with no os list.
       - run: python tools/accuracy/run.py --tier ${{ needs.plan.outputs.tier }} -n 4 --receipt .crapkit/accuracy/receipts/windows-${{ matrix.python }}.json
+      # The past bugs that replay on Windows only (bugs.tsv platform windows), a
+      # seventh a night; the retro job replays the others in the image.
+      - uses: astral-sh/setup-uv@v6
+        if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
+        with:
+          version: "0.12.17"  # tools/accuracy/pins.toml, [oracle.uv]
+      - if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
+        run: python tools/accuracy/retro.py nightly --slice-of 7 --platform-only
       - uses: actions/upload-artifact@v4
         if: always()
         with:

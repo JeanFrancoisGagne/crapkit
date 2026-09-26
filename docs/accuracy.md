@@ -108,6 +108,42 @@ one is wrong before changing either:
 A strict xfail that starts passing fails the run: its bug is fixed. Change its
 rulings row to `fixed` with one value on both sides.
 
+## Past bugs
+
+`tests/accuracy/suite_strength/retro/bugs.tsv` lists every past calculation bug:
+its fix commits, the commit before them, and the check that must catch it.
+`ledger.tsv` beside it records the last replay of each row. `tools/accuracy/retro.py`
+replays a row: it checks out the commit before the fix and the fix, installs each
+commit's crapkit in a venv of its own, and runs the check from this tree against it.
+
+```
+python tools/accuracy/retro.py run R57 --record
+```
+
+A replay counts only when the check fails on an AssertionError at the commit
+before the fix and passes at the fix. A check that passes before the fix catches
+nothing, and one that fails at the fix proves nothing; both are refused, the row
+stays `pending`, and its ledger note says why. Each night accuracy.yml replays the
+rows whose check changed and a seventh of the rest: the `retro` job in the Linux
+image, and the Windows cell the rows whose `platform` is `windows`
+(`retro.py nightly --platform-only`).
+
+When the check cannot ask its question of the old commit (it reads a field the fix
+added, or a later bug fails it too), write a probe: a script in `retro/probes/`
+that asks only this bug's question through the CLI or API both commits have. It
+exits 0 when the value holds and raises AssertionError when it does not, and its
+`# source:` line names where the expected value comes from, never crapkit's output
+at the fix. Name it in the row's `probe` cell.
+
+The replayed check runs with `CRAPKIT_ACCURACY_PYTHON` set to the commit's venv,
+that commit's crapkit (and nothing else from its venv) first on PYTHONPATH, and
+`CRAPKIT_ACCURACY_CHECKOUT` naming the commit's checkout, where a check finds the
+files a wheel does not carry, such as `action.yml`. A row's `env` cell may set
+`CRAPKIT_ACCURACY_LANGUAGES` and `CRAPKIT_ACCURACY_ROOT_PATHS` for a commit that
+read fewer languages or refused a root scope of `.`. `CRAPKIT_RETRO_WORK` moves
+the worktrees and venvs (default `.crapkit/accuracy/retro`), and rows R01 to R12
+need `CRAPKIT_RETRO_BUNDLE`, the history bundle their commits live in.
+
 ## Change control
 
 Goldens, hand tables, rulings, probes and oracle adapters are locked

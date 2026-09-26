@@ -235,6 +235,17 @@ def test_a_pass_reads_passed_and_a_pass_without_a_base_run_says_so(tmp_path):
                                       "changed file.")
 
 
+def test_a_retro_replay_runs_the_action_its_commit_holds(tmp_path, monkeypatch):
+    """A replay installs the commit's crapkit as a wheel, which carries no
+    action.yml; the checkout the replay names holds the commit's Action."""
+    monkeypatch.setenv(action_runs.CHECKOUT_ENV, str(tmp_path))
+    replayed = action_runs.action_path()
+    monkeypatch.delenv(action_runs.CHECKOUT_ENV)
+    monkeypatch.delenv(action_runs.drive.PYTHON_ENV, raising=False)
+
+    assert (replayed, action_runs.action_path()) == (tmp_path, action_runs.REPO)
+
+
 # --- compatibility with the last release ----------------------------------------------------
 
 @pytest.mark.nightly

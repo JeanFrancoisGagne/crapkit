@@ -322,6 +322,39 @@ def test_a_venv_that_cannot_import_crapkit_is_refused(monkeypatch):
         retro.crapkit_root(Path("py"))
 
 
+def _site_packages(tmp_path: Path) -> Path:
+    """A wheel venv's site-packages: crapkit, its dist-info, and the runner beside them."""
+    site = tmp_path / "venv" / "Lib" / "site-packages"
+    for name in ("crapkit/__init__.py", "crapkit/cli/__init__.py", "crapkit-0.8.0.dist-info/METADATA",
+                 "pytest_cov/__init__.py", "lizard.py"):
+        (site / name).parent.mkdir(parents=True, exist_ok=True)
+        (site / name).write_bytes(b"# " + name.encode() + b"\n")
+    return site
+
+
+def test_a_wheel_s_crapkit_reaches_the_check_without_the_rest_of_site_packages(tmp_path, monkeypatch):
+    """A bare venv the check starts must not import the replay venv's pytest_cov
+    through PYTHONPATH: the check gets crapkit alone, copied once per venv."""
+    site = _site_packages(tmp_path)
+    monkeypatch.setattr(retro, "crapkit_root", lambda interpreter: str(site))
+
+    root = Path(retro.import_root(Path("py")))
+    (site / "crapkit" / "__init__.py").write_bytes(b"# changed after the copy\n")
+
+    assert root == site.parent / retro.ALONE
+    assert sorted(path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()) == [
+        "crapkit-0.8.0.dist-info/METADATA", "crapkit/__init__.py", "crapkit/cli/__init__.py"]
+    assert Path(retro.import_root(Path("py"))) == root
+    assert (root / "crapkit" / "__init__.py").read_bytes() == b"# crapkit/__init__.py\n"
+
+
+def test_a_crapkit_outside_site_packages_is_taken_where_it_is(monkeypatch):
+    """A link install imports crapkit from the commit's src/, which holds nothing else."""
+    monkeypatch.setattr(retro, "crapkit_root", lambda interpreter: "/wt/abc/src")
+
+    assert retro.import_root(Path("py")) == str(Path("/wt/abc/src"))
+
+
 def test_the_commit_s_crapkit_leads_the_check_s_pythonpath(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", str(tmp_path / "lib"))
 
@@ -343,6 +376,17 @@ def test_a_row_s_env_reaches_the_replayed_check(tmp_path):
     assert (env["CRAPKIT_ACCURACY_LANGUAGES"], env["CRAPKIT_ACCURACY_ROOT_PATHS"]) == (
         "python,typescript", "entries")
     assert env[retro.PYTHON_ENV] == "py"
+
+
+def test_the_replayed_check_learns_the_commit_s_checkout(tmp_path, monkeypatch):
+    """A wheel carries src/ only: a check that runs the commit's action.yml finds it
+    through the checkout the replay names, and a run with no checkout names none."""
+    monkeypatch.delenv(retro.CHECKOUT_ENV, raising=False)
+
+    named = retro._pytest_env(Path("py"), tmp_path / "o", "/old/src", "", tmp_path / "wt")
+    unnamed = retro._pytest_env(Path("py"), tmp_path / "o", "/old/src")
+
+    assert (named[retro.CHECKOUT_ENV], retro.CHECKOUT_ENV in unnamed) == (str(tmp_path / "wt"), False)
 
 
 @pytest.mark.parametrize("cell, says", [
@@ -513,6 +557,15 @@ def test_a_table_write_that_fails_halfway_leaves_the_old_table(tmp_path, monkeyp
      r'File "<home>\uv\python\lib\runpy.py", line 88'),
     ("in /home/ann/src/a.py\nand\t/Users/ann/b.py", "in <home>/src/a.py and <home>/b.py"),
     ("assert 3 == 0 in src/users/a.py", "assert 3 == 0 in src/users/a.py"),
+    (r"re-baseline with `D:\scratch\retro\a815caa38248-venv-3.12-wheel\Scripts\python.exe -m",
+     r"re-baseline with `<work>\a815caa38248-venv-3.12-wheel\Scripts\python.exe -m"),
+    (r"CRAP...D:\\scratch\\retro\\20f00e137133\\js\\shared.js",
+     r"CRAP...<work>\\20f00e137133\\js\\shared.js"),
+    ('File "/tmp/retro/33ba48079aa6/src/crapkit/cli.py", line 3',
+     'File "<work>/33ba48079aa6/src/crapkit/cli.py", line 3'),
+    (r'File "C:\Users\ann\crapkit\.crapkit\accuracy\retro\33ba48079aa6\src\a.py"',
+     r'File "<work>\33ba48079aa6\src\a.py"'),
+    ("commit 33ba48079aa6 is not in the bundle", "commit 33ba48079aa6 is not in the bundle"),
 ])
 def test_a_table_cell_names_no_local_path(evidence, cell):
     """A replay's evidence quotes the temp and home paths it ran under; the committed
@@ -586,6 +639,19 @@ def test_nightly_replays_stale_rows_and_its_slice_and_never_a_bundle_row(tables)
     assert retro.main(["nightly", "--slice-of", "3", "--day", "0"]) == 0
     # R4's digest moved; slice 0 of the public rows R1, R2, R4 in id order is R1.
     assert sorted(tables.replayed) == ["R1", "R4"]
+
+
+THIS_OS = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
+
+
+def test_a_platform_only_nightly_replays_the_rows_that_name_this_os(tables):
+    """The Windows cell replays the Windows rows; the Linux job, which replays
+    every `any` row, is not run twice."""
+    rows = [_bug_row("R1"), _bug_row("R2", platform=THIS_OS), _bug_row("R3", platform=THIS_OS)]
+    tables.write(rows, [_ledger_row(bug) for bug in ("R1", "R2", "R3")])
+
+    assert retro.main(["nightly", "--slice-of", "1", "--day", "0", "--platform-only"]) == 0
+    assert sorted(tables.replayed) == ["R2", "R3"]
 
 
 def test_release_replays_stale_rows_and_every_bundle_row(tables):
@@ -1363,12 +1429,13 @@ def test_a_probe_bug_replays_its_probe_file_in_the_commit_s_tree(tmp_path, monke
 def test_a_node_bug_replays_its_check_against_the_commit_s_venv_under_its_env(tmp_path, monkeypatch):
     monkeypatch.setattr(retro, "worktree", lambda sha, site: tmp_path / sha)
     monkeypatch.setattr(retro, "build_venv", lambda tree, python, site, extra=(): (tree, python, site, extra))
-    monkeypatch.setattr(retro, "replay_node", lambda test, interpreter, env: [(test, interpreter, env)])
+    monkeypatch.setattr(retro, "replay_node",
+                        lambda test, interpreter, env, tree: [(test, interpreter, env, tree)])
     site = retro.Site(work=tmp_path)
 
     got = retro._records(retro.Bug("R6", NODE, "a", "b", env=CUT), "abc", "3.12", site)
 
-    assert got == [(NODE, (tmp_path / "abc", "3.12", site, ()), CUT)]
+    assert got == [(NODE, (tmp_path / "abc", "3.12", site, ()), CUT, tmp_path / "abc")]
 
 
 # --- tables, rows and the ledger ----------------------------------------------------------------------
@@ -1548,7 +1615,7 @@ def test_the_nightly_slice_is_today_s_unless_a_day_is_named(tables, monkeypatch,
     days = []
     monkeypatch.setattr(retro, "weekly_slice", lambda rows, of, day: days.append((of, day)) or [])
 
-    retro._nightly(SimpleNamespace(day=day, slice_of=3, python=retro.CURRENT))
+    retro._nightly(SimpleNamespace(day=day, slice_of=3, python=retro.CURRENT, platform_only=False))
 
     assert days == [(3, datetime.date.today().toordinal() if expected == "today" else expected)]
 
@@ -1564,9 +1631,10 @@ def test_digest_with_a_probe_prints_the_digest_that_covers_it(capsys):
      {"python": retro.CURRENT, "command": "run", "ids": ["R1", "R2"], "record": True}),
     (["--python", "3.13", "run", "R1"],
      {"python": "3.13", "command": "run", "ids": ["R1"], "record": False}),
-    (["nightly"], {"python": retro.CURRENT, "command": "nightly", "slice_of": 7, "day": None}),
-    (["nightly", "--slice-of", "3", "--day", "4"],
-     {"python": retro.CURRENT, "command": "nightly", "slice_of": 3, "day": 4}),
+    (["nightly"], {"python": retro.CURRENT, "command": "nightly", "slice_of": 7, "day": None,
+                   "platform_only": False}),
+    (["nightly", "--slice-of", "3", "--day", "4", "--platform-only"],
+     {"python": retro.CURRENT, "command": "nightly", "slice_of": 3, "day": 4, "platform_only": True}),
     (["release"], {"python": retro.CURRENT, "command": "release"}),
     (["digest", "t::x", "--probe", "R1.py"],
      {"python": retro.CURRENT, "command": "digest", "test": "t::x", "probe": "R1.py"}),

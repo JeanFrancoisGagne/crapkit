@@ -80,10 +80,16 @@ class ActionRun:
         return found[0].read_text(encoding="utf-8") if found else ""
 
 
+CHECKOUT_ENV = "CRAPKIT_ACCURACY_CHECKOUT"  # tools/accuracy/retro.py names the commit's worktree
+
+
 def action_path() -> Path:
     """The checkout that holds the crapkit under test: its action.yml and
-    tools/action/comment.py go with its code. An installed (non-editable)
-    crapkit falls back to this repository."""
+    tools/action/comment.py go with its code. A retro replay names that checkout
+    in CHECKOUT_ENV, since it installs the commit's crapkit as a wheel; an editable
+    crapkit leads to it; any other installed crapkit falls back to this repository."""
+    if os.environ.get(CHECKOUT_ENV):
+        return Path(os.environ[CHECKOUT_ENV])
     python = os.environ.get(drive.PYTHON_ENV)
     if not python:
         return REPO

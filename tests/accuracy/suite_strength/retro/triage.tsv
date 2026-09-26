@@ -97,8 +97,8 @@ ecc092fee9181d5b162aa2ab0574e81266c5f67e	2026-09-23	not-calc		refactor: the same
 d1cda22d862609d27ac3fa86e532d3591e6c28c0	2026-09-23	not-calc		refactor: the same outputs: dead entry point removed	brief builds every packet through its loader, with no second entry point
 5616a6eaab43a4de0d5b6146ff1d7741e63be3b1	2026-09-23	not-calc		refactor: the same outputs: helper folded into rejudged	packet.rejudged applies the scoring rule itself, with no public helper beside it
 8cf5f5284c82436312b2949a9c2ed0baa1f0c18b	2026-09-23	not-calc		refactor: the same outputs: same remedies on every row	The queue reads each scope's ceiling through Config.ceiling_of
-7eac49c1d4495535a37d7a1e53d5a968eefa0424	2026-09-23	calc-fix	R51	Identity admission of saved marks	worklist again refuses a run whose same-line twins have no recorded order
-e9abef6180e3bdaaa69341391fd0cc799a5eaab5	2026-09-23	calc-fix	R105	Remedy label	worklist judges the remedy against today's ceiling, as next-item does
+7eac49c1d4495535a37d7a1e53d5a968eefa0424	2026-09-23	calc-fix	R51,R105	Identity admission of saved marks	worklist again refuses a run whose same-line twins have no recorded order
+e9abef6180e3bdaaa69341391fd0cc799a5eaab5	2026-09-23	not-calc		introduced R105 in the same unreleased series: worklist rejudged the remedy against today's ceiling, which 7eac49c took back	worklist judges the remedy against today's ceiling, as next-item does
 ec070cf92b3d4de11a26f2e16464b77c82e631cd	2026-09-22	not-calc		performance: the same outputs: an empty next-item queue loads no artifact	An empty next-item queue reads no lane artifact and starts no git process
 3b2e6c22d1954c53128964cb364dce4a34c23d9c	2026-09-22	not-calc		message wording: the value and the exit code are unchanged: the no-run message names the store	duplication and worklist name the missing run when the store exists
 7199f1b7e128f6a5e7767768d4a44ed01f44c320	2026-09-22	calc-fix	R50	Remedy label	brief and next-item judge the remedy against today's ceiling
