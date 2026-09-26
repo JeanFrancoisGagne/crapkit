@@ -68,7 +68,8 @@ so every count and every name reads it as before, and only
 `CorrectedSwiftStates` opens nothing for it. A token that decides nothing is a
 `_Plain`: its value carries a leading `_`, the way lizard renames a label
 written `(for:`, so no count reads it, and the parameter list names it by its
-source spelling.
+source spelling. A `<` that compares is an `_Operator`, the same value again,
+which only the parameter count reads differently.
 
 Registration
 ------------
