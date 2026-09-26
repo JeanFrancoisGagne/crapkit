@@ -595,6 +595,20 @@ case the message was written for: `coverage.py report has no function regions fo
 its 40 file(s) — needs coverage >= 7.6`. That verdict is read before the branch-data one, so
 a report missing both is told its coverage is too old rather than sent to add `--cov-branch`,
 which a coverage that old would not fix.
+### Where a function's region starts
+
+coverage.py 7.6 added the per-function regions crapkit joins on, and 7.13.1 added each
+region's `start_line`. A report from 7.6 up to 7.13.0 names no start line, and a region's
+lines begin at its body. crapkit then takes the def statement as the region's start: the
+last statement ahead of the body, when the module or a function the region is nested in
+holds it. A one-line def holds its own def statement, so it starts where its body does.
+
+Through 0.8.0 such a region started at its first body line. A nested def whose def opened
+its encloser's body shared a start line with the encloser's region, and a nested def
+further down overlapped the encloser's region by one line more than its own, which lacked
+the def line. Either way the join handed the nested def the encloser's number, so a helper
+no test called read as tested as the function around it.
+
 ### `--continue-on-collection-errors`
 
 This is pytest's `reportOnFailure`, and it is the flag people leave out. pytest raises

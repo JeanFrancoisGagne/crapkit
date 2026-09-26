@@ -18,6 +18,15 @@
   a function nobody edited, so the change needs an analysis-version bump, which makes
   each marks file re-seed once. [What the istanbul parser
   reads](docs/lanes.md#what-the-istanbul-parser-reads) states the rule.
+- A coverage.py report from 7.6 up to 7.13.0 names no `start_line`, so a region
+  started at its first body line. A nested def whose def opened its encloser's body
+  shared a start line with the encloser's region, and a nested def anywhere else
+  overlapped the encloser's region by one line more than its own, which lacked the def
+  line. The join handed the nested def the encloser's number, and a helper no test
+  called read 0.5 where it reads 0. A region with no
+  `start_line` now starts on its def statement, the last statement ahead of its body
+  that the module or its encloser holds. Nested defs measured by those coverage.py
+  versions change score, which is part of the same analysis-version bump.
 
 ### Every platform computes the same CRAP
 

@@ -1,11 +1,13 @@
 """Per-file coverage.py regions, context cleanup, and report completeness rules.
 
-Requires the per-function regions coverage.py has emitted since 7.6.0 and the
-start_line key from 7.13.1. Branch data is preferred and not required: the
-coverage term falls back to statements, with a warning, so an artifact built by
-`pytest --cov --cov-report=json` — the default CI shape, with no --cov-branch —
-still scores. Function spans come from start_line and the maximum
-executed/missing line, the closest thing the report offers to an end line.
+Requires the per-function regions coverage.py has emitted since 7.6.0. A
+report from 7.13.1 on names each region's start_line; before it the def
+statement is found just ahead of the region's body. Branch data is preferred
+and not required: the coverage term falls back to statements, with a warning,
+so an artifact built by `pytest --cov --cov-report=json` — the default CI
+shape, with no --cov-branch — still scores. Function spans run from the def
+line to the maximum executed/missing line, the closest thing the report offers
+to an end line.
 
 This module is also the coverage.py adapter (coverage_format looks it up from a
 lane's `parser`): it walks the report's "files" member through covstream's
@@ -14,6 +16,7 @@ for the wrong-tree check, and owns the runner advice a refusal gives.
 """
 from __future__ import annotations
 
+import bisect
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -41,10 +44,45 @@ def _admit_summary(name: str, summary: dict) -> dict:
     return counts
 
 
-def _fn_coverage(name: str, fn: dict) -> FnCoverage:
+def _region_lines(fn: dict) -> list[int]:
+    return list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
+
+
+class _Statements:
+    """Every statement line in one file with the region that holds it, to find
+    a def statement in a report that names no start_line.
+
+    coverage.py wrote start_line from 7.13.1. Before it, a region's lines
+    begin at its body, and the def statement sits in the region around it:
+    a nested def whose def opens its encloser's body put the encloser's
+    region on the nested def's line, and the join handed the nested def the
+    encloser's number. A one-line def holds its own def statement."""
+
+    def __init__(self, regions: dict) -> None:
+        held = sorted((line, name) for name, fn in regions.items() for line in _region_lines(fn))
+        self.lines = [line for line, _ in held]
+        self.holders = [name for _, name in held]
+
+    def def_line(self, name: str, first: int) -> int:
+        """The statement just ahead of the body when the code around `name`
+        holds it: the module, or a region `name` is nested in."""
+        at = bisect.bisect_left(self.lines, first) - 1
+        if at < 0:
+            return first
+        holder = self.holders[at]
+        return self.lines[at] if holder == "" or name.startswith(holder + ".") else first
+
+
+def _region_start(name: str, fn: dict, lines: list[int], statements: _Statements) -> int:
+    if fn.get("start_line"):
+        return fn["start_line"]
+    return statements.def_line(name, min(lines)) if lines else 0
+
+
+def _fn_coverage(name: str, fn: dict, statements: _Statements) -> FnCoverage:
     summary = _admit_summary(name, fn.get("summary", {}))
-    lines = list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
-    start = fn.get("start_line") or (min(lines) if lines else 0)
+    lines = _region_lines(fn)
+    start = _region_start(name, fn, lines, statements)
     end = max(lines) if lines else start
     return FnCoverage(name=name, start=start, end=end,
                       invoked=summary.get("covered_lines", 0) > 0,
@@ -70,7 +108,9 @@ def _file_functions(data: dict) -> list[FnCoverage]:
     """One file's functions, sorted by start line. Ask `has_regions` first: this
     reads an absent "functions" key as an empty one."""
     # the "" key is the "(no function)" module-level bucket
-    fns = [_fn_coverage(name, fn) for name, fn in (data.get("functions") or {}).items() if name]
+    regions = data.get("functions") or {}
+    statements = _Statements(regions)
+    fns = [_fn_coverage(name, fn, statements) for name, fn in regions.items() if name]
     return sorted(fns, key=lambda f: f.start)
 
 

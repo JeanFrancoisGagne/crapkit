@@ -94,6 +94,10 @@ re-seeds once, with the same three commands as version 11 below:
   reads 0 where it read 0.5. A ternary or `&&` that opens ahead of a callback on its
   line moves from the callback to the function around it. See [what the istanbul parser
   reads](lanes.md#what-the-istanbul-parser-reads).
+- Under a coverage.py lane whose report comes from coverage.py 7.6 up to 7.13.0,
+  which names no `start_line`, a nested def reads its own region where it read its
+  encloser's. See [where a function's region
+  starts](lanes.md#where-a-functions-region-starts).
 
 ### Analysis version 11
 

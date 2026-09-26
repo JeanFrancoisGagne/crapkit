@@ -160,3 +160,57 @@ def test_qualname_collapse_fails_conservative_never_confident():
     executed_twin = InventoryRow("py", "m.py", "make( x )", 9, 11, 3, 3, 3, 3, 1, 1)
     (scored,) = score_rows([executed_twin], per_file, lane_scopes={"py"})
     assert scored.cov == 0.0 and scored.flag == "untested"
+
+
+def _region(executed, missing, branches=(0, 0)):
+    lines = len(executed) + len(missing)
+    return {"executed_lines": executed, "missing_lines": missing,
+            "summary": {"covered_lines": len(executed), "num_statements": lines,
+                        "num_branches": branches[0], "covered_branches": branches[1]}}
+
+
+# coverage.py 7.10.6 over (no start_line: a region starts where its lines do):
+# 62 def outer(flag):           72 def wrap(items):            85 def one_line(value): return value + 1
+# 63     def inner(value):      73     total = len(items)
+# 64         if value: ...      74     def each(item):
+# 67     if flag: ...           75         return item + total
+#                               76     return [each(i) for i in items]
+NO_START_LINE = {"meta": {"branch_coverage": True, "version": "7.10.6"}, "files": {"m.py": {
+    "functions": {
+        "": _region([1, 62, 72, 85], []),
+        "outer": _region([63, 67, 69], [68], branches=(2, 1)),
+        "outer.inner": _region([], [64, 65, 66], branches=(2, 0)),
+        "wrap": _region([73, 74, 76], []),
+        "wrap.each": _region([], [75]),
+        "one_line": _region([85], [], branches=(2, 2)),
+    }}}}
+
+
+def test_a_region_with_no_start_line_starts_on_its_def_statement():
+    """Before 7.13.1 a region names no start_line and its lines begin at the
+    body. The def statement is the statement just ahead of the body, held by
+    the code around the function; a one-line def holds its own."""
+    per_file = parse_coveragepy(json.dumps(NO_START_LINE), path_prefix="")
+
+    assert {fn.name: (fn.start, fn.end) for fn in per_file["m.py"]} == {
+        "outer": (62, 69), "outer.inner": (63, 66), "wrap": (72, 76), "wrap.each": (74, 75),
+        "one_line": (85, 85)}
+
+
+def test_a_nested_def_joins_its_own_region_in_a_report_with_no_start_line():
+    """outer's body opens with inner's def, so a region starting at its first
+    body line put outer on inner's start line, and the join handed inner
+    outer's 1 of 2 branches while no test called inner."""
+    from crapkit.score import score_rows
+    from crapkit.snapshot import InventoryRow
+
+    rows = [InventoryRow("s", "m.py", name, start, end, 2, 2, 2, 3, 1, 1)
+            for name, start, end in (("outer( flag )", 62, 69), ("outer.inner( value )", 63, 66),
+                                     ("wrap( items )", 72, 76), ("wrap.each( item )", 74, 75))]
+    per_file = parse_coveragepy(json.dumps(NO_START_LINE), path_prefix="")
+
+    scored = score_rows(rows, per_file, lane_scopes={"s"})
+
+    assert [(row.long_name, row.cov) for row in scored] == [
+        ("outer( flag )", 0.5), ("outer.inner( value )", 0.0),
+        ("wrap( items )", 1.0), ("wrap.each( item )", 0.0)]
