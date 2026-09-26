@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 from kit import installers, repos
 from kit.cells import cell
 from kit.installers import said
@@ -57,14 +55,14 @@ def _followed(box, templates) -> list[tuple[str, object]]:
 
 @cell("lin-follow-hints", channel="pip venv", harness="none",
       scenario="fresh: from init, only the commands crapkit prints as next steps, each exit 0, until none",
-      use_cases="init to worklist", os="linux", image="core", cadence="nightly")
+      use_cases="init to verify", os="linux", image="core", cadence="nightly")
 def test_every_step_crapkit_prints_runs_as_printed(box, templates):
     ran = _followed(box, templates)
     commands = [command for command, _ in ran]
 
     assert len(ran) < LIMIT
     assert commands[:2] == ["crapkit init", "python -m pip install pytest-cov"]
-    assert commands[2:] == ["crapkit coverage", "crapkit worklist"]
+    assert commands[2:] == ["crapkit coverage", "crapkit worklist", "crapkit ratchet seed", "crapkit verify"]
     assert printed_steps(said(ran[-1][1])) == []
     assert all(step.exit == 0 for _, step in ran)
 
@@ -72,9 +70,6 @@ def test_every_step_crapkit_prints_runs_as_printed(box, templates):
 @cell("lin-follow-hints", channel="pip venv", harness="none",
       scenario="fresh: the printed steps end at a passing verify", use_cases="init to verify", os="linux",
       image="core", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-7: the next steps crapkit prints end at "
-                                       "`crapkit worklist`, which prints none, so a user who follows them never "
-                                       "seeds the ratchet or runs verify")
 def test_the_printed_steps_end_at_a_passing_verify(box, templates):
     ran = _followed(box, templates)
 

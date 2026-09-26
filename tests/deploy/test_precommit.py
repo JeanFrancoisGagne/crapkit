@@ -9,16 +9,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from kit import docsnip, gitmirror, gitsurf, repos, wheels
 from kit.cells import cell
 
 PACKET = "deploy-git"
 UPGRADE_DOC = "docs/upgrading.md"
 OLD = "0.7.6"
-ALL_FILES = ("deploy-bug deploy-git-2: `pre-commit run --all-files`, the form CI runs, passes a committed "
-             "function over the ceiling: crapkit-gate reads only staged files, and a clean index has none")
 
 
 def framework_repo(box, templates, candidate, *, guard: bool = False) -> Path:
@@ -53,7 +49,6 @@ def test_precommit_on_windows_refuses_then_accepts(box, templates, candidate):
     precommit_cell(box, templates, candidate, guard=False)
 
 
-@pytest.mark.xfail(strict=True, reason=ALL_FILES)
 @cell("lin-precommit-all-files", channel="pre-commit run --all-files", harness="pre-commit 4.6.2",
       scenario="fresh: breach on a clean index; what CI reports", use_cases="commit gate", os="linux",
       image="cells", cadence="nightly")

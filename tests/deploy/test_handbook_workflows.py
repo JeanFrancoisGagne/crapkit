@@ -16,8 +16,6 @@ import os
 import re
 from pathlib import Path
 
-import pytest
-
 from kit import docsnip, hooks_rules, installers, profiles, repos
 from kit.cells import cell
 from kit.installers import Expect, bare, said, shape
@@ -666,10 +664,6 @@ def test_below_the_git_top_the_hook_command_refuses_the_staged_breach(box, templ
       scenario="fresh: below the git top, the Enforcement block arms a hook git runs, and that hook gates a commit "
                "made in packages/api", use_cases="commit gate, subdir root", os="linux", image="core",
       cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-9: from a crapkit root below the git top, the "
-                                       "handbook's Enforcement block cannot write .git/hooks/pre-commit, and the "
-                                       "hook it writes at the git top refuses every commit with 'no crapkit.toml "
-                                       "at <top>'")
 def test_below_the_git_top_the_enforcement_block_arms_a_working_hook(box, templates):
     top, root = _nested(box, templates)
     armed = enforce_where_it_can(box, root)

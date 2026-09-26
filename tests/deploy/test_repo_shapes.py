@@ -12,38 +12,19 @@ import re
 import tomllib
 from pathlib import Path
 
-import pytest
-
 from kit import gitsurf, repos
 from kit.cells import cell
 from kit.mcp_client import McpClient
 
 PACKET = "deploy-git"
-FIRST_COMMIT = ("deploy-bug deploy-git-10: `crapkit coverage` in a repo with no commit yet exits 4 quoting "
-                "`git rev-parse HEAD ... ambiguous argument 'HEAD'`, and names no fix (make the first commit); "
-                "doctor passed the same repo")
-ARMED_FIRST = ("deploy-bug deploy-git-11: a gate armed before `crapkit init` refuses every commit with `no "
-               "crapkit.toml at ROOT - nothing to analyze`, a line that names neither `crapkit init` nor why "
-               "nothing to analyze blocks the commit")
-BELOW_TOP = ("deploy-bug deploy-git-8: with the crapkit root below the git top, the README Route 2 hook runs at "
-             "the top and refuses every commit with `no crapkit.toml at TOP - nothing to analyze`; that line, "
-             "also what next-item prints from a sibling package, names no `--repo`")
-
-
-def with_pytest_config(box, templates, name: str) -> Path:
-    """Template `name` plus the pyproject.toml py-pytest carries, so init finds
-    the suite: the zero-commit and not-git templates hold the files alone."""
-    repo = repos.checkout(box, name, cache=templates)
-    (repo / "pyproject.toml").write_text(repos.PYPROJECT_PY, encoding="utf-8", newline="\n")
-    return repo
 
 
 def start(box, repo: Path) -> dict[str, object]:
-    """The 60-second start's crapkit lines in `repo`, the fix for the
-    container guard applied after init; each command's step by its line."""
+    """The 60-second start in `repo` through its commit and verify, the fix for
+    the container guard applied after init; each line's step by its line."""
     steps = {}
-    for line in gitsurf.start_lines()[:-1]:
-        steps[line] = box.script(line, cwd=repo)
+    for line in gitsurf.start_lines():
+        steps[line] = box.script(line, cwd=repo, env=box.commit_env() if line.startswith("git commit") else None)
         if line == "crapkit init" and steps[line].exit == 0:
             gitsurf.keyed_in_container(repo)
     return steps
@@ -76,7 +57,7 @@ def test_a_submodule_stays_out_of_the_scopes_and_its_bump_commits(box, templates
       os="linux", image="cells", cadence="nightly")
 def test_a_repo_with_no_commit_starts_once_its_first_commit_lands(box, templates):
     gitsurf.pip_venv(box)
-    repo = with_pytest_config(box, templates, "zero-commit")
+    repo = repos.checkout(box, "zero-commit", cache=templates)
     box.run(["git", "add", "-A"], cwd=repo, expect=0)
     box.run(["git", "commit", "-q", "-m", "first"], cwd=repo, env=box.commit_env(), expect=0)
 
@@ -84,13 +65,12 @@ def test_a_repo_with_no_commit_starts_once_its_first_commit_lands(box, templates
     assert [line for line, step in steps.items() if step.exit != 0] == []
 
 
-@pytest.mark.xfail(strict=True, reason=FIRST_COMMIT)
 @cell("lin-zero-commit", channel="pip venv", harness="git 2.47",
       scenario="fresh: first line the user acts on in a repo with no commit", use_cases="init, commit gate",
       os="linux", image="cells", cadence="nightly")
 def test_coverage_before_the_first_commit_names_it(box, templates):
     gitsurf.pip_venv(box)
-    repo = with_pytest_config(box, templates, "zero-commit")
+    repo = repos.checkout(box, "zero-commit", cache=templates)
     box.run(["git", "add", "-A"], cwd=repo, expect=0)
 
     coverage = start(box, repo)["crapkit coverage"]
@@ -104,7 +84,7 @@ def test_coverage_before_the_first_commit_names_it(box, templates):
       os="linux", image="cells", cadence="nightly")
 def test_init_outside_a_repo_says_so_and_starts_after_git_init(box, templates):
     gitsurf.pip_venv(box)
-    folder = with_pytest_config(box, templates, "not-git")
+    folder = repos.checkout(box, "not-git", cache=templates)
 
     refused = box.script("crapkit init", cwd=folder)
     assert refused.exit != 0 and "not a git repository" in refused.stderr, refused.stderr
@@ -133,7 +113,6 @@ def test_a_gate_armed_first_passes_signed_debt_once_seeded(box, templates):
     assert "carry a ratchet mark and were not gated" in step.stderr
 
 
-@pytest.mark.xfail(strict=True, reason=ARMED_FIRST)
 @cell("lin-brownfield-arm-first", channel="pip venv", harness="git 2.47",
       scenario="fresh: gate armed before init; the first commit's line", use_cases="init, commit gate",
       os="linux", image="cells", cadence="nightly")
@@ -175,7 +154,6 @@ def test_a_root_below_the_git_top_answers_mcp_and_the_advisory(box, templates):
         assert not error and "calc/grade.py" in text, text
 
 
-@pytest.mark.xfail(strict=True, reason=BELOW_TOP)
 @cell("lin-monorepo", channel="pip venv", harness="git 2.47",
       scenario="fresh: subdir root; Route 2 at git top; commit in packages/api", use_cases="subdir root",
       os="linux", image="cells", cadence="nightly")
@@ -186,7 +164,6 @@ def test_route2_at_the_git_top_gates_a_commit_in_the_package(box, templates):
     gitsurf.refused_then_accepted(box, repo, where="packages/api/calc")
 
 
-@pytest.mark.xfail(strict=True, reason=BELOW_TOP)
 @cell("lin-monorepo", channel="pip venv", harness="git 2.47",
       scenario="fresh: subdir root; next-item from a sibling package", use_cases="subdir root",
       os="linux", image="cells", cadence="nightly")

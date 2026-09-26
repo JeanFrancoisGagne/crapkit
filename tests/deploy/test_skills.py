@@ -171,9 +171,12 @@ def restore(box, repo: Path) -> None:
     box.run(["git", "checkout", "-q", "--", "."], cwd=repo, expect=0)
 
 
-def amend(box, repo: Path) -> None:
-    box.run(["git", "commit", "-q", "--amend", "-m", "adopt crapkit, reworded"], cwd=repo, env=box.commit_env(),
-            expect=0)
+def rewrite_history(box, repo: Path) -> None:
+    """A rebase that rewrites every commit, the root included, so no measured
+    run is left behind HEAD. An amend of the last commit alone no longer
+    refuses: verify reads the newest trusted run behind HEAD, and the run
+    measured before it is still there."""
+    box.run(["git", "rebase", "-q", "--force-rebase", "--root"], cwd=repo, env=box.commit_env(), expect=0)
 
 
 def rename(repo: Path, old: str, new: str) -> None:
@@ -210,7 +213,8 @@ class Row:
 ROWS = {
     "3-unparseable-config": Row(3, ("verify",), lambda box, repo: append(repo / "crapkit.toml", "\n[[lane]\n"),
                                 restore),
-    "4-rewritten-baseline": Row(4, ("verify",), amend, lambda box, repo: crapkit(box, repo, "coverage"),
+    "4-rewritten-baseline": Row(4, ("verify",), rewrite_history,
+                                lambda box, repo: crapkit(box, repo, "coverage"),
                                 says="is not an ancestor of HEAD"),
     "4-not-a-repository": Row(4, ("verify",), lambda box, repo: rename(repo, ".git", ".git-away"),
                               lambda box, repo: rename(repo, ".git-away", ".git"), says="not a git repository"),
@@ -232,16 +236,12 @@ ROWS = {
                               restore, names={"FILE": "calc/grade.py"}),
     "9-uncovered-lines": Row(9, ("verify",), uncovered_function, cover_it),
 }
-NOT_A_REPO = pytest.mark.xfail(strict=True, reason="deploy-bug deploy-plugins-8: `crapkit verify` in a directory with "
-                               "a crapkit.toml and no .git exits 4 printing git's `diff --no-index` usage, about 100 "
-                               "lines, instead of naming the missing repository")
-ROW_PARAMS = [pytest.param(name, marks=NOT_A_REPO if name == "4-not-a-repository" else ()) for name in ROWS]
 
 
 @cell("lin-recover-skill", channel="plugin skill", harness="none",
       scenario="each refusal in the recover table, its first command, its fix, the refused command succeeds",
       use_cases="recovery", os="linux", image="core", cadence="nightly")
-@pytest.mark.parametrize("name", ROW_PARAMS)
+@pytest.mark.parametrize("name", ROWS)
 def test_recover_table_row(box, templates, name):
     row = ROWS[name]
     repo = adopted(box, templates)

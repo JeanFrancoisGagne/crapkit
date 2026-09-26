@@ -253,13 +253,15 @@ def submodule(box, repo: Path) -> None:
 
 
 def zero_commit(box, repo: Path) -> None:
+    """py-pytest's files, pyproject.toml included so init finds the suite, staged and never committed."""
     _init(box, repo)
-    _write(repo, _python_files())
+    _write(repo, {**_python_files(), "pyproject.toml": PYPROJECT_PY})
     box.run(["git", "add", "-A"], cwd=repo, expect=0)
 
 
 def not_git(box, repo: Path) -> None:
-    _write(repo, _python_files())
+    """py-pytest's files, pyproject.toml included, in a directory git never saw."""
+    _write(repo, {**_python_files(), "pyproject.toml": PYPROJECT_PY})
 
 
 def brownfield(box, repo: Path) -> None:
