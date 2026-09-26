@@ -53,6 +53,8 @@ CHECKS = [
      "pytest": [_PACKET + "test_packet_params.py"]},
     {"name": "PowerShell functions against the Parser AST and PSComplexity", "seconds": 3,
      "pytest": [_PACKET + "test_powershell_oracles.py"]},
+    {"name": "brief twins while a newer run's twin index lands", "seconds": 1,
+     "pytest": [_PACKET + "test_duplicates_race_seam.py"]},
     {"name": "Go ccn, cognitive and nesting against gocyclo, gocognit and revive", "seconds": 40,
      "pytest": [_PACKET + "test_go_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
     {"name": "Rust ccn and cognitive against rust-code-analysis and cargo-crap", "seconds": 60,
