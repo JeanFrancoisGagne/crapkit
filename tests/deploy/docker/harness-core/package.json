@@ -7,6 +7,7 @@
     "@openai/codex": "0.156.1",
     "claude-code-2.1.139": "npm:@anthropic-ai/claude-code@2.1.139",
     "claude-code-2.1.138": "npm:@anthropic-ai/claude-code@2.1.138",
+    "codex-0.131.0": "npm:@openai/codex@0.131.0",
     "codex-0.121.0": "npm:@openai/codex@0.121.0"
   }
 }

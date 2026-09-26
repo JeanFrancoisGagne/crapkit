@@ -218,8 +218,10 @@ command = "claude"
 [harness.codex]
 npm = "@openai/codex"
 version = "0.156.1"
-# 0.121.0 added `codex marketplace add` (release notes, #17087).
-floors = ["0.121.0"]
+# 0.131.0 is the first with `codex plugin add`, the README's second Codex line
+# (0.130.0 exits 2); 0.121.0 added `codex marketplace add` (release notes,
+# #17087) and is the release the README's lines stop on.
+floors = ["0.131.0", "0.121.0"]
 image = "core"
 command = "codex"
 

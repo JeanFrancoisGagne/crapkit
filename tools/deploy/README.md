@@ -129,7 +129,7 @@ linux/arm64:
 |---|---|
 | `cells` | Debian trixie (snapshot.debian.org), uv, CPython 3.10 (below the floor, for the refusal cell) to 3.14 and the 3.15.0rc2 prerelease, Node 22, git, pipx, prek, libfaketime, the npm fixture cache, the runner venv, the wheelhouse |
 | `cells-arm64` | cells, built for linux/arm64 with the aarch64 binaries and wheel rows (the weekly lin-arm64 cell) |
-| `core` | cells + Claude Code (and floors 2.1.139, 2.1.138), Codex (and floor 0.121.0), the Cursor agent |
+| `core` | cells + Claude Code (and floors 2.1.139, 2.1.138), Codex (and floors 0.131.0, 0.121.0), the Cursor agent |
 | `full` | core + Gemini CLI, OpenCode, Copilot CLI, Cline, Continue, Crush, Amp, oh-my-pi, Junie, Goose, Aider, both Agent SDKs |
 | `full-latest` | full + every harness again at its newest release, first on PATH (the weekly latest-harnesses cells, with `--online`) |
 | `ci` | cells + act, actions/checkout and actions/setup-python at their pinned SHAs, a runner tool-cache Python |
@@ -178,7 +178,9 @@ content a registry or the GitHub Actions cache would hold.
 | `ci` | 2.05 GB | 506 MB | 231 s | 21.2 s | 2.2 s |
 | `gui` | 16.1 GB | 4.31 GB | 1402 s | 41.8 s | 1.1 s |
 
-The `cells-arm64` and `full-latest` rows are from 2026-09-25. The
+The `cells-arm64` and `full-latest` rows are from 2026-09-25. On 2026-09-26 the
+Codex 0.131.0 floor joined `core`, which then took 5.78 GB on disk (warm rebuild
+127 s); `full` and `gui` grow by the same 0.32 GB, and the other figures predate it. The
 `cells-arm64` cold build is its first build under QEMU, its warm build
 followed a wheel lock change, and its no-change time is the QEMU check. The `full-latest` 3553 s is a weekly rebuild:
 every `@latest` layer over a cached `full`, with other builds running on the

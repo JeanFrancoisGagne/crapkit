@@ -6,7 +6,8 @@
     lin-plugin-floors     the README plugin lines on each harness floor pins.toml names: Claude Code
                           2.1.139 and 2.1.138 each advise an edit once, since the plugin's one hook
                           is shell form and passes no args for 2.1.138 to drop, and doctor
-                          --plugin-root names no floor on 2.1.138; Codex 0.121.0
+                          --plugin-root names no floor on 2.1.138; Codex 0.131.0, the oldest the
+                          README names, installs the plugin from its two lines
 
 A floor runs under its plain command name: a sandbox bin directory first on
 PATH holds `claude` (or `codex`) pointing at the floor binary, so the README
@@ -17,8 +18,6 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
-
-import pytest
 
 from kit import docsnip, repos, shim, wheels
 from kit.cells import cell
@@ -182,9 +181,6 @@ CODEX_FLOOR = floors("codex")[0]
 @cell("lin-plugin-floors", channel="plugins", harness=f"Codex {CODEX_FLOOR}",
       scenario=f"fresh: the README Codex lines on Codex {CODEX_FLOOR}; 12 tools", use_cases="Codex plugin install",
       os="linux", image="core", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason=f"deploy-bug deploy-plugins-5: the README's Codex lines fail on Codex "
-                   f"{CODEX_FLOOR} (marketplace add wants .agents/plugins/marketplace.json, `codex plugin add` does "
-                   "not exist) and the README names no minimum Codex version")
 def test_codex_floor_installs_the_plugin(box, candidate):
     cli_venv(box)
     repo = plain_repo(box)
@@ -195,4 +191,11 @@ def test_codex_floor_installs_the_plugin(box, candidate):
     with CodexSession(box) as codex:
         tools = codex.tools(codex.thread(repo))
 
-    assert codex_version(box) == candidate.version and len(tools) == TOOLS
+    assert codex_version(box, pinned(box, "codex")) == candidate.version and len(tools) == TOOLS
+
+
+def pinned(box, command: str) -> str:
+    """The pinned release of `command`: `codex plugin list --json`, which reads
+    the installed version, first exists in Codex 0.137.0."""
+    return next(str(Path(directory) / command) for directory in box.toolchain["harness_bin"]
+                if (Path(directory) / command).exists())
