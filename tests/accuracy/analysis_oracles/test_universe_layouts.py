@@ -380,3 +380,64 @@ def test_one_owner_across_packet_lane_and_ceiling(path, targeted):
 ])
 def test_a_measured_set_names_only_its_own_languages(paths, languages):
     assert analysis_inventory.languages_of(paths) == languages
+
+
+# --- the retro tree (analysis_inventory.retro_tree) ---------------------------------------------
+
+LOOSE = {"crapkit.toml": config([("root", ["."], PY)]), "a.py": "", "pkg/b.py": "",
+         "pkg/deep/c.py": "", "web/d.ts": "", "README.md": ""}
+
+
+def test_top_entries_name_each_directory_and_loose_file_once():
+    assert analysis_inventory.top_entries(LOOSE) == ["README.md", "a.py", "pkg", "web"]
+
+
+@pytest.mark.parametrize(("declared", "root"), [
+    (".", True), ("./", True), ("." + chr(92), True), ("/", True), ("", True),
+    ("src", False), ("./src", False), (".hidden.py", False), (".github", False)])
+def test_a_root_path_is_every_spelling_of_the_repo_root(declared, root):
+    assert analysis_inventory.is_root(declared) is root
+
+
+@pytest.mark.parametrize(("paths", "rooted"), [
+    (["."], ["a.py", "pkg"]), (["src"], ["src"]), (["./", "src"], ["a.py", "pkg", "src"])])
+def test_root_paths_become_the_entries(paths, rooted):
+    assert analysis_inventory.rooted(paths, ["a.py", "pkg"]) == rooted
+
+
+def test_only_a_changed_list_line_is_rewritten():
+    text = "[[scope]]\npaths = ['.']\n\n[[scope]]\npaths = ['src" + chr(92) + "']\nname = \"x\"\n"
+    got = analysis_inventory.rewrite_lists(text, "paths", lambda found: [p for p in found if p != "."])
+    assert got == "[[scope]]\npaths = []\n\n[[scope]]\npaths = ['src" + chr(92) + "']\nname = \"x\"\n"
+
+
+def test_no_variable_leaves_the_tree_as_given():
+    assert analysis_inventory.retro_tree(LOOSE, {}) is LOOSE
+
+
+def test_the_language_limit_drops_other_sources_and_keys():
+    files = {**LOOSE, "crapkit.toml": config([("all", ["pkg", "web"], PY + TS)])}
+    got = analysis_inventory.retro_tree(files, {analysis_inventory.LANGUAGES_ENV: "python"})
+    assert sorted(got) == ["README.md", "a.py", "crapkit.toml", "pkg/b.py", "pkg/deep/c.py"]
+    assert 'languages = ["python"]' in got["crapkit.toml"].split("\n")
+
+
+def test_entries_replace_the_root_path():
+    got = analysis_inventory.retro_tree(LOOSE, {analysis_inventory.ROOT_PATHS_ENV: "entries"})
+    assert 'paths = ["README.md", "a.py", "pkg", "web"]' in got["crapkit.toml"].split("\n")
+
+
+@pytest.mark.parametrize("name", sorted(LAYOUTS))
+def test_entries_keep_every_hand_owner_under_the_model(name):
+    """Every hand layout declares its root scope last, so the entries, which tie
+    with a same-length path of an earlier scope, still leave each file its owner."""
+    scopes, globs, hand = LAYOUTS[name]
+    entries = analysis_inventory.top_entries(hand)
+    rewritten = [(scope, analysis_inventory.rooted(paths, entries), languages)
+                 for scope, paths, languages in scopes]
+    assert {path: owner(path, rewritten, globs) for path in hand} == hand
+
+
+def test_crapkit_reads_the_entries_as_the_root(tmp_path, monkeypatch):
+    monkeypatch.setenv(analysis_inventory.ROOT_PATHS_ENV, "entries")
+    _named("root-owns-loose-files", tmp_path)

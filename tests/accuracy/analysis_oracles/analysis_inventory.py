@@ -9,14 +9,19 @@ that reads crapkit through it can still be a calc's independent test.
 
 shared() measures one file set once per session under a lock, so pytest-xdist
 workers that ask for the same set wait for the first and read its export.
+
+A retro replay reruns a check at an older crapkit commit; retro_tree() below
+writes the tree that commit can read, and only when a replay asks for it.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
+import tomllib
 
 from filelock import FileLock
 
@@ -128,6 +133,100 @@ class Measured:
         return [row for row in self.in_file(path) if bare(row["long_name"]) == name]
 
 
+# --- retro replays: a tree an older crapkit can read --------------------------------------
+#
+# Two limits of older commits refuse or empty a tree this module writes. build()
+# works around each one only when its variable is set; a normal run sets neither.
+#
+# CRAPKIT_ACCURACY_ROOT_PATHS=entries. Before c24e6a4 a root scope path (".")
+# owned no file, and from 0a4a55b to c24e6a4 it was a config error. Each root
+# path is written as the tree's top-level entries instead: a directory claims
+# the files under it and a loose file claims itself (docs/configuration.md
+# "[[scope]]": a bare path also matches that exact file). An entry ties with
+# another scope's path of the same length where "." never would, so this serves
+# commits that match scopes in declaration order, the ones it exists for.
+#
+# CRAPKIT_ACCURACY_LANGUAGES=python,typescript. A commit refuses a config that
+# names a language it has no reader for. The tree keeps only the source files
+# of the listed languages (README table) and each scope only the listed keys.
+ROOT_PATHS_ENV = "CRAPKIT_ACCURACY_ROOT_PATHS"
+LANGUAGES_ENV = "CRAPKIT_ACCURACY_LANGUAGES"
+CONFIG = "crapkit.toml"
+
+
+def top_entries(files) -> list[str]:
+    """The first component of every path but the config's, sorted, once each."""
+    return sorted({path.split("/")[0] for path in files if path != CONFIG})
+
+
+def is_root(declared: str) -> bool:
+    """A declared scope path naming the repo root: ".", "./", ".\\", "/" or ""."""
+    return declared.replace(chr(92), "/").strip("/") in ("", ".")
+
+
+def rooted(paths: list, entries: list) -> list:
+    """A scope's paths with its root paths replaced by `entries`."""
+    rest = [path for path in paths if not is_root(path)]
+    return paths if len(rest) == len(paths) else list(entries) + rest
+
+
+def rewrite_lists(text: str, key: str, change) -> str:
+    """Each one-line `key = [...]` of a TOML text passed through change(); a
+    line change() leaves equal stays byte for byte."""
+    return "\n".join(_rewrite_line(line, key, change) for line in text.split("\n"))
+
+
+def _rewrite_line(line: str, key: str, change) -> str:
+    if not line.startswith(key + " ="):
+        return line
+    found = tomllib.loads(line)[key]
+    changed = change(found)
+    return line if changed == found else f"{key} = {json.dumps(changed, ensure_ascii=False)}"
+
+
+def _kept(path: str, keep) -> bool:
+    language = SUFFIX_LANGUAGE.get(Path(path).suffix.lower())
+    return language is None or language in keep
+
+
+def _text(data) -> str:
+    return data.decode("utf-8") if isinstance(data, bytes) else data
+
+
+def _only(found: list, keep) -> list:
+    return [key for key in found if key in keep]
+
+
+def limited(files: dict, text: str, keep) -> tuple:
+    """The files of the `keep` languages (and every non-source file), and the
+    config text with each scope's languages cut to `keep`."""
+    files = {path: data for path, data in files.items() if _kept(path, keep)}
+    return files, rewrite_lists(text, "languages", lambda found: _only(found, keep))
+
+
+def _keys(value: str) -> tuple:
+    return tuple(key for key in value.split(",") if key)
+
+
+def retro_tree(files: dict, environ=None) -> dict:
+    """`files` as an older crapkit reads them under the two variables above,
+    read from `environ` (os.environ when None); `files` itself when neither is set."""
+    environ = os.environ if environ is None else environ
+    keep = _keys(environ.get(LANGUAGES_ENV, ""))
+    by_entries = environ.get(ROOT_PATHS_ENV) == "entries"
+    return _retro(files, keep, by_entries) if keep or by_entries else files
+
+
+def _retro(files: dict, keep: tuple, by_entries: bool) -> dict:
+    text = _text(files.get(CONFIG, ""))
+    if keep:
+        files, text = limited(files, text, keep)
+    if by_entries:
+        entries = top_entries(files)
+        text = rewrite_lists(text, "paths", lambda found: rooted(found, entries))
+    return {**files, CONFIG: text} if CONFIG in files else files
+
+
 # --- building and measuring --------------------------------------------------------------
 
 def _write(top: Path, files: dict) -> None:
@@ -138,9 +237,10 @@ def _write(top: Path, files: dict) -> None:
 
 
 def build(files: dict, top: Path) -> Path:
-    """A one-commit git repo at `top` holding `files` ({posix path: str or bytes})."""
+    """A one-commit git repo at `top` holding `files` ({posix path: str or bytes}),
+    as retro_tree() writes them."""
     top.mkdir(parents=True)
-    _write(top, files)
+    _write(top, retro_tree(files))
     repos.git(top, "init", "-q", "-b", "main")
     with (top / ".git" / "config").open("a", encoding="utf-8") as handle:
         handle.write(GIT_CONFIG)
