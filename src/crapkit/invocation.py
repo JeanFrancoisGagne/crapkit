@@ -1,4 +1,4 @@
-"""How to spell crapkit in a message crapkit prints. Pure.
+"""How to spell crapkit in a message crapkit prints.
 
 Every next-step and every refusal names the command the reader runs next, and
 they all used to spell it `crapkit`. That is the console script, and two
@@ -8,22 +8,35 @@ hook-precommit` from a git hook, which is spelled that way precisely because git
 runs hooks outside the activated venv. In both, `init` finished by telling the
 reader to run `crapkit coverage` and the shell answered 127.
 
-The process already knows. `sys.argv[0]` is the console script when that is what
-started it, and the package's own `__main__.py` when `python -m` did, so the
-message can name the form that resolves where it is being read.
+So the message names `crapkit` only when PATH resolves it to a console script
+of the interpreter running this process, which is the crapkit that wrote the
+message. Otherwise it names that interpreter: `sys.executable`, never bare
+`python`, since on Windows a bare `python` reaches the WindowsApps stub, a venv
+that has no crapkit, or the base interpreter a venv wraps.
 
-`sys.executable`, never bare `python`: on Windows a bare `python` reaches the
-WindowsApps stub, a venv that has no crapkit, or the base interpreter a venv
-wraps. The interpreter running this process is the one crapkit is installed in.
+The interpreter is spelled with forward slashes. An agent's Bash tool on
+Windows is Git Bash, which drops every backslash of `C:\\venv\\Scripts\\python.exe`
+and answers 127; `C:/venv/Scripts/python.exe` runs in Git Bash, cmd.exe and
+PowerShell alike. A path that holds a space is quoted, and PowerShell reads a
+line that opens with a quoted string as an expression: there the reader types
+`& ` first (README). The MCP server's children run as `python -m crapkit`, so
+every next step an agent reads from a tool result goes through here.
 
 Not everything crapkit prints goes through here. The brief packet's `commands.*`
 stay console-script strings (docs/agent-json.md, #37), and so do the crapkit.toml
 template comments `init` writes into a consumer's repo: both are read somewhere
 other than the process that produced them.
+
+A path the reader typed, on the command line or in crapkit.toml, is quoted back
+by `quoted_path` as typed. repr doubled every backslash, so `crapkit .\\mini`
+answered about `'.\\\\mini'`, a token nobody typed.
 """
 from __future__ import annotations
 
+import os
+import shutil
 import sys
+import sysconfig
 from pathlib import Path
 
 _CONSOLE_SCRIPT = "crapkit"
@@ -31,15 +44,45 @@ _CONSOLE_SCRIPT = "crapkit"
 
 def _self() -> str:
     """The spelling of crapkit that resolves in the environment this process is
-    running in."""
-    argv0 = sys.argv[0] if sys.argv else ""
-    if Path(argv0).stem == _CONSOLE_SCRIPT:
+    running in, read from any shell."""
+    if _runs_here(shutil.which(_CONSOLE_SCRIPT)):
         return _CONSOLE_SCRIPT
-    return f"{_quoted(sys.executable)} -m {_CONSOLE_SCRIPT}"
+    return f"{_quoted(_forward(sys.executable))} -m {_CONSOLE_SCRIPT}"
+
+
+def _runs_here(found: str | None) -> bool:
+    """PATH's `crapkit` is a console script this interpreter installed. A
+    symlink (pipx, uv tool) counts where it points."""
+    return found is not None and Path(found).resolve().parent in _scripts_dirs()
+
+
+def _scripts_dirs() -> set[Path]:
+    """Where installs into this interpreter put console scripts: its own
+    environment, and the user scheme `pip install --user` writes to."""
+    schemes = {sysconfig.get_default_scheme(), sysconfig.get_preferred_scheme("user")}
+    return {Path(sysconfig.get_path("scripts", scheme)).resolve() for scheme in schemes}
+
+
+def _forward(path: str, sep: str = os.sep) -> str:
+    return path.replace(sep, "/")
 
 
 def _quoted(interpreter: str) -> str:
-    r"""`C:\Program Files\Python311\python.exe` is an ordinary Windows install,
-    and unquoted it reaches cmd.exe as `C:\Program` plus two arguments. Double
-    quotes are the one form cmd, PowerShell, bash and zsh all read."""
+    r"""`C:/Program Files/Python311/python.exe` is an ordinary Windows install,
+    and unquoted it reaches cmd.exe as `C:/Program` plus two arguments. Double
+    quotes are the one form cmd, bash and zsh all read. PowerShell runs the
+    quoted line only with `& ` in front, and no spelling runs unchanged in
+    all four."""
     return f'"{interpreter}"' if " " in interpreter else interpreter
+
+
+def quoted_path(value: str | os.PathLike) -> str:
+    r"""A path the reader typed, in single quotes and spelled as typed: `.\mini`
+    reads `'.\mini'`, where repr printed `'.\\mini'`. A character that would
+    break the line (a control character, a lone surrogate) is still escaped the
+    way repr escapes it."""
+    return "'" + "".join(map(_shown, os.fspath(value))) + "'"
+
+
+def _shown(char: str) -> str:
+    return char if char.isprintable() else repr(char)[1:-1]

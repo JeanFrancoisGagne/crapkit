@@ -159,7 +159,7 @@ runs:
 {
   "flag": "measured",
   "uncovered_lines": null,
-  "uncovered_lines_note": "lane 'py': files in its scopes changed since .crapkit/cov/py.json was written (uncommitted edits count), so its line numbers are stale — commit or revert them, then rerun `crapkit coverage`"
+  "uncovered_lines_note": "lane 'py': files in its scopes changed since .crapkit/cov/py.json was written (uncommitted edits count), so its line numbers are stale - commit or revert them, then rerun `crapkit coverage`"
 }
 ```
 
@@ -308,7 +308,7 @@ $ crapkit claims release --all --json
 A release naming a claim that is not open is exit 1, and the message lists what is:
 
 ```
-crapkit: no open claim on 'classify' in calc/grade.py — open: calc/grade.py audit( rows , strict , cap , floor , verbose )
+crapkit: no open claim on 'classify' in calc/grade.py - open: calc/grade.py audit( rows , strict , cap , floor , verbose )
 ```
 
 ---
@@ -463,9 +463,14 @@ session need not read the config to learn which number it is aiming at.
 | `refresh_writes_run` | bool | Always `true`. `refresh` appends a scored coverage run to `.crapkit/crap.sqlite`. Other commands can write caches or test artifacts; this field does not promise filesystem read-only execution. |
 
 Each value is a whole command line. Run it as given to preserve filename quoting
-and the refresh reuse policy. Simple paths remain readable. POSIX commands use
-shell quoting; Windows commands support cmd.exe and PowerShell, using an encoded
-PowerShell command when a filename could trigger shell expansion.
+and the refresh reuse policy. Simple paths remain readable. When every argument
+reads literally inside double quotes in sh, bash, PowerShell and cmd.exe, the
+line takes that one form on every OS, so a command written on Linux runs as
+printed in cmd.exe. An argument one of those shells rewrites inside double
+quotes (`$`, `%`, `!`, a backtick, a backslash, a quote, a line break) takes the
+writing OS's form: POSIX shell quoting, or on Windows a form cmd.exe and
+PowerShell both read, using an encoded PowerShell command when a filename could
+trigger shell expansion.
 
 With a scoped template and without one:
 
@@ -550,7 +555,7 @@ of several ways its lookup comes back empty:
 
 ```
 $ crapkit brief calc/grade.py 12
-crapkit: no function starts at line 12 in calc/grade.py in the latest scored run — it starts functions at: 1, 24
+crapkit: no function starts at line 12 in calc/grade.py in the latest scored run - it starts functions at: 1, 24
 
 $ crapkit explain calc/grade.py 12
 crapkit: no function matching '12' in calc/grade.py appears in any run
@@ -563,7 +568,7 @@ it and not the start line. An ordinal past the end is exit 1 listing the handles
 does hold:
 
 ```
-crapkit: no (anonymous)#5 in app/parse_csv.py in the latest scored run — it holds: (anonymous)#1, (anonymous)#2
+crapkit: no (anonymous)#5 in app/parse_csv.py in the latest scored run - it holds: (anonymous)#1, (anonymous)#2
 ```
 
 `explain` resolves the handle the same way, against the run `brief` reads.
@@ -576,7 +581,7 @@ wins, the same rule the queue ranks on. Anything genuinely ambiguous or absent i
 with the candidates listed:
 
 ```
-crapkit: no function named 'nope' in calc/grade.py in the latest scored run — it holds: _adjusted, _band, classify, extra, summarize
+crapkit: no function named 'nope' in calc/grade.py in the latest scored run - it holds: _adjusted, _band, classify, extra, summarize
 ```
 
 The twin selector picks one of them instead. `NAME#2` is the second function of that name
@@ -585,7 +590,7 @@ in file order, `NAME#3` the third — the same ordinals the ratchet keys their m
 the last twin is exit 1:
 
 ```
-crapkit: no __post_init__#5 in calc/iso_cost.py in the latest scored run — it holds 2 function(s) named '__post_init__'
+crapkit: no __post_init__#5 in calc/iso_cost.py in the latest scored run - it holds 2 function(s) named '__post_init__'
 ```
 
 Only a whole-number tail selects: a long name that merely contains a `#`, such as an
@@ -967,7 +972,7 @@ $ crapkit coverage --json
 | `grade` | The letter for over-ceiling density over the same functions `over_target` counts. `A+` only at exactly zero. |
 | `by_scope` | Per scope: `{functions, over_target, crap_load, grade}`. |
 | `lanes` | Provenance per lane that succeeded: `artifact_sha256`, the command's `exit_code` (`null` when the artifact was reused), `parser`, `scopes`, plus `results_artifact_sha256`, `failures`, `tests_total` and `tests_skipped` when the lane declares a `results_artifact`. The digests bind coverage and JUnit to the bytes read for this run. Under `--reuse-unchanged` each lane also carries `rerun_reason`: `""` when its artifact was reused, else the sentence its `rerunning:` stderr line gave, such as `the working tree has 1 uncommitted change(s): src/app.ts`. |
-| `lane_failures` | Lane name to failure text, for lanes that produced no artifact, or one that reaches none of the paths their scopes declare: measured files outside this checkout (another tree), or absolute paths that resolve under it (this tree, spelled absolutely, which the root-relative join still matches nothing of). Non-empty means the run is typed `partial` and cannot be a baseline; `coverage` exits 5 only when every lane failed, and then the payload is the [error object](#errors). |
+| `lane_failures` | Lane name to failure text, for lanes that produced no artifact, or one that reaches none of the paths their scopes declare: measured files outside this checkout (another tree), or absolute paths that resolve under it (this tree, spelled absolutely, which the root-relative join still matches nothing of). Non-empty means the run is typed `partial` and cannot be a baseline; `coverage` exits 5 only when every lane failed, and then the payload is the [error object](#errors). The text is plain: escape codes the lane's runner printed are removed, and the lane log keeps them ([lanes.md](lanes.md#the-failure-message-names-its-own-log)). |
 | `kind` | `coverage` for a full run, `partial` when a lane was skipped (`--lane`) or failed: the word `runs` lists it under. A partial run is never a baseline. |
 | `unmeasured_scopes` | Scopes a declared lane measures that no succeeding lane reached this run, in declaration order; `[]` on a full run. A scope no lane declares at all is not listed: that is a configuration `doctor` names, not this run's shape. |
 | `ceilings` | The ceilings in force: `default` (the `[crapkit] target`) and every scope whose own `target` differs from it, `{"default": 6, "reports": 12}`. Scopes at the default are not listed. |
@@ -1055,7 +1060,7 @@ loses rather than the key alone. A repo whose one lane declares neither the arti
 
 ```json
 ["lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = \".crapkit/cov/junit-py.xml\" to the lane",
- "scope 'calc' has a lane but no [crapkit.scoped_tests] template — `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add calc = \"<test command>\" under [crapkit.scoped_tests]"]
+ "scope 'calc' has a lane but no [crapkit.scoped_tests] template - `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add calc = \"<test command>\" under [crapkit.scoped_tests]"]
 ```
 
 `crapkit init` writes `--junitxml` and `results_artifact` on the lanes it detects, so this
@@ -1129,7 +1134,7 @@ carries no `crapkit` at all, there is nothing to compare and nothing that can st
 
 ```
 $ crapkit doctor --plugin-root crapkit
-crapkit doctor: FAIL no `crapkit` on PATH — the plugin's hooks/hooks.json and .mcp.json both spawn that bare name, so every PostToolUse edit fires a command that cannot start and the MCP server never comes up. Install it where the PATH the hook inherits can see it (`pipx install crapkit`), or point the plugin at the environment holding it.
+crapkit doctor: FAIL no `crapkit` on PATH - the plugin's hooks/hooks.json and .mcp.json both spawn that bare name, so every PostToolUse edit fires a command that cannot start and the MCP server never comes up. Install it where the PATH the hook inherits can see it (`pipx install crapkit`), or point the plugin at the environment holding it.
 ```
 
 Exit 1. A `pip install` into a project `.venv` is the usual way to land here: the console
@@ -1454,6 +1459,19 @@ opened, so the hook holds no CRAP to compare. Same rule as the commit gate, desc
 An unknown `claude-*` subcommand exits 0 silently too, so a plugin newer than the installed
 CLI degrades to silence instead of an argparse usage dump on every edit.
 
+An argument `claude-hook` does not define, such as a flag a newer plugin passes, also exits
+0, with one line on stderr that names the arguments as typed. The edit is not judged,
+because this build cannot know what the new flag asks for:
+
+```
+$ crapkit claude-hook --protocol 1 --budget 5
+crapkit claude-hook: this crapkit does not know `--budget 5`; the hook was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, then run `crapkit doctor --plugin-root`
+```
+
+The flags this build knows, `--protocol` included, are still read. Only an exit 2 hands a
+PostToolUse hook's stderr to the model, so the line stays out of the model's context. Any
+other subcommand still answers an unknown flag with argparse's usage error.
+
 ---
 
 ## MCP server
@@ -1559,6 +1577,11 @@ refusal of a file whose name is not UTF-8: the CLI's error object lists it in
 true in the cases where no CLI call runs at all: the missing-config result above, an
 unknown tool name, and an argument the tool's own table refuses.
 
+Tool text is plain whatever colour variables the client sets. The CLI runs with the
+server's environment, so under `FORCE_COLOR` or `PYTHON_COLORS=1` a Python 3.13 or later
+traceback, or a 3.14 usage error, comes out of the CLI coloured; the server removes the
+escape codes from the stderr it relays, and the JSON a tool prints on stdout carries none.
+
 Arguments are checked against the served schema before anything is spawned. `tools/list`
 declares `required` from each tool's positionals (`get_function_brief` and
 `get_function_history` require `path` and `name`). A missing positional answers
@@ -1585,6 +1608,12 @@ on `tools/call` and `initialize` they answer `-32602` with no result:
 `ping` answers an empty result, so a client's keepalive never reads as an error. A frame
 that is not one JSON object, such as a line that is not JSON or an array, gets no reply,
 and the server reads the next line.
+
+A string value reaches the command as a value, whatever its first character. The server
+passes each option as `--flag=value` and puts the positionals after `--`, so
+`get_function_brief` with `path` `-x.py` briefs the file named `-x.py`, a `path` of
+`--help` is a path that no run holds (an error object, `isError: true`), and an `exclude`
+fragment of `-legacy` excludes what contains `-legacy`.
 
 ## Docker
 

@@ -31,6 +31,7 @@ from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
 from .gitpaths import readable, shown
 from .lane_command import launch_spec, pytest_python
+from .plaintext import strip_escapes
 from .procs import CwdMissing, NoProgress, own_processes, run_bounded
 from .repopath import Placing
 from .repotext import lenient, os_bytes
@@ -72,9 +73,13 @@ _ATTEMPT_BANNER = re.compile(r"--- attempt \d+ ---")
 
 
 def _log_lines(log_path: Path) -> list[str]:
+    """The log as its readers quote it: escape codes removed. The lane child
+    inherits FORCE_COLOR and PY_COLORS, and pytest then puts a colour code in
+    front of `E   `, which hid the cause from `_DIAGNOSTIC` and carried raw
+    escape bytes into the refusal. The file itself keeps its colour."""
     if not log_path.is_file():
         return []
-    return lenient(log_path.read_bytes()).strip().splitlines()
+    return strip_escapes(lenient(log_path.read_bytes())).strip().splitlines()
 
 
 def _tail_lines(lines: list[str], budget: int) -> list[str]:
@@ -246,7 +251,7 @@ def _missing_plugin_hint(tail: str, lane: Lane) -> str:
     """
     if "unrecognized arguments" not in tail or "--cov" not in tail:
         return ""
-    return (f" — the --cov flags come from the pytest-cov package, which has to be "
+    return (f" - the --cov flags come from the pytest-cov package, which has to be "
             f"installed in {_pytest_cov_home(lane)}, not in the shell's active venv")
 
 
@@ -329,10 +334,10 @@ def _no_artifact_head(root: Path, lane: Lane, stale: list[str], reuse: bool = Fa
         return f"produced no artifact at {lane.artifact}"
     leftover, predates, is_ = _leftover_words(stale)
     if reuse:
-        return (f"wrote no artifact on its last attempt — {leftover} {predates} it and {is_} "
+        return (f"wrote no artifact on its last attempt - {leftover} {predates} it and {is_} "
                 "the previous run's, which --reuse-artifacts will not score")
     if (root / lane.artifact).is_file():
-        return f"wrote no artifact this run — {leftover} {predates} it and {is_} the previous run's"
+        return f"wrote no artifact this run - {leftover} {predates} it and {is_} the previous run's"
     return f"produced no artifact at {lane.artifact}, and {leftover} {is_} the previous run's"
 
 
@@ -1158,14 +1163,14 @@ def _zero_overlap(lane: Lane, coverage: dict, declared) -> str:
 
 def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]) -> str:
     return (f"{_zero_overlap(lane, coverage, declared)}, and {len(outside)} of them "
-            f"outside this checkout entirely — {lane.artifact} describes a different tree, "
+            f"outside this checkout entirely - {lane.artifact} describes a different tree, "
             f"so joining it would score every function in those scopes untested; it reports "
             f"paths like {_sample(outside)}. {lane_format(lane).WRONG_TREE_FIX}")
 
 
 def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -> str:
     return (f"{_zero_overlap(lane, coverage, declared)}, and {len(inside)} of them written "
-            f"as absolute paths that DO sit under this checkout — {lane.artifact} measured "
+            f"as absolute paths that DO sit under this checkout - {lane.artifact} measured "
             f"this tree and spelled it absolutely, and the join is on root-relative paths, "
             f"so it still matches nothing and every function in those scopes would score "
             f"untested; it reports paths like {_sample(inside)}. {lane_format(lane).ABSOLUTE_FIX}")
@@ -1174,7 +1179,7 @@ def _absolute_message(lane: Lane, coverage: dict, declared, inside: list[str]) -
 def _unmeasured_message(lane: Lane, coverage: dict, declared, meant: str) -> str:
     reports = f"; it measured {_sample(coverage)}" if coverage else ""
     return (f"{_zero_overlap(lane, coverage, declared)}, so every function in those "
-            f"scopes will score untested{reports} — either nothing in them is exercised yet, "
+            f"scopes will score untested{reports} - either nothing in them is exercised yet, "
             f"{_unmeasured_reading(lane, meant)}")
 
 

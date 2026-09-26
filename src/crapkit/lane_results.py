@@ -208,7 +208,7 @@ def _drop_note(name: str, now: int, runs: list[dict], fraction: float) -> str | 
         return None
     whose, why = _drop_source(source, runs)
     return (f"lane {name!r} ran {now} tests, {before - now} fewer than {whose}'s {before}{why} "
-            "— check the runner's log for a worker that died without reporting it")
+            "- check the runner's log for a worker that died without reporting it")
 
 
 def _drop_source(source: dict, runs: list[dict]) -> tuple[str, str]:

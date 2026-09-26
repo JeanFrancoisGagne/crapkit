@@ -1,0 +1,2 @@
+exit 0
+{"runs": [{"baseline": false, "commit": "287d7ba4c9d72591ceee12ff16d17459a57a6b05", "created_at": "<STAMP>Z", "findings": 0, "id": 1, "kind": "coverage", "lanes": ["py"], "verdict_ok": null}, {"baseline": true, "commit": "287d7ba4c9d72591ceee12ff16d17459a57a6b05", "created_at": "<STAMP>Z", "findings": 0, "id": 2, "kind": "coverage", "lanes": ["py"], "verdict_ok": null}], "schema": 1}

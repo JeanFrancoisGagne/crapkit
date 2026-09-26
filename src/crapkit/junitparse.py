@@ -19,6 +19,7 @@ import re
 import xml.etree.ElementTree as ET
 
 from .errors import ToolError
+from .plaintext import strip_junit_escapes
 
 # pytest-xdist logs a dead worker as a session-level report, so pytest's junitxml
 # writes it as <error> rather than <failure>. The nodeid it names is the test the
@@ -59,9 +60,12 @@ def _walk(root: ET.Element) -> tuple[set[str], dict]:
 
 
 def _error_text(elem: ET.Element) -> str:
-    """An error's message and body together. A runner that supplies neither
-    still owes the reader a note, so the placeholder stands in for both."""
-    return f"{elem.get('message') or ''} {elem.text or ''}".strip() or "no message"
+    """An error's message and body together, as plain text. A runner that
+    supplies neither still owes the reader a note, so the placeholder stands in
+    for both. pytest writes a coloured traceback here with ESC spelled `#x1B`,
+    and the refusal quotes this text to stderr and the PR comment."""
+    text = strip_junit_escapes(f"{elem.get('message') or ''} {elem.text or ''}")
+    return text.strip() or "no message"
 
 
 def _crash_notes(root: ET.Element) -> list[str]:
@@ -118,7 +122,7 @@ def suite_summary(report: str | bytes) -> tuple[set[str], dict]:
     _refuse_unfinished(root)
     failed, counts = _walk(root)
     if counts["tests"] == 0:
-        raise ToolError("junit report contains zero testcases — the suite crashed before collecting, not a pass")
+        raise ToolError("junit report contains zero testcases - the suite crashed before collecting, not a pass")
     return failed, counts
 
 

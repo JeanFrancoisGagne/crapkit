@@ -1,0 +1,2 @@
+exit 0
+{"pairs": [{"contained": false, "functions": [{"end": 10, "long_name": "grade( score )", "nloc": 10, "path": "pkg/calc.py", "start": 1}, {"end": 17, "long_name": "grade_twin( score )", "nloc": 10, "path": "pkg/c\u00e9.py", "start": 8}], "similarity": 0.8571}], "run_id": 2, "schema": 1}

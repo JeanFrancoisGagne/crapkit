@@ -37,7 +37,7 @@ from .repotext import json_kind, utf8_spelling
 if TYPE_CHECKING:
     from .config import Lane
 
-_NO_BRANCH = "coverage.py report lacks branch data — run the lane with branch coverage on"
+_NO_BRANCH = "coverage.py report lacks branch data - run the lane with branch coverage on"
 # The oldest coverage.py whose report this reader takes: 7.13.1 writes each
 # region's start_line. pyproject.toml's py and dev extras pin the same floor.
 COVERAGE_FLOOR = "coverage>=7.13.1"
@@ -196,7 +196,7 @@ def judge_branch(branch: bool, per_file: dict[str, list[FnCoverage]], label: str
     if not any(fn.statements_total for fns in per_file.values() for fn in fns):
         raise ToolError(_NO_BRANCH)
     print(f"crapkit: {_named(label)}coverage.py report carries no branch data, so the "
-          "coverage term is statement-based for this artifact — add --cov-branch to the "
+          "coverage term is statement-based for this artifact - add --cov-branch to the "
           "lane command to measure branches", file=sys.stderr)
 
 
@@ -232,9 +232,9 @@ def judge_regions(regionless: list[str], total: int, label: str = "") -> None:
         return
     if len(regionless) == total:
         raise ToolError(f"coverage.py report has no function regions for any of its "
-                        f"{total} file(s) — {_OLD_COVERAGE}")
+                        f"{total} file(s) - {_OLD_COVERAGE}")
     print(f"crapkit: {_named(label)}coverage.py report has no function regions for "
-          f"{len(regionless)} of {total} file(s) ({_sample(regionless)}) — those files "
+          f"{len(regionless)} of {total} file(s) ({_sample(regionless)}) - those files "
           f"are skipped and the rest of the report is scored", file=sys.stderr)
 
 
@@ -414,7 +414,7 @@ def parse_coveragepy_contexts_file(path: Path | str, *, path_prefix: str,
 # adapter then spells each root-relative key as git does (_speller).
 
 WRONG_TREE_FIX = ("Point the lane at this checkout's own environment (a bare "
-                  "`python -m pytest` binds to whichever venv the shell has active — run "
+                  "`python -m pytest` binds to whichever venv the shell has active - run "
                   "it through the project's manager, `uv run python -m pytest ...`), or "
                   "set path_prefix when the runner reports paths relative to a subdirectory")
 ABSOLUTE_FIX = ("Make the runner write relative paths: `relative_files = true` "

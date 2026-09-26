@@ -108,7 +108,7 @@ still holds it.
 A name that two functions answer to exits 1 and lists the candidates. Pass the long
 name or the start line instead:
 
-    crapkit: 'render' in calc/report.py is ambiguous — candidates: render( counts , width , header , sort_desc ), render( self , rows )
+    crapkit: 'render' in calc/report.py is ambiguous - candidates: render( counts , width , header , sort_desc ), render( self , rows )
 
 A function lizard could not name shows as `(anonymous)` in every payload, and every
 anonymous function in one file prints that same string. Its `handle` is the ordinal
@@ -119,7 +119,7 @@ something else, while `"(anonymous)#2"` still opens the callback you claimed. `b
 `explain` and `claims release` all take it. An ordinal past the end exits 1 and lists
 the handles the file does hold:
 
-    crapkit: no (anonymous)#5 in calc/report.py in the latest scored run — it holds: (anonymous)#1, (anonymous)#2
+    crapkit: no (anonymous)#5 in calc/report.py in the latest scored run - it holds: (anonymous)#1, (anonymous)#2
 
 One file can also give one name to several NAMED functions: several dataclasses each
 with a `__post_init__`, both arms of an `#ifdef` fork. A bare name resolves to the worst
@@ -129,7 +129,7 @@ of them, which is the one the queue ranks, in `brief`, `explain` and
 packet is the mark on the function that packet opened. An ordinal past the last twin
 exits 1:
 
-    crapkit: no __post_init__#5 in calc/iso_cost.py in the latest scored run — it holds 2 function(s) named '__post_init__'
+    crapkit: no __post_init__#5 in calc/iso_cost.py in the latest scored run - it holds 2 function(s) named '__post_init__'
 
 ### One call for a batch of packets
 
@@ -343,7 +343,7 @@ run at all, and `crapkit doctor` answers it. doctor reads each lane command with
 shell that will run it, sh on POSIX and cmd.exe on Windows, and FAILs a lane whose first
 word will not start:
 
-    FAIL lane 'py': cmd.exe cannot run 'python' (exit 9009) — the lane cannot start, so its scopes can only ever score no-lane
+    FAIL lane 'py': cmd.exe cannot run 'python' (exit 9009) - the lane cannot start, so its scopes can only ever score no-lane
 
 9009 is cmd.exe saying it could not start that name. The usual cause is the Store
 `python.exe` alias a stock Windows PATH carries with no Store app behind it: it resolves,
@@ -720,6 +720,7 @@ clears tempfile's cached directory for the call. These files do:
 | `test_cpp_family_admission_e2e.py`, `test_polyglot_admission_e2e.py` | repos big enough for the analysis pool, which forks its caller on Linux |
 | `test_verify_git_dedupe_e2e.py` | a counter patched onto `gitio` while `run_cli` builds the repo |
 | `test_latin1_locale_paths_e2e.py` | the locale the interpreter reads as it starts, and the `-X utf8` restart a Latin-1 one causes |
+| `test_outputs_hold_across_seed_and_tz.py` | PYTHONHASHSEED, PYTHONUTF8 and LANG, which the interpreter reads only as it starts |
 
 Two files start their processes without the runner.
 `test_verify_reads_stores_older_crapkits_wrote_e2e.py` runs older releases, taken from
@@ -897,6 +898,12 @@ snapshot record, all three or nothing). Leave it alone.
 - No wall clock in scoring paths. Churn weights and burn-down ages anchor on the newest
   commit in the log, so a fixed tree reports byte-identically.
 - JSON is sorted-keys and carries no timestamps in rows.
+- The same bytes on every OS and Python. `tests/goldens/machine_outputs/` holds the 17
+  outputs a program reads (`tests/e2e/test_machine_outputs_match_on_every_os.py`), and
+  `tests/goldens/help_words.txt` the words of every help screen
+  (`tests/unit/test_suite_pins_colour_and_width.py`); every CI leg reads the same copies.
+  Rewrite them with `CRAPKIT_WRITE_GOLDENS=1` for a change every OS makes, and commit the
+  diff with it. A row that fails on one OS only is the bug the copies exist to catch.
 
 ## The docs are pinned to the code
 

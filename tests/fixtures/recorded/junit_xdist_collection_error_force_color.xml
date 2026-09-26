@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="3" time="1.547" timestamp="2026-09-24T15:53:24.476002-04:00" hostname="runner"><testcase classname="" name="tests.test_n3" time="0.000"><error message="collection failure">#x1B[31mImportError while importing test module 'C:\repo\tests\test_n3.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+#x1B[1m#x1B[31mC:\Python312\Lib\importlib\__init__.py#x1B[0m:90: in import_module
+    #x1B[0m#x1B[94mreturn#x1B[39;49;00m _bootstrap._gcd_import(name[level:], package, level)#x1B[90m#x1B[39;49;00m
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^#x1B[90m#x1B[39;49;00m
+#x1B[1m#x1B[31mtests\test_n3.py#x1B[0m:1: in &lt;module&gt;
+    #x1B[0m#x1B[94mimport#x1B[39;49;00m#x1B[90m #x1B[39;49;00m#x1B[04m#x1B[96mpkg#x1B[39;49;00m#x1B[04m#x1B[96m.#x1B[39;49;00m#x1B[04m#x1B[96mmissing_mod#x1B[39;49;00m  #x1B[90m# noqa#x1B[39;49;00m#x1B[90m#x1B[39;49;00m
+    ^^^^^^^^^^^^^^^^^^^^^^#x1B[90m#x1B[39;49;00m
+#x1B[1m#x1B[31mE   ModuleNotFoundError: No module named 'pkg.missing_mod'#x1B[0m#x1B[0m</error></testcase><testcase classname="tests.test_n2" name="test_ok" time="0.001" /><testcase classname="tests.test_n1" name="test_ok" time="0.001" /></testsuite></testsuites>

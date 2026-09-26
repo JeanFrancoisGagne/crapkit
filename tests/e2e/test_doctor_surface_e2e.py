@@ -202,7 +202,7 @@ def test_doctor_json_names_the_files_behind_a_problem(measured_repo: Path):
     payload = json.loads(run_cli(measured_repo, "doctor", "--json").stdout)
 
     assert payload["problems"] == ["1 tracked file(s) match a scope language but "
-                                   "no scope path: loose.py — add a [[scope]] claiming "
+                                   "no scope path: loose.py - add a [[scope]] claiming "
                                    "them, or an [exclude] glob (docs/configuration.md)"]
 
 
@@ -292,9 +292,9 @@ def test_doctor_warns_about_a_lane_that_writes_into_the_consumers_tree(tmp_path:
     assert res.returncode == 0, "breaking an existing consumer's gate would be worse"
     warnings = [ln for ln in res.stdout.splitlines() if ln.startswith("WARN")]
     assert warnings == [
-        "WARN lane 'js' writes coverage/coverage-final.json at the repo root — point it "
+        "WARN lane 'js' writes coverage/coverage-final.json at the repo root - point it "
         "under .crapkit/ (for example .crapkit/cov/js/) to keep the tree clean",
-        "WARN lane 'js' writes junit.xml at the repo root — point it under .crapkit/ "
+        "WARN lane 'js' writes junit.xml at the repo root - point it under .crapkit/ "
         "(for example .crapkit/cov/js/) to keep the tree clean"], res.stdout
 
 

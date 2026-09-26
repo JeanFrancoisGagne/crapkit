@@ -9,6 +9,8 @@ import base64
 import shlex
 from types import SimpleNamespace
 
+import pytest
+
 from crapkit import packet
 from crapkit.score import ScoredRow
 
@@ -166,6 +168,42 @@ def test_windows_commands_escape_a_double_quote_for_powershell_to_pass_on(monkey
     script = base64.b64decode(encoded.removeprefix(prefix)).decode("utf-16le")
     assert script.endswith(r"""& $command.Source 'explain' 'src/cls.py' 'g( s = \"a\\\\\" )'; """
                            "exit $LASTEXITCODE")
+
+
+@pytest.mark.parametrize("os_name", ["posix", "nt"])
+def test_an_argument_every_shell_reads_in_double_quotes_prints_one_form_on_both_oses(
+        monkeypatch, os_name):
+    """A line made on Linux is pasted into cmd.exe too, which reads `'` as part
+    of the argument: sh, bash, PowerShell and cmd.exe all read these double
+    quotes literally."""
+    monkeypatch.setattr(packet, "os", SimpleNamespace(name=os_name))
+
+    assert packet.console_command(["explain", "pkg/cé.py", "accent"]) == 'crapkit explain "pkg/cé.py" accent'
+    assert packet.commands("src/a b.py", True)["gate"] == 'crapkit rescore "src/a b.py" --gate'
+    assert packet.commands("-a.py", True)["gate"] == 'crapkit rescore --gate -- "-a.py"'
+
+
+def test_an_argument_sh_rewrites_in_double_quotes_keeps_the_posix_form(monkeypatch):
+    monkeypatch.setattr(packet, "os", SimpleNamespace(name="posix"))
+
+    assert (packet.console_command(["explain", "app/users.$id.tsx", "loader( )"])
+            == "crapkit explain 'app/users.$id.tsx' 'loader( )'")
+    assert packet.console_command(["explain", "", "a\tb"]) == "crapkit explain '' 'a\tb'"
+
+
+def test_a_backslash_path_stays_bare_on_windows(monkeypatch):
+    monkeypatch.setattr(packet, "os", SimpleNamespace(name="nt"))
+
+    assert packet.console_command(["rescore", "src\\a.py", "--gate"]) == "crapkit rescore src\\a.py --gate"
+
+
+def test_a_typographic_double_quote_takes_the_encoded_form_on_windows(monkeypatch):
+    """PowerShell ends a double-quoted string at a typographic quote."""
+    monkeypatch.setattr(packet, "os", SimpleNamespace(name="nt"))
+
+    for quote in "“”„":
+        command = packet.console_command(["explain", "src/a.py", f"f( s = {quote}x )"])
+        assert command.startswith(packet.ENCODED_PREFIX), command
 
 
 # --- regrowth: complexity that came back --------------------------------------

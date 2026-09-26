@@ -8,14 +8,20 @@ escaping is json.dumps' problem and never a shell quoting question.
 
 It reads the payloads and nothing else: no git, no network, no clock. Run it on
 three saved files and you get the byte-identical comment the job would post,
-which is how the rendering in README's action section was produced.
+which is how the rendering in README's action section was produced. It imports
+crapkit.plaintext, so run it where crapkit is installed; the action installs
+crapkit from its own checkout before this step.
 """
 from __future__ import annotations
 
 import argparse
 import itertools
 import json
+import re
+import sys
 from pathlib import Path
+
+from crapkit.plaintext import strip_escapes, strip_junit_escapes
 
 # The line that makes the comment findable. The action greps for it to decide
 # between a POST and a PATCH, so a second spelling means a comment per push
@@ -53,6 +59,14 @@ _CUT_NOTE = ("the comment stopped at GitHub's 65,536-character limit; the job lo
              "holds the whole text.\n")
 _DEFAULT_TOP = 5
 _CELL_BREAKS = str.maketrans({char: ascii(char)[1:-1] for char in "\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029"})
+
+# What a quoted line loses after crapkit.plaintext has removed every escape
+# sequence (written as an actual ESC, or as the `#x1B` text a junit report
+# holds): every other C0 control but tab, newline and carriage return, which the
+# line split reads. crapkit's own payloads arrive plain; the strip covers a
+# payload saved from a crapkit before 0.8.1, whose lane failures carried a
+# coloured test runner's escape codes.
+_CONTROLS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _read_text(path: str | None) -> str:
@@ -112,7 +126,7 @@ def _base_reason(sha_path: str | None, reason_path: str | None) -> str | None:
     """
     if not sha_path or _read_text(sha_path).strip():
         return None
-    return _read_text(reason_path).strip() or "no base commit"
+    return _first_line(_read_text(reason_path)) or "no base commit"
 
 
 def _plural(count: int, noun: str) -> str:
@@ -120,7 +134,10 @@ def _plural(count: int, noun: str) -> str:
 
 
 def _first_line(text) -> str:
-    lines = str(text or "").strip().splitlines()
+    """The first line of crapkit's text as the comment quotes it: plain, with
+    no escape sequence or control character a reader would see as garbage."""
+    plain = strip_escapes(strip_junit_escapes(str(text or "")))
+    lines = _CONTROLS.sub("", plain).strip().splitlines()
     return lines[0].strip() if lines else ""
 
 
@@ -505,8 +522,16 @@ def top_rows(value: str) -> int:
     return _DEFAULT_TOP
 
 
+def _plain_parser(version=sys.version_info) -> dict:
+    """argparse's keywords for plain text. From 3.14 argparse colours help and
+    usage errors in a pipe once the job sets FORCE_COLOR or PYTHON_COLORS, and
+    the Action runs this file on whatever `python-version` names; before 3.14
+    there is no `color` keyword to pass."""
+    return {"color": False} if version >= (3, 14) else {}
+
+
 def _parse(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0], **_plain_parser())
     parser.add_argument("--coverage", help="crapkit coverage --json output")
     parser.add_argument("--coverage-exit", type=int, default=0,
                         help="coverage's exit code; non-zero means verify was not run")

@@ -252,11 +252,12 @@ def lenient_decoder() -> codecs.IncrementalDecoder:
 
 
 def child_input(text: str) -> bytes:
-    """Text crapkit writes to a child's stdin, as UTF-8 with each LF written as
-    the OS line ending, as a text-mode pipe writes it. A lone surrogate an OS
-    string carried in, a path or a reason in bytes that are not UTF-8, reads
-    as U+FFFD instead of ending the command."""
-    return os_text(text).replace("\n", os.linesep).encode("utf-8")
+    """Text crapkit writes to a child's stdin (the alert command's line and
+    digest), as UTF-8 with LF line ends on every OS. A text-mode pipe wrote CR
+    LF on Windows, so an alert log fed by `cat >>` held both. A lone surrogate
+    an OS string carried in, a path or a reason in bytes that are not UTF-8,
+    reads as U+FFFD instead of ending the command."""
+    return os_text(text).encode("utf-8")
 
 
 def plain_utf8(data: bytes) -> str:

@@ -30,11 +30,11 @@ def _scored_store(root: Path) -> tuple[SnapshotStore, dict]:
     """The store and the run next-item ranks, or the error naming what to run."""
     db_path = root / ".crapkit" / "crap.sqlite"
     if not db_path.is_file():
-        raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first")
+        raise CrapkitError(f"no snapshot in {root} - run `{_self()} coverage` first")
     store = SnapshotStore(db_path)
     latest = _latest_scored(store)
     if latest is None:
-        raise CrapkitError(f"no scored run in {root} — run `{_self()} coverage` first")
+        raise CrapkitError(f"no scored run in {root} - run `{_self()} coverage` first")
     return store, latest
 
 
@@ -386,8 +386,8 @@ def _print_claims(as_json: bool, claims: list) -> None:
 
 def _release_target(target: list) -> tuple[str, str]:
     if len(target) != 2:
-        raise CrapkitError("claims release needs PATH NAME — the path and function "
-                           "next-item printed — or --all to close every open claim")
+        raise CrapkitError("claims release needs PATH NAME - the path and function "
+                           "next-item printed - or --all to close every open claim")
     return target[0], target[1]
 
 
@@ -410,7 +410,7 @@ def _claim_matches(c: dict, name: str) -> bool:
 def _named_claims(claims: list, path: str, name: str) -> list:
     held = [c for c in claims if c["path"] == path and _claim_matches(c, name)]
     if not held:
-        raise CrapkitError(f"no open claim on {name!r} in {path} — "
+        raise CrapkitError(f"no open claim on {name!r} in {path} - "
                            f"open: {_claims_summary(claims)}")
     return held
 
@@ -450,22 +450,22 @@ def cmd_claims(args: argparse.Namespace) -> int:
 
 def _no_match_message(path: str, name: str, rows: list, candidates: list) -> str:
     if candidates:
-        return f"{name!r} in {path} is ambiguous — candidates: {', '.join(candidates)}"
+        return f"{name!r} in {path} is ambiguous - candidates: {', '.join(candidates)}"
     known = sorted({keys.bare_name(r.long_name) for r in rows})
     return (f"no function named {name!r} in {path} in the latest scored run"
-            f" — it holds: {', '.join(known) or 'nothing'}")
+            f" - it holds: {', '.join(known) or 'nothing'}")
 
 
 def _no_line_message(path: str, name: str, rows: list) -> str:
     starts = ", ".join(str(s) for s in sorted({r.start for r in rows}))
     return (f"no function starts at line {name} in {path} in the latest scored run"
-            f" — it starts functions at: {starts or 'nothing'}")
+            f" - it starts functions at: {starts or 'nothing'}")
 
 
 def _no_handle_message(path: str, name: str, rows: list) -> str:
     held = ", ".join(keys.handle_names(rows))
     return (f"no {name} in {path} in the latest scored run"
-            f" — it holds: {held or 'no anonymous functions'}")
+            f" - it holds: {held or 'no anonymous functions'}")
 
 
 def _pick_function(path: str, rows: list, name: str, run_id: int | None = None):
@@ -516,7 +516,7 @@ def _past_the_last_twin(path: str, name: str, rows: list, long_name: str) -> str
 
 def _no_twin_message(path: str, name: str, wanted: str, held: int) -> str:
     return (f"no {name} in {path} in the latest scored run"
-            f" — it holds {held} function(s) named {wanted!r}")
+            f" - it holds {held} function(s) named {wanted!r}")
 
 
 def _brief_mark(entries: list | None, key: tuple[str, str]) -> float | None:
@@ -897,8 +897,8 @@ def _brief_batch(loader, count: int) -> dict:
 def _brief_target(args: argparse.Namespace) -> tuple[str, str]:
     """PATH and NAME, which only --batch may leave out."""
     if not args.path or not args.name:
-        raise CrapkitError("brief needs PATH NAME — the path and function next-item "
-                           "printed — or --batch N for the top N queue items")
+        raise CrapkitError("brief needs PATH NAME - the path and function next-item "
+                           "printed - or --batch N for the top N queue items")
     return args.path, args.name
 
 
@@ -928,7 +928,7 @@ def _resolve_top(requested: int | None, cfg) -> int:
 
 def _stale_warning(stale: bool, as_json: bool, latest: dict) -> None:
     if stale and not as_json:
-        print(f"warning: snapshot is for {latest['commit'][:11]}, HEAD has moved on — "
+        print(f"warning: snapshot is for {latest['commit'][:11]}, HEAD has moved on - "
               f"rerun `{_self()} coverage`", file=sys.stderr)
 
 
@@ -1042,7 +1042,7 @@ def _worklist_run(root: Path, store) -> dict:
     runs = rowful_runs(store)
     if runs:
         return runs[-1]
-    raise CrapkitError(f"no run with rows in {root} — run `{_self()} coverage` first "
+    raise CrapkitError(f"no run with rows in {root} - run `{_self()} coverage` first "
                        f"(or `{_self()} inventory` for complexity-only ranking, "
                        "with no coverage, flags or remedies)")
 

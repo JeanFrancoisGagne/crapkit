@@ -18,6 +18,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 import crapkit
 from crapkit import __version__
 from untraced_child import untraced_env
@@ -93,3 +95,42 @@ def test_a_dist_info_with_no_version_header_defers_to_metadata(tmp_path):
 
     assert line == "crapkit None"
     assert imported is True
+
+
+# --- several dist-infos in one directory ---------------------------------------
+#
+# A botched upgrade can leave crapkit-0.7.5.dist-info beside crapkit-0.8.0.dist-info.
+# The header scan takes the first crapkit dist-info os.listdir returns, and
+# importlib.metadata does the same. NTFS lists names sorted, ext4 in hash order
+# and tmpfs newest first, so two machines can answer different numbers for the
+# same broken install. One machine always answers one number: --version says
+# what importlib.metadata says.
+
+# The package's own dist-info beside two that earlier installs left: the scan
+# answers without asking importlib.metadata only when it lands on the
+# package's own number, the one case where the two could part.
+LEFT_BEHIND = ["0.7.5", __version__, "0.6.0"]
+
+
+def _answers(path_entries: list[str]) -> tuple[str, str]:
+    """What `python -m crapkit --version` and importlib.metadata each say."""
+    env = untraced_env()
+    env["PYTHONPATH"] = os.pathsep.join(path_entries)
+    cli = subprocess.run([sys.executable, "-m", "crapkit", "--version"],
+                         capture_output=True, text=True, env=env)
+    meta = subprocess.run([sys.executable, "-c",
+                           "import importlib.metadata as m; print(m.version('crapkit'))"],
+                          capture_output=True, text=True, env=env)
+    assert cli.returncode == 0 and meta.returncode == 0, cli.stderr + meta.stderr
+    return cli.stdout.strip(), meta.stdout.strip()
+
+
+@pytest.mark.parametrize("made", [LEFT_BEHIND, LEFT_BEHIND[::-1]], ids=["upgrade-order", "reverse-order"])
+def test_several_dist_infos_in_one_entry_answer_what_importlib_metadata_answers(tmp_path, made):
+    for version in made:
+        _fake_dist_info(tmp_path, version)
+
+    cli, meta = _answers([str(tmp_path), _src_root()])
+
+    assert meta in LEFT_BEHIND, meta
+    assert cli == f"crapkit {meta}", (sorted(os.listdir(tmp_path)), os.listdir(tmp_path))

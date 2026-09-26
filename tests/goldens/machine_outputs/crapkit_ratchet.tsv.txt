@@ -1,0 +1,7 @@
+# crapkit-analysis=11 lizard=<LIZARD>
+# crapkit-keys=1
+path	long_name	crap
+pkg/b.py	clamp_low( x , lo , hi )	6.7969
+pkg/calc.py	grade( score )	15.5469
+pkg/cé.py	grade_twin( score )	15.5469
+pkg/deep/z.py	z( a , b )	15.5469

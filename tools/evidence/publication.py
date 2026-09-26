@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import sys
 import zipfile
 
 
@@ -121,8 +122,13 @@ def check_saved(target: Path, expected: str, omitted: tuple) -> dict:
     return saved
 
 
+# From 3.14 argparse colours help and usage, into a pipe too when FORCE_COLOR is
+# set. Older argparse has no `color` keyword.
+PLAIN_HELP = {"color": False} if sys.version_info >= (3, 14) else {}
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, **PLAIN_HELP)
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--originals", type=Path,
                         help="private directory containing the original repository-relative archive paths")

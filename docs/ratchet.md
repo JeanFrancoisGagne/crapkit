@@ -98,7 +98,7 @@ and callbacks recovered by a newer reader need the
 has an explanation:
 
 ```
-crapkit: calc/iso_cost.py defines __post_init__( self ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: calc/iso_cost.py defines __post_init__( self ) more than once; each one takes its own ratchet key - the first as written, later ones suffixed #2, #3 in file order
 ```
 
 One run names five such files at most, in path order, and counts the rest on one line:
@@ -124,7 +124,7 @@ question it can answer: does a `(path, key name)` mark exist? If it does, that f
 not gated, whatever the edit did to it. One stderr line reports the count, never a list:
 
 ```
-crapkit gate: 1 staged function(s) carry a ratchet mark and were not gated — `crapkit verify` fails a mark that rises
+crapkit gate: 1 staged function(s) carry a ratchet mark and were not gated - `crapkit verify` fails a mark that rises
 ```
 
 The three gates read the file differently:
@@ -214,11 +214,11 @@ header-only marks file is not a mistake, it says nothing is over the ceiling.
 
 ```
 $ crapkit ratchet seed            # no store at all
-crapkit: no snapshot in /repo — run `crapkit coverage` first
+crapkit: no snapshot in /repo - run `crapkit coverage` first
 EXIT=1
 
 $ crapkit ratchet seed            # inventory ran, but no lanes ever did
-crapkit: no trusted full run to work from — run `crapkit coverage` first (failed verifies and hook runs never serve as baselines)
+crapkit: no trusted full run to work from - run `crapkit coverage` first (failed verifies and hook runs never serve as baselines)
 EXIT=1
 ```
 
@@ -254,7 +254,7 @@ that store lands on run 1 too, and says so on stderr:
 
 ```
 $ crapkit verify
-warning: run 3 is not the baseline: verify run 2 FAILED with 1 finding(s) and no passing verify has cleared it since — measuring against run 1 @ 964eaf2ad80 instead, so those findings stay visible. Fix them, or pass `--baseline 3` to accept the newer run deliberately.
+warning: run 3 is not the baseline: verify run 2 FAILED with 1 finding(s) and no passing verify has cleared it since - measuring against run 1 @ 964eaf2ad80 instead, so those findings stay visible. Fix them, or pass `--baseline 3` to accept the newer run deliberately.
 verify OK @ 964eaf2ad80 vs baseline 964eaf2ad80 (0 changed files)
 ```
 
@@ -265,7 +265,7 @@ signing anything:
 
 ```
 $ crapkit ratchet seed
-crapkit: no run to work from: verify run 1 FAILED with 1 finding(s), nothing older is left to work from, and a fresh `crapkit coverage` would only be refused the same way — fix the findings and let a verify pass
+crapkit: no run to work from: verify run 1 FAILED with 1 finding(s), nothing older is left to work from, and a fresh `crapkit coverage` would only be refused the same way - fix the findings and let a verify pass
 EXIT=1
 ```
 
@@ -339,13 +339,13 @@ Three cases:
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] — CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
 EXIT=3
 ```
 
 ```
 $ crapkit verify
-warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) — run `crapkit coverage`, then re-baseline with `crapkit ratchet seed` to stamp it
+warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) - run `crapkit coverage`, then re-baseline with `crapkit ratchet seed` to stamp it
 verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files) ratchet: restamped -> git add crapkit-ratchet.tsv
 EXIT=0
 ```
@@ -392,7 +392,7 @@ names run ID, since verify reads `--baseline` before it checks the stamp:
 
 ```
 $ crapkit verify --baseline 12
-crapkit: ratchet marks were recorded under [crapkit-analysis=9 lizard=1.24.0] but this run measures [crapkit-analysis=10 lizard=1.24.0] — CRAP scores are not comparable across metric versions; re-baseline from run 12 with `crapkit ratchet seed --baseline 12`
+crapkit: ratchet marks were recorded under [crapkit-analysis=9 lizard=1.24.0] but this run measures [crapkit-analysis=10 lizard=1.24.0] - CRAP scores are not comparable across metric versions; re-baseline from run 12 with `crapkit ratchet seed --baseline 12`
 EXIT=3
 ```
 
@@ -570,7 +570,7 @@ conflict for you to resolve after re-seeding one side:
 
 ```
 $ git merge legacy
-crapkit: ratchet merge refused: ours is [crapkit-analysis=8 lizard=1.24.0] and theirs is [unstamped] — marks from different metric versions cannot merge; run `crapkit coverage`, then re-baseline one side with `crapkit ratchet seed`
+crapkit: ratchet merge refused: ours is [crapkit-analysis=8 lizard=1.24.0] and theirs is [unstamped] - marks from different metric versions cannot merge; run `crapkit coverage`, then re-baseline one side with `crapkit ratchet seed`
 Auto-merging crapkit-ratchet.tsv
 CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
 Automatic merge failed; fix conflicts and then commit the result.
@@ -812,7 +812,7 @@ no trail. Without `alert_command` the override is refused outright, before anyth
 
 ```
 $ crapkit verify --override "shipping the hotfix, ticket 412"
-crapkit: no alert_command configured — the override requires a visible alert line; set [crapkit] alert_command in crapkit.toml
+crapkit: no alert_command configured - the override requires a visible alert line; set [crapkit] alert_command in crapkit.toml
 EXIT=3
 ```
 
@@ -869,8 +869,8 @@ $ CRAPKIT_OVERRIDE_REASON="hotfix 412, decompose in the follow-up" git commit -m
 crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
   ccn   7  app/m.py:9  route( a , b , c , d )
 crapkit: override granted with full audit (hotfix 412, decompose in the follow-up).
-crapkit: clear CRAPKIT_OVERRIDE_REASON now (`unset CRAPKIT_OVERRIDE_REASON`) — while set it grants again on every commit.
-crapkit: a CI job or a launcher that exported it is not cleared by any command here — clear it where it was set.
+crapkit: clear CRAPKIT_OVERRIDE_REASON now (`unset CRAPKIT_OVERRIDE_REASON`) - while set it grants again on every commit.
+crapkit: a CI job or a launcher that exported it is not cleared by any command here - clear it where it was set.
 ```
 
 That first line is spelled for the platform you are on. On Windows the receipt names all

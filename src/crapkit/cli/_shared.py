@@ -14,7 +14,7 @@ from pathlib import Path
 from ..config import load_config_text
 from ..errors import ConfigError, CrapkitError, ToolError, UnreadableNameError
 from ..gitpaths import readable, shown
-from ..invocation import _self
+from ..invocation import _self, quoted_path
 from ..merge import UNREAD_ADVICE
 from ..repopath import on_a_share, rooted, typed, typed_path
 from ..rootfind import find_root
@@ -207,7 +207,7 @@ def _repo_out_path(root: Path, out: str) -> Path:
     else:
         path = (root / named).resolve()
         if root.resolve() not in path.parents:
-            raise ConfigError(f"{out!r} is repo-relative and climbs out of {root}; "
+            raise ConfigError(f"{quoted_path(out)} is repo-relative and climbs out of {root}; "
                               "pass an absolute path to write outside it")
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
@@ -341,7 +341,7 @@ def _latest_scored(store: SnapshotStore):
 def _open_store(root: Path, first_command: str = "coverage") -> SnapshotStore:
     db_path = root / ".crapkit" / "crap.sqlite"
     if not db_path.is_file():
-        raise CrapkitError(f"no snapshot in {root} — run `{_self()} {first_command}` first")
+        raise CrapkitError(f"no snapshot in {root} - run `{_self()} {first_command}` first")
     return SnapshotStore(db_path)
 
 

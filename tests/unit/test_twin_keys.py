@@ -381,7 +381,7 @@ def test_the_documented_out_of_range_twin_message_is_the_one_the_tool_prints(pag
     printed = _no_twin_message("calc/iso_cost.py", "__post_init__#5", "__post_init__", 2)
 
     assert printed == ("no __post_init__#5 in calc/iso_cost.py in the latest scored run"
-                       " — it holds 2 function(s) named '__post_init__'")
+                       " - it holds 2 function(s) named '__post_init__'")
     assert printed in (_ROOT / page).read_text(encoding="utf-8"), page
 
 

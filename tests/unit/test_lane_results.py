@@ -133,7 +133,7 @@ def test_a_drop_from_the_last_trusted_run_says_so_without_a_run_id(tmp_path):
 
     (note,) = suite_drops(lambda: reversed(runs), {"py": {"tests_total": 12}})
 
-    assert note == ("lane 'py' ran 12 tests, 8 fewer than the last trusted run's 20 — check "
+    assert note == ("lane 'py' ran 12 tests, 8 fewer than the last trusted run's 20 - check "
                     "the runner's log for a worker that died without reporting it")
 
 

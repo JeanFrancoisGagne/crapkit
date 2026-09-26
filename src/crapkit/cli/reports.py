@@ -44,23 +44,29 @@ def _warn_skipped_runs(scored_runs: list[dict], pair) -> None:
     if not skipped:
         return
     print(f"warning: digest compared runs {pair[0]['id']} -> {pair[1]['id']}, "
-          f"skipping run(s) {', '.join(str(r['id']) for r in skipped)} — "
+          f"skipping run(s) {', '.join(str(r['id']) for r in skipped)} - "
           "a run only pairs with one whose lane set is identical", file=sys.stderr)
 
 
 def _send_digest_alert(root: Path, cfg, prev: dict, cur: dict, lines: list[str]) -> None:
     """Hand the digest body to the configured alert command; a nonzero exit is fatal."""
-    import subprocess
-
-    from ..repotext import child_input
+    from ..override import ALERT_FIX, send_alert
 
     if not cfg.alert_command.strip():
         raise ConfigError("digest --alert needs [crapkit] alert_command")
     body = f"crapkit digest (runs {prev['id']} -> {cur['id']}):\n" + "\n".join(lines) + "\n"
-    proc = subprocess.run(cfg.alert_command, shell=True, cwd=root, input=child_input(body),
-                          capture_output=True)
-    if proc.returncode != 0:
-        raise ToolError(f"digest alert command failed (exit {proc.returncode})")
+    code, printed = send_alert(cfg.alert_command, root, body)
+    if code != 0:
+        raise ToolError(f"digest alert command failed (exit {code}): {printed} - "
+                        f"the digest above was not alerted; {ALERT_FIX}")
+
+
+def _digest_store(root: Path) -> SnapshotStore:
+    """The repo's snapshot store; a repo never measured is told to run coverage."""
+    db_path = root / ".crapkit" / "crap.sqlite"
+    if not db_path.is_file():
+        raise CrapkitError(f"no snapshot in {root} - run `{_self()} coverage` first")
+    return SnapshotStore(db_path)
 
 
 def cmd_digest(args: argparse.Namespace) -> int:
@@ -68,10 +74,7 @@ def cmd_digest(args: argparse.Namespace) -> int:
 
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
-    db_path = root / ".crapkit" / "crap.sqlite"
-    if not db_path.is_file():
-        raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first")
-    store = SnapshotStore(db_path)
+    store = _digest_store(root)
     pair = _digest_pair(store)
     if pair is None:
         return 0
@@ -291,7 +294,7 @@ def cmd_overrides(args: argparse.Namespace) -> int:
 
 _NO_SPAN = "function not in the latest run"
 
-_NO_CONTEXT = ("no context data — run the py lane with dynamic_context = "
+_NO_CONTEXT = ("no context data - run the py lane with dynamic_context = "
                "test_function and a --show-contexts JSON report")
 
 # %x01 opens a commit record and %x02 closes it, so a body of any shape stays

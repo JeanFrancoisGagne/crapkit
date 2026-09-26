@@ -13,9 +13,10 @@ from pathlib import Path
 
 from .errors import ConfigError, ToolError
 from .keys import stated_key
+from .plaintext import printed_text
 from .ratchet import RatchetEntry
 from .ratchetfile import RatchetFile
-from .repotext import child_input, lenient, os_text
+from .repotext import child_input, os_text
 from .store import SnapshotStore
 from .verify import GateViolation
 
@@ -106,8 +107,12 @@ def _require_auditable_override(reason: str, alert_command: str) -> None:
         raise ConfigError("an override requires a non-empty reason")
     if not alert_command.strip():
         raise ConfigError(
-            "no alert_command configured — the override requires a visible alert line; "
+            "no alert_command configured - the override requires a visible alert line; "
             "set [crapkit] alert_command in crapkit.toml")
+
+
+# What a refusal over a failed alert tells its reader to do.
+ALERT_FIX = "rerun once [crapkit] alert_command in crapkit.toml exits 0"
 
 
 def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolation],
@@ -117,12 +122,31 @@ def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolat
     line = f"crapkit OVERRIDE ({reason}): {summary}"
     # The line reaches the alert command on stdin, never interpolated into the
     # shell string: function names come from analyzed source and are not shell-safe.
-    proc = subprocess.run(alert_command, shell=True, cwd=root, input=child_input(line + "\n"),
-                          capture_output=True)
-    if proc.returncode != 0:
-        raise ToolError(
-            f"override alert command failed (exit {proc.returncode}): "
-            f"{lenient(proc.stderr or proc.stdout).strip()[-300:]} — no alert, no override")
+    code, printed = send_alert(alert_command, root, line + "\n")
+    if code != 0:
+        raise ToolError(f"override alert command failed (exit {code}): "
+                        f"{printed} - no alert, no override; {ALERT_FIX}")
+
+
+def send_alert(alert_command: str, root: Path, text: str) -> tuple[int, str]:
+    """Hand `text` to the alert command on stdin, and return its exit code and
+    the last 300 characters it printed as plain text with LF line ends: stderr
+    when it holds text once its escape codes are gone, else stdout.
+
+    The bytes are `repotext.child_input`'s: UTF-8 with LF line ends on every
+    OS. A text-mode pipe turned each LF into CR LF on Windows, so an alert log
+    fed by `cat >>` held CR LF from a Windows committer and LF from everyone
+    else."""
+    proc = subprocess.run(alert_command, shell=True, cwd=root,
+                          input=child_input(text), capture_output=True)
+    return proc.returncode, _message(proc.stderr, proc.stdout)
+
+
+def _message(stderr: bytes, stdout: bytes) -> str:
+    """The stream that says something, chosen after the escape codes are gone:
+    a stderr that held only a colour reset would otherwise hide stdout's message."""
+    said = printed_text(stderr).strip()
+    return (said or printed_text(stdout).strip())[-300:]
 
 
 def _granted_marks(prior: list[RatchetEntry], violations: list[GateViolation], *,

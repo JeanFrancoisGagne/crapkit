@@ -80,7 +80,7 @@ def _mutation_targets(root: Path, files: list | None, cwd: Path | None = None) -
         return {_repo_relative(f, root, cwd): None for f in files}
     targets = {p: _range_lines(rs) for p, rs in changed_ranges(diff_since(root, "HEAD")).items()}
     if not targets:
-        raise CrapkitError("no changes vs HEAD to mutate — name files with --files")
+        raise CrapkitError("no changes vs HEAD to mutate - name files with --files")
     return targets
 
 
@@ -240,7 +240,7 @@ def cmd_mutate(args: argparse.Namespace) -> int:
         return _drop_mutate_pool(root)
     cfg = _load_repo_config(root)
     if not cfg.mutation_command:
-        raise ConfigError("mutate needs [crapkit] mutation_command — the suite run once per mutant")
+        raise ConfigError("mutate needs [crapkit] mutation_command - the suite run once per mutant")
     targets, outside = _corpus_targets(root, cfg,
                                        _mutation_targets(root, args.files, cwd=_stand(args.repo)))
     mutants = _collect_mutants(root, targets, args.max_mutants)
@@ -273,7 +273,7 @@ def cmd_duplication(args: argparse.Namespace) -> int:
     runs = rowful_runs(store)
     if not runs:
         # the store opened, so what is missing is a run that scored anything
-        raise CrapkitError(f"no run with rows in {root} — run `{_self()} inventory` first")
+        raise CrapkitError(f"no run with rows in {root} - run `{_self()} inventory` first")
     rows = store.read_rows(runs[-1]["id"])
 
     # A loader, never a bound dict: whoever names those texts pins every byte of

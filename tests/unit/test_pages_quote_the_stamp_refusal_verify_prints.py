@@ -7,11 +7,11 @@ moved with it; the README and the handbook still told the reader to run the
 seed alone, and the handbook's next sentence says "Do what it says."
 """
 import re
-import sys
 from pathlib import Path
 
 import pytest
 
+from crapkit import invocation
 from crapkit.ratchet import stamp_conflict
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -23,7 +23,7 @@ _QUOTE = re.compile(r"crapkit: (ratchet marks were recorded under \[([^\]]*)\] "
 @pytest.fixture(autouse=True)
 def console_script(monkeypatch):
     """The pages run `$ crapkit verify`, so the refusal names that spelling."""
-    monkeypatch.setattr(sys, "argv", ["/usr/local/bin/crapkit", "verify"])
+    monkeypatch.setattr(invocation, "_runs_here", lambda found: True)
 
 
 def _plain_quotes(page: str) -> list[re.Match]:

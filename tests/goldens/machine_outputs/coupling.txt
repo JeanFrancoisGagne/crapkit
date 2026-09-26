@@ -1,0 +1,2 @@
+exit 0
+{"pairs": [{"confidence": 1.0, "files": ["pkg/calc.py", "pkg/c\u00e9.py"], "support": 3}, {"confidence": 1.0, "files": ["pkg/calc.py", "pkg/deep/z.py"], "support": 3}, {"confidence": 0.6667, "files": ["pkg/c\u00e9.py", "pkg/deep/z.py"], "support": 2}], "schema": 1, "window_months": 12}

@@ -14,7 +14,9 @@ from pathlib import Path
 from .agent_fields import schema_of
 from .cli._shared import _on_its_drive
 from .invocation import _self
+from .plaintext import strip_escapes
 from .repopath import typed_path
+from .repotext import json_kind
 from .rootfind import CONFIG_NAME, find_root
 
 # Newest first. Everything this server does — tools, annotations, structured
@@ -1557,20 +1559,25 @@ def _flag_values(value) -> list:
 
 
 def _flag_args(flags: dict, arguments: dict) -> list[str]:
+    """Each option bound to its value in one word, `--exclude=-legacy`: split
+    in two, a value that starts with `-` is read by argparse as a flag."""
     out: list[str] = []
     for key, flag in flags.items():
         for v in _flag_values(arguments.get(key)):
-            out += [flag] if v is True else [flag, str(v)]
+            out.append(flag if v is True else f"{flag}={v}")
     return out
 
 
-def build_argv(tool: dict, arguments: dict) -> list[str]:
-    argv = list(tool["argv"])
-    argv += [str(arguments[p]) for p in tool["positional"]]
-    argv += _flag_args(tool["flags"], arguments)
+def build_argv(tool: dict, arguments: dict, repo: str) -> list[str]:
+    """The CLI argv for one call: the options bound to their values, then
+    `--repo=` and `--json`, then `--` and the positionals. After `--` argparse
+    reads every word as a value, so `path="--help"` is a path, never brief's
+    help answered as a successful result."""
+    argv = [*tool["argv"], *_flag_args(tool["flags"], arguments), f"--repo={repo}"]
     if tool["json_flag"]:
         argv.append("--json")
-    return argv
+    positionals = [str(arguments[p]) for p in tool["positional"]]
+    return argv + ["--", *positionals] if positionals else argv
 
 
 def _result(text: str, *, is_error: bool) -> dict:
@@ -1596,13 +1603,15 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     server started in a workspace must not hand the command a working
     directory below the root, because `path` is repo-relative on every tool's
     schema. A command that printed nothing answers with its stderr, so a
-    refusal reaches the caller as text. An exit the tool declares in
-    `verdict_exits` is an answer, not a failure: `gate` exits 6 on a breach
-    and its payload says so in `gate.ok`."""
-    argv = build_argv(tool, arguments) + ["--repo", repo]
+    refusal reaches the caller as text, with its escape codes removed: the
+    child shares the client's environment, and under FORCE_COLOR or
+    PYTHON_COLORS=1 a 3.13+ traceback or a 3.14 argparse message arrives
+    coloured. An exit the tool declares in `verdict_exits` is an answer, not
+    a failure: `gate` exits 6 on a breach and its payload says so in `gate.ok`."""
+    argv = build_argv(tool, arguments, repo)
     proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
-    text = proc.stdout if proc.stdout.strip() else proc.stderr
+    text = proc.stdout if proc.stdout.strip() else strip_escapes(proc.stderr)
     verdict = _unread_verdict(tool, proc.returncode, text)
     if verdict is not None:
         return _structured(_result(verdict, is_error=False))
@@ -1690,7 +1699,7 @@ def _argument_error(tool: dict, arguments) -> str | None:
     is read: a string's characters read as undeclared keys.
     """
     if not isinstance(arguments, dict):
-        return f"arguments must be an object (got {_json_type(arguments)})"
+        return f"arguments must be an object (got {json_kind(arguments)})"
     return (_missing_positional(tool, arguments) or _unknown_key(tool, arguments)
             or _wrong_type(tool, arguments))
 
@@ -1815,17 +1824,6 @@ def _method_handler(method):
 # tools/list read none, so they answer whatever params are.
 _PARAMS_HOLD = {"initialize": "carrying protocolVersion",
                 "tools/call": "naming the tool and its arguments"}
-# The JSON types json.loads hands over in place of an object; the rest are numbers.
-_JSON_TYPES = {list: "an array", str: "a string", bool: "a boolean"}
-
-
-def _json_type(value) -> str:
-    """The JSON type a value that is not an object arrived as, in the words both
-    refusals print. The type, not the value: a by-position list or a long string
-    echoed back tells the agent less than the name of what it sent."""
-    return _JSON_TYPES.get(type(value), "a number")
-
-
 def _params(msg: dict):
     """The request's params, with null or absent read as the empty object."""
     params = msg.get("params")
@@ -1841,7 +1839,7 @@ def _invalid_params(method, params) -> dict | None:
     if holds is None or isinstance(params, dict):
         return None
     return {"code": -32602,
-            "message": f"params must be an object {holds} (got {_json_type(params)})"}
+            "message": f"params must be an object {holds} (got {json_kind(params)})"}
 
 
 def _handle(root: Path, msg: dict, run_cli=None) -> dict | None:

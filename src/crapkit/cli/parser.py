@@ -9,14 +9,15 @@ import sys
 
 from .. import __version__
 from ..errors import ConfigError, CrapkitError
-from ..invocation import _self
+from ..invocation import _self, quoted_path
 
 # The claude-* namespace, named here rather than read off the parser, because the
 # guard has to answer before argparse sees the argv at all. A plugin's hooks.json
 # ships machine-wide and can name a subcommand an older installed CLI does not
-# have; argparse answers that with exit 2 and a usage dump, which on PostToolUse
-# lands in the model's context on every edit. Silence is the only safe answer,
-# and it is what makes every future plugin-ahead-of-CLI drift harmless.
+# have, or a flag it does not define; argparse answers either with exit 2 and a
+# usage dump, which on PostToolUse lands in the model's context on every edit.
+# Exit 0 is the only safe answer: silent for a subcommand, one line naming the
+# flag for a flag. It is what makes every future plugin-ahead-of-CLI drift harmless.
 _CLAUDE_SUBCOMMANDS = frozenset({"claude-hook"})
 
 
@@ -200,10 +201,33 @@ _REPO_FLAG = {"default": None,
               "help": "crapkit root (default: the nearest crapkit.toml at or above cwd)"}
 
 
+def _color_kwargs(version: tuple, streams: tuple) -> dict:
+    """The `color` keyword for the root parser: off unless both `streams` are
+    terminals, from Python 3.14 on.
+
+    3.14's argparse colours help and usage, and FORCE_COLOR turns that on before
+    it asks whether stdout is a terminal, so `crapkit help` printed escape codes
+    into a pipe that an agent reads as text. It takes that one decision from
+    stdout, yet prints usage errors to stderr, so both streams are asked here.
+    On a terminal argparse keeps its own decision, NO_COLOR included. Every
+    subcommand parser inherits the keyword from the root; before 3.14 there is
+    no keyword to pass."""
+    if version < (3, 14) or all(_on_a_terminal(stream) for stream in streams):
+        return {}
+    return {"color": False}
+
+
+def _on_a_terminal(stream) -> bool:
+    """`stream` is a terminal; a missing stream (pythonw hands out None) is not."""
+    isatty = getattr(stream, "isatty", None)
+    return bool(isatty and isatty())
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The whole CLI surface, assembled without parsing anything. README's
     Subcommands table is checked against this parser's own subcommand set."""
-    parser = argparse.ArgumentParser(prog="crapkit")
+    parser = argparse.ArgumentParser(
+        prog="crapkit", **_color_kwargs(sys.version_info, (sys.stdout, sys.stderr)))
     parser.add_argument("--version", action=_VersionAction, default=argparse.SUPPRESS,
                         help="print the program name and its version")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -269,7 +293,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "the keep-set, then VACUUM")
     runs_p.add_argument("--keep", type=int, default=5,
                         help="prune: newest trusted runs to keep (default 5). A floor, not "
-                             "a cap — the digest pair, passing verify baselines, runs an "
+                             "a cap - the digest pair, passing verify baselines, runs an "
                              "override names and the newest non-hook run are kept too")
     runs_p.add_argument("--repo", **_REPO_FLAG)
     runs_p.add_argument("--json", action="store_true", help="machine output")
@@ -557,20 +581,57 @@ def _refuse_path_argument(arg: str) -> int:
     """Same exit code argparse already gave this argv, with the route the dump
     left out. Nothing that used to work changes: every argv reaching here was a
     usage error before."""
-    print(f"crapkit: {arg!r} is not a subcommand; the repo is a flag on one, "
+    print(f"crapkit: {quoted_path(arg)} is not a subcommand; the repo is a flag on one, "
           f"e.g. `{_self()} inventory --repo {arg}` "
           f"(`{_self()} --help` lists the subcommands)", file=sys.stderr)
     return 2
 
 
-def main(argv: list[str] | None = None) -> int:
-    _reconfigure_streams()
+def _claude_command(argv: list[str] | None) -> bool:
+    """A `claude-*` subcommand this build defines: argv a program wrote, and a
+    program that can be newer than this build."""
+    args = sys.argv[1:] if argv is None else argv
+    return bool(args) and args[0] in _CLAUDE_SUBCOMMANDS
+
+
+def _claude_version_skew(command: str, unknown: list[str]) -> int:
+    """A claude-* argv holding arguments this build does not define.
+
+    A plugin's hooks.json can pass the hook a flag added after the installed
+    CLI was built. argparse answered that with exit 2 and its usage block, and
+    PostToolUse hands the model an exit 2's stderr on every edit. Exit 0, as
+    for an unknown subcommand, with one line for the person reading the hook
+    output. The edit is not judged: what the new flag asks for is unknown here."""
+    print(f"crapkit {command}: this crapkit does not know `{' '.join(unknown)}`; the hook "
+          "was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, "
+          "then run `crapkit doctor --plugin-root`", file=sys.stderr)
+    return 0
+
+
+def _parse(parser: argparse.ArgumentParser, argv: list[str] | None) -> argparse.Namespace | int:
+    """parse_args, except that a claude-* command reads the flags this build
+    knows, `--protocol` included, and answers anything left over in one line."""
+    if not _claude_command(argv):
+        return parser.parse_args(argv)
+    args, unknown = parser.parse_known_args(argv)
+    return _claude_version_skew(args.command, unknown) if unknown else args
+
+
+def _arguments(argv: list[str] | None) -> argparse.Namespace | int:
+    """The parsed argv, or the exit code of an argv answered before any handler runs."""
     if _unknown_claude_command(argv):
         return 0
     named_path = _path_first_arg(argv)
     if named_path is not None:
         return _refuse_path_argument(named_path)
-    args = build_parser().parse_args(argv)
+    return _parse(build_parser(), argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    _reconfigure_streams()
+    args = _arguments(argv)
+    if isinstance(args, int):
+        return args
     try:
         return args.func(args)
     except CrapkitError as exc:

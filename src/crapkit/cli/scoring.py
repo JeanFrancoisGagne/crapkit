@@ -32,12 +32,19 @@ def _tracked_files(files_by_scope: dict) -> list[str]:
 
 
 def _present_on_disk(root: Path, tracked: list[str]) -> list[str]:
-    """Keep the tracked paths that exist, naming each dropped one on stderr."""
+    """Keep the tracked paths that exist, naming each dropped one on stderr in
+    `tracked`'s order. A set difference named them in hash order, which moves
+    with the per-process string hash seed, so one tree printed another order on
+    every run."""
     # git ls-files lists staged deletions too; a tracked-but-absent file has no
     # functions and must not crash the run
-    present = [f for f in tracked if (root / f).is_file()]
-    for gone in set(tracked) - set(present):
-        print(f"crapkit: tracked file missing from working tree, skipped: {gone}", file=sys.stderr)
+    present = []
+    for path in tracked:
+        if (root / path).is_file():
+            present.append(path)
+        else:
+            print(f"crapkit: tracked file missing from working tree, skipped: {path}",
+                  file=sys.stderr)
     return present
 
 
@@ -475,7 +482,7 @@ def _refuse_empty_lane_run(cfg, requested) -> None:
         raise ConfigError(f"no lane named {requested!r}")
     if cfg.lane_less_scopes:
         raise ConfigError(
-            f"no [[lane]] to run for scope(s) {', '.join(cfg.lane_less_scopes)} — declare a "
+            f"no [[lane]] to run for scope(s) {', '.join(cfg.lane_less_scopes)} - declare a "
             "[[lane]] measuring them in crapkit.toml, or set coverage_optional = true on a "
             "scope no coverage parser can read")
 
@@ -880,7 +887,7 @@ def _untracked_of(root: Path, paths: set[str]) -> set[str]:
 def _warn_untracked(untracked: set[str]) -> None:
     if untracked:
         print(f"crapkit: {len(untracked)} untracked file(s) gated in full "
-              f"({', '.join(sorted(untracked))}) — git add to gate only future edits",
+              f"({', '.join(sorted(untracked))}) - git add to gate only future edits",
               file=sys.stderr)
 
 
@@ -980,11 +987,11 @@ def _rescore_baseline(root: Path) -> tuple[SnapshotStore, dict]:
     refusal naming the command that makes one."""
     db_path = root / ".crapkit" / "crap.sqlite"
     if not db_path.is_file():
-        raise CrapkitError(f"no snapshot in {root} — run `{_self()} coverage` first")
+        raise CrapkitError(f"no snapshot in {root} - run `{_self()} coverage` first")
     store = SnapshotStore(db_path)
     latest = _latest_scored(store)
     if latest is None:
-        raise CrapkitError(f"no scored run in {root} — run `{_self()} coverage` first")
+        raise CrapkitError(f"no scored run in {root} - run `{_self()} coverage` first")
     return store, latest
 
 

@@ -16,7 +16,6 @@ import codecs
 import fnmatch
 import io
 import json
-import os
 import re
 from pathlib import Path
 
@@ -180,12 +179,11 @@ def test_escaped_gives_back_every_byte(data):
 
 
 @pytest.mark.parametrize("text, sent", [("caf\u00e9", "caf\u00e9".encode("utf-8")),
-                                        ("a\nb\n", b"a" + os.linesep.encode() + b"b"
-                                         + os.linesep.encode()), ("", b"")],
-                         ids=["accent", "lf-as-the-os-line-ending", "empty"])
-def test_child_input_is_the_text_as_utf8_as_a_text_mode_pipe_wrote_it(text, sent):
+                                        ("a\nb\n", b"a\nb\n"), ("", b"")],
+                         ids=["accent", "lf-on-every-os", "empty"])
+def test_child_input_is_the_text_as_utf8_with_lf_line_ends(text, sent):
     """0.8.0 handed the alert text to a text-mode pipe, which wrote CRLF on
-    Windows. The bytes are the same now that crapkit encodes them itself."""
+    Windows. The alert command now reads LF on every OS."""
     assert repotext.child_input(text) == sent
 
 

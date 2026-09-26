@@ -21,7 +21,7 @@ def test_duplication_names_the_missing_run_not_a_missing_store(tmp_path, capsys)
     code, _, err = run(root, capsys, "duplication")
 
     assert code == 1
-    assert err.startswith(f"crapkit: no run with rows in {root} — run `"), err
+    assert err.startswith(f"crapkit: no run with rows in {root} - run `"), err
     assert "inventory` first" in err and "no snapshot" not in err, err
 
 
@@ -31,7 +31,7 @@ def test_worklist_names_the_missing_run_not_a_missing_store(tmp_path, capsys):
     code, _, err = run(root, capsys, "worklist")
 
     assert code == 1
-    assert err.startswith(f"crapkit: no run with rows in {root} — run `"), err
+    assert err.startswith(f"crapkit: no run with rows in {root} - run `"), err
     assert "coverage` first" in err and "no snapshot" not in err, err
 
 

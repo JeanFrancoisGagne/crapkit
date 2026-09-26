@@ -44,6 +44,9 @@ A named set of path prefixes and languages that shares one ceiling and one set o
 **Lane**:
 One configured test command that writes one coverage artifact for one scope.
 
+**Lane log**:
+The file a lane's output streams to, `.crapkit/lane-<name>.log`, kept as the command wrote it, colour included. A refusal quotes its tail as plain text.
+
 **Launcher token**:
 `{python}` or `{python:DIR}` in a lane, scoped-tests, retest or mutation command: the python the command names, spelled so either OS can read the committed file. The loader reads it as `python` on Windows and `python3` elsewhere, or as the launcher inside the venv at DIR (`DIR\Scripts\python.exe`, `DIR/bin/python`). `init` writes it.
 _Avoid_: placeholder (that is `{files}` or `{tests}`, filled in when the command runs)
@@ -143,7 +146,7 @@ Admission under the floor because the file changes often.
 Active rows are ranked by risk; dormant rows have no recent churn.
 
 **Churn window**:
-The months of history churn reads (`churn_window_months`). A commit counts while its commit date is at or after the window's cutoff; its recency weight reads the author date.
+The months of history churn reads (`churn_window_months`). A commit counts while its commit date is at or after the window's cutoff; its recency weight reads the author date. The cutoff is that many months before now on the UTC calendar, the same instant in every time zone.
 _Avoid_: floor for the window's start (Floor is worklist admission); call it the cutoff
 
 **Shallow clone**:
@@ -157,3 +160,11 @@ A mutant whose suite failed a test, or ran past `mutation_timeout_seconds`. A ti
 **No verdict**:
 A mutant whose suite ran no test (exit 5, pytest's "no tests collected"). No test judged it, so it is in neither `killed` nor `survived`, and the kill rate leaves it out.
 _Avoid_: killed, for a suite that never ran a test
+
+### What crapkit prints
+
+**Next step**:
+The command a refusal or note tells its reader to run next. It names `crapkit` when PATH finds this installation's console script, and otherwise the running interpreter spelled with forward slashes, so Git Bash, cmd.exe and PowerShell run it as printed. An interpreter path that holds a space is quoted, and PowerShell runs that line with `& ` typed in front. The brief packet's `commands.*` always say `crapkit`.
+
+**Typed path**:
+A path a message quotes back the way the reader typed it, in single quotes with one backslash where they typed one. A lane or scope name keeps its repr.

@@ -1278,8 +1278,14 @@ def _print_plan(version: str) -> None:
             print(f"    note: {step.note}")
 
 
+# From 3.14 argparse colours help and usage, into a pipe too when FORCE_COLOR is
+# set. Older argparse has no `color` keyword.
+PLAIN_HELP = {"color": False} if sys.version_info >= (3, 14) else {}
+
+
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="release.py", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="release.py", description=__doc__.splitlines()[0],
+                                     **PLAIN_HELP)
     parser.add_argument("action", choices=tuple(ACTIONS))
     parser.add_argument("target", nargs="?", help="the version to release; for `run`, the stage")
     parser.add_argument("version", nargs="?", help="for `run`: the version")

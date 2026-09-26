@@ -6,10 +6,10 @@ to print, `ratchet seed` alone, kept the old stamp and verify refused again.
 The remedy is a fresh coverage run, then the seed.
 """
 import argparse
-import sys
 
 import pytest
 
+from crapkit import invocation
 from crapkit.cli.ratchet_cmds import cmd_ratchet
 from crapkit.cli.verifying import _guard_ratchet_stamp
 from crapkit.errors import ConfigError
@@ -22,9 +22,9 @@ NEW = "crapkit-analysis=10 lizard=1.24.0"
 
 @pytest.fixture(autouse=True)
 def console_script(monkeypatch):
-    """The refusals name the invocation the process started with; a console
-    script run spells it `crapkit`."""
-    monkeypatch.setattr(sys, "argv", ["/usr/local/bin/crapkit", "verify"])
+    """The refusals name `crapkit` when PATH resolves it to this interpreter's
+    console script, as it does where crapkit is installed."""
+    monkeypatch.setattr(invocation, "_runs_here", lambda found: True)
 
 
 def marks(path, stamp: str):
@@ -36,7 +36,7 @@ def marks(path, stamp: str):
 
 def test_the_stamp_refusal_names_coverage_then_seed():
     assert stamp_conflict(OLD, NEW) == (
-        f"ratchet marks were recorded under [{OLD}] but this run measures [{NEW}] — CRAP "
+        f"ratchet marks were recorded under [{OLD}] but this run measures [{NEW}] - CRAP "
         "scores are not comparable across metric versions; run `crapkit coverage`, then "
         "re-baseline with `crapkit ratchet seed`")
 
@@ -47,7 +47,7 @@ def test_the_unstamped_warning_names_coverage_then_seed(tmp_path, capsys):
     _guard_ratchet_stamp(saved, "crapkit-ratchet.tsv")
 
     assert capsys.readouterr().err == (
-        "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) — "
+        "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) - "
         "run `crapkit coverage`, then re-baseline with `crapkit ratchet seed` to stamp it\n")
 
 
@@ -59,6 +59,6 @@ def test_the_merge_refusal_names_coverage_then_seed(tmp_path):
         cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
 
     assert str(refused.value) == (
-        f"ratchet merge refused: ours is [{OLD}] and theirs is [{NEW}] — marks from different "
+        f"ratchet merge refused: ours is [{OLD}] and theirs is [{NEW}] - marks from different "
         "metric versions cannot merge; run `crapkit coverage`, then re-baseline one side with "
         "`crapkit ratchet seed`")

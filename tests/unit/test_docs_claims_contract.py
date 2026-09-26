@@ -7,12 +7,12 @@ against the code, the git history or the scaffolder that produces it.
 """
 import re
 import subprocess
-import sys
 from functools import lru_cache
 from pathlib import Path
 
 import pytest
 
+from crapkit import invocation
 from crapkit.config import Config
 from crapkit.churn import parse_git_log
 from crapkit.cli.parser import build_parser
@@ -426,15 +426,16 @@ def test_the_ratchet_page_prints_the_refusal_seed_raises_on_an_untrusted_store(t
     """docs/ratchet.md quotes the refusal a store with no trusted run produces.
 
     The page's session is `$ crapkit ratchet seed`, so the refusal it quotes is
-    the one a console-script run prints. The message names the invocation the
-    process was started with, and pytest is not that one.
+    the one a console-script run prints. The message names `crapkit` only when
+    PATH resolves it to this interpreter's console script, which a checkout run
+    through PYTHONPATH has not got.
     """
     from crapkit.cli.ratchet_cmds import _latest_full_run
     from crapkit.errors import CrapkitError
     from crapkit.snapshot import InventoryRow
     from crapkit.store import SnapshotStore
 
-    monkeypatch.setattr(sys, "argv", ["/usr/local/bin/crapkit", "ratchet", "seed"])
+    monkeypatch.setattr(invocation, "_runs_here", lambda found: True)
     store = SnapshotStore(tmp_path / "crap.sqlite")
     store.write_run(commit="a" * 40, tool_versions={},
                     rows=[InventoryRow("src", "src/a.py", "f( )", 1, 9, 7, 5, 5, 8, 1, 2)],

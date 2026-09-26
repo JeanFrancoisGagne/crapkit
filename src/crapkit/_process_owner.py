@@ -410,6 +410,17 @@ def main(options: dict) -> None:
         _reply({"error": str(error)})
 
 
+def _utf8_channel() -> None:
+    """The channel is UTF-8 JSON lines whatever the environment says. This
+    child inherits the caller's environment, and PYTHONIOENCODING=utf-8-sig
+    opened its first reply with a byte-order mark while utf-16 and utf-32 wrote
+    bytes the caller's UTF-8 reader could not parse, so `coverage` exited 1
+    before a lane ran. Nothing has been read or written yet, so both streams
+    can still change codec."""
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
+
+
 def _logged_main(argv: list[str]) -> None:
     """Run the guardian. An error it did not expect goes to its stderr, which
     the caller points at owner.log, under a dated line naming this process:
@@ -423,4 +434,5 @@ def _logged_main(argv: list[str]) -> None:
 
 
 if __name__ == "__main__":
+    _utf8_channel()
     _logged_main(sys.argv)

@@ -201,7 +201,7 @@ def test_the_init_summary_does_not_send_a_go_repo_looking_for_a_lane(go_repo: Pa
 
 
 def test_doctor_does_not_call_the_missing_lane_a_gap(go_repo: Path):
-    """`no [[lane]] declared — inventory works; coverage needs one` is true of a
+    """`no [[lane]] declared - inventory works; coverage needs one` is true of a
     Python repo nobody wired and false here, where coverage needs none."""
     run_cli(go_repo, "init")
 

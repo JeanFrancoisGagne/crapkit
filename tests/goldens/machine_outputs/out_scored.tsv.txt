@@ -1,0 +1,7 @@
+scope	path	long_name	start	end	ccn_std	ccn_mod	ccn	nloc	params	nesting	cov	flag	crap	remedy	cognitive	occurrence
+pkg	pkg/b.py	clamp_low( x , lo , hi )	1	6	3	3	3	6	3	1	0.25	measured	6.796875	add-tests	2	1
+pkg	pkg/calc.py	grade( score )	1	10	5	5	5	10	1	1	0.25	measured	15.546875	add-tests	4	1
+pkg	pkg/calc.py	clamp( x , lo , hi )	13	18	3	3	3	6	3	1	1.0	measured	3.0	ok	2	1
+pkg	pkg/cé.py	accent( v )	1	5	3	3	3	5	1	2	0.5	measured	4.125	ok	3	1
+pkg	pkg/cé.py	grade_twin( score )	8	17	5	5	5	10	1	1	0.25	measured	15.546875	add-tests	4	1
+pkg	pkg/deep/z.py	z( a , b )	1	6	5	5	5	6	2	1	0.25	measured	15.546875	add-tests	4	1

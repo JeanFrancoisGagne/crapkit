@@ -415,7 +415,7 @@ def _note_twin_keys(rel_path: str, records: list[FunctionRecord]) -> None:
     if not names:
         return
     print(f"crapkit: {rel_path} defines {_listed(names)} more than once; each one takes "
-          f"its own ratchet key — the first as written, later ones suffixed #2, #3 in "
+          f"its own ratchet key - the first as written, later ones suffixed #2, #3 in "
           f"file order", file=sys.stderr)
 
 

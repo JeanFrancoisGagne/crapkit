@@ -19,12 +19,13 @@ only asks which lines open a commit and the churn parser reads either header
 shape, so no reader pays a pass to strip it. And the key records the HEAD the
 log was built from, so a HEAD that grew from it costs `git log cached..HEAD`
 instead of the window — 0.77 s instead of 6.9 s at a day-old HEAD, for the
-same 628k lines. Commit date is not author date: `--since` filters on the
+same 628k lines. Commit date is not author date: `--max-age` filters on the
 committer's clock while the recency weight uses the author's, and a rebased
 commit has two different ones. The key also records the cutoff the log was cut
-at, because that cutoff can move back: git's month arithmetic puts 6 months
-before Aug 31 on Mar 3 and before Sep 1 on Mar 1, and a log cut at the later
-cutoff cannot be re-dated to the earlier one.
+at, because that cutoff can move back: git's month arithmetic, which the window
+counts on the UTC calendar, puts 6 months before Aug 31 on Mar 3 and before
+Sep 1 on Mar 1, and a log cut at the later cutoff cannot be re-dated to the
+earlier one.
 
 A cache is disposable. An unreadable, torn or unkeyable log reads as cold, never
 as a crash, and a HEAD the cached log is not an ancestor of (a rewind, a rebase,
@@ -33,9 +34,11 @@ a force-push) rebuilds rather than prepends.
 from __future__ import annotations
 
 import json
+import os
+import time
 import zlib
 from collections.abc import Iterable, Iterator
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from itertools import chain
 from operator import methodcaller
@@ -70,8 +73,8 @@ RELATIVE_PATHS = "root-relative"
 
 
 class Window(NamedTuple):
-    """The window's log and the --since cutoff it was cut at. The cutoff is None
-    when git would not name one, or when a laid-down log recorded none."""
+    """The window's log and the cutoff it was cut at. The cutoff is None only
+    when a laid-down log recorded none."""
     lines: Iterator[str]
     cutoff: int | None
 
@@ -117,9 +120,9 @@ def grew_from(root: Path, base: str, head: str) -> bool:
     return base == head or _ancestry(root, base, head)
 
 
-def window_cutoff(root: Path, months: int, head: str | None) -> int | None:
-    """git's --since cutoff for the window, the commit date a commit must reach
-    to stay in it; None when git will not name one.
+def window_cutoff(root: Path, months: int, head: str | None) -> int:
+    """The window's cutoff, the commit date a commit must reach to stay in it,
+    counted on the UTC calendar.
 
     Read once per HEAD and UTC day in a process, so a carry and the refresh
     after it cut at the same cutoff. The cutoff moves with the clock, so a
@@ -129,7 +132,7 @@ def window_cutoff(root: Path, months: int, head: str | None) -> int | None:
 
 
 @lru_cache(maxsize=16)
-def _cutoff_at(root: Path, months: int, head: str | None, date: str) -> int | None:
+def _cutoff_at(root: Path, months: int, head: str | None, date: str) -> int:
     return _window_cutoff(root, months)
 
 
@@ -430,12 +433,13 @@ def _window_log(root: Path, months: int, head: str | None, cutoff: int | None) -
     again. Only a caller with no HEAD to key on walks HEAD itself.
 
     Cut at `cutoff`, the one the caller records, rather than at a second
-    reading of "N months ago": the clock moves between the two, and at a month
-    end it moves the cutoff back. Only when git named no cutoff does the walk
-    read the clock itself."""
-    since = f"--since={months} months ago" if cutoff is None else f"--max-age={cutoff}"
-    return _git_lines(root, "log", "--relative", since, LOG_FORMAT, "--name-only",
-                      *([head] if head else []))
+    reading of the clock: the clock moves between the two, and at a month end
+    it moves the cutoff back. Only a caller with no cutoff to record has the
+    walk read the clock itself. Always --max-age, never --since: git counts
+    "N months ago" on the local calendar, and the window is counted on UTC's."""
+    cutoff = _window_cutoff(root, months) if cutoff is None else cutoff
+    return _git_lines(root, "log", "--relative", f"--max-age={cutoff}", LOG_FORMAT,
+                      "--name-only", *([head] if head else []))
 
 
 def _range_log(root: Path, base: str, head: str) -> Iterator[str]:
@@ -443,16 +447,38 @@ def _range_log(root: Path, base: str, head: str) -> Iterator[str]:
     return _git_lines(root, "log", "--relative", f"{base}..{head}", LOG_FORMAT, "--name-only")
 
 
-def _window_cutoff(root: Path, months: int) -> int | None:
-    """git's own reading of "N months ago": rev-parse prints the --max-age it would
-    hand rev-list, so a re-dated log expires exactly what a fresh --since would.
+def _window_cutoff(root: Path, months: int) -> int:
+    """The commit date the window starts at: `months` months before now, counted
+    on the UTC calendar. crapkit asked git for this once (`rev-parse --since="N
+    months ago"`), and git counts on the local calendar, so wherever the local
+    and UTC dates sit on either side of a day the earlier month lacks, two
+    machines cut the same repo's window a day apart. Every window of `root`
+    starts here; only the clock and `months` decide where."""
+    return _months_before(_clock(), months)
 
-    None when git will not answer — and then a refresh would be guessing at the
-    window, which is what the full walk is for.
-    """
+
+def _clock() -> int:
+    """Now, in whole seconds. GIT_TEST_DATE_NOW, the variable git's own date code
+    reads for "now", pins it: a test that pinned git's clock for "N months ago"
+    pins the window the same way."""
     try:
-        out = "".join(_git_lines(root, "rev-parse", f"--since={months} months ago"))
-    except GitError:
-        return None
-    digits = out.strip().rpartition("=")[2]
-    return int(digits) if digits.isdigit() else None
+        return int(os.environ["GIT_TEST_DATE_NOW"])
+    except (KeyError, ValueError):
+        return int(time.time())
+
+
+# git reads a negative --max-age as a date past every commit and walks nothing,
+# so a window reaching back past January 1970 starts in that month.
+_EPOCH_MONTH = 1970 * 12
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _months_before(now: int, months: int) -> int:
+    """`now` less `months` months on the UTC calendar, with git's arithmetic:
+    the day of the month and the time of day stay, and a day the earlier month
+    lacks rolls into the next one as mktime rolls it (6 months before Aug 31 is
+    Mar 3, and 12 months before Feb 29 is Mar 1)."""
+    at = _EPOCH + timedelta(seconds=now)  # fromtimestamp refuses 1969 on Windows
+    year, month = divmod(max(at.year * 12 + at.month - 1 - months, _EPOCH_MONTH), 12)
+    first = at.replace(year=year, month=month + 1, day=1)
+    return (first + timedelta(days=at.day - 1) - _EPOCH) // timedelta(seconds=1)

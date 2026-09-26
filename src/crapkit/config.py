@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .errors import ConfigError
+from .invocation import quoted_path
 from .config_contract import admit, enum_values
 from .repopath import Refused, declared, disk_spelling, file_separators
 from .repotext import plain_utf8
@@ -653,11 +654,12 @@ _PATH_KEYS = {
 def _path(key: str, raw: str, root: str | os.PathLike | None = None, owner: str = "") -> str:
     """One value of a path-valued key, read by repopath's declared entry as
     _PATH_KEYS marks the key. A refusal names the key's owner and the value as
-    written, so `scope 'web': path '../web'` says which line to fix."""
+    written, so `scope 'web': path '../web'` says which line to fix, with one
+    backslash where the reader typed one."""
     try:
         return declared(raw, _PATH_KEYS[key], root)
     except Refused as exc:
-        raise ConfigError(f"{owner}{raw!r} {exc}") from None
+        raise ConfigError(f"{owner}{quoted_path(raw)} {exc}") from None
 
 
 def _parse_scope(row: dict, root: str | os.PathLike | None = None) -> Scope:
@@ -757,7 +759,7 @@ def _reject_shared_artifacts(lanes: list, root=None) -> None:
             if key in seen_artifacts:
                 raise ConfigError(
                     f"lanes {seen_artifacts[key]!r} and {lane.name!r} share the artifact path "
-                    f"{artifact!r}; reused paths cross-attribute coverage under --reuse-artifacts")
+                    f"{quoted_path(artifact)}; reused paths cross-attribute coverage under --reuse-artifacts")
             seen_artifacts[key] = lane.name
 
 

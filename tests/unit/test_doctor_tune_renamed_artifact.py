@@ -41,5 +41,5 @@ def test_the_stamp_at_the_declared_path_wins_over_an_older_one(repo, capsys):
 def test_a_stamp_another_lane_wrote_costs_nothing_here(repo, capsys):
     _stamps(repo, {"coverage/old-api.json": {"commit": "abc", "lane": "api", "seconds": 300.0}})
 
-    assert _cost_line(repo, capsys) == ("# lane cost: no durations recorded yet — "
+    assert _cost_line(repo, capsys) == ("# lane cost: no durations recorded yet - "
                                         "suggested from the cpu count alone")

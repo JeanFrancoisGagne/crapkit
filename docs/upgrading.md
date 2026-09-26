@@ -465,4 +465,6 @@ records complete Windows source and Linux installed-wheel verification, independ
 reviews and repeatable performance probes. Its benchmark tables distinguish
 synthetic duplication input, fixture setup and a fixed unit subset from complete
 suite runs. They do not claim a whole-suite speedup. Hosted CI dispatch and macOS
-runtime execution were outside that local verification.
+runtime execution were outside that local verification. Hosted CI now runs the
+source suite on Python 3.11, 3.12, 3.13 and 3.14 on Ubuntu and Windows, and on
+Python 3.13 on macOS for the letter-case rows.

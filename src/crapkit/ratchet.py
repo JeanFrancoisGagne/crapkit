@@ -175,7 +175,7 @@ def stamp_conflict(recorded: str, current: str) -> str | None:
     if not recorded or recorded == current:
         return None
     return (f"ratchet marks were recorded under [{recorded}] but this run measures "
-            f"[{current}] — CRAP scores are not comparable across metric versions; "
+            f"[{current}] - CRAP scores are not comparable across metric versions; "
             f"{coverage_then_seed()}")
 
 

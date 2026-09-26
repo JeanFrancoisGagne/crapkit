@@ -413,8 +413,13 @@ def _judged(output: Path, judge) -> int:
             _retain_evidence(scratch, output, evidence)
 
 
+# From 3.14 argparse colours help and usage, into a pipe too when FORCE_COLOR is
+# set. Older argparse has no `color` keyword.
+PLAIN_HELP = {"color": False} if sys.version_info >= (3, 14) else {}
+
+
 def parse_arguments(argv=None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, **PLAIN_HELP)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--base", required=True)
     parser.add_argument("--output", type=Path, default=Path(".crapkit/ci-verdict"))

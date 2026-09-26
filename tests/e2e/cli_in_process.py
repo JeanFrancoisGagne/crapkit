@@ -16,8 +16,9 @@ it rebuilds what the child had and puts the worker back afterwards:
   it. sys.stdout and sys.stderr are new text streams on those descriptors,
   opened the way Python opens a child's.
 - sys.stdin holds the bytes the child would have read, sys.argv what
-  `python -m crapkit` sets (crapkit spells itself in messages from argv[0]),
-  and warnings print to stderr under a new interpreter's filters.
+  `python -m crapkit` sets, and warnings print to stderr under a new
+  interpreter's filters. crapkit spells itself in messages from the call's
+  PATH (invocation._self), which is the child's.
 - crapkit's functools caches are empty on entry and on exit: a probe cached for
   one PATH must not answer the next test, which may have another.
 - The call's garbage is collected on the way out, which closes the store the

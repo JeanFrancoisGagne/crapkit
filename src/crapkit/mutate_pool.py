@@ -96,7 +96,7 @@ def require_live_suite(tree: Path, cfg, *, owner=None) -> None:
     if code == 0:
         return
     raise ToolError(f"mutation_command {_runner_word(cfg.mutation_command)!r} "
-                    f"{_baseline_verdict(code)} — run "
+                    f"{_baseline_verdict(code)} - run "
                     f"`{cfg.mutation_command}` in {tree} and fix it before scoring")
 
 

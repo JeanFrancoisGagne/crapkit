@@ -1,5 +1,7 @@
 """The MCP tool registry is pure data: names, schemas, argv mappings. The
 server assembles from it; these tests need no transport."""
+import pytest
+
 from crapkit.mcp_server import TOOLS, build_argv, tool_listing
 
 
@@ -18,15 +20,15 @@ def test_listing_shape_matches_mcp():
 
 
 def test_build_argv_maps_flags_positionals_and_lists():
+    """Options bound as `--flag=value`, then the repo, then `--` and the
+    positionals, so no value is ever read as a flag."""
     tool = next(t for t in TOOLS if t["name"] == "get_next_item")
-    argv = build_argv(tool, {"top": 3, "exclude": ["cli.py", "lanes"]})
-    assert argv[0] == "next-item"
-    assert argv[argv.index("--top") + 1] == "3"
-    assert argv.count("--exclude") == 2
+    argv = build_argv(tool, {"top": 3, "exclude": ["cli.py", "lanes"]}, "R")
+    assert argv == ["next-item", "--top=3", "--exclude=cli.py", "--exclude=lanes", "--repo=R"]
 
     explain = next(t for t in TOOLS if t["name"] == "get_function_history")
-    argv = build_argv(explain, {"path": "src/a.ts", "name": "dispatch"})
-    assert argv[:3] == ["explain", "src/a.ts", "dispatch"]
+    argv = build_argv(explain, {"path": "src/a.ts", "name": "dispatch"}, "R")
+    assert argv == ["explain", "--repo=R", "--json", "--", "src/a.ts", "dispatch"]
 
 
 def test_the_served_schema_types_exclude_as_an_array_of_fragments():
@@ -42,10 +44,11 @@ def test_the_served_schema_types_exclude_as_an_array_of_fragments():
 def test_every_fragment_in_the_array_becomes_its_own_cli_flag():
     tool = next(t for t in TOOLS if t["name"] == "get_next_item")
 
-    argv = build_argv(tool, {"exclude": ["stats", "grade", "report"]})
+    argv = build_argv(tool, {"exclude": ["stats", "grade", "report"]}, "R")
 
-    assert [argv[i + 1] for i, a in enumerate(argv) if a == "--exclude"] == \
-        ["stats", "grade", "report"], "the CLI flag repeats; the array is how you repeat it"
+    assert [a for a in argv if a.startswith("--exclude=")] == \
+        ["--exclude=stats", "--exclude=grade", "--exclude=report"], \
+        "the CLI flag repeats; the array is how you repeat it"
 
 
 def test_mutating_commands_are_not_exposed():
@@ -58,7 +61,7 @@ def test_next_item_argv_carries_no_json_flag():
     """next-item always emits JSON and defines no --json flag; appending one
     made the MCP tool exit 2 with a usage dump (found by the release audit)."""
     tool = next(t for t in TOOLS if t["name"] == "get_next_item")
-    argv = build_argv(tool, {})
+    argv = build_argv(tool, {}, "R")
     assert "--json" not in argv
 
 # --- what the listing teaches a client's model --------------------------------
@@ -177,13 +180,13 @@ def test_worklist_and_next_item_type_scope_as_an_array_of_strings():
         assert "declared" in scope["description"], f"{name}.scope never says the names must be declared"
 
 
-def test_every_scope_in_the_array_becomes_its_own_scope_flag():
-    for name in ("list_worklist", "get_next_item"):
-        tool = next(t for t in TOOLS if t["name"] == name)
+@pytest.mark.parametrize("name", ["list_worklist", "get_next_item"])
+def test_every_scope_in_the_array_becomes_its_own_scope_flag(name):
+    tool = next(t for t in TOOLS if t["name"] == name)
 
-        argv = build_argv(tool, {"scope": ["api", "web"]})
+    argv = build_argv(tool, {"scope": ["api", "web"]}, "R")
 
-        assert [argv[i + 1] for i, a in enumerate(argv) if a == "--scope"] == ["api", "web"], name
+    assert [a for a in argv if a.startswith("--scope=")] == ["--scope=api", "--scope=web"]
 
 
 # --- title and output schema: the two definition fields the TDQS evaluator reads ----
