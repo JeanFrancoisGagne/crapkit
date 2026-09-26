@@ -135,21 +135,24 @@ every marks file re-seeds once, with the same three commands as version 11 below
 
 ### Go and Zig signatures (next analysis version)
 
-The next release reads Go and Zig signatures to where the language ends them, and
-raises the analysis version for it. A function type such as `var cb func(int) error`
-no longer opens a function, so the function around it gets back the block the type
-took and its `ccn` can rise; the anonymous row that held the block goes away. A
-function that had no row, one after a package-level function type or a Zig `extern
-fn` prototype, is listed, and one whose result type holds braces reads its whole body.
-Either can be over its ceiling and fails the gate the next time its file changes.
-`params` moves for parameters of function type or with a braced type. A Zig switch
-reads as one decision in `ccn`, the smaller of the two columns, where it read one per
-prong and one more for `else =>`, so a Zig function with a switch reads lower. A Go
-`select` with a case reads one decision where it read none, so its function reads
-one higher and can go over its ceiling. Long names do not change, so no mark
-changes key. Re-seed once: `crapkit coverage`, `crapkit ratchet
-prune`, then `crapkit ratchet seed`. Prune drops the marks of the anonymous rows that
-go away.
+### Go, Zig and shell readers (next analysis version)
+
+The next release reads Go and Zig signatures to where the language ends them, and raises
+the analysis version for it. A function type such as `var cb func(int) error` no longer
+opens a function, so the function around it gets back the block the type took and its
+`ccn` can rise; the anonymous row that held the block goes away. A function that had no
+row, one after a package-level function type or a Zig `extern fn` prototype, is listed,
+and one whose result type holds braces reads its whole body. Either can be over its
+ceiling and fails the gate the next time its file changes. `params` moves for parameters
+of function type or with a braced type. A Zig switch reads as one decision in `ccn`, the
+smaller of the two columns, where it read one per prong and one more for `else =>`, so a
+Zig function with a switch reads lower. A Go `select` with a case reads one decision
+where it read none, so its function reads one higher and can go over its ceiling. A Zig
+`try`, an optional's `?` and an error-set `||` stop adding to `cognitive`, `try` and `?`
+stop adding to `nesting`, and a shell glob's `?` stops adding to `cognitive`, so those
+columns can fall in Zig and shell repos. Long names do not change, so no mark changes
+key. Re-seed once: `crapkit coverage`, `crapkit ratchet prune`, then
+`crapkit ratchet seed`. Prune drops the marks of the anonymous rows that go away.
 
 ### Analysis version 11
 

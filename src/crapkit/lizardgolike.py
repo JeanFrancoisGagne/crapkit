@@ -290,8 +290,17 @@ class CorrectedZigReader(_Lookahead, _StockZigReader):
     # pylint: disable=too-few-public-methods
     # `=>` counts through _ProngStates, which can tell the default prong from
     # the others; analyze's modified rule asks `counts_prong` the same question.
+    # Zig has no `?:` either: a `?` marks an optional type or unwraps one, so
+    # the cognitive pass, which reads this set, charges it nothing.
     _ternary_operators = set()
     counts_prong = staticmethod(counted_prong)
+
+    # The words lizard's nesting extension reads as opening a structure. Its
+    # default set also holds `try`, which holds no block and so never closed
+    # (three tries read nesting 3), `?`, and `case`, `def` and `foreach`, which
+    # are names in Zig. That extension nests on `&&` and `||` whatever this set
+    # holds, so a Zig error-set merge still reads one level there.
+    loops = frozenset({"if", "for", "while", "catch"})
 
     def __init__(self, context):
         super().__init__(context)

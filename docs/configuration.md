@@ -181,6 +181,7 @@ Read the ones you are about to point a scope at. Skip the rest.
 **`shell` and `powershell` report functions only.** Statements outside any function land in
 lizard's `*global*` pseudo-function, exactly like Python module-level code. A script that is
 one long top-level sequence reports nothing. That is the answer, not a parse failure.
+A shell `?` is a glob character and costs nothing in `cognitive`.
 
 **`powershell` counts one point per `switch` arm**, the way `case` is counted in C, and
 `default` is free. Its keywords are matched case-sensitively as written, so `If (` in code
@@ -226,7 +227,9 @@ template reports only what its methods do.
 **`zig` counts each `switch` prong but the default**, the way C counts each `case` but
 `default`: `else =>` and `_ =>` are free, and `1, 2 =>` is one prong. The modified column
 reads the switch once, as it does a C `switch`. A Go `select` is Go's switch over channel
-operations and reads once there too.
+operations and reads once there too. `try`, the `?` of an optional and the `||` that merges
+error sets decide nothing and cost nothing in `cognitive`; `try` and `?` open no `nesting`
+level either.
 
 **`rust`, `shell` and `powershell` run on crapkit's own readers.** lizard has neither a shell
 nor a PowerShell reader, and its Rust reader scores a 7-arm `match` as ccn 2 (filed upstream

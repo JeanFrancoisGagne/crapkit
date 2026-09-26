@@ -10,7 +10,7 @@ same rules with no second parse and no new dependency:
   try / finally / case labels / with are free; nesting rises inside the
   block structures listed above.
 
-Three language-specific rules:
+Four language-specific rules:
   * in C/C++ and Objective-C/C++ a `&&` before the function's opening brace
     declares an rvalue reference rather than deciding anything, and costs
     nothing. See `_declarator_and`.
@@ -26,6 +26,12 @@ Three language-specific rules:
     and `case` open, `fi`, `done` and `esac` close, and `do`, `then` and `in`
     only introduce the body of a structure already charged. See
     `_shell_keywords`.
+  * in Zig `||` merges two error sets, a type, and boolean or is spelled `or`,
+    so `||` costs nothing. See `_error_set_merge`.
+
+A `?` is a conditional operator only where the reader counts one
+(`ternary_operators`). Shell's `?` is a glob and Zig's marks an optional, and
+neither reader counts `?`, so neither is charged.
 
 A Python def's signature never counts. Its body starts at the token after the
 `:` that closes the signature at bracket depth 0, so `def f(x, y): return 1 if
@@ -97,6 +103,10 @@ _RUST_COUNTING = frozenset({"for", "while", "loop", "match"})
 # the two sets above use exact names: the discriminator is the language.
 _SHELL_READERS = frozenset({"ShellReader"})
 
+# The readers whose `||` merges error sets: lizard's Zig reader and crapkit's
+# subclass of it.
+_ZIG_READERS = frozenset({"ZigReader", "CorrectedZigReader"})
+
 # Shell's block openers. `until` and `select` are here and not in `_COUNTING`
 # because no other language crapkit reads spells a loop that way; `case` is
 # shell's switch and is charged like one, +1 and the nesting it sits in, with
@@ -131,13 +141,16 @@ class _FnState:
     __slots__ = ("total", "stack", "max_depth", "brace_depth", "line_indent",
                  "at_line_start", "pending", "else_pending", "question_pending",
                  "bool_op", "name", "recursed", "body_started", "signature_depth",
-                 "prev", "label_check", "for_pending", "c_family", "is_rust", "is_shell")
+                 "prev", "label_check", "for_pending", "c_family", "is_rust", "is_shell",
+                 "ternary", "is_zig")
 
     def __init__(self, name: str, c_family: bool = False, is_rust: bool = False,
-                 is_shell: bool = False):
+                 is_shell: bool = False, ternary: bool = True, is_zig: bool = False):
         self.c_family = c_family
         self.is_rust = is_rust
         self.is_shell = is_shell
+        self.ternary = ternary     # the reader counts `?` as a conditional operator
+        self.is_zig = is_zig
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
         self.max_depth = 0       # the deepest the stack has been
@@ -172,7 +185,9 @@ class LizardExtension:
         reader_name = type(reader).__name__
         is_python = reader_name.lower().startswith("python")
         flags = (reader_name in _DECLARATOR_READERS, reader_name in _RUST_READERS,
-                 reader_name in _SHELL_READERS)
+                 reader_name in _SHELL_READERS,
+                 "?" in getattr(reader, "ternary_operators", "?"),
+                 reader_name in _ZIG_READERS)
         last = None
         for token in tokens:
             if is_python:
@@ -415,8 +430,13 @@ def _declarator_and(state: _FnState, token: str) -> bool:
     return state.c_family and token == "&&" and state.brace_depth == 0
 
 
+def _error_set_merge(state: _FnState, token: str) -> bool:
+    """True for a Zig `||`, which merges two error sets: `(A || B)!T` is a type."""
+    return state.is_zig and token == "||"
+
+
 def _bool_op(state: _FnState, token: str) -> None:
-    if _declarator_and(state, token):
+    if _declarator_and(state, token) or _error_set_merge(state, token):
         return
     op = {"and": "&&", "or": "||"}.get(token, token)
     if op != state.bool_op:
@@ -501,9 +521,10 @@ def _structure_token(state: _FnState, token: str, is_python: bool) -> None:
 def _jumps_and_recursion(state: _FnState, token: str, is_python: bool) -> None:
     if token == "?":
         # A C ternary, a Swift optional or a Kotlin elvis waits one token to be
-        # told apart. Rust's `?` is none of them: it returns early on an error or
-        # relaxes a `?Sized` bound, and an early return is no increment.
-        state.question_pending = not state.is_rust
+        # told apart, where the reader counts a `?` at all. Rust's `?` is none of
+        # them: it returns early on an error or relaxes a `?Sized` bound, and an
+        # early return is no increment.
+        state.question_pending = state.ternary and not state.is_rust
     elif token in ("break", "continue"):
         state.label_check = not is_python
     elif token == "goto":

@@ -508,6 +508,13 @@ def test_break_with_a_level_pays_the_labeled_jump():
     assert _cognitive("scan.sh", BREAK_LEVELED) == 4
 
 
+def test_a_glob_question_mark_decides_nothing():
+    """Shell has no `?:`, and this reader counts none in ccn. `ls a?b` matches
+    one character, so the cognitive column charges it nothing too. It read 1
+    per `?`, 2 here."""
+    assert _cognitive("glob.sh", "f() {\n  ls a?b\n  echo ?\n}\n") == 0
+
+
 def test_analysis_version_invalidates_the_cached_shell_cognitive_column():
     """Every cached .sh and .bash record at version 7 or below carries a cognitive
     score measured with flat nesting, and the cache keys on content plus the

@@ -2,8 +2,10 @@
 
 ## 0.8.1 — unreleased
 
-Go and Zig functions are read to where their signature ends. The release that ships
-this raises the analysis version, so every Go or Zig repo re-seeds its marks once.
+Go and Zig functions are read to where their signature ends, a Zig switch and a Go
+`select` count as the switch they are, and Zig and shell words that decide nothing stop
+counting. The release that ships this raises the analysis version, so every repo
+re-seeds its marks once; the [upgrading guide](docs/upgrading.md) lists what moves.
 
 ### Go and Zig signatures end where the language ends them
 
@@ -35,6 +37,20 @@ this raises the analysis version, so every Go or Zig repo re-seeds its marks onc
   Zig function with a switch of three prongs and an `else` reads 2 where it read 4,
   and a Go function with a `select` of two cases and a default reads 2 where it read
   1 and can now be over its ceiling.
+
+### Words that decide nothing stop counting
+
+- A Zig `try` opens no nesting level. lizard's nesting extension counted it as a
+  structure that never closed, so three tries in a row read `nesting` 3.
+- A Zig `?` marks an optional type (`?usize`) or unwraps one (`p.?`). It read as a
+  conditional operator, cognitive +1 and a nesting level; it now costs nothing.
+- A Zig `||` merges two error sets, `(A || B)!T`, and no longer costs cognitive +1 as
+  a boolean operator; Zig's boolean or is `or`. lizard's nesting extension still
+  reads it as a level.
+- `case`, `def` and `foreach` are names in Zig and open no nesting level.
+- A shell `?` is a glob character (`ls a?b`). The cognitive column charged each one as
+  a conditional operator; the shell reader counts no `?:` in `ccn`, and now neither
+  column does.
 
 ### Rust reads its own syntax, not C's
 

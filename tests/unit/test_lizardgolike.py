@@ -398,3 +398,54 @@ def test_a_zig_prong_counts_once_whatever_it_matches():
 }
 """
     assert columns("a.zig", source, "grade")[:3] == (4, 2, 2)
+
+
+# --- Zig words that decide nothing: try, ?, || ----------------------------------------
+
+def test_a_zig_try_opens_no_nesting_level():
+    """lizard's nesting extension counts `try` as a structure and never closes
+    it, so three tries read nesting 3. Sonar's nesting rises inside a structure
+    that holds a block; `try` holds none."""
+    source = "pub fn tries() !void {\n    try first();\n    try second();\n    try third();\n}\n"
+    record = the_one("a.zig", source, "tries")
+
+    assert (record.nesting, record.cognitive) == (0, 0)
+
+
+def test_a_try_inside_an_if_is_as_deep_as_the_if():
+    source = ("pub fn guarded(a: bool) !void {\n    if (a) {\n        try first();\n"
+              "        try second();\n    }\n}\n")
+
+    assert the_one("a.zig", source, "guarded").nesting == 1
+
+
+def test_a_zig_optional_decides_nothing():
+    """`?usize` is a type and `x.?` unwraps one: neither is a conditional
+    operator, so cognitive 0 and nesting 0. Both read 1."""
+    typed = "pub fn indexOf(haystack: []const u8) ?usize {\n    return find(haystack, 0);\n}\n"
+    unwrap = "pub fn first(p: ?*const u8) u8 {\n    return p.?.*;\n}\n"
+
+    for source, name in ((typed, "indexOf"), (unwrap, "first")):
+        record = the_one("a.zig", source, name)
+        assert (record.cognitive, record.nesting, record.ccn) == (0, 0, 1), name
+
+
+def test_a_zig_error_set_merge_is_no_boolean_operator():
+    """Zig spells boolean or as `or`; `||` merges two error sets, a type. The
+    `if` +1 and the `or` +1 are the whole cognitive score; it read 3. lizard's
+    nesting extension still reads the `||` as a level, whatever the reader
+    says, so the nesting column is not pinned here."""
+    source = ("fn open(p: []const u8) (error{Empty} || Io)!u8 {\n"
+              "    if (p.len == 0 or p[0] == 0) {\n        return error.Empty;\n    }\n    return 1;\n}\n")
+    record = the_one("a.zig", source, "open")
+
+    assert (record.ccn, record.cognitive) == (3, 2)
+
+
+def test_zig_words_other_languages_nest_on_are_names_in_zig():
+    """`case`, `def` and `foreach` are no Zig keywords, so a variable with one of
+    those names opens nothing."""
+    source = "fn names() u8 {\n    const case = 1;\n    const def = 2;\n    return case + def;\n}\n"
+
+    assert the_one("a.zig", source, "names").nesting == 0
+
