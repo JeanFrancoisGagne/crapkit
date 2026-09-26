@@ -21,10 +21,23 @@ Hand fixture (`hand` below):
 - big_e has 4006 body lines (4004 shingles). big_f shares its first 3206 body
   lines (3203 shingles): 3203/4004 = 0.799950... under 0.8, though it rounds
   to 0.8000 at 4 places. big_g shares 3207 (3204 shingles): 0.800200, a pair.
+- hub (t.py) holds four 12-line blocks; tie_1..tie_4 (u1.py..u4.py) each hold
+  one of them under their own def line: 13 lines, 10 shingles, 9 inside the
+  block, so each pairs with hub at 9/10 = 0.9, a four-way tie under the two
+  pairs at 1.0 (copy_a with outer, and with outer.copy_a).
+- star_a and star_b (s1.py, s2.py): 12 body lines, the 6th a `**first(items),`
+  or `**second(items),` argument line, which is code. 13 lines, 10 shingles,
+  5 outside the differing line: 0.5, no pair. crapkit leaves the line out as a
+  comment and reads 8/9 = 0.8889 (analysis-oracles-140).
+- doc_a and doc_b (k1.py, k2.py): one 10-line body under two def lines and two
+  one-line docstrings. crapkit leaves a line starting with three quotes out:
+  11 lines, 7/8 = 0.875. Keeping the docstring, a string literal: 7/9 = 0.7778.
 
 jscpd 5.3.2 (weak mode, which drops comments) is the outside oracle on the
 small functions: the functions that hold each clone it reports, joined into
-clone classes, are the pairs crapkit reports.
+clone classes, are the pairs crapkit reports. A brute force over every pair
+(oracles/symilar_adapter.py) is the self-diff for the whole set, and pylint's
+symilar the nightly oracle.
 """
 from __future__ import annotations
 
@@ -35,7 +48,8 @@ import subprocess
 import pytest
 
 from accuracy.analysis_oracles import analysis_inventory
-from accuracy.kit import drive, oracles, rulings
+from accuracy.analysis_oracles.oracles import symilar_adapter
+from accuracy.kit import drive, oracles, rulings, runlog
 
 pytestmark = pytest.mark.process
 
@@ -44,6 +58,9 @@ BODY = ["total = 0", "for item in items:", "    if item > limit:", "        tota
         "count = len(items)", "return total / max(count, 1)"]
 BIG = [f"e_{i} = {i}" for i in range(4006)]
 SMALL_FILES = ("a.py", "b.py", "c.py", "d.py")
+TIE_BLOCKS = [[f"part_{block}_{line} = shift(items, {line}) + {block}" for line in range(12)]
+              for block in range(1, 5)]
+DOC_BODY = [f"step_{line} = scale(items, {line}) - limit" for line in range(10)]
 
 
 def _function(name: str, body: list[str], indent: str = "    ") -> str:
@@ -67,6 +84,23 @@ def _big(name: str, shared: int, tag: str) -> str:
     return _function(name, BIG[:shared] + [f"{tag}_{i} = {i}" for i in range(900)])
 
 
+def _star(name: str, spread: str) -> str:
+    return _function(name, ["acc = 0", "for entry in items:", "    acc += entry", "merged = dict(",
+                            "    base=acc,", f"    **{spread}(items),", "    limit=limit,", ")",
+                            "size = len(items)", "if size > limit:", "    return merged",
+                            "return None"])
+
+
+def _documented(name: str, docstring: str) -> str:
+    return _function(name, [f'"""{docstring}"""', *DOC_BODY])
+
+
+def _ties() -> dict:
+    ties = {f"u{block}.py": _function(f"tie_{block}", TIE_BLOCKS[block - 1])
+            for block in range(1, 5)}
+    return {"t.py": _function("hub", [line for block in TIE_BLOCKS for line in block]), **ties}
+
+
 def hand_files() -> dict:
     return {
         "a.py": _function("copy_a", BODY),
@@ -77,6 +111,11 @@ def hand_files() -> dict:
         "e.py": _function("big_e", BIG),
         "f.py": _big("big_f", 3206, "f"),
         "g.py": _big("big_g", 3207, "g"),
+        **_ties(),
+        "s1.py": _star("star_a", "first"),
+        "s2.py": _star("star_b", "second"),
+        "k1.py": _documented("doc_a", "Sum the items above the limit."),
+        "k2.py": _documented("doc_b", "Add up what passes the limit."),
     }
 
 
@@ -161,12 +200,57 @@ def test_an_enclosing_function_under_min_lines_never_pairs(pairs):
 
 # --- hash seeds and input order (R29) -------------------------------------------------
 
+# The renamed layout: the small files, outer's file and the tie set under new
+# paths that reverse the ties' order; hub still sorts before every tie.
+RENAMES = {"a.py": "lib/z_a.py", "b.py": "lib/y_b.py", "c.py": "lib/x_c.py", "d.py": "lib/w_d.py",
+           "h.py": "lib/v_h.py", "t.py": "ties/hub.py", "u1.py": "ties/t4.py",
+           "u2.py": "ties/t3.py", "u3.py": "ties/t2.py", "u4.py": "ties/t1.py"}
+RENAMED_NAMES = {"copy_a", "copy_b", "factory", "factory.closure", "other", "outer",
+                 "outer.copy_a", "hub", "tie_1", "tie_2", "tie_3", "tie_4"}
+# --top 4 keeps the two pairs at 1.0 and cuts the 0.9 tie after two of its four
+# pairs. README: "Ties have a stable order across hash seeds"; the order kept
+# is by location (test_ties_are_ordered_by_location_not_by_arrival), so the
+# renamed layout keeps the ties that now sort first.
+TOP_FOUR = {
+    "given": [{"copy_a", "outer"}, {"copy_a", "outer.copy_a"}, {"hub", "tie_1"},
+              {"hub", "tie_2"}],
+    "renamed": [{"copy_a", "outer"}, {"copy_a", "outer.copy_a"}, {"hub", "tie_4"},
+                {"hub", "tie_3"}],
+}
+
+
+@pytest.fixture(scope="module")
+def renamed(tmp_path_factory):
+    files = hand_files()
+    moved = {new: files[old] for old, new in RENAMES.items()}
+    tree = {"crapkit.toml": analysis_inventory.config(analysis_inventory.languages_of(moved)),
+            **moved}
+    driver = drive.Driver(analysis_inventory.build(tree, tmp_path_factory.mktemp("dup-renamed")
+                                                   / "repo"))
+    done = driver.run("coverage")
+    assert done.code == 0, done.stderr
+    return driver
+
+
 @pytest.mark.parametrize("seed", ["0", "1", "4242"])
-def test_top_pairs_ignore_hash_seed_and_input_order(hand, seed):
-    base = hand.run("duplication", "--json", "--top", "3")
-    seeded = drive.Driver(hand.root, spawn=True, env={"PYTHONHASHSEED": seed})
-    again = seeded.run("duplication", "--json", "--top", "3")
-    assert (again.code, again.json()["pairs"]) == (0, base.json()["pairs"])
+@pytest.mark.parametrize("layout", ["given", "renamed"])
+def test_top_pairs_ignore_hash_seed_and_input_order(hand, renamed, layout, seed):
+    """R29: the pairs --top 4 keeps, and their order, under three hash seeds and
+    two layouts of the same bytes."""
+    root = {"given": hand.root, "renamed": renamed.root}[layout]
+    seeded = drive.Driver(root, spawn=True, env={"PYTHONHASHSEED": seed})
+    done = seeded.run("duplication", "--json", "--top", "4")
+    assert done.code == 0, done.stderr
+    kept = [{_bare(f["long_name"]) for f in pair["functions"]} for pair in done.json()["pairs"]]
+    assert kept == TOP_FOUR[layout]
+
+
+def test_renamed_paths_give_the_same_pairs(pairs, renamed):
+    """The same bytes under other paths pair the same functions at the same
+    similarities: a path only orders ties."""
+    moved = pair_names(renamed.json("duplication", "--json"))
+    assert moved == {names: value for names, value in pairs.items() if names <= RENAMED_NAMES}
+    assert len(moved) == 16
 
 
 def _both_small(places: tuple) -> bool:
@@ -181,6 +265,103 @@ def test_ties_are_ordered_by_location_not_by_arrival(hand):
     ties = [paths for paths in ranked if _both_small(paths)]
     assert len(ties) >= 3
     assert ties == sorted(ties)
+
+
+# --- line scheme rulings and the brute-force self-diff ------------------------------------
+
+@pytest.fixture(scope="module")
+def hand_rows(hand, tmp_path_factory):
+    """crapkit's inventory rows for the hand set: the functions and their spans."""
+    out = tmp_path_factory.mktemp("dup-rows") / "inventory.tsv"
+    return list(analysis_inventory.run_inventory(hand.root, out).rows)
+
+
+def _texts(files: dict) -> dict[str, list[str]]:
+    return {path: text.splitlines() for path, text in files.items()}
+
+
+def _file_windows(path: str, keep_docstrings: bool = False) -> set:
+    """The windows of the one function a hand file holds, by the scheme or,
+    with keep_docstrings, with its docstring line kept."""
+    lines = _texts(hand_files())[path]
+    if keep_docstrings:
+        return symilar_adapter.windows(["".join(line.split()) for line in lines if line.strip()])
+    return symilar_adapter.windows(symilar_adapter.normalized(lines, 1, len(lines)))
+
+
+@rulings.applies("AO-DUP-STAR-LINE")
+def test_a_code_line_starting_with_a_star_is_shingled(pairs):
+    """A `**spread(items),` argument line is code; only comment lines are left out."""
+    hand = symilar_adapter.containment(_file_windows("s1.py"), _file_windows("s2.py"))
+    assert hand == 0.5
+    rulings.pin_ruling("AO-DUP-STAR-LINE", oracle="none",
+                       crapkit=pairs.get(frozenset({"star_a", "star_b"}), "none"))
+
+
+@rulings.applies("AO-DUP-DOCSTRING-LINES")
+def test_a_docstring_line_is_left_out_like_a_comment(pairs):
+    """A docstring is a string literal (Python reference, "Docstrings"), yet a line
+    starting with three quotes is left out, and the scheme the brute force and
+    symilar read takes the same transform: raw 7/9, transformed 7/8."""
+    raw = symilar_adapter.containment(_file_windows("k1.py", keep_docstrings=True),
+                                      _file_windows("k2.py", keep_docstrings=True))
+    transformed = symilar_adapter.containment(_file_windows("k1.py"), _file_windows("k2.py"))
+    assert (round(raw, 4), transformed) == (0.7778, 0.875)
+    rulings.pin_ruling("AO-DUP-DOCSTRING-LINES", crapkit=pairs[frozenset({"doc_a", "doc_b"})],
+                       oracle=round(raw, 4))
+
+
+def _named(found: dict) -> dict:
+    return {frozenset(_bare(name) for _, _, name in key): value for key, value in found.items()}
+
+
+def _without(found: dict, names: set) -> dict:
+    return {key: value for key, value in found.items() if not key & names}
+
+
+def test_brute_force_over_every_pair_gives_crapkit_s_pairs(hand_rows, pairs):
+    """Self-diff: containment over every pair of shingled functions, with plain
+    sets of line windows and no index, is crapkit's pair list. star_a and star_b
+    hold an analysis-oracles-140 line and are set aside."""
+    texts = _texts(hand_files())
+    aside = {_bare(name) for _, _, name in symilar_adapter.set_aside(hand_rows, texts)}
+    found = _named(symilar_adapter.brute_force(hand_rows, texts, 0.8))
+    assert aside == {"star_a", "star_b"}
+    assert len(pairs) < 50, "the default --top 50 cut the list"
+    assert _without(pairs, aside) == _without(found, aside)
+
+
+def _pairs_by_key(payload: dict) -> dict:
+    return {tuple(sorted((f["path"], f["start"], f["long_name"]) for f in pair["functions"])):
+            pair["similarity"] for pair in payload["pairs"]}
+
+
+def _decoded(files: dict) -> dict[str, list[str]]:
+    return {path: (text.decode("utf-8") if isinstance(text, bytes) else text).splitlines()
+            for path, text in files.items()}
+
+
+def _outside(found: dict, aside: set) -> dict:
+    return {key: value for key, value in found.items() if not set(key) & aside}
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("corpus, similarity, floor", [("src", 0.01, 5), ("stdlib", 0.5, 3000)])
+def test_brute_force_over_a_corpus_gives_crapkit_s_pairs(request, corpus, similarity, floor):
+    """The self-diff over crapkit's own source at --similarity 0.01, so every pair
+    that shares one window is compared, and over the standard library at 0.5
+    (4,474 pairs on 3.12)."""
+    files = request.getfixturevalue(f"{corpus}_corpus").files
+    measured = request.getfixturevalue(f"{corpus}_inventory")
+    payload = drive.Driver(Path(measured.root)).json(
+        "duplication", "--similarity", str(similarity), "--top", "10000000")
+    rows, texts = list(measured.rows), _decoded(files)
+    aside = symilar_adapter.set_aside(rows, texts)
+    runlog.note("skipped_files", oracle=f"brute force {corpus}: functions set aside (ao-140)",
+                count=len(aside))
+    found = _outside(symilar_adapter.brute_force(rows, texts, similarity), aside)
+    assert len(found) >= floor
+    assert _outside(_pairs_by_key(payload), aside) == found
 
 
 # --- jscpd, the outside oracle ------------------------------------------------------------
@@ -230,10 +411,10 @@ def jscpd_pairs(root: Path, rows: list[dict], out: Path) -> set:
     return _class_pairs(_classes(links))
 
 
-def test_jscpd_clone_classes_are_the_pairs_crapkit_reports(oracle, hand, pairs, tmp_path):
+def test_jscpd_clone_classes_are_the_pairs_crapkit_reports(oracle, hand, hand_rows, pairs,
+                                                           tmp_path):
     oracle("jscpd")
-    inventory = analysis_inventory.run_inventory(hand.root, tmp_path / "inventory.tsv")
-    found = jscpd_pairs(hand.root, list(inventory.rows), tmp_path / "jscpd")
+    found = jscpd_pairs(hand.root, hand_rows, tmp_path / "jscpd")
     small = {"copy_a", "copy_b", "factory", "factory.closure", "other"}
     mine = {names for names in pairs if names <= small and "factory" not in names}
     assert found == mine == {frozenset({"copy_a", "copy_b"}),
