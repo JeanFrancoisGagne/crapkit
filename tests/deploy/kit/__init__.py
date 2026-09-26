@@ -44,7 +44,8 @@ the user touches. The kit owns everything a cell must not re-invent:
   stub_anthropic, stub_openai
                 scripted model APIs that record every request body
   clock         what run.py --faketime changes for a cell: the environment
-                name libfaketime adds, and the releases it cannot start
+                name libfaketime adds, the releases it cannot start, and the
+                programs that keep the real clock
 
 The environment a run.py invocation hands the kit:
 
