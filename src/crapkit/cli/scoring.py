@@ -22,8 +22,8 @@ from ..universe import assign_files, scan_files
 from ..uncovered import DeadLineFold
 from ._shared import (_analysis_tools, _command_root, _emit_findings, _file_sizer, _gate_line,
                       _latest_scored, _load_repo_config, _load_sources, _print_json,
-                      _print_unread, _ratchet_entries, _repo_out_path, _repo_relative,
-                      _say_left_out, _stand, _unreadable_json, _write_tsv)
+                      _print_unread, _ratchet_entries, _repo_out_path, _say_left_out,
+                      _scored_arguments, _stand, _unreadable_json, _write_tsv)
 
 
 def _tracked_files(files_by_scope: dict) -> list[str]:
@@ -769,7 +769,7 @@ def _rescore_analyze(root: Path, cfg, files,
     from ..analyze import unread_reasons
     from ..hook import file_ceilings
 
-    rel_paths = sorted({_repo_relative(p, root, cwd) for p in files})
+    rel_paths = _scored_arguments(files, root, cfg, cwd)
     _refuse_missing(root, rel_paths)
     files_by_scope = assign_files(rel_paths, cfg, size_of=_file_sizer(root))
     flat = _tracked_files(files_by_scope)
@@ -820,6 +820,12 @@ def _unmeasured(row, unjoined: set) -> bool:
     return row in unjoined or unjoined_flag(row.flag)
 
 
+# What every rescore payload says about its two sources, check_gate's verdict
+# on a name that is not UTF-8 included.
+RESCORE_NOTE = ("coverage is the baseline run's; complexity is the working tree's. "
+                "Run verify for the real verdict.")
+
+
 def _rescore_json(overlay, latest: dict, gate: dict | None = None,
                   unjoined: set = frozenset()) -> None:
     """The functions, and under --gate the verdict beside them: one object,
@@ -832,7 +838,7 @@ def _rescore_json(overlay, latest: dict, gate: dict | None = None,
             "end": r.end, "ccn": r.ccn, "cov": r.cov, "flag": r.flag, "crap": r.crap,
             "remedy": r.remedy, "stale_coverage": True, "unmeasured": _unmeasured(r, unjoined),
         } for r in overlay],
-        "note": "coverage is the baseline run's; complexity is the working tree's. Run verify for the real verdict.",
+        "note": RESCORE_NOTE,
     }
     if gate is not None:
         payload["gate"] = gate

@@ -231,11 +231,20 @@ ARGUMENT_REFUSAL = ("is named in bytes that are not UTF-8, and crapkit reads eve
                     "rename it (git mv) to a UTF-8 name")
 
 
+# A lookup command answers for the one file it is handed, so it refuses such a
+# name whether a scope takes it or not. rescore leaves out a name no scope takes.
+RENAME_ROWS = [
+    pytest.param(name, command, id=f"{kind}-{cid}")
+    for kind, name in (("scoped", b"src/caf\xe9.py"), ("unscoped", b"docs/caf\xe9.md"))
+    for cid, command in (("rescore", ("rescore",)), ("rescore-gate", ("rescore", "--gate")),
+                         ("explain", ("explain",)), ("brief", ("brief",)),
+                         ("ratchet-move-to", ("ratchet", "move", "src/app.py")))
+    if kind == "scoped" or command[0] != "rescore"
+]
+
+
 @POSIX_NAME
-@pytest.mark.parametrize("name", [b"src/caf\xe9.py", b"docs/caf\xe9.md"], ids=["scoped", "unscoped"])
-@pytest.mark.parametrize("command", [("rescore",), ("rescore", "--gate"), ("explain",), ("brief",),
-                                     ("ratchet", "move", "src/app.py")],
-                         ids=["rescore", "rescore-gate", "explain", "brief", "ratchet-move-to"])
+@pytest.mark.parametrize(("name", "command"), RENAME_ROWS)
 def test_a_command_handed_a_name_that_is_not_utf8_names_the_rename(tmp_path, name, command):
     """A Linux shell hands the name over as its own bytes. rescore answered
     'src/caf\ufffd.py does not exist', a file nobody named, where the file does
@@ -249,6 +258,22 @@ def test_a_command_handed_a_name_that_is_not_utf8_names_the_rename(tmp_path, nam
 
     assert result.returncode == 3, result.stdout + result.stderr
     assert result.stderr == f"crapkit: {_shown(name)} {ARGUMENT_REFUSAL}\n", result.stderr
+
+
+@POSIX_NAME
+@pytest.mark.parametrize("command", [("rescore",), ("rescore", "--gate")], ids=["rescore", "rescore-gate"])
+def test_rescore_leaves_out_a_name_no_scope_takes_with_one_line(tmp_path, command):
+    """Q17: hook-precommit leaves such a staged file out, and rescore --gate
+    refused the same file at exit 3."""
+    repo = _repo(tmp_path)
+    assert run_cli(repo, "coverage").returncode == 0
+    _commit(repo, {b"docs/caf\xe9.md": SOURCE}, "add a Latin-1 name")
+
+    result = run_cli(repo, *command, os.fsdecode(b"docs/caf\xe9.md"))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stderr == ("crapkit: left out docs/caf\\xe9.md: its name is not UTF-8 and no "
+                             "scope takes it, so nothing in it is scored\n"), result.stderr
 
 
 # The argument a caller hands for a file whose name is not UTF-8: on POSIX the
@@ -279,24 +304,50 @@ def test_the_gates_error_object_lists_the_name_in_unread_files(tmp_path):
     assert json.loads(result.stdout)["error"]["unread_files"] == [UNREAD_FILE]
 
 
-def test_check_gate_answers_such_a_name_with_a_failed_verdict(tmp_path):
-    """check_gate answered isError true with the exit-3 error object: no
-    verdict, no finding. It speaks MCP, so it returns the gate's refusal as a
-    verdict that fails, with the name in unread_files."""
-    repo = _measured_with_an_unreadable_file(tmp_path)
+def _check_gate_reply(repo: Path, path: str) -> dict:
+    """check_gate's result over `crapkit mcp`, the way a host calls it."""
     frames = "\n".join(json.dumps(frame) for frame in (
         {"jsonrpc": "2.0", "id": 1, "method": "initialize",
          "params": {"protocolVersion": "2025-06-18", "capabilities": {}}},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-         "params": {"name": "check_gate", "arguments": {"path": UNREADABLE_ARGUMENT}}}))
+         "params": {"name": "check_gate", "arguments": {"path": path}}}))
 
     result = run_cli(repo, "mcp", stdin=frames)
 
-    reply = json.loads(result.stdout.splitlines()[-1])["result"]
+    return json.loads(result.stdout.splitlines()[-1])["result"]
+
+
+def test_check_gate_answers_such_a_name_with_a_failed_verdict(tmp_path):
+    """check_gate answered isError true with the exit-3 error object: no
+    verdict, no finding. On Windows it answered `src/caf\ufffd.py does not
+    exist`, because the child it spawned read the name off argv as U+FFFD. It
+    speaks MCP, so it returns the gate's refusal as a verdict that fails, with
+    the name in unread_files and the baseline every verdict names."""
+    repo = _measured_with_an_unreadable_file(tmp_path)
+
+    reply = _check_gate_reply(repo, UNREADABLE_ARGUMENT)
+
     assert reply["isError"] is False, reply
     gate = reply["structuredContent"]["gate"]
     assert (gate["ok"], gate["judged"], gate["breaches"]) == (False, 0, []), gate
     assert gate["unread_files"] == [{**UNREAD_FILE, "dirty": True}]
+    assert {"baseline_run", "baseline_commit", "note"} <= set(reply["structuredContent"])
+
+
+@pytest.mark.parametrize("name", ["docs/caf\udce9.md", "tools/caf\udce9.py", "src/caf\udce9.txt"],
+                         ids=["docs-md", "outside-scope-path-py", "no-scope-language"])
+def test_check_gate_judges_a_name_no_scope_takes_as_any_unscoped_file(tmp_path, name):
+    """Q17 skips a name no scope takes. check_gate failed the gate on it."""
+    repo = _repo(tmp_path)
+    assert run_cli(repo, "coverage").returncode == 0
+    (repo / name).parent.mkdir(parents=True, exist_ok=True)
+    (repo / name).write_text(TANGLED, encoding="utf-8")
+
+    reply = _check_gate_reply(repo, name)
+
+    assert reply["isError"] is False, reply
+    gate = reply["structuredContent"]["gate"]
+    assert (gate["ok"], gate["judged"], gate["unread_files"]) == (True, 0, []), gate
 
 
 @pytest.mark.parametrize("command", ["inventory", "coverage", "verify"])

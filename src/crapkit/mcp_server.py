@@ -7,15 +7,18 @@ in the CLI.
 from __future__ import annotations
 
 import json
+import os
 from .procs import run_owned
 import sys
 from pathlib import Path
 
 from .agent_fields import schema_of
-from .cli._shared import _on_its_drive
+from .cli._shared import SCHEMA_VERSION, _load_repo_config, _on_its_drive
+from .errors import UNREAD_NAME_REASON, CrapkitError
+from .gitpaths import readable, shown
 from .invocation import _self
 from .plaintext import strip_escapes
-from .repopath import typed_path
+from .repopath import typed, typed_path
 from .repotext import json_kind
 from .rootfind import CONFIG_NAME, find_root
 
@@ -1352,8 +1355,8 @@ TOOLS: tuple[dict, ...] = (
                 "type": "string",
                 "description": ("repo-relative, or absolute inside repo, source file to judge "
                 "as edited. Outside the repo or missing answers a config error, and an "
-                "unchanged or unscoped file judges 0. A file whose name is not UTF-8 answers "
-                "gate.ok false with the name in gate.unread_files. repo may be any directory "
+                "unchanged or unscoped file judges 0. A file a scope takes whose name is not UTF-8 "
+                "answers gate.ok false with the name in gate.unread_files. repo may be any directory "
                 "under the checkout, and path stays relative to the root it walks up to.")}},
         "output": {
             "schema": {
@@ -1623,45 +1626,71 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     PYTHON_COLORS=1 a 3.13+ traceback or a 3.14 argparse message arrives
     coloured. An exit the tool declares in `verdict_exits` is an answer, not
     a failure: `gate` exits 6 on a breach and its payload says so in `gate.ok`."""
+    unread = _unreadable_path(tool, arguments, repo)
+    if unread is not None:
+        return _unread_name_result(Path(repo), unread)
     argv = build_argv(tool, arguments, repo)
     proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
     text = proc.stdout if proc.stdout.strip() else strip_escapes(proc.stderr)
-    verdict = _unread_verdict(tool, proc.returncode, text)
-    if verdict is not None:
-        return _structured(_result(verdict, is_error=False))
     failed = proc.returncode != 0 and proc.returncode not in tool.get("verdict_exits", ())
     return _structured(_result(text, is_error=failed))
 
 
-def _unread_verdict(tool: dict, returncode: int, text: str) -> str | None:
-    """A gate tool's answer when the CLI refused a file whose name is not UTF-8.
+def _unreadable_path(tool: dict, arguments: dict, repo: str) -> str | None:
+    """The root-relative name a gate tool's `path` gives, when a file on disk
+    has that name and it is not UTF-8; None for any other call.
 
-    Every CLI gate exits 3 on such a name, since no reader can key it. A tool
-    that speaks MCP maps that refusal to its own protocol, where a tool error
-    reads as a broken tool: the answer is the verdict the refusal is, a gate
-    that fails with nothing judged and each refused name in `unread_files`,
-    in the entry shape `rescore --gate --json` lists: `dirty` is true, since
-    the gate judges the working tree. Any other exit-3 answer stays the tool
-    error it was."""
-    if returncode != 3 or not tool.get("unread_verdict"):
+    Such a name never goes on a child's argv. On Windows the child read a lone
+    surrogate there as U+FFFD, looked up a file nobody named, and check_gate
+    answered isError true with `does not exist`."""
+    if not tool.get("unread_verdict"):
         return None
-    unread = _error_fields(text).get("unread_files")
-    if not unread:
+    rel = typed(str(arguments["path"]), repo)
+    if rel is None or readable(rel) or not os.path.lexists(Path(repo) / rel):
         return None
-    return json.dumps({"functions": [], "schema": 1, "gate": {
-        "ok": False, "judged": 0, "ceilings": {}, "breaches": [], "untracked": [],
-        "unread_files": [{**item, "dirty": True} for item in unread]}}, sort_keys=True)
+    return rel
 
 
-def _error_fields(text: str) -> dict:
-    """The inner object of the CLI's --json error answer, or {} for any other text."""
+def _unread_name_result(root: Path, rel: str) -> dict:
+    """check_gate's answer on a file whose name is not UTF-8, decided here.
+
+    Every CLI gate exits 3 on such a name when a scope takes it, since no
+    reader can key it. A tool that speaks MCP maps that refusal to its own
+    protocol, where a tool error reads as a broken tool: the answer is the
+    verdict the refusal is. A name no scope takes judges 0 and passes, as any
+    unscoped file does (Q17). A repo the CLI would refuse first (no config, no
+    scored run) answers that refusal as the CLI's error object."""
     try:
-        parsed = json.loads(text)
-    except ValueError:
-        return {}
-    error = parsed.get("error") if isinstance(parsed, dict) else None
-    return error if isinstance(error, dict) else {}
+        payload = _unread_name_verdict(root, rel)
+    except CrapkitError as exc:
+        return _result(_error_text(exc), is_error=True)
+    return _structured(_result(json.dumps(payload, sort_keys=True), is_error=False))
+
+
+def _unread_name_verdict(root: Path, rel: str) -> dict:
+    """`rescore --gate --json`'s payload for the one file: the baseline every
+    verdict names, no function, and the name in `gate.unread_files` when a
+    scope takes it, in the entry shape the CLI lists (`dirty` is true, since
+    the gate judges the working tree)."""
+    from .cli.scoring import RESCORE_NOTE, _rescore_baseline
+    from .universe import claiming_scope
+
+    cfg = _load_repo_config(root)
+    store, latest = _rescore_baseline(root)
+    store.close()
+    unread = [] if claiming_scope(rel, cfg) is None else [
+        {"path": shown(rel), "reason": UNREAD_NAME_REASON, "dirty": True}]
+    return {"baseline_run": latest["id"], "baseline_commit": latest["commit"], "functions": [],
+            "note": RESCORE_NOTE, "schema": SCHEMA_VERSION, "gate": {
+                "ok": not unread, "judged": 0, "ceilings": {}, "breaches": [], "untracked": [],
+                "unread_files": unread}}
+
+
+def _error_text(exc: CrapkitError) -> str:
+    """The CLI's `--json` error object for a refusal the server met in process."""
+    return json.dumps({"error": {"exit": exc.exit_code, "kind": exc.kind, "message": str(exc),
+                                 **exc.json_fields()}, "schema": SCHEMA_VERSION}, sort_keys=True)
 
 
 # JSON Schema type names to the Python shapes json.loads produces for them. A

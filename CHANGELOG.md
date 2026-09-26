@@ -443,10 +443,18 @@ version bump under Upgrading from 0.8.0 above.
   advisory; it now exits 2 with an advisory naming the file and the rename.
 - Under `--json`, the error object of each such refusal lists every refused file in a new
   `unread_files` field, a `path` and a `reason` per file, where the stderr line names the
-  first and counts the rest. The `check_gate` MCP tool answers a `path` whose name is not
-  UTF-8 with a verdict, `gate.ok` false, `judged` 0 and the file in `gate.unread_files`
-  with `dirty` true, the entry shape `rescore --gate --json` lists,
-  where it answered `isError: true` with the error object.
+  first and counts the rest. The `check_gate` MCP tool answers a `path` a scope takes
+  whose name is not UTF-8 with a verdict, `gate.ok` false, `judged` 0 and the file in
+  `gate.unread_files` with `dirty` true, the entry shape `rescore --gate --json` lists,
+  plus the `baseline_run`, `baseline_commit` and `note` every verdict carries, where it
+  answered `isError: true` with the error object. On Windows it answered `isError: true`
+  with `src/caf\ufffd.ts does not exist`, because the CLI it started read the name off its
+  command line as U+FFFD; the server now decides this verdict without starting the CLI.
+- A `rescore` or `rescore --gate` argument naming a file whose name is not UTF-8 and that
+  no scope takes is left out with one `crapkit: left out` line on stderr, and the gate
+  judges 0, as `hook-precommit` does for the same staged file. It exited 3 with the
+  rename sentence. `check_gate` answers such a `path` with `gate.ok` true and `judged` 0
+  where it failed the gate. A name a scope takes is still refused at exit 3.
 - Under a POSIX locale that is not UTF-8, `crapkit` restarts itself once with `-X utf8`,
   so `coverage` scores, and `claude-hook` advises on, `pkg/café.py`; each opened
   `pkg/caf\xe9.py`, which does not exist, and skipped the file as missing. The POSIX

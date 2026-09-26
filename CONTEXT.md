@@ -77,7 +77,7 @@ A source file the analysis names on stderr and scores as zero functions, because
 _Avoid_: skipped file (nothing about it is silent)
 
 **Unreadable name**:
-A file name git gives in bytes that are not UTF-8, so no row, mark or cache can be keyed on it. git's listings hand it on as a value; the scope assignment judges it. When a scope takes the name, the command refuses with exit 3 and the `git mv` fix, and a `--json` error object lists it in `unread_files`; `check_gate` returns that refusal as a verdict with `gate.ok` false. Any other tracked or staged one is left out, named once on stderr and listed in `unreadable_names`. An untracked one is a change to the lanes that read it.
+A file name git gives in bytes that are not UTF-8, so no row, mark or cache can be keyed on it. git's listings hand it on as a value; the scope assignment judges it. When a scope takes the name, the command refuses with exit 3 and the `git mv` fix, and a `--json` error object lists it in `unread_files`; `check_gate` returns that refusal as a verdict with `gate.ok` false. Any other tracked or staged one is left out, named once on stderr and listed in `unreadable_names`; a `rescore` argument no scope takes is left out with one stderr line, and `check_gate` judges it 0. `explain`, `brief` and `ratchet move` answer for the one file they are handed, so they refuse such a name whether a scope takes it or not. An untracked one is a change to the lanes that read it.
 _Avoid_: unanalyzable file (lizard read that one)
 
 ### Runs

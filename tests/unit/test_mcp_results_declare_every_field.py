@@ -17,6 +17,7 @@ from cli_inproc_repo import (KNOTTY, add_knotty, commit_all, repo, seed_artifact
 
 from crapkit import mcp_server
 from crapkit.cli import main
+from crapkit.gitpaths import readable
 
 
 def _extra_schema(schema: dict):
@@ -107,16 +108,62 @@ def test_each_result_declares_every_field_it_carries(scored):
     assert gaps == {}
 
 
-def test_check_gates_verdict_on_a_name_that_is_not_utf8_declares_every_field(scored):
-    """The verdict the server builds from the CLI's exit-3 refusal: a POSIX
-    name holding byte e9, or on NTFS a lone surrogate."""
-    (scored / "src" / "caf\udce9.ts").write_text(KNOTTY, encoding="utf-8")
+def _check_gate_on(scored, name: str) -> dict:
+    """check_gate's answer on a file written under NAME, a TypeScript body over its ceiling."""
+    (scored / name).parent.mkdir(parents=True, exist_ok=True)
+    (scored / name).write_text(KNOTTY, encoding="utf-8")
+    return mcp_server._call_tool(scored, "check_gate", {"path": name})
 
-    result = mcp_server._call_tool(scored, "check_gate", {"path": "src/caf\udce9.ts"})
+
+def test_check_gates_verdict_on_a_name_that_is_not_utf8_declares_every_field(scored):
+    """The verdict on a file a scope takes: a POSIX name holding byte e9, or
+    on NTFS a lone surrogate."""
+    result = _check_gate_on(scored, "src/caf\udce9.ts")
 
     assert result["isError"] is False, result["content"][0]["text"][-600:]
     assert result["structuredContent"]["gate"]["unread_files"][0]["path"] == "src/caf\\xe9.ts"
     assert undeclared(result["structuredContent"], _output_schema("check_gate")) == []
+
+
+def test_check_gates_verdict_on_a_name_that_is_not_utf8_carries_every_key_a_verdict_carries(scored):
+    """The verdict held functions, schema and gate only, so a reader of
+    baseline_run found no key on an isError false result, where every other
+    check_gate answer carries one."""
+    plain = mcp_server._call_tool(scored, "check_gate", {"path": "src/app.ts"})["structuredContent"]
+
+    unread = _check_gate_on(scored, "src/caf\udce9.ts")["structuredContent"]
+
+    assert sorted(unread) == sorted(plain)
+    assert (unread["baseline_run"], unread["baseline_commit"], unread["note"]) == (
+        plain["baseline_run"], plain["baseline_commit"], plain["note"])
+
+
+def test_check_gate_never_hands_a_name_that_is_not_utf8_to_the_cli(scored, monkeypatch):
+    """A Windows venv launcher hands a lone surrogate on argv to the child as
+    U+FFFD, so the child looked up src/caf\ufffd.ts, a file nobody named, and
+    answered isError true with `does not exist`. The server decides the
+    verdict itself, and no word it spawns holds the name."""
+    spawned = []
+    real = mcp_server.run_owned
+    monkeypatch.setattr(mcp_server, "run_owned",
+                        lambda argv, **kw: spawned.append(argv) or real(argv, **kw))
+
+    result = _check_gate_on(scored, "src/caf\udce9.ts")
+
+    assert result["isError"] is False, result["content"][0]["text"][-600:]
+    assert [word for argv in spawned for word in argv if not readable(word)] == []
+
+
+@pytest.mark.parametrize("name", ["docs/caf\udce9.md", "tools/caf\udce9.ts"],
+                         ids=["no-scope-language", "outside-every-scope-path"])
+def test_check_gate_judges_a_name_no_scope_takes_as_any_unscoped_file(scored, name):
+    """Q17: a name no scope takes is skipped, not refused. The server failed the
+    gate on any existing name that is not UTF-8, scoped or not."""
+    result = _check_gate_on(scored, name)
+
+    assert result["isError"] is False, result["content"][0]["text"][-600:]
+    gate = result["structuredContent"]["gate"]
+    assert (gate["ok"], gate["judged"], gate["breaches"], gate["unread_files"]) == (True, 0, [], [])
 
 
 def test_check_gate_ceilings_map_a_path_to_an_integer():

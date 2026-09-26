@@ -20,7 +20,7 @@ from ..repopath import on_a_share, rooted, typed, typed_path
 from ..rootfind import find_root
 from ..store import SnapshotStore
 from ..repotext import marks_text, os_text, repo_text
-from ..universe import left_out_lines
+from ..universe import claiming_scope, left_out_lines
 
 
 SCHEMA_VERSION = 1  # bumped whenever a --json field is removed or retyped
@@ -148,10 +148,41 @@ def _repo_relative(raw: str, root: Path = Path("."), cwd: Path | None = None) ->
     refused rather than matched against nothing: scoring no functions is not an
     answer to a path crapkit cannot place. A name that is not UTF-8 goes on to
     `_readable_argument`."""
+    return _readable_argument(_placed(raw, root, cwd), root)
+
+
+def _placed(raw: str, root: Path, cwd: Path | None) -> str:
+    """A file argument as git spells it under `root`, or the refusal of a path
+    outside it."""
     rel = typed(raw, root, cwd)
     if rel is None:
         raise ConfigError(f"{shown(raw)} is outside the repo at {shown(str(root))}")
-    return _readable_argument(rel, root)
+    return rel
+
+
+def _scored_arguments(files, root: Path, cfg, cwd: Path | None = None) -> list[str]:
+    """The root-relative names a scoring command reads from its file arguments.
+
+    A name that is not UTF-8 and that no scope takes is left out with one
+    stderr line (Q17), as a scan leaves such a name out: `rescore --gate`
+    refused it at exit 3, where hook-precommit passes the same staged file.
+    A name a scope takes still gets the rename refusal."""
+    placed = sorted({_placed(raw, root, cwd) for raw in files})
+    left_out = _left_out_arguments(placed, root, cfg)
+    _say_left_out_arguments(left_out)
+    return sorted({_readable_argument(rel, root) for rel in placed if rel not in left_out})
+
+
+def _left_out_arguments(names: list[str], root: Path, cfg) -> list[str]:
+    """The files on disk whose names are not UTF-8 and that no scope takes."""
+    return [rel for rel in names if not readable(rel) and os.path.lexists(root / rel)
+            and claiming_scope(rel, cfg) is None]
+
+
+def _say_left_out_arguments(names: list[str]) -> None:
+    for rel in names:
+        print(f"crapkit: left out {shown(rel)}: its name is not UTF-8 and no scope takes it, "
+              "so nothing in it is scored", file=sys.stderr)
 
 
 def _readable_argument(rel: str, root: Path) -> str:
