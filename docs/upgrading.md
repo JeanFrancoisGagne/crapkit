@@ -199,18 +199,25 @@ some JavaScript and TypeScript coverage move:
   files. A function that reads less covered now can go over its ceiling.
 ### Next analysis version: C, C++ and Objective-C rows
 
-The release after 0.8.0 reads the C family's parameters in a new way, so it raises
-the analysis version and every marks file re-seeds once, with the same three commands
-as version 11 below.
+The release after 0.8.0 reads the C family's functions and parameters in new ways, so
+it raises the analysis version and every marks file re-seeds once, with the same three
+commands as version 11 below.
 
 - `params` counts each declaration in a C, C++ or Objective-C parameter list, named
   or not: `f(int*, char)` reads 2, `f(const int arr[4])` reads 1, and an Objective-C
   method counts its arguments. `params` is reported and never gated.
-- A function after one whose default argument holds a parenthesized `<`, such as
-  `f(bool b = (1 < 2))`, reads its own parameters again and prints its long name with
-  spaces, `g( int a , int c)` where it read `g(int a,int c)`. That is a new ratchet
-  key: `ratchet prune` drops the old mark and `ratchet seed` marks the function under
-  the new name if it is over its ceiling.
+- Functions that had no row get one: those after a `<` comparison in a default
+  template argument or a member initializer, which lizard read as a template bracket.
+  A newly listed function over its ceiling fails the gate the next time its file
+  changes, and `ratchet seed` marks it.
+- Rows that were not functions go: a declaration whose trailing return type holds
+  braces, and an Objective-C instance-variable block.
+- Rows named after an attribute take the function's name: `__attribute__((noinline))`,
+  `API_AVAILABLE( ios(10))`, or `)` for an Objective-C method. The name is a new
+  ratchet key, and so is the long name of a function after one whose default argument
+  holds a parenthesized `<`: `g( int a , int c)` where it read `g(int a,int c)`.
+  `ratchet prune` drops the old mark and `ratchet seed` marks the function under its
+  new name if it is over its ceiling.
 
 ### Analysis version 11
 

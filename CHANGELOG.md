@@ -782,7 +782,31 @@ version and every repo with those languages re-seeds its marks once (`crapkit co
   breaks the functions after it. lizard left its bracket stack one deep, so every later
   function in the file read `params` 0 and printed its long name without spaces,
   `g(int a,int c)`. Those functions now read `g( int a , int c)`, a new ratchet key.
-- `params` is reported and never gated, and no other long name changes.
+- `params` is reported and never gated.
+
+### C, C++ and Objective-C functions that were hidden, invented or misnamed
+
+- A `<` comparison in a default template argument, `template <int N, bool E = (N < 19)>`,
+  or in a member initializer, `static constexpr bool v = N < 19;`, no longer hides
+  every function after it. lizard read the `<` as a template bracket and read on to the
+  next `>` in the file: fmt's chrono.h kept rows for its first 1,102 lines of 2,432 and
+  now lists all 285 functions. Each one is scored, gated and ratcheted for the first
+  time.
+- A declaration whose trailing return type holds braces, `static auto check(int) ->
+  decltype(all(Tag{}));`, has no row. The braces read as a body.
+- An attribute between the parameter list and the body keeps the function's name and
+  start line. `int run(int a) __attribute__((noinline)) {` read `__attribute__`, and an
+  Objective-C method with `API_AVAILABLE(ios(10))` or `NS_SWIFT_NAME(...)` read `)`,
+  started on the attribute's line and counted 1 of cognitive for recursion on the
+  body's first `)`. These rows take their real name, a new ratchet key, so a mark
+  recorded under `__attribute__((noinline))`, `API_AVAILABLE( ios(10))` or `)` is no
+  longer seen; `ratchet prune` drops it.
+- An Objective-C instance-variable block, `@interface Extension () { int _first; }`, is
+  no function. It read as one named `Extension()`, or after its last variable when the
+  extension adopted a protocol.
+- In a `.m` or `.mm` file, a C function's parameter list no longer names a method
+  after the word that follows it. A prototype, `int f(int);`, followed by an array
+  initializer's braces gave a function named after the array.
 
 ## 0.8.0 — 2026-09-23
 

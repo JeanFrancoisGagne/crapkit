@@ -122,3 +122,134 @@ def test_register_names_both_classes_when_the_rebind_does_not_take(monkeypatch):
     with pytest.raises(RuntimeError, match=r"'\.c' to no reader, not "
                                            r"crapkit\.lizardclike\.CLikeReader"):
         lizardclike.register()
+
+
+# --- functions lizard hid, merged or misnamed --------------------------------------
+
+BODY = " {\n    if (a) {\n        go();\n    }\n}\n"
+
+HIDDEN_AFTER = {  # a construct, then a function lizard never listed after it
+    "comparison in a default template argument": "template <int N, bool E = (N < 19)>\n"
+                                                 "struct S {\n  static constexpr int v = 1;\n};\n",
+    "comparison in a member initializer": "template <int N>\n"
+                                          "struct S {\n  static constexpr bool v = N < 19;\n};\n",
+}
+
+
+@pytest.mark.parametrize("head", HIDDEN_AFTER.values(), ids=HIDDEN_AFTER.keys())
+def test_a_less_than_comparison_hides_no_function_after_it(head):
+    """lizard read `<` as a template bracket wherever it stood and read on to the
+    next `>` in the file, so every function after it had no row: fmt's chrono.h
+    kept its rows only for its first thousand lines."""
+    rows = analyze_source("p.cpp", head + "int after(int a)" + BODY, note=False)
+
+    assert [(r.long_name, r.start, r.ccn) for r in rows] == [("after( int a)", 5, 2)]
+
+
+DECLTYPE_BRACES = {
+    "member": "struct S {\n    static auto check(int) -> decltype(all(Tag{}));\n"
+              "    int value(int a) {\n        return a;\n    }\n};\n",
+    "free": "auto check(int) -> decltype(all(Tag{}));\n",
+}
+
+
+@pytest.mark.parametrize("source", DECLTYPE_BRACES.values(), ids=DECLTYPE_BRACES.keys())
+def test_a_declaration_whose_return_type_holds_braces_has_no_row(source):
+    """`-> decltype(all(Tag{}))` declares check and defines nothing; lizard read
+    the braces as its body."""
+    names = [r.long_name for r in analyze_source("p.cpp", source, note=False)]
+
+    assert not [name for name in names if "check" in name]
+
+
+ATTRIBUTED = {  # path: (source, (bare name, start, cognitive)), worked by hand
+    "same-line.m": ("@implementation K\n- (void)run:(int)a\n      with:(int)b API_AVAILABLE(ios(10))"
+                    + BODY + "@end\n", ("run", 2, 1)),
+    "next-line.m": ("@implementation K\n- (void)run:(int)a API_AVAILABLE(ios(10))\n{\n"
+                    "    if (a) {\n        go();\n    }\n}\n@end\n", ("run", 2, 1)),
+    "gnu.m": ("@implementation K\n- (void)run:(int)a __attribute__((noinline))" + BODY + "@end\n",
+              ("run", 2, 1)),
+    "swift-name.m": ("@implementation K\n- (void)run:(int)a NS_SWIFT_NAME(run(_:))" + BODY
+                     + "@end\n", ("run", 2, 1)),
+    "bare-word.m": ("@implementation K\n- (void)run NS_REQUIRES_SUPER {\n    go();\n}\n@end\n",
+                    ("run", 2, 0)),
+    "c-gnu.c": ("int run(int a) __attribute__((noinline))" + BODY, ("run", 1, 1)),
+    "c-gnu-next.c": ("int run(int a)\n    __attribute__((noinline))" + BODY, ("run", 1, 1)),
+    "c-avail.c": ("int run(int a) API_AVAILABLE(ios(10))" + BODY, ("run", 1, 1)),
+    "cpp-gnu.cpp": ("int run(int a) __attribute__((noinline))" + BODY, ("run", 1, 1)),
+    "cpp-override.cpp": ("struct W {\n  int run(int a) const override __attribute__((cold))" + BODY
+                         + "};\n", ("run", 2, 1)),
+    "c-gnu.m": ("int run(int a) __attribute__((noinline))" + BODY, ("run", 1, 1)),
+}
+
+
+@pytest.mark.parametrize("path", ATTRIBUTED)
+def test_an_attribute_before_the_body_leaves_the_name_and_the_start_alone(path):
+    """lizard named the row after the attribute (`__attribute__`,
+    `API_AVAILABLE`) or, for a method, after the attribute's last `)`, which then
+    read as recursion; an attribute on a later line moved the start there."""
+    source, hand = ATTRIBUTED[path]
+
+    rows = analyze_source(path, source, note=False)
+
+    assert [(_bare(r.long_name), r.start, r.cognitive) for r in rows] == [hand]
+
+
+def _bare(long_name: str) -> str:
+    """`W::run( int a) const` and `run:( int ) with:( int )` both read `run`."""
+    return long_name.split("(")[0].split("::")[-1].split(":")[0].strip()
+
+
+UNCHANGED = {  # source: the one long name lizard already gave it
+    "MACRO(x)\nTEST(a, b)" + BODY: "TEST( a , b)",
+    'template <typename T>\nFMT_VISIBILITY("hidden")\nauto parse(T& ctx) -> int {\n  return 0;\n}\n':
+        "parse( T & ctx)",
+    "template <typename T>\nJSON_HEDLEY_NON_NULL(1)\nvoid grisu2(T* buf) {\n}\n": "grisu2( T * buf)",
+    "static __attribute__((unused)) int f(int a)" + BODY: "f( int a)",
+}
+
+
+@pytest.mark.parametrize("source", UNCHANGED, ids=["macro line", "template head", "hedley macro",
+                                                   "prefix attribute"])
+def test_a_word_and_parentheses_before_a_declaration_stay_where_lizard_put_them(source):
+    """A word with arguments is an attribute only right after the parameter list
+    of a function that has a return type. Before a declaration it keeps lizard's
+    reading, which is what keeps these four named right."""
+    (record,) = analyze_source("p.cpp", source, note=False)
+
+    assert record.long_name == UNCHANGED[source]
+
+
+INSTANCE_VARIABLES = {
+    "class extension": "@interface Extension () {\n    int _first;\n    int _second;\n}\n@end\n",
+    "extension adopting a protocol": "@interface Adopting () <NSCopying> {\n    int _phase;\n"
+                                     "    unsigned long long _offset;\n}\n@end\n",
+    "implementation": "@implementation Owner {\n    int _count;\n}\n@end\n",
+}
+
+
+@pytest.mark.parametrize("source", INSTANCE_VARIABLES.values(), ids=INSTANCE_VARIABLES.keys())
+def test_an_instance_variable_block_is_no_function(source):
+    """lizard read `@interface Extension () {` as a function named Extension, and
+    `() <NSCopying> {` as one named after its last instance variable."""
+    assert analyze_source("p.m", source, note=False) == []
+
+
+def test_a_c_function_at_the_top_of_an_implementation_keeps_its_row():
+    source = ("@implementation Foo\nstatic int helper(int x) {\n    return x;\n}\n"
+              "- (void)m {\n    helper(1);\n}\n@end\n")
+
+    rows = analyze_source("p.m", source, note=False)
+
+    assert [(r.long_name, r.start) for r in rows] == [("helper( int x)", 2), ("m", 5)]
+
+
+def test_a_prototype_in_objective_c_opens_no_function():
+    """lizard named a method after whatever followed any parameter list in a `.m`
+    file, a prototype's `;` included, and the next brace, here an array
+    initializer's, became that method's body."""
+    source = "int f(int);\nstatic int table[] = {1, 2};\nint g(int a) {\n    return a;\n}\n"
+
+    rows = analyze_source("p.m", source, note=False)
+
+    assert [r.long_name for r in rows] == ["g( int a)"]
