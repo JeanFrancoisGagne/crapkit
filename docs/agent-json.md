@@ -816,7 +816,8 @@ $ crapkit verify --json
 the file holds that name, and `long_name#2` for the second function holding it. It is the
 string to look up in `crapkit-ratchet.tsv`, and `long_name` alone is not, whenever a file
 gives one name to several functions. `ratchet_regressions` carries the key in `long_name`
-already, because the entry it reports comes from the marks file.
+already, because the entry it reports comes from the marks file. It lists the largest rise
+first, and rises equal at 4 places in path order.
 
 **`diff_uncovered` truncates at 50 entries; `diff_uncovered_count` does not.** Above 50 the
 two disagree on purpose. Trust the count.

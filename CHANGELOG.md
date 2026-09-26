@@ -13,6 +13,14 @@ No score changes.
   whichever it put first. A coupling cache an older crapkit wrote keeps the old order
   until the next commit or midnight UTC.
 
+### Marks that rose by the same amount list in path order
+
+- `verify` lists `ratchet_regressions` largest rise first, and rises equal at 4 places
+  in path order. The rise was a float difference, where 10.3 - 10.1 is
+  0.20000000000000107 and 20.3 - 20.1 is 0.1999999999999993, so two marks that rose by
+  0.2 listed in that noise's order and the `--override` refusal named whichever came
+  first.
+
 ### `explain --history` returns each commit message as git stored it
 
 - A body line that was `\x02` ended its commit's record there, and a body line starting

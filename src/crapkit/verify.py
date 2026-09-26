@@ -298,8 +298,16 @@ def _ratchet_regressions(fresh, ratchet, dirty) -> list[RatchetRegression]:
         if row is not None and round(row.crap, 4) > entry.crap:
             regressions.append(RatchetRegression(entry.path, entry.long_name, entry.crap,
                                                  round(row.crap, 4), entry.path in dirty))
-    regressions.sort(key=lambda r: (-(r.fresh_crap - r.recorded), r.path))
+    regressions.sort(key=_largest_rise_first)
     return regressions
+
+
+def _largest_rise_first(r: RatchetRegression) -> tuple:
+    """The rise is rounded to the 4 places both scores hold, so equal rises tie
+    and list by path. In binary floating point 10.3 - 10.1 is 0.20000000000000107
+    and 20.3 - 20.1 is 0.1999999999999993: two marks that rose by 0.2 listed by
+    that noise, and the refusal line names whichever came first."""
+    return -round(r.fresh_crap - r.recorded, 4), r.path
 
 
 def unmarked_over_ceiling(fresh: list[ScoredRow], ratchet: list[RatchetEntry], target: int,

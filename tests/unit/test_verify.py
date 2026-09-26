@@ -100,3 +100,18 @@ def test_gate_uses_the_scope_ceiling():
                  fresh_failures=set(), target=6, scope_targets={"src": 6, "legacy": 10})
     assert [g.path for g in v.gate_violations] == ["src/a.ts"], \
         "the legacy scope's ceiling of 10 admits ccn 8; src's ceiling of 6 does not"
+
+
+def test_marks_that_rose_by_the_same_amount_list_in_path_order():
+    """a.ts and b.ts rose by 0.2 each, c.ts by 1.0. In binary floating point
+    10.3 - 10.1 is 0.20000000000000107 and 20.3 - 20.1 is 0.1999999999999993,
+    which listed b.ts ahead of a.ts."""
+    marks = [RatchetEntry(path="src/a.ts", long_name="f( )", crap=20.1),
+             RatchetEntry(path="src/b.ts", long_name="f( )", crap=10.1),
+             RatchetEntry(path="src/c.ts", long_name="f( )", crap=7.0)]
+    fresh = [scored(path="src/a.ts", crap=20.3), scored(path="src/b.ts", crap=10.3),
+             scored(path="src/c.ts", crap=8.0)]
+    v = evaluate(fresh=fresh, changed_ranges={}, ratchet=marks, baseline_failures=set(),
+                 fresh_failures=set(), target=6)
+    assert [(r.path, r.recorded, r.fresh_crap) for r in v.ratchet_regressions] == [
+        ("src/c.ts", 7.0, 8.0), ("src/a.ts", 20.1, 20.3), ("src/b.ts", 10.1, 10.3)]
