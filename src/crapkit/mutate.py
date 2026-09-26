@@ -37,14 +37,18 @@ class Mutant(NamedTuple):
 
 # source token -> mutation targets. Negation flips plus boundary shifts —
 # the boundary mutant (> vs >=) is the one an off-by-one test hole misses.
-# Word operators retain their historical display spelling in this table.
+# Word operators retain their historical display spelling in this table. Zig
+# compares like C but joins with `and` and `or`: its `||` merges error sets and
+# it has no `&&`, so the C-family table flipped `A || B` to `A && B`, which does
+# not compile.
+_COMPARISONS = {"==": ("!=",), "!=": ("==",), "<=": ("<", ">"), ">=": (">", "<"),
+                "<": ("<=", ">="), ">": (">=", "<=")}
 _OPS = {
-    "python": {"==": ("!=",), "!=": ("==",), "<=": ("<", ">"), ">=": (">", "<"),
-               "<": ("<=", ">="), ">": (">=", "<="),
+    "python": {**_COMPARISONS,
                " and ": (" or ",), " or ": (" and ",), "True": ("False",), "False": ("True",)},
-    "typescript": {"===": ("!==",), "!==": ("===",), "==": ("!=",), "!=": ("==",),
-                   "<=": ("<", ">"), ">=": (">", "<"), "<": ("<=", ">="), ">": (">=", "<="),
+    "typescript": {"===": ("!==",), "!==": ("===",), **_COMPARISONS,
                    "&&": ("||",), "||": ("&&",), "true": ("false",), "false": ("true",)},
+    "zig": {**_COMPARISONS, "and": ("or",), "or": ("and",), "true": ("false",), "false": ("true",)},
 }
 # a short token matching INSIDE one of these is not that operator (== in ===,
 # > in => arrows, < in <=, < in a Swift half-open range): skip the occurrence
@@ -138,9 +142,10 @@ def mutation_language(rel_path: str) -> str:
     """The language whose operator table this path's mutants come from.
 
     Everything unnamed answers `typescript`, which is what the C-family table is.
-    Swift, Go, Vue and Zig spell their operators that way, and C, C++,
-    Objective-C and Java are where the spelling came from — none of them needs a
-    table of its own, and a table per label would be four copies to drift apart.
+    Swift, Go and Vue spell their operators that way, and C, C++, Objective-C and
+    Java are where the spelling came from — none of them needs a table of its own,
+    and a table per label would be four copies to drift apart. Zig takes its own
+    table: its connectives are `and` and `or`.
     """
     for suffix, language in _LANGUAGE_BY_SUFFIX.items():
         if rel_path.endswith(suffix):

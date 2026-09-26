@@ -30,6 +30,16 @@
   makes a mutant. Kill rates on Rust, C++ and Swift files can fall. No CRAP score
   changes.
 
+### `mutate` flips Zig's `and` and `or`, and leaves its `||` alone
+
+- Zig joins booleans with `and` and `or`. Its `||` merges two error sets, and `&&` is
+  no Zig operator. `mutate` gave Zig the C-family table, so `const E = A || B;` grew
+  `const E = A && B;`, which does not compile and counted as a kill no test made,
+  while `a and b` grew no mutant at all. Zig now has a table of its own: the same
+  comparisons and boolean literals, and `and` and `or` flipped into each other. Zig
+  files can gain mutants, and their kill rates can move either way. No CRAP score
+  changes.
+
 ### Recovery recognizes an abandoned temporary mutation run of any size
 
 - Startup recovery and `crapkit clean` refused a temporary mutation receipt that recorded

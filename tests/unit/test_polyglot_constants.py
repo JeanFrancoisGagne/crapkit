@@ -120,9 +120,10 @@ CPP_BRANCH = ("int pick(int a, int b) {\n"
 
 
 def test_the_c_family_mutates_off_the_table_it_falls_through_to():
-    """C, C++, Objective-C, Java and Zig were admitted with no table of their
-    own, which is a decision rather than an omission: they spell `==`, `!=`,
-    `<`, `>`, `&&`, `||` exactly as the C-family table does."""
+    """C, C++, Objective-C and Java were admitted with no table of their own,
+    which is a decision rather than an omission: they spell `==`, `!=`, `<`,
+    `>`, `&&`, `||` exactly as the C-family table does. Zig does not, so it has
+    a table of its own."""
     mutated = {m.mutated.strip()
                for m in file_mutants(CPP_BRANCH, changed_lines={2},
                                      language=mutate.mutation_language("src/pick.cpp"))}
@@ -131,6 +132,24 @@ def test_the_c_family_mutates_off_the_table_it_falls_through_to():
                        "if (a >= b && a != 0) { return a; }",
                        "if (a <= b && a != 0) { return a; }",
                        "if (a > b || a != 0) { return a; }"}
+
+
+def test_a_zig_error_set_merge_is_not_a_connective():
+    """Zig's `||` merges two error sets, and Zig has no `&&` at all. `A && B`
+    does not compile, so the mutant counted as a kill no test made."""
+    assert file_mutants("const E = A || B;\n", None, "zig") == []
+
+
+@pytest.mark.parametrize("line, mutated", [
+    ("const ok = a and b or !c;\n", ["const ok = a or b or !c;", "const ok = a and b and !c;"]),
+    ("if (a > b and a != 0) return a;\n",
+     ["if (a > b and a == 0) return a;", "if (a >= b and a != 0) return a;",
+      "if (a <= b and a != 0) return a;", "if (a > b or a != 0) return a;"]),
+])
+def test_zig_flips_its_connectives_and_and_or(line, mutated):
+    """Zig spells its boolean connectives `and` and `or`, and they grew no
+    mutant, so a test that never checked the second operand read as enough."""
+    assert [m.mutated for m in file_mutants(line, None, "zig")] == mutated
 
 
 def test_a_member_arrow_is_not_a_comparison():
