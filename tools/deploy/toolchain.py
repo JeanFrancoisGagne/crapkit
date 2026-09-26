@@ -156,13 +156,18 @@ def _once(target: Path, make, pin: str = "") -> Path:
     with nothing changed costs nothing. The old stamp goes before make runs,
     so a make that dies leaves no stamp for its half-made output to match."""
     stamp = target.with_name(target.name + ".pin")
-    if target.exists() and _read_stamp(stamp) == pin:
+    if _current(target, pin):
         return target
     _remove(target)
     _remove(stamp)
     make()
     stamp.write_text(pin, encoding="utf-8")
     return target
+
+
+def _current(target: Path, pin: str) -> bool:
+    """target exists and its <target>.pin says it was made, in full, from `pin`."""
+    return target.exists() and _read_stamp(target.with_name(target.name + ".pin")) == pin
 
 
 def _read_stamp(stamp: Path) -> str:
@@ -243,10 +248,21 @@ def runner_pin(python: str) -> str:
     return digest(DOCKER / "runner-requirements.txt") + " " + python
 
 
+def refuse_own_venv(venv: Path, pin: str, prefix: str = sys.prefix) -> None:
+    """Stop before making again the venv whose python runs this script. Windows
+    keeps that python.exe open, so the remove deleted the venv's packages, then
+    failed on the interpreter and left no runner at all."""
+    if not _current(venv, pin) and Path(prefix).resolve() == venv.resolve():
+        raise SystemExit(f"toolchain: this Python is the runner venv {venv}, which the pins say to make again; "
+                         "run toolchain.py with another Python 3.11 or newer, such as the 3.12 under "
+                         f"{venv.parent / 'python'}")
+
+
 def install_runner(uv: Path, python: str, root: Path) -> str:
     """The runner venv, made again when its requirements or its Python move."""
     venv = root / "runner"
     runner = venv / ("Scripts/python.exe" if WINDOWS else "bin/python")
+    refuse_own_venv(venv, runner_pin(python))
 
     def make():
         subprocess.run([str(uv), "venv", "-q", "--python", python, str(venv)], check=True)

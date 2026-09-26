@@ -67,7 +67,9 @@ Output lands in `.crapkit/deploy-out/` (`--out` moves it):
 `--native` runs the cells on this machine instead of in a container. Windows
 and macOS cells always run this way, and so does lin-native-start on a bare
 ubuntu runner. It needs the toolchain first: `python tools/deploy/toolchain.py
-[--harness core|full|none]` installs the pinned uv, CPythons, Node, pipx,
+[--harness core|full|none]`, with any Python 3.11 or newer except the
+toolchain's own runner venv, which a pin change makes again (toolchain.py
+refuses to start the rebuild under it). It installs the pinned uv, CPythons, Node, pipx,
 prek (Windows and Linux), pwsh (Windows and macOS), PortableGit (Windows), the
 harness binaries for this OS, the wheelhouse rows and the npm caches. On Linux
 it keeps the machine's own git and `/usr/bin/python3`, as a user's machine

@@ -156,6 +156,26 @@ def test_a_step_whose_output_exists_is_not_run_again(tmp_path):
     assert ran == []
 
 
+def test_the_runner_venv_is_never_made_again_under_its_own_python(tmp_path):
+    """toolchain.py run by the runner's python, with the runner's pin moved,
+    stops before it deletes anything."""
+    venv = tmp_path / "runner"
+    (venv / "Lib").mkdir(parents=True)
+
+    with pytest.raises(SystemExit, match="this Python is the runner venv"):
+        toolchain.refuse_own_venv(venv, "pin-2", prefix=str(venv))
+    assert (venv / "Lib").is_dir()
+
+
+def test_a_current_runner_or_another_python_goes_ahead(tmp_path):
+    venv = tmp_path / "runner"
+    venv.mkdir()
+    (tmp_path / "runner.pin").write_text("pin-1", encoding="utf-8")
+
+    toolchain.refuse_own_venv(venv, "pin-1", prefix=str(venv))
+    toolchain.refuse_own_venv(venv, "pin-2", prefix=str(tmp_path / "base-python"))
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="the C:\\dt base is the Windows jobs' basetemp")
 def test_the_windows_basetemp_has_no_short_name_component():
     assert "~" not in str(toolchain.basetemp())
