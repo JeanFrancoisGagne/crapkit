@@ -432,10 +432,13 @@ def table(entries: list[dict]) -> str:
     return "\n".join([_HEADER] + [_cell(row) for row in entries])
 
 
-def _scope_line(changed: list[str], entries: list[dict]) -> str:
+def _scope_line(changed: list[str], entries: list[dict] | None) -> str:
+    """The heading names the files the rows cover. `entries` is None when
+    there is no ranking, so the heading gives no top count to read as 0."""
     if changed:
         return f"### Worklist: {_plural(len(changed), 'changed file')}"
-    return f"### Worklist: the whole repository, top {len(entries)}"
+    top = "" if entries is None else f", top {len(entries)}"
+    return f"### Worklist: the whole repository{top}"
 
 
 def worklist_gap(worklist: dict | None) -> str | None:
@@ -457,8 +460,7 @@ def worklist_gap(worklist: dict | None) -> str | None:
 def _worklist_section(worklist, changed: list[str], entries: list[dict]) -> list[str]:
     gap = worklist_gap(worklist)
     if gap is not None:
-        heading = f"### Worklist: {_plural(len(changed), 'changed file')}" if changed else "### Worklist"
-        return [heading, "", gap]
+        return [_scope_line(changed, None), "", gap]
     shallow = [SHALLOW_LINE, ""] if worklist.get("shallow") else []
     return [_scope_line(changed, entries), "", *shallow, table(entries)]
 

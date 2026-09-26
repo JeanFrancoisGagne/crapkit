@@ -1490,6 +1490,7 @@ def test_a_worklist_that_printed_nothing_says_so_and_ranks_no_top_zero():
     text = _builder().body(None, None, 1, None, [], 5)
 
     assert "No ranked function" not in text and "top 0" not in text, text
+    assert "\n### Worklist: the whole repository\n" in text, text
     assert "`crapkit worklist` printed no ranking; its error is in the job log." in text, text
 
 
