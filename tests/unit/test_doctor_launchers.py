@@ -156,6 +156,21 @@ def test_under_pipx_run_on_its_pip_backend_the_fail_names_pipx(tmp_path, monkeyp
     assert line.endswith("(`pipx install crapkit`), then run this check again."), line
 
 
+def test_under_uvx_the_fail_sends_no_one_to_put_uv_s_environment_on_path(tmp_path, monkeypatch, capsys):
+    """uvx's environment holds this crapkit's launcher, and uv deletes or
+    rebuilds that environment on its own. The FAIL names the install that
+    stays, not the launcher's directory as one to add to PATH."""
+    cached = _under_uvx(tmp_path, monkeypatch)
+    (cached / BIN / ("crapkit.exe" if os.name == "nt" else "crapkit")).touch()
+    monkeypatch.setattr(admin, "_launcher_dirs", lambda: [cached / BIN])
+    monkeypatch.setenv("PATH", joined(cached / BIN))
+
+    assert main(["doctor", "--plugin-root", str(PLUGIN)]) == 1
+    (line,) = capsys.readouterr().out.splitlines()
+    assert "which PATH does not list" not in line, line
+    assert line.endswith("then run this check again."), line
+
+
 def test_under_uvx_an_install_further_down_path_is_the_one_checked(tmp_path, monkeypatch):
     cached = _under_uvx(tmp_path, monkeypatch)
     kept = shim(tmp_path / "tools", "0.7.6")

@@ -216,9 +216,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   Code loads in place from a local directory marketplace gets `git -C <dir> pull`, since
   `claude plugin update` only refreshes the cache copy beside it. A plugin Codex
   installed gets `codex plugin marketplace remove crapkit`, the marketplace added again
-  at the CLI's release tag, and `codex plugin add crapkit@crapkit`. A CLI behind gets `uv tool upgrade crapkit`, `pipx upgrade crapkit`,
-  or pip for the python its launcher starts (`uv pip` in a venv uv made). A pre-release
-  or local build names both repairs.
+  at the CLI's release tag, and `codex plugin add crapkit@crapkit`. A CLI behind gets
+  `uv tool upgrade crapkit`, `pipx upgrade crapkit`, or pip for the python its launcher
+  starts (`uv pip` in a venv uv made). A pre-release or local build names both repairs.
 - An install whose files differ from its marketplace's copy at one version is named, with
   the `claude plugin uninstall` and `claude plugin install` lines for each scope that
   holds it, run in its project for a project or local install. Between
@@ -585,7 +585,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   with the directory that holds the launcher of the crapkit running it, when there is
   one: `This crapkit's launcher is in DIR, which PATH does not list: add that directory
   to PATH, then restart the agent.` That is where `pip install --user` and a venv leave
-  it, and the line named only `pipx install crapkit`.
+  it, and the line named only `pipx install crapkit`. Under `uvx`, `uv run --with` or
+  `pipx run` the FAIL names the install that stays instead, since that launcher sits in an
+  environment the tool deletes or rebuilds.
 - The upgrade table has rows for pip --user, pipx (`pipx upgrade crapkit`), uvx
   (`uvx crapkit@latest --version`) and an install from the git URL (`python -m pip install
   --force-reinstall --no-deps git+https://github.com/JeanFrancoisGagne/crapkit.git`). A
@@ -664,12 +666,13 @@ nothing. Each of these now gets a line naming the object and the next step:
 ### The gate recipes in README and the handbook arm a gate that runs
 
 - The hook body README's Route 1 and Route 2 and the handbook write runs the `crapkit`
-  on PATH and falls back to `python -m crapkit`. It was `exec python -m crapkit
-  hook-precommit` alone, so a pipx or uv tool install, the installs README names for the
-  gate, and any machine with `python3` and no `python` (Debian, Ubuntu, macOS) refused
-  every commit with `exec: python: not found`. The gate section says what a hook that
-  still reaches no crapkit prints: exit 127 and `exec: python: not found` with no
-  python, exit 1 and `No module named crapkit` from a python that lacks it.
+  on PATH, then `uvx crapkit`, and falls back to `python -m crapkit`. It was `exec python
+  -m crapkit hook-precommit` alone, so a pipx or uv tool install, the installs README
+  names for the gate, and any machine with `python3` and no `python` (Debian, Ubuntu,
+  macOS) refused every commit with `exec: python: not found`. The gate section says what
+  a hook that reaches no `crapkit`, no `uvx` and no `python` that imports crapkit
+  prints: exit 127 and `exec: python: not found` with no python, exit 1 and `No module
+  named crapkit` from a python that lacks it.
 - Route 1 and the handbook's Enforcement block write the hook to `$(git rev-parse
   --git-common-dir)/hooks/pre-commit`. In a linked worktree, where `.git` is a file,
   `.git/hooks/pre-commit` failed with `Directory nonexistent` and the next commit went
