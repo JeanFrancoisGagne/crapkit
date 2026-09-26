@@ -95,9 +95,6 @@ def test_codex_refresh_installs_main_between_releases(box, candidate):
       scenario="drift: same version, different contents; after the README update lines Claude Code runs main's "
       "files, or doctor --plugin-root says it does not", use_cases="plugin drift", os="linux", image="core",
       cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-plugins-7: main past a release keeps the release's version "
-                   "string, so `claude plugin update` answers 'already at the latest version', the installed copy keeps "
-                   "the release's files, and doctor --plugin-root exits 0")
 def test_claude_update_between_releases_is_seen(box, candidate):
     repo = plain_repo(box)
     tree = between_releases(box, both_plugins_at_candidate(box, candidate, repo), candidate)

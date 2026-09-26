@@ -95,8 +95,6 @@ def test_uvx_only_user_gets_the_plugin_working(box, candidate, templates):
 @cell("lin-pair-uvx-plugin", channel="uvx + Claude plugin", harness="Claude Code",
       scenario="fresh: `uvx crapkit doctor --plugin-root` names the missing launcher the plugin cannot start",
       use_cases="plugin, doctor --plugin-root", os="linux", image="core", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-plugins-6: under uvx, doctor --plugin-root finds the "
-                   "crapkit uvx put on its own PATH and exits 0, while the plugin's `crapkit` spawns fail with ENOENT")
 def test_uvx_doctor_names_the_missing_launcher(box, candidate, templates):
     repo = uvx_user(box, candidate, templates)
     doctor = box.run(["uvx", "crapkit", "doctor", "--plugin-root"], cwd=repo)

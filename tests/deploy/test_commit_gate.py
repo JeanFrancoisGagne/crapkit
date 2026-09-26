@@ -13,7 +13,6 @@ import json
 import re
 from pathlib import Path
 
-import pytest
 
 from kit import docsnip, gitmirror, gitsurf, repos, wheels
 from kit.cells import cell
@@ -21,9 +20,6 @@ from kit.cells import cell
 PACKET = "deploy-git"
 UPGRADE_DOC = "docs/upgrading.md"
 OLD_HOOKS = "0.4.0"
-SILENT_GATE = ("deploy-bug deploy-git-1: a clone whose commits run no crapkit gate "
-               "(hooks path unset, shadowed by a global core.hooksPath, or taken back by husky) "
-               "commits a function over the ceiling and doctor says nothing")
 
 
 def adopted(box, templates, name: str = "py-pytest") -> Path:
@@ -67,7 +63,6 @@ def test_route2_commits_an_executable_hook_that_refuses_then_accepts(box, templa
     gitsurf.refused_then_accepted(box, repo)
 
 
-@pytest.mark.xfail(strict=True, reason=SILENT_GATE)
 @cell("lin-gate-route2", channel="Route 2", harness="git 2.47",
       scenario="fresh: README steps; mode 100755; a second clone without hooksPath commits ungated and doctor names it",
       use_cases="commit gate, doctor", os="linux", image="cells", cadence="push")
@@ -152,7 +147,6 @@ def husky(box, repo: Path) -> None:
     box.run(["git", "commit", "-q", "-m", "husky"], cwd=repo, env=box.commit_env(), expect=0)
 
 
-@pytest.mark.xfail(strict=True, reason=SILENT_GATE)
 @cell("lin-husky", channel="Route 2 in a husky repo", harness="husky 9 + git",
       scenario="fresh: README Route 2 after husky owns core.hooksPath", use_cases="commit gate", os="linux",
       image="cells", cadence="nightly")

@@ -118,9 +118,6 @@ def test_the_python_extra_over_a_venv_that_pins_coverage_74(box, templates):
 @cell("lin-pyextra-conflict", channel="pip [py] into a venv pinning coverage 7.4 + pytest-cov 5", harness="none",
       scenario="fresh: doctor names the coverage.py floor before coverage refuses", use_cases="doctor",
       os="linux", image="core", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-6: with coverage 7.4 in the lane's venv, "
-                                       "`crapkit doctor` prints 'no problems found' and `crapkit coverage` then "
-                                       "exits 5 with 'needs coverage >= 7.6'")
 def test_doctor_names_the_coverage_floor_before_coverage_refuses(box, templates):
     repo, _ = _pinned_venv(box, templates)
     _resynced(box, repo)

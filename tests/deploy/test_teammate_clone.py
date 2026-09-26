@@ -10,15 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from kit import docsnip, gitsurf, repos
 from kit.cells import cell
 
 PACKET = "deploy-git"
-NO_DRIVER = ("deploy-bug deploy-git-3: a clone whose .gitattributes names merge=crapkit-ratchet with no "
-             "merge.crapkit-ratchet.driver configured gets git's text merge of the marks file, and doctor "
-             "says nothing")
 CONFLICT = "CONFLICT (content): Merge conflict in crapkit-ratchet.tsv"
 
 
@@ -51,7 +47,6 @@ def test_a_clone_without_the_driver_gets_gits_text_conflict(box, templates):
     assert "<<<<<<<" in (clone / "crapkit-ratchet.tsv").read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_DRIVER)
 @cell("lin-teammate-clone", channel="clone of an adopted repo", harness="git 2.47",
       scenario="fresh: README + CONTRIBUTING lines; merge without the driver configured; assert git's text merge and doctor",
       use_cases="ratchet merge, commit gate", os="linux", image="cells", cadence="push")

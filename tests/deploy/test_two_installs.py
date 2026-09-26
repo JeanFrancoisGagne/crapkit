@@ -26,10 +26,6 @@ from kit.state import output
 
 PACKET = "deploy-upgrade"
 OLD = state.source_version("0.7.6")
-TWO_UNNAMED = pytest.mark.xfail(
-    strict=True, raises=state.KnownBug,
-    reason="deploy-bug deploy-upgrade-5: with two crapkit installs on PATH, doctor names neither the second one "
-           "nor which one a hook or a GUI-started MCP server runs")
 
 
 def with_path(box, *directories) -> dict[str, str]:
@@ -64,11 +60,10 @@ def named(text: str, directory) -> bool:
 def doctor_names_both(box, repo, env: dict, old_dir, new_dir) -> None:
     doctor = box.run([found_on(env, "crapkit"), "doctor"], cwd=repo, env=env)
     text = output(doctor)
-    state.known_bug(named(text, old_dir) and named(text, new_dir), "deploy-upgrade-5",
-                    f"doctor with installs in {old_dir} and {new_dir} printed:\n{text}")
+    assert named(text, old_dir) and named(text, new_dir), (
+        f"doctor with installs in {old_dir} and {new_dir} printed:\n{text}")
 
 
-@TWO_UNNAMED
 @cell("lin-two-installs", channel="user-site 0.7.6 + venv candidate", harness="shell, git hook, plugin",
       scenario="upgrade one copy; which version each consumer runs; doctor names both",
       use_cases="install", os="linux", image="core", cadence="nightly")
@@ -96,7 +91,6 @@ def test_lin_two_installs(box, templates, candidate):
     doctor_names_both(box, repo, activated, user_bin, state.scripts(venv))
 
 
-@TWO_UNNAMED
 @cell("win-two-installs", channel="system Scripts 0.7.6 + uv tool candidate", harness="shell, GUI-style PATH",
       scenario="upgrade one copy; which version the terminal and a GUI-started MCP server run; doctor names both",
       use_cases="install", os="windows", image=None, cadence="nightly")
