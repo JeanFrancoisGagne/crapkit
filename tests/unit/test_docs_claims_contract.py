@@ -1143,17 +1143,21 @@ def test_the_polyglot_workflow_prints_the_doctor_verdict_init_leaves():
     """Workflow 3 showed doctor FAILing `infra` and `ops` as scopes in no lane's
     list, and told the reader to settle the fork. init writes `coverage_optional
     = true` on a scope no coverage parser reads, so doctor has nothing to fail
-    and the reader went looking for two lines that never print."""
-    from crapkit.cli.admin import _doctor_uncovered
+    and the reader went looking for two lines that never print. The same config
+    gets one WARN on every machine, a lane scope with no [crapkit.scoped_tests]
+    template, and doctor's closing line counts it."""
+    from crapkit.cli.admin import _doctor_uncovered, _doctor_verdict
     from crapkit.config import load_config_text
+    from crapkit.doctor import scoped_test_gaps
 
     lanes = live_lanes(detect_lanes(frozenset({"pyproject.toml"}), TS_PACKAGE), POLYGLOT_SCOPES)
-    fails = [f"FAIL {finding.text}" for finding in _doctor_uncovered(load_config_text(
-        starter_toml(POLYGLOT_SCOPES, lanes)))]
+    cfg = load_config_text(starter_toml(POLYGLOT_SCOPES, lanes))
+    findings = _doctor_uncovered(cfg) + list(scoped_test_gaps(cfg.lanes, cfg.scoped_tests))
     printed = _printed_under(_handbook_pre("3 · Day one on a polyglot repo"), "crapkit doctor")
 
-    assert [line for line in printed if line.startswith("FAIL")] == fails
-    assert printed[-1] == (f"doctor: {len(fails)} problem(s)" if fails else "doctor: no problems found")
+    assert ([line for line in printed if line.startswith(("FAIL", "WARN"))]
+            == [f"{finding.level} {finding.text}" for finding in findings])
+    assert printed[-1] == _doctor_verdict(findings)
 
 
 # --- the README rows an agent picks a command from ---------------------------

@@ -25,7 +25,9 @@ HOOKS = ROOT / "plugin" / "hooks" / "hooks.json"
 PAGES = sorted({"README.md", "AGENTS.md", "CONTRIBUTING.md",
                 *(path.relative_to(ROOT).as_posix() for path in (ROOT / "docs").glob("*.md")),
                 *(path.relative_to(ROOT).as_posix() for path in (ROOT / "plugin").rglob("*.md"))})
-EXEC_FORM_CLAIM = re.compile(r"needs (?:Claude Code )?2\.1\.139|bare `crapkit`"
+# "a bare `crapkit`" is the argless spawn; "the bare `crapkit` command" is the
+# name either form starts.
+EXEC_FORM_CLAIM = re.compile(r"needs (?:Claude Code )?2\.1\.139|\ba bare `crapkit`"
                              r"|[Dd]o not (?:install|add) (?:crapkit's |the )?(?:Claude Code )?plugin")
 OLD_PLUGIN = re.compile(r"\b0\.8\.0\b")
 # A sentence ends at a period after a letter, a code span or a parenthesis, so a
@@ -92,6 +94,17 @@ def test_a_claim_about_the_exec_form_hook_is_found(text):
 ])
 def test_a_sentence_about_the_old_plugin_or_the_shell_form_hook_passes(text):
     assert exec_form_claims(text) == []
+
+
+def test_the_bare_command_name_is_no_claim_about_the_hook_form():
+    """Either hook form starts the bare name `crapkit`, so a page may say that
+    with the package gone the plugin starts a command that is not there. The
+    exec-form claim is that an agent runs a bare `crapkit`, one with no
+    arguments."""
+    removal = ("Both plugins start the bare `crapkit` command, so with the package gone and the "
+               "Claude Code plugin still installed, `claude mcp list` shows `Failed to connect`.")
+
+    assert exec_form_claims(removal) == []
 
 
 def test_a_claim_is_cut_at_its_own_sentence():
