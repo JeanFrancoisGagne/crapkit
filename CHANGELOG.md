@@ -1339,6 +1339,25 @@ each marks file re-seed once.
 - A `[switch]` parameter type costs no cognitive complexity. It read as a switch
   statement: +1, and the block after it counted one level deeper.
 
+### PowerShell finds the functions it lost
+
+- A function whose name carries a scope or dots gets a row under the whole name:
+  `function script:Get-Thing` reports `script:Get-Thing` and `function Get.Thing`
+  reports `Get.Thing`. It had no row, and its decisions counted toward no function.
+- A declaring word that declares nothing opens nothing: `dotnet build --configuration
+  $c`, `$o.filter`, `@{ filter = '*.txt' }`, `Write-Output function`. It opened a
+  function, so the function around the word lost its row, and a phantom row named
+  after a later token, such as `$c`, could take its place.
+- The decisions in a class's methods count toward no function. They counted toward the
+  function whose body declares the class. Methods still get no row.
+- `params` counts the parameters of the `param(...)` block that opens a function body,
+  so an advanced function no longer reads 0. The long name, which is the ratchet key,
+  still holds only the header list, so no key changes. A packet's `params` list still
+  names only the header's parameters; its `source` holds the block.
+- Rows appear and phantom rows go, so upgrade in this order: `crapkit coverage`, then
+  `crapkit ratchet prune` to drop marks left under phantom names, then
+  `crapkit ratchet seed`.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

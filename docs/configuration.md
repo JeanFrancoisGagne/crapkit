@@ -205,6 +205,10 @@ switch as 13, not 2. Keywords count in any case, as PowerShell reads them: `If (
 `if` and `Default` is the free arm. A keyword word that does not start a statement keeps
 its spelling, so `$xs | ForEach { }` is the ForEach-Object alias and costs nothing.
 
+**`powershell` gives a class's methods no row.** Their decisions count toward no function,
+not toward the function that declares the class, so nothing gates a method's complexity.
+Move logic you want gated into a function.
+
 **Pester test files need a glob of your own.** Pester names them `Foo.Tests.ps1`, beside the
 source they test, and no default exclude claims that spelling. `**/*.test.*` does not match
 `.Tests.ps1`, and crapkit will not invent a glob that deletes production files from repos

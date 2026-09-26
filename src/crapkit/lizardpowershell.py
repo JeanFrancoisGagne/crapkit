@@ -3,10 +3,23 @@
 WHAT IS REPORTED
     Named function-shaped declarations, in all four spellings PowerShell has:
     `function Name { }`, `filter Name { }`, `workflow Name { }` and
-    `configuration Name { }`. A parameter list in the header
-    (`function Name ($a, $b) { }`) is read as parameters; the far more common
-    `function Name { param(...) }` reports zero, because `param()` is a
-    statement in the body and not a header.
+    `configuration Name { }`. A name keeps its scope and its dots:
+    `function script:Get-Thing` reports `script:Get-Thing`, and
+    `function Get.Thing` reports `Get.Thing`, as PowerShell's parser names
+    them. A declaring word declares only where it starts a statement and a
+    name follows it, so `dotnet build --configuration $c`, `$o.filter` and
+    `@{ filter = '*.txt' }` open nothing.
+
+    The parameters are the header list's (`function Name ($a, $b) { }`) plus
+    those of the `param(...)` block that opens the body, the usual shape of an
+    advanced function: one per entry, whatever attributes, type and default it
+    carries. Only the header list shows in the long name. The long name is the
+    ratchet key, and a key that grew the block's parameters would orphan every
+    mark recorded before this reader read the block.
+
+    A class or an enum is skipped whole. Its methods get no row, and the
+    decisions in them count toward no function, not the function whose body
+    declares the class: a method is a function of its own (about_Classes).
 
     Top-level script code is NOT reported. Statements outside any declaration
     belong to lizard's `*global*` pseudo-function, exactly like Python module
@@ -132,8 +145,9 @@ KNOWN LIMITS
       body that runs to the next `"@`.
     - A `{` pattern arm (`switch ($x) { {$_ -gt 5} { ... } }`) counts twice:
       the pattern's own brace opens directly inside the switch body too.
-    - `params` is 0 for the usual `function Name { param(...) }` shape, so the
-      parameter-count column understates PowerShell.
+    - A `param()` block's parameters count in `params` and are missing from a
+      packet's `params` list, which crapkit reads off the long name.
+    - A class's methods get no row, so their complexity is not gated.
 
 REGISTRATION
     lizard resolves a filename through `lizard_languages.get_reader_for`, which
@@ -280,8 +294,14 @@ def _spelled(tokens):
     spelling = _Spelling()
     return (spelling(token) for token in tokens)
 
-# Every keyword that declares something with a name and a brace body.
-_FUNC_KEYWORDS = ("function", "filter", "workflow", "configuration")
+# The keywords that declare something with a name and a brace body, and the
+# state that reads the name. A class or an enum is read only to skip its body.
+_DECLARES = {"function": "_function_name", "filter": "_function_name",
+             "workflow": "_function_name", "configuration": "_function_name",
+             "class": "_type_name", "enum": "_type_name"}
+
+# What joins the parts of one function name: `script:Get-Thing`, `Get.Thing`.
+_NAME_JOINERS = frozenset({":", "."})
 
 # The wildcard arm of a switch, free exactly like C's `default:`.
 _DEFAULT_ARM = "default"
@@ -290,35 +310,163 @@ _DEFAULT_ARM = "default"
 # closes the `[switch]` type accelerator; `;` ends the statement it sat in.
 _DISARMS_SWITCH = frozenset({"]", ";"})
 
+# What a bracket does to the depth a param() block is read at.
+_DEPTH_CHANGE = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
+
+
+def _is_name(token: str) -> bool:
+    """A word that can name a function or a type, as `=`, `$x` and `{` cannot."""
+    return token[:1].isalnum() or token[:1] == "_"
+
+
+class _ParamBlock:
+    """The parameters a function's param(...) block declares.
+
+    One per comma-separated entry: the entry's first variable at the block's
+    own depth. An attribute, a type or a default sits inside brackets or after
+    that variable, so `[Parameter(Mandatory = $true)][string]$Name =
+    $env:USERNAME` is the one parameter `$Name`.
+    """
+
+    def __init__(self, function):
+        self._function = function
+        self._depth = 1        # inside the block's own parentheses
+        self._named = False    # the current entry has its variable
+
+    def read(self, token: str) -> bool:
+        """Read one token; True once the block's closing parenthesis is read."""
+        self._depth += _DEPTH_CHANGE.get(token, 0)
+        if self._depth == 1:
+            self._entry(token)
+        return self._depth == 0
+
+    def _entry(self, token: str) -> None:
+        if token == ",":
+            self._named = False
+        elif token.startswith("$") and not self._named:
+            self._function.full_parameters.append(token)
+            self._named = True
+
 
 class PowerShellStates(GoLikeStates):
-    """Function detection: the Go machine, with PowerShell's two differences.
+    """Function detection: the Go machine, with PowerShell's differences.
 
     Go declares with one keyword, `func`, and PowerShell with four, so the
-    global state matches the set. Go also writes `func name(args) {` and always
-    has the parameter list, while PowerShell usually writes `function Name {`
-    and declares its parameters in the body, so a `{` right after the name has
-    to open the body rather than end the search. Everything else — the brace
-    bookkeeping, nested declarations, the name accumulation — is the inherited
-    machine.
+    global state matches the set, and only where the word starts a statement:
+    `dotnet build --configuration`, `$o.filter` and `@{ filter = 1 }` declare
+    nothing. A word that turns out to name nothing hands back the function it
+    opened (`_abandon`), so the function around it keeps its row.
+
+    A name may carry a scope (`script:Get-Thing`) or dots (`Get.Thing`); its
+    parts arrive as separate tokens and are joined back. Go writes
+    `func name(args) {` and always has the parameter list, while PowerShell
+    usually writes `function Name {` and declares its parameters in a
+    `param(...)` block that opens the body, which `_ParamBlock` reads. A class
+    or an enum opens a function too, one that is never listed, so the
+    decisions in its methods count toward no function. Everything else, the
+    brace bookkeeping and nested declarations, is the inherited machine.
     """
 
     FUNC_KEYWORD = "function"
 
+    def __init__(self, context):
+        super().__init__(context)
+        self._previous = ""      # the last token read, block comments aside
+        self._line = 0           # the line it ended on
+        self._statement = True   # the token being read starts a statement
+        self._parameters = None  # the param(...) block being read
+
+    def __call__(self, token, reader=None):
+        if token.startswith(_BLOCK_COMMENT):
+            return None
+        self._statement = _begins_statement(self._previous, self.context.current_line != self._line)
+        done = super().__call__(token, reader)
+        self._previous, self._line = token, self.context.current_line
+        return done
+
     def _state_global(self, token):
-        if token in _FUNC_KEYWORDS:
-            self._state = self._function_name
+        if self._statement and token in _DECLARES:
             self.context.push_new_function("")
+            self._state = getattr(self, _DECLARES[token])
         elif token == "{":
             self.sub_state(self.statemachine_clone())
         elif token == "}":
             self.statemachine_return()
 
-    def _expect_function_dec(self, token):
-        if token == "{":
-            self.next(self._expect_function_impl, token)
+    def _abandon(self, token):
+        """The declaring word named nothing: take back the function it opened
+        and read the token as the code it is."""
+        self.context.current_function = self.context.stacked_functions.pop()
+        self.next(self._state_global, token)
+
+    def _function_name(self, token):
+        if _is_name(token):
+            self.context.add_to_function_name(token)
+            self._state = self._expect_function_dec
         else:
-            super()._expect_function_dec(token)
+            self._abandon(token)
+
+    def _expect_function_dec(self, token):
+        if token in _NAME_JOINERS:
+            self.context.add_to_function_name(token)
+            self._state = self._function_name
+        elif token == "{":
+            self.next(self._expect_function_impl, token)
+        elif token == "(":
+            self.next(self._function_dec, token)
+        else:
+            self._abandon(token)
+
+    def _function_impl(self, _):
+        body = self.statemachine_clone()
+        body.next(body._body_start)
+        self.sub_state(body, self._end_function)
+
+    def _end_function(self):
+        self._state = self._state_global
+        self.context.end_of_function()
+
+    def _body_start(self, token):
+        """A function body's first statement, where its param() block sits,
+        after any attribute such as `[CmdletBinding()]`."""
+        if token == "[":
+            self.next(self._attribute, token)
+        elif token.lower() == "param":
+            self._state = self._param_open
+        else:
+            self.next(self._state_global, token)
+
+    @CodeStateMachine.read_inside_brackets_then("[]", "_body_start")
+    def _attribute(self, _):
+        pass
+
+    def _param_open(self, token):
+        if token == "(":
+            self._parameters = _ParamBlock(self.context.current_function)
+            self._state = self._param_block
+        else:
+            self.next(self._state_global, token)
+
+    def _param_block(self, token):
+        if self._parameters.read(token):
+            self._state = self._state_global
+
+    def _type_name(self, token):
+        if _is_name(token):
+            self._state = self._type_header
+        else:
+            self._abandon(token)
+
+    def _type_header(self, token):
+        """`: Base, IThing` up to the body, which is skipped whole."""
+        if token == "{":
+            self.sub_state(self.statemachine_clone(), self._drop_type)
+
+    def _drop_type(self):
+        """The type's body ended. The function its `class` opened holds the
+        methods' decisions and is not listed, so they count toward none."""
+        self._state = self._state_global
+        self.context.current_function = self.context.stacked_functions.pop()
 
 
 class SwitchArmStates(CodeStateMachine):

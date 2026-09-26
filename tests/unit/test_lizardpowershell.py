@@ -533,6 +533,111 @@ def test_a_function_declared_inside_another_is_reported_separately():
         "Get-P7Outer": 2, "Get-P7Inner": 2}
 
 
+def _rows(code):
+    return [(bare_name(r.long_name), r.start, r.end, r.ccn_std)
+            for r in analyze_source("probe.ps1", code)]
+
+
+IF_BODY = "    if ($x) {\n        return 1\n    }\n    return 0\n"
+AFTER = "\nfunction Get-After($y) {\n    if ($y) {\n        return 2\n    }\n    return 0\n}\n"
+
+
+@pytest.mark.parametrize("name", ["script:Get-Scoped", "global:Get-Scoped",
+                                  "private:Get-Scoped", "Get.Dotted"])
+def test_a_scoped_or_dotted_name_is_one_function(name):
+    """`function [<scope:>]<name>` declares one function (about_Functions), and
+    PowerShell's parser names `function Get.Dotted` Get.Dotted. The name used
+    to end at its colon or dot, the function got no row, and its decisions
+    counted toward none."""
+    code = f"function {name}($x) {{\n{IF_BODY}}}\n" + AFTER
+
+    assert _rows(code) == [(name, 1, 6, 2), ("Get-After", 8, 13, 2)]
+
+
+@pytest.mark.parametrize("line", [
+    "dotnet build --configuration $x.Configuration",
+    "$f = $o.filter",
+    "$h = @{ filter = '*.txt'; class = 'x' }",
+    "Write-Output function workflow",
+])
+def test_a_declaring_word_that_declares_nothing_opens_nothing(line):
+    """A declaring word declares only where it starts a statement and a name
+    follows it. A native option, a member, a hashtable key and a bare argument
+    opened a declaration: the function around the word lost its row, and a
+    phantom row named after a later token could take its place."""
+    code = ("function Invoke-Build($x) {\n    if ($x) {\n        " + line + "\n    }\n"
+            "    return 0\n}\n\nfunction Get-Next($y) {\n    return $y\n}\n")
+
+    assert _rows(code) == [("Invoke-Build", 1, 6, 2), ("Get-Next", 8, 10, 1)]
+
+
+CLASS_IN_FUNCTION = """function Get-WithClass($x) {
+    class Holder {
+        [int] Pick([int]$y) {
+            if ($y) {
+                return 1
+            }
+            return 0
+        }
+    }
+    return $x
+}
+"""
+
+
+def test_a_class_method_decides_nothing_for_the_function_declaring_the_class():
+    """The method is a function of its own (about_Classes), not a branch of the
+    function around the class. Its `if` counted toward Get-WithClass in ccn and
+    cognitive. Methods get no row of their own either."""
+    (record,) = analyze_source("probe.ps1", CLASS_IN_FUNCTION)
+
+    assert (bare_name(record.long_name), record.start, record.end, record.ccn_std,
+            record.cognitive) == ("Get-WithClass", 1, 11, 1, 0)
+
+
+@pytest.mark.parametrize("declaration", [
+    "class Holder {\n    [int] Pick([int]$y) {\n        if ($y) { return 1 }\n        return 0\n    }\n}\n",
+    "class Child : Holder {\n    Child() { if ($true) { } }\n}\n",
+    "enum Color {\n    Red\n    Green\n}\n",
+])
+def test_a_type_declared_before_a_function_leaves_it_alone(declaration):
+    code = declaration + "\nfunction Get-Next($x) {\n" + IF_BODY + "}\n"
+    start = declaration.count("\n") + 2
+
+    assert _rows(code) == [("Get-Next", start, start + 5, 2)]
+
+
+# --- the param() block ---------------------------------------------------------
+
+PARAM_BLOCKS = {
+    "attributes and types": (P10_ADVANCED, 2),
+    "comment-based help first": (
+        "function Get-Greeting {\n    <#\n    .SYNOPSIS\n    Says hello.\n    #>\n"
+        "    param([string]$Name, [int]$Count = 1)\n    $Name\n}\n", 2),
+    "an attribute on the same line": (
+        "function Get-Same {\n    [CmdletBinding()] Param(\n"
+        "        [Parameter(Mandatory = $true)][ValidateScript({ $_ -gt 0 })][int]$Count,\n"
+        "        [string[]]$Names = @('a', 'b'),\n        [switch]$Force\n    )\n    $Count\n}\n", 3),
+    "a default that reads a variable": (
+        "function Get-Default {\n    param($Name = $env:USERNAME, $Other)\n    $Name\n}\n", 2),
+    "an empty block": ("function Get-None {\n    param()\n    1\n}\n", 0),
+    "a script block's own block": (
+        "function Invoke-It {\n    $block = { param($a, $b) $a + $b }\n    & $block 1 2\n}\n", 0),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(PARAM_BLOCKS))
+def test_a_param_block_declares_the_parameters(shape):
+    """`param(...)` opening the body is how an advanced function declares its
+    parameters (about_Functions_Advanced_Parameters), and it read 0. The long
+    name stays the bare function name: it is the ratchet key, and a key that
+    grew the block's parameters would orphan every mark recorded before."""
+    code, count = PARAM_BLOCKS[shape]
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.params, " " in record.long_name) == (count, False)
+
+
 # --- only declarations, never top-level code -----------------------------------
 
 def test_top_level_script_code_is_not_reported_as_a_function():
