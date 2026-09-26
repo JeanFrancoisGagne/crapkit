@@ -349,12 +349,12 @@ windows-linux-containers = "the windows-2025 runner's Docker runs Windows contai
 # select a cell the tree holds, or pytest collects nothing and exits 5.
 # `free_disk` deletes the runner's preinstalled SDKs first: an entry that
 # builds full or an image on it needs it, since full takes 13.62 GB of the
-# runner's disk. `timeout` is in minutes. No deploy.yml
-# run has been measured yet; once one is, `measured` holds its minutes and the
-# timeout is 1.5 times that, rounded up. An entry that builds core or ci
-# passes --cache gha: a fresh runner holds no layers, and with --cache local
-# it builds the image cold (tools/deploy/README.md, "The GitHub Actions
-# cache").
+# runner's disk. `timeout` is in minutes. No deploy.yml run has been measured
+# yet; once one is, `measured` holds its minutes and the timeout is 1.5 times
+# that, rounded up. An entry that builds core or ci passes --cache gha, unless
+# it builds cold on purpose with --no-cache as lin-repeat does: a fresh runner
+# holds no layers, and with --cache local it builds the image cold
+# (tools/deploy/README.md, "The GitHub Actions cache").
 
 [jobs.nightly-linux-core]
 runner = "linux"

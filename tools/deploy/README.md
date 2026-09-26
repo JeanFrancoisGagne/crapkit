@@ -223,7 +223,8 @@ re-runs of that pull request can read them.
 | `latest-harnesses` | `full` | `local` | blocked (latest-mode) |
 | `weekly-arm64` | `cells` | `local` | blocked (arm64) |
 
-Every job that builds `core` or `ci` reads the cache. A fresh runner holds no
+Every job that builds `core` or `ci` reads the cache, except `lin-repeat`,
+which builds cold with `--no-cache` on purpose. A fresh runner holds no
 layers, so with `--cache local` the job builds the image cold, and a cold `core`
 build takes up to 40 minutes on a 4-core runner (`[budget.deploy-linux]` in
 `tests/deploy/MAP.toml`), past the 30-minute timeouts of `weekly-online` and
