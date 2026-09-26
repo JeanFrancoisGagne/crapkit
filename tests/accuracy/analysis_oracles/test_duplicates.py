@@ -369,12 +369,13 @@ def _crapkit_pairs(root: Path, similarity: float) -> dict:
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("corpus, similarity, floor", [("src", 0.01, 5), ("stdlib", 0.5, 3000),
+@pytest.mark.parametrize("corpus, similarity, floor", [("src", 0.01, 5), ("stdlib", 0.01, 150),
                                                        ("click", 0.01, 30)])
 def test_brute_force_over_a_corpus_gives_crapkit_s_pairs(request, corpus, similarity, floor):
-    """The self-diff over crapkit's own source and click at --similarity 0.01, so
-    every pair that shares one window is compared, and over the standard
-    library at 0.5 (4,474 pairs on 3.12)."""
+    """The self-diff over crapkit's own source, CPython's Lib at the tag the
+    corpus pins for the running Python and click, at --similarity 0.01, so every
+    pair that shares one window is compared (the pinned Lib: 103 files, 2,916
+    functions and 252 pairs on 3.12)."""
     files, root, rows = _python_corpus(request, corpus)
     texts = _decoded(files)
     aside = symilar_adapter.set_aside(rows, texts)
