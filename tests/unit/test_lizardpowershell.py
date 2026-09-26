@@ -830,6 +830,48 @@ def test_a_keyword_word_that_starts_no_statement_keeps_its_spelling():
     assert (record.ccn_std, record.cognitive) == (2, 1)
 
 
+@pytest.mark.parametrize("line", [
+    "$xs | foreach { $_.Name }",
+    "$xs |\n        foreach { $_.Name }",
+    "$xs.foreach({ $_.Name })",
+    "git switch $xs",
+    "Write-Output if while",
+    "Write-Output -InputObject catch",
+    "Get-ChildItem -Filter:foreach",
+    "return if",
+])
+def test_a_lower_case_keyword_word_that_names_a_command_an_argument_or_a_member_decides_nothing(line):
+    """After a pipe a word is a command (`foreach` is the ForEach-Object alias),
+    after a word or a parameter it is an argument, and after a `.` it is a
+    member. PowerShell reads no keyword in any of those places. Written in
+    lower case, each still cost a loop, a condition or a cognitive switch,
+    while the same line with `ForEach` cost nothing."""
+    (record,) = analyze_source("probe.ps1", f"function Get-Names($xs) {{\n    {line}\n}}\n")
+
+    assert (record.ccn_std, record.ccn_mod, record.cognitive, record.nesting) == (1, 1, 0, 0)
+
+
+@pytest.mark.parametrize("code, ccn", [
+    ("function Get-A {\n    param($a) if ($a) { 1 }\n}\n", 2),
+    ("function Get-A($a) {\n    $x = `\n        if ($a) { 1 } else { 2 }\n    $x\n}\n", 2),
+    ("function Get-A($a) {\n    git status; if ($a) { 1 }\n}\n", 2),
+    ("function Get-A($a) {\n    Write-Output $a\n    foreach ($x in $a) { $x }\n}\n", 2),
+])
+def test_a_keyword_that_starts_a_statement_after_a_bracket_or_a_backtick_still_counts(code, ccn):
+    """The argument rule reads only a word, a parameter, a pipe or a dot
+    before the keyword. A `)` ending a param() block and a backtick escaping
+    the line break both leave the keyword starting its statement."""
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert record.ccn_std == ccn
+
+
+def test_a_dotted_function_name_keeps_the_spelling_of_a_keyword_part():
+    """The dot in `function Get.foreach` joins a name, and the name is the
+    ratchet key: the member rule leaves it as written."""
+    assert _rows("function Get.foreach($x) {\n" + IF_BODY + "}\n")[0][:3] == ("Get.foreach", 1, 6)
+
+
 # --- PowerShell 7 operators ------------------------------------------------------
 
 def test_pipeline_chain_operators_are_conditions():

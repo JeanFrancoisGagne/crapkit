@@ -202,8 +202,9 @@ of `for ((;;))` is no case arm.
 **`powershell` counts one point per `switch` arm**, the way `case` is counted in C, and
 `default` is free. The arms cost the same in `ccn_mod`, so the gate reads a twelve-arm
 switch as 13, not 2. Keywords count in any case, as PowerShell reads them: `If (` is an
-`if` and `Default` is the free arm. A keyword word that does not start a statement keeps
-its spelling, so `$xs | ForEach { }` is the ForEach-Object alias and costs nothing.
+`if` and `Default` is the free arm. A keyword word that is a command, an argument or a
+member is no keyword in any case: `$xs | foreach { }` is the ForEach-Object alias and
+`git switch main` runs git, so neither costs anything.
 
 **`powershell` gives a class's methods no row.** Their decisions count toward no function,
 not toward the function that declares the class, so nothing gates a method's complexity.

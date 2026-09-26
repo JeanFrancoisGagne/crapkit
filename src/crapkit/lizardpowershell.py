@@ -83,10 +83,14 @@ KEYWORDS IN ANY CASE
     (about_Language_Keywords), and every rule that reads one matches the
     lower-case spelling. So the tokenizer hands the rules `if` for `IF`,
     `function` for `Function` and `default` for `Default`, and `-or` for
-    `-Or`, through `_Spelling`. A keyword word is respelled only where it
+    `-Or`, through `_Spelling`. A keyword word is lower-cased only where it
     starts a statement, because only there does PowerShell read it as a
-    keyword: after a pipe `ForEach` is the ForEach-Object alias, and after a
-    parameter `Default` is an argument (`Out-File -Encoding Default`).
+    keyword. Where it is a command, an argument or a member it gets a
+    capital, which no rule reads: after a pipe `foreach` is the
+    ForEach-Object alias, after a word or a parameter it is an argument
+    (`git switch main`, `Out-File -Encoding default`), and after a `.` it is
+    a member (`$xs.foreach({ })`). Written in lower case, each of those cost
+    a loop or a cognitive switch the capitalized spelling did not.
 
     `-and` and `-or` come out as `&&` and `||`. lizard's ND column knows those
     two by spelling and adds one nesting level for the first of them in a
@@ -140,9 +144,10 @@ KNOWN LIMITS
       ccn 1.
     - A `$( )` inside a `@" "@` here-string is evaluated and counts nothing:
       the whole here-string is one token.
-    - A lower-case keyword that starts no statement still counts as a
-      condition (`Write-Output if`), because lizard's condition counter reads
-      the word alone. Only a capitalized one keeps its spelling there.
+    - A lower-case keyword word used as a hashtable key (`@{ if = 1 }`)
+      still counts, because a key stands where a statement starts. So does
+      an argument on a line a backtick continues, since the reader does not
+      look past the backtick for the command word before it.
     - A here-string is recognized by `@"` and `"@` alone. PowerShell also
       requires the opener to end its line and the terminator to start one;
       this reader does not check either, so `@"` inside an expression opens a
@@ -261,35 +266,75 @@ def _begins_statement(previous: str, new_line: bool) -> bool:
     return new_line or previous in _STATEMENT_OPENERS or _LABEL.match(previous) is not None
 
 
+def _is_name(token: str) -> bool:
+    """A word that can name a function or a type, as `=`, `$x` and `{` cannot."""
+    return token[:1].isalnum() or token[:1] == "_"
+
+
+def _takes_no_keyword(previous: str) -> bool:
+    """Whether a word after `previous`, in the same statement, is a command or
+    an argument.
+
+    After a pipe a word is a command, and after a command word or a
+    `-Parameter` it is an argument: `$xs | foreach { }` (ForEach-Object's
+    alias), `git switch main`, `Write-Output -InputObject if`. A keyword is
+    no command word, so `function foreach` keeps its name as written.
+    """
+    if previous == "|" or previous.startswith("-"):
+        return True
+    return _is_name(previous) and previous not in _KEYWORDS
+
+
 class _Spelling:
     """The spelling every rule reads: keywords and operators in lower case.
 
     Sees the raw token stream, whitespace and comments included, so a line
-    break is a token here. A keyword keeps the case it is written in when it
-    does not start a statement, because PowerShell does not read it as a
-    keyword there either.
+    break is a token here. A keyword word that starts a statement is spelled
+    in lower case, because only there does PowerShell read it as a keyword.
+    One that is a command, an argument or a member is spelled with a capital,
+    which no rule reads. Anywhere else it keeps the case it is written in:
+    `[switch]` stays as the header parameter list, and so the long name, has
+    always spelled it.
     """
 
     def __init__(self):
         self.previous = ""       # the last code token, as spelled
         self.new_line = False    # a line break since then
+        self.head = ""           # the current statement's first token, as spelled
 
     def __call__(self, token: str) -> str:
         if token.isspace():
             self.new_line = self.new_line or "\n" in token
             return token
-        spelled = self._spell(token)
-        if not token.startswith(_COMMENT_OPENERS):
-            self.previous, self.new_line = spelled, False
+        if token.startswith(_COMMENT_OPENERS):
+            return token
+        statement = _begins_statement(self.previous, self.new_line)
+        spelled = self._spell(token, statement)
+        if statement:
+            self.head = spelled
+        self.previous, self.new_line = spelled, False
         return spelled
 
-    def _spell(self, token: str) -> str:
+    def _spell(self, token: str, statement: bool) -> str:
         lower = token.lower()
         if lower in _OPERATORS:
             return _OPERATORS[lower]
-        if lower in _KEYWORDS and _begins_statement(self.previous, self.new_line):
+        if lower not in _KEYWORDS:
+            return token
+        if statement:
             return lower
+        if self._names_no_keyword():
+            return token[:1].upper() + token[1:]
         return token
+
+    def _names_no_keyword(self) -> bool:
+        """Whether the keyword word read now is a command, an argument or a
+        member. After a `.` or a `:` it is a member or a parameter's value
+        (`$xs.foreach({ })`, `-Filter:if`), except in a declaration's name:
+        `function Get.foreach` keeps its spelling, the ratchet key it is."""
+        if self.previous in _NAME_JOINERS:
+            return self.head not in _DECLARES
+        return _takes_no_keyword(self.previous)
 
 
 def _spelled(tokens):
@@ -319,11 +364,6 @@ _BRACE_CHANGE = {"{": 1, "}": -1}
 
 # What a bracket does to the depth a param() block is read at.
 _DEPTH_CHANGE = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
-
-
-def _is_name(token: str) -> bool:
-    """A word that can name a function or a type, as `=`, `$x` and `{` cannot."""
-    return token[:1].isalnum() or token[:1] == "_"
 
 
 class _ParamBlock:

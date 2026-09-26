@@ -1323,9 +1323,11 @@ each marks file re-seed once.
 - A keyword that starts a statement counts in any case, as PowerShell reads it: `IF`,
   `ForEach`, `ElseIf`, `Default`, `Function`. A capitalized `if` used to count
   nothing, a capitalized `Default` arm cost a point as if it tested something, and a
-  function declared with `Function` got no row. A keyword word that starts no statement
-  keeps its spelling, so `$xs | ForEach { }` still reads as the ForEach-Object alias
-  and `Out-File -Encoding Default` as an argument.
+  function declared with `Function` got no row.
+- A keyword word that is a command, an argument or a member counts nothing in any case:
+  `$xs | foreach { }` (the ForEach-Object alias), `$xs.foreach({ })`, `git switch main`,
+  `Write-Output if`. Written in lower case, each cost a loop, a condition or a
+  cognitive switch that the capitalized spelling did not.
 - `-And`, `-OR` and `-Xor` count as their lower-case spelling does.
 - PowerShell 7's pipeline chains `&&` and `||` count one decision each. They counted
   nothing.
