@@ -18,6 +18,9 @@
   `coupling-cache-v2.json`. Each file 0.8.0 and earlier wrote held a window cut at the
   wall clock, and the same key would have served it on the day of an upgrade; the
   first churn read deletes them and walks the window once.
+- The `churn_window_months` description in `crapkit.schema.json`, which editors show on
+  hover, and the MCP descriptions of `churn_window_months` and `window_months` say the
+  window counts back from HEAD's commit date.
 
 No score changes.
 

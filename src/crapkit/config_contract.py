@@ -24,9 +24,13 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                      'coverage (default 6)'},
                                            'churn_window_months': {'type': 'integer',
                                                                    'minimum': 1,
-                                                                   'description': 'git log window for '
-                                                                                  'churn weighting '
-                                                                                  '(default 12)'},
+                                                                   'description': 'months of git '
+                                                                                  'history churn '
+                                                                                  'weighting reads, '
+                                                                                  'counted back from '
+                                                                                  'the commit date '
+                                                                                  'of HEAD (default '
+                                                                                  '12)'},
                                            'worklist_floor': {'type': 'integer',
                                                               'minimum': 1,
                                                               'description': 'minimum ccn for worklist '

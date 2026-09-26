@@ -302,7 +302,8 @@ TOOLS: tuple[dict, ...] = (
                 "when over their ceiling or in a hot file")},
             "churn_window_months": {
                 "type": "integer",
-                "description": "months of git history the churn weights cover"},
+                "description": ("months of git history the churn weights cover, counted "
+                "back from the commit date of HEAD")},
             "active": {
                 "type": "array",
                 "description": ("the ranking: functions in files with churn in the window, risk "
@@ -1150,8 +1151,8 @@ TOOLS: tuple[dict, ...] = (
                 "description": "payload schema version, 1"},
             "window_months": {
                 "type": "integer",
-                "description": ("months of git history the pairs were counted over (the config's "
-                "churn_window_months)")},
+                "description": ("months of git history the pairs were counted over, back from "
+                "the commit date of HEAD (the config's churn_window_months)")},
             "pairs": {
                 "type": "array",
                 "description": ("pairs clearing both thresholds, ordered by support x confidence "

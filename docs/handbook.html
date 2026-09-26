@@ -828,6 +828,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
 
 $ crapkit coupling --top 5      # cold, caches deleted: 0.53 s
 $ crapkit coupling --top 5      # warm: 0.09 s</code></pre>
+<p>Each name carries its format version, so an upgrade that changes a format writes a new file. The window those files describe ends at HEAD's commit date, never today's, so a repo nobody has committed to in a year still ranks the year before its last commit. <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-else-lives-in-crapkit">What else lives in .crapkit/</a> lists the names the current version writes.</p>
 <p><code>trend</code> and <code>report</code> read a rollup row written once per run and pruned with that run, instead of rescanning every scored row the store holds. Both now write to the store on a best-effort basis, which is new for two commands that used to be pure readers.</p>
 <p>Every mutation worker uses a kept worktree, including the default of one. See <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees">mutation worktrees</a> for preparation, concurrent runs and cleanup. Reclaim the checkouts with:</p>
 <pre><code>$ crapkit mutate --drop-pool
