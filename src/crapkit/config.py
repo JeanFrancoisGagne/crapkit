@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
 import tomllib
 from collections.abc import Iterator
 from pathlib import Path
@@ -85,37 +84,119 @@ SHELL_IS_CMD = os.name == "nt"
 
 
 def shell_words(command: str, cmd: bool | None = None) -> list[str]:
-    """The words the shell hands the runner. `-m "not live and not perf"` is one
-    argument there and must be one token here — a whitespace split reads four
-    positionals into it. A command the shell would refuse (a quote that never
-    closes) gets the whitespace read instead: a rough lint beats a crash at
-    config load."""
-    return [word for word, _ in _shell_tokens(command, cmd)]
+    """The words the shell hands the programs on the line, in order. `-m "not
+    live and not perf"` is one argument there and must be one token here: a
+    whitespace split reads four positionals into it."""
+    return [word for words in shell_segments(command, cmd) for word in words]
 
 
-def _shell_tokens(command: str, cmd: bool | None = None) -> list[tuple[str, bool]]:
-    """The words, each with a flag: True when quoting or an escape built it. A
-    built word is an argument and never the shell's own syntax, however it is
-    spelled — `"&&"` and cmd.exe's `^&` both reach the program as the text `&&`
-    and `&`. The whitespace fallback knows no quoting, so it builds nothing."""
+def shell_segments(command: str, cmd: bool | None = None) -> list[list[str]]:
+    """One argv per command on the line, read by the shell that will run it. A
+    command that holds no word (a redirection alone) gives no argv."""
     cmd = SHELL_IS_CMD if cmd is None else cmd
+    commands = _cmd_segments(command) if cmd else _sh_commands(command)
+    return [words for words in commands if words]
+
+
+# sh's reading, one piece of the line at a time (POSIX Shell Command Language
+# 2.2 quoting, 2.3 token recognition, 2.7 redirection, 2.9 lists). An operator
+# ends the word in front of it whether or not a blank stands between them, so
+# `--cov=x.json&& coverage json` is two commands. A quote that never closes
+# matches no quoted form and is read as an ordinary character: sh would refuse
+# the line, and a rough lint beats a crash at config load.
+_SH_PIECE = re.compile(r"""
+    (?P<blank>[ \t\r]+)
+  | (?P<comment>\#[^\n]*)
+  | (?P<operator>&&|\|\||;;|<<-?|>>|<&|>&|<>|>\||[&|;<>()\n])
+  | (?P<joined>\\\n)
+  | '(?P<single>[^']*)'
+  | "(?P<double>(?:[^"\\]|\\.)*)"
+  | \\(?P<escaped>.)
+  | (?P<bare>.)
+""", re.X | re.S)
+
+# Inside double quotes a backslash escapes $, `, ", itself and a line feed, and
+# is text before anything else. An escaped line feed is removed (group 1 unset).
+_SH_DOUBLE_ESCAPE = re.compile(r'\\(?:([$`"\\])|\n)')
+
+
+class _ShLine:
+    """The commands on a sh line as its pieces arrive, each a list of words."""
+
+    def __init__(self) -> None:
+        self.commands: list[list[str]] = [[]]
+        self.word: str | None = None  # None: no word is open; "" is the empty word '' writes
+        self.digits = False  # the open word is bare digits: `2` in `2>x` names a descriptor
+        self.target = False  # the next word is a redirection's target, never an argument
+
+    def bare(self, text: str) -> None:
+        self.digits = (self.word is None or self.digits) and text.isdigit()
+        self.word = (self.word or "") + text
+
+    def quoted(self, text: str) -> None:
+        self.digits = False
+        self.word = (self.word or "") + text
+
+    def double(self, text: str) -> None:
+        self.quoted(_SH_DOUBLE_ESCAPE.sub(r"\1", text))
+
+    def skip(self, _text: str) -> None:
+        """A comment, or a backslash joining two lines: nothing reaches a word."""
+
+    def take(self, piece: re.Match) -> int:
+        """Read one piece; the index the next one starts at. A `#` that starts a
+        word starts a comment to the end of the line, and one inside a word
+        (`a#b`, `a\\;#b`) is text, with the line read on from behind it."""
+        kind = piece.lastgroup
+        if kind == "comment" and self.word is not None:
+            self.bare("#")
+            return piece.start() + 1
+        _SH_STEPS[kind](self, piece[kind])
+        return piece.end()
+
+    def blank(self, _text: str = "") -> None:
+        """The open word ends. The word a redirection opens is the shell's."""
+        if self.word is None:
+            return
+        if not self.target:
+            self.commands[-1].append(self.word)
+        self.word, self.digits, self.target = None, False, False
+
+    def operator(self, text: str) -> None:
+        """`&&`, `|`, `;`, a parenthesis or a line feed starts the next command;
+        a redirection takes the next word, and bare digits touching it."""
+        redirection = text[0] in "<>"
+        if redirection and self.digits:
+            self.word, self.digits = None, False
+        self.blank()
+        self.target = redirection
+        if not redirection:
+            self.commands.append([])
+
+
+_SH_STEPS = {"blank": _ShLine.blank, "comment": _ShLine.skip, "operator": _ShLine.operator,
+             "joined": _ShLine.skip, "single": _ShLine.quoted, "double": _ShLine.double,
+             "escaped": _ShLine.quoted, "bare": _ShLine.bare}
+
+
+def _sh_commands(command: str) -> list[list[str]]:
+    """Each command on the line as sh splits it, with sh's redirections out."""
+    line, at = _ShLine(), 0
+    while at < len(command):
+        at = line.take(_SH_PIECE.match(command, at))
+    line.blank()
+    return line.commands
+
+
+def _shell_tokens(command: str) -> list[tuple[str, bool]]:
+    """cmd.exe's words, each with a flag: True when quoting or an escape built
+    it. A built word is an argument and never the shell's own syntax, however it
+    is spelled: `"&&"` and `^&` reach the program as the text `&&` and `&`. The
+    whitespace fallback knows no quoting, so it builds nothing."""
     try:
-        return _cmd_tokens(command) if cmd else _sh_tokens(command)
+        return _cmd_tokens(command)
     except ValueError:
         return [(word, False) for word in command.split()]
-
-
-def _sh_tokens(command: str) -> list[tuple[str, bool]]:
-    """sh's reading, from shlex, plus the flag. shlex outside posix mode leaves
-    the quotes and backslashes in the word, so a word whose two spellings differ
-    is one sh built. When the two readings disagree on where the words are
-    (`a\\ b` is one word to posix mode and two outside it), nothing is called
-    built: the operator split then reads exactly what 0.4.4 read."""
-    words = shlex.split(command)
-    raw = shlex.split(command, posix=False)
-    if len(raw) != len(words):
-        raw = words
-    return [(word, word != spelling) for word, spelling in zip(words, raw)]
 
 
 def _uncaret(command: str) -> list[tuple[str, bool]]:
@@ -203,34 +284,11 @@ _SHELL_OPERATORS = frozenset({"&&", "||", "&", "|"})
 _REDIRECTION = re.compile(r"\d*[<>]{1,2}")
 
 
-def shell_segments(command: str, cmd: bool | None = None) -> list[list[str]]:
-    """One argv per command on the line, read by the shell that will run it."""
-    cmd = SHELL_IS_CMD if cmd is None else cmd
-    tokens = _drop_redirections(_shell_tokens(command, cmd))
-    if not cmd:
-        tokens = _split_semicolons(tokens)
-    return _command_segments(tokens, _separators(cmd))
-
-
-def _separators(cmd: bool) -> frozenset[str]:
-    """What ends one command and starts the next. sh adds ';'; to cmd.exe it is
+def _cmd_segments(command: str) -> list[list[str]]:
+    """One argv per command on the line, as cmd.exe splits it. To cmd.exe ';' is
     an ordinary character the program is handed (verified argv for
     `--cov=src; echo done`: ["--cov=src;", "echo", "done"])."""
-    return _SHELL_OPERATORS if cmd else _SHELL_OPERATORS | {";"}
-
-
-def _split_semicolons(tokens: list[tuple[str, bool]]) -> list[tuple[str, bool]]:
-    """sh's ';' as its own word. shlex leaves it stuck to the word in front
-    (`--cov=src;`), so the first command read clean while the next command's
-    words landed in its argv, and the lane was refused naming a program pytest
-    never sees. A quoted ';' is an argument and stays where it is."""
-    out: list[tuple[str, bool]] = []
-    for word, built in tokens:
-        if built or not word.endswith(";"):
-            out.append((word, built))
-        else:
-            out += _kept(word[:-1], False) + [(";", False)]
-    return out
+    return _command_segments(_drop_redirections(_shell_tokens(command)), _SHELL_OPERATORS)
 
 
 def _drop_redirections(tokens: list[tuple[str, bool]]) -> list[tuple[str, bool]]:

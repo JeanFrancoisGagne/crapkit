@@ -5,7 +5,7 @@ import pytest
 
 from crapkit.errors import ConfigError
 from crapkit import config as config_module
-from crapkit.config import Config, load_config_text, shell_words
+from crapkit.config import Config, load_config_text, shell_segments, shell_words
 
 
 MINIMAL = """
@@ -353,6 +353,28 @@ def test_shell_words_breaks_words_only_on_space_tab_and_the_line_endings():
             ["pytest", "-k", "not\u00a0slow"]
         assert shell_words("pytest -k a\u000bb", cmd=cmd) == ["pytest", "-k", "a\u000bb"]
         assert shell_words("pytest\t-m\tx\r\ny", cmd=cmd) == ["pytest", "-m", "x", "y"]
+
+
+def test_under_sh_only_a_bare_number_touching_a_redirection_is_its_descriptor():
+    """POSIX 2.7: in `2>x` the 2 names the descriptor and is no argument. A number
+    with a blank before the operator, a word holding more than digits and a
+    quoted number are all arguments the program gets."""
+    assert shell_segments("pytest --cov 2>x", cmd=False) == [["pytest", "--cov"]]
+    assert shell_segments("pytest 2 >x a2>x '2'>x", cmd=False) == [["pytest", "2", "a2", "2"]]
+    assert shell_segments("pytest --cov 2>&1|tee run.log", cmd=False) == \
+        [["pytest", "--cov"], ["tee", "run.log"]]
+
+
+def test_under_sh_a_backslash_in_double_quotes_escapes_only_what_posix_names():
+    """POSIX 2.2.3: inside double quotes a backslash escapes $, `, ", \\ and a
+    line feed, and is text before anything else."""
+    assert shell_words(r'pytest -k "a\"b\\c\$d\e"', cmd=False) == ["pytest", "-k", 'a"b\\c$d\\e']
+
+
+def test_under_sh_parentheses_end_the_command_they_touch():
+    """A subshell's parentheses are operators (POSIX 2.9.4), never part of a word."""
+    assert shell_segments("(cd tests && pytest --cov)", cmd=False) == \
+        [["cd", "tests"], ["pytest", "--cov"]]
 
 
 def test_shell_words_under_sh_reads_single_quotes():
