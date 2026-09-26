@@ -268,7 +268,9 @@ def _prune_renames(root: Path, runs: list[dict]) -> _Renames:
         return _Renames(renamed_paths(root, first["commit"]), first)
     except GitError:
         if not _git_work_tree(root):
-            print(f"note: {root} is not a git work tree, so prune followed no renames",
+            print(f"note: {root} is not a git work tree, so prune followed no renames and dropped "
+                  "the marks of every file that left, renamed or not; to keep a renamed file's "
+                  f"marks, run `{_self()} ratchet prune` in the git checkout instead",
                   file=sys.stderr)
             return _Renames({}, None)
         if _held(root, first):

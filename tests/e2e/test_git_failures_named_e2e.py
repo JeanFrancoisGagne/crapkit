@@ -323,7 +323,10 @@ def test_a_store_outside_any_git_work_tree_prunes_and_says_no_rename_was_followe
 
     assert res.returncode == 0, res.stdout + res.stderr
     assert "pruned 1, followed 0 rename(s)" in res.stdout, res.stdout
-    assert "is not a git work tree, so prune followed no renames" in res.stderr, res.stderr
+    assert (f"note: {copy} is not a git work tree, so prune followed no renames and dropped the "
+            "marks of every file that left, renamed or not; to keep a renamed file's marks, run "
+            "`") in res.stderr, res.stderr
+    assert " ratchet prune` in the git checkout instead\n" in res.stderr, res.stderr
 
 
 def corrupt(repo: Path, sha: str) -> None:
