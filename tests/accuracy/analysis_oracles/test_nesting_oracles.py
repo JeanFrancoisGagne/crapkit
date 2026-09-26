@@ -7,7 +7,8 @@ nested def. The model is oracles/py_sonar.py's depth, counted from the Sonar
 paper's B2 nesting list with crapkit's documented choices (analysis_choices);
 each place crapkit reads the paper another way is an N-row in rulings.tsv,
 pinned by a hand probe. pylint 4.0.9's too-many-nested-blocks is the second
-oracle (nightly): its block list differs from both in three named places, each
+oracle (nightly, on crapkit's source and on CPython's Lib at the running
+Python's pinned tag): its block list differs from both in three named places, each
 an N-row with a hand case, and a def holding one of them is left out of the
 comparison and counted.
 """
@@ -33,11 +34,15 @@ def _model_differential(files: dict, measured, outcome=None) -> analysis_pydiff.
                                    outcome)
 
 
+def _note(name: str, outcome: analysis_pydiff.Outcome) -> None:
+    runlog.note("skipped_files", oracle=name, count=sum(outcome.set_aside.values()),
+                compared=outcome.compared, misses=len(outcome.differing))
+
+
 def test_python_depth_matches_model(src_unparsed, src_unparsed_inventory, py_shape_inventory):
     outcome = _model_differential(src_unparsed.files, src_unparsed_inventory)
     _model_differential(analysis_shapes.py_shape_files(), py_shape_inventory, outcome)
-    runlog.note("skipped_files", oracle="depth model: defs set aside",
-                count=sum(outcome.set_aside.values()))
+    _note("depth model: defs set aside", outcome)
 
     assert outcome.differing == []
     assert outcome.compared > 1500
@@ -46,9 +51,7 @@ def test_python_depth_matches_model(src_unparsed, src_unparsed_inventory, py_sha
 @pytest.mark.nightly
 def test_python_depth_matches_model_on_the_stdlib(stdlib_unparsed, stdlib_unparsed_inventory):
     outcome = _model_differential(stdlib_unparsed.files, stdlib_unparsed_inventory)
-    runlog.note("skipped_files", oracle="depth model on the stdlib: defs set aside",
-                count=sum(outcome.set_aside.values()), compared=outcome.compared,
-                misses=len(outcome.differing))
+    _note("depth model on the stdlib: defs set aside", outcome)
 
     assert outcome.differing == []
 
@@ -66,15 +69,31 @@ def _texts(files: dict) -> dict[str, str]:
             for path, data in files.items()}
 
 
+def _pylint_differential(corpus, measured, work) -> analysis_pydiff.Outcome:
+    files = _texts(corpus.files)
+    reported = pylint_nesting.depths(files, work)
+    return analysis_pydiff.compare(files, measured, "nesting", _pylint_expected(reported),
+                                   py_defect_shapes.NESTING)
+
+
 @pytest.mark.nightly
 def test_python_depth_matches_pylint(src_unparsed, src_unparsed_inventory, oracle, tmp_path):
     oracle("pylint")
-    files = _texts(src_unparsed.files)
-    reported = pylint_nesting.depths(files, tmp_path)
-    outcome = analysis_pydiff.compare(files, src_unparsed_inventory, "nesting",
-                                      _pylint_expected(reported), py_defect_shapes.NESTING)
-    runlog.note("skipped_files", oracle="pylint R1702: defs set aside",
-                count=sum(outcome.set_aside.values()))
+    outcome = _pylint_differential(src_unparsed, src_unparsed_inventory, tmp_path)
+    _note("pylint R1702: defs set aside", outcome)
+
+    assert outcome.differing == []
+    assert outcome.compared > 1000
+
+
+@pytest.mark.nightly
+def test_python_depth_matches_pylint_on_the_stdlib(stdlib_unparsed, stdlib_unparsed_inventory,
+                                                   oracle, tmp_path):
+    """pylint over CPython's Lib at the running Python's pinned tag, the second
+    oracle beside the depth model on the same defs."""
+    oracle("pylint")
+    outcome = _pylint_differential(stdlib_unparsed, stdlib_unparsed_inventory, tmp_path)
+    _note("pylint R1702 on the stdlib: defs set aside", outcome)
 
     assert outcome.differing == []
     assert outcome.compared > 1000
@@ -82,14 +101,40 @@ def test_python_depth_matches_pylint(src_unparsed, src_unparsed_inventory, oracl
 
 # pylint's R1702 block list against crapkit's documented one, one def each:
 # pylint opens a level for a try and reads an except body beside it; crapkit
-# opens one for an except and one for a comprehension's for.
+# opens one for an except and one for a comprehension's for. The last two are
+# pylint bugs (oracles/pylint_nesting.py): an async def's only if reads 0, and
+# an if right under a with inside an if restarts at 1.
 PYLINT_CASES = {
     "AO-N-PYLINT-TRY": ("def f(a):\n    try:\n        if a:\n            return 1\n"
                         "    finally:\n        a.close()\n"),
     "AO-N-PYLINT-EXCEPT": ("def f(a):\n    try:\n        a()\n    except E:\n        if a:\n"
                            "            return 2\n"),
     "AO-N-PYLINT-COMPREHENSION": "def f(a):\n    return [x for x in a if x]\n",
+    "AO-N-PYLINT-ASYNC": "async def f(a):\n    if a:\n        return 1\n    return 0\n",
+    "AO-N-PYLINT-WITH": ("def f(a, b):\n    if a:\n        with b:\n            if b:\n"
+                         "                return 1\n    return 0\n"),
 }
+
+
+# Which with shapes AO-N-PYLINT-WITH sets aside. pylint 4.0.9 read each by hand:
+# a with at the top holding if/if 2, an if after a with holding no block 2 (crapkit
+# 2 for both); a while in a with in a with in a for 1, where crapkit reads 2.
+WITH_SHAPES = {
+    "with at the top": ("def f(a, b):\n    with b:\n        if a:\n            if b:\n"
+                        "                return 1\n", True),
+    "with holding no block": ("def f(a, b):\n    if a:\n        with b:\n            b()\n"
+                              "        if b:\n            return 1\n", True),
+    "with in a with in a for": ("def f(a, b):\n    for x in a:\n        with b:\n"
+                                "            with x:\n                while x:\n"
+                                "                    x()\n", False),
+}
+
+
+@pytest.mark.parametrize("name", sorted(WITH_SHAPES))
+def test_only_a_block_under_a_nested_with_is_set_aside_for_pylint(name):
+    source, comparable = WITH_SHAPES[name]
+
+    assert pylint_nesting.comparable(ast.parse(source).body[0]) is comparable
 
 
 @pytest.fixture(scope="module")

@@ -3,8 +3,9 @@
 With max-nested-blocks=0 pylint reports every block nest it leaves with its
 depth, "Too many nested blocks (N/0)", on a line inside the function. The
 deepest N reported inside a def is that def's depth as pylint counts it
-(pylint docs, refactoring checker R1702: if, elif, for, while, try and with
-bodies each open a level).
+(pylint docs, refactoring checker R1702). In pylint 4.0.9's source
+(pylint/checkers/refactoring/refactoring_checker.py) if, for, while and try
+open a level; with opens none.
 
 Its count and crapkit's documented one (docs/agent-json.md "nesting": one
 level per if, elif, else, for, while, except and comprehension for, none for
@@ -13,6 +14,15 @@ rulings.tsv N-row with a hand case: pylint opens a level for a try and reads an
 except body beside it, crapkit opens one for an except and for a comprehension's
 for. A def that holds any of those, or a nested def (whose blocks pylint charges
 to the enclosing scope), is left out of the comparison and counted.
+
+Two more are pylint bugs, each a rulings.tsv row with a hand case, and their
+defs are left out too:
+
+- AO-N-PYLINT-ASYNC: the checker has leave_functiondef but no
+  leave_asyncfunctiondef, so an async def's last group of nested blocks is
+  never reported (one if reads 0) and its stack leaks into the next def;
+- AO-N-PYLINT-WITH: a block right in the body of a with that sits in another
+  block restarts at 1, where the paper and crapkit keep the outer levels.
 
 One pylint process reads a whole file list. No crapkit import.
 """
@@ -30,6 +40,10 @@ FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 TRIES = tuple(getattr(ast, name) for name in ("Try", "TryStar") if hasattr(ast, name))
 COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)
 DIFFERENT = (*TRIES, *COMPREHENSIONS, ast.Match, *FUNCTIONS)
+# The statements pylint stacks as a level (visit_if, visit_for, visit_while,
+# visit_try), and the with it never stacks.
+STACKED = (ast.If, ast.For, ast.While, *TRIES)
+WITHS = (ast.With, ast.AsyncWith)
 DEPTH = re.compile(r"Too many nested blocks \((\d+)/0\)")
 ARGV = ("-m", "pylint", "--disable=all", "--enable=R1702", "--max-nested-blocks=0",
         "--score=n", "--output-format=json", "--persistent=n")
@@ -71,8 +85,30 @@ def depth_of(fn, path: str, reported: dict) -> int:
 
 
 def comparable(fn) -> bool:
-    """No try, comprehension, match or nested def anywhere in fn."""
-    return not any(isinstance(node, DIFFERENT) for node in ast.walk(fn) if node is not fn)
+    """fn is a plain def with no try, comprehension, match or nested def in it,
+    and no with inside a block holds a block (see _restarts_under_a_with)."""
+    return not (isinstance(fn, ast.AsyncFunctionDef) or _holds(fn, DIFFERENT)
+                or _restarts_under_a_with(fn))
+
+
+def _holds(fn, kinds: tuple) -> bool:
+    return any(isinstance(node, kinds) for node in ast.walk(fn) if node is not fn)
+
+
+def _restarts_under_a_with(fn) -> bool:
+    """A block right in the body of a with that sits inside another block.
+    pylint stacks no with, so _check_nested_blocks finds none of that block's
+    parents on its stack, pops every level and restarts the block at 1."""
+    return any(_holds_a_with_opening_a_block(block) for block in ast.walk(fn)
+               if isinstance(block, STACKED))
+
+
+def _holds_a_with_opening_a_block(block) -> bool:
+    return any(_opens_a_block(node) for node in ast.walk(block) if isinstance(node, WITHS))
+
+
+def _opens_a_block(with_node) -> bool:
+    return any(isinstance(child, STACKED) for child in with_node.body)
 
 
 def depths(files: dict[str, str], work: Path) -> dict:
