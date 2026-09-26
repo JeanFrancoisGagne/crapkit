@@ -822,7 +822,7 @@ devcontainers-cli = ["lin-devcontainer"]
 "Kilo Code reads the Cline config shape" = { probe = "calibrate-all" }
 "uvx refreshes a cached crapkit under PyPI cache headers" = { probe = "lin-up-uvx-n1" }
 "uv picks an interpreter for uvx when none is named" = { probe = "lin-uvx-polyglot-start" }
-"the first upgrade over a running crapkit.exe fails with WinError 32" = { probe = "win-launcher-lock" }
+"which installers fail with Windows error 32 over a running crapkit.exe" = { probe = "win-launcher-lock" }
 "crapkit's container guard fires under podman, with no /.dockerenv" = { probe = "lin-podman" }
 "Aider sends a lint failure to the model" = { manual = "run aider interactively on a file crapkit refuses; the headless lint path is what lin-aider asserts" }
 "Claude Desktop starts the server with cwd /" = { manual = "add the docs config to a test profile of Claude Desktop, never a person's own, and read the shim log" }
