@@ -367,6 +367,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   tool result that names both versions and the restart. The check lives in the old
   process, so it helps from the next upgrade on: a 0.8.0 server upgraded to 0.8.1 can
   still answer the old error once, and the restart fixes it the same way.
+- An upgrade that lands while a call runs no longer breaks that call's answer. The server
+  spells the command that prints a cut answer in full before it starts the CLI, so it no
+  longer loads the new release's `packet.py` after the run.
 - `crapkit watch` checks the same way before each rescore. After an upgrade it exits 1
   with one line that names both versions and says to restart it, where its first rescore
   died with a traceback from inside the new files.

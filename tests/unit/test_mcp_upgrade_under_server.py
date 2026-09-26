@@ -94,6 +94,27 @@ def test_a_package_file_it_cannot_read_runs_the_call(monkeypatch, tmp_path):
     assert ran == ["list_runs"]
 
 
+def test_an_upgrade_during_a_call_still_names_the_command_for_the_whole_answer(monkeypatch,
+                                                                             tmp_path):
+    """The check before the spawn cannot see an upgrade that lands while the
+    command runs. packet.py spells the `full` command a cut answer carries, and
+    the server imported it after the run, so the next release's packet.py
+    loaded into the old process and a long call answered JSON-RPC -32603."""
+    payload = {"runs": [{"id": n, "note": "x" * 200} for n in range(60)], "schema": 1}
+
+    def upgraded_while_running(argv, **_):
+        monkeypatch.setitem(sys.modules, "crapkit.packet", None)
+        return subprocess.CompletedProcess(argv, 0, json.dumps(payload) + "\n", "")
+
+    monkeypatch.setattr(mcp_server, "run_owned", upgraded_while_running)
+    repo = _measured(tmp_path / "repo")
+
+    result = mcp_server._call_tool(repo, "list_runs", {})
+
+    full = json.loads(result["content"][0]["text"])["truncated"]["full"]
+    assert full.endswith(f"runs --json --repo {repo.resolve()}"), full
+
+
 def test_the_server_reads_its_own_package_directory():
     assert _package._INIT == Path(crapkit.__file__)
     assert _package.installed_version() == crapkit.__version__

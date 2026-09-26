@@ -1612,15 +1612,19 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     refusal reaches the caller as text. An exit the tool declares in
     `verdict_exits` is an answer, not a failure: `gate` exits 6 on a breach
     and its payload says so in `gate.ok`. A call that came before the client
-    named its workspace folders waits for them here, in the worker."""
+    named its workspace folders waits for them here, in the worker. The
+    command a cut answer names is spelled before the spawn: an upgrade that
+    lands while the command runs must not load the next release's packet.py
+    into this process."""
     if isinstance(repo, _Session):
         return repo.run(tool, arguments, owner)
     argv = build_argv(tool, arguments) + ["--repo", repo]
+    full = _full_command(tool, arguments, repo)
     proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
     text = proc.stdout if proc.stdout.strip() else proc.stderr
     failed = proc.returncode != 0 and proc.returncode not in tool.get("verdict_exits", ())
-    return _structured(_result(text, is_error=failed), lambda: _full_command(tool, arguments, repo))
+    return _structured(_result(text, is_error=failed), lambda: full)
 
 
 def _full_command(tool: dict, arguments: dict, repo: str) -> str:
