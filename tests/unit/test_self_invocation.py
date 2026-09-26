@@ -164,7 +164,9 @@ def test_an_interpreter_reached_through_a_spaced_link_is_named_by_its_target(tmp
 def test_a_spaced_interpreter_with_no_other_spelling_keeps_its_quoted_segments(tmp_path,
                                                                               monkeypatch):
     """A real directory holding a space: its 8.3 short name when the volume keeps
-    one, else the path with that segment quoted."""
+    one, else the path with that segment quoted and the line's first character
+    bare. That line runs in PowerShell, pwsh and Git Bash; for a venv's launcher
+    cmd.exe loses it, and docs/adr/0003 says why that trade was taken."""
     python = tmp_path / "with space" / "python.exe"
     python.parent.mkdir()
     python.write_bytes(b"")
@@ -173,7 +175,8 @@ def test_a_spaced_interpreter_with_no_other_spelling_keeps_its_quoted_segments(t
 
     word = _self().removesuffix(" -m crapkit")
 
-    assert " " not in word or word == shell_path(str(python))
+    quoted_alone = word.endswith('/"with space"/python.exe') and not word.startswith('"')
+    assert " " not in word or quoted_alone, word
     assert os.path.samefile(_named_file(word), python)
 
 

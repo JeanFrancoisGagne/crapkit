@@ -150,6 +150,26 @@ def test_a_quoted_segment_in_the_interpreter_path_runs_in_every_shell(shell, tmp
     assert _paste(shell, line, tmp_path) == (0, '["coverage"]'), line
 
 
+@pytest.mark.skipif(os.name != "nt", reason="the venv launcher is the Windows one")
+@pytest.mark.parametrize("shell", SHELLS)
+def test_a_venv_in_a_spaced_directory_runs_everywhere_but_cmd(shell, tmp_path, monkeypatch,
+                                                              request):
+    """No one line runs a venv's python.exe from a directory whose name holds a
+    space in every shell (docs/adr/0003). The venv launcher, started from
+    cmd.exe, ends its own name at the first space unless the line opens with a
+    quote, and PowerShell reads a line that opens with one as a string. crapkit
+    takes PowerShell, pwsh and Git Bash. A volume that keeps 8.3 short names
+    spells the directory with no space, and then cmd.exe runs it too, so the
+    cmd.exe case is a strict xfail only while the printed line holds a quote."""
+    venv = tmp_path / "real space" / "venv"
+    hang_guard.run([sys.executable, "-m", "venv", "--without-pip", str(venv)])
+    line = _printed(monkeypatch, venv / "Scripts" / "python.exe")
+    if shell == "cmd" and '"' in line:
+        request.applymarker(pytest.mark.xfail(strict=True, reason="docs/adr/0003"))
+
+    assert _paste(shell, line, tmp_path) == (0, '["coverage"]'), line
+
+
 @pytest.mark.parametrize("shell", SHELLS)
 def test_the_repo_path_a_refusal_prints_reaches_crapkit_as_one_argument(shell, tmp_path,
                                                                         monkeypatch, capsys):

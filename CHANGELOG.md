@@ -13,11 +13,16 @@
   a parse error. The path now prints with forward slashes, which cmd.exe, PowerShell and
   Git Bash all open, and a segment holding a space or a shell operator is quoted on its
   own, `C:/"Program Files"/Python311/python.exe`, so the line never opens with a quote.
-- A venv's `python.exe`, run from cmd.exe, ends its own name at the first space unless
-  the line opens with a quote. So before quoting a segment, crapkit looks for a spelling
-  of the same file with no space: the directories a link points at, then the 8.3 short
-  name. When there is none, cmd.exe still cannot run a venv interpreter whose path holds
-  a space; PowerShell, pwsh and Git Bash can.
+- One case trades cmd.exe for PowerShell. A venv's `python.exe`, run from cmd.exe, ends
+  its own name at the first space unless the line opens with a quote, and PowerShell
+  cannot run a line that opens with one, so no line runs a venv in a spaced directory in
+  every shell. Before quoting a segment, crapkit looks for a spelling of the same file
+  with no space: the directories a link points at, then the 8.3 short name. When there
+  is none, as on a volume that keeps no 8.3 names, the line runs in PowerShell, pwsh and
+  Git Bash and no longer runs in cmd.exe, where the 0.8.0 spelling, the whole path in
+  double quotes, did. In cmd.exe, put the whole path in double quotes by hand.
+  [docs/adr/0003](docs/adr/0003-a-pasted-command-never-opens-with-a-quote.md) says why
+  PowerShell won.
 - On POSIX an interpreter path that needs quoting goes in single quotes, so sh no longer
   expands a `$` or a backtick inside it.
 - `crapkit <path>` is refused with the command to run instead, `crapkit inventory --repo

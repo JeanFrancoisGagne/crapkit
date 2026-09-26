@@ -65,6 +65,9 @@ def shell_path(path: str) -> str:
     quoted on its own, `C:/"Program Files"/...`, which keeps the first
     character bare.
 
+    One case loses cmd.exe: a venv's python.exe whose path holds a space
+    (`_spaceless`). docs/adr/0003 records that trade.
+
     Inside double quotes some shell still reads `%`, `!`, `$` and a backtick,
     so a directory name holding one of them is not safe here.
     """
@@ -85,7 +88,10 @@ def _spaceless(path: str) -> str:
     and PowerShell reads a line that opens with one as a string. So no single
     line runs a venv interpreter whose path holds a space in both shells. The
     directories a link points at, or the 8.3 short name the volume keeps, can
-    name the same file with no space at all. `path` itself when neither does.
+    name the same file with no space at all. `path` itself when neither does,
+    and then `shell_path` keeps PowerShell, pwsh and Git Bash and gives up
+    cmd.exe, which ran the whole-path-quoted spelling crapkit printed up to
+    0.8.0 (docs/adr/0003).
     """
     if " " not in path:
         return path
