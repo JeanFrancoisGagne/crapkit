@@ -7,7 +7,9 @@ copy-paste that later grew a few lines still surfaces. An inverted shingle
 index keeps a 14k-function repo tractable: only pairs that actually share a
 shingle are ever compared. Tiny functions are structural noise and stay out.
 Each function is shingled from its own lines: a function nested in it owns its
-lines past its first, so a closure's clone pairs with the closure alone.
+lines past its first, so a closure's clone pairs with the closure alone. A line
+enters with its whitespace removed; blank lines and the comment lines of the
+file's language stay out.
 
 A shingle is a stable 8-byte digest, so one run's index can be stored and read
 back by another process. Both readers take either kind of index: the
@@ -21,32 +23,64 @@ from __future__ import annotations
 from bisect import bisect_right
 from hashlib import blake2b
 import heapq
+from itertools import chain
+from posixpath import splitext
 from typing import NamedTuple
 
 from .keys import lookup
 from .snapshot import InventoryRow
 from .sourcelines import source_lines
+from .universe import LANGUAGE_EXTENSIONS
 
 WINDOW = 4  # consecutive normalized lines per shingle
-_COMMENT_PREFIXES = ("#", "//", "/*", "*", '"""', "'''")
 # What a stored digest was made with. A stored index is only comparable with a
 # target shingled the same way, so any change to the line split, _normalized_lines,
 # _shingles or _digest changes this string, and every stored index reads as absent
 # until the next build replaces it. v2: lines end where the reader ends them
 # (sourcelines), no longer at a form feed, and a function is shingled from its own
-# lines, its nested functions' left out.
-SHINGLE_FORMAT = f"v2 blake2b-8 window {WINDOW}"
+# lines, its nested functions' left out. v3: comment lines as the file's language
+# writes them.
+SHINGLE_FORMAT = f"v3 blake2b-8 window {WINDOW}"
+
+
+class _Comments(NamedTuple):
+    """How one language writes a comment line.
+
+    `line` holds the prefixes that make a whole line a comment. `block` opens a
+    comment at a line's start and closes it wherever the closer falls, or is
+    None in a language without one. `starts` is every prefix that sends a line
+    down the slow path: the line prefixes and the block opener."""
+
+    line: tuple[str, ...]
+    block: tuple[str, str] | None
+    starts: tuple[str, ...]
+
+
+def _comments(line: tuple[str, ...], block: tuple[str, str] | None = None) -> _Comments:
+    return _Comments(line, block, line + (block[:1] if block else ()))
+
+
+# A comment is what the language's reference calls one, so a Python `// 2` or
+# `**kwargs` line, a C `*out = x;` or `#define` line and a Rust `#[attr]` line
+# are code. Python's docstrings are string literals; a line that opens or
+# closes one is left out by convention, as it always was.
+_C_FAMILY = _comments(("//",), ("/*", "*/"))
+_COMMENTS = {"python": _comments(("#", '"""', "'''")), "shell": _comments(("#",)),
+             "powershell": _comments(("#",), ("<#", "#>")), "zig": _comments(("//",))}
+_COMMENTS_BY_SUFFIX = {suffix: _COMMENTS.get(language, _C_FAMILY)
+                       for language, suffixes in LANGUAGE_EXTENSIONS.items() for suffix in suffixes}
 # The one threshold a run's index is stored at: brief's, and duplication's
 # default. Any other min_lines builds its own index for that call.
 STORED_MIN_LINES = 8
 
 
 class _Source(NamedTuple):
-    """One file as the shingler reads it: its lines, and the span of every
-    function in it as a `_span_key`, sorted."""
+    """One file as the shingler reads it: its lines, the span of every function
+    in it as a `_span_key`, sorted, and how its language writes a comment."""
 
     lines: list[str]
     spans: list[tuple[int, int, int]]
+    comments: _Comments
 
 
 def _span_key(r) -> tuple[int, int, int]:
@@ -92,14 +126,49 @@ def _own_runs(r, spans: list[tuple[int, int, int]]):
     yield at, r.end
 
 
-def _normalized_lines(source: _Source, r) -> list[str]:
-    picked = []
-    for first, last in _own_runs(r, source.spans):
-        for raw in source.lines[first - 1:last]:
-            line = "".join(raw.split())  # whitespace never distinguishes a clone
-            if line and not raw.strip().startswith(_COMMENT_PREFIXES):
-                picked.append(line)
+def _opening(text: str, comments: _Comments) -> tuple[str | None, int]:
+    """The closer a stripped line awaits when it opens a block comment, and
+    where the search for it starts; (None, 0) when it opens none."""
+    block = comments.block
+    if block and text.startswith(block[0]):
+        return block[1], len(block[0])
+    return None, 0
+
+
+def _uncommented(text: str, closer: str | None, comments: _Comments) -> tuple[str, str | None]:
+    """What of a stripped line is code, and the block closer still awaited
+    after it. A line holding code after a closed block comment is code. One
+    loop turn per block comment closed on the line, so no line is too long."""
+    start = 0
+    if closer is None:
+        closer, start = _opening(text, comments)
+    while closer is not None:
+        at = text.find(closer, start)
+        if at < 0:
+            return "", closer
+        text = text[at + len(closer):].lstrip()
+        closer, start = _opening(text, comments)
+    return ("" if text.startswith(comments.line) else text), None
+
+
+def _code_lines(raw_lines, comments: _Comments) -> list[str]:
+    """Each code line with its whitespace removed, blank and comment lines left
+    out. Only a line inside a block comment or starting like a comment pays
+    for the closer and prefix checks."""
+    picked, closer = [], None
+    for raw in raw_lines:
+        text = raw.strip()
+        if closer is not None or text.startswith(comments.starts):
+            text, closer = _uncommented(text, closer, comments)
+        if text:
+            picked.append("".join(raw.split()))  # whitespace never distinguishes a clone
     return picked
+
+
+def _normalized_lines(source: _Source, r) -> list[str]:
+    runs = _own_runs(r, source.spans)
+    return _code_lines(chain.from_iterable(source.lines[first - 1:last] for first, last in runs),
+                       source.comments)
 
 
 def _digest(window: bytes) -> int:
@@ -120,8 +189,12 @@ def _shingles(lines: list[str]) -> set[int]:
             for window in zip(*(encoded[i:] for i in range(WINDOW)))}
 
 
-def _source(text: str | None, spans: list[tuple[int, int, int]]) -> _Source | None:
-    return None if text is None else _Source(source_lines(text), spans)
+def _source(path: str, text: str | None, spans: list[tuple[int, int, int]]) -> _Source | None:
+    """The file's comment syntax is its language's, the C family's for a suffix
+    no language claims."""
+    if text is None:
+        return None
+    return _Source(source_lines(text), spans, _COMMENTS_BY_SUFFIX.get(splitext(path)[1], _C_FAMILY))
 
 
 def _row_shingles(r: InventoryRow, source: _Source, min_lines: int) -> set[int] | None:
@@ -140,7 +213,7 @@ def _function_shingles(rows: list[InventoryRow], sources: dict[str, str],
     cached_path, source = None, None
     for r in rows:
         if r.path != cached_path:
-            cached_path, source = r.path, _source(sources.get(r.path), spans[r.path])
+            cached_path, source = r.path, _source(r.path, sources.get(r.path), spans[r.path])
         if source is None:
             continue
         shingles = _row_shingles(r, source, min_lines)
@@ -299,7 +372,7 @@ def _target_shingles(target, text: str | None, file_rows, min_lines: int) -> set
     """`file_rows` hold the rows of the target's file. The functions nested in
     the target own their lines, so the target's shingles leave them out."""
     spans = _spans_by_path(r for r in file_rows if r.path == target.path)
-    source = _source(text, spans.get(target.path, []))
+    source = _source(target.path, text, spans.get(target.path, []))
     return None if source is None else _row_shingles(target, source, min_lines)
 
 

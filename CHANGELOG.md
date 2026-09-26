@@ -1435,6 +1435,14 @@ is rebuilt at the first `duplication` or `brief` after upgrading.
 - A brief on a closure no longer lists its factory as a twin at 1.0: the factory's own
   lines hold none of the closure's. `contained` still marks a twin that nests with the
   target, now only where the enclosing function's own lines copy the nested one.
+- A comment line is what the file's language calls one. One prefix list served every
+  language, so a line starting with `#`, `//`, `/*`, `*` or three quotes was left out
+  everywhere: a Python `**options` or `// 2` line, a C `*out = x;` or `#define` line, a
+  Rust `#[attr]` line, a JavaScript generator's `*name() {` line. Two functions that
+  differ in one such line share 5 of 10 shingles and read 8 of 9, 0.8889, a pair at the
+  default 0.8. Python leaves out `#` lines and a line that opens or closes a docstring;
+  shell leaves out `#`; PowerShell `#` and `<# #>`; Zig `//`; every other language `//`
+  and `/* */`, where a block comment's lines without a leading `*` were read as code.
 
 ## 0.8.0 — 2026-09-23
 
