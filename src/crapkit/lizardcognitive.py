@@ -449,10 +449,43 @@ def _settle_line(state: _FnState, token: str, is_python: bool) -> None:
 
 
 def _python_dedent(state: _FnState) -> None:
-    """At a line's first real token, close every block its indent has left."""
-    if not state.at_line_start:
+    """At a statement line's first real token, close every block its indent
+    has left. A line inside a bracket continues a statement, and its indent
+    closes nothing."""
+    if not _statement_start(state):
         return
+    _close_comprehensions(state)
     while state.stack and state.line_indent <= state.stack[-1]:
+        state.stack.pop()
+
+
+def _statement_start(state: _FnState) -> bool:
+    """A Python statement starts at a line's first real token outside every
+    bracket. `if` and `else` anywhere else are a ternary's."""
+    return state.at_line_start and not state.runs
+
+
+class _Bracket(NamedTuple):
+    """A Python comprehension's level on the nesting stack: open while the
+    bracket it sits in is, at `depth` brackets deep. See _comprehension."""
+
+    depth: int
+
+
+def _comprehension(state: _FnState) -> None:
+    """A comprehension's `for`: +1 and the nesting it sits in, and a level that
+    closes with the comprehension's bracket. Kept open to the end of the line,
+    it charged the second of `[p for p in a] + [q for q in b]` one level
+    deeper than the first."""
+    state.total += 1 + len(state.stack)
+    _push(state, _Bracket(len(state.runs)))
+
+
+def _close_comprehensions(state: _FnState) -> None:
+    """Close the comprehension levels whose bracket has closed. A statement
+    end that clears the brackets (a stray `;`) closes them too."""
+    while (state.stack and isinstance(state.stack[-1], _Bracket)
+           and state.stack[-1].depth > len(state.runs)):
         state.stack.pop()
 
 
@@ -673,6 +706,7 @@ def _close_run(state: _FnState) -> None:
     outer, grouping = state.runs.pop()
     if outer is not None or not grouping:
         state.bool_op = outer
+    _close_comprehensions(state)
 
 
 def _message_token(state: _FnState, token: str) -> None:
@@ -738,6 +772,8 @@ def _signature_token(state: _FnState, token: str) -> None:
 
 
 def _brace(state: _FnState, token: str) -> None:
+    if "{" in state.dialect.openers:
+        return  # a bracket, which _follow_runs keeps; its depth is no block's
     if token == "{":
         _open_brace(state)
     else:
@@ -871,8 +907,8 @@ def _structure_token(state: _FnState, token: str, is_python: bool) -> None:
     Rust's cyclomatic column counts the arms instead, so the two columns say
     different things about one block on purpose.
     """
-    if is_python and token == "match":
-        _python_match(state, token)
+    if is_python:
+        _python_structure(state, token)
     elif token == "guard":
         _guard(state, is_python)
     elif not _charged_elsewhere(state, token):
@@ -887,6 +923,15 @@ def _charged_elsewhere(state: _FnState, token: str) -> bool:
         state.for_pending = not implements_for(state.prev)
         return True
     return _loop_tail(state, token)
+
+
+def _python_structure(state: _FnState, token: str) -> None:
+    if token == "match":
+        _python_match(state, token)
+    elif token == "for" and state.runs:
+        _comprehension(state)
+    else:
+        _structure(state, token, True)
 
 
 def _loop_tail(state: _FnState, token: str) -> bool:
@@ -1038,7 +1083,7 @@ def _counts_question(state: _FnState) -> bool:
 
 
 def _if_token(state: _FnState, is_python: bool) -> None:
-    if is_python and not state.at_line_start:
+    if is_python and not _statement_start(state):
         state.total += 1 + _nesting(state, is_python)  # ternary expression form
         return
     state.total += 1 + _nesting(state, is_python)
@@ -1046,7 +1091,7 @@ def _if_token(state: _FnState, is_python: bool) -> None:
 
 
 def _else_token(state: _FnState, token: str, is_python: bool) -> None:
-    if is_python and not state.at_line_start:
+    if is_python and not _statement_start(state):
         return  # the else arm of a ternary expression is part of its +1
     if state.guard_else:
         state.guard_else = False
