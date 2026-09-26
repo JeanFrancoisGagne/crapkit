@@ -8,7 +8,7 @@ When `python -m crapkit` started crapkit, every next step and refusal it prints 
 
 One case has no line that runs in all four: a venv's `python.exe` in a directory whose name holds a space. A venv's `python.exe` is a launcher that reads its own name off the command line it was started with. Unless that line opens with a double quote, the name ends at the first space, and the launcher hands the rest to the base interpreter as a script path (exit 2). From cmd.exe the line is what the reader typed, and PowerShell cannot take one that opens with a quote. Before it quotes anything, crapkit looks for a spelling of the same file with no space: the directories a link crosses, resolved, then the 8.3 short name the volume keeps. Only a real spaced directory on a volume with no 8.3 names is left, and for that one crapkit prints the quoted-segment spelling, which runs in PowerShell, pwsh and Git Bash and fails in cmd.exe.
 
-Up to 0.8.0 crapkit printed that path whole in double quotes. That line ran in cmd.exe and Git Bash and failed in both PowerShells, for every spaced path, venv or not. The trade is deliberate: PowerShell is the shell Windows Terminal opens by default, and coding agents on Windows run their commands through PowerShell or Git Bash.
+Up to 0.8.0 crapkit printed that path whole in double quotes. That line ran in cmd.exe and Git Bash and failed in both PowerShells, for every spaced path, venv or not. The trade is deliberate: PowerShell is the shell Windows Terminal opens by default, and coding agents on Windows run their commands through PowerShell or Git Bash. The same spelling serves the install line a pytest-cov note prints for a lane that names its python by path.
 
 Alternatives we did not take:
 

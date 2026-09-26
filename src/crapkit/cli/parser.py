@@ -9,7 +9,7 @@ import sys
 
 from .. import __version__
 from ..errors import ConfigError, CrapkitError
-from ..invocation import _self, shell_path
+from ..invocation import _self, shell_arg
 
 # The claude-* namespace, named here rather than read off the parser, because the
 # guard has to answer before argparse sees the argv at all. A plugin's hooks.json
@@ -528,7 +528,7 @@ def _refuse_path_argument(arg: str) -> int:
     usage error before. The path goes back into the command as one shell word:
     printed as it came, a space split it and Git Bash ate its backslashes."""
     print(f"crapkit: {arg!r} is not a subcommand; the repo is a flag on one, "
-          f"e.g. `{_self()} inventory --repo {shell_path(arg)}` "
+          f"e.g. `{_self()} inventory --repo {shell_arg(arg)}` "
           f"(`{_self()} --help` lists the subcommands)", file=sys.stderr)
     return 2
 

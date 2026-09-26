@@ -2,7 +2,7 @@
 
 ## 0.8.1 — unreleased
 
-### A next step printed under `python -m crapkit` runs in Git Bash and PowerShell
+### A command crapkit prints for the reader to paste runs in Git Bash and PowerShell
 
 - When `python -m crapkit` started crapkit, every next step and refusal names the
   interpreter's path, and on Windows two of the shells a reader pastes into could not
@@ -28,7 +28,25 @@
 - `crapkit <path>` is refused with the command to run instead, `crapkit inventory --repo
   <path>`, and the path went into that command as it came: a space split it into two
   arguments in every shell, and Git Bash read the backslashes of `C:\work\app` as
-  escapes. The path is now quoted the same way as the interpreter.
+  escapes. The path now goes in with forward slashes, and in one pair of double quotes
+  when it holds a space or a shell operator: `--repo "my repos/app"`. Quoting only the
+  spaced segment is not enough after the command word, because PowerShell ends a word
+  that opens with a quote at the closing one and read `"my repos"/app` as two arguments.
+  The fix doctor prints for a hook committed without the executable bit, `git
+  update-index --chmod=+x <path>`, quotes the path the same way, so a hooks directory
+  whose name holds a space stays one path.
+- The note init and doctor print for a lane whose python cannot import pytest_cov, and
+  the refusal after pytest rejects `--cov`, end with an install line built on the lane's
+  python. When the lane names that python by path, as init writes a repo's venv on
+  Windows, the line was `.venv\Scripts\python.exe -m pip install pytest-cov`: Git Bash
+  ran it as `.venvScriptspython.exe` and exited 127, and from any directory but the
+  lane's no shell found the file. The line now names the file the path resolves to,
+  spelled the way a next step spells crapkit's own interpreter. A lane that names
+  `python` still gets `python -m pip install pytest-cov`.
+- The recipe a refused coveragepy lane prints for the shards a killed parallel run left
+  behind was `coverage combine && coverage json -o <target>`. Windows PowerShell 5.1
+  has no `&&` and stopped at a parse error before either command ran. The recipe now
+  names the two commands one after the other, and the target goes in as one word.
 
 ### A SARIF log names a schema URI that answers
 

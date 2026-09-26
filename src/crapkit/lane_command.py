@@ -11,7 +11,7 @@ The command line itself is read by `config.shell_words` and
 module adds is the step that runs pytest and the python heading it: lanes.py
 names that python in the hint after a lane fails for want of pytest-cov, and
 doctor asks it whether pytest-cov imports, so the two cannot name different
-words.
+words, and both print the install line for it through `install_python`.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from pathlib import Path, PurePath
 from typing import NamedTuple
 
 from .config import shell_segments, shell_words
+from .invocation import interpreter_word
 
 _WINDOWS = os.name == "nt"
 
@@ -176,6 +177,21 @@ def pytest_python(command: str) -> str | None:
     """
     step = pytest_step(command)
     return step[0] if step and is_python(step[0]) else None
+
+
+def install_python(word: str, spec: LaunchSpec) -> str:
+    r"""The lane's python as the first word of an install line a reader pastes.
+
+    A bare name stays as the lane spells it. A path is read from the lane's
+    directory, and the reader pastes from wherever they stand, into cmd.exe,
+    PowerShell or Git Bash: `.venv\Scripts\python.exe -m pip install pytest-cov`
+    found nothing outside the lane's directory, and Git Bash ran it as
+    `.venvScriptspython.exe`. So a path goes out as the file it names, spelled
+    the way a next step spells crapkit's own interpreter. The word as written
+    when it names no file.
+    """
+    resolved = spec.resolve(word) if os.sep in word or "/" in word else None
+    return interpreter_word(resolved) if resolved else word
 
 
 def pytest_head(command: str) -> str:

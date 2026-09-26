@@ -17,8 +17,9 @@ from ..config import load_config_text
 from ..doctor import Finding
 from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
-from ..invocation import _self
-from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
+from ..invocation import _self, shell_arg
+from ..lane_command import (LaunchSpec, first_word, install_python, launch_spec, pytest_head,
+                            pytest_python)
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
@@ -368,14 +369,15 @@ def _missing_pytest_cov_note(name: str, word: str, spec: LaunchSpec) -> str:
     own `.venv` carries pytest-cov still gets this note when the lane names the
     `python` a stock PATH answers with, and then installing a package is the
     wrong move: the reader has to be able to tell which of the two was asked.
-    The install command carries the same word, so it lands in that interpreter's
-    environment rather than whichever one the reader's shell has active. Where
-    the word lands is read the way the lane's shell reads it, so a relative
-    launcher names the same file from any directory doctor runs in."""
+    The install command names the same interpreter, so it lands in that
+    interpreter's environment rather than whichever one the reader's shell has
+    active. Where the word lands is read the way the lane's shell reads it, so
+    a relative launcher names the same file from any directory doctor runs in,
+    and the install command names that file (`install_python`)."""
     resolved = spec.resolve(word) or word
     return (f"note: lane {name!r} names `{word}`, which resolves here to {resolved} and "
-            f"cannot import pytest_cov - run `{word} -m pip install pytest-cov` in the "
-            "environment the suite runs in "
+            f"cannot import pytest_cov - run `{install_python(word, spec)} -m pip install "
+            "pytest-cov` in the environment the suite runs in "
             # Double quotes, not single: cmd.exe passes ' through as an
             # ordinary character and pip rejects the requirement. Double
             # quotes are the one form cmd, PowerShell, bash and zsh share,
@@ -967,12 +969,13 @@ def _doctor_hook_modes(root: Path) -> list[Finding]:
     """WARN, never FAIL: on Windows the bit is unreadable from the filesystem and
     the hook still runs, so a Windows author must not be blocked by it. On Linux
     and macOS git skips a 100644 hook without a word, which is how crapkit's own
-    contributor gate armed nothing."""
+    contributor gate armed nothing. The fix command quotes the path the way the
+    reader's shell needs it, so a hooks directory with a space stays one path."""
     from ..doctor import non_executable_hooks
 
     return [Finding("WARN", f"{path} is not executable in the index — core.hooksPath "
                             "is set, so Unix clones silently skip it; fix with "
-                            f"`git update-index --chmod=+x {path}` and commit")
+                            f"`git update-index --chmod=+x {shell_arg(path)}` and commit")
             for path in non_executable_hooks(_hook_modes(root))]
 
 

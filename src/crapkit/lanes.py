@@ -29,7 +29,8 @@ from .coverage_istanbul import FnCoverage
 from .coverage_format import lane_format
 from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
-from .lane_command import launch_spec, pytest_python
+from .invocation import shell_arg
+from .lane_command import LaunchSpec, install_python, launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
 from .universe import ScopeMatch, owning_scope, path_matchers
 
@@ -205,7 +206,7 @@ def _attempt_once(root: Path, lane: Lane, log_path: Path, attempt: int, owner=No
         return None
 
 
-def _pytest_cov_home(lane: Lane) -> str:
+def _pytest_cov_home(lane: Lane, spec: LaunchSpec) -> str:
     """Which environment the package has to land in, as concretely as the lane
     command allows.
 
@@ -220,10 +221,11 @@ def _pytest_cov_home(lane: Lane) -> str:
     word = pytest_python(lane.command)
     if not word:
         return "the environment the lane's suite runs in"
-    return f"the environment `{word}` runs in (`{word} -m pip install pytest-cov`)"
+    return (f"the environment `{word}` runs in "
+            f"(`{install_python(word, spec)} -m pip install pytest-cov`)")
 
 
-def _missing_plugin_hint(tail: str, lane: Lane) -> str:
+def _missing_plugin_hint(tail: str, lane: Lane, spec: LaunchSpec) -> str:
     """The one failure signature a new user cannot decode: pytest rejecting
     --cov points at crapkit's config when the real gap is the pytest-cov package.
 
@@ -233,7 +235,7 @@ def _missing_plugin_hint(tail: str, lane: Lane) -> str:
     if "unrecognized arguments" not in tail or "--cov" not in tail:
         return ""
     return (f" — the --cov flags come from the pytest-cov package, which has to be "
-            f"installed in {_pytest_cov_home(lane)}, not in the shell's active venv")
+            f"installed in {_pytest_cov_home(lane, spec)}, not in the shell's active venv")
 
 
 def _shard_hint(root: Path, lane: Lane) -> str:
@@ -258,7 +260,9 @@ def _shard_hint(root: Path, lane: Lane) -> str:
     The `-o` target is printed relative to the shard directory, because that is
     where the operator is told to stand. `artifact` is repo-relative, so a lane
     with a `cwd` that pasted the key verbatim wrote the JSON one directory below
-    the path crapkit reads, and the next run refused it again.
+    the path crapkit reads, and the next run refused it again. The target goes
+    in as one word of the operator's shell, and the recipe is two commands, not
+    a chain: Windows PowerShell 5.1 has no `&&`.
     """
     if lane.parser != "coveragepy":
         return ""
@@ -270,8 +274,8 @@ def _shard_hint(root: Path, lane: Lane) -> str:
     noun, verb = ("shard", "sits") if len(shards) == 1 else ("shards", "sit")
     return (f"; {len(shards)} coverage {noun} ({shards[0].name}, ...) {verb} in "
             f"{shard_dir}, which is what a killed parallel run leaves behind: "
-            f"`coverage combine && coverage json -o {target}` there, then a "
-            "re-run with --reuse-artifacts, scores what that suite did measure")
+            f"`coverage combine` followed by `coverage json -o {shell_arg(target)}` "
+            "there, then a re-run with --reuse-artifacts, scores what that suite did measure")
 
 
 def _no_artifact_head(root: Path, lane: Lane, stale: list[str], reuse: bool = False) -> str:
@@ -336,7 +340,7 @@ def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | 
     hint = f"; last output: {tail}" if tail else ""
     raise UnwrittenArtifact(
         f"lane {lane.name!r} {_no_artifact_head(root, lane, list(refused), reuse)}{detail}"
-        f"; lane log: {log_path}{hint}{_missing_plugin_hint(tail, lane)}"
+        f"; lane log: {log_path}{hint}{_missing_plugin_hint(tail, lane, launch_spec(root, lane))}"
         f"{_shard_hint(root, lane)}", refused)
 
 

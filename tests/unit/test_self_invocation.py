@@ -22,7 +22,7 @@ import pytest
 
 from crapkit import invocation
 from crapkit.errors import CrapkitError
-from crapkit.invocation import _self, shell_path
+from crapkit.invocation import _self, shell_arg, shell_path
 
 MODULE_RUN = str(Path(sys.prefix) / "Lib" / "site-packages" / "crapkit" / "__main__.py")
 CONSOLE_RUN = str(Path(sys.prefix) / "Scripts" / "crapkit.exe")
@@ -109,6 +109,22 @@ def test_a_posix_path_is_quoted_the_way_sh_reads_it(posix):
 
 def test_a_posix_path_without_anything_to_quote_is_left_bare(posix):
     assert shell_path("/usr/bin/python3") == "/usr/bin/python3"
+
+
+def test_a_windows_argument_that_needs_quotes_goes_in_one_pair(windows):
+    """After the command word, PowerShell ends a word that opens with a quote at
+    the closing quote: `"my repos"/app` is two arguments there. A whole quoted
+    word is one argument in cmd.exe, PowerShell and Git Bash."""
+    assert shell_arg(r"my repos\app") == '"my repos/app"'
+    assert shell_arg(r"C:\a&b\x") == '"C:/a&b/x"'
+
+
+def test_a_windows_argument_of_word_characters_is_left_bare(windows):
+    assert shell_arg(r"C:\work\app") == "C:/work/app"
+
+
+def test_a_posix_argument_is_quoted_the_way_sh_reads_it(posix):
+    assert shell_arg("my repos/$app") == "'my repos/$app'"
 
 
 def test_a_windows_module_run_names_the_interpreter_with_forward_slashes(windows, as_module,

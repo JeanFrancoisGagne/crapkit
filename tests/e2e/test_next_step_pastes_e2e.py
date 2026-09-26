@@ -10,8 +10,9 @@ line as a string and stops at `-m` with a parse error.
 
 Each case pastes `<the spelling> coverage` into cmd.exe, Windows PowerShell,
 pwsh and Git Bash on Windows, sh and bash elsewhere, with a stand-in crapkit on
-PYTHONPATH that prints the argv it received. A shell this machine lacks is
-skipped.
+PYTHONPATH that prints the argv it received. A stand-in pip does the same for
+the install line a pytest-cov note prints, and adds the interpreter that ran it.
+A shell this machine lacks is skipped.
 """
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ import pytest
 from crapkit.invocation import _self, shell_path
 
 STUB = "import json, sys\nprint(json.dumps(sys.argv[1:]))\n"
+PIP_STUB = "import json, sys\nprint(json.dumps([sys.executable, *sys.argv[1:]]))\n"
 SHELLS = ("cmd", "powershell", "pwsh", "bash") if os.name == "nt" else ("sh", "bash")
 
 
@@ -69,11 +71,12 @@ def _argv(name: str, line: str, scratch: Path):
 
 
 def _paste(name: str, line: str, scratch: Path) -> tuple[int, str]:
-    stub = scratch / "stub" / "crapkit"
-    stub.mkdir(parents=True, exist_ok=True)
-    (stub / "__init__.py").write_bytes(b"")
-    (stub / "__main__.py").write_bytes(STUB.encode("utf-8"))
-    env = {**os.environ, "PYTHONPATH": str(stub.parent), "PYTHONDONTWRITEBYTECODE": "1"}
+    for module, main in (("crapkit", STUB), ("pip", PIP_STUB)):
+        stub = scratch / "stub" / module
+        stub.mkdir(parents=True, exist_ok=True)
+        (stub / "__init__.py").write_bytes(b"")
+        (stub / "__main__.py").write_bytes(main.encode("utf-8"))
+    env = {**os.environ, "PYTHONPATH": str(scratch / "stub"), "PYTHONDONTWRITEBYTECODE": "1"}
     done = hang_guard.run(_argv(name, line, scratch), cwd=scratch, env=env, text=True,
                           encoding="utf-8", errors="replace")
     lines = done.stdout.strip().splitlines()
@@ -170,21 +173,47 @@ def test_a_venv_in_a_spaced_directory_runs_everywhere_but_cmd(shell, tmp_path, m
     assert _paste(shell, line, tmp_path) == (0, '["coverage"]'), line
 
 
+@pytest.mark.parametrize("typed", ["absolute", "relative"])
 @pytest.mark.parametrize("shell", SHELLS)
-def test_the_repo_path_a_refusal_prints_reaches_crapkit_as_one_argument(shell, tmp_path,
+def test_the_repo_path_a_refusal_prints_reaches_crapkit_as_one_argument(shell, typed, tmp_path,
                                                                         monkeypatch, capsys):
     """`crapkit <path>` is refused with the command to run instead, `... inventory
     --repo <path>`. The path printed as it came split at its space in every
-    shell."""
+    shell, and `"my repos"/app`, its spaced segment quoted alone, still split in
+    PowerShell and pwsh: a word that opens with a quote ends at the closing one.
+    The reader pastes from the directory they typed the path in."""
     from crapkit.cli import main
 
     monkeypatch.setattr(sys, "argv", [str(Path("crapkit") / "__main__.py")])
     repo = tmp_path / "my repos" / "app"
-    main([str(repo)])
+    main([str(repo) if typed == "absolute" else "my repos/app"])
     line = re.search(r"e\.g\. `([^`]+)`", capsys.readouterr().err).group(1)
 
     code, printed = _paste(shell, line, tmp_path)
 
     assert code == 0, line
     command, flag, path = json.loads(printed)
-    assert (command, flag, Path(path)) == ("inventory", "--repo", repo)
+    assert (command, flag, tmp_path / path) == ("inventory", "--repo", repo), line
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_the_install_line_a_pytest_cov_note_prints_runs_the_lanes_python(shell, tmp_path):
+    r"""A lane that names its python by path, as init writes a repo's venv on
+    Windows (`.venv\Scripts\python.exe`), got the install line
+    `.venv\Scripts\python.exe -m pip install pytest-cov`. Git Bash ran that as
+    `.venvScriptspython.exe` and exited 127, and from any directory but the
+    lane's no shell found the file. Pasted here from another directory."""
+    from crapkit.cli.admin import _missing_pytest_cov_note
+    from crapkit.lane_command import LaunchSpec
+
+    executable = Path(sys.executable)
+    root = _install_root(executable)
+    word = str(executable.relative_to(root.parent))
+    note = _missing_pytest_cov_note("py", word, LaunchSpec(root.parent))
+    line = re.search(r"run `([^`]+)` in the environment", note).group(1)
+
+    code, printed = _paste(shell, line, tmp_path)
+
+    assert code == 0, line
+    ran, *argv = json.loads(printed)
+    assert os.path.samefile(ran, executable) and argv == ["install", "pytest-cov"], line

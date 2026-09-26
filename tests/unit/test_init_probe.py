@@ -942,6 +942,24 @@ def test_the_pytest_cov_note_names_the_python_it_asked(tmp_path, monkeypatch, ca
     assert '"crapkit[py]"' in err
 
 
+def test_the_install_line_names_the_file_a_lane_path_resolves_to(tmp_path):
+    r"""init writes a repo's venv as `.venv\Scripts\python.exe` on Windows, and
+    the note's install line carried that word as written: Git Bash ran it as
+    `.venvScriptspython.exe`, and from any directory but the lane's no shell
+    found it. The note still names the word the lane names."""
+    from crapkit.invocation import interpreter_word
+
+    python = tmp_path / ".venv" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"")
+    word = str(Path(".venv", "Scripts", "python.exe"))
+
+    note = admin._missing_pytest_cov_note("py", word, LaunchSpec(tmp_path))
+
+    assert f"names `{word}`" in note
+    assert f"run `{interpreter_word(str(python))} -m pip install pytest-cov`" in note
+
+
 # --- and a runner the LANE's own environment supplies -------------------------
 #
 # lanes.py starts the lane with {**os.environ, **lane.env}, so a lane that ships

@@ -43,18 +43,20 @@ def _self() -> str:
     argv0 = sys.argv[0] if sys.argv else ""
     if Path(argv0).stem == _CONSOLE_SCRIPT:
         return _CONSOLE_SCRIPT
-    return f"{_interpreter()} -m {_CONSOLE_SCRIPT}"
+    return f"{interpreter_word(sys.executable)} -m {_CONSOLE_SCRIPT}"
 
 
-def _interpreter() -> str:
-    """sys.executable as the first word of a line a reader pastes."""
+def interpreter_word(path: str) -> str:
+    """The interpreter at `path` as the first word of a line a reader pastes:
+    `shell_path` of the spelling without a space, where Windows has one."""
     if os.name != "nt":
-        return shell_path(sys.executable)
-    return shell_path(_spaceless(sys.executable))
+        return shell_path(path)
+    return shell_path(_spaceless(path))
 
 
 def shell_path(path: str) -> str:
-    r"""`path` as one word that the shells a reader pastes into read back as `path`.
+    r"""`path` as the command word of a line, one word that the shells a reader
+    pastes into read back as `path`.
 
     POSIX quoting for sh. On Windows one line has to serve cmd.exe, PowerShell
     and Git Bash, and the obvious spellings each lose one of them. Git Bash
@@ -74,6 +76,24 @@ def shell_path(path: str) -> str:
     if os.name != "nt":
         return shlex.quote(path)
     return "/".join(map(_windows_segment, path.replace("\\", "/").split("/")))
+
+
+def shell_arg(path: str) -> str:
+    """`path` as one argument after the command word, read back as `path` by
+    the shells a reader pastes into.
+
+    Not `shell_path`'s spelling. After the command word PowerShell ends a word
+    that opens with a quote at the closing quote, so `--repo "my repos"/app`
+    reached crapkit as `my repos` and `/app`. One pair of double quotes around
+    the whole path is one argument in cmd.exe, PowerShell and Git Bash, and
+    forward slashes keep Git Bash off the backslashes. POSIX quoting for sh.
+    As in `shell_path`, `%`, `!`, `$` and a backtick are not safe inside the
+    quotes.
+    """
+    if os.name != "nt":
+        return shlex.quote(path)
+    word = path.replace("\\", "/")
+    return word if _BARE_SEGMENT.fullmatch(word.replace("/", "")) else f'"{word}"'
 
 
 def _windows_segment(segment: str) -> str:

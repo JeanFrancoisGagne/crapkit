@@ -133,6 +133,27 @@ def test_the_command_a_path_refusal_prints_keeps_the_path_one_argument(arg, caps
     assert [Path(word) for word in shlex.split(printed.group(1))] == [Path(arg)]
 
 
+@pytest.mark.parametrize(("arg", "word"), [("my repos/app", '"my repos/app"'),
+                                           ("a b/c d/e", '"a b/c d/e"'),
+                                           (r"C:\my repos\app", '"C:/my repos/app"'),
+                                           (r"C:\work\app", "C:/work/app")])
+def test_a_refused_windows_path_that_needs_quotes_goes_in_one_pair(arg, word, capsys,
+                                                                  monkeypatch):
+    """PowerShell ends an argument that opens with a quote at the closing quote,
+    so `--repo "my repos"/app` reached crapkit as `my repos` and `/app`. One pair
+    of quotes around the whole path is one argument in cmd.exe, PowerShell and
+    Git Bash."""
+    from types import SimpleNamespace
+
+    from crapkit import invocation
+    from crapkit.cli import main
+
+    monkeypatch.setattr(invocation, "os", SimpleNamespace(name="nt"))
+    main([arg])
+
+    assert f" inventory --repo {word}` " in capsys.readouterr().err
+
+
 def test_a_misspelled_subcommand_is_still_argparses_error():
     """Shape is the whole trigger, so a typo carrying no path separator still
     gets the usage dump a human is there to read."""

@@ -145,3 +145,22 @@ def test_config_parses_the_progress_deadline():
         '[[lane]]\nname = "py"\ncommand = "pytest --cov"\nartifact = "c.json"\n'
         'parser = "coveragepy"\nscopes = ["src"]\nno_progress_seconds = 300\n')
     assert cfg.lanes[0].no_progress_seconds == 300
+
+
+def test_the_shard_recipe_runs_in_windows_powershell(tmp_path):
+    """Windows PowerShell 5.1 has no `&&`, so `coverage combine && coverage json
+    -o ...` stopped at a parse error before either command ran. The recipe names
+    the two commands one after the other, and the `-o` target goes in as one
+    word of the reader's shell."""
+    from crapkit.invocation import shell_arg
+
+    (tmp_path / ".coverage.box.pid5.aaaa").write_text("x", encoding="utf-8")
+    lane = Lane(name="py", command=f'"{PY}" -c "import sys; sys.exit(1)"',
+                artifact="cov out/coverage.json", parser="coveragepy", scopes=())
+
+    with pytest.raises(ToolError) as exc:
+        run_lane(tmp_path, lane)
+
+    message = str(exc.value)
+    assert "&&" not in message
+    assert f"`coverage json -o {shell_arg('cov out/coverage.json')}` there" in message
