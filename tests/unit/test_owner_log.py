@@ -20,9 +20,12 @@ from crapkit.errors import ToolError
 from crapkit.procs import own_processes
 from hang_guard import exited
 
-# An inherited family list the guardian cannot parse: it raises before it
-# replies, the way any error the guardian did not expect ends it.
-BROKEN = {"CRAPKIT_COMMAND_FAMILIES": "not json"}
+# A lock name holding a NUL byte, which no OS can open: the guardian raises
+# ValueError before it replies, the way any error it did not expect ends it.
+# crapkit never names such a lock, so this crash stays a crash. (An inherited
+# family list it cannot parse used to be the trigger; that is now a refusal
+# that names the variable, in test_071_family_adapters.)
+BROKEN_LOCK = "measurement" + chr(0) + ".lock"
 
 
 @pytest.mark.parametrize("locks, expected", [
@@ -47,10 +50,9 @@ def test_an_owner_holding_no_checkout_lock_logs_beside_the_measurement_locks(tmp
 
 def _crash(tmp_path, monkeypatch) -> str:
     """Start an owner that raises before it replies, and return the exit-5 line."""
-    for key, value in BROKEN.items():
-        monkeypatch.setenv(key, value)
+    monkeypatch.delenv("CRAPKIT_COMMAND_FAMILIES", raising=False)
     with pytest.raises(ToolError, match="before confirming ownership") as raised:
-        with own_processes([tmp_path / ".crapkit" / "measurement.lock"]):
+        with own_processes([tmp_path / ".crapkit" / BROKEN_LOCK]):
             pass
     return str(raised.value)
 
@@ -62,7 +64,7 @@ def test_a_crashed_owner_leaves_its_traceback_and_the_line_names_the_file(tmp_pa
     assert line == f"measurement owner stopped before confirming ownership; its error is at the end of {log}"
     text = log.read_text(encoding="utf-8", errors="replace")
     assert re.match(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ measurement owner \d+ stopped:\n", text), text
-    assert "Traceback" in text and "JSONDecodeError" in text, text
+    assert "Traceback" in text and "ValueError: embedded null" in text, text
 
 
 def test_a_second_crash_appends_to_the_first(tmp_path, monkeypatch):

@@ -20,9 +20,27 @@ _ENV = 'CRAPKIT_COMMAND_FAMILIES'
 def command_environment(environment):
     """Name a family before spawn; only successful registration creates it."""
     family = str(Path(tempfile.gettempdir()) / ('crapkit-family-' + uuid.uuid4().hex))
-    parents = json.loads(os.environ.get(_ENV, '[]'))
     return family, {**(os.environ if environment is None else environment),
-                    _ENV: json.dumps([*parents, family])}
+                    _ENV: json.dumps([*_inherited(), family])}
+
+
+def _inherited():
+    """The ancestor families crapkit handed this process. The variable is
+    crapkit's own hand-off, so any other value is refused by name: parsed
+    unchecked, it stopped the measurement owner with no word of the cause."""
+    text = os.environ.get(_ENV, '[]')
+    try:
+        families = json.loads(text)
+    except ValueError:
+        families = None
+    if not (isinstance(families, list) and all(map(_is_family, families))):
+        raise ToolError(f'{_ENV} holds {text!r}, not the JSON list of absolute paths crapkit '
+                        f'hands a nested command; unset {_ENV} and run the command again')
+    return families
+
+
+def _is_family(value):
+    return isinstance(value, str) and os.path.isabs(value) and '\0' not in value
 
 
 @contextmanager
@@ -44,9 +62,10 @@ def _register(path, stack):
 @contextmanager
 def ancestor_leases():
     """Keep all ancestor commands incomplete until this guardian exits."""
+    families = _inherited()
     with ExitStack() as stack:
         try:
-            for path in json.loads(os.environ.get(_ENV, '[]')):
+            for path in families:
                 _register(Path(path), stack)
         except OSError as error:
             raise ToolError('ancestor command has stopped; cannot retain ownership') from error

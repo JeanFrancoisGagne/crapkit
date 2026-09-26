@@ -220,19 +220,23 @@ def test_mutate_runs_a_suite_that_prints_an_emoji_on_the_unmutated_tree(tmp_path
     assert json.loads(result.stdout)["mutants"] > 0
 
 
-def test_a_crashed_owner_leaves_its_traceback_in_owner_log_and_the_line_names_it(tmp_path):
-    """The owner is forced to raise before it replies, by a family list it
-    cannot parse. Its stderr went to DEVNULL, and the exit-5 line named no cause."""
+def test_a_family_list_crapkit_did_not_write_is_refused_by_name_before_a_lane_runs(tmp_path):
+    """CRAPKIT_COMMAND_FAMILIES is crapkit's hand-off to a nested command. A
+    value it did not write stopped the owner, and the exit-5 line said
+    `measurement owner stopped before confirming ownership`, naming neither
+    the variable nor the fix. A real owner crash, and the owner.log line it
+    leaves, is in tests/unit/test_owner_log.py."""
     repo = _repo(tmp_path, _config(PYTEST_S))
 
     result = run_cli(repo, "coverage", env_extra={"CRAPKIT_COMMAND_FAMILIES": "not json"}, encoding="utf-8")
 
-    log = repo.resolve() / ".crapkit" / "owner.log"
     assert result.returncode == 5, result.stdout + result.stderr
-    assert result.stderr.startswith("crapkit: measurement owner stopped before confirming ownership; "
-                                    f"its error is at the end of {log}\n"), result.stderr
-    text = log.read_text(encoding="utf-8", errors="replace")
-    assert "measurement owner" in text and "JSONDecodeError" in text, text
+    assert result.stderr == ("crapkit: CRAPKIT_COMMAND_FAMILIES holds 'not json', not the JSON list of "
+                             "absolute paths crapkit hands a nested command; unset CRAPKIT_COMMAND_FAMILIES "
+                             "and run the command again\n"), result.stderr
+    assert not (repo / ".crapkit" / "cov" / "py.json").exists(), "the lane ran"
+    log = repo / ".crapkit" / "owner.log"
+    assert not log.exists() or "Traceback" not in log.read_text(encoding="utf-8", errors="replace")
 
 
 # The owner waits for a stopped command's process group by reading every

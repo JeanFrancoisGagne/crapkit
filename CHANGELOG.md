@@ -523,6 +523,12 @@ version bump under Upgrading from 0.8.0 above.
   `measurement owner stopped`. The owner's stderr goes to `.crapkit/owner.log`, and each
   exit-5 `measurement owner stopped` line names that file and says whether the owner
   wrote to it.
+- A `CRAPKIT_COMMAND_FAMILIES` crapkit did not write is refused at exit 5 by a line that
+  names the variable, quotes its value and says to unset it. crapkit hands that variable,
+  a JSON list of absolute paths, to the commands a lane starts. Set to anything else (empty,
+  `not json`, `5`, an object), it stopped `coverage`, `verify`, `test-scoped`, `mutate`
+  and the MCP tools with `measurement owner stopped before confirming ownership`, which
+  named neither the variable nor the fix.
 - `doctor --plugin-root` reads the PATH launcher's `--version` answer as bytes. A launcher
   that prints a byte that is not UTF-8 gets the FAIL line, now `gave no readable answer
   to crapkit --version`, and exit 1, with no reader-thread traceback on Windows. The
