@@ -1,10 +1,15 @@
 """The moved clock of a `run.py --faketime` run (lin-clock).
 
 run.py mounts /etc/ld.so.preload naming libfaketime and /etc/faketimerc
-holding the offset, so every dynamically linked process in the container
-starts under libfaketime and reads the moved clock, whatever environment the
-kit or a harness hands it. Statically linked tools (uv, Go and Rust binaries)
-keep the real clock. Two things follow for a cell:
+holding the offset. The dynamic loader reads /etc/ld.so.preload, so every
+dynamically linked process in the container starts under libfaketime and
+reads the moved clock, whatever environment the kit or a harness hands it and
+whatever language built it: Goose and prek are Rust binaries linked against
+glibc, and both read the moved clock. A program that names no dynamic loader
+keeps the real clock. REAL_CLOCK names the ones in the images: uv and uvx,
+the Codex CLI's musl binary and Crush, a Go binary. A cell that asserts a
+time reads it through date, git, node or python. Two more things follow for
+a cell:
 
   FAKETIME_SHARED  libfaketime writes it into the environment of each process
                    it loads into (the shared memory that keeps a process tree
@@ -28,6 +33,12 @@ import pytest
 
 PRELOAD = Path("/etc/ld.so.preload")
 ADDED_ENV = frozenset({"FAKETIME_SHARED"})
+# The file names of the programs in the images that name no dynamic loader, so
+# /etc/ld.so.preload never reaches them and they keep the real clock. The
+# codex here is the musl binary the Codex CLI's node launcher starts.
+# test_kit_isolation holds each one loader-free and every other program of the
+# toolchain and the harness commands dynamically linked.
+REAL_CLOCK = frozenset({"uv", "uvx", "codex", "crush"})
 # npm package -> why its pinned release never starts under libfaketime.
 # Measured with `claude --version` in the core image: exit 124 under `timeout`
 # at +0, +1d, +30d and +400d, and with FAKETIME_DONT_FAKE_MONOTONIC=1,

@@ -30,8 +30,9 @@ toolchain.py installed (Windows and macOS always run native). `--repeat N`
 runs the selection N times from fresh containers and fails when any cell's
 verdict differs between runs. `--faketime` runs the container under
 libfaketime (lin-clock): HH:MM:SS starts the clock at that UTC time today,
-+400d runs 400 days ahead; a cell that starts Claude Code 2.1.281, which never
-starts under libfaketime, is skipped at that step. Output: <out>/junit*.xml, <out>/transcripts/,
++400d runs 400 days ahead. uv, the Codex CLI's binary and Crush name no dynamic
+loader and keep the real clock; a cell that starts Claude Code 2.1.281, which
+never starts under libfaketime, is skipped at that step. Output: <out>/junit*.xml, <out>/transcripts/,
 <out>/build.json (build times and image sizes).
 """
 from __future__ import annotations
@@ -411,15 +412,18 @@ def container_command(tag: str, out: Path, selected: list[str], online: bool, ru
 
 
 # --- the clock (lin-clock) ---------------------------------------------------------
-# `--faketime SPEC` runs every process in the container under libfaketime, which
-# the images hold (Debian's faketime package). It is loaded through
-# /etc/ld.so.preload and set through /etc/faketimerc, two files mounted
+# `--faketime SPEC` runs every dynamically linked process in the container under
+# libfaketime, which the images hold (Debian's faketime package). It is loaded
+# through /etc/ld.so.preload and set through /etc/faketimerc, two files mounted
 # read-only, and not through LD_PRELOAD and FAKETIME: the kit builds each
 # cell's environment from an allowlist, so a crapkit a cell starts would run on
-# the real clock. Every process gets the same offset, so the run's clock moves
-# as the real one does. Statically linked tools (uv, Go and Rust binaries) keep
-# the real clock. Claude Code 2.1.281 deadlocks under libfaketime before main,
-# so the kit skips a cell at its first start of it (tests/deploy/kit/clock.py).
+# the real clock. Every such process gets the same offset, so the run's clock
+# moves as the real one does. A program that names no dynamic loader never
+# reads /etc/ld.so.preload and keeps the real clock: uv, the Codex CLI's musl
+# binary and Crush (tests/deploy/kit/clock.py REAL_CLOCK). A Rust binary linked
+# against glibc, such as Goose or prek, reads the moved clock. Claude
+# Code 2.1.281 deadlocks under libfaketime before main, so the kit skips a cell
+# at its first start of it (kit/clock.py CANNOT_START).
 
 FAKETIME_LIBRARY = "/usr/lib/{triplet}/faketime/libfaketime.so.1"
 TRIPLETS = {"linux/amd64": "x86_64-linux-gnu", "linux/arm64": "aarch64-linux-gnu"}
@@ -446,8 +450,9 @@ def faketime_mounts(out: Path, spec: str | None, platform: str, now: datetime.da
     library = FAKETIME_LIBRARY.format(triplet=TRIPLETS[platform])
     (clock / "ld.so.preload").write_text(library + "\n", encoding="utf-8", newline="\n")
     (clock / "faketimerc").write_text(offset + "\n", encoding="utf-8", newline="\n")
-    print(f"run: --faketime {spec}: every process runs at libfaketime offset {offset}; a cell stops, "
-          "skipped, at the first start of a release tests/deploy/kit/clock.py names (Claude Code 2.1.281)")
+    print(f"run: --faketime {spec}: every dynamically linked process runs at libfaketime offset {offset} "
+          "(uv, Codex and Crush keep the real clock); a cell stops, skipped, at the first start of a release "
+          "tests/deploy/kit/clock.py names (Claude Code 2.1.281)")
     return ["-v", f"{(clock / 'ld.so.preload').resolve()}:/etc/ld.so.preload:ro",
             "-v", f"{(clock / 'faketimerc').resolve()}:/etc/faketimerc:ro"]
 
@@ -529,8 +534,9 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
                              "daemon's builder when it runs the pinned BuildKit, else " + CONTAINER_BUILDER + ")")
     parser.add_argument("--faketime", metavar="HH:MM:SS|SPEC",
                         help="run the container under libfaketime: HH:MM:SS starts the clock at that UTC time "
-                             "today, any other value is libfaketime's own (+400d); a cell skips at a release "
-                             "that cannot start under it (tests/deploy/kit/clock.py)")
+                             "today, any other value is libfaketime's own (+400d); uv, Codex and Crush keep "
+                             "the real clock, and a cell skips at a release that cannot start under it "
+                             "(tests/deploy/kit/clock.py)")
     parser.add_argument("-n", type=int, default=0)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args(argv)

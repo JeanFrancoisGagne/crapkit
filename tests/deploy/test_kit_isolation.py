@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import sys
 import threading
 import time
@@ -590,7 +591,7 @@ def test_no_harness_binary_changes_during_the_session_with_every_update_switch_s
 
 
 # --- the moved clock (run.py --faketime) --------------------------------------------------
-# kit/clock.py: under the clock every process runs under libfaketime, which
+# kit/clock.py: under the clock every dynamically linked process runs under libfaketime, which
 # adds FAKETIME_SHARED to its environment, and a release in CANNOT_START
 # deadlocks before main, so the kit skips a cell at its first start.
 
@@ -687,6 +688,75 @@ def test_each_release_the_clock_skips_still_cannot_start_under_it(box):
 
     assert answered == [], (f"{answered} answered --version under libfaketime within {CLOCK_PROBE_SECONDS} s: "
                             "remove the package from kit/clock.py CANNOT_START so lin-clock runs its cells again")
+
+
+# The dynamic loader is the one reader of /etc/ld.so.preload, so an ELF program
+# with no PT_INTERP program header never loads libfaketime and keeps the real
+# clock. kit/clock.py REAL_CLOCK names those programs.
+PT_INTERP = 3
+IMAGE_PROGRAMS = ("uv", "uvx", "git", "node", "prek", "runner_python")
+SYSTEM_PROGRAMS = ("/usr/bin/date",)
+CODEX_NATIVE = "node_modules/@openai/codex-linux-*/vendor/*/bin/codex"
+
+
+def is_elf(path: str) -> bool:
+    try:
+        with open(path, "rb") as program:
+            return program.read(4) == b"\x7fELF"
+    except OSError:  # a directory, or nothing there
+        return False
+
+
+def names_a_loader(path: str) -> bool:
+    """Whether the 64-bit little-endian ELF program at `path` names a dynamic loader."""
+    with open(path, "rb") as program:
+        head = program.read(4096)
+    (table,) = struct.unpack_from("<Q", head, 0x20)
+    size, count = struct.unpack_from("<HH", head, 0x36)
+    return PT_INTERP in (struct.unpack_from("<I", head, table + size * index)[0] for index in range(count))
+
+
+def harness_files(box, pattern: str) -> list[Path]:
+    """`pattern` under the install root of each harness_bin dir."""
+    return [path for directory in box.toolchain.get("harness_bin", []) for path in Path(directory).parent.glob(pattern)]
+
+
+def image_programs(box) -> set[str]:
+    """The ELF programs of the toolchain, date, the harness commands and the
+    native binary the Codex CLI's launcher starts, symlinks followed."""
+    named = [box.toolchain.get(name) for name in IMAGE_PROGRAMS if box.toolchain.get(name)]
+    candidates = [*named, *SYSTEM_PROGRAMS, *harness_files(box, "bin/*"), *harness_files(box, CODEX_NATIVE)]
+    return {path for path in map(os.path.realpath, candidates) if is_elf(path)}
+
+
+def fake_elf(path: Path, kinds: list[int]) -> str:
+    """A 64-bit ELF header and program headers of these p_type values."""
+    header = b"\x7fELF\x02\x01\x01" + bytes(9) + struct.pack("<HHIQQQIHHHHHH", 2, 62, 1, 0, 64, 0, 0, 64, 56,
+                                                             len(kinds), 0, 0, 0)
+    path.write_bytes(header + b"".join(struct.pack("<I", kind) + bytes(52) for kind in kinds))
+    return str(path)
+
+
+def test_a_program_names_a_loader_when_a_program_header_is_its_interpreter(tmp_path):
+    pt_load, pt_phdr = 1, 6
+    dynamic = fake_elf(tmp_path / "dynamic", [pt_phdr, PT_INTERP, pt_load])
+    static = fake_elf(tmp_path / "static", [pt_load, pt_load])
+    script = fake_release(tmp_path, "@openai/codex") / "claude"
+
+    assert names_a_loader(dynamic) and not names_a_loader(static)
+    assert is_elf(static) and not is_elf(str(script)) and not is_elf(str(tmp_path))
+
+
+@pytest.mark.skipif(not IN_IMAGE, reason="run.py --faketime moves the clock in the images only")
+def test_the_programs_kit_clock_says_keep_the_real_clock_are_the_ones_that_name_no_loader(box):
+    programs = image_programs(box)
+    wrong = sorted(path for path in programs if names_a_loader(path) == (Path(path).name in clock.REAL_CLOCK))
+
+    assert "uv" in {Path(path).name for path in programs}
+    assert wrong == [], (f"{wrong}: each names a dynamic loader while kit/clock.py REAL_CLOCK lists its file name, "
+                         "or names none while REAL_CLOCK leaves it out. Make REAL_CLOCK and the program list in the "
+                         "kit/clock.py docstring match: under --faketime a program keeps the real clock only when "
+                         "it names no dynamic loader, whatever language built it")
 
 
 def test_a_changed_harness_binary_is_named():
