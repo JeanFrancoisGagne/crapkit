@@ -269,6 +269,47 @@ def test_a_cpp_reference_or_label_address_is_not_a_connective(line):
     assert file_mutants(line, None, "cpp") == []
 
 
+@pytest.mark.parametrize("language, text, changed", [
+    ("cpp", "void f(Foo&& other) { g(); }\n", None),
+    ("cpp", "void f(const Foo &&other) { g(); }\n", None),
+    ("cpp", "void f(std::vector<int>&& v) { g(); }\n", None),
+    ("cpp", "Foo(Foo&&) = default;\n", None),
+    ("cpp", "Foo& operator=(Foo&&) noexcept;\n", None),
+    ("cpp", "void f(Foo&&, int n);\n", None),
+    ("cpp", "template <typename... Args>\nvoid f(Args&&... args) { g(); }\n", {2}),
+    ("objectivec", "void f(Foo&& other) { g(); }\n", None),
+])
+def test_a_cpp_reference_after_a_type_name_is_not_a_connective(language, text, changed):
+    """A type is a name, so the token before `&&` cannot tell `Foo&& other` from
+    `a && b`. clang-format hugs a reference to its type or its name and spaces a
+    connective on both sides, and nothing after `Foo&&)` can be a right operand.
+    `void f(Foo|| other)` does not compile, so the run counted a kill no test made."""
+    assert file_mutants(text, changed, language) == []
+
+
+def test_a_cast_to_a_reference_is_a_type_argument_not_two_comparisons():
+    """`static_cast<` always opens a type. Its `<T&&>` read as two comparisons and
+    a connective, and none of the five mutants compiled."""
+    assert file_mutants("auto y = static_cast<T&&>(x);\n", None, "cpp") == []
+
+
+@pytest.mark.parametrize("text, changed, mutated", [
+    ("bool f() { return a&&b; }\n", None, ["bool f() { return a||b; }"]),
+    ("bool f() { return f(a)&& b; }\n", None, ["bool f() { return f(a)|| b; }"]),
+    ("bool f() { return a &&\n    b; }\n", None, ["bool f() { return a ||"]),
+    ("template <typename... Ts>\nbool all(Ts... ts) { return (ts && ...); }\n", {2},
+     ["bool all(Ts... ts) { return (ts || ...); }"]),
+    ("bool f(int n) { return static_cast<int>(n) > 0 && ok; }\n", None,
+     ["bool f(int n) { return static_cast<int>(n) >= 0 && ok; }",
+      "bool f(int n) { return static_cast<int>(n) <= 0 && ok; }",
+      "bool f(int n) { return static_cast<int>(n) > 0 || ok; }"]),
+])
+def test_a_cpp_connective_spaced_like_one_still_mutates(text, changed, mutated):
+    """Unspaced, spaced on both sides, broken after the operator, or a fold over
+    a pack: each joins two operands."""
+    assert [m.mutated for m in file_mutants(text, changed, "cpp")] == mutated
+
+
 @pytest.mark.parametrize("line, mutated", [
     ("bool f() { return this && n-- && ok; }\n",
      ["bool f() { return this || n-- && ok; }", "bool f() { return this && n-- || ok; }"]),

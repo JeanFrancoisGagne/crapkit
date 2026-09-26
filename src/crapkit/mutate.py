@@ -78,6 +78,17 @@ _LEXEMES = {language: re.compile(f"{whole}|{_SHARED_LEXEMES.pattern}")
 # ends in a type; a C++ type keyword before `&&` declares a reference.
 _PREFIX_CONNECTIVES = frozenset({"rust", "cpp", "objectivec"})
 _OPERAND_ENDS = frozenset({")", "]", "}", ">", "?", "+", "-", "this", "await"})
+# A C++ reference also follows a name, the type's (`Foo&& other`,
+# `std::vector<int>&& v`), so the token before cannot tell it from `a && b`. The
+# layout can: clang-format hugs a reference to its type (`Foo&& x`) or to its
+# name (`Foo &&x`) and spaces a connective on both sides, and a connective needs
+# a right operand, which `)`, `,`, `>`, `;`, `=` and a pack's `... args` cannot
+# start (`Foo(Foo&&)`, `static_cast<T&&>(x)`, `Args&&... args`). A fold,
+# `(ts && ...)`, joins operands and keeps its mutant.
+_REFERENCE_LANGUAGES = frozenset({"cpp", "objectivec"})
+_REFERENCES = re.compile(r"(?<=[\w>])&&(?=\s)|(?<=\s)&&(?=\w)|&&(?=\s*(?:[),>;=\]}]|\.\.\.\s*\w))")
+# A C++ cast names its target type in angles, so `static_cast<T&&>` holds no comparison.
+_CASTS = frozenset({"static_cast", "dynamic_cast", "const_cast", "reinterpret_cast"})
 # The keyword before a declared operator's own name: `bool operator<(...)` and
 # Swift's `static func <` name the operator they define and compare nothing.
 _OPERATOR_NAMERS = {"cpp": "operator", "objectivec": "operator", "swift": "func"}
@@ -184,7 +195,7 @@ def _code_tokens(text: str, language: str):
     lexed = list(get_lexer_by_name(aliases.get(language, language)).get_tokens_unprocessed(text))
     mask, syntax = _code_masks(text, lexed, language)
     protected, ambiguous = _type_angles(syntax, lexed, language)
-    protected |= _not_operations(lexed, language)
+    protected |= _not_operations(lexed, language) | _references(text, language)
     lexemes = _LEXEMES.get(language, _SHARED_LEXEMES)
     tokens = ((match.start(), match.group()) for match in lexemes.finditer(mask)
               if match.start() not in protected)
@@ -197,6 +208,13 @@ def _not_operations(lexed: list, language: str) -> set:
     namer = _OPERATOR_NAMERS.get(language)
     return {at for (at, _, value), (_, kind, before) in zip(tokens, [(0, None, "")] + tokens)
             if before == namer or _opens_an_operand(value, kind, before, language)}
+
+
+def _references(text: str, language: str) -> set:
+    """Offsets of a C++ `&&` laid out as a reference, not a connective."""
+    if language not in _REFERENCE_LANGUAGES:
+        return set()
+    return {match.start() for match in _REFERENCES.finditer(text)}
 
 
 def _significant_tokens(lexed: list) -> list:
@@ -299,17 +317,23 @@ def _java_type_tail(tokens: list, end: int, language: str) -> bool:
 
 
 def _type_angles(syntax: str, lexed: list, language: str) -> tuple[set, set]:
-    from pygments.token import Keyword, Name
-
     protected, ambiguous = set(), set()
     if language not in _ANGLE_LANGUAGES:
         return protected, ambiguous
-    typed = {at for at, kind, _ in lexed if kind in Keyword.Type or kind in Name.Builtin}
+    typed = _typed_offsets(lexed)
     tokens = _syntax_depths(syntax)
     for start, end in _angle_pairs(tokens):
         kind = _angle_kind(syntax, tokens, start, end, typed, language)
         _record_angles(tokens, start, end, kind, protected, ambiguous)
     return protected, ambiguous - protected
+
+
+def _typed_offsets(lexed: list) -> set:
+    """Tokens whose next `<` opens type arguments: a type, a builtin, a C++ cast."""
+    from pygments.token import Keyword, Name
+
+    return {at for at, kind, value in lexed
+            if kind in Keyword.Type or kind in Name.Builtin or value in _CASTS}
 
 
 def _record_angles(tokens: list, start: int, end: int, kind: str, protected: set, ambiguous: set) -> None:

@@ -16,14 +16,19 @@
 ### `mutate` flips a `&&` or `||` only where it joins two operands
 
 - In Rust a `||` with nothing on its left is a closure with no parameters and a `&&`
-  there borrows twice, and in C++ `auto&& x` and `int&& y` declare references. `mutate`
-  flipped them all, so `spawn(move || ...)` grew `spawn(move && ...)` and `auto&& x`
-  grew `auto|| x`. It also flipped the name a declaration gives an operator: `bool
-  operator<(const A&) const;` grew `operator<=`, and Swift's `static func <` grew
-  `static func <=`. None of these compiles, so each counted as a kill no test made.
-  They now make no mutant. A connective after an operand, including one that starts
-  a rustfmt continuation line, still makes its own. Kill rates on Rust, C++ and Swift
-  files can fall. No CRAP score changes.
+  there borrows twice, and in C++ `auto&& x`, `int&& y` and `Foo&& other` declare
+  references. `mutate` flipped them all, so `spawn(move || ...)` grew
+  `spawn(move && ...)` and `Foo&& other` grew `Foo|| other`. It also flipped the name a
+  declaration gives an operator (`bool operator<(const A&) const;` grew `operator<=`,
+  and Swift's `static func <` grew `static func <=`), and it read the type argument in
+  `static_cast<T&&>(x)` as two comparisons. None of these compiles, so each counted as
+  a kill no test made. They now make no mutant. A connective after an operand,
+  including one that starts a rustfmt continuation line, still makes its own. After a
+  C++ type name the layout decides: a `&&` hugged to one side (`Foo&& x`, `Foo &&x`) or
+  followed by `)`, `,` or `>` is a reference, and one spaced on both sides or on
+  neither (`a && b`, `a&&b`) is a connective, so a reference written `Foo && x` still
+  makes a mutant. Kill rates on Rust, C++ and Swift files can fall. No CRAP score
+  changes.
 
 ### Recovery recognizes an abandoned temporary mutation run of any size
 
