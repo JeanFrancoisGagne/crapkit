@@ -137,3 +137,22 @@ def test_the_agents_field_table_names_the_fields_next_item_emits():
     assert head["shallow"] is True
     for field in ("`shallow`", "`unmeasured`"):
         assert f"| {field} |" in (ROOT / AGENTS).read_text(encoding="utf-8"), field
+
+
+@pytest.mark.parametrize("field, entry", [
+    ("functions", {"functions": [], "summary": {}}),
+    ("missing_lines", {"missing_lines": ["5"]}),
+], ids=["functions-array", "missing-lines-string"])
+def test_the_upgrade_note_quotes_the_shape_refusal_a_report_that_read_at_exit_0_gets(field, entry):
+    """0.8.0 read `"functions": []` as a report without branch data and a
+    `"5"` in missing_lines as a dead line that matched no line, both at exit 0.
+    0.8.1 fails the lane at exit 5; the upgrade note quotes the refusal the
+    reader raises, so a reworded message fails here."""
+    from crapkit import coverage_py
+
+    read = coverage_py._read_functions if field == "functions" else coverage_py._dead_lines
+    with pytest.raises(ValueError) as refusal:
+        read("src/a.py", entry)
+    quoted = str(refusal.value).split("; ", 1)[0]
+
+    assert f"`{quoted}`" in _flat(UPGRADING)

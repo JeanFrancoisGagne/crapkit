@@ -296,6 +296,15 @@ istanbul. A report the coverage tool wrote is never refused for this;
 [what the istanbul parser reads](lanes.md#what-the-istanbul-parser-reads) lists each form
 for both formats.
 
+**Coverage artifacts with a field of the wrong shape.** 0.8.0 read a coverage.py file
+entry whose `functions` was an array, such as `"functions": []`, as a report without
+branch data, and a `missing_lines` entry that was not an integer, such as `"5"`, as a dead
+line that matched no line, both at exit 0. From 0.8.1 the lane fails, so `coverage` and
+`verify` exit 5, naming the file, the field and the JSON type it holds:
+`src/a.py: functions holds an array, not an object` or
+`src/a.py: missing_lines[0] holds a string, not a line number`, then
+`` regenerate the report with `coverage json` ``. A report coverage.py wrote holds neither.
+
 **An unreadable `.crapkit/artifacts.json`.** The record that a lane's last attempt failed
 lives in that file. A file that did not parse, or whose lane entry was not an object, read
 as no record, so `--reuse-artifacts` scored the artifact the failed attempt left.
