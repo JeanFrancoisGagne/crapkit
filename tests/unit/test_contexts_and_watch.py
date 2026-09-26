@@ -113,6 +113,19 @@ def test_a_poll_git_cannot_answer_names_its_error_once_and_judges_the_file_when_
     assert moved == ["a.py"]
 
 
+def test_a_poll_git_cannot_answer_over_many_files_names_three_sorted_and_counts_the_rest(
+        tmp_path, monkeypatch, capsys):
+    """The refusal names files the way every crapkit list does (named.first_few):
+    the first three, here sorted, then how many more."""
+    names = ["e.py", "d.py", "c.py", "b.py", "a.py"]
+    root = _tree(tmp_path, **{name: "x = 1\n" for name in names})
+    monkeypatch.setattr(watch, "record", _git_refuses)
+
+    snapshot(root, names)
+
+    assert "git could not read the content of a.py, b.py, c.py and 2 more (" in capsys.readouterr().out
+
+
 def test_a_file_git_cannot_read_at_the_start_is_judged_once_it_reads(tmp_path, monkeypatch, capsys):
     root = _tree(tmp_path, **{"a.py": "a = 1\n"})
     real = watch.record

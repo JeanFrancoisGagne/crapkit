@@ -27,6 +27,7 @@ from typing import NamedTuple
 
 from .errors import GitError
 from .lane_sources import record
+from .named import first_few
 
 # Pathspec characters a git read may carry. Windows caps a whole command line
 # at 32,767, so a list past this reads the whole index instead of naming files.
@@ -68,17 +69,10 @@ def _read(root: Path, paths, fault: str) -> tuple[dict[str, str], str]:
     except GitError as exc:
         error = str(exc)
     if error != fault:
-        print(f"crapkit watch: git could not read the content of {_some(paths)} ({error}); "
+        print(f"crapkit watch: git could not read the content of {first_few(sorted(paths))} ({error}); "
               "fix what git reports. Until git answers, each poll asks again and rescores "
               "nothing it could not read", flush=True)
     return {}, error
-
-
-def _some(paths) -> str:
-    """Up to three of `paths`, and how many more."""
-    names = sorted(paths)
-    more = f" and {len(names) - 3} more" if len(names) > 3 else ""
-    return ", ".join(names[:3]) + more
 
 
 def _stat_mtime(path: Path) -> float | None:
