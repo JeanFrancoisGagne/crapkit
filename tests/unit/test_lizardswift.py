@@ -263,3 +263,124 @@ def test_a_closure_after_a_comma_ends_where_its_brace_closes():
               "}\n")
 
     assert _rows(source) == [("each v : [ Int ]", 1, 5)]
+
+
+# --- decisions: what adds 1 to ccn, and what does not --------------------------------------------
+#
+# NIST SP 500-235 sec. 4.1: v(G) = 1 + the binary decisions. A switch adds one per
+# case-labeled statement in ccn_std; ccn_mod counts the switch once.
+
+def _counts(source: str) -> tuple:
+    row = analyze.analyze_source("case.swift", source)[0]
+    return row.ccn_std, row.ccn_mod, row.ccn, row.cognitive, row.nesting
+
+
+@pytest.mark.parametrize("condition", ["if case let .failure(e) = r {",
+                                       "if let a = r.value, case .failure = r {",
+                                       "while case let e? = next() {",
+                                       "for case let e? in r.items {"])
+def test_a_case_pattern_in_a_condition_is_no_switch_case(condition):
+    """Statements, If Statement and Case pattern: `if case let` is one condition of
+    one if. The `case` read as a switch case: ccn_std 3 and a second nesting level."""
+    source = f"func g(r: R) {{\n    {condition}\n        show(1)\n    }}\n}}\n"
+
+    assert _counts(source)[:3] == (2, 2, 2)
+    assert _counts(source)[4] == 1
+
+
+def test_a_case_pattern_in_a_guard_is_no_switch_case():
+    source = "func g(r: R) {\n    guard case .failure = r else {\n        return\n    }\n}\n"
+
+    assert _counts(source)[:3] == (2, 2, 2)
+
+
+def test_a_switch_case_still_counts_one_each():
+    source = ("func pick(k: Int) -> Int {\n    switch k {\n    case 1:\n        return 10\n"
+              "    case 2:\n        return 20\n    default:\n        return 0\n    }\n}\n")
+
+    assert _counts(source)[:3] == (3, 2, 2)
+
+
+@pytest.mark.parametrize("expression,decisions", [("a ?? 0", 1), ("a ?? b ?? 0", 2)])
+def test_each_nil_coalescing_operator_is_one_decision(expression, decisions):
+    """Basic Operators, Nil-Coalescing Operator: `a ?? b` picks one of two values."""
+    source = f"func f(a: Int?, b: Int?) -> Int {{\n    return {expression}\n}}\n"
+
+    assert _counts(source)[:3] == (1 + decisions,) * 3
+
+
+@pytest.mark.parametrize("label", ["for", "while", "if", "catch", "guard", "case"])
+def test_a_keyword_argument_label_is_no_structure(label):
+    """Functions, Specifying Argument Labels: `for name` is a label and a parameter name.
+    Read as a loop it cost ccn 1, cognitive 1 and a nesting level. The long name, and
+    with it the ratchet key, stays as lizard spelled it."""
+    source = f"func value({label} name: String) -> String {{\n    return name\n}}\n"
+
+    assert _counts(source) == (1, 1, 1, 0, 0)
+    assert _rows(source) == [(f"value {label} name : String", 1, 3)]
+
+
+def test_a_keyword_label_after_a_line_break_is_no_structure():
+    source = "func f(a: Int) {\n    run(a,\n        for: a)\n    run(\n        while: a)\n}\n"
+
+    assert _counts(source) == (1, 1, 1, 0, 0)
+
+
+@pytest.mark.parametrize("mark", ["done: (() -> Void)? = nil", "error: (any Error)?", "all: [Int]?",
+                                  "seen: Set<Int>?"])
+def test_an_optional_type_mark_is_no_decision(mark):
+    """Types, Optional Type: `(() -> Void)?` is a type. A `?` right after `)`, `]` or `>`
+    read as a conditional operator: ccn 2, cognitive 1, nesting 1."""
+    source = f"func optionalMark({mark}) {{\n    show(1)\n}}\n"
+
+    assert _counts(source) == (1, 1, 1, 0, 0)
+    assert _rows(source)[0][0] == "optionalMark " + " ".join(
+        mark.replace("(", " ").replace(")", " ").replace("[", " [ ").replace("]", " ] ")
+        .replace("<", " < ").replace(">", " > ").replace(":", " :").replace("- >", "->").split())
+
+
+@pytest.mark.parametrize("chain", ["f()?.g()", "a[0]?.b", "{ $0 }()?.b"])
+def test_an_optional_chain_is_no_decision(chain):
+    """Optional Chaining: `f()?.g()` calls g only when f returned a value, which the
+    function does not branch on."""
+    source = f"func chain() {{\n    let x = {chain}\n}}\n"
+
+    assert _counts(source)[:3] == (1, 1, 1)
+
+
+@pytest.mark.parametrize("ternary", ["(a > b) ? 1 : 2", "f(a) ? 1 : 2", "a > b\n        ? 1\n        : 2"])
+def test_a_ternary_after_a_bracket_is_still_a_decision(ternary):
+    """Swift writes the conditional operator with whitespace on both sides of `?`, which
+    is what tells it from an optional mark glued to what it follows."""
+    source = f"func pick(a: Int, b: Int) -> Int {{\n    return {ternary}\n}}\n"
+
+    assert _counts(source)[:3] == (2, 2, 2)
+
+
+# --- the parameter count, and nesting ----------------------------------------------------------
+
+@pytest.mark.parametrize("parameters,count", [("pair: (Int, Int)", 1),
+                                              ("done: (Int, String) -> Void", 1),
+                                              ("r: Result<URLRequest, any Error>", 1),
+                                              ("v: [Int] = [1, 2], d: [String: Int] = [\"a\": 1, \"b\": 2]", 2),
+                                              ("s: Set<Set<Int>>, n: Int", 2),
+                                              ("a: Int, b: Int", 2)])
+def test_a_comma_inside_one_parameter_counts_no_parameter(parameters, count):
+    """Functions, Function Parameters: `pair: (Int, Int)` is one parameter of tuple type.
+    Every comma in the list counted one. The long name keeps each comma."""
+    source = f"func f({parameters}) {{\n    show(1)\n}}\n"
+    row = analyze.analyze_source("case.swift", source)[0]
+
+    assert row.params == count
+    assert row.long_name.count(",") == parameters.count(",")
+
+
+@pytest.mark.parametrize("body,depth", [("try first()\n    try second()", 0),
+                                        ("try? first()\n    try! second()", 0),
+                                        ("if a {\n        try first()\n        try second()\n    }", 1)])
+def test_a_try_expression_opens_no_nesting_level(body, depth):
+    """Error Handling: `try` marks an expression that can throw and opens no block. The
+    nesting pass opened a level at each plain `try` that no brace closed."""
+    source = f"func tryTwice(a: Bool) throws {{\n    {body}\n}}\n"
+
+    assert _counts(source)[4] == depth
