@@ -15,6 +15,11 @@ languages that allow such a body (C, C++, Objective-C, Java, JavaScript,
 TypeScript and Zig) the body now holds a level from its header's `)` to the
 end of its statement, and a `{` is a structure's block only where the
 structure is still waiting for it at its own bracket depth.
+
+A block closes where its `}` stands in the token stream, whichever function
+lizard gives that `}` to. lizard gives the function around a JavaScript arrow
+the arrow's `{` and the arrow its `}`, so the braced block around the arrow
+never closed: every structure after it in the function sat one level deeper.
 """
 import pytest
 
@@ -44,6 +49,12 @@ ZIG_ELSE_CHAINS = [  # (label, source, Sonar value)
 def test_a_zig_payload_else_continues_its_chain(label, source, want):
     rows = analyze_source("a.zig", source, note=False)
     assert [r.cognitive for r in rows] == [want], label
+
+
+def _named(rows) -> list:
+    """The cognitive values of the rows with a name: an arrow reads
+    `(anonymous)` and a Go function literal reads empty."""
+    return [r.cognitive for r in rows if r.long_name.strip() and not r.long_name.startswith("(")]
 
 
 IF_TERNARY = "int f(int a, int b) {\n    if (a) b = b > 0 ? 1 : 2;\n    return b;\n}\n"
@@ -136,5 +147,32 @@ BRACELESS = [  # (label, path, source, Sonar value)
 @pytest.mark.parametrize("label,path,source,want", BRACELESS, ids=[c[0] for c in BRACELESS])
 def test_a_body_without_braces_is_a_level(label, path, source, want):
     rows = analyze_source(path, source, note=False)
-    named = [r.cognitive for r in rows if not r.long_name.startswith("(anonymous)")]
-    assert named == [want], label
+    assert _named(rows) == [want], label
+
+
+AROUND_AN_ARROW = [  # (label, path, source, Sonar value of the named function)
+    ("a JavaScript if block around an arrow with a block body", "a.js",
+     "function f(a, xs) {\n  if (a) {\n    xs.forEach((x) => { g(x) })\n  }\n  if (a) {\n"
+     "    if (xs) { g() }\n  }\n}\n", 4),
+    ("a TypeScript loop block around two arrows", "a.ts",
+     "function f(xs: number[], a: boolean) {\n  for (const x of xs) {\n"
+     "    p.then((r) => { g(r); }).catch(async (e) => { h(e); });\n  }\n"
+     "  if (a) {\n    g();\n  }\n}\n", 2),
+    ("a TSX arrow in a block of a component", "a.tsx",
+     "export function C(props: { a: boolean }) {\n  if (props.a) {\n"
+     "    useEffect(() => { g(); }, []);\n  }\n  if (props.a) {\n    if (x) {\n      g();\n"
+     "    }\n  }\n  return <div />;\n}\n", 4),
+    ("a JavaScript function expression (control)", "a.js",
+     "function f(a, xs) {\n  if (a) {\n    xs.forEach(function (x) { g(x) })\n  }\n  if (a) {\n"
+     "    if (xs) { g() }\n  }\n}\n", 4),
+    ("a Go function literal (control)", "a.go",
+     "package p\n\nfunc F(a bool) int {\n\tif a {\n\t\tdefer func() { g() }()\n\t}\n\tif a {\n"
+     "\t\tif a {\n\t\t\tg()\n\t\t}\n\t}\n\treturn 0\n}\n", 4),
+]
+
+
+@pytest.mark.parametrize("label,path,source,want", AROUND_AN_ARROW,
+                         ids=[c[0] for c in AROUND_AN_ARROW])
+def test_a_block_around_an_arrow_closes_at_its_brace(label, path, source, want):
+    rows = analyze_source(path, source, note=False)
+    assert _named(rows) == [want], label

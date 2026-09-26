@@ -373,7 +373,7 @@ class _FnState:
                  "prev", "prev2", "label_check", "dialect", "call_pending", "call",
                  "messages", "runs", "run_break", "word_op", "braces", "closed_do",
                  "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies",
-                 "ended")
+                 "ended", "brace_base")
 
     def __init__(self, fn=None, dialect: _Dialect = _DEFAULT_DIALECT):
         self.dialect = dialect
@@ -382,7 +382,8 @@ class _FnState:
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
         self.max_depth = 0       # the deepest the stack has been
-        self.brace_depth = 0
+        self.brace_depth = 0     # counted from where the function started; see _state_for
+        self.brace_base = 0      # the stream's brace depth where the function started
         self.line_indent = 0
         self.at_line_start = True
         self.pending = False     # a counting structure awaits its '{' (braced languages)
@@ -467,16 +468,28 @@ def _state_for(states: dict, fn, last, dialect: _Dialect) -> _FnState:
     The bracket depth the body rules read belongs to the stream too: lizard
     hands a JavaScript arrow the `)` that closes the call it is passed to,
     `xs.map((v) => (v ? 1 : 2))`, and the function around it resumed two
-    brackets deep, where no `;` could end its statement.
+    brackets deep, where no `;` could end its statement. So does the brace
+    depth, which a function counts from where it started: lizard hands the
+    function around an arrow the arrow's `{` and the arrow its `}`, and the
+    function resumed one brace deep, so the block around the arrow never
+    closed and every structure after it paid a level more.
     """
     state = states.get(fn)
     if state is None:
         state = states[fn] = _FnState(fn, dialect)
+        state.brace_base = _stream_braces(last)
     if last is not None and state is not last:
         state.line_indent = last.line_indent
         state.at_line_start = last.at_line_start
         state.bracket_depth = last.bracket_depth
+        state.brace_depth = _stream_braces(last) - state.brace_base
     return state
+
+
+def _stream_braces(last) -> int:
+    """The braces open in the token stream after the last token: the last
+    state's own depth over the depth it started at."""
+    return last.brace_depth + last.brace_base if last is not None else 0
 
 
 def _step(state: _FnState, token: str, is_python: bool) -> None:
