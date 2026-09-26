@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.11", "3.12", "3.13"]
         # Windows runs the unit and e2e sessions four to five times slower than
         # Ubuntu, so each Windows session is a job of its own and the two run
@@ -32,6 +32,19 @@ jobs:
             suite: e2e
           - os: windows-latest
             suite: unit e2e
+          # macOS is here for the letter-case rows: APFS opens SRC/a.py for a
+          # tracked src/a.py under POSIX path rules, a pairing no other job
+          # has. The rows read paths, not the interpreter, so one Python and
+          # one job holding both suites run them all. A Python added above
+          # needs its own macOS exclude here.
+          - os: macos-latest
+            python: "3.11"
+          - os: macos-latest
+            python: "3.12"
+          - os: macos-latest
+            suite: unit
+          - os: macos-latest
+            suite: e2e
     runs-on: ${{ matrix.os }}
     # The Latin-1 locale rows build en_US.ISO-8859-1 and fr_FR.UTF-8 with
     # localedef into a temp directory. Where a host cannot, they skip; here a

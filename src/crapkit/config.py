@@ -1,8 +1,12 @@
 """crapkit.toml parsing. Text in, Config out; every rejection is a ConfigError (exit 3).
 
-Pure, with one exception: given a `root`, the full-suite guard reads pytest's
-own configuration in a lane's working directory, and only when the lane's
-pytest command carries a positional to judge against `testpaths`."""
+Pure, with two exceptions, both only given a `root`. The full-suite guard reads
+pytest's own configuration in a lane's working directory, and only when the
+lane's pytest command carries a positional to judge against `testpaths`. And
+every path-valued key is read by repopath's declared entry (_PATH_KEYS), which
+gives a declared directory the letter case the directory lists where the
+filesystem opens it in another case, because git and every reader after this
+compare the text."""
 from __future__ import annotations
 
 import os
@@ -15,6 +19,7 @@ from typing import NamedTuple
 
 from .errors import ConfigError
 from .config_contract import admit, enum_values
+from .repopath import Refused, declared, disk_spelling, file_separators
 from .repotext import plain_utf8
 
 # `cpp` is the whole C family, C included: lizard resolves every one of its
@@ -413,13 +418,16 @@ def pytest_testpaths_at(directory: str | os.PathLike) -> tuple[str, ...]:
     return _pytest_testpaths(lambda name: _pytest_text(directory, name))
 
 
-def _as_testpath(token: str) -> str:
+def _as_testpath(token: str, base: Path | None = None) -> str:
     """One spelling for the comparison: forward slashes, no leading `./`, no
-    trailing separator. `tests/`, `./tests` and `tests` name one directory."""
-    spelled = token.replace("\\", "/")
+    trailing separator. `tests/`, `./tests` and `tests` name one directory.
+    Given the directory it is read from, it takes the case that directory
+    lists: on NTFS `Tests` is tests/."""
+    spelled = file_separators(token)
     if spelled.startswith("./"):
         spelled = spelled[2:]
-    return spelled.rstrip("/")
+    spelled = spelled.rstrip("/")
+    return disk_spelling(base, spelled) if base is not None and spelled else spelled
 
 
 def _declared_testpaths(positionals: list[str], lane_dir: Path | None) -> set[str]:
@@ -429,7 +437,7 @@ def _declared_testpaths(positionals: list[str], lane_dir: Path | None) -> set[st
     common lane costs a read-only command no file read."""
     if not positionals or lane_dir is None:
         return set()
-    return {_as_testpath(path) for path in pytest_testpaths_at(lane_dir)}
+    return {_as_testpath(path, lane_dir) for path in pytest_testpaths_at(lane_dir)}
 
 
 def _outside_testpaths(positionals: list[str], lane_dir: Path | None) -> list[str]:
@@ -442,10 +450,10 @@ def _outside_testpaths(positionals: list[str], lane_dir: Path | None) -> list[st
     of what a bare `pytest` does, which is the narrowing this guard exists to
     refuse, so one entry of several is not enough."""
     declared = _declared_testpaths(positionals, lane_dir)
-    if not declared <= {_as_testpath(tok) for tok in positionals}:
+    if not declared <= {_as_testpath(tok, lane_dir) for tok in positionals}:
         return positionals
     # An empty `declared` is a subset of anything and drops nothing below.
-    return [tok for tok in positionals if _as_testpath(tok) not in declared]
+    return [tok for tok in positionals if _as_testpath(tok, lane_dir) not in declared]
 
 
 def _validate_coveragepy_command(name: str, command: str, lane_dir: Path | None = None) -> None:
@@ -627,53 +635,44 @@ def load_config_text(text: str, *, root: str | os.PathLike | None = None) -> Con
         raise ConfigError(f"crapkit.toml is missing a required key: {exc}") from exc
 
 
-def _unrooted(raw: str) -> str:
-    r"""One declared scope path spelled the way `git ls-files` spells a path.
-
-    universe.py hoists the declared string straight into a prefix, so `./src`
-    looked for `./src/...` while git emits `src/a.py`. Backslashes were already
-    collapsed one layer down, which made the tool look like it normalized paths
-    when it normalized one spelling of them.
-    """
-    path = raw.replace("\\", "/").rstrip("/")
-    while path.startswith("./"):
-        path = path[2:]
-    return path.lstrip("/")
-
-
-def _scope_path(name, raw: str) -> str:
-    """A declared path a tracked file could actually match.
-
-    `./src` claimed nothing: the scope scored zero files, every file under it
-    came back unclaimed, and neither doctor FAIL named the dot — so the reader
-    was sent to declare a second scope for a path the first one already owned.
-    A path that climbs above the root or names a drive can never match a
-    tracked path at all, so it is refused here rather than reported later as an
-    empty scope. `..` is refused as a SEGMENT, not as a prefix: `src/../etc` is
-    the spelling a reader reaches for when they mean a sibling directory, and
-    matching a leading `../` alone let it through into the same silent empty
-    scope. A bare `.` is the repo root. The matcher gives it the lowest path
-    precedence so a deeper scope can own its subtree.
-    """
-    path = _unrooted(raw)
-    if path == "" or ".." in path.split("/") or ":" in path:
-        raise ConfigError(f"scope {name!r}: path {raw!r} can never match a tracked file — "
-                          "scope paths are repo-relative, with no drive and no `..` "
-                          "(docs/configuration.md)")
-    return path
+# Every path-valued key crapkit.toml holds, and the kind repopath's declared
+# entry reads it as: "file" (a path the OS opens), "scope", "prefix" and "input"
+# (a directory as git spells it, in the case the directory lists) or "glob".
+_PATH_KEYS = {
+    "scope.paths": "scope",
+    "lane.path_prefix": "prefix",
+    "lane.inputs": "input",
+    "lane.cwd": "file",
+    "lane.artifact": "file",
+    "lane.results_artifact": "file",
+    "crapkit.ratchet_file": "file",
+    "exclude.globs": "glob",
+}
 
 
-def _parse_scope(row: dict) -> Scope:
+def _path(key: str, raw: str, root: str | os.PathLike | None = None, owner: str = "") -> str:
+    """One value of a path-valued key, read by repopath's declared entry as
+    _PATH_KEYS marks the key. A refusal names the key's owner and the value as
+    written, so `scope 'web': path '../web'` says which line to fix."""
+    try:
+        return declared(raw, _PATH_KEYS[key], root)
+    except Refused as exc:
+        raise ConfigError(f"{owner}{raw!r} {exc}") from None
+
+
+def _parse_scope(row: dict, root: str | os.PathLike | None = None) -> Scope:
     languages = tuple(row.get("languages", ()))
     scope_target = row.get("target")
     return Scope(name=row["name"],
-                 paths=tuple(_scope_path(row.get("name"), p) for p in row["paths"]),
+                 paths=tuple(_path("scope.paths", p, root, f"scope {row.get('name')!r}: path ")
+                             for p in row["paths"]),
                  languages=languages,
                  target=scope_target,
                  coverage_optional=row.get("coverage_optional", False))
 
 
-def _parse_scopes(rows) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
+def _parse_scopes(rows, root: str | os.PathLike | None = None
+                  ) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
     """Every [[scope]] row and its notes, off ONE walk of the rows.
 
     Notes hang on the same rows the scopes come from, so collecting them in a
@@ -683,7 +682,7 @@ def _parse_scopes(rows) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
     scopes: dict[str, Scope] = {}
     notes: dict[str, tuple[str, ...]] = {}
     for row in rows:
-        scope = _parse_scope(row)
+        scope = _parse_scope(row, root)
         if scope.name in scopes:
             raise ConfigError(f"duplicate scope name {scope.name!r}; each scope needs its own name")
         scopes[scope.name] = scope
@@ -691,6 +690,17 @@ def _parse_scopes(rows) -> tuple[tuple[Scope, ...], dict[str, tuple[str, ...]]]:
         if row_notes:
             notes[scope.name] = row_notes
     return tuple(scopes.values()), notes
+
+
+def _expanded(command: str) -> str:
+    """The command with its launcher tokens expanded for the OS reading the
+    file, once, as the Lane is built (lane_command.expand_launchers), so every
+    reader of the command sees the one the shell will run. Imported here and
+    not at the top: lane_command reads this module's shell tokenizer as it
+    loads."""
+    from .lane_command import expand_launchers
+
+    return expand_launchers(command)
 
 
 def _validate_lane_command(parser: str, full_suite: bool, name: str, command: str,
@@ -716,52 +726,27 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
     if unknown_scopes:
         raise ConfigError(f"lane {row.get('name')!r} references undeclared scope(s) {sorted(unknown_scopes)}")
     full_suite = row.get("full_suite", True)
-    _validate_lane_command(parser, full_suite, row.get("name", "?"), row["command"],
-                           _lane_dir(root, row.get("cwd", "")))
-    return Lane(name=row["name"], command=row["command"], artifact=row["artifact"],
+    cwd = _path("lane.cwd", row.get("cwd", ""))
+    command = _expanded(row["command"])
+    _validate_lane_command(parser, full_suite, row.get("name", "?"), command,
+                           _lane_dir(root, cwd))
+    return Lane(name=row["name"], command=command,
+                artifact=_path("lane.artifact", row["artifact"]),
                 parser=parser, scopes=lane_scopes,
-                cwd=row.get("cwd", ""), path_prefix=row.get("path_prefix", ""),
+                cwd=cwd, path_prefix=_path("lane.path_prefix", row.get("path_prefix", ""), root),
                 env=tuple(sorted(row.get("env", {}).items())),
                 full_suite=full_suite, container_ok=row.get("container_ok", False),
-                results_artifact=row.get("results_artifact", ""),
+                results_artifact=_path("lane.results_artifact", row.get("results_artifact", "")),
                 timeout_seconds=row.get("timeout_seconds", 0),
                 no_progress_seconds=row.get("no_progress_seconds", 0),
                 retries=row.get("retries", 0),
-                retest_command=row.get("retest_command", ""),
-                inputs=_lane_inputs(row))
+                retest_command=_expanded(row.get("retest_command", "")),
+                inputs=_lane_inputs(row, root))
 
 
-_DRIVE_PATH = re.compile(r"[A-Za-z]:")
-
-
-def _outside_root(entry: str) -> bool:
-    """An input git would read outside the root, or could not read at all.
-
-    Inputs become pathspecs read from the root with diff.relative on, and that
-    diff never reports a change above the root: a `../shared` input would be
-    trusted forever."""
-    path = entry.replace("\\", "/")
-    return not path or path.startswith("/") or bool(_DRIVE_PATH.match(path)) or ".." in path.split("/")
-
-
-def _lane_inputs(row: dict) -> tuple[str, ...]:
-    return tuple(_lane_input(row.get("name"), entry) for entry in row.get("inputs", ()))
-
-
-def _lane_input(name, entry: str) -> str:
-    r"""One input spelled the way `git ls-files` spells a root-relative path.
-
-    git reads inputs with --literal-pathspecs, so `src/*.ts` would match no
-    file at all and the lane would be reused forever while its sources change.
-    `src\app.ts` matched on Windows git and named a file holding a backslash on
-    Linux; the scope-path spelling rule settles that before git sees it."""
-    if _outside_root(entry):
-        raise ConfigError(f"lane {name!r}: inputs entry {entry!r} is not a path "
-                          "inside the root; list paths relative to crapkit.toml, without '..'")
-    if "*" in entry or "?" in entry:
-        raise ConfigError(f"lane {name!r}: inputs entry {entry!r} is a glob; inputs are literal "
-                          "paths from the root, so list the directory or file itself")
-    return _unrooted(entry) or "."
+def _lane_inputs(row: dict, root: str | os.PathLike | None = None) -> tuple[str, ...]:
+    owner = f"lane {row.get('name')!r}: inputs entry "
+    return tuple(_path("lane.inputs", entry, root, owner) for entry in row.get("inputs", ()))
 
 
 def _reject_shared_artifacts(lanes: list, root=None) -> None:
@@ -786,8 +771,15 @@ def _unique_lanes(rows, scope_names: set, root) -> list[Lane]:
     return list(lanes.values())
 
 
+def _scoped_tests(main: dict) -> tuple[tuple[str, str], ...]:
+    """Each scope's test-scoped template, by scope name, with its launcher
+    token expanded; `{files}` stays for test-scoped to fill in."""
+    return tuple(sorted((name, _expanded(template))
+                        for name, template in main.get("scoped_tests", {}).items()))
+
+
 def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
-    scopes, scope_notes = _parse_scopes(raw["scope"])
+    scopes, scope_notes = _parse_scopes(raw["scope"], root)
     scope_names = {s.name for s in scopes}
     main = raw.get("crapkit", {})
     lanes = [lane._replace(log_max_bytes=main.get("log_max_bytes", 16777216))
@@ -796,16 +788,17 @@ def _build_config(raw: dict, root: str | os.PathLike | None = None) -> Config:
     return Config(
         target=main.get("target", DEFAULT_TARGET),
         scopes=scopes,
-        exclude_globs=tuple(raw.get("exclude", {}).get("globs", ())),
+        exclude_globs=tuple(_path("exclude.globs", glob)
+                            for glob in raw.get("exclude", {}).get("globs", ())),
         max_file_bytes=raw.get("exclude", {}).get("max_file_bytes"),
         churn_window_months=main.get("churn_window_months", 12),
         worklist_floor=main.get("worklist_floor", 5),
         worklist_top=main.get("worklist_top", 50),
         lanes=tuple(lanes),
-        ratchet_file=main.get("ratchet_file", "crapkit-ratchet.tsv"),
+        ratchet_file=_path("crapkit.ratchet_file", main.get("ratchet_file", "crapkit-ratchet.tsv")),
         alert_command=main.get("alert_command", ""),
-        scoped_tests=tuple(sorted(main.get("scoped_tests", {}).items())),
-        mutation_command=main.get("mutation_command", ""),
+        scoped_tests=_scoped_tests(main),
+        mutation_command=_expanded(main.get("mutation_command", "")),
         mutation_timeout_seconds=main.get("mutation_timeout_seconds", 300),
         mutation_workers=main.get("mutation_workers", 1),
         diff_uncovered_max=main.get("diff_uncovered_max"),

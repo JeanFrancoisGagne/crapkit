@@ -119,13 +119,19 @@ def test_the_interpreter_falls_back_to_the_windows_launcher(tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize("present, chosen", [
-    (("python", "python3", "py"), "python"),
-    (("python3", "py"), "python3"),
+    (("python", "python3", "py"), "{python}"),
+    (("python3", "py"), "{python}" if os.name != "nt" else "python3"),
+    (("python",), "{python}" if os.name == "nt" else "python"),
 ])
 def test_the_launcher_is_the_last_resort_not_the_first_choice(
         tmp_path, monkeypatch, present, chosen):
     """`py` is Windows-only, and the config it writes gets committed. It may
-    only be reached where no portable name resolves at all."""
+    only be reached where no portable name resolves at all.
+
+    Where the name the token reads as here resolves (`python` on Windows,
+    `python3` elsewhere), init writes the token, which reads as the other OS's
+    name there. Where only another name resolves, init writes that name, so the
+    config still runs on the machine that wrote it."""
     _name_only_on_path(tmp_path, monkeypatch, *present)
     assert admin._interpreter(tmp_path) == chosen
 
@@ -771,7 +777,7 @@ def test_a_lockfile_makes_init_write_the_managers_own_python(tmp_path):
 
 
 def test_without_a_lockfile_the_name_that_resolves_is_the_one_written(tmp_path):
-    assert admin._interpreter(_repo(tmp_path, "Cargo.lock")) in ("python", "python3")
+    assert admin._interpreter(_repo(tmp_path, "Cargo.lock")) in ("{python}", "python", "python3")
 
 
 def test_the_interpreter_written_is_a_name_and_never_a_path(tmp_path, monkeypatch):
@@ -784,7 +790,7 @@ def test_the_interpreter_written_is_a_name_and_never_a_path(tmp_path, monkeypatc
     assert admin._interpreter(tmp_path) == "python3"
 
     monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/" + name)
-    assert admin._interpreter(tmp_path) == "python"
+    assert admin._interpreter(tmp_path) == "{python}"
 
 
 def test_the_manager_prefixes_the_name_the_fallback_chose(tmp_path, monkeypatch):
@@ -810,7 +816,7 @@ def test_the_lockfiles_init_reads_are_the_ones_it_looks_for(tmp_path):
 # a lane naming that PATH python: init exited 0, doctor called the config
 # clean, and the first `crapkit coverage` exited 5 on "No module named pytest".
 
-_VENV_WORD = ".venv\\\\Scripts\\\\python.exe" if os.name == "nt" else ".venv/bin/python"
+_VENV_WORD = "{python:.venv}"
 
 
 def _fake_venv(root, *parts: str):
@@ -864,7 +870,7 @@ def test_a_scopes_own_venv_counts_too(tmp_path, monkeypatch):
 
     assert admin._repo_venv_python(tmp_path) is None, "not a candidate without the scope"
     word = admin._repo_venv_python(tmp_path, ("api",))
-    assert word == _VENV_WORD.replace(".venv", "api\\\\.venv" if os.name == "nt" else "api/.venv")
+    assert word == "{python:api/.venv}"
 
 
 def test_the_root_venv_wins_over_a_scopes(tmp_path, monkeypatch):
@@ -889,25 +895,49 @@ def test_the_venv_beats_a_bare_name_and_loses_to_a_lockfile(tmp_path, monkeypatc
 
 
 def test_a_repo_with_no_venv_still_gets_a_bare_name(tmp_path):
-    assert admin._interpreter(tmp_path) in ("python", "python3", "py")
+    assert admin._interpreter(tmp_path) in ("{python}", "python", "python3", "py")
 
 
 def test_the_venv_word_survives_the_config_it_is_written_into(tmp_path, monkeypatch):
-    r"""The one that has to hold on Windows. crapkit.toml is TOML, where `\` is
-    a string escape, and cmd.exe reads an unquoted `/` as the end of the
-    command name — so the word init writes carries doubled backslashes there,
-    and the config loader hands back the path that runs."""
-    import tomllib
+    r"""crapkit.toml is TOML, where `\` is a string escape, and cmd.exe reads an
+    unquoted `/` as the end of the command name. The token holds neither, and
+    the config loader hands back the launcher that runs on the OS reading it."""
+    from crapkit.config import load_config_text
 
     _fake_venv(tmp_path, ".venv")
     _pytest_imports(monkeypatch, True)
     word = admin._repo_venv_python(tmp_path)
 
-    value = tomllib.loads(f'command = "{word} -m pytest --cov"')["command"]
+    (lane,) = load_config_text(
+        "[[scope]]\nname = 'pkg'\npaths = ['pkg']\nlanguages = ['python']\n"
+        f'[[lane]]\nname = "py"\ncommand = "{word} -m pytest --cov"\n'
+        'artifact = "cov.json"\nparser = "coveragepy"\nscopes = ["pkg"]\n').lanes
 
-    assert value.endswith("python.exe -m pytest --cov") or value.endswith("python -m pytest --cov")
-    assert "//" not in value and "\\\\" not in value, "the escape unescapes to one separator"
-    assert is_python(first_word(word)), "the probe has to read it as a python"
+    launcher = os.sep.join((".venv", *admin._VENV_LAUNCHER))
+    assert lane.command == f"{launcher} -m pytest --cov", lane.command
+    assert is_python(first_word(lane.command)), "the probe has to read it as a python"
+
+
+@pytest.mark.parametrize("layout", [("Scripts", "python.exe"), ("bin", "python")])
+def test_the_venv_word_is_the_same_whichever_os_writes_it(tmp_path, monkeypatch, layout):
+    r"""init on Windows and init on Linux commit one line, and each OS reads it
+    as its own launcher. The Windows author's `.venv\Scripts\python.exe`
+    failed every lane of a Linux checkout that carried its own .venv, and the
+    Linux author's `.venv/bin/python` failed on Windows."""
+    from crapkit.lane_command import expand_launchers
+
+    monkeypatch.setattr(admin, "_VENV_LAUNCHER", layout)
+    venv = tmp_path / ".venv"
+    (venv / layout[0]).mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")
+    (venv / layout[0] / layout[1]).write_text("", encoding="utf-8")
+    _pytest_imports(monkeypatch, True)
+
+    word = admin._repo_venv_python(tmp_path)
+
+    assert word == "{python:.venv}"
+    assert expand_launchers(word, windows=True) == ".venv\\Scripts\\python.exe"
+    assert expand_launchers(word, windows=False) == ".venv/bin/python"
 
 
 def test_the_pytest_import_probe_asks_a_real_interpreter():

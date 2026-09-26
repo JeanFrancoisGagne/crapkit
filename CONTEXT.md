@@ -44,6 +44,10 @@ A named set of path prefixes and languages that shares one ceiling and one set o
 **Lane**:
 One configured test command that writes one coverage artifact for one scope.
 
+**Launcher token**:
+`{python}` or `{python:DIR}` in a lane, scoped-tests, retest or mutation command: the python the command names, spelled so either OS can read the committed file. The loader reads it as `python` on Windows and `python3` elsewhere, or as the launcher inside the venv at DIR (`DIR\Scripts\python.exe`, `DIR/bin/python`). `init` writes it.
+_Avoid_: placeholder (that is `{files}` or `{tests}`, filled in when the command runs)
+
 **Inputs**:
 The root-relative paths a lane declares its command reads. While none of them changed since the artifact's commit, `--reuse-unchanged` reuses the lane instead of rerunning it.
 _Avoid_: dependencies, sources (a scope's paths are its sources)

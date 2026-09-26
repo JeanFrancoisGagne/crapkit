@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
+from ..repopath import typed_path
 from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
@@ -138,7 +139,7 @@ def _tsv_baseline(root: Path, rel: str) -> dict:
     verify says so."""
     from ..verify import parse_baseline_tsv
 
-    path = root / rel
+    path = typed_path(rel, root)
     if not path.is_file():
         raise CrapkitError(f"no baseline file at {path} — write one with `verify --emit-baseline`")
     try:
@@ -575,6 +576,16 @@ def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
               f"over the ceiling {maximum}", file=sys.stderr)
 
 
+def _test_files(root: Path, failures: set[str]) -> dict[str, str]:
+    """Each failing test's file part as git spells the file, read off the disk
+    here so the verdict stays a pure function of its inputs."""
+    from ..repopath import Reported
+    from ..verify import file_part
+
+    reported = Reported(root)
+    return {part: reported(part) for part in {file_part(f) for f in failures}}
+
+
 class _RunsBehind:
     """Trusted runs older than the baseline and at or behind its commit, newest
     first: where a lane the baseline recorded no test results for is looked up.
@@ -926,7 +937,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     found = baseline_failures(baseline, provenance, behind)
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
                        baseline_failures=set(found.carried), fresh_failures=fresh_failures,
-                       target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty)
+                       target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty,
+                       test_files=_test_files(root, fresh_failures))
     verdict = _maybe_flake_retry(root, cfg, provenance, verdict)
     unjudged = _warn_baseline_gaps(found, baseline, provenance, verdict.new_failures)
     _warn_suite_shrink(baseline, provenance, behind)

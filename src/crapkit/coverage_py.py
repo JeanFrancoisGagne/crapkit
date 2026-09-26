@@ -16,7 +16,7 @@ for the wrong-tree check, and owns the runner advice a refusal gives.
 Under a POSIX locale that is not UTF-8 the lane's own Python names files in that
 locale's encoding, so its report keys `pkg/café.py` as `pkg/cafÃ©.py`. The
 adapter reads such a key back through the locale's codec when the file it then
-names exists and the key as written does not (_respelled).
+names exists and the key as written does not (_speller).
 """
 from __future__ import annotations
 
@@ -24,13 +24,15 @@ import codecs
 import locale
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import covstream
 from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
-from .repotext import json_kind, locale_spelling, utf8_spelling
+from .repopath import Reported, file_separators
+from .repotext import json_kind, utf8_spelling
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -257,7 +259,7 @@ def measured_key(prefix: str, raw_path: str) -> str:
 
     The one spelling of the forward rule. The reader prepends the prefix to
     EVERY key, an absolute one included, which is why as_reported exists."""
-    return prefix + raw_path.replace("\\", "/")
+    return prefix + file_separators(raw_path)
 
 
 def as_reported(lane: Lane, key: str) -> str:
@@ -380,29 +382,36 @@ def parse_coveragepy_missing_file(path: Path | str, *, path_prefix: str,
     return missing
 
 
-def _coveragepy_contexts(w, prefix: str, source_path: str) -> dict:
+def _coveragepy_contexts(w, prefix: str, source_path: str, spell: Callable[[str], str]) -> dict:
     selected = {}
     for key, value, kind in covstream.walk_report(w, "files"):
-        if kind == "sub" and measured_key(prefix, key) == source_path:
+        if kind == "sub" and spell(measured_key(prefix, key)) == source_path:
             selected = _line_contexts(value.get("contexts", {}))
     return selected
 
 
+def _as_written(key: str) -> str:
+    return key
+
+
 def parse_coveragepy_contexts_file(path: Path | str, *, path_prefix: str,
-                                   source_path: str, chunk: int = covstream.CHUNK
+                                   source_path: str, chunk: int = covstream.CHUNK,
+                                   spell: Callable[[str], str] = _as_written
                                    ) -> dict[int, list[str]]:
-    """One repository path's line contexts, after validating the whole report."""
+    """One repository path's line contexts, after validating the whole report.
+    `spell` turns a measured key into git's spelling before the compare."""
     prefix = lane_prefix(path_prefix)
     selected, _ = covstream.read_walk(
-        path, lambda w: _coveragepy_contexts(w, prefix, source_path), _BAD_REPORT, chunk)
+        path, lambda w: _coveragepy_contexts(w, prefix, source_path, spell), _BAD_REPORT, chunk)
     return selected
 
 
 # --- the adapter a lane reads through ------------------------------------------
 #
-# The reader takes path_prefix and takes no repo root, so a refusal is about the
+# The walk takes path_prefix and takes no repo root, so a refusal is about the
 # environment the lane binds to, and the prefix is a real knob. A path this tree
-# spelled absolutely is the runner's own switch: path_prefix only prepends.
+# spelled absolutely is the runner's own switch: path_prefix only prepends. The
+# adapter then spells each root-relative key as git does (_speller).
 
 WRONG_TREE_FIX = ("Point the lane at this checkout's own environment (a bare "
                   "`python -m pytest` binds to whichever venv the shell has active — run "
@@ -414,28 +423,46 @@ ABSOLUTE_FIX = ("Make the runner write relative paths: `relative_files = true` "
 UNMEASURED_READING = "or the runner reports paths this lane needs path_prefix to rebase"
 
 
+def _speller(root: Path) -> Callable[[str], str]:
+    """A measured key as git spells the file. A root-relative key takes the
+    letter case its directories list (repopath's reported entry): coverage.py on
+    macOS keys a file in the case the import system handed it, and `PKG/mod.py`
+    named no tracked file. An absolute key stays as written, because
+    relative_files is the runner's own switch and the wrong-tree check names it.
+    A key the lane's child wrote in a locale that is not UTF-8 first reads back
+    as the UTF-8 name it spells (_utf8_speller)."""
+    relative = Reported(root).relative
+    in_utf8 = _utf8_speller(root)
+
+    def spell(key: str) -> str:
+        key = in_utf8(key)
+        return key if os.path.isabs(key) else relative(key)
+    return spell
+
+
+def _respelled(per_key: dict, spell: Callable[[str], str]) -> dict:
+    return {spell(key): value for key, value in per_key.items()}
+
+
 def read(lane: Lane, root: Path, artifact: Path) -> tuple[dict, dict, str]:
     """The lane's function coverage, dead lines and artifact digest, one walk."""
-    per_file, dead, digest = parse_coveragepy_both_file(artifact, path_prefix=lane.path_prefix,
-                                                        label=f"lane {lane.name!r}")
-    return _respelled(root, per_file), _respelled(root, dead), digest
+    per_file, dead, digest = parse_coveragepy_both_file(
+        artifact, path_prefix=lane.path_prefix, label=f"lane {lane.name!r}")
+    spell = _speller(root)
+    return _respelled(per_file, spell), _respelled(dead, spell), digest
 
 
 def missing(lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]:
     """The lines coverage.py reports as never run, per measured file."""
-    return _respelled(root, parse_coveragepy_missing_file(artifact, path_prefix=lane.path_prefix))
+    return _respelled(parse_coveragepy_missing_file(artifact, path_prefix=lane.path_prefix),
+                      _speller(root))
 
 
 def contexts(lane: Lane, root: Path, artifact: Path, source_path: str) -> dict[int, list[str]]:
     """line -> test ids for one repository path, under the key the lane's child
-    wrote for it when its locale is not UTF-8."""
-    found = parse_coveragepy_contexts_file(artifact, path_prefix=lane.path_prefix,
-                                           source_path=source_path)
-    codec = _child_codec()
-    if found or codec is None or source_path.isascii():
-        return found
+    wrote for it in git's letter case or in a locale that is not UTF-8."""
     return parse_coveragepy_contexts_file(artifact, path_prefix=lane.path_prefix,
-                                          source_path=locale_spelling(source_path, codec))
+                                          source_path=source_path, spell=_speller(root))
 
 
 def _child_codec() -> str | None:
@@ -449,13 +476,13 @@ def _child_codec() -> str | None:
     return None if codec in ("utf-8", "ascii") else codec
 
 
-def _respelled(root: Path, by_key: dict) -> dict:
-    """The report's keys, each written in the child's locale read back as the
-    repository path it names."""
+def _utf8_speller(root: Path) -> Callable[[str], str]:
+    """A report key, written in the child's locale, read back as the repository
+    path it names; as written when the child names files in UTF-8."""
     codec = _child_codec()
     if codec is None:
-        return by_key
-    return {_respelled_key(root, key, codec): value for key, value in by_key.items()}
+        return _as_written
+    return lambda key: _respelled_key(root, key, codec)
 
 
 def _respelled_key(root: Path, key: str, codec: str) -> str:

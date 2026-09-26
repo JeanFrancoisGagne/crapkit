@@ -12,6 +12,10 @@ module adds is the step that runs pytest and the python heading it: lanes.py
 names that python in the hint after a lane fails for want of pytest-cov, and
 doctor asks it whether pytest-cov imports, so the two cannot name different
 words.
+
+It also owns the launcher token (`{python}`, `{python:DIR}`) init writes into
+a lane's command: config expands it once, as it builds the Lane, so all six
+readers of `Lane.command` see this OS's launcher.
 """
 from __future__ import annotations
 
@@ -22,8 +26,49 @@ from pathlib import Path, PurePath
 from typing import NamedTuple
 
 from .config import shell_segments, shell_words
+from .repopath import declared
 
 _WINDOWS = os.name == "nt"
+
+
+# The python a committed crapkit.toml names, spelled so every OS can read it.
+# init wrote the launcher of the OS it ran on, `.venv\Scripts\python.exe` or
+# `.venv/bin/python`, and the file is committed: the other OS's checkout, with a
+# venv of its own, failed every lane. `{python}` reads as `python` on Windows and
+# `python3` elsewhere (an Ubuntu without python-is-python3 has no `python`), and
+# `{python:DIR}` as the launcher inside the venv at DIR. No backslash and no
+# quote, so it survives the TOML basic string init writes it into, and no name
+# `prepare_template` fills in, so `{files}` beside it is untouched.
+_LAUNCHER_TOKEN = re.compile(r"\{python(?::([^{}\s]+))?\}")
+
+
+def python_token(venv: str = "") -> str:
+    """The launcher token init writes: `{python}`, or `{python:DIR}` for the
+    venv at DIR, root-relative with `/` between directories."""
+    return f"{{python:{venv}}}" if venv else "{python}"
+
+
+def expand_launchers(command: str, windows: bool = _WINDOWS) -> str:
+    """The command with each launcher token replaced by the launcher of the OS
+    reading the file. Anything else, a bare `python` included, stays as
+    written. The loader calls this before the full-suite guard reads the
+    command, so every reader after it sees the command the shell will run."""
+    return _LAUNCHER_TOKEN.sub(lambda token: _launcher(token.group(1), windows), command)
+
+
+# Keyed by `windows`: the name `{python}` reads as, and the separator and
+# layout of the launcher inside a venv.
+_BARE_PYTHON = {True: "python", False: "python3"}
+_VENV_LAYOUT = {True: ("\\", "Scripts", "python.exe"), False: ("/", "bin", "python")}
+
+
+def _launcher(venv: str | None, windows: bool) -> str:
+    """The venv's DIR is a path crapkit.toml holds, read by repopath's declared
+    entry: `\\` separates and a leading `./` names nothing, on every OS."""
+    if venv is None:
+        return _BARE_PYTHON[windows]
+    separator, *layout = _VENV_LAYOUT[windows]
+    return separator.join([*filter(None, declared(venv, "file").split("/")), *layout])
 
 
 def _names(key: str, name: str, windows: bool) -> bool:

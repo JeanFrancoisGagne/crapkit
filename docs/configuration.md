@@ -39,22 +39,60 @@ an unknown parser, a lane naming an undeclared scope, a negative `timeout_second
 
 Without `--repo`, CLI commands find the nearest `crapkit.toml` at or above the
 current directory. A `.git` entry stops the search. With `--repo PATH`, that path
-names the exact project root; the flag belongs after the subcommand.
+names the exact project root; the flag belongs after the subcommand. `init` does
+not search: it writes `crapkit.toml` into `--repo PATH` or the current directory,
+each read by the rules below.
+
+Git names every tracked file one way: relative to the root, with `/` between
+directories, in the letter case its index holds. crapkit reads each spelling below
+as that one before it compares the path with a scope, a mark or a stored row.
 
 | File argument | Meaning |
 |---|---|
 | Relative path with a discovered root | Relative to the current directory, then rebased to the project root. |
 | Relative path with explicit `--repo` | Relative to the named project root. |
-| Absolute source path | Accepted when it resolves inside the project root. |
+| Leading `./` | Dropped: `./src/a.py` is `src/a.py`. |
+| Absolute source path | Accepted when it resolves inside the project root, reached through a symlink, a junction or a lower-case drive letter too. |
 | Windows backslash | A directory separator on Windows; a literal filename character on POSIX. |
+| Letter case | On a disk that ignores case (Windows NTFS, macOS APFS by default), `SRC/App.py` names the file git lists as `src/app.py`, and crapkit uses git's spelling. On a case-sensitive disk (Linux ext4) the case has to match. |
+| Git Bash and WSL paths (Windows) | `/c/repo/src/a.py` from Git Bash or MSYS and `/mnt/c/repo/src/a.py` from WSL read as `C:\repo\src\a.py`, unless the current drive holds a literal `\c\repo`. This covers `--repo` too, for `init` as for every other command. |
+| Extended-length and admin-share paths (Windows) | `\\?\C:\repo`, `\\?\UNC\localhost\C$\repo` and this machine's own `\\localhost\C$\repo` read as `C:\repo`. |
+| Network share root (Windows) | A root on a network share, such as `\\server\share\repo` given to `--repo` or standing as the working directory, exits 3 before any lane starts and before `init` reads the tree. cmd.exe cannot start a command in a UNC directory and would run every lane in `C:\Windows`. The refusal ends with the command that fixes it, `Map the share to a drive letter (net use Z: \\server\share) and run crapkit from Z:\repo`. A root typed on a mapped drive keeps that letter, for the CLI and for an MCP call's `repo` alike. |
 | Bytes that are not UTF-8 | The path resolves as the OS spelled it, so a checkout under a directory named in Latin-1 places its files like any other. When the root-relative name itself is not UTF-8 and a file exists under it, the command exits 3 naming the rename, since no row can key that name. With no file behind it, each such byte reads as U+FFFD and the command answers as it does for a missing file. |
 
     crapkit: src/caf\xe9.py is named in bytes that are not UTF-8, and crapkit reads every path as UTF-8: rename it (git mv) to a UTF-8 name
 
-These rules apply to source arguments such as `brief`, `rescore`, `test-scoped`
-and `claims release`. The `claude-hook` exception gets its root from its input
-payload. [MCP tools](agent-json.md#mcp-server) take project-relative paths because
-their CLI calls run at the server's selected root.
+These rules apply to source arguments such as `brief`, `explain`, `rescore`,
+`test-scoped`, `ratchet move`, `mutate --files` and `claims release`, and to
+`next-item --exclude`, where a fragment drops a leading `./`, reads `\` as `/` on
+Windows and ignores letter case where the disk does. The `claude-hook` exception
+gets its root from its input payload, and reads the payload's `file_path` and `cwd`
+by the same rules. [MCP tools](agent-json.md#mcp-server) pass their `path` and
+`repo` to the same readers, so a relative path is relative to the server's
+selected root.
+
+A path in a CLI argument follows the rules of the OS it was typed on. A path
+crapkit reads out of a file follows one rule everywhere, because the file may come
+from the other OS: `crapkit.toml`, coverage reports and JUnit reports separate at `\`
+on every OS. So a tracked file whose name holds `\`, which Linux and macOS allow, is
+unsupported: a coverage report's key for it reads as a path with one more directory,
+and the file scores untested. `crapkit doctor` names each such file in one WARN:
+
+```
+$ crapkit doctor
+resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit 16777216 bytes per file
+...
+WARN 1 tracked file(s) hold \ in their name, which crapkit does not support: crapkit.toml, coverage reports and JUnit ids read \ as a directory separator, so such a file cannot be measured: src/pkg/we\ird.py; rename each without the \
+```
+
+`crapkit.toml` itself is committed and read on every OS, so each path it carries
+drops a leading `./` and reads `\` as `/`. Scope `paths`, `[exclude] globs` and
+`path_prefix` also drop a leading `/` and read from the root, and on a disk that
+ignores case, scope paths, `path_prefix` and `inputs` take the case their
+directories list. A scope path spelled absolutely (`/home/dev/repo/web`,
+`/c/repo/web`, `/mnt/c/repo/web`, `\\server\share\web`, `//server/share/web`,
+`C:/repo/web`) is refused at load with exit 3, with its relative spelling when it lands
+in this checkout.
 
 Tracked Git paths preserve whitespace and Unicode separators. crapkit reads every
 path as UTF-8, because rows, marks and caches are keyed on it. A file whose name
@@ -83,8 +121,12 @@ config; the first command that loads that config refuses a name a scope takes.
 
 Scope-prefix normalization below applies to configuration strings, not to the
 filenames Git reports.
-Output flags such as `--export`, `--sarif` and `--emit-baseline` are project-relative;
-an absolute output path explicitly selects a destination outside it.
+Output flags (`--export`, `--sarif`, `--emit-baseline` and `report --out`) are
+project-relative; an absolute output path selects a destination outside the project.
+Those flags, `verify --baseline-tsv`, `inventory --db`, `doctor --plugin-root` and the
+`CLAUDE_CONFIG_DIR` and `CRAPKIT_RESOURCE_DIR` variables read a Git Bash, WSL,
+extended-length or admin-share path as the drive it names, by the rows above. A
+relative `inventory --db` path is read from the working directory.
 
 On Linux and other POSIX systems Python hands a path to the OS in the locale's
 encoding. Under a locale that is not UTF-8 (`LANG=en_US.ISO-8859-1`), `pkg/café.py`
@@ -137,7 +179,7 @@ lands on the function it is in, whatever characters sit above it.
 | `churn_window_months` | int >= 1 | `12` | How far back `git log` is read for churn weighting, coupling and the worklist rank. |
 | `worklist_floor` | int >= 1 | `5` | Minimum ccn for queue admission, in `worklist` and `next-item` alike. Printed in the worklist header as `floor ccn>=5`. It has no CLI flag. Two rules reach under it: files whose churn weight is in the top 10% are promoted down to ccn 3, and a function scoring over its ceiling is admitted whatever its ccn. |
 | `worklist_top` | int >= 1 | `50` | Cap on the worklist active list. `worklist --top N` overrides it per call. |
-| `ratchet_file` | string | `"crapkit-ratchet.tsv"` | The committed marks file, repo-relative. |
+| `ratchet_file` | string | `"crapkit-ratchet.tsv"` | The committed marks file, repo-relative. `\` separates directories on every OS and a leading `./` is dropped, so `gates\ratchet.tsv` written on Windows and `./gates/ratchet.tsv` both open `gates/ratchet.tsv` on Linux. |
 | `alert_command` | string | `""` | A shell command that receives a digest or override body on **stdin**. `digest --alert` uses it, and an override refuses to grant without it. Never interpolated into the shell string. |
 | `scoped_tests` | table | none | Written as its own table, `[crapkit.scoped_tests]`, mapping scope name to a command template. `test-scoped` fills `{files}` with the quoted file list; a template with no `{files}` runs as written, which is how a scope runs its whole suite when its tests live outside its own `paths`. `init` picks the form per scope from the tracked files: `{files}` only where the scope's own paths hold a test file; the whole-suite form otherwise, naming the repo's test directory unless pytest's `testpaths` already collects it; `npm run test -w <dir>` for an npm workspace with a test script; and the runner's related-tests mode (`npx vitest related --run {files}`, `npx jest --findRelatedTests {files}`) for a root JavaScript scope, keyed by what package.json names. One comment line above each entry says which form it chose. It is also step 4 of the burn-down loop and `brief`'s `commands.scoped_tests`, so **doctor warns** about a scope a lane measures with no template behind it (`null` there leaves a session with nothing to run between the gate and verify) and **doctor fails** a `{files}` template on a scope that holds no test file, since that template hands the runner a source path and collects nothing. |
 | `notes` | array of string | `[]` | House rules for this repo, in the config rather than in a file an agent has to find. `brief` carries them into the packet as `notes`, repo-wide lines first, then the scope's own. crapkit never parses them. |
@@ -359,21 +401,48 @@ An array of tables. One lane per coverage command. Full recipes in [lanes.md](la
 | Key | Type | Required | Default | What it does |
 |---|---|---|---|---|
 | `name` | string | yes | | The lane's id. Names its log at `.crapkit/lane-<name>.log` and `coverage --lane`. |
-| `command` | string | yes | | Run through the shell, cwd at the repo root unless `cwd` says otherwise. Its exit code is recorded, not enforced: a suite with known failures still writes a valid artifact. crapkit reads it with the shell that will run it, sh on POSIX and cmd.exe on Windows, and so does `doctor`. That reading covers quoting, carets, `&&` segments, redirections and `;`: [How a lane command is read](lanes.md#how-a-lane-command-is-read). |
-| `artifact` | string | yes | | Repo-relative path to the coverage file the command writes. Its absence after the command (and its retries) is the failure. Two lanes may not share an artifact path. Point it under `.crapkit/cov/`, which `init` already gitignores; `doctor` warns about a lane writing at the repo root. See [Where artifacts live](lanes.md#where-artifacts-live). |
+| `command` | string | yes | | Run through the shell, cwd at the repo root unless `cwd` says otherwise. Its exit code is recorded, not enforced: a suite with known failures still writes a valid artifact. crapkit reads it with the shell that will run it, sh on POSIX and cmd.exe on Windows, and so does `doctor`. That reading covers quoting, carets, `&&` segments, redirections and `;`: [How a lane command is read](lanes.md#how-a-lane-command-is-read). A `{python}` or `{python:DIR}` token names the interpreter so one committed line runs on every OS: [The launcher token](#the-launcher-token). |
+| `artifact` | string | yes | | Repo-relative path to the coverage file the command writes. Its absence after the command (and its retries) is the failure. Two lanes may not share an artifact path. Point it under `.crapkit/cov/`, which `init` already gitignores; `doctor` warns about a lane writing at the repo root. `\` separates directories on every OS and a leading `./` is dropped, here and in `results_artifact`. See [Where artifacts live](lanes.md#where-artifacts-live). |
 | `parser` | `istanbul` \| `coveragepy` | yes | | How to read the artifact. |
 | `scopes` | array of string | yes | | Which scopes this lane's coverage speaks for. A scope in no lane's list can only score `no-lane`. |
-| `cwd` | string | no | repo root | Repo-relative working directory for the command. `doctor` fails when it does not exist. |
-| `path_prefix` | string | no | `""` | Prefix joined onto coverage.py's relative paths, for a suite run from a subdirectory. A coveragepy key: the istanbul reader never reads it. It only ever prepends, so it cannot rebase a path the runner wrote absolutely, which is the runner's own switch instead ([The same tree, spelled absolutely](lanes.md#the-same-tree-spelled-absolutely)). |
+| `cwd` | string | no | repo root | Repo-relative working directory for the command. `\` separates directories on every OS and a leading `./` is dropped, so `backend\` written on Windows is `backend/` on Linux. `doctor` fails when it does not exist. `coverage` fails such a lane without starting the command, `lane 'py' FAILED: cwd <path> is not a directory, so the command never ran; fix cwd = 'nope' for this lane in crapkit.toml, or create that directory`, and exits 5 when no lane is left. |
+| `path_prefix` | string | no | `""` | Prefix joined onto coverage.py's relative paths, for a suite run from a subdirectory. Read like a scope path: `api\`, `./api/`, `.\api\` and `/api/` all read `api/`, `.` reads as no prefix, and on a disk that ignores case `API/` takes the case the directory lists. A coveragepy key: the istanbul reader never reads it. It only ever prepends, so it cannot rebase a path the runner wrote absolutely, which is the runner's own switch instead ([The same tree, spelled absolutely](lanes.md#the-same-tree-spelled-absolutely)). |
 | `env` | table of string | no | `{}` | Extra environment for the command, merged over the inherited environment. Use it to cap a runner that sizes its own worker pool from free memory, and to hand a junit reporter its output path when the reporter reads no path off the command line (`jest-junit` is one). Every lane gets it, so raising `max_parallel_lanes` without one lets N lanes each claim the whole box. crapkit adds `PYTHONIOENCODING=utf-8` unless this table sets it ([why](lanes.md#a-python-child-writes-its-log-in-utf-8)). A `PATH` here **replaces** the inherited one for that lane, and `doctor` looks for the lane's runner on it, so a lane that ships its own toolchain is checked the way it runs. |
 | `inputs` | array of string | no | `[]` | Root-relative paths the command reads: its source, tests, fixtures and runner config. With them, `--reuse-unchanged` reuses the lane while the commit its artifact was built at is still behind HEAD, no committed, staged, unstaged or untracked change touches these paths (a lane's declared `artifact` or `results_artifact` is not such a change), the artifact bytes still match, and this lane's own table, `env` included, is the one it was measured with. Other `crapkit.toml` settings and environment variables the lane does not set are outside that proof. Without `inputs` a lane is reused only at the same clean HEAD. Entries are literal paths, no globs: an entry holding `*` or `?`, or one that is absolute or climbs out of the root, is a config error. An entry that matches no tracked file, and no untracked file outside `.gitignore`, such as a misspelled directory, still loads, but reuse can see no change through it, so `doctor` fails on it. A file the command reads that the list leaves out is never checked, so an edit to it reuses a stale artifact. See [Reusing artifacts](lanes.md#reusing-artifacts). |
-| `full_suite` | bool | no | `true` | `false` permits a positional argument in a pytest coverage command. At `true`, a positional is a config error: subset coverage under a suite with cross-file pollution is run-order dependent. A flag's value is not a positional (`-n 8`, `-o timeout=300`, `-p no:randomly` all pass), and the command is read by the shell that will run it, one argv per `&&`, `\|\|`, `&` or `\|` segment, with every segment that runs pytest checked. On cmd.exe a `;` starts nothing, so `pytest --cov; echo done` hands pytest `echo` and is refused; write the second command after `&&`. Use double quotes for values, since cmd.exe does not treat `'` as a quote. Set it false deliberately for a genuinely scoped suite. |
+| `full_suite` | bool | no | `true` | `false` permits a positional argument in a pytest coverage command. At `true`, a positional is a config error: subset coverage under a suite with cross-file pollution is run-order dependent. A flag's value is not a positional (`-n 8`, `-o timeout=300`, `-p no:randomly` all pass), and the command is read by the shell that will run it, one argv per `&&`, `\|\|`, `&` or `\|` segment, with every segment that runs pytest checked. On cmd.exe a `;` starts nothing, so `pytest --cov; echo done` hands pytest `echo` and is refused; write the second command after `&&`. Use double quotes for values, since cmd.exe does not treat `'` as a quote. A positional that names a testpaths entry in another letter case, on a disk that ignores case, names that entry. Set it false deliberately for a genuinely scoped suite. |
 | `container_ok` | bool | no | `false` | Lets a `coveragepy` lane run inside a container. Without it such a lane refuses with exit 5 whenever `/.dockerenv` exists or `CRAPKIT_INSIDE_CONTAINER=1`. |
 | `results_artifact` | string | no | `""` | A JUnit XML report, under `.crapkit/cov/` for the same reason as `artifact`. Two checks read it and neither runs without it: no-new-failures (`verify` exit 8) and the crashed-worker trust check, plus the suite-shrink warning. `doctor` WARNs on a `coveragepy` or `istanbul` lane that declares none, naming both, and `crapkit init` writes it on the lanes it detects. Declared but missing is exit 5, so the check can never pass vacuously, and so is a report saying the run never finished ([a crashed xdist worker or a session error](lanes.md#a-junit-that-says-the-run-did-not-finish)). Under `--reuse-artifacts` both of those are one warning instead, and the lane records no test counts: there the operator is reading a report off disk, which can be the junit of a run whose coverage was salvaged by hand. |
 | `timeout_seconds` | int >= 0 | no | `0` | crapkit kills the command past this. The kill takes the whole process tree, not just the shell, and crapkit waits for it, so no orphan suite keeps running after the lane fails. `0` means no crapkit-owned timeout. |
 | `no_progress_seconds` | int >= 0 | no | `0` | crapkit kills the command when its log has not grown for this many seconds. `timeout_seconds` has to be longer than your slowest honest run, so it cannot cut a suite that hangs early without cutting the slow ones too; this one measures output instead. Set it above the longest quiet stretch the runner has, since a silent build step before the tests looks the same as a hang. `0` means no progress watch. See [lanes.md](lanes.md#a-suite-that-stops-making-progress). |
 | `retries` | int >= 0 | no | `0` | Reruns after a timeout or a missing artifact. Each attempt appends to the lane log under an `--- attempt N ---` header, and a failure message hoists its cause out of the last attempt alone, so the attempts before it are readable only in the log the message names. |
 | `retest_command` | string | no | `""` | Rerun template for newly failed tests, before exit 8 is decided. See [lanes.md](lanes.md#flake-retest). |
+
+### The launcher token
+
+A committed `crapkit.toml` runs on every OS its collaborators use, and the path to a
+venv's python differs between them. A lane naming `.venv\Scripts\python.exe` fails on
+Linux, and one naming `.venv/bin/python` fails under cmd.exe. The loader replaces a
+launcher token with the spelling of the OS reading the file:
+
+| Token | Windows | Linux and macOS |
+|---|---|---|
+| `{python}` | `python` | `python3` |
+| `{python:.venv}` | `.venv\Scripts\python.exe` | `.venv/bin/python` |
+| `{python:api/.venv}` | `api\.venv\Scripts\python.exe` | `api/.venv/bin/python` |
+
+`DIR` is the venv directory, written with `/`, and the shell reads it from the lane's
+`cwd` like any other path in the command. The token works in a lane's `command` and
+`retest_command`, in `[crapkit.scoped_tests]` templates beside `{files}`, and in
+`mutation_command`. The replacement happens at load, so the full-suite guard,
+`doctor`'s interpreter probe and every run read the command the shell will run.
+Text that only looks like the token, such as `{PYTHON}` or `{python:}`, stays as
+written.
+
+`crapkit init` writes `{python:DIR}` for a venv it finds in the tree and `{python}`
+where no venv carries pytest. A machine where that name does not resolve keeps the
+name that does, such as `py` on a Windows PATH with only the launcher. A lane behind
+a lockfile's manager keeps `uv run python` and its siblings, since the manager picks
+the interpreter. See [lanes.md](lanes.md#the-interpreter-a-lane-binds-to).
 
 ---
 
@@ -383,6 +452,28 @@ An array of tables. One lane per coverage command. Full recipes in [lanes.md](la
 |---|---|---|---|
 | `globs` | array of string | `[]` | Paths matching any glob leave the corpus. Each glob matches the **whole** repo-relative path, case-insensitively, and a leading `**/` matches zero or more directories, so one glob covers the repo root and every nested copy. |
 | `max_file_bytes` | int >= 0 | absent (no limit) | Files larger than this leave the corpus entirely, minified blobs included. `doctor` reports each one as a `note`, never a FAIL, and the count surfaces as `skipped_max_bytes` in `inventory --json` and `coverage --json`. |
+
+A glob is read the way a scope path is, so a config written on either OS excludes the
+same files on both:
+
+- `\` separates directories on every OS: `src\gen\**` reads `src/gen/**`, and
+  `**\gen\**` reads `**/gen/**`.
+- A leading `./` or `/` is dropped: `./src/gen/**` and `/src/gen/**` read
+  `src/gen/**`, from the root and never from the filesystem's.
+- A trailing `/` names the directory's contents, as in .gitignore: `src/gen/` reads
+  `src/gen/**`.
+
+`crapkit doctor` WARNs on each glob that matches no tracked file and quotes it as
+written, with the spelling the loader reads when that differs. Such a glob excludes
+nothing, so the files it was meant for stay scored. The globs `init` writes by default
+are left out, since they guard trees a repo may never track.
+
+```
+$ crapkit doctor
+resources: up to 8 analysis worker(s) per pool, 8 shared slot(s); lane log limit 16777216 bytes per file
+...
+WARN [exclude] glob './src/gen/**' matches no tracked file (read as 'src/gen/**'), so it excludes nothing; fix the path or delete the glob
+```
 
 Test directories are excluded **unconditionally**, before `globs` is consulted: any path
 component matching `test`, `tests` or `__tests__`, case-insensitively. You do not need a

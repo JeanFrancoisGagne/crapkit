@@ -14,6 +14,7 @@ from ..churn_cache import load_churn
 from ..errors import ConfigError, CrapkitError
 from ..gitio import head_commit, ls_files, shallow_checkout, shallow_warning
 from ..invocation import _self
+from ..repopath import Fragment, fragments
 from ..keys import claim_key, key_names, key_of, lookup, position, split_ordinal
 from ..score import SCORED_COLUMNS
 from ..store import SnapshotStore
@@ -84,7 +85,7 @@ def cmd_next_item(args: argparse.Namespace) -> int:
                            cfg, _file_reader(store, latest["id"]))
     adm = admission(load_churn(root, cfg.churn_window_months), cfg.worklist_floor)
     ranked, skipped_no_lane = _next_ranked(scored, adm)
-    excludes = args.exclude or []
+    excludes = fragments(args.exclude or [], root)
     ranked = [r for r in ranked if not _excluded_item(r, excludes)]
     handles = _Handles(store, latest["id"])
     ranked, skipped_claimed = _unclaimed(store, ranked, handles)
@@ -249,8 +250,10 @@ def _handle(handles, row) -> str | None:
     return None if handles is None else handles.of(row)
 
 
-def _excluded_item(r, excludes: list) -> bool:
-    return any(pat in r.path or pat in r.long_name for pat in excludes)
+def _excluded_item(r, excludes: list[Fragment]) -> bool:
+    """A row whose path holds an `--exclude`'s path side (repopath's fragment
+    entry), or whose function name holds it as typed: a name keeps its case."""
+    return any(ex.within(r.path) or ex.typed in r.long_name for ex in excludes)
 
 
 def _skip_reason(r, adm, excludes: list) -> str | None:

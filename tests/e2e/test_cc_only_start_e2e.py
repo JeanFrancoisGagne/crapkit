@@ -302,7 +302,7 @@ def _swap_lane_command(repo: Path) -> None:
     a declared-but-missing results file refuses the lane."""
     path = repo / "crapkit.toml"
     text = path.read_text(encoding="utf-8")
-    swapped = re.sub(r'^command = "(?:python3?|py) -m pytest .*"$', 'command = "python make_cov.py"',
+    swapped = re.sub(r'^command = "(?:\{python\}|python3?|py) -m pytest .*"$', 'command = "python make_cov.py"',
                      text, count=1, flags=re.M)
     assert swapped != text, "init stopped writing a pytest lane for a pyproject repo"
     swapped = re.sub(r'^results_artifact = .*\n', "", swapped, count=1, flags=re.M)

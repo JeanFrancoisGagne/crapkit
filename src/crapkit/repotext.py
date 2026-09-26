@@ -48,7 +48,7 @@ where a UTF-16 file was a traceback instead of a sentence.
   POSIX. `os_bytes` turns it back into the bytes the OS meant, for a hash or a
   lock key. `os_text` makes it text a store or a file can hold. A lane's child
   under a POSIX locale that is not UTF-8 names files in that locale's codec:
-  `locale_spelling` and `utf8_spelling` move a name between the two.
+  `utf8_spelling` reads such a name back as the UTF-8 name it spells.
 
 `gitpaths` frames a path git names (C quoting, NUL and tab records) and decodes
 it through `escaped`.
@@ -365,12 +365,6 @@ def os_text(value: str) -> str:
     """An OS string as text a store or a file can hold: UTF-8, with each byte
     that is not UTF-8 read as U+FFFD."""
     return os_bytes(value).decode("utf-8", "replace")
-
-
-def locale_spelling(name: str, codec: str) -> str:
-    """The str a Python child under a locale whose codec is `codec` makes of
-    the UTF-8 name `name`: each byte of the name read in that codec."""
-    return name.encode("utf-8").decode(codec, "surrogateescape")
 
 
 def utf8_spelling(name: str, codec: str) -> str | None:

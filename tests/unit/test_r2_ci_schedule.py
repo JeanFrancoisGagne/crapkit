@@ -48,7 +48,7 @@ def test_source_platform_matrix_has_one_owner_and_keeps_install_and_gate_contrac
     setup = step(dogfood["steps"], "uses", "actions/setup-python@")
     owner = (dogfood["runs-on"], setup["with"]["python-version"])
     assert combinations | {owner} == set(itertools.product(
-        ["ubuntu-latest", "windows-latest"], ["3.11", "3.12", "3.13"]))
+        ["ubuntu-latest", "windows-latest"], ["3.11", "3.12", "3.13"])) | {("macos-latest", "3.13")}
     assert owner not in combinations, "the action already measures this source suite"
     for job in (jobs["test"], dogfood):
         assert_source_install(job)

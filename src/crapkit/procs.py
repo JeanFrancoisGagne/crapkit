@@ -137,16 +137,41 @@ class _StartFailed(ToolError, OSError):
     could not be put and answer with a finding."""
 
 
+class CwdMissing(_StartFailed):
+    """The start failed because the directory it was asked to start in is not
+    one. A caller that knows where that directory came from adds the fix."""
+
+
 def _run(command, streams, owner, kwargs, watch):
     """Start one owned command, wait for it and its cleanup, and return its code.
 
     `streams` are the command's stdout and stderr. `watch` is the deadline, the
     progress stream and the no-progress limit. None means the deadline passed.
     """
-    with _START(command, *streams, owner, kwargs) as process:
+    with ExitStack() as stack:
+        process = _entered(stack, _START(command, *streams, owner, kwargs), kwargs.get("cwd"))
         code = _complete_command(process, *watch, owner)
     _refuse_failed_start(code)
     return code
+
+
+def _entered(stack: ExitStack, start, cwd):
+    """The started process, or a start failure naming a cwd that is not a
+    directory. Popen raised FileNotFoundError on POSIX and NotADirectoryError
+    on Windows, which the lane layer does not read as a lane's failure, so a
+    lane whose cwd named nothing ended `crapkit coverage` in a traceback, exit
+    1. The cwd is read only once Popen has failed, so a start that works costs
+    no extra stat."""
+    try:
+        return stack.enter_context(start)
+    except (FileNotFoundError, NotADirectoryError) as error:
+        _refuse_missing_cwd(cwd, error)
+        raise
+
+
+def _refuse_missing_cwd(cwd, error: OSError) -> None:
+    if cwd is not None and not os.path.isdir(cwd):
+        raise CwdMissing(f"cwd {cwd} is not a directory, so the command never ran") from error
 
 
 @contextmanager

@@ -155,6 +155,9 @@ def test_init_does_not_probe_a_lane_it_did_not_write(tmp_path: Path):
 
 
 _DEAD_EXIT = 9009 if os.name == "nt" else 127
+# The name init's `{python}` token reads as on this OS, and so the word the
+# lane starts: `python` on Windows, `python3` elsewhere.
+_DEAD_WORD = "python" if os.name == "nt" else "python3"
 
 
 def _with_a_python_that_will_not_run(tmp_path: Path) -> dict:
@@ -167,7 +170,7 @@ def _with_a_python_that_will_not_run(tmp_path: Path) -> dict:
     if os.name == "nt":
         (shim_dir / "python.bat").write_text(f"@exit /b {_DEAD_EXIT}\n", encoding="utf-8")
     else:
-        shim = shim_dir / "python"
+        shim = shim_dir / _DEAD_WORD
         shim.write_text(f"#!/bin/sh\nexit {_DEAD_EXIT}\n", encoding="utf-8")
         shim.chmod(0o755)
     return {"PATH": os.pathsep.join([str(shim_dir), os.environ["PATH"]])}
@@ -183,7 +186,7 @@ def test_init_says_when_the_shell_cannot_run_the_lanes_interpreter(
 
     assert res.returncode == 0, res.stderr
     assert "cannot run it" in res.stderr and str(_DEAD_EXIT) in res.stderr
-    assert "`python`" in res.stderr, "the note has to name the word the lane starts with"
+    assert f"`{_DEAD_WORD}`" in res.stderr, "the note has to name the word the lane starts with"
     assert "pytest_cov" not in res.stderr, "nothing ran: pytest-cov is not the gap"
     assert (pytest_repo / "crapkit.toml").is_file(), "a note must not stop the scaffold"
 
@@ -200,7 +203,7 @@ def test_doctor_fails_a_lane_whose_first_word_will_not_run(
 
     assert res.returncode == 1, res.stdout
     assert "cannot run" in res.stdout and str(_DEAD_EXIT) in res.stdout
-    assert "'python'" in res.stdout, "name the word that has to change"
+    assert f"'{_DEAD_WORD}'" in res.stdout, "name the word that has to change"
     assert "no problems found" not in res.stdout
 
 
@@ -399,6 +402,59 @@ def test_doctor_flags_a_lane_whose_cwd_is_missing(bare_repo: Path):
     assert "nowhere" in res.stdout
 
 
+def _add_globs(repo: Path, *globs: str) -> None:
+    """Append globs to the [exclude] list init wrote, in TOML literal strings,
+    so a backslash reaches the loader as typed."""
+    path = repo / "crapkit.toml"
+    added = "".join(f"  '{glob}',\n" for glob in globs)
+    path.write_text(path.read_text(encoding="utf-8").replace("globs = [\n", f"globs = [\n{added}", 1),
+                    encoding="utf-8")
+
+
+def test_doctor_warns_on_an_exclude_glob_that_matches_no_tracked_file(bare_repo: Path):
+    """A typo in a glob excluded nothing, silently: the generated files stayed
+    scored and doctor printed `no problems found`. The glob is quoted as the
+    file holds it; a backslash glob that matches is read as git's spelling and
+    says nothing, and neither do init's own defaults."""
+    (bare_repo / "src" / "gen").mkdir()
+    (bare_repo / "src" / "gen" / "client.ts").write_text("export const c = 1;\n", encoding="utf-8")
+    _git_commit_all(bare_repo, "generated client")
+    assert run_cli(bare_repo, "init").returncode == 0
+    _add_globs(bare_repo, "src\\gen\\**", "src/gne/**", "pylib\\gen\\")
+
+    res = run_cli(bare_repo, "doctor")
+    report = json.loads(run_cli(bare_repo, "doctor", "--json").stdout)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    warned = _starting(res.stdout.splitlines(), "WARN [exclude] glob")
+    assert warned == [
+        "WARN [exclude] glob 'src/gne/**' matches no tracked file, so it excludes nothing; "
+        "fix the path or delete the glob",
+        "WARN [exclude] glob 'pylib\\\\gen\\\\' matches no tracked file (read as 'pylib/gen/**'), "
+        "so it excludes nothing; fix the path or delete the glob"], res.stdout
+    assert "doctor: no problems found" in res.stdout, "a WARN never fails doctor"
+    assert _starting(report["warnings"], "[exclude]") == [line[5:] for line in warned]
+
+
+def _starting(lines: list[str], prefix: str) -> list[str]:
+    return [line for line in lines if line.startswith(prefix)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a Windows checkout cannot hold a name with \\")
+def test_doctor_names_a_tracked_file_whose_name_holds_a_backslash(bare_repo: Path):
+    """Legal on POSIX, and read as a directory separator by every file crapkit
+    reads a path out of, so the file cannot be measured."""
+    (bare_repo / "pylib" / "we\\ird.py").write_text("def w():\n    return 1\n", encoding="utf-8")
+    _git_commit_all(bare_repo, "a backslash name")
+    assert run_cli(bare_repo, "init").returncode == 0
+
+    res = run_cli(bare_repo, "doctor")
+
+    (line,) = [ln for ln in res.stdout.splitlines() if "hold \\ in their name" in ln]
+    assert line.startswith("WARN 1 tracked file(s) hold \\ in their name"), line
+    assert line.endswith(": pylib/we\\ird.py; rename each without the \\"), line
+
+
 def test_doctor_show_files_lists_scope_members(bare_repo: Path):
     assert run_cli(bare_repo, "init").returncode == 0
     res = run_cli(bare_repo, "doctor", "--show-files")
@@ -593,7 +649,7 @@ def test_without_a_lockfile_the_commented_template_keeps_the_bare_interpreter(
 
     text = (unmarked_locked_repo / "crapkit.toml").read_text(encoding="utf-8")
 
-    assert re.search(r'# command = "(python3?|py) -m pytest --cov', text), text
+    assert re.search(r'# command = "(\{python\}|python3?|py) -m pytest --cov', text), text
 
 
 # --- the virtualenv the repo carries ------------------------------------------

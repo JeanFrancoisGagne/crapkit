@@ -167,6 +167,81 @@ def test_a_path_prefix_cannot_hide_an_artifact_from_another_tree(tmp_path, elsew
     assert "backend/" + elsewhere not in str(raised.value)
 
 
+# A key from another checkout, in each spelling a runner or a report written on
+# another OS carries. `//localhost/...` stands for any share: asking Windows
+# about a server it cannot find takes seconds a key.
+ANOTHER_TREE = {
+    "posix": "/other/checkout/backend/a.py",
+    "drive": "C:/other/checkout/backend/a.py",
+    "drive-backslash": "C:\\other\\checkout\\backend\\a.py",
+    "lower-drive": "c:/other/checkout/backend/a.py",
+    "unc": "//localhost/nosuch/checkout/backend/a.py",
+    "unc-backslash": "\\\\localhost\\nosuch\\checkout\\backend\\a.py",
+    "msys": "/c/other/checkout/backend/a.py",
+    "wsl": "/mnt/c/other/checkout/backend/a.py",
+    "climb": "../sibling/backend/a.py",
+}
+
+# (scope paths, path_prefix): a scope the glued key lands in. The prefix equal
+# to the scope is the monorepo lane path_prefix is for; a root scope claims
+# every key, glued or not.
+REACHED_BY_GLUE = {
+    "prefix-is-the-scope": (("backend",), "backend"),
+    "prefix-with-slash": (("backend",), "backend/"),
+    "root-scope": ((".",), ""),
+    "root-scope-with-prefix": ((".",), "backend"),
+}
+
+
+@pytest.mark.parametrize("which", REACHED_BY_GLUE)
+@pytest.mark.parametrize("spelling", ANOTHER_TREE)
+def test_a_key_from_another_tree_reaches_no_scope_whatever_the_prefix(tmp_path, which,
+                                                                        spelling):
+    """PC8. The reader glues path_prefix onto an absolute key too, and
+    `backend/` + `/other/checkout/a.py` is a path under the `backend` scope, so
+    the reach check said the artifact reached its scope. Every function in it
+    scored untested with exit 0, and the same report without path_prefix was
+    refused. A root scope claimed the key with no prefix at all. The reach
+    check now asks only keys the runner wrote relative to this checkout."""
+    paths, prefix = REACHED_BY_GLUE[which]
+    elsewhere = ANOTHER_TREE[spelling]
+    _artifact(tmp_path, elsewhere)
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(scopes=("backend",), path_prefix=prefix), {"backend": paths})
+
+    message = str(raised.value)
+    assert "describes a different tree" in message
+    assert elsewhere.replace("\\", "/") in message, "quoted as the runner wrote it"
+
+
+@pytest.mark.parametrize("which", REACHED_BY_GLUE)
+def test_an_absolute_key_under_this_checkout_is_refused_under_any_prefix(tmp_path, which):
+    """The same glue hid the absolute-path refusal: this tree, spelled
+    absolutely, reached the scope as `backend/C:/.../backend/a.py` and scored
+    untested, where the lane without the prefix names relative_files."""
+    paths, prefix = REACHED_BY_GLUE[which]
+    _artifact(tmp_path, _inside(tmp_path, "backend/a.py"))
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(scopes=("backend",), path_prefix=prefix), {"backend": paths})
+
+    assert "under this checkout" in str(raised.value)
+    assert "relative_files = true" in str(raised.value)
+
+
+def test_a_relative_key_beside_one_from_another_tree_still_joins(tmp_path):
+    """The reach check skips an escaping key; it does not refuse on one. A
+    report that reaches the scope with any relative key keeps the join, as it
+    did before, glue or no glue."""
+    _artifact(tmp_path, "a.py", "/other/checkout/backend/a.py")
+
+    coverage, _, _ = _run(tmp_path, _lane(scopes=("backend",), path_prefix="backend"),
+                          {"backend": ("backend",)})
+
+    assert "backend/a.py" in coverage
+
+
 def test_in_tree_paths_that_miss_the_scope_warn_rather_than_fail(tmp_path, capsys):
     """The greenfield shape: a suite that imports none of the scoped source yet.
     `untested` is the right answer there, and refusing it would exit 5 on exactly
@@ -339,8 +414,9 @@ def test_a_mixed_artifact_is_another_tree_and_the_outside_paths_win(tmp_path):
 
 
 def test_a_js_lane_is_told_about_its_own_reporter_not_about_coveragepy(tmp_path):
-    """The istanbul reader strips the root off every path literally, so an
-    absolute in-tree path means the reporter spelled the root some other way."""
+    """The istanbul reader rebases every key that resolves under this checkout,
+    so an absolute in-tree key left over is one this machine could not open:
+    the advice is to rerun the lane here, not a coverage.py setting."""
     measured = {_inside(tmp_path, "web/src/app.ts"): []}
 
     with pytest.raises(ToolError) as raised:
@@ -349,4 +425,73 @@ def test_a_js_lane_is_told_about_its_own_reporter_not_about_coveragepy(tmp_path)
     message = str(raised.value)
     assert "under this checkout" in message
     assert "relative_files" not in message, "a coverage.py key a JS reporter never reads"
-    assert "cwd" in message and "root" in message
+    assert "rerun the lane on this machine" in message
+
+
+# --- one placing rule --------------------------------------------------------
+# The wrong-tree check and istanbul's rebase answer one question, "is this
+# absolute path in this checkout?". Each used to answer it its own way: lanes
+# compared resolved text, the reader asked the disk which directory is the root.
+# A key the reader could not rebase then reached a check that called the same
+# checkout another tree, or the other way round.
+
+import os  # noqa: E402
+
+from crapkit.repopath import Reported  # noqa: E402
+from crapkit.lanes import _split_escaped  # noqa: E402
+
+from path_spellings import (admin_share, lower_drive, link_directory,  # noqa: E402
+                            need_case_insensitive)
+
+
+def _placed_tree(tmp_path):
+    root = tmp_path / "repo"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "app.ts").write_text("export const a = 1;\n", encoding="utf-8")
+    link_directory(tmp_path / "alias", root)
+    return root.resolve()
+
+
+def _checkout_case(root) -> str:
+    return str(root.parent / root.name.swapcase() / "src" / "app.ts")
+
+
+# id -> (what the host needs, an absolute spelling of src/app.ts in this checkout)
+PLACED = {
+    "native": ("", lambda root, tmp: str(root / "src" / "app.ts")),
+    "forward-slashes": ("", lambda root, tmp: (root / "src" / "app.ts").as_posix()),
+    "linked-checkout": ("", lambda root, tmp: str(tmp / "alias" / "src" / "app.ts")),
+    "lower-drive": ("windows", lambda root, tmp: lower_drive(root / "src" / "app.ts")),
+    "upper-cased": ("windows", lambda root, tmp: str(root / "src" / "app.ts").upper()),
+    "extended-length": ("windows", lambda root, tmp: "\\\\?\\" + str(root / "src" / "app.ts")),
+    "admin-share": ("windows", lambda root, tmp: admin_share(root / "src" / "app.ts")),
+    "directory-case": ("case", lambda root, tmp: str(root / "SRC" / "app.ts")),
+    "checkout-case": ("case", lambda root, tmp: _checkout_case(root)),
+}
+
+
+@pytest.mark.parametrize("which", PLACED)
+def test_the_wrong_tree_check_places_a_key_where_the_istanbul_reader_does(tmp_path, which):
+    need, spell = PLACED[which]
+    if need == "windows" and os.name != "nt":
+        pytest.skip("needs Windows path rules")
+    if need == "case":
+        need_case_insensitive(tmp_path)
+    root = _placed_tree(tmp_path)
+    key = spell(root, tmp_path)
+
+    assert Reported(root)(key) == "src/app.ts"
+    assert _split_escaped(root, [key.replace("\\", "/")]) == ([], [key.replace("\\", "/")])
+
+
+def test_a_drive_letter_path_is_another_tree_where_the_os_has_no_drives(tmp_path, monkeypatch):
+    """On POSIX `C:/repo/src/app.ts` is a relative name. Read against the
+    working directory it could land in the checkout crapkit stands in, and a
+    report written on Windows would be scored as this tree."""
+    if os.name == "nt":
+        pytest.skip("needs POSIX path rules")
+    root = _placed_tree(tmp_path)
+    (root / "C:" / "repo" / "src").mkdir(parents=True)
+    monkeypatch.chdir(root)
+
+    assert _split_escaped(root, ["C:/repo/src/app.ts"]) == (["C:/repo/src/app.ts"], [])

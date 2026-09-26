@@ -1,20 +1,20 @@
-"""End-to-end: the istanbul half of the absolute-path refusal.
+r"""End-to-end: an istanbul report that spells this checkout another way joins.
 
-`tests/e2e/test_lane_absolute_paths_e2e.py` proves the coveragepy half three
-ways and never builds an istanbul lane, so the advice a JS consumer meets
-(`coverage_istanbul.ABSOLUTE_FIX`) had nothing behind it. The two messages name different knobs,
-and the istanbul one is the harder to write: the reader strips this checkout's
-root off every measured path literally, so a path that stayed absolute means the
-reporter spelled that root some other way, and no key on the lane can rebase it.
+`tests/e2e/test_lane_absolute_paths_e2e.py` proves the coveragepy half of the
+absolute-path refusal: coverage.py has a switch to write relative paths, and
+the refusal names it. An istanbul reporter always writes absolute paths, and
+its reader rebases every one that lands in this checkout. It used to strip the
+root as literal text, so a key that named this checkout in another spelling
+stayed absolute and the lane FAILED, told to point the reporter at the
+checkout it had measured: a report made from a shell standing in `c:\...`, one
+reached through a junction or symlink, one keyed `\\?\C:\...`.
 
-Staging it needs a root spelled two ways, because a reporter that spells the
-root exactly as crapkit does is rebased and joins fine. The lane's script
-reaches the checkout through its parent (`<parent>/mini-build/../mini/src`),
-which is what a reporter given an unnormalized `root` or `cwd` writes into every
-key. crapkit's own root is the normalized spelling, the literal strip misses,
-and the key stays absolute while still resolving under the checkout. Case and
-symlinks stage the same thing on one platform each; this spelling stages it on
-both.
+Staging it needs a root spelled two ways. The lane's script reaches the
+checkout through its parent (`<parent>/mini-build/../mini/src`), which is what
+a reporter given an unnormalized `root` or `cwd` writes into every key. Case,
+drive-letter case and symlinks stage the same thing on one platform each
+(tests/unit/test_coverage_istanbul.py feeds each of them to the reader); this
+spelling stages it on both.
 
 The artifact cannot be committed: its keys carry the tmp directory the fixture
 is copied into. The lane writes it, the way the coveragepy test's lane does.
@@ -110,30 +110,25 @@ def istanbul_absolute_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_an_istanbul_lane_is_refused_and_told_about_its_own_reporter(istanbul_absolute_repo):
+def test_an_istanbul_report_keyed_through_another_spelling_of_the_root_joins(
+        istanbul_absolute_repo):
     res = run_cli(istanbul_absolute_repo, "coverage", "--json")
 
-    assert res.returncode == 5, res.stderr
-    assert "lane 'unit' FAILED" in res.stderr
-    assert "under this checkout" in res.stderr
-    assert "cwd/root option" in res.stderr
+    assert res.returncode == 0, res.stderr
+    assert "FAILED" not in res.stderr, res.stderr
 
 
-def test_the_istanbul_refusal_carries_no_coveragepy_advice(istanbul_absolute_repo):
-    """The bug this covers. `relative_files` is a coverage.py key no JS reporter
-    reads, and a lane told to set it in pyproject.toml cannot act on the advice."""
-    err = run_cli(istanbul_absolute_repo, "coverage", "--json").stderr
-
-    assert "relative_files" not in err
-    assert "[tool.coverage.run]" not in err and ".coveragerc" not in err
-    assert "path_prefix" not in err, "a knob the istanbul reader never reads"
-    assert "different tree" not in err, "the paths do resolve under this checkout"
-
-
-def test_the_refused_istanbul_scope_reads_as_a_tooling_gap(istanbul_absolute_repo):
-    """Same contract the coveragepy half earned: a refused lane leaves its scopes
-    `no-lane`, never a grade assembled out of a path-spelling mistake."""
+def test_the_rebased_istanbul_scope_is_measured(istanbul_absolute_repo):
+    """The lane's scope reads as measured, not as a tooling gap: the key named
+    this checkout, so its function carries the coverage the report recorded."""
     summary = json.loads(run_cli(istanbul_absolute_repo, "coverage", "--json").stdout)
 
-    assert summary["lane_failures"]["unit"]
-    assert summary["no_lane"] > 0
+    assert "unit" not in summary.get("lane_failures", {}), summary
+    assert summary["no_lane"] == 0, summary
+
+
+def test_the_rebased_istanbul_lane_carries_no_refusal_advice(istanbul_absolute_repo):
+    err = run_cli(istanbul_absolute_repo, "coverage", "--json").stderr
+
+    assert "relative_files" not in err and "cwd/root option" not in err, err
+    assert "different tree" not in err, "the paths do resolve under this checkout"

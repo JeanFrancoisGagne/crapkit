@@ -8,7 +8,7 @@ AST-remapped output of @vitest/coverage-v8 >= 3.2, which is istanbul-schema-iden
 
 This module is also the istanbul adapter (coverage_format looks it up from a
 lane's `parser`): it reads the artifact through covstream's framing, keys each
-file by stripping the checkout root, and owns the advice a wrong-tree refusal
+file by rebasing it under the checkout root, and owns the advice a wrong-tree refusal
 gives an istanbul lane. Attribution itself stays independent of file I/O and
 JSON framing.
 """
@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from . import covstream
 from .errors import ToolError
+from .repopath import Reported
 from .repotext import json_kind
 
 if TYPE_CHECKING:
@@ -47,9 +48,7 @@ class FnCoverage(NamedTuple):
 
 
 def _rel_path(abs_path: str, repo_root: str) -> str:
-    norm = abs_path.replace("\\", "/")
-    root = repo_root.replace("\\", "/").rstrip("/") + "/"
-    return norm[len(root):] if norm.startswith(root) else norm
+    return Reported(repo_root)(abs_path)
 
 
 # --- span attribution ------------------------------------------------------
@@ -376,17 +375,19 @@ _BAD_ISTANBUL = "unparseable istanbul artifact"
 
 
 def _istanbul_map(w, repo_root: str, per_file) -> dict:
+    keys = Reported(repo_root)
     out = {}
     for abs_path, cov in covstream.split_window(w):
-        rel = _rel_path(abs_path, repo_root)
+        rel = keys(abs_path)
         out[rel] = _named_file(rel, lambda: per_file(_require_counters(cov)))
     return out
 
 
 def _istanbul_both(w, repo_root: str) -> tuple[dict, dict]:
     per_file, dead = {}, {}
+    keys = Reported(repo_root)
     for abs_path, cov in covstream.split_window(w):
-        rel = _rel_path(abs_path, repo_root)
+        rel = keys(abs_path)
         per_file[rel] = _read_file(rel, cov)
         dead[rel] = _dead_lines(cov)
     return per_file, dead
@@ -461,16 +462,19 @@ def parse_istanbul_missing_file(path: Path | str, *, repo_root: str,
 
 # --- the adapter a lane reads through ------------------------------------------
 #
-# The reader takes the checkout root, rebases every path under it and never
-# reads path_prefix, so a path that stayed absolute came from another tree and
-# no key on the lane can rebase it.
+# The reader takes the checkout root, rebases every path that resolves under it
+# whatever its spelling, and never reads path_prefix, so a path that stayed
+# absolute came from another tree and no key on the lane can rebase it.
 
 WRONG_TREE_FIX = ("The reader rebases every path under this checkout's root, so these were "
                   "written against another one: rerun the suite here rather than reusing an "
                   "artifact copied in or restored from a CI cache")
-ABSOLUTE_FIX = ("The reader strips this checkout's root off every measured path "
-                "literally, so the reporter spelled that root some other way: point "
-                "it at this checkout with its own cwd/root option, then rerun the lane")
+# Reached only by a path this platform cannot open: repopath's reported entry
+# rebases every other spelling of this checkout before the wrong-tree check
+# reads a key.
+ABSOLUTE_FIX = ("The reader rebases every measured path that resolves under this "
+                "checkout, and these could not be opened here: rerun the lane on this "
+                "machine rather than reusing a report written somewhere else")
 UNMEASURED_READING = "or the suite measured a part of the tree these scopes do not name"
 
 

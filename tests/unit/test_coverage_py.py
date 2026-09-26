@@ -477,3 +477,75 @@ def test_the_lanes_page_quotes_the_branchless_function_refusal():
 
     quoted = f"crapkit: lane 'py' FAILED: {raised.value}"
     assert quoted in (root / "docs" / "lanes.md").read_text(encoding="utf-8").splitlines()
+
+
+
+# --- the file a report key names, in each spelling a runner writes ---------------
+
+import os as _os
+from pathlib import Path as _Path
+
+from crapkit import coverage_py as _adapter
+from crapkit.config import Lane as _Lane
+from crapkit.lanes import _judge_artifact_scope
+
+from path_spellings import lower_drive as _lower
+
+
+def _read_keyed(root: _Path, key: str) -> list[str]:
+    artifact = root / "cov.json"
+    artifact.write_text(json.dumps({**REPORT, "files": {key: REPORT["files"]["pylib\\mod.py"]}}),
+                        encoding="utf-8")
+    lane = _Lane(name="py", command="x", artifact="cov.json", parser="coveragepy",
+                 scopes=("py",))
+    return list(_adapter.read(lane, root, artifact)[0])
+
+
+@pytest.mark.parametrize("key", ["pylib/sub/mod.py", "pylib\\sub\\mod.py", "pylib/sub\\mod.py"],
+                         ids=["posix", "windows-written", "mixed"])
+def test_a_relative_key_reads_as_one_path_in_any_separator(tmp_path, key):
+    """relative_files on Windows keys `pylib\\sub\\mod.py`, and the artifact is
+    read on whichever OS the next command runs: each spelling is
+    pylib/sub/mod.py."""
+    (tmp_path / "pylib" / "sub").mkdir(parents=True)
+    (tmp_path / "pylib" / "sub" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+
+    assert _read_keyed(tmp_path, key) == ["pylib/sub/mod.py"]
+
+
+ABSOLUTE_KEYS = {
+    "native": lambda root: str(root / "pylib" / "mod.py"),
+    "forward-slashes": lambda root: (root / "pylib" / "mod.py").as_posix(),
+    "lower-drive": lambda root: _lower(root / "pylib" / "mod.py"),
+}
+
+
+@pytest.mark.parametrize("which", ABSOLUTE_KEYS)
+def test_an_absolute_key_under_this_checkout_fails_the_lane_naming_relative_files(tmp_path,
+                                                                                  which):
+    """relative_files off keys this checkout's own files absolutely, and a shell
+    standing in `c:\\...` lowers the drive letter. The join is root-relative, so
+    each spelling fails the lane and names coverage.py's switch."""
+    if which == "lower-drive" and _os.name != "nt":
+        pytest.skip("needs Windows path rules")
+    root = tmp_path.resolve()
+    (root / "pylib").mkdir()
+    (root / "pylib" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    lane = _Lane(name="py", command="x", artifact="cov.json", parser="coveragepy",
+                 scopes=("py",))
+    measured = dict.fromkeys(_read_keyed(root, ABSOLUTE_KEYS[which](root)), [])
+
+    with pytest.raises(ToolError, match="relative_files = true"):
+        _judge_artifact_scope(lane, measured, {"py": ("pylib",)}, root)
+
+
+@pytest.mark.skipif(_os.name == "nt", reason="needs POSIX path rules")
+def test_posix_folds_a_backslash_the_tree_holds_in_a_file_name(tmp_path):
+    """git on Linux can track `pylib/we\\ird.py` as one file, and a report
+    written on Windows keys pylib/we/ird.py the same way. The key cannot say
+    which, so it reads as a separator on every OS, and a tracked name holding a
+    backslash is unsupported (doctor names it)."""
+    (tmp_path / "pylib").mkdir()
+    (tmp_path / "pylib" / "we\\ird.py").write_text("x = 1\n", encoding="utf-8")
+
+    assert _read_keyed(tmp_path, "pylib/we\\ird.py") == ["pylib/we/ird.py"]

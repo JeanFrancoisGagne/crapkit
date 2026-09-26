@@ -5,6 +5,7 @@ lands its half-finished functions in this verdict. The finding still fires — e
 codes are unchanged — but it is tagged, and the summary splits the two counts, so
 nobody spends an afternoon on 377 regressions that belong to somebody else.
 """
+from crapkit.junitparse import failed_test_ids
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
 from crapkit.verify import dirty_counts, dirty_failure_ids, evaluate
@@ -63,6 +64,22 @@ def test_a_junit_classname_matches_a_dirty_path_in_both_shapes():
         ["pylib.test_new::test_x", "src/keep.test.ts::renders"]
 
 
+def test_a_junit_file_in_windows_spelling_matches_its_dirty_test_file():
+    """bun on Windows writes classname="" and the file with backslashes, so the
+    id is `src\\deep\\keep.test.ts::renders` while git names the dirty file
+    `src/deep/keep.test.ts`. The failure read as committed: `findings: 1
+    committed / 0 dirty` for a test file with uncommitted edits."""
+    report = ('<testsuite><testcase name="renders" classname="" '
+              'file="src\\deep\\keep.test.ts"><failure/></testcase></testsuite>')
+
+    v = evaluate(fresh=[scored(ccn=2)], changed_ranges={}, ratchet=[],
+                 baseline_failures=set(), fresh_failures=failed_test_ids(report),
+                 target=6, dirty_paths={"src/deep/keep.test.ts"})
+
+    assert v.dirty_failures == ["src\\deep\\keep.test.ts::renders"]
+    assert dirty_counts(v) == (0, 1)
+
+
 def test_counts_add_up_across_all_three_finding_kinds():
     mark = RatchetEntry(path="src/b.ts", long_name="g( )", crap=20.0)
     v = evaluate(
@@ -100,3 +117,107 @@ def test_the_split_line_does_not_call_the_dirty_set_tracked(capsys):
     assert line.startswith("findings: 0 committed / 1 dirty")
     assert "uncommitted tracked edits" not in line
     assert "untracked" in line, "the set includes files git has never seen"
+
+
+
+# --- a JUnit id whose file part is spelled another way ---------------------------
+#
+# A runner's classname or file attribute names the test file however the runner
+# was started: jest-junit's `{filepath}` is absolute, and a runner handed
+# `./web/...` keeps the dot. Matched as text against git's `web/src/app.test.ts`,
+# a failure in the file under edit read as committed: `findings: 1 committed /
+# 0 dirty`, and a pre-push check reading committed_findings blamed the tree.
+
+import os as _os
+
+import pytest as _pytest
+
+from path_spellings import need_case_insensitive as _need_case_insensitive
+from path_spellings import need_case_sensitive as _need_case_sensitive
+
+
+def _dirty_ids(root, classname: str) -> list[str]:
+    """The ids verify tags dirty, with the file parts placed as cmd_verify
+    places them."""
+    from crapkit.cli.verifying import _test_files
+
+    report = (f'<testsuite><testcase name="renders" classname="{classname}">'
+              '<failure/></testcase></testsuite>')
+    failures = failed_test_ids(report)
+    return evaluate(fresh=[scored(ccn=2)], changed_ranges={}, ratchet=[],
+                    baseline_failures=set(), fresh_failures=failures, target=6,
+                    dirty_paths={"web/src/app.test.ts"},
+                    test_files=_test_files(root, failures)).dirty_failures
+
+
+def _test_file(tmp_path):
+    (tmp_path / "web" / "src").mkdir(parents=True)
+    (tmp_path / "web" / "src" / "app.test.ts").write_text("test('x', () => {});\n",
+                                                          encoding="utf-8")
+    return tmp_path.resolve()
+
+
+@_pytest.mark.parametrize("spell", [
+    lambda root: "web/src/app.test.ts",
+    lambda root: "./web/src/app.test.ts",
+    lambda root: "web\\src\\app.test.ts",
+    lambda root: str(root / "web" / "src" / "app.test.ts"),
+    lambda root: (root / "web" / "src" / "app.test.ts").as_posix(),
+], ids=["relative", "dot-slash", "backslash", "absolute-native", "absolute-forward"])
+def test_a_junit_file_in_any_spelling_of_the_dirty_test_file_is_dirty(tmp_path, spell):
+    """A JUnit report written on Windows is read on Linux too, so its backslash
+    separates directories on every OS."""
+    root = _test_file(tmp_path)
+    classname = spell(root)
+
+    assert _dirty_ids(root, classname) == [f"{classname}::renders"]
+
+
+@_pytest.mark.skipif(_os.name != "nt", reason="needs Windows path rules")
+@_pytest.mark.parametrize("spell", [
+    lambda root: str(root / "web" / "src" / "app.test.ts")[0].lower()
+    + str(root / "web" / "src" / "app.test.ts")[1:],
+], ids=["absolute-lower-drive"])
+def test_windows_matches_a_junit_file_in_its_own_spellings(tmp_path, spell):
+    root = _test_file(tmp_path)
+    classname = spell(root)
+
+    assert _dirty_ids(root, classname) == [f"{classname}::renders"]
+
+
+def test_a_junit_file_elsewhere_stays_committed(tmp_path):
+    root = _test_file(tmp_path / "repo")
+    other = _test_file(tmp_path / "other")
+
+    assert _dirty_ids(root, str(other / "web" / "src" / "app.test.ts")) == []
+
+
+CASE_SPELLINGS = {
+    "directory-case": "WEB/src/app.test.ts",
+    "file-case": "web/src/App.Test.ts",
+    "backslash-case": "web\\SRC\\app.test.ts",
+    "dot-slash-case": "./Web/src/app.test.ts",
+}
+
+
+@_pytest.mark.parametrize("which", CASE_SPELLINGS)
+def test_a_relative_junit_file_in_another_case_is_dirty_where_the_disk_opens_it(tmp_path,
+                                                                              which):
+    """A runner started from `Web\\` on a case-insensitive disk names the test
+    file in the case it was typed, and git names it in the case the directory
+    lists. The failure is in the file under edit, so it is dirty."""
+    _need_case_insensitive(tmp_path)
+    root = _test_file(tmp_path)
+    classname = CASE_SPELLINGS[which]
+
+    assert _dirty_ids(root, classname) == [f"{classname}::renders"]
+
+
+def test_a_relative_junit_file_in_another_case_names_another_file_on_a_case_sensitive_disk(
+        tmp_path):
+    """On ext4 `WEB/src/app.test.ts` is not git's `web/src/app.test.ts`, so the
+    failure stays committed."""
+    _need_case_sensitive(tmp_path)
+    root = _test_file(tmp_path)
+
+    assert _dirty_ids(root, "WEB/src/app.test.ts") == []

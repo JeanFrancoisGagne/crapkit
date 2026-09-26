@@ -19,12 +19,15 @@ from ..doctor import Finding
 from ..errors import ConfigError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self
-from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
+from ..lane_command import (LaunchSpec, expand_launchers, first_word, launch_spec,
+                            pytest_head, pytest_python, python_token)
+from ..repopath import typed_path
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..gitpaths import readable
 from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
-from ._shared import _command_root, _file_sizer, _load_repo_config, _print_json, _say_left_out, repo_text
+from ._shared import (_command_root, _file_sizer, _init_root, _load_repo_config, _print_json,
+                      _say_left_out, repo_text)
 
 
 def _present_lockfiles(root: Path) -> frozenset[str]:
@@ -94,19 +97,17 @@ def _imports_pytest(launcher: Path) -> bool:
 
 
 def _committed_launcher(venv: Path, root: Path) -> str:
-    r"""The launcher as a committed config spells it: repo-relative, so it
-    travels the way an absolute path never could, and written for the file it
-    lands in.
+    r"""The launcher as a committed config spells it: the launcher token for
+    this venv, repo-relative, so it travels the way an absolute path never
+    could, to either OS.
 
-    Windows takes both halves of that. cmd.exe reads an unquoted `/` as the end
-    of the command name (`.venv/Scripts/python --version` answers `'.venv' is
-    not recognized`), so the separator has to be a backslash; and `\` opens an
-    escape inside a TOML basic string, so init writes `.venv\\Scripts\\python.exe`
-    and the config loader hands back the single-backslash path that runs. Both
-    spellings start under cmd.exe, which is why the probe reads this one.
+    The OS's own spelling did not travel. Windows wrote `.venv\\Scripts\\python.exe`
+    (cmd.exe reads an unquoted `/` as the end of the command name, and `\`
+    opens an escape in a TOML basic string), which no Linux checkout has, and
+    Linux wrote `.venv/bin/python`, which cmd.exe cannot start. The loader
+    expands `{python:.venv}` into the launcher of the OS reading the file.
     """
-    separator = "\\\\" if os.name == "nt" else "/"
-    return separator.join([*venv.relative_to(root).parts, *_VENV_LAUNCHER])
+    return python_token(venv.relative_to(root).as_posix())
 
 
 def _repo_venv_python(root: Path, scopes: tuple[str, ...] = ()) -> str | None:
@@ -147,7 +148,22 @@ def _interpreter(root: Path, scopes: tuple[str, ...] = ()) -> str:
     runner = lockfile_runner(_present_lockfiles(root))
     if runner:
         return f"{runner} {_python_name()}"
-    return _repo_venv_python(root, scopes) or _python_name()
+    return _repo_venv_python(root, scopes) or _bare_python()
+
+
+def _bare_python() -> str:
+    """The `{python}` token where the name it reads as on this OS resolves
+    here, else `_python_name`'s answer.
+
+    A bare name did not travel either: the `python` a Windows init wrote does
+    not exist on an Ubuntu without python-is-python3, and the token reads as
+    `python3` there. A machine where only another name resolves (`py` on
+    Windows, `python` alone on POSIX) keeps that name, so the config still
+    runs on the machine that wrote it."""
+    import shutil
+
+    token = python_token()
+    return token if shutil.which(expand_launchers(token)) else _python_name()
 
 
 def _present_markers(root: Path) -> frozenset[str]:
@@ -626,7 +642,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     from ..scaffold import (detect_lanes, live_lanes, pytest_testpaths, sniff_scopes,
                             starter_toml)
 
-    root = Path(args.repo or ".").resolve()  # init writes where the user stands; it adopts nothing
+    root = _init_root(args.repo)  # init writes where the user stands; it adopts nothing
     toml_path = root / "crapkit.toml"
     if toml_path.is_file():
         return _finish_init(root)
@@ -647,11 +663,13 @@ def cmd_init(args: argparse.Namespace) -> int:
     text = starter_toml(scopes, lanes, interpreter=interpreter,
                         testpaths=pytest_testpaths(_marker_texts(root)),
                         tracked=files, package_json=packages)
-    load_config_text(text)  # self-check: never write a config crapkit cannot read back
+    # Self-check: never write a config crapkit cannot read back. The probe asks
+    # the lanes as they load, with the launcher token read for this OS.
+    written = load_config_text(text)
     gitignore = _extend_gitignore(root, live_lanes(lanes, scopes))
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes, packages)
-    _warn_missing_pytest_cov(root, live_lanes(lanes, scopes))
+    _warn_missing_pytest_cov(root, written.lanes)
     _print_gitignore_step(gitignore)
     return 0
 
@@ -1306,6 +1324,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
     named = [f for f in files if readable(f)]
     return (_doctor_keys(raw)
             + _doctor_scopes(root, cfg, files, show_files)
+            + _doctor_path_names(cfg, raw, files)
             + _doctor_lanes(root, cfg)
             + _doctor_inputs(root, cfg.lanes)
             + _doctor_stamps(root, cfg.lanes)
@@ -1319,6 +1338,25 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_scoped_tests(cfg, named)
             + _doctor_unmeasured(root, cfg, named)
             + _doctor_unread(root, cfg, named))
+
+
+def _written_globs(raw: dict, cfg) -> tuple[tuple[str, str], ...]:
+    """Each [exclude] glob as crapkit.toml holds it, paired with the glob the
+    loader reads, leaving out init's default set: those guard trees a repo may
+    never track, and matching nothing is them doing their job."""
+    from ..scaffold import DEFAULT_EXCLUDES
+
+    written = raw.get("exclude", {}).get("globs", ())
+    return tuple((glob, read) for glob, read in zip(written, cfg.exclude_globs)
+                 if read not in DEFAULT_EXCLUDES)
+
+
+def _doctor_path_names(cfg, raw: dict, files: list[str]) -> list[Finding]:
+    """An [exclude] glob that matches no tracked file, and a tracked name
+    holding `\\` (both WARN)."""
+    from ..doctor import backslash_names, unmatched_globs
+
+    return [*unmatched_globs(_written_globs(raw, cfg), files), *backslash_names(files)]
 
 
 def _doctor_inputs(root: Path, lanes) -> list[Finding]:
@@ -1638,7 +1676,7 @@ def _newest_root(roots: list[Path]) -> Path | None:
 def _plugins_dir() -> Path:
     """Where Claude Code keeps plugins: under CLAUDE_CONFIG_DIR, else ~/.claude."""
     base = os.environ.get("CLAUDE_CONFIG_DIR")
-    return (Path(base) if base else Path.home() / ".claude") / "plugins"
+    return (typed_path(base) if base else Path.home() / ".claude") / "plugins"
 
 
 def _plugin_entries(recorded) -> dict:
@@ -1687,7 +1725,7 @@ def _resolve_plugin_root(arg: str) -> tuple[Path | None, str]:
     the handshake names the missing file at the path the operator typed.
     """
     if arg:
-        under = Path(arg)
+        under = typed_path(arg)
         return _newest_root(_manifest_roots(under)) or under, str(under)
     plugins = _plugins_dir()
     return _newest_root(_installed_crapkit_roots(plugins)), str(plugins)

@@ -147,6 +147,12 @@ cancels the run it replaces; every push to main runs to the end.
 | `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. Then `test_claude_code_loads_the_manifests_doctor_reads` asks that Claude Code whether each manifest encoding loads, under `CRAPKIT_REQUIRE_CLAUDE=1`. | A validation error, or a manifest this Claude Code reads another way than `doctor --plugin-root` does. |
 | `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on Crapkit, with `CRAPKIT_REQUIRE_LOCALES=1` as in `test`. | Action execution errors, a test failure or an event-base complexity breach (`hook-precommit --base "$BASE_REF"`). Its `gate: false` setting leaves score enforcement to `verdict`. |
 
+`test` also runs one macOS job, Python 3.13 with both suites in it, for the
+letter-case rows. APFS opens `SRC/a.py` for a tracked `src/a.py` under POSIX
+path rules. Ubuntu's disk keeps the two names apart, so those rows skip there,
+and Windows folds case alongside its own separator and drive rules. A case row
+that fails only on the macOS job reads a path's letter case as text somewhere.
+
 Both verdict jobs check installed source bytes: a measurement before mapping
 coverage paths, the join before an uploaded measurement stands for its revision.
 The join compares its JSON verdict with the actual run ledger. Each measurement

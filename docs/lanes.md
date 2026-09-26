@@ -738,8 +738,8 @@ along with everything else:
 | `poetry.lock` | `poetry run python -m pytest …` |
 | `pdm.lock` | `pdm run python -m pytest …` |
 | `Pipfile.lock` | `pipenv run python -m pytest …` |
-| none, and a venv in the tree | `.venv/bin/python -m pytest …` (`.venv\\Scripts\\python.exe` on Windows) |
-| none at all | `python -m pytest …` (or `python3`, or `py` on Windows: the first that resolves) |
+| none, and a venv in the tree | `{python:.venv} -m pytest …`, which runs `.venv/bin/python` on Linux and macOS and `.venv\Scripts\python.exe` on Windows |
+| none at all | `{python} -m pytest …`, which runs `python3` on Linux and macOS and `python` on Windows; where that name does not resolve, the first of `python`, `python3` and `py` that does |
 
 The first match in that order wins, so a repo mid-migration between two managers gets the
 same config every time.
@@ -748,14 +748,20 @@ With no lockfile, `init` looks for the environment the repo carries: `.venv`, `v
 one `.venv` inside each scope it just sniffed. A directory counts only when it holds
 `pyvenv.cfg` and its interpreter imports `pytest`, so an empty environment, or a `venv/`
 package of somebody's sources, leaves the bare name alone. The path is repo-relative
-because an absolute one does not survive the repo reaching anyone else, and the Windows
-spelling is the file's, not the shell's: crapkit.toml is TOML, where `\` opens a string
-escape, so the committed line reads `command = ".venv\\Scripts\\python.exe -m pytest …"`
-and the loader hands the lane the single-backslash path. Forward slashes are not an
-option there: cmd.exe reads an unquoted `/` as the end of the command name and answers
-`'.venv' is not recognized`. That spelling is also the one gap in the row: a config
-written on Windows names `Scripts\python.exe`, which no Unix collaborator has, the same
-way `py` does not travel.
+because an absolute one does not survive the repo reaching anyone else.
+
+crapkit.toml is committed, so a Windows author's lane runs on a Linux collaborator's
+checkout and the other way round, each with a venv of its own. No one spelling of the
+launcher runs on both. cmd.exe reads an unquoted `/` as the end of the command name, so
+`.venv/bin/python` answers `'.venv' is not recognized`, and sh reads
+`.venv\Scripts\python.exe` as `.venvScriptspython.exe`. A bare `python` fails on an
+Ubuntu without python-is-python3. So `init` writes a
+[launcher token](configuration.md#the-launcher-token), and the loader replaces it with
+the launcher of the OS reading the file before anything reads the command. The one gap
+left is a machine where only another name resolves: `init` writes `py` on a Windows PATH
+that carries only the launcher, and a committed `py -m pytest` fails every Unix
+collaborator's doctor. Install a Python that puts `python` on that PATH, then write
+`{python}` in place of `py`.
 
 Every python line `init` writes carries the same prefix, and there are two in any one
 file: the `[crapkit.scoped_tests]` entry, plus either the live `[[lane]]` command or,
@@ -784,7 +790,10 @@ note: lane 'py' runs through `uv`, which this machine's PATH does not carry — 
 ```
 
 Writing the prefix by hand is the fix for a repo that adopted crapkit earlier, or one that
-pins its environment some other way: `command` is a shell string and takes anything.
+pins its environment some other way: `command` is a shell string and takes anything. A
+config `init` wrote before 0.8.1 names one OS's venv launcher: swap `.venv/bin/python`,
+or `.venv\\Scripts\\python.exe` as the TOML string spells it, for `{python:.venv}` so
+checkouts on the other OS run it too.
 
 ### A suite that spawns subprocesses
 
@@ -954,7 +963,7 @@ parser = "coveragepy"
 scopes = ["api"]
 ```
 
-Getting `path_prefix` wrong is silent and expensive. The same tree, same suite, only the key
+Getting `path_prefix` wrong is quiet and expensive. The same tree, same suite, only the key
 removed:
 
 ```
@@ -963,7 +972,25 @@ without path_prefix: 1 functions scored: 1 untested, ..., CRAP load 20.0
 ```
 
 The lane ran and passed both times. Without the prefix, no artifact path matched any scoped
-file, so every function fell to `untested` and scored as if nothing tested it.
+file, so every function fell to `untested` and scored as if nothing tested it. The run
+still exits 0. The one sign is a stderr line that opens
+`crapkit: lane 'py' measured 1 file(s), none of them under the paths its scopes declare`.
+A lane with no prefix is told the runner may report paths it needs `path_prefix` to
+rebase. A lane whose prefix names the wrong directory is told which prefix crapkit read,
+and which prefix would key a file the runner named that is on disk and in the lane's
+scopes:
+`or path_prefix 'web', which crapkit.toml sets for this lane, does not rebase the
+runner's paths onto those scopes; path_prefix = 'api' would key the runner's src/calc.py
+as api/src/calc.py, a file those scopes claim`. When the runner's paths need no prefix,
+the line says to drop `path_prefix` from the lane. When no declared path holds a file the
+runner named, it says to set `path_prefix` to the directory the runner's paths are
+relative to.
+
+Any spelling of the right directory works, because `path_prefix` is read the way a scope
+path is: `api\`, `./api/`, `.\api\` and `/api/` all read `api/`, and on a disk that ignores
+case `API/` takes the case the directory lists. Before 0.8.1 each of those glued its own
+text onto every key, so a Windows-written `api\` scored the whole scope untested on every
+OS, with the same stderr line as the only sign.
 
 ---
 
@@ -1777,13 +1804,16 @@ $ crapkit coverage
 crapkit: lane 'py' FAILED: lane 'py' measured 2 file(s), none of them under the paths its scopes declare (src), and 2 of them written as absolute paths that DO sit under this checkout — .crapkit/cov/py.json measured this tree and spelled it absolutely, and the join is on root-relative paths, so it still matches nothing and every function in those scopes would score untested; it reports paths like /repo/src/faro/core.py, /repo/src/faro/util.py. Make the runner write relative paths: `relative_files = true` under `[tool.coverage.run]` in pyproject.toml, or `[run] relative_files = true` in .coveragerc, then rerun the lane
 ```
 
-For an istanbul lane the switch is the reporter's `cwd`/`root` option instead: that reader
-strips this checkout's root off every path literally, so a path arriving absolute was
-written against a root spelled some other way.
+An istanbul lane does not reach this refusal. Its reporter writes every path absolute, and
+its reader rebases each one that resolves under this checkout, whatever spelling it
+arrives in: a lower-case drive letter from a shell that stood in `c:\...`, another letter
+case, a junction or symlink to the checkout, or the `\\?\` prefix. Before 0.8.1 the reader
+stripped the root as literal text, so each of those failed the lane with advice to point
+the reporter at the checkout it had already measured.
 
-crapkit does not rebase these itself. The join contract stays root-relative, and a runner
-spelling every path absolutely is one setting to fix once, not a shape to re-derive on
-every run.
+For a coveragepy lane crapkit does not rebase these itself. The join contract stays
+root-relative, and a runner spelling every path absolutely is one setting to fix once, not
+a shape to re-derive on every run.
 
 Both sides of that comparison are resolved the same way, symlinks followed and the case
 folded where the filesystem folds it, so a checkout reached through a symlink or spelled
@@ -1815,10 +1845,13 @@ tuning per repo; zero has no reading under which the join was going to work.
 The two tests run on different spellings of the path, which is what keeps
 [`path_prefix`](#running-from-a-subdirectory) out of the other two verdicts. The reach test
 runs after the prefix is applied, so a prefix that already fixes the join is never
-mentioned at all. The escape test runs on the path the runner wrote, with the prefix taken
-back off: gluing `backend/` onto `/other/checkout/a.py` would otherwise make another tree's
-path read as an in-tree one. `path_prefix` is a coveragepy key, and the istanbul reader
-never reads it.
+mentioned at all, and it asks only the keys the runner wrote relative to this checkout.
+The escape test runs on the path the runner wrote, with the prefix taken back off. Gluing
+`backend/` onto `/other/checkout/a.py` gives `backend//other/checkout/a.py`, a path under
+a `backend` scope, and a root scope (`.`) claims any key. Before 0.8.1 the reach test asked
+such keys, so a lane with `path_prefix`, or scoped to the root, scored every function
+untested with exit 0 on another tree's report; it now gets the refusal above.
+`path_prefix` is a coveragepy key, and the istanbul reader never reads it.
 
 The reach test is `universe.owning_scope` over the lane's own scopes, the same predicate
 that assigns files to scopes, so a scope declaring individual files rather than

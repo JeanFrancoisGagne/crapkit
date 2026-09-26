@@ -9,6 +9,7 @@ import pytest
 
 from crapkit.churn import FileChurn
 from crapkit.cli.queue import _no_lane_gap, _rankable, _skip_reason
+from crapkit.repopath import fragments
 from crapkit.score import ScoredRow, crap
 from crapkit.worklist import HOT_MIN_CCN, Marks, admission, over_target_floor, sql_floor
 
@@ -177,7 +178,8 @@ def test_a_no_lane_row_at_its_ceiling_under_the_floor_is_not_counted():
     assert _no_lane_gap(scored(flag="no-lane", remedy="ok"), adm) is False
 
 
-def test_an_excluded_row_reports_the_flag_that_ate_it():
+def test_an_excluded_row_reports_the_flag_that_ate_it(tmp_path):
     adm = admission(CHURN, floor=5)
 
-    assert _skip_reason(scored(), adm, ["dark"]) == "excluded_by_flag"
+    excludes = fragments(["dark"], tmp_path)
+    assert _skip_reason(scored(), adm, excludes) == "excluded_by_flag"

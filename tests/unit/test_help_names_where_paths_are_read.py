@@ -1,11 +1,19 @@
 """mutate --files, claims release and ratchet move rebase a relative path from the
 working directory when the root came from the walk, like explain and rescore do,
-so their help says so too."""
+so their help says so too. Every command that takes a file argument also names
+the spellings it reads as git's path, and next-item's --exclude names the ones
+it reads in a path fragment, each checked against the reader it describes."""
+import os
+
 import pytest
 
 from crapkit.cli import main
+from crapkit.cli._shared import _repo_relative
+from crapkit.repopath import fragment as path_fragment
 
-NOTE = "(repo-relative; without --repo, read from the working directory)"
+WHERE = ("(repo-relative or absolute; ./src/a.py, SRC/a.py where the disk ignores case, "
+         "and on Windows src\\a.py, /c/... and /mnt/c/... name src/a.py; "
+         "without --repo, read from the working directory)")
 
 
 def _help(capsys, command: str) -> str:
@@ -18,16 +26,98 @@ def _help(capsys, command: str) -> str:
 def test_mutate_help_says_where_its_files_are_read_from(capsys):
     text = _help(capsys, "mutate")
 
-    assert f"--files [FILES ...] mutate these whole files {NOTE}" in text, text
+    assert f"--files [FILES ...] mutate these whole files {WHERE}" in text, text
 
 
 def test_claims_help_says_where_the_release_path_is_read_from(capsys):
     text = _help(capsys, "claims")
 
-    assert f"PATH {NOTE}" in text, text
+    assert f"PATH {WHERE}" in text, text
 
 
 def test_ratchet_help_says_where_move_paths_are_read_from(capsys):
     text = _help(capsys, "ratchet")
 
-    assert f"for move: OLD NEW {NOTE}" in text, text
+    assert f"for move: OLD NEW {WHERE}" in text, text
+
+
+@pytest.mark.parametrize("command", ["explain", "brief", "rescore", "test-scoped"])
+def test_each_file_argument_help_names_the_spellings_it_reads(capsys, command):
+    text = _help(capsys, command)
+
+    assert WHERE in text, text
+
+
+def test_the_spellings_the_help_names_read_as_the_file_git_names(tmp_path):
+    """The help's examples, fed through the reader every file argument takes."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("", encoding="utf-8")
+
+    assert _repo_relative("./src/a.py", tmp_path) == "src/a.py"
+    if os.name == "nt":
+        assert _repo_relative("src\\a.py", tmp_path) == "src/a.py"
+        assert _repo_relative("SRC/a.py", tmp_path) == "src/a.py"
+        drive = str(tmp_path.resolve())
+        msys = "/" + drive[0].lower() + drive[2:].replace("\\", "/") + "/src/a.py"
+        assert _repo_relative(msys, tmp_path) == "src/a.py"
+        assert _repo_relative("/mnt" + msys, tmp_path) == "src/a.py"
+
+
+def test_next_item_exclude_help_names_the_path_fragment_spellings(capsys):
+    text = _help(capsys, "next-item")
+
+    assert ("--exclude EXCLUDE skip items whose path or function name contains this "
+            "(repeatable); a path fragment reads as git spells it: ./pkg/legacy, "
+            "PKG/Legacy where the disk ignores case, and pkg\\legacy on Windows all "
+            "skip pkg/legacy") in text, text
+
+
+@pytest.mark.parametrize("typed", ["./pkg/legacy", "PKG/Legacy"])
+def test_the_exclude_fragments_the_help_names_read_as_git_s_path(typed):
+    assert path_fragment(typed, True).path == "pkg/legacy"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a backslash is a separator on Windows only")
+def test_the_backslash_fragment_the_help_names_reads_as_git_s_path_on_windows():
+    assert path_fragment("pkg\\legacy", False).path == "pkg/legacy"
+
+
+TYPED = "on Windows /c/... and /mnt/c/... name the drive"
+
+# command -> the flags whose PATH it writes or opens (repopath.typed_path)
+PATH_FLAGS = {
+    "inventory": ["--db", "--export"],
+    "coverage": ["--export", "--sarif"],
+    "report": ["--out"],
+    "verify": ["--baseline-tsv", "--emit-baseline", "--sarif"],
+    "doctor": ["--plugin-root"],
+}
+
+
+def _flag_help(command: str, flag: str) -> str:
+    import argparse
+
+    from crapkit.cli.parser import build_parser
+
+    subs = next(a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+    return next(a.help for a in subs.choices[command]._actions if flag in a.option_strings)
+
+
+@pytest.mark.parametrize("command, flag", [(c, f) for c, flags in PATH_FLAGS.items()
+                                           for f in flags])
+def test_each_path_flag_help_names_the_drive_spellings_it_reads(capsys, command, flag):
+    r"""`--export /c/...` wrote into a new C:\c tree while every file argument
+    read that spelling as its drive; the flags now read it the same way."""
+    assert TYPED in _flag_help(command, flag)
+    assert TYPED in _help(capsys, command), "and --help prints it"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Git Bash and WSL spellings name a drive on Windows")
+def test_the_drive_spellings_the_flag_help_names_are_what_a_writer_opens(tmp_path):
+    from crapkit.cli._shared import _repo_out_path
+
+    dest = tmp_path.resolve() / "x.tsv"
+    msys = "/" + dest.drive[0].lower() + dest.as_posix()[2:]
+
+    assert _repo_out_path(tmp_path, msys) == dest
+    assert _repo_out_path(tmp_path, "/mnt" + msys) == dest
