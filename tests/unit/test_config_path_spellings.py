@@ -397,7 +397,7 @@ def test_an_absolute_scope_path_is_refused_by_name(tmp_path, which):
         _scope(root, written)
 
     message = str(refusal.value)
-    assert repr(written) in message and "repo-relative" in message, message
+    assert f"'{written}'" in message and "repo-relative" in message, message
 
 
 def test_an_absolute_scope_path_in_this_checkout_is_told_its_relative_spelling(tmp_path):

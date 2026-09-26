@@ -276,12 +276,15 @@ def test_digest_alert_hands_the_function_name_to_the_alert_command_as_utf8(tmp_p
     assert f"src/m.py {long_name}" in out.out
 
 
+# What a failed alert's line says after the command's own words.
+NOT_ALERTED = (" - the digest above was not alerted; rerun once [crapkit] alert_command in "
+               "crapkit.toml exits 0\n")
 ANSWERS = [
     # id, the alert command's exit code and output, digest's exit, digest's own line on stderr
-    ("exits-3", 3, b"", 5, "crapkit: digest alert command failed (exit 3)\n"),
+    ("exits-3", 3, b"", 5, "crapkit: digest alert command failed (exit 3): " + NOT_ALERTED),
     ("writes-bytes-that-are-not-utf8", 0, b"caf\xe9 \xff\xfe\n", 0, ""),
     ("writes-bytes-that-are-not-utf8-and-exits-3", 3, b"caf\xe9 \xff\xfe\n", 5,
-     "crapkit: digest alert command failed (exit 3)\n"),
+     "crapkit: digest alert command failed (exit 3): caf\ufffd \ufffd\ufffd" + NOT_ALERTED),
 ]
 
 

@@ -640,7 +640,7 @@ def test_a_method_that_is_not_a_known_string_is_an_unknown_method(monkeypatch, t
 
 @pytest.mark.parametrize("arguments, argv", [
     ({"path": "src/café.py", "name": "naïve_世界"}, ["src/café.py", "naïve_世界"]),
-    ({"top": 10 ** 30}, ["--top", str(10 ** 30)]),
+    ({"top": 10 ** 30}, [f"--top={10 ** 30}"]),
     ({"repo": ""}, []),
 ], ids=["non-ascii-name", "top-10-to-the-30", "repo-empty"])
 def test_values_at_the_edge_of_their_type_reach_the_cli_as_given(monkeypatch, tmp_path,
@@ -651,7 +651,7 @@ def test_values_at_the_edge_of_their_type_reach_the_cli_as_given(monkeypatch, tm
 
     assert replies[1]["result"]["isError"] is False, replies[1]
     assert all(word in calls[0] for word in argv), calls
-    assert calls[0][-2:] == ["--repo", str(tmp_path)]
+    assert f"--repo={tmp_path}" in calls[0], calls
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="needs Windows path rules")
@@ -666,4 +666,4 @@ def test_a_repo_in_a_git_bash_or_wsl_spelling_serves_the_checkout_it_names(monke
     replies = _serve(monkeypatch, tmp_path, [_call(1, "list_runs", {"repo": spelled})])
 
     assert replies[1]["result"]["isError"] is False, replies[1]
-    assert calls[0][-2:] == ["--repo", str(tmp_path.resolve())], calls
+    assert f"--repo={tmp_path.resolve()}" in calls[0], calls

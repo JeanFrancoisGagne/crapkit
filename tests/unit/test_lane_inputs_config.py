@@ -41,7 +41,7 @@ def test_an_input_outside_the_root_is_refused_at_load(entry):
     with pytest.raises(ConfigError) as raised:
         load_config_text(_config(json.dumps([entry])))
     message = str(raised.value)
-    assert "lane 'py'" in message and repr(entry) in message
+    assert "lane 'py'" in message and f"'{entry}'" in message
 
 
 @pytest.mark.parametrize("entry", ["src/*.ts", "src/app?.ts", "*"])

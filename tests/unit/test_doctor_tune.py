@@ -126,7 +126,7 @@ def test_every_unmeasured_lane_is_named():
 def test_with_no_duration_at_all_the_line_stays_the_cpu_count_line():
     lines = tune_lines(cpus=8, knobs=suggest_knobs(cpus=8, lanes=2), durations=(),
                        unmeasured=("a", "b"))
-    assert lines[-1] == ("# lane cost: no durations recorded yet — "
+    assert lines[-1] == ("# lane cost: no durations recorded yet - "
                          "suggested from the cpu count alone")
 
 
@@ -144,7 +144,7 @@ _CASE_TIMES = ('<testsuite tests="2"><testcase classname="t" name="x" time="20"/
                '<testcase classname="t" name="y" time="30"/></testsuite>')
 _SUMMED = "# lane cost: 180.0s serial -> ~100.0s across 3 lane slot(s)"
 _PARTIAL = f"# lane cost: 130.0s serial -> ~100.0s across 3 lane slot(s) for 2 of 3 lanes; {_UNKNOWN_B}"
-_NONE = "# lane cost: no durations recorded yet — suggested from the cpu count alone"
+_NONE = "# lane cost: no durations recorded yet - suggested from the cpu count alone"
 
 # Lane a recorded 100 s and lane c 30 s in every row; each row says what lane b
 # left on disk: its stamp's fields (None = no stamp at all) and its junit text

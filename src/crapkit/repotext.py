@@ -34,7 +34,8 @@ where a UTF-16 file was a traceback instead of a sentence.
   reads with Node; a pytest.ini, tox.ini, setup.cfg or pyproject.toml, which
   pytest reads) goes through `plain_utf8`: U+FFFD for each byte that is not
   UTF-8, and a BOM kept, which JSON.parse and pytest then refuse, and so does
-  crapkit.
+  crapkit. What a child printed, which a refusal quotes, reads the same way, as
+  a UTF-8 text-mode pipe reads it (`plaintext.printed_text`).
 - A patch or a path name git hands over, which crapkit must hand back byte for
   byte, goes through `escaped`: each byte that is not UTF-8 is a lone
   surrogate, and encoding with surrogateescape gives the byte back. `shown`

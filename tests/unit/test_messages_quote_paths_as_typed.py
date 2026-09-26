@@ -9,7 +9,10 @@ and still escapes a character that would break the line.
 Each row drives the real command in-process with the Windows spelling and with
 the POSIX one. The lane-command rows run on Windows only: on POSIX crapkit
 splits a lane command with shell rules, where a backslash is an escape, so the
-typed token never reaches the message with its backslashes.
+typed token never reaches the message with its backslashes. A lane's cwd and
+artifact are settled before doctor or the loader names them: config reads a
+backslash there as a directory separator on every OS, so their Windows rows sit
+with the settled paths at the end.
 """
 from __future__ import annotations
 
@@ -116,7 +119,7 @@ SITES = [
     ("parser: a path as the first argument", _first_argument, ".\\mini", "./mini", [WINDOWS]),
     ("_shared: an --export path that climbs out", _export, "..\\out.tsv", "../out.tsv", [WINDOWS]),
     ("config: a scope path with a drive", _scope_path, "C:\\src", "C:/src", []),
-    ("admin: a lane cwd that does not exist", _lane_cwd, "sub\\dir", "sub/dir", []),
+    ("admin: a lane cwd that does not exist", _lane_cwd, None, "sub/dir", []),
     ("admin: a lane executable off PATH", _lane_executable, ".venv\\Scripts\\python.exe",
      ".venv/bin/python", [WINDOWS]),
     ("admin: a lane script that does not exist", _lane_script, "scripts\\run.py", "scripts/run.py",
@@ -124,14 +127,14 @@ SITES = [
     ("admin: a lane the shell cannot run", _lane_cannot_run, ".\\fail.bat", None, [WINDOWS]),
     ("config: an input outside the root", _input_outside, "..\\other", "../other", []),
     ("config: an input that is a glob", _input_glob, "src\\*.ts", "src/*.ts", []),
-    ("config: two lanes share an artifact", _shared_artifact, "coverage\\cov.json",
-     "coverage/cov.json", []),
+    ("config: two lanes share an artifact", _shared_artifact, None, "coverage/cov.json", []),
 ]
 
 
 def _rows():
     for site, driver, windows, posix, marks in SITES:
-        yield pytest.param(driver, windows, id=f"{site} (Windows spelling)", marks=marks)
+        if windows is not None:
+            yield pytest.param(driver, windows, id=f"{site} (Windows spelling)", marks=marks)
         if posix is not None:
             yield pytest.param(driver, posix, id=f"{site} (POSIX spelling)")
 
@@ -157,4 +160,19 @@ def test_an_unmatched_input_is_quoted_the_way_git_reads_it(repo, capsys, typed):
     said = _said(capsys, ["doctor", "--repo", str(repo)])
 
     assert "inputs entry 'src/nothere' matches no file" in said, said
+    assert chr(92) * 2 not in said, said
+
+
+@pytest.mark.parametrize("driver, typed, settled", [
+    (_lane_cwd, "sub" + chr(92) + "dir", "sub/dir"),
+    (_shared_artifact, "coverage" + chr(92) + "cov.json", "coverage/cov.json"),
+], ids=["a lane cwd that does not exist", "two lanes share an artifact"])
+def test_a_lane_file_path_is_quoted_the_way_config_settled_it(repo, capsys, driver, typed,
+                                                               settled):
+    """config reads a lane's cwd and artifact with a backslash as a directory
+    separator on every OS, so the message names the spelling it settled and
+    never a doubled backslash."""
+    said = driver(repo, capsys, typed)
+
+    assert f"'{settled}'" in said, said
     assert chr(92) * 2 not in said, said

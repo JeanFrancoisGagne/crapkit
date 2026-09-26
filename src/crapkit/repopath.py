@@ -371,7 +371,7 @@ def _declared_file(raw: str, root: str | os.PathLike | None) -> str:
     return _undotted(file_separators(raw))
 
 
-_NEVER_MATCHES = ("can never match a tracked file — scope paths are repo-relative, with no "
+_NEVER_MATCHES = ("can never match a tracked file - scope paths are repo-relative, with no "
                   "drive and no `..` (docs/configuration.md)")
 
 

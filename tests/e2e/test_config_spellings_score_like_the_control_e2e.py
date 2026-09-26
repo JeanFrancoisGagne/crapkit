@@ -221,7 +221,7 @@ def test_an_absolute_scope_path_is_refused_instead_of_scoring_nothing(tmp_path, 
     res = run_cli(repo, "coverage")
 
     assert res.returncode == 3, res.stdout + res.stderr
-    assert f"scope 'src': path {written!r} names nothing under the root" in res.stderr, res.stderr
+    assert f"scope 'src': path '{written}' names nothing under the root" in res.stderr, res.stderr
 
 
 @pytest.mark.parametrize("src_path", ["src/../src", "..\\repo\\src", "../repo/src",
@@ -235,7 +235,7 @@ def test_a_scope_path_that_climbs_out_of_the_root_is_refused(tmp_path, src_path)
     res = run_cli(repo, "coverage")
 
     assert res.returncode == 3, res.stdout + res.stderr
-    assert f"path {src_path!r} can never match a tracked file" in res.stderr, res.stderr
+    assert f"path '{src_path}' can never match a tracked file" in res.stderr, res.stderr
 
 
 # --- a lane artifact spelled from Windows, reused ----------------------------------------

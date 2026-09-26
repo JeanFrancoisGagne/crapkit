@@ -143,8 +143,9 @@ _COLOUR_ENVS = {
 _KNOBS = ("FORCE_COLOR", "NO_COLOR", "PYTHON_COLORS", "PY_COLORS", "TERM", "CLICOLOR_FORCE")
 
 
-@pytest.mark.parametrize("argv", [["--top", "five", "--out", "c.md"], ["--no-such-flag", "--out", "c.md"],
-                                  ["--help"]], ids=["top-five", "unknown-flag", "help"])
+@pytest.mark.parametrize("argv", [["--coverage-exit", "five", "--out", "c.md"],
+                                  ["--no-such-flag", "--out", "c.md"], ["--help"]],
+                         ids=["exit-five", "unknown-flag", "help"])
 @pytest.mark.parametrize("colour", list(_COLOUR_ENVS.values()), ids=list(_COLOUR_ENVS))
 def test_the_builders_usage_error_and_help_are_plain_in_a_pipe(tmp_path, argv, colour):
     """Runs on the interpreter the suite runs on; the 3.14 CI legs are the ones

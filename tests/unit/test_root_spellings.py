@@ -192,4 +192,4 @@ def test_an_mcp_call_naming_a_mapped_drive_repo_is_served_on_the_drive(repo,  # 
     reply = mcp_server._call_tool(repo, "list_runs", {"repo": str(repo / "src")})
 
     assert reply.get("isError") is not True, reply
-    assert calls[0][-2:] == ["--repo", str(repo)], calls
+    assert f"--repo={repo}" in calls[0], calls

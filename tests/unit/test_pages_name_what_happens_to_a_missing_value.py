@@ -181,7 +181,7 @@ def test_the_0_4_15_note_quotes_the_refusal_reuse_prints_once_a_real_run_records
     lane = Lane(name="py", command="pytest", artifact="cov.json", parser="coveragepy",
                 scopes=("src",))
     head = _no_artifact_head(tmp_path, lane, ["cov.json"], reuse=True)
-    quoted = head.split(" — ", 1)[0]
+    quoted = head.split(" - ", 1)[0]
     notes = " ".join(_section(UPGRADING, UPGRADE_NOTES).split())
 
     assert quoted == "wrote no artifact on its last attempt"

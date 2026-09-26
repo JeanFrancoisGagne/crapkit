@@ -1753,7 +1753,7 @@ def _declared_version(answer: str) -> str | None:
     """The version in `crapkit X.Y.Z`. One holding U+FFFD, a byte that was not
     UTF-8, is no version: printed, it named a CLI nothing on the machine is."""
     words = answer.split()
-    readable = len(words) == 2 and words[0] == "crapkit" and "�" not in words[1]
+    readable = len(words) == 2 and words[0] == "crapkit" and "\ufffd" not in words[1]
     return words[1] if readable else None
 
 

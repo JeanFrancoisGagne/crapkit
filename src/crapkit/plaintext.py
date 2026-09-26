@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import re
 
+from .repotext import plain_utf8
+
 
 def _escapes(esc: str, bel: str) -> re.Pattern[str]:
     """ESC and what follows it in an ECMA-48 sequence: a CSI (`[`, parameter
@@ -47,6 +49,7 @@ def printed_text(data: bytes) -> str:
     it: UTF-8 with each byte that is not UTF-8 as U+FFFD, a CR LF or a lone CR
     read as LF the way a text-mode pipe reads them, and no escape sequence. A
     child on Windows ends each line in CR LF, and a quote that kept the CR put
-    one inside the refusal a reader sees."""
-    text = data.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+    one inside the refusal a reader sees. repotext's `plain_utf8` reads the
+    bytes, as a UTF-8 text-mode pipe does."""
+    text = plain_utf8(data).replace("\r\n", "\n").replace("\r", "\n")
     return strip_escapes(text)
