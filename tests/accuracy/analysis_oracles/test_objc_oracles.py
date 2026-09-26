@@ -65,13 +65,25 @@ def compile_commands(root: Path, paths: list) -> None:
     (root / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
 
 
+def _first_failure(root: Path, left: list):
+    failed = adapter.tidy_cognitive(root, left).failed if left else set()
+    return next((path for path in left if path in failed), None)
+
+
 def failing(root: Path, paths: tuple) -> set:
-    """The files that do not compile, one clang-tidy run each. In one run over many
-    files clang-tidy 23.1.2 keeps its error count, so every file after the first
-    that fails also reads `Error while processing`. OCLint names the header an
-    error sits in, not the file that included it (AFNetworking imports Foundation
-    in its headers), so it cannot tell either."""
-    return set().union(*(adapter.tidy_cognitive(root, [path]).failed for path in paths))
+    """The files that do not compile. clang-tidy 23.1.2 reads the files of one run
+    in the order given and keeps its error count, so every file after the first
+    that fails also reads `Error while processing`: the first is a true failure,
+    and the files after it are run again, until a run has none. OCLint names the
+    header an error sits in, not the file that included it (AFNetworking imports
+    Foundation in its headers), so it cannot tell either."""
+    failed, left = set(), list(paths)
+    first = _first_failure(root, left)
+    while first is not None:
+        failed.add(first)
+        left = left[left.index(first) + 1:]
+        first = _first_failure(root, left)
+    return failed
 
 
 def _run(root: Path, built: list) -> dict:
@@ -222,6 +234,11 @@ def test_objc_probes_compile_without_an_apple_sdk(objc_probes, oracle):
                                 "objcpp/equivalence.mm", "objcpp/methods.mm"]
 
 
+# The fewest functions each tool must compare on the probes: clang-tidy reads C
+# functions only, and the set-asides take their share.
+PROBES_MIN = {"oclint-ccn": 25, "oclint-depth": 12, "tidy-cognitive": 7, "tidy-nesting": 5}
+
+
 @LINUX
 @pytest.mark.parametrize("name", sorted(TOOLS))
 def test_objc_probes_match_the_clang_tools(name, objc_probes, oracle):
@@ -229,7 +246,7 @@ def test_objc_probes_match_the_clang_tools(name, objc_probes, oracle):
     outcome = tooldiff.differential(name, TOOLS[name], LISTED, objc_probes[0])
 
     assert outcome.problems == []
-    assert outcome.compared > 5
+    assert outcome.compared > PROBES_MIN[name]
 
 
 @LINUX

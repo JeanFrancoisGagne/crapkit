@@ -159,3 +159,17 @@ o-for-after-brace	defects.m	drain:	cognitive	3	Sonar Cognitive Complexity v1.7 (
 o-for-after-brace	defects.m	drain:	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a for and an if	
 o-finish	defects.m	finish:	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
 o-finish	defects.m	finish:	start	35	Apple, Programming with Objective-C: a method starts on its declaring line	
+o-block-method	methods.m	sumWith:	start	124	Apple, Programming with Objective-C: a method starts on its declaring line	
+o-block-method	methods.m	sumWith:	end	132	Apple, Programming with Objective-C: a method ends at the brace that closes its body	
+o-block-method	methods.m	sumWith:	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if, inside a block literal the method's body holds (as probe o-block)	
+o-block-method	methods.m	sumWith:	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the block raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
+o-block-method	methods.m	sumWith:	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the block	AO-N-CLOSURE-IF
+o-do-while	methods.m	split:	end	141	Apple, Programming with Objective-C: a method ends at the brace that closes its body	
+o-do-while	methods.m	split:	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a do-while in a method whose selector spans three lines	
+o-do-while	methods.m	split:	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; do while +1	
+o-do-while	methods.m	split:	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the do-while body	
+o-available	methods.m	modern	start	143	Apple, Programming with Objective-C: a method starts on its declaring line	
+o-available	methods.m	modern	end	148	Apple, Programming with Objective-C: a method ends at the brace that closes its body	
+o-available	methods.m	modern	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if; its condition is @available(...) (Clang Language Extensions, Objective-C @available)	
+o-available	methods.m	modern	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1	
+o-available	methods.m	modern	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if body	

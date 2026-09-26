@@ -118,3 +118,33 @@ static int held(id x) {
     }
     return 0;
 }
+
+@implementation Probe (More)
+
+- (int)sumWith:(int)n {
+    int (^add)(int) = ^(int k) {
+        if (k > n) {
+            return k;
+        }
+        return 0;
+    };
+    return add(1);
+}
+
+- (int)
+    split:(int)a
+     over:(int)b {
+    do {
+        a -= b;
+    } while (a > b);
+    return a;
+}
+
+- (int)modern {
+    if (@available(macOS 10.12, *)) {
+        return 1;
+    }
+    return 0;
+}
+
+@end
