@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from accuracy.analysis_oracles import ts_shapes_swift
 from accuracy.analysis_oracles.oracles import treesitter_cognitive as cognitive
 from accuracy.analysis_oracles.oracles import treesitter_counters as counters
 
@@ -855,6 +856,8 @@ SHAPES = [
     Shape("AO-SWIFT-COALESCE-COG", _all("swift"), COGNITIVE,
           lambda fn, c: has_type(fn, c, {"nil_coalescing_expression"})),
     Shape("AO-SWIFT-SUPER-INIT", _all("swift"), EVERY, near_init_expression),
+    *[Shape(ruling, _all("swift"), columns, holds)
+      for ruling, columns, holds in ts_shapes_swift.RULES],
 ]
 
 
@@ -879,5 +882,11 @@ def _loose_line(context: Context, start: int) -> bool:
     return start in lines
 
 
+def swift_extra_line(context: Context, start: int) -> bool:
+    """An init expression's phantom row (AO-SWIFT-SUPER-INIT), or a row
+    ts_shapes_swift explains: an accessor block or subscript, a phantom accessor word."""
+    return init_expression_line(context, start) or ts_shapes_swift.extra_line(context, start)
+
+
 EXTRA_ROWS = {"go": _loose_line, "rust": signature_line, "java": java_extra_line,
-              "objc": ivar_block_line, "swift": init_expression_line}
+              "objc": ivar_block_line, "swift": swift_extra_line}
