@@ -130,3 +130,41 @@ def test_recursion_costs_one_however_many_calls():
     source = ("def fib(n):\n    if n < 2:\n        return n\n"
               "    return fib(n - 1) + fib(n - 2)\n")
     assert _cognitive("a.py", source, "fib") == 2
+
+
+OVERLOADS = [  # (label, path, source, name, Sonar value)
+    ("Java delegates to a longer overload", "K.java",
+     "class K {\n    static String format(Date date) {\n        return format(date, false);\n    }\n}\n",
+     "K::format", 0),
+    ("Java calls itself", "K.java",
+     "class K {\n    static int depth(Node n) {\n        return n == null ? 0 : 1 + depth(n.parent);\n"
+     "    }\n}\n", "K::depth", 2),
+    ("Java varargs take any count", "K.java",
+     "class K {\n    static int sum(int... xs) {\n        return xs.length == 0 ? 0 : sum(1, 2, 3);\n"
+     "    }\n}\n", "K::sum", 2),
+    ("Swift delegates to a longer overload", "a.swift",
+     "func validate() -> Int {\n    return validate(statusCode: 200, strict: true)\n}\n", "validate", 0),
+    ("Swift leaves a default out", "a.swift",
+     "func fetch(_ url: String, retries: Int = 3) {\n    fetch(url)\n}\n", "fetch", 1),
+    ("C++ leaves a default out", "a.cpp",
+     "int f(int a, bool upper = false) {\n    return f(a);\n}\n", "f", 1),
+    ("C++ delegates to a longer overload", "a.cpp",
+     "void write(int a) {\n    write(a, 2);\n}\n", "write", 0),
+    ("C++ passes a call as its one argument", "a.cpp",
+     "int f(int a) {\n    return f(g(a, 1));\n}\n", "f", 1),
+    ("C++ takes no arguments", "a.cpp", "void spin() {\n    spin();\n}\n", "spin", 1),
+    ("C varargs", "a.c", "int g(int a, ...) {\n    return g(1, 2, 3);\n}\n", "g", 1),
+]
+
+
+@pytest.mark.parametrize("label,path,source,name,want", OVERLOADS, ids=[c[0] for c in OVERLOADS])
+def test_an_overload_with_another_arity_is_another_function(label, path, source, name, want):
+    assert _cognitive(path, source, name) == want
+
+
+def test_a_go_method_calls_itself_through_its_receiver():
+    source = ("package p\n\nfunc (c *Command) Traverse(args []string) int {\n\tif len(args) == 0 {\n"
+              "\t\treturn 0\n\t}\n\treturn c.Traverse(args[1:])\n}\n\n"
+              "func (c *Command) Name() string {\n\treturn c.parent.Name()\n}\n")
+    rows = [r.cognitive for r in analyze_source("a.go", source, note=False)]
+    assert rows == [2, 0]

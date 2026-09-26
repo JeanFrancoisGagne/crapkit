@@ -5,7 +5,10 @@ same rules with no second parse and no new dependency:
   +1 and +nesting for if / ternary / switch / loops / catch-except
   +1 flat for else / elif / elseif (an else-if chain costs one per link, no
   deepening)
-  +1 per boolean-operator run, +1 each time the operator alternates
+  +1 per sequence of logical operators, +1 each time the operator changes;
+  a call's arguments, an index and a negated group hold sequences of their
+  own, and a sequence runs on over line breaks (see `_follow_runs`); `??`
+  costs nothing
   +1 for a labeled break/continue or goto, +1 once when the body calls the
   function itself (see `_recursion` for what a call is in each language)
   try / finally / case labels / with are free; nesting rises inside the
@@ -64,6 +67,7 @@ The whitepaper's worked examples in tests/unit/test_cognitive.py are the spec.
 """
 from __future__ import annotations
 
+import math
 import re
 from typing import NamedTuple
 
@@ -135,6 +139,13 @@ _QUESTION = frozenset({"?"})
 class _Dialect(NamedTuple):
     """What one language's tokens mean to the rules below.
 
+    `rust`: Rust's own syntax, a `for` that loops over nothing, a signature
+    that never counts and a `?` that is no conditional (see _resolve_for,
+    _signature, _counts_question). `error_sets`: `||` merges two error sets
+    (Zig; see _error_set_merge). `conditions`: the reader's condition set,
+    read at each `?`, and set from the reader for each file (see
+    LizardExtension.__call__).
+
     `declarator_and`: a `&&` before the body's brace declares an rvalue
     reference (C, C++, Objective-C++). `shell_blocks`: blocks are delimited by words (shell).
     `messages`: a call to a method is a message, `[self sel:arg]`
@@ -143,14 +154,15 @@ class _Dialect(NamedTuple):
     says the name matches in any case (PowerShell). `word_ops`: the logical
     operators spelled as words. `elvis`: `a ?: b` is GNU's conditional with its
     middle operand omitted (C, C++, Objective-C). `openers` and `closers`: the
-    brackets a run of logical operators is kept per. `rust`: Rust's own syntax, a `for` that
-    loops over nothing, a signature that never counts and a `?` that is no
-    conditional (see _resolve_for, _signature, _counts_question).
-    `error_sets`: `||` merges two error sets (Zig; see _error_set_merge).
-    `conditions`: the reader's condition set, read at each `?`, and set from the
-    reader for each file (see LizardExtension.__call__).
+    brackets a run of logical operators is kept per. `overloads`: one name can
+    belong to several functions that differ in their parameters (C++, Java,
+    Swift), so a call to the name is a call to this one only when it passes a
+    number of arguments this one takes.
     """
 
+    rust: bool = False
+    error_sets: bool = False
+    conditions: frozenset = _QUESTION
     declarator_and: bool = False
     shell_blocks: bool = False
     messages: bool = False
@@ -160,9 +172,7 @@ class _Dialect(NamedTuple):
     elvis: bool = False
     openers: frozenset = _OPENERS
     closers: frozenset = _CLOSERS
-    rust: bool = False
-    error_sets: bool = False
-    conditions: frozenset = _QUESTION
+    overloads: bool = False
 
 
 # Keyed on the reader's exact class name, never on an issubclass test: JavaReader,
@@ -173,11 +183,13 @@ class _Dialect(NamedTuple):
 # table reads under the defaults.
 _DEFAULT_DIALECT = _Dialect()
 _RUST = _Dialect(rust=True)
-_ZIG = _Dialect(word_ops=_AND_OR, error_sets=True)
 _PYTHON = _Dialect(word_ops=_AND_OR, openers=_PYTHON_OPENERS, closers=_PYTHON_CLOSERS)
 _DIALECTS = {
-    "CLikeReader": _Dialect(declarator_and=True, word_ops=_AND_OR, elvis=True),
-    "ObjCReader": _Dialect(declarator_and=True, messages=True, word_ops=_AND_OR, elvis=True),
+    "CLikeReader": _Dialect(declarator_and=True, word_ops=_AND_OR, elvis=True, overloads=True),
+    "ObjCReader": _Dialect(declarator_and=True, messages=True, word_ops=_AND_OR, elvis=True,
+                           overloads=True),
+    "JavaReader": _Dialect(overloads=True),
+    "SwiftReader": _Dialect(overloads=True),
     "RustReader": _RUST,
     "CorrectedRustReader": _RUST,
     "ShellReader": _Dialect(shell_blocks=True, command_leads=_SHELL_LEADS),
@@ -185,18 +197,36 @@ _DIALECTS = {
                                  word_ops=_POWERSHELL_OPS),
     "PythonReader": _PYTHON,
     "PythonSignatureReader": _PYTHON,
-    "ZigReader": _ZIG,
-    "CorrectedZigReader": _ZIG,
+    "ZigReader": _Dialect(word_ops=_AND_OR),
 }
 
-# What a function calls itself through: nothing, one of these receivers, or its
-# own qualifier (`Calc::fact`, `K.fact`). A call through any other receiver is
-# another object's method with the same name.
+# A reader crapkit subclasses reads under the rules of the lizard reader it
+# corrects, and Zig's `||` merges error sets under either.
+_DIALECTS["ZigReader"] = _DIALECTS["ZigReader"]._replace(error_sets=True)
+_DIALECTS.update({f"Corrected{stock}": _DIALECTS.get(stock, _DEFAULT_DIALECT)
+                  for stock in ("GoReader", "SwiftReader", "ZigReader")})
+
+# What a function calls itself through: nothing, one of these receivers, its
+# own qualifier (`Calc::fact`, `K.fact`) or, in Go, its receiver's name. A call
+# through any other receiver is another object's method with the same name.
 _SELF_RECEIVERS = frozenset({"self", "this", "Self", "cls"})
 _MEMBER_ACCESS = frozenset({".", "->", "::", "?."})
 
 # How lizard qualifies a name: `detail::pow10`, `K::fact`, `outer.inner`.
 _QUALIFIER = re.compile(r"::|\.")
+
+# A Go method's receiver, which opens lizard's long name: `(c*Command)Traverse`.
+_GO_RECEIVER = re.compile(r"^\((\w+)")
+
+
+class _Own(NamedTuple):
+    """How a function is called, read off lizard's FunctionInfo once its body
+    starts, where the name is final (see _own)."""
+
+    name: str
+    bare: str               # the name without its qualifier
+    receivers: frozenset    # what a call to it can be made through
+    arity: tuple            # the fewest and the most arguments a call passes
 
 # Shell's block openers. `until` and `select` are here and not in `_COUNTING`
 # because no other language crapkit reads spells a loop that way; `case` is
@@ -231,12 +261,15 @@ _SIGNATURE_DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 class _FnState:
     __slots__ = ("total", "stack", "max_depth", "brace_depth", "line_indent",
                  "at_line_start", "pending", "else_pending", "question_pending",
-                 "bool_op", "name", "recursed", "body_started", "signature_depth",
+                 "bool_op", "fn", "own", "recursed", "body_started", "signature_depth",
                  "prev", "prev2", "label_check", "for_pending", "dialect", "call_pending",
+                 "call",
                  "messages", "runs", "run_break", "word_op")
 
-    def __init__(self, name: str, dialect: _Dialect = _DEFAULT_DIALECT):
+    def __init__(self, fn=None, dialect: _Dialect = _DEFAULT_DIALECT):
         self.dialect = dialect
+        self.fn = fn
+        self.own = None          # see _own
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
         self.max_depth = 0       # the deepest the stack has been
@@ -247,7 +280,6 @@ class _FnState:
         self.else_pending = False
         self.question_pending = False
         self.bool_op = None
-        self.name = name
         self.recursed = False
         self.body_started = False  # Python only: past the colon that ends the signature
         self.signature_depth = 0   # brackets open in that signature
@@ -256,6 +288,7 @@ class _FnState:
         self.label_check = False  # just saw break/continue
         self.for_pending = False  # Rust only: just saw a `for` that may be a binder's
         self.call_pending = False  # the name was just spelled; a `(` makes it a call
+        self.call = None          # that call's arguments so far; see _follow_call
         self.messages = []        # Objective-C: one entry per open `[`, see _message_token
         self.runs = []            # per open bracket: the run outside it; see _open_run
         self.run_break = False    # a line ended; the next token says whether the run did
@@ -314,16 +347,10 @@ def _state_for(states: dict, fn, last, dialect: _Dialect) -> _FnState:
     lizard named at the time. So a state that was not the last one stepped
     takes the last one's position, or the outer resumes with a stale
     `at_line_start` and reads its `if` as the ternary form, which opens nothing.
-
-    The name is read again at every token. lizard builds it while it reads the
-    declaration, so the name at a function's first token is often not its name:
-    empty in Go and PowerShell, `K::int` for a Java method returning int, the
-    class alone for `File File::open(`. By the body it is final.
     """
     state = states.get(fn)
     if state is None:
-        state = states[fn] = _FnState("", dialect)
-    state.name = getattr(fn, "name", "")
+        state = states[fn] = _FnState(fn, dialect)
     if last is not None and state is not last:
         state.line_indent = last.line_indent
         state.at_line_start = last.at_line_start
@@ -465,8 +492,19 @@ def _resolve_label(state: _FnState, token: str) -> None:
 
 
 def _resolve_call(state: _FnState, token: str) -> None:
+    """The name followed by `(` is a call. Where a name can be overloaded the
+    call is to this function only if it passes as many arguments as this one
+    takes, which is known at the closing bracket; see _follow_call. The pass
+    sees no types, so an overload that takes as many arguments of other types
+    still reads as a call to this one, and so does a call a macro qualifies
+    (`FMT_POSIX_CALL(close(fd))` expands to `::close`)."""
     state.call_pending = False
-    _count_recursion(state, token == "(")
+    if token != "(":
+        return
+    if state.dialect.overloads:
+        state.call = [len(state.runs) + 1, 0, -1]  # depth inside, commas, tokens
+    else:
+        _count_recursion(state, True)
 
 
 def _resolve_word_op(state: _FnState, token: str) -> None:
@@ -520,8 +558,34 @@ def _observe(state: _FnState, token: str) -> None:
     """What a body token tells the rules that follow expressions across tokens,
     whatever else the token does."""
     _follow_runs(state, token)
+    if state.call is not None:
+        _follow_call(state, token)
     if state.dialect.messages:
         _message_token(state, token)
+
+
+def _follow_call(state: _FnState, token: str) -> None:
+    """Count the arguments of a call to the function's own name, one per comma
+    at the call's own depth, and judge the call when its bracket closes.
+
+    `format(date)` inside `format(Date date, boolean millis)` delegates to
+    another overload, and one argument is not two. A statement that ends
+    inside the brackets, a lambda's block in an argument, leaves the count
+    unknown, and the call counts.
+    """
+    call = state.call
+    if len(state.runs) < call[0]:
+        state.call = None
+        _count_recursion(state, token not in state.dialect.closers or _fits(state, call))
+    elif token == "," and len(state.runs) == call[0]:
+        call[1] += 1
+    call[2] += 1
+
+
+def _fits(state: _FnState, call: list) -> bool:
+    passed = call[1] + 1 if call[2] else 0
+    fewest, most = _own(state).arity
+    return fewest <= passed <= most
 
 
 def _follow_runs(state: _FnState, token: str) -> None:
@@ -600,7 +664,7 @@ def _message_sent(state: _FnState, message: list) -> None:
     if message[:1] != ["self"] or len(message) < 2:
         return
     selector = "".join(message[2:]) or message[1]
-    _count_recursion(state, selector == state.name.replace(" ", ""))
+    _count_recursion(state, selector == _own(state).name.replace(" ", ""))
 
 
 def _signature(state: _FnState, token: str, is_python: bool) -> bool:
@@ -803,19 +867,45 @@ def _in_body(state: _FnState) -> bool:
 
 
 def _names_itself(state: _FnState, token: str) -> bool:
-    """The function's own name, reached through no receiver, through `self`,
-    `this`, `Self` or `cls`, or through its own qualifier. A `(` next makes it a
-    call; see _resolve_call."""
-    if not state.name.endswith(token):
-        return False  # most tokens; spares the split
-    parts = _QUALIFIER.split(state.name)
-    if token != parts[-1]:
+    """The function's own name, reached through no receiver or through one of
+    its own (see _SELF_RECEIVERS). A `(` next makes it a call; see
+    _resolve_call."""
+    own = _own(state)
+    if token != own.bare:
         return False
-    return state.prev not in _MEMBER_ACCESS or _own_receiver(state.prev2, parts)
+    return state.prev not in _MEMBER_ACCESS or state.prev2 in own.receivers
 
 
-def _own_receiver(receiver: str, parts: list) -> bool:
-    return receiver in _SELF_RECEIVERS or (len(parts) > 1 and receiver == parts[-2])
+def _own(state: _FnState) -> _Own:
+    """Read once, in the body. lizard builds the name while it reads the
+    declaration, so the name at a function's first token is often not its
+    name: empty in Go and PowerShell, `K::int` for a Java method returning int,
+    the class alone for `File File::open(`."""
+    if state.own is None:
+        state.own = _own_of(state.fn)
+    return state.own
+
+
+def _own_of(fn) -> _Own:
+    name = getattr(fn, "name", "")
+    parts = _QUALIFIER.split(name)
+    receivers = _SELF_RECEIVERS.union(parts[-2:-1],
+                                      _GO_RECEIVER.findall(getattr(fn, "long_name", "")))
+    return _Own(name, parts[-1], receivers, _arity(getattr(fn, "full_parameters", ())))
+
+
+def _arity(parameters) -> tuple:
+    """A parameter with a default can be left out, and a variadic one (`...`)
+    takes any number, as lizard spells them in C++, Java and Swift."""
+    kinds = [_parameter_kind(p.strip()) for p in parameters if p.strip()]
+    most = math.inf if "variadic" in kinds else len(kinds)
+    return kinds.count("required"), most
+
+
+def _parameter_kind(spelled: str) -> str:
+    if "..." in spelled:
+        return "variadic"
+    return "optional" if "=" in spelled else "required"
 
 
 def _commands_itself(state: _FnState, token: str) -> bool:
@@ -825,9 +915,10 @@ def _commands_itself(state: _FnState, token: str) -> bool:
 
 
 def _same_command(state: _FnState, token: str) -> bool:
+    name = _own(state).name
     if state.dialect.fold_case:
-        return token.casefold() == state.name.casefold()
-    return token == state.name
+        return token.casefold() == name.casefold()
+    return token == name
 
 
 def _count_recursion(state: _FnState, calls_itself: bool) -> None:
