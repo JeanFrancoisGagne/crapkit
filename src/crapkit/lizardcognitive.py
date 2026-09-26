@@ -71,11 +71,40 @@ from .lizardrust import implements_for
 
 _COUNTING = frozenset({"if", "for", "foreach", "while", "do", "catch", "except", "switch"})
 
+# The logical operators every language spells with symbols. `??` is not one: a
+# null-coalescing operator costs nothing (Sonar v1.7, Ignore shorthand). The
+# spelled-out operators depend on the language; see `_Dialect.word_ops`.
+_BOOL_OPS = frozenset({"&&", "||"})
+
+# `and` and `or` are operators in Python and Zig, and C++'s alternative tokens
+# for `&&` and `||`. Everywhere else they are identifiers.
+_AND_OR = frozenset({"and", "or"})
+
 # `-and` and `-or` are PowerShell's, where `&&` and `||` chain pipelines instead.
 # They reach here as single tokens only because crapkit's PowerShell reader adds
-# a `-\w+` rule to lizard's shared pattern; every other reader splits them into
-# `-` and a word, so widening this set moves no other language's score.
-_BOOL_OPS = frozenset({"&&", "||", "??", "and", "or", "-and", "-or"})
+# a `-\w+` rule to lizard's shared pattern.
+_POWERSHELL_OPS = frozenset({"-and", "-or"})
+
+# The brackets that hold a run of logical operators of their own: a call's
+# arguments, an index, a negated group. See _open_run. Python's braces are
+# brackets too; in every other language a brace opens a block.
+_OPENERS = frozenset({"(", "["})
+_CLOSERS = frozenset({")", "]"})
+_PYTHON_OPENERS = _OPENERS | {"{"}
+_PYTHON_CLOSERS = _CLOSERS | {"}"}
+
+# A bracket after one of these is a negated group, whose operators are a
+# sequence of their own: the paper scores `a && !(b && c)` 3.
+_NEGATIONS = frozenset({"!", "not", "-not"})
+
+# A bracket after a name is a call or an index, unless the name is one of these
+# words, which a plain group follows.
+_GROUPING_WORDS = frozenset({"if", "elif", "while", "for", "foreach", "switch", "match", "case",
+                             "when", "return", "yield", "await", "and", "or", "in", "is",
+                             "else", "do", "until", "catch", "assert", "throw"})
+
+# The tokens that end a statement, and every run open in it.
+_STATEMENT_ENDS = frozenset({";", "{", "}"})
 
 # The keywords that pay a FLAT +1 with no nesting increment, which is what the
 # whitepaper gives an else-if link. `elseif` is one word in PowerShell (and in
@@ -83,8 +112,6 @@ _BOOL_OPS = frozenset({"&&", "||", "??", "and", "or", "-and", "-or"})
 # +1 + nesting and a chain inside a loop would cost more than the same chain at
 # the top of the function.
 _ELSE_KEYWORDS = frozenset({"else", "elif", "elseif"})
-
-_RUN_RESETS = frozenset({";", ",", "{", "}"})
 
 # The words after which a shell or PowerShell word is a command. Both languages
 # call a function by naming it as a command, with no parentheses, so a function
@@ -113,9 +140,12 @@ class _Dialect(NamedTuple):
     `messages`: a call to a method is a message, `[self sel:arg]`
     (Objective-C). `command_leads`: a call is the function's name as a
     command, after one of these words (shell, PowerShell), and `fold_case`
-    says the name matches in any case (PowerShell). `rust`: Rust's own syntax, a
-    `for` that loops over nothing, a signature that never counts and a `?` that
-    is no conditional (see _resolve_for, _signature, _counts_question).
+    says the name matches in any case (PowerShell). `word_ops`: the logical
+    operators spelled as words. `elvis`: `a ?: b` is GNU's conditional with its
+    middle operand omitted (C, C++, Objective-C). `openers` and `closers`: the
+    brackets a run of logical operators is kept per. `rust`: Rust's own syntax, a `for` that
+    loops over nothing, a signature that never counts and a `?` that is no
+    conditional (see _resolve_for, _signature, _counts_question).
     `error_sets`: `||` merges two error sets (Zig; see _error_set_merge).
     `conditions`: the reader's condition set, read at each `?`, and set from the
     reader for each file (see LizardExtension.__call__).
@@ -126,6 +156,10 @@ class _Dialect(NamedTuple):
     messages: bool = False
     command_leads: frozenset | None = None
     fold_case: bool = False
+    word_ops: frozenset = frozenset()
+    elvis: bool = False
+    openers: frozenset = _OPENERS
+    closers: frozenset = _CLOSERS
     rust: bool = False
     error_sets: bool = False
     conditions: frozenset = _QUESTION
@@ -139,14 +173,18 @@ class _Dialect(NamedTuple):
 # table reads under the defaults.
 _DEFAULT_DIALECT = _Dialect()
 _RUST = _Dialect(rust=True)
-_ZIG = _Dialect(error_sets=True)
+_ZIG = _Dialect(word_ops=_AND_OR, error_sets=True)
+_PYTHON = _Dialect(word_ops=_AND_OR, openers=_PYTHON_OPENERS, closers=_PYTHON_CLOSERS)
 _DIALECTS = {
-    "CLikeReader": _Dialect(declarator_and=True),
-    "ObjCReader": _Dialect(declarator_and=True, messages=True),
+    "CLikeReader": _Dialect(declarator_and=True, word_ops=_AND_OR, elvis=True),
+    "ObjCReader": _Dialect(declarator_and=True, messages=True, word_ops=_AND_OR, elvis=True),
     "RustReader": _RUST,
     "CorrectedRustReader": _RUST,
     "ShellReader": _Dialect(shell_blocks=True, command_leads=_SHELL_LEADS),
-    "PowerShellReader": _Dialect(command_leads=_POWERSHELL_LEADS, fold_case=True),
+    "PowerShellReader": _Dialect(command_leads=_POWERSHELL_LEADS, fold_case=True,
+                                 word_ops=_POWERSHELL_OPS),
+    "PythonReader": _PYTHON,
+    "PythonSignatureReader": _PYTHON,
     "ZigReader": _ZIG,
     "CorrectedZigReader": _ZIG,
 }
@@ -195,7 +233,7 @@ class _FnState:
                  "at_line_start", "pending", "else_pending", "question_pending",
                  "bool_op", "name", "recursed", "body_started", "signature_depth",
                  "prev", "prev2", "label_check", "for_pending", "dialect", "call_pending",
-                 "messages")
+                 "messages", "runs", "run_break", "word_op")
 
     def __init__(self, name: str, dialect: _Dialect = _DEFAULT_DIALECT):
         self.dialect = dialect
@@ -219,6 +257,9 @@ class _FnState:
         self.for_pending = False  # Rust only: just saw a `for` that may be a binder's
         self.call_pending = False  # the name was just spelled; a `(` makes it a call
         self.messages = []        # Objective-C: one entry per open `[`, see _message_token
+        self.runs = []            # per open bracket: the run outside it; see _open_run
+        self.run_break = False    # a line ended; the next token says whether the run did
+        self.word_op = None       # `and`/`or` just seen; a `:` next makes it a selector part
 
 
 class LizardExtension:
@@ -295,8 +336,7 @@ def _step(state: _FnState, token: str, is_python: bool) -> None:
         return
     if token.startswith(("#", "//", "/*")):
         return  # a comment token must never read as code, whatever it contains
-    if is_python:
-        _python_dedent(state)
+    _settle_line(state, token, is_python)
     if not _resolve_lookbehinds(state, token, is_python):
         _consume(state, token, is_python)
     state.prev2 = state.prev
@@ -310,10 +350,36 @@ def _line_event(state: _FnState, token: str) -> None:
     first real token of the line arrives."""
     if "\n" in token:
         state.at_line_start = True
-        state.bool_op = None
+        state.run_break = _may_end_statement(state)
         state.line_indent = len(token) - token.rfind("\n") - 1
     elif state.at_line_start:
         state.line_indent += len(token)
+
+
+def _may_end_statement(state: _FnState) -> bool:
+    """Whether a line break can end the run of logical operators.
+
+    Not inside a bracket, and not after an operator or a backslash, which
+    continue the expression on the next line. Whether a line that starts with
+    an operator continues it is for that line's first token to say; see
+    _settle_line.
+    """
+    after_operator = _is_bool_op(state, state.prev) or state.prev == "\\"
+    return not state.runs and not after_operator
+
+
+def _is_bool_op(state: _FnState, token: str) -> bool:
+    return token in _BOOL_OPS or token in state.dialect.word_ops
+
+
+def _settle_line(state: _FnState, token: str, is_python: bool) -> None:
+    """A line's first real token closes the blocks a Python dedent left and ends
+    the run of logical operators, unless the token continues it."""
+    if is_python:
+        _python_dedent(state)
+    if state.run_break:
+        state.run_break = False
+        state.bool_op = state.bool_op if _is_bool_op(state, token) else None
 
 
 def _python_dedent(state: _FnState) -> None:
@@ -328,12 +394,9 @@ def _resolve_lookbehinds(state: _FnState, token: str, is_python: bool) -> bool:
     """Signals needing one token of hindsight. True = this token is consumed."""
     if state.for_pending:
         _resolve_for(state, token, is_python)
-    if state.question_pending:
-        _resolve_question(state, token, is_python)
-    if state.label_check:
-        _resolve_label(state, token)
-    if state.call_pending:
-        _resolve_call(state, token)
+    _resolve_words(state, token)
+    if state.question_pending and _resolve_question(state, token, is_python):
+        return True
     if state.else_pending:
         return _resolve_else(state, token)
     return False
@@ -354,10 +417,37 @@ def _resolve_else(state: _FnState, token: str) -> bool:
     return token == "if"
 
 
-def _resolve_question(state: _FnState, token: str, is_python: bool) -> None:
+def _resolve_words(state: _FnState, token: str) -> None:
+    """What the word just before this token turned out to be."""
+    if state.label_check:
+        _resolve_label(state, token)
+    if state.call_pending:
+        _resolve_call(state, token)
+    if state.word_op:
+        _resolve_word_op(state, token)
+
+
+def _resolve_question(state: _FnState, token: str, is_python: bool) -> bool:
+    """A `?` is a conditional unless the token after it says otherwise. True when
+    this token is the second `?` of `??` (or `??=`), which lizard's JavaScript
+    and PowerShell tokenizers split in two: a null-coalescing operator costs
+    nothing (Sonar v1.7, Ignore shorthand), so the pair is consumed."""
     state.question_pending = False
-    if token not in (".", ":", ")"):  # optional chaining / optional type / trailing
+    if token == "?":
+        return True
+    if _is_conditional(state, token):
         state.total += 1 + _nesting(state, is_python)
+    return False
+
+
+def _is_conditional(state: _FnState, token: str) -> bool:
+    """`?.` is optional chaining, `?)` and `?:` optional marks in TypeScript. In
+    C, C++ and Objective-C, `?:` is GCC's conditional with its middle operand
+    omitted, `a ?: b` for `a ? a : b` (GCC manual sec. 6.8), and costs what a
+    ternary costs."""
+    if token == ":":
+        return state.dialect.elvis
+    return token not in (".", ")")
 
 
 def _resolve_for(state: _FnState, token: str, is_python: bool) -> None:
@@ -377,6 +467,14 @@ def _resolve_label(state: _FnState, token: str) -> None:
 def _resolve_call(state: _FnState, token: str) -> None:
     state.call_pending = False
     _count_recursion(state, token == "(")
+
+
+def _resolve_word_op(state: _FnState, token: str) -> None:
+    """An `and` or `or` followed by `:` names an Objective-C selector part
+    (`- (int)join:(int)a and:(int)b`); anything else makes it the operator."""
+    op, state.word_op = state.word_op, None
+    if token != ":":
+        _bool_op(state, op)
 
 
 def _is_label(state: _FnState, token: str) -> bool:
@@ -412,6 +510,8 @@ def _consume(state: _FnState, token: str, is_python: bool) -> None:
         _brace(state, token)
     elif token in _BOOL_OPS:
         _bool_op(state, token)
+    elif token in state.dialect.word_ops:
+        state.word_op = token  # the next token decides; see _resolve_word_op
     else:
         _keywords(state, token, is_python)
 
@@ -419,10 +519,57 @@ def _consume(state: _FnState, token: str, is_python: bool) -> None:
 def _observe(state: _FnState, token: str) -> None:
     """What a body token tells the rules that follow expressions across tokens,
     whatever else the token does."""
-    if token in _RUN_RESETS:
-        state.bool_op = None
+    _follow_runs(state, token)
     if state.dialect.messages:
         _message_token(state, token)
+
+
+def _follow_runs(state: _FnState, token: str) -> None:
+    """Keep one run of logical operators per open bracket.
+
+    A comma ends the run it sits in, which is one argument's or one element's.
+    A statement's end ends every run. See _open_run and _close_run for the
+    brackets.
+    """
+    if token in state.dialect.openers:
+        _open_run(state)
+    elif token in state.dialect.closers:
+        _close_run(state)
+    elif token == ",":
+        state.bool_op = None
+    elif token in _STATEMENT_ENDS:
+        state.bool_op = None
+        state.runs.clear()
+
+
+def _open_run(state: _FnState) -> None:
+    """A bracket after a name (a call's arguments, an index) or after a negation
+    holds a run of its own, and the paper counts `a && !(b && c)` as two runs.
+    Any other bracket is a plain group, which continues the run outside it:
+    `a && (b && c)` is one."""
+    grouping = _groups(state.prev)
+    state.runs.append((state.bool_op, grouping))
+    if not grouping:
+        state.bool_op = None
+
+
+def _groups(prev: str) -> bool:
+    if prev in _NEGATIONS:
+        return False
+    if prev in _GROUPING_WORDS:
+        return True
+    return not (prev[:1].isalnum() or prev[:1] in ("_", "$", ")", "]"))
+
+
+def _close_run(state: _FnState) -> None:
+    """The run outside the bracket resumes. A group opened where no run was
+    open hands its own run out instead, so `(a && b) && c` is one run."""
+    if not state.runs:
+        state.bool_op = None
+        return
+    outer, grouping = state.runs.pop()
+    if outer is not None or not grouping:
+        state.bool_op = outer
 
 
 def _message_token(state: _FnState, token: str) -> None:
