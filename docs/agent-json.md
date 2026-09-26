@@ -1566,7 +1566,9 @@ directory, and GitHub Copilot CLI starts a plugin's server in
 When no session record names a folder either (a Copilot CLI older than the
 `COPILOT_AGENT_SESSION_ID` variable, or a config directory set with the deprecated
 `--config-dir` instead of `COPILOT_HOME`), the `initialize` instructions and each tool
-result ask the model to pass the workspace's absolute path as the tool's `repo` argument:
+result ask the model to pass the workspace's absolute path as the tool's `repo` argument.
+Copilot CLI 1.0.88 leaves a server's instructions out of the model's prompt in a
+`copilot -p` session, so there the tool result is the text the model reads:
 
 ```
 this crapkit MCP server started in /home/me/.copilot/installed-plugins/crapkit/crapkit, the plugin's install directory, not in your workspace, and the client names no workspace folders. Pass this tool a `repo` argument with the absolute path of the repo you want scored.

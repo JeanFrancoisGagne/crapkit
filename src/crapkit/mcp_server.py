@@ -1964,10 +1964,12 @@ class _Session:
         return {key: value for key, value in result.items() if key != "structuredContent"}
 
     def hint(self) -> str:
-        """What the instructions add when nothing on the wire can name the
-        workspace: GitHub Copilot CLI starts a plugin's server in the plugin's
-        install directory and declares no roots."""
-        if self.plugin and not self.capable and not os.environ.get("COPILOT_AGENT_SESSION_ID"):
+        """What the instructions add when nothing names the workspace: GitHub
+        Copilot CLI starts a plugin's server in the plugin's install directory
+        and declares no roots, and a session id whose record names no folder
+        (a config directory set with --config-dir) names nothing either, the
+        same test each tool result makes."""
+        if self.plugin and not self.capable and not self._session_folder():
             return (" This server started in its plugin's install directory, not in your "
                     "workspace, and the client names no workspace folders: pass a `repo` "
                     "argument with the absolute path of the repo you want scored on every call.")

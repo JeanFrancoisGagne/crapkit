@@ -261,6 +261,9 @@ def test_a_copilot_session_folder_without_a_config_is_named(tmp_path, client):
 
 
 def test_a_copilot_session_without_a_record_asks_for_repo(tmp_path, client):
+    """Copilot gives the server a session id whose record names no folder when
+    the config directory was set with --config-dir instead of COPILOT_HOME, so
+    the instructions ask for `repo` as each answer does."""
     env = {**_copilot_session(tmp_path, "cwd: x"), "COPILOT_AGENT_SESSION_ID": "gone"}
     session = client(Path(env["PLUGIN_ROOT"]), plugin=env)
 
@@ -268,6 +271,7 @@ def test_a_copilot_session_without_a_record_asks_for_repo(tmp_path, client):
 
     assert text.startswith(f"this crapkit MCP server started in {Path(env['PLUGIN_ROOT']).resolve()}, "
                            "the plugin's install directory"), text
+    assert "pass a `repo` argument" in session.init["result"]["instructions"]
 
 
 def test_a_repo_the_server_was_started_with_is_never_replaced(tmp_path, client):

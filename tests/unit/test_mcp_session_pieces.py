@@ -77,7 +77,8 @@ def test_a_method_that_is_not_a_string_is_unknown(tmp_path):
     assert reply["error"]["code"] == -32601
 
 
-def test_a_plugin_session_without_roots_says_to_pass_repo(tmp_path):
+def test_a_plugin_session_without_roots_says_to_pass_repo(monkeypatch, tmp_path):
+    monkeypatch.delenv("COPILOT_AGENT_SESSION_ID", raising=False)
     session = mcp_server._Session(tmp_path, plugin=True)
     session.greet({"capabilities": {}})
 
@@ -85,6 +86,25 @@ def test_a_plugin_session_without_roots_says_to_pass_repo(tmp_path):
     assert session.ask() is None
     assert session.missing()["content"][0]["text"].startswith(
         f"this crapkit MCP server started in {tmp_path}, the plugin's install directory")
+
+
+@pytest.mark.parametrize("record, hinted", [(None, True), ("cwd: {folder}", False)])
+def test_the_instructions_ask_for_repo_only_when_no_session_record_names_a_folder(
+        monkeypatch, tmp_path, record, hinted):
+    """A Copilot CLI session id alone names nothing: with --config-dir its
+    record is not under COPILOT_HOME, and each tool result asks for `repo`."""
+    home = tmp_path / "copilot"
+    if record:
+        path = home / "session-state" / "s1" / "workspace.yaml"
+        path.parent.mkdir(parents=True)
+        path.write_text(record.format(folder=tmp_path) + "\n", encoding="utf-8")
+    monkeypatch.setenv("COPILOT_HOME", str(home))
+    monkeypatch.setenv("COPILOT_AGENT_SESSION_ID", "s1")
+    session = mcp_server._Session(tmp_path, plugin=True)
+    session.greet({"capabilities": {}})
+
+    assert ("pass a `repo` argument" in session.hint()) is hinted
+    assert ("the plugin's install directory" in session.missing()["content"][0]["text"]) is hinted
 
 
 def test_a_server_started_in_its_plugin_directory_is_not_walked_up_from(monkeypatch, tmp_path):
