@@ -1,5 +1,7 @@
-"""No reader in src/ decodes bytes from outside crapkit with a strict codec,
-and none but repotext picks the policy a lenient decode uses.
+"""No reader in src/ or in the Action's comment builder decodes bytes from
+outside crapkit with a strict codec, and none but repotext picks the policy a
+lenient decode uses. tools/action/comment.py imports crapkit and reads what the
+Action's steps wrote (git's error, the changed names), so the rule covers it.
 
 git's free text, a runner's report, an MCP frame, a source file and a name the
 OS hands over can each hold a byte that is not UTF-8. A strict decode of one
@@ -29,6 +31,7 @@ from pathlib import Path
 import pytest
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "crapkit"
+ACTION = Path(__file__).resolve().parents[2] / "tools" / "action"
 RULE_HOMES = frozenset({"repotext.py"})
 SUBPROCESS_CALLS = frozenset({"run", "Popen", "check_output", "call", "check_call"})
 
@@ -222,6 +225,17 @@ def test_each_allowed_read_is_one_src_still_makes():
     assert not stale, (
         "ALLOWED names a strict read src/ no longer makes; drop the entry:\n"
         + "\n".join(f"  {site}" for site in stale))
+
+
+def test_the_action_builder_reads_through_repotext_kinds():
+    """The builder spelled its own policies: `replace` for changed names and
+    `ignore` for the cut request body, and a strict read of git's error."""
+    found = strict_reads(ACTION) + policy_sites(ACTION)
+
+    assert (ACTION / "comment.py").is_file()
+    assert not found, (
+        "the Action's builder reads bytes without a repotext kind; call the kind for its source:\n"
+        + "\n".join(f"  {site}" for site in found))
 
 
 def test_each_rule_home_the_scan_skips_is_there():

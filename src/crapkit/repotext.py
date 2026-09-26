@@ -28,7 +28,9 @@ where a UTF-16 file was a traceback instead of a sentence.
   is dropped and each byte that is not UTF-8 reads as U+FFFD. git, Node and a
   browser read such bytes the same way, and one of them in an author name
   inside the churn window used to stop every command that reads churn. A
-  child's stdin is written by `child_input`.
+  child's stdin is written by `child_input`. The Action's comment builder
+  reads the files its steps wrote this way too, and cuts the comment for
+  GitHub's byte limit with `utf8_head`.
 - A file whose own reader decodes UTF-8 and knows no byte-order mark (a
   plugin's manifest, hooks file and installed_plugins.json, which Claude Code
   reads with Node; a pytest.ini, tox.ini, setup.cfg or pyproject.toml, which
@@ -271,6 +273,13 @@ def child_input(text: str) -> bytes:
     an OS string carried in, a path or a reason in bytes that are not UTF-8,
     reads as U+FFFD instead of ending the command."""
     return os_text(text).encode("utf-8")
+
+
+def utf8_head(text: str, size: int) -> str:
+    """The longest start of `text` whose UTF-8 bytes fit in `size`, for a
+    receiver that counts bytes (GitHub takes a comment of 65,536). A character
+    the cut would split is left out whole, never sent as U+FFFD."""
+    return text.encode("utf-8")[:size].decode("utf-8", "ignore")
 
 
 def plain_utf8(data: bytes) -> str:

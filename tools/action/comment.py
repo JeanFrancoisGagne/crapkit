@@ -27,6 +27,7 @@ from pathlib import Path
 
 from crapkit.named import first_few
 from crapkit.plaintext import strip_escapes, strip_junit_escapes
+from crapkit.repotext import lenient, plain_utf8, utf8_head
 
 # The line that makes the comment findable. The action greps for it to decide
 # between a POST and a PATCH, so a second spelling means a comment per push
@@ -77,11 +78,12 @@ _CONTROLS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 def _read_text(path: str | None) -> str:
     """A file the action left behind, or "" when it did not: a step that
     failed leaves an empty redirect target, a step that was skipped leaves no
-    file at all, and the comment reads both as "nothing here"."""
+    file at all, and the comment reads both as "nothing here". git's error
+    can hold a byte that is not UTF-8, which reads as U+FFFD."""
     if not path:
         return ""
     try:
-        return Path(path).read_text(encoding="utf-8")
+        return lenient(Path(path).read_bytes())
     except OSError:
         return ""
 
@@ -118,7 +120,7 @@ def _changed_paths(args: argparse.Namespace) -> list[str]:
         raw = Path(args.changed_z).read_bytes()
     except OSError:
         return []
-    return [path for path in raw.decode("utf-8", "replace").split("\0") if path]
+    return [path for path in plain_utf8(raw).split("\0") if path]
 
 
 def _base_reason(sha_path: str | None, reason_path: str | None) -> str | None:
@@ -544,7 +546,7 @@ def request_text(text: str) -> str:
     raw = text.encode("utf-8")
     if len(raw) <= _BODY_LIMIT:
         return text
-    kept = raw[:_BODY_LIMIT - len(_CUT_NOTE) - 1].decode("utf-8", "ignore")
+    kept = utf8_head(text, _BODY_LIMIT - len(_CUT_NOTE) - 1)
     return kept[:kept.rfind("\n") + 1] + "\n" + _CUT_NOTE
 
 
