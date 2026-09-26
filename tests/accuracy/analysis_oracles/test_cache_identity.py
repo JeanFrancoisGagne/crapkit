@@ -10,12 +10,19 @@ analysis version), and a fingerprint change drops the whole cache.
 A warm run must equal the cold one after every kind of change: an edit, a
 touch that keeps the bytes, a rename, equal bytes under two languages, a
 version bump, and an edit that lands while crapkit hashes the file
-(test_cache_race_seam.py, which imports crapkit for that seam). The
+(test_cache_race_seam.py, which wraps crapkit's hash for that seam). The
 version-bump check first shows the cache is read (poisoned entries under the
 current fingerprint come back), so a pass is not a cache nobody consulted.
+Records the reader before whole template literals wrote (R45, stamped
+`cache=5`) read cold too.
+
+Self-diff: the cache file crapkit streams one entry at a time equals, byte for
+byte, json.dumps(document, sort_keys=True) of the same document, and holds the
+records the same run exported.
 """
 from __future__ import annotations
 
+import hashlib
 from importlib import metadata
 import json
 import os
@@ -115,6 +122,11 @@ def test_warm_equals_cold_on_every_probe_file(probe_files, tmp_path):
 SMALL = {"a.py": "def a(x):\n    if x:\n        return 1\n    return 2\n",
          "b.ts": "export function b(x: number): number {\n  return x > 0 ? 1 : 2;\n}\n",
          "c.go": "package c\n\nfunc C(x int) int {\n\tif x > 0 {\n\t\treturn 1\n\t}\n\treturn 2\n}\n"}
+TWO_LANGUAGES = "function f(a) {\n  if (a) {\n    return 1;\n  }\n  return 2;\n}\n"
+
+
+def _edit(text: str, number: int) -> str:
+    return text + f"\n\ndef added{number}(x):\n    if x:\n        return {number}\n    return 0\n"
 
 
 @pytest.fixture
@@ -154,6 +166,89 @@ def test_a_torn_cache_file_reads_cold(warmed, tmp_path):
     assert warmed.run().rows == _cold_of(warmed, tmp_path / "cold").rows
 
 
+# --- a cache from the reader before whole template literals (R45) ---------------------------------
+
+# docs/upgrading.md, version 11: lizard ended a template at the first backtick
+# inside it, so a template nested in another's `${...}` hid every function after
+# it, folded into the function around it. That reader stamped its cache `cache=5`
+# (the fingerprint names the cache version), and read at 89ee5b8 it lists `a`
+# alone, lines 1 to 10. Records it wrote must read cold under today's reader.
+NESTED = ("export function a(x) {\n  return `outer ${`inner ${x}`} tail`;\n}\n\n"
+          "export function b(y) {\n  if (y > 0) {\n    return 1;\n  }\n  return 2;\n}\n")
+# (name, start, end, ccn) read off NESTED; ccn is NIST SP 500-235 sec. 4.1, 1 + one if.
+NESTED_HAND = [("a", 1, 3, 1), ("b", 5, 10, 2)]
+END = 3  # FunctionRecord column 3: the last line
+
+
+def _folded(cache: dict) -> None:
+    """Each entry as the older reader wrote it: one record over the whole file."""
+    for key, records in cache["entries"].items():
+        cache["entries"][key] = [records[0][:END] + [records[-1][END]] + records[0][END + 1:]]
+
+
+def _older_stamp(cache: dict) -> None:
+    cache["fp"], count = re.subn(r"(^|;)cache=\d+", r"\g<1>cache=5", cache["fp"])
+    assert count == 1, f"the fingerprint names no cache version: {cache['fp']}"
+
+
+def _hand(measured) -> list:
+    return [(analysis_inventory.bare(row["long_name"]), row["start"], row["end"], row["ccn"])
+            for row in measured.rows]
+
+
+def test_a_cache_from_the_reader_before_whole_templates_reads_cold(tmp_path):
+    warm = Warm({"mod.ts": NESTED}, tmp_path / "warm")
+    cold_run = warm.run()  # the repo's first run has no cache: a cold run
+    assert _hand(cold_run) == NESTED_HAND
+    _rewrite_cache(warm.root, _folded)
+    # The precondition: a folded entry under today's stamp is served.
+    assert [row[0] for row in _hand(warm.run())] == ["a"]
+    _rewrite_cache(warm.root, lambda cache: (_folded(cache), _older_stamp(cache)))
+    assert warm.run().rows == cold_run.rows
+
+
+# --- the streamed save against the whole-document dump -------------------------------------------
+
+def _document_dump(raw: bytes) -> bytes:
+    """What json.dumps(document, sort_keys=True) writes for the same document:
+    the whole-document form the streamed writer must reproduce byte for byte
+    (src/crapkit/analyze.py _write_entries)."""
+    return json.dumps(json.loads(raw.decode("utf-8")), sort_keys=True).encode("utf-8")
+
+
+# FunctionRecord's first twelve columns: the export's columns after `scope`, in its order.
+RECORD = ("path", "long_name", "start", "end", "ccn_std", "ccn_mod", "ccn", "nloc", "params",
+          "nesting", "cognitive", "occurrence")
+
+
+def _entries_as_rows(save: bytes, root: Path) -> list:
+    """Every cached record, after checking its entry key ends in the SHA-256 of
+    the bytes its path holds (README: cached by content hash)."""
+    rows = []
+    for key, records in json.loads(save)["entries"].items():
+        for record in records:
+            digest = hashlib.sha256((root / record[0]).read_bytes()).hexdigest()
+            assert key.endswith(":" + digest), (key, record[0])
+            rows.append(tuple(record[: len(RECORD)]))
+    return sorted(rows)
+
+
+def test_the_streamed_cache_equals_the_whole_document_dump(warmed):
+    """A cold save, then a save after an edit and a second language: each holds
+    one entry per distinct reader and content, in the dump's exact bytes, and
+    the records the run exported."""
+    saves = [(warmed.root / CACHE).read_bytes()]
+    warmed.write("a.py", _edit(SMALL["a.py"], 3))
+    warmed.write("d.js", TWO_LANGUAGES)
+    warmed.write("d.ts", TWO_LANGUAGES)
+    measured = warmed.run()
+    saves.append((warmed.root / CACHE).read_bytes())
+    assert [len(json.loads(save)["entries"]) for save in saves] == [3, 5]
+    assert saves == [_document_dump(save) for save in saves]
+    exported = sorted(tuple(row[column] for column in RECORD) for row in measured.rows)
+    assert _entries_as_rows(saves[-1], warmed.root) == exported
+
+
 # --- equal bytes under two readers (R30) --------------------------------------------------------
 
 # An unparenthesized arrow body with `<` before a comma: a comparison in
@@ -182,13 +277,6 @@ def test_the_two_readers_read_the_ambiguous_bytes_differently(tmp_path):
 
 
 # --- a scripted walk through every change kind (push) -----------------------------------------------
-
-TWO_LANGUAGES = "function f(a) {\n  if (a) {\n    return 1;\n  }\n  return 2;\n}\n"
-
-
-def _edit(text: str, number: int) -> str:
-    return text + f"\n\ndef added{number}(x):\n    if x:\n        return {number}\n    return 0\n"
-
 
 def _bump(cache: dict) -> None:
     cache["fp"] += "-older"
