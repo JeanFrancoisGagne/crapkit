@@ -247,6 +247,26 @@ def test_a_swift_comparison_that_is_its_whole_run_still_mutates():
     assert mutated == ["let ok = xs |> count > n", "let ok = xs |> count < n"]
 
 
+@pytest.mark.parametrize("line, mutated", [
+    ("if a == b { f() }\n", ["if a != b { f() }"]),
+    ("if a === b { f() }\n", ["if a !== b { f() }"]),
+    ("let t = a == b ? 1 : 2\n", ["let t = a != b ? 1 : 2"]),
+    ("func f<T>(x: T) -> Bool { x == y }\n", ["func f<T>(x: T) -> Bool { x != y }"]),
+])
+def test_a_swift_equality_mutates(line, mutated):
+    """Pygments' Swift lexer calls `=` punctuation, so `a == b`, the commonest
+    comparison in Swift, grew no mutant, and a test that never checked it read
+    as enough. A generic's angles on the same line stay out of it."""
+    assert [m.mutated for m in file_mutants(line, None, "swift")] == mutated
+
+
+@pytest.mark.parametrize("line", ["var y = 1\n", "let e = a==-1\n", "for i in 0..<b { f() }\n"])
+def test_a_swift_assignment_or_undeclared_run_makes_no_equality_mutant(line):
+    """One `=` assigns. `a==-1` is one undeclared operator `==-` to the Swift
+    lexer and does not compile."""
+    assert file_mutants(line, None, "swift") == []
+
+
 # --- a connective that opens an operand, and an operator's own name ------------
 
 @pytest.mark.parametrize("line", [
@@ -347,6 +367,7 @@ def test_a_cpp_connective_after_an_operand_still_mutates(line, mutated):
     ("cpp", "struct A { bool operator==(const A& o) const; };\n"),
     ("objectivec", "struct A { bool operator&&(const A& o) const; };\n"),
     ("swift", "struct A { static func < (l: A, r: A) -> Bool { f() } }\n"),
+    ("swift", "struct A { static func == (l: A, r: A) -> Bool { f() } }\n"),
 ])
 def test_a_declared_operator_is_a_name_not_an_operation(language, line):
     """`bool operator<=(...)` declares a different operator, so every caller of

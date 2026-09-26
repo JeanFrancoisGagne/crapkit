@@ -40,6 +40,15 @@
   files can gain mutants, and their kill rates can move either way. No CRAP score
   changes.
 
+### `mutate` flips Swift's `==` and `===`
+
+- Pygments' Swift lexer calls `=` punctuation, and `mutate` looked only at operators
+  there, so `a == b` and `a === b` grew no mutant, and a Swift test that never checked
+  an equality read as enough. Both now mutate, to `a != b` and `a !== b`. An unspaced
+  `a<b` still makes no mutant: a `<` before a name is also how Swift opens a generic's
+  angles (`Foo<Bar>`). Swift files gain mutants, and their kill rates can move either
+  way. No CRAP score changes.
+
 ### Recovery recognizes an abandoned temporary mutation run of any size
 
 - Startup recovery and `crapkit clean` refused a temporary mutation receipt that recorded

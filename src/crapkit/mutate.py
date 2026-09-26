@@ -247,7 +247,7 @@ def _ends_an_operand(kind, value: str, language: str) -> bool:
 def _code_masks(text: str, lexed: list, language: str) -> tuple[str, str]:
     mask, syntax = [" "] * len(text), [" "] * len(text)
     for at, kind, value in lexed:
-        if _code_kind(kind, language):
+        if _code_kind(kind, value, language):
             mask[at:at + len(value)] = value
         if _syntax_kind(kind):
             syntax[at:at + len(value)] = value
@@ -349,10 +349,20 @@ def _record_angles(tokens: list, start: int, end: int, kind: str, protected: set
         ambiguous.update((tokens[start][0], tokens[end][0]))
 
 
-def _code_kind(kind, language: str) -> bool:
+def _code_kind(kind, value: str, language: str) -> bool:
     from pygments.token import Keyword, Name, Operator, Punctuation
 
-    return kind in Keyword or kind in Name.Builtin or kind in Operator or (language == "go" and kind in Punctuation)
+    if kind in Punctuation:
+        return _operator_punctuation(value, language)
+    return kind in Keyword or kind in Name.Builtin or kind in Operator
+
+
+def _operator_punctuation(value: str, language: str) -> bool:
+    """Pygments calls every Go operator punctuation, and Swift's `=`, so without
+    this `a == b` and `a === b` grew no mutant in Swift. Only the `=` joins: a
+    Swift `<` before a name is punctuation too, and there it opens a generic's
+    angles as often as it compares (`Foo<Bar>`, `a<b`)."""
+    return language == "go" or (language == "swift" and value == "=")
 
 
 def _line_starts(text: str) -> list[int]:
