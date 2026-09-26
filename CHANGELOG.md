@@ -1440,9 +1440,10 @@ is rebuilt at the first `duplication` or `brief` after upgrading.
   everywhere: a Python `**options` or `// 2` line, a C `*out = x;` or `#define` line, a
   Rust `#[attr]` line, a JavaScript generator's `*name() {` line. Two functions that
   differ in one such line share 5 of 10 shingles and read 8 of 9, 0.8889, a pair at the
-  default 0.8. Python leaves out `#` lines and a line that opens or closes a docstring;
-  shell leaves out `#`; PowerShell `#` and `<# #>`; Zig `//`; every other language `//`
-  and `/* */`, where a block comment's lines without a leading `*` were read as code.
+  default 0.8. Python leaves out `#` lines and, as before, a line starting with three
+  quotes; shell leaves out `#`; PowerShell `#` and `<# #>`; Zig `//`; every other
+  language `//` and `/* */`, where a block comment's lines without a leading `*` were
+  read as code.
 
 ## 0.8.0 — 2026-09-23
 

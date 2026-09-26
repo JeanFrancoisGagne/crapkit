@@ -62,8 +62,8 @@ def _comments(line: tuple[str, ...], block: tuple[str, str] | None = None) -> _C
 
 # A comment is what the language's reference calls one, so a Python `// 2` or
 # `**kwargs` line, a C `*out = x;` or `#define` line and a Rust `#[attr]` line
-# are code. Python's docstrings are string literals; a line that opens or
-# closes one is left out by convention, as it always was.
+# are code. Python's docstrings are string literals; a line starting with
+# three quotes is left out all the same, as it always was.
 _C_FAMILY = _comments(("//",), ("/*", "*/"))
 _COMMENTS = {"python": _comments(("#", '"""', "'''")), "shell": _comments(("#",)),
              "powershell": _comments(("#",), ("<#", "#>")), "zig": _comments(("//",))}

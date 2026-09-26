@@ -57,7 +57,7 @@ def own_lines(function, rows, file_lines):
 
 def oracle_lines(function, rows, sources):
     """Every source here is Python: a comment line starts with #, and a line
-    opening or closing a docstring is left out too."""
+    starting with three quotes is left out too."""
     lines = own_lines(function, rows, sources[function.path].splitlines())
     return ["".join(line.split()) for line in lines if line.strip()
             and not line.strip().startswith(("#", '"""', "'''"))]
