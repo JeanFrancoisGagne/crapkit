@@ -75,9 +75,10 @@ def _fresh_index_before_crapkit(request, monkeypatch):
     copied repo, a file rewritten with the same bytes) the worktree `git diff`
     among crapkit's concurrent lane reads rewrites .git/index, and on Windows
     a read that opens it during the rename fails: the lane stamps no proof or
-    reads stale, about once in a hundred runs of a check here (V12,
-    calc-bug verdict-model-8). V12's check pins that race; the others read
-    only their own construct."""
+    reads stale (V12, calc-bug verdict-model-8). That failed 5 of 360 runs of
+    test_lane_inputs_take_the_scope_path_spelling[plain] at -n 4 on Windows
+    before this refresh and none of 240 after. V12's check pins the race; the
+    others read only their own construct."""
     if request.function in _stat_only_checks():
         return
     run = drive.Driver.run
