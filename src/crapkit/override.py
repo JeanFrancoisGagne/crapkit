@@ -124,8 +124,15 @@ def _alert_or_refuse(alert_command: str, root: Path, violations: list[GateViolat
     # shell string: function names come from analyzed source and are not shell-safe.
     code, printed = send_alert(alert_command, root, line + "\n")
     if code != 0:
-        raise ToolError(f"override alert command failed (exit {code}): "
-                        f"{printed} - no alert, no override; {ALERT_FIX}")
+        raise ToolError(f"{alert_failed('override', code, printed)} - no alert, no override; {ALERT_FIX}")
+
+
+def alert_failed(what: str, code: int, printed: str) -> str:
+    """The head of a failed alert's refusal: the exit code, then what the
+    command printed, or that it printed nothing. An empty quote left the
+    reader a colon and two spaces where the reason belongs."""
+    said = f": {printed}" if printed else " and printed nothing"
+    return f"{what} alert command failed (exit {code}){said}"
 
 
 def send_alert(alert_command: str, root: Path, text: str) -> tuple[int, str]:

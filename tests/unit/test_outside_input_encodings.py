@@ -281,7 +281,7 @@ NOT_ALERTED = (" - the digest above was not alerted; rerun once [crapkit] alert_
                "crapkit.toml exits 0\n")
 ANSWERS = [
     # id, the alert command's exit code and output, digest's exit, digest's own line on stderr
-    ("exits-3", 3, b"", 5, "crapkit: digest alert command failed (exit 3): " + NOT_ALERTED),
+    ("exits-3", 3, b"", 5, "crapkit: digest alert command failed (exit 3) and printed nothing" + NOT_ALERTED),
     ("writes-bytes-that-are-not-utf8", 0, b"caf\xe9 \xff\xfe\n", 0, ""),
     ("writes-bytes-that-are-not-utf8-and-exits-3", 3, b"caf\xe9 \xff\xfe\n", 5,
      "crapkit: digest alert command failed (exit 3): caf\ufffd \ufffd\ufffd" + NOT_ALERTED),

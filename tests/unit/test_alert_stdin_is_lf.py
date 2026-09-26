@@ -136,6 +136,30 @@ def test_a_failed_alert_quotes_the_stream_that_holds_text_once_colour_is_gone(tm
     assert str(refused.value) == f"override alert command failed (exit 3): {quoted}{NEXT}"
 
 
+# An alert command that fails with nothing to say, or only colour codes and
+# blank lines, leaves no quote: the refusal says it printed nothing rather than
+# leaving an empty quote between the exit code and the next step.
+SILENT = {"nothing": (b"", b""), "reset-only": (b"\x1b[0m", b""), "blank-lines": (b"\r\n\n", b"\r\n")}
+
+
+@pytest.mark.parametrize("printed", list(SILENT))
+def test_a_silent_failed_override_alert_says_it_printed_nothing(tmp_path, printed):
+    with pytest.raises(ToolError) as refused:
+        _alert_or_refuse(_printing_both(tmp_path, *SILENT[printed]), tmp_path, [VIOLATION], "hotfix")
+
+    assert str(refused.value) == f"override alert command failed (exit 3) and printed nothing{NEXT}"
+
+
+@pytest.mark.parametrize("printed", list(SILENT))
+def test_a_silent_failed_digest_alert_says_it_printed_nothing(tmp_path, printed):
+    cfg = SimpleNamespace(alert_command=_printing_both(tmp_path, *SILENT[printed]))
+
+    with pytest.raises(ToolError) as refused:
+        _send_digest_alert(tmp_path, cfg, {"id": 1}, {"id": 2}, ["CRAP load 1.0 -> 2.0"])
+
+    assert str(refused.value) == f"digest alert command failed (exit 3) and printed nothing{DIGEST_NEXT}"
+
+
 TRACEBACK = "import sys; sys.stdin.read(); 1/0"
 
 
