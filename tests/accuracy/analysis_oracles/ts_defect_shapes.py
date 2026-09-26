@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from accuracy.analysis_oracles import ts_shapes_swift
+from accuracy.analysis_oracles import ts_shapes_cpp, ts_shapes_swift
 from accuracy.analysis_oracles.oracles import treesitter_cognitive as cognitive
 from accuracy.analysis_oracles.oracles import treesitter_counters as counters
 
@@ -858,6 +858,8 @@ SHAPES = [
     Shape("AO-SWIFT-SUPER-INIT", _all("swift"), EVERY, near_init_expression),
     *[Shape(ruling, _all("swift"), columns, holds)
       for ruling, columns, holds in ts_shapes_swift.RULES],
+    *(Shape(ruling, frozenset(languages), columns, holds)
+      for ruling, languages, columns, holds in ts_shapes_cpp.SHAPES),
 ]
 
 
@@ -889,4 +891,5 @@ def swift_extra_line(context: Context, start: int) -> bool:
 
 
 EXTRA_ROWS = {"go": _loose_line, "rust": signature_line, "java": java_extra_line,
-              "objc": ivar_block_line, "swift": swift_extra_line}
+              "objc": ivar_block_line, "swift": swift_extra_line,
+              "cpp": ts_shapes_cpp.extra_row}
