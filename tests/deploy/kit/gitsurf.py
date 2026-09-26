@@ -208,8 +208,11 @@ def route1(box, repo: Path, *, shell: str = "sh", expect: int | None = 0):
 
 
 def route2(box, repo: Path, *, shell: str = "sh", expect: int | None = 0):
-    """README Route 2, the whole block, pasted into `shell`. It commits."""
-    return box.script(docsnip.fence(README, ROUTE2).text, shell=shell, cwd=repo, env=box.commit_env(),
+    """README Route 2, the whole block, pasted into `shell`: sh and bash run the
+    heredoc block, powershell and pwsh the PowerShell block under the same
+    heading. It commits."""
+    index = 0 if shell in ("sh", "bash") else 1
+    return box.script(docsnip.fence(README, ROUTE2, index=index).text, shell=shell, cwd=repo, env=box.commit_env(),
                       expect=expect)
 
 

@@ -9,16 +9,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from kit import docsnip, gitsurf, repos, wheels
 from kit.cells import cell
 
 PACKET = "deploy-git"
 UPGRADE_DOC = "docs/upgrading.md"
 OLD = "0.7.6"
-PS_ROUTE2 = ("deploy-bug deploy-git-6: README Route 2 prints only an sh block; pasted into PowerShell the "
-             "heredoc does not parse, no hook is written and the next commit is ungated")
 
 
 def driven(box, templates, *, shell: str = "sh") -> Path:
@@ -152,14 +148,13 @@ def test_the_driver_lines_from_powershell_merge_cleanly(box, templates):
     gitsurf.assert_driver_merged(gitsurf.merge(box, repo, "feature"), repo, expected)
 
 
-@pytest.mark.xfail(strict=True, reason=PS_ROUTE2)
 @cell("win-route2-merge-ps", channel="Route 2 + merge driver", harness="PortableGit, powershell.exe 5.1",
-      scenario="fresh: what a PowerShell user gets from the README lines", use_cases="commit gate, merge",
-      os="windows", image=None, cadence="nightly")
+      scenario="fresh: README Route 2's PowerShell block, pasted into powershell.exe, arms a gate that refuses "
+      "then accepts", use_cases="commit gate, merge", os="windows", image=None, cadence="nightly")
 def test_route2_pasted_into_powershell_arms_the_gate(box, templates):
     gitsurf.pip_venv(box)
     repo = repos.checkout(box, "py-pytest", cache=templates)
     gitsurf.adopt(box, repo)
-    gitsurf.route2(box, repo, shell="powershell", expect=None)
+    gitsurf.route2(box, repo, shell="powershell")
 
     gitsurf.refused_then_accepted(box, repo)
