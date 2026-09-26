@@ -18,6 +18,7 @@ no input reaches are listed at the bottom with the reason.
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 import shutil
@@ -139,16 +140,33 @@ def test_a_branch_named_in_latin1_is_a_base_like_any_other(tmp_path):
 
 BREACH = b"def sprawl(n):\n" + b"".join(b"    if n == %d:\n        n += %d\n" % (i, i) for i in range(1, 8)) + b"    return n\n"
 ALERT = b"import sys\nopen('alert.bin', 'ab').write(sys.stdin.buffer.read())\n"
-REPLACED = "\ufffd" * (3 if WINDOWS else 1)  # one byte on POSIX, three of broken UTF-16 on Windows
+# What the alert holds for a broken character. crapkit reads a lone surrogate
+# as the bytes it stands for: on POSIX the one byte, one U+FFFD; on Windows
+# three bytes of broken UTF-8, three U+FFFD. The environment carries the
+# surrogate itself. A command line may not: the python.exe of a uv venv on
+# Windows is a launcher that re-reads its command line and hands the
+# interpreter one U+FFFD before crapkit runs, while a plain interpreter or a
+# CPython venv hands over the surrogate. _argv_read_as asks the interpreter.
+READ_AS = "\ufffd" * (3 if WINDOWS else 1)
+BROKEN = "{}"  # where a row's broken character lands in the alert
 
 REASON_ROWS = [
-    pytest.param(f"urgent {LATIN1} fix", f"urgent caf{REPLACED} fix", id="reason-invalid-utf8-bytes"),
-    pytest.param(f"urgent {WINDOWS_SURROGATE} fix", "urgent caf\ufffd\ufffd\ufffd fix", marks=ONLY_WINDOWS,
+    pytest.param(f"urgent {LATIN1} fix", f"urgent caf{BROKEN} fix", id="reason-invalid-utf8-bytes"),
+    pytest.param(f"urgent {WINDOWS_SURROGATE} fix", f"urgent caf{BROKEN} fix", marks=ONLY_WINDOWS,
                  id="reason-lone-surrogate"),
     pytest.param("hotfix 123", "hotfix 123", id="reason-ascii"),
     pytest.param("correctif café", "correctif café", id="reason-valid-accent"),
     pytest.param("修正 \U0001f680", "修正 \U0001f680", id="reason-cjk-emoji"),
 ]
+
+
+@functools.cache
+def _argv_read_as() -> str:
+    """What one broken character of a command-line argument becomes by the
+    time crapkit reads it, asked of the interpreter the CLI rows start."""
+    probe = subprocess.run([CRAPKIT[0], "-c", "import sys; print(ascii(sys.argv[1]))", LATIN1],
+                           capture_output=True, text=True, timeout=hang_guard.HANG_SECONDS, check=True)
+    return "\ufffd" if probe.stdout.strip() == ascii("caf\ufffd") else READ_AS
 
 
 def _override_repo(root: Path) -> Path:
@@ -173,7 +191,7 @@ def test_a_hook_override_reason_in_any_bytes_alerts_and_records(tmp_path, reason
 
     answered(res)
     assert "override granted with full audit" in res.stdout, shown(res)
-    _alerted(repo, kept)
+    _alerted(repo, kept.format(READ_AS))
 
 
 @pytest.mark.parametrize("reason, kept", REASON_ROWS)
@@ -184,7 +202,7 @@ def test_a_verify_override_reason_in_any_bytes_alerts_and_records(tmp_path, reas
     res = spawned(repo, "verify", "--override", reason, env_extra={"CRAPKIT_OVERRIDE_REASON": None})
 
     answered(res)
-    _alerted(repo, kept)
+    _alerted(repo, kept.format(_argv_read_as()))
 
 
 # --- the host name: resources._budget_directory and lanes._output_lock ----------
