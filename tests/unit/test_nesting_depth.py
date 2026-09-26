@@ -7,7 +7,8 @@ opposite shapes (measured on 0.4.15, and on `lizard -Ens`: flat 3 ifs -> 3,
 nested 3 -> 6). crapkit's cognitive pass already keeps a per-function stack of
 open blocks for the Sonar nesting increment; the deepest that stack gets is the
 depth a reader means by "nesting". Spec item 15, decision 13: Python rows read
-that depth, brace languages keep lizard's column.
+that depth, brace languages keep lizard's column. Shell rows read it too, since
+ND never closes a block that ends in `fi`, `done` or `esac`.
 """
 from pathlib import Path
 
@@ -178,6 +179,73 @@ def test_a_brace_language_keeps_lizards_depth():
     assert _nesting("f.ts", TS) == 3
 
 
+# --- shell: blocks close on words, so the depth comes off the cognitive pass ----
+#
+# lizard's ND closes a level on a `}` or pops a hidden one at a `;`. Shell closes
+# `if` with `fi`, a loop with `done` and `case` with `esac`, none of which ND
+# reads, so every block leaked a level: seven ifs side by side read 6, four nested
+# read 3, and a `case` read 0 because ND's shell set left it out.
+
+SH_FLAT = "flat() {\n" + "".join(
+    f'  if [ "$1" = {i} ]; then\n    n={i}\n  fi\n' for i in range(7)) + "}\n"
+
+# `then` on its own line puts no `;` between the blocks for ND to pop at.
+SH_FLAT_NO_SEMICOLON = "flat() {\n  if a\n  then\n    n=1\n  fi\n  if b\n  then\n    n=2\n  fi\n}\n"
+
+SH_DEEP = (
+    "deep() {\n"
+    '  if [ -n "$1" ]; then\n'
+    '    if [ -n "$2" ]; then\n'
+    '      if [ -n "$3" ]; then\n'
+    '        if [ -n "$4" ]; then\n'
+    "          return\n"
+    "        fi\n      fi\n    fi\n  fi\n}\n")
+
+SH_CASE = 'pick() {\n  case "$1" in\n    a) echo 10 ;;\n    b) echo 20 ;;\n    *) echo 0 ;;\n  esac\n}\n'
+
+SH_IF_IN_CASE = ('pick() {\n  case "$1" in\n    a)\n      if [ -n "$2" ]; then\n        echo 10\n'
+                 '      fi\n      ;;\n  esac\n}\n')
+
+SH_LOOPS = ("scan() {\n  while read -r line; do\n    for w in $line; do\n      echo \"$w\"\n"
+            "    done\n  done\n  until ok; do\n    sleep 1\n  done\n}\n")
+
+SH_LISTS = "lists() {\n  a && b\n  c || d\n}\n"
+
+
+def test_seven_shell_ifs_side_by_side_are_one_level_deep():
+    assert _nesting("flat.sh", SH_FLAT) == 1
+
+
+def test_shell_ifs_with_then_on_its_own_line_are_one_level_deep():
+    assert _nesting("flat.sh", SH_FLAT_NO_SEMICOLON) == 1
+
+
+def test_four_nested_shell_ifs_are_four_levels_deep():
+    assert _nesting("deep.sh", SH_DEEP) == 4
+
+
+def test_a_shell_case_opens_one_level_and_its_arms_sit_side_by_side():
+    """Sonar's switch: the `case` opens one level, the arms add none."""
+    assert _nesting("pick.sh", SH_CASE) == 1
+
+
+def test_an_if_inside_a_case_arm_is_two_deep():
+    assert _nesting("pick.sh", SH_IF_IN_CASE) == 2
+
+
+def test_a_loop_in_a_loop_is_two_deep_and_a_later_loop_starts_over():
+    assert _nesting("scan.sh", SH_LOOPS) == 2
+
+
+def test_a_shell_and_or_list_opens_no_level():
+    """`a && b` is a decision, not a block: ccn counts it, the depth does not."""
+    assert _nesting("lists.sh", SH_LISTS) == 0
+
+
+def test_bash_files_read_the_same_depth_as_sh_files():
+    assert _nesting("flat.bash", SH_FLAT) == 1
+
+
 def test_the_agent_json_page_names_where_each_languages_nesting_comes_from():
     """The row a reader of `next-item --json` lands on has to say which column a
     Python number is, or 7 and 1 for the same flat function across an upgrade
@@ -187,6 +255,5 @@ def test_the_agent_json_page_names_where_each_languages_nesting_comes_from():
     rows = [ln for ln in page.splitlines() if ln.startswith("| `nesting` |")]
     assert len(rows) == 1, f"expected one `nesting` row, found {len(rows)}"
     row = rows[0]
-    assert "cognitive" in row and "lizard" in row, row
-    assert "Python" in row, row
-    assert "`with`" in row and "`except`" in row, row
+    named = ("cognitive", "lizard", "Python", "shell", "`with`", "`except`", "`esac`")
+    assert [word for word in named if word not in row] == [], row

@@ -48,9 +48,10 @@ the arrow's), exactly as ccn is attributed today. Ternary branches do not
 deepen nesting (a structure inside a ternary arm is rare enough to accept).
 
 The deepest the per-function stack gets is recorded too, as
-`cognitive_nesting`. analyze.py reads it as the `nesting` column of a Python
-row, because lizard's ND extension counts structures there rather than depth:
-a flat function of seven `if`s read 7. Brace languages keep lizard's column.
+`cognitive_nesting`. analyze.py reads it as the `nesting` column of a Python or
+shell row, because lizard's ND extension closes a level only on a `}` or at a
+`;`: a flat Python function of seven `if`s read 7, and seven shell ifs side by
+side read 6. Brace languages keep lizard's column.
 
 Where this extension sits in lizard's chain is load-bearing and differs by
 reader: the python rules read whitespace tokens that lizard's own

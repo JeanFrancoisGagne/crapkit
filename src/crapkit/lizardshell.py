@@ -92,6 +92,14 @@ KNOWN LIMITS
       in an array subscript (`a[i ? 1 : 0]=x`) or in the old `$[ ]` form counts
       nothing.
 
+NESTING DEPTH
+    A shell row's `nesting` is the deepest that same extension's block stack
+    gets, not lizard's ND column (analyze._nesting_depth). ND closes a level on a
+    `}` or at a `;`, and shell closes a block with a word, so every block leaked
+    a level: seven ifs side by side read 6, four nested read 3, and a `case` read
+    0. Read off the stack, the seven read 1, the four read 4, and a `case` opens
+    one level its arms share, the way Sonar's switch does. `&&` and `||` open none.
+
 REGISTRATION
     lizard resolves a filename through `lizard_languages.get_reader_for`, which
     walks the hard-coded list `lizard_languages.languages()` and has no plugin hook
@@ -391,10 +399,6 @@ class ShellReader(CodeReader, ScriptLanguageMixIn):
     _logical_operators = {"&&", "||"}
     _case_keywords = set()      # arms are counted as ';;', see the module docstring
     _ternary_operators = set()  # '?' decides only inside (( )), see _Arithmetic
-
-    # What lizard's ND extension treats as a nesting structure; its default set is
-    # the C family's and mentions neither `elif` nor `until`.
-    loops = {"if", "elif", "for", "while", "until", "&&", "||"}
 
     def __init__(self, context):
         super().__init__(context)

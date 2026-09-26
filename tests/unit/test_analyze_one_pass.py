@@ -129,9 +129,10 @@ def _raw(abs_path: str, rel_path: str, extensions):
 
 def _nesting(rel_path: str, f) -> int:
     """0.5.0, spec item 15: a Python row's nesting is the depth the cognitive
-    pass measured; every other language keeps lizard's ND column. The reference
-    spells the rule out rather than importing the production helper."""
-    if rel_path.endswith(".py"):
+    pass measured, and so is a shell row's; every other language keeps lizard's
+    ND column. The reference spells the rule out rather than importing the
+    production helper."""
+    if rel_path.endswith((".py", ".sh", ".bash")):
         return getattr(f, "cognitive_nesting", 0) or 0
     return getattr(f, "max_nesting_depth", 0) or 0
 

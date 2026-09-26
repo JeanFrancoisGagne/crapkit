@@ -440,18 +440,21 @@ def _extensions_for(rel_path: str) -> list:
     return _EXTENSIONS
 
 
-# The suffix lizard routes to PythonReader (`PythonReader.ext`), and the one
-# language whose `nesting` is not lizard's. lizard's ND extension counts
-# nesting STRUCTURES for Python rather than depth: a flat function of seven
-# `if`s read 7 and a three-deep one read 3, the same number for opposite
-# shapes. The cognitive pass keeps a per-function stack of open blocks for the
-# Sonar nesting increment, and the deepest it gets is the depth. Brace
-# languages keep lizard's column, which reads their braces.
-_PYTHON_SUFFIXES = (".py",)
+# The suffixes whose `nesting` is not lizard's: Python's (`PythonReader.ext`)
+# and shell's (`ShellReader.ext`). lizard's ND extension closes a level only on
+# a `}` or at a `;`, and neither language closes a block that way. For Python
+# it counted STRUCTURES rather than depth: a flat function of seven `if`s read
+# 7 and a three-deep one read 3, the same number for opposite shapes. Shell
+# closes with `fi`, `done` and `esac`, so every block leaked a level: seven ifs
+# side by side read 6, four nested read 3, and a `case` read 0. The cognitive
+# pass keeps a per-function stack of open blocks for the Sonar nesting
+# increment, closing them by indent or by those words, and the deepest it gets
+# is the depth. Brace languages keep lizard's column, which reads their braces.
+_DEPTH_FROM_COGNITIVE_SUFFIXES = (".py", ".sh", ".bash")
 
 
 def _nesting_depth(rel_path: str, fn) -> int:
-    if rel_path.lower().endswith(_PYTHON_SUFFIXES):
+    if rel_path.lower().endswith(_DEPTH_FROM_COGNITIVE_SUFFIXES):
         return getattr(fn, "cognitive_nesting", 0) or 0
     return getattr(fn, "max_nesting_depth", 0) or 0
 

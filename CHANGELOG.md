@@ -1010,6 +1010,19 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   `#[test] fn t() {` gains a row per such function. The same analysis-version bump
   covers this.
 
+## Unreleased
+
+### Shell reads the depth of its blocks
+
+- A shell function's `nesting` is how deep its blocks go. lizard's ND column closed a
+  level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
+  `done` and `esac`, so every block leaked a level: seven ifs side by side read 6, four
+  nested read 3, and a `case` read 0. They read 1, 4 and 1 now, the depth crapkit's
+  cognitive pass measures, and `&&` or `||` opens no level. `nesting` is reported and
+  never gated, so no gate verdict moves with it. The change needs an analysis-version
+  bump, which makes each marks file re-seed once
+  ([upgrading](docs/upgrading.md#next-analysis-version-shell-rows)).
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

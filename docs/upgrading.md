@@ -309,6 +309,17 @@ Rust:
   listed; it had no row. A decision or a brace after a raw string (`r#"..."#`), a raw
   identifier (`r#type`) or an attribute on the same line now counts.
 
+### Next analysis version: shell rows
+
+The release after 0.8.0 moves shell's numbers, so it raises the analysis version and
+every marks file re-seeds once, with the same three commands as version 11 below.
+
+- A shell function's `nesting` reads how deep its blocks go. lizard's ND column closed
+  a level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
+  `done` and `esac`, so every block leaked a level: seven ifs side by side read 6, four
+  nested read 3, and a `case` read 0. They read 1, 4 and 1 now, and `&&` or `||` opens
+  no level. `nesting` is reported and never gated, so no verdict moves with it.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or
