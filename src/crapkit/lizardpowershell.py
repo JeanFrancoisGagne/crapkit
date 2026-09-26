@@ -44,11 +44,13 @@ CCN CONVENTION
         switch ($x) {
             1 { ... }
             'a' { ... }
+            { $_ -gt 5 } { ... }
             default { ... }
         }
 
-    so the arm is the `{` that opens directly inside the switch body, and the
-    `default` arm is free. That mirrors lizard's own C `switch`/`case` handling
+    so an arm is a pattern and the block that opens directly inside the switch
+    body after it, one point per arm whatever the pattern is, a script block
+    included, and the `default` arm is free. That mirrors lizard's own C `switch`/`case` handling
     and both readers already in this package: the shell reader counts a `case`
     arm at its `;;` and the Rust reader counts a `match` arm at its `=>`, each
     for the same reason. Counting the keyword once instead would score a
@@ -67,7 +69,9 @@ CCN CONVENTION
     declares a boolean parameter, and 138 `param()` blocks in the 106-script
     corpus this reader was built against are full of them. Left in the keyword
     set, every advanced function paid a phantom point for its own signature.
-    The cognitive column skips a `switch` right after `[` for the same reason.
+    The arm counter opens a switch only where the word starts a statement, so
+    neither `[switch]$Force` nor `git switch main` opens one, and the
+    cognitive column skips a `switch` right after `[`.
 
     `?` stays a ternary operator, as lizard has it everywhere. In PowerShell 7
     it is the ternary; in every version it is also the `Where-Object` alias,
@@ -143,8 +147,6 @@ KNOWN LIMITS
       requires the opener to end its line and the terminator to start one;
       this reader does not check either, so `@"` inside an expression opens a
       body that runs to the next `"@`.
-    - A `{` pattern arm (`switch ($x) { {$_ -gt 5} { ... } }`) counts twice:
-      the pattern's own brace opens directly inside the switch body too.
     - A `param()` block's parameters count in `params` and are missing from a
       packet's `params` list, which crapkit reads off the long name.
     - A class's methods get no row, so their complexity is not gated.
@@ -306,9 +308,14 @@ _NAME_JOINERS = frozenset({":", "."})
 # The wildcard arm of a switch, free exactly like C's `default:`.
 _DEFAULT_ARM = "default"
 
-# Tokens that prove the `switch` just seen was not a switch STATEMENT. `]`
-# closes the `[switch]` type accelerator; `;` ends the statement it sat in.
-_DISARMS_SWITCH = frozenset({"]", ";"})
+# Any other pattern: a value, a string, a variable or a script block.
+_ARM = "arm"
+
+# What ends a switch's flags and subject outside their parentheses: its body's
+# `{`, or a `;` or `}` that ends a statement which opened no body.
+_SUBJECT_ENDS = frozenset({"{", ";", "}"})
+_PAREN_CHANGE = {"(": 1, ")": -1}
+_BRACE_CHANGE = {"{": 1, "}": -1}
 
 # What a bracket does to the depth a param() block is read at.
 _DEPTH_CHANGE = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
@@ -469,6 +476,43 @@ class PowerShellStates(GoLikeStates):
         self.context.current_function = self.context.stacked_functions.pop()
 
 
+class _SwitchBody:
+    """One open switch body: where it began and what its current arm has read.
+
+    An arm is a pattern and the block it runs (about_Switch). The pattern is
+    whatever sits directly in the body before that block: a value, a string,
+    `default`, or a script block of its own, `{ $_ -gt 5 }`. So a `{` opening
+    directly in the body starts the arm's block when a pattern came before it,
+    and is itself the pattern when none did.
+    """
+
+    __slots__ = ("depth", "pattern", "in_pattern")
+
+    def __init__(self, depth: int):
+        self.depth = depth        # the brace depth the body's `{` opened at
+        self.pattern = None       # the current arm's pattern: None, _ARM or _DEFAULT_ARM
+        self.in_pattern = False   # a script-block pattern is open
+
+    def read(self, token: str) -> None:
+        """A token directly in the body, other than a brace."""
+        if token == ";":
+            self.pattern = None
+        elif self.pattern is None:
+            self.pattern = _DEFAULT_ARM if token == _DEFAULT_ARM else _ARM
+
+    def opens_arm(self) -> bool:
+        """A `{` directly in the body: True when it runs an arm that tests
+        something, the one point the arm costs."""
+        pattern, self.pattern = self.pattern, None
+        self.in_pattern = pattern is None
+        return pattern == _ARM
+
+    def closes(self) -> None:
+        """A `}` back at the body's own depth: a closed script block is a pattern."""
+        if self.in_pattern:
+            self.in_pattern, self.pattern = False, _ARM
+
+
 class SwitchArmStates(CodeStateMachine):
     """One condition per switch arm, the `default` arm free.
 
@@ -477,55 +521,80 @@ class SwitchArmStates(CodeStateMachine):
     `condition_counter` uses, so an arm lands on whichever function lizard has
     open — the same attribution every other condition gets.
 
-    An arm has no keyword to match, so it is found by position: the `{` that
-    opens directly inside a switch body. That needs the brace depth, which
-    needs to know where the switch body began, which is why this machine
-    carries a stack rather than a flag. Nested switches are why the stack is a
-    list.
+    An arm has no keyword to match, so it is found by position: the block that
+    opens directly inside a switch body after a pattern (see `_SwitchBody`).
+    That needs the brace depth, which needs to know where the switch body
+    began, which is why this machine carries a stack rather than a flag.
+    Nested switches are why the stack is a list.
+
+    `switch` opens a switch only where it starts a statement, so `git switch
+    main` and `[switch]$Force` open nothing. The flags and subject between the
+    word and its body can hold brackets, semicolons and script blocks inside
+    their parentheses (`switch ($m['k'])`); only a `;` or a `}` outside them
+    ends a switch that opened no body.
     """
 
     def __init__(self, context):
         super().__init__(context)
-        self._armed = False   # a switch statement is waiting for its body brace
-        self._bodies = []     # depth at which each open switch body began
+        self._subject = None   # parentheses open in a switch's subject; None when no switch waits
+        self._bodies = []      # one _SwitchBody per open switch body, innermost last
         self._depth = 0
-        self._previous_code_token = ""
+        self._previous = ""    # the last token read, block comments aside
+        self._line = 0         # the line it ended on
 
     def _state_global(self, token):
-        if token.isspace():
-            return  # `default` and its `{` may sit on two lines
-        self._dispatch(token)
-        self._previous_code_token = token
+        if token.startswith(_BLOCK_COMMENT):
+            return
+        statement = _begins_statement(self._previous, self.context.current_line != self._line)
+        self._dispatch(token, statement)
+        self._previous, self._line = token, self.context.current_line
 
-    def _dispatch(self, token):
+    def _dispatch(self, token: str, statement: bool) -> None:
+        if self._subject is not None:
+            self._read_subject(token)
+        elif token == "switch" and statement:
+            self._subject = 0
+        else:
+            self._read(token)
+
+    def _read_subject(self, token: str) -> None:
+        if self._subject == 0 and token in _SUBJECT_ENDS:
+            self._end_subject(token)
+        else:
+            self._subject += _PAREN_CHANGE.get(token, 0)
+            self._depth += _BRACE_CHANGE.get(token, 0)
+
+    def _end_subject(self, token: str) -> None:
+        self._subject = None
+        if token == "{":
+            self._bodies.append(_SwitchBody(self._depth))
+            self._depth += 1
+        else:
+            self._read(token)  # a `;` or a `}`: the word opened no switch
+
+    def _read(self, token: str) -> None:
         if token == "{":
             self._open_brace()
         elif token == "}":
             self._close_brace()
-        elif token == "switch":
-            # `[switch]$Force` is a parameter declaration, not a statement.
-            self._armed = self._previous_code_token != "["
-        elif token in _DISARMS_SWITCH:
-            self._armed = False
+        elif self._in_body():
+            self._bodies[-1].read(token)
 
     def _open_brace(self) -> None:
-        if self._armed:
-            self._bodies.append(self._depth)
-            self._armed = False
-        elif self._opens_an_arm():
+        if self._in_body() and self._bodies[-1].opens_arm():
             self.context.add_condition()
         self._depth += 1
 
     def _close_brace(self) -> None:
-        self._armed = False
         self._depth -= 1
-        if self._bodies and self._bodies[-1] == self._depth:
+        if self._bodies and self._bodies[-1].depth == self._depth:
             self._bodies.pop()
+        elif self._in_body():
+            self._bodies[-1].closes()
 
-    def _opens_an_arm(self) -> bool:
-        return (bool(self._bodies)
-                and self._depth == self._bodies[-1] + 1
-                and self._previous_code_token != _DEFAULT_ARM)
+    def _in_body(self) -> bool:
+        """Whether the brace depth sits directly inside the innermost switch body."""
+        return bool(self._bodies) and self._depth == self._bodies[-1].depth + 1
 
 
 class PowerShellReader(CodeReader, ScriptLanguageMixIn):

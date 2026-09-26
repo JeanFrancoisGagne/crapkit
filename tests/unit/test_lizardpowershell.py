@@ -324,6 +324,57 @@ def test_a_param_block_costs_nothing_at_all():
     assert _only(code).cyclomatic_complexity == 1
 
 
+def _switch(subject, arms):
+    return f"function f($m, $n) {{\n    switch {subject} {{\n{arms}    }}\n}}\n"
+
+
+TWO_ARMS = "        'a' { return 1 }\n        'b' { return 2 }\n"
+
+
+@pytest.mark.parametrize("subject", ["($m['k'])", "-regex ($m[0])", "($(Get-A; Get-B))",
+                                     "-file $m[0]", "($n)\n   "])
+def test_a_switch_counts_its_arms_whatever_its_subject_holds(subject):
+    """A `]` or a `;` in the flags or subject ended the switch before its body
+    (`switch ($m['k'])` counted neither arm). Only a `;` or a `}` outside the
+    subject's parentheses ends a switch that opened no body now, and the body
+    may start on the next line."""
+    assert _only(_switch(subject, TWO_ARMS)).cyclomatic_complexity == 3
+
+
+@pytest.mark.parametrize("arms, ccn", [
+    ("        { $_ -gt 5 } { 'big' }\n        { $_ -lt 0 } { 'negative' }\n"
+     "        default { 'small' }\n", 3),
+    ("        1 { 'one' }\n        { $_ -gt 5 } { 'big' }\n        'x' { 'x' }\n", 4),
+    ("        1 { 'one' }; default { 'many' }\n", 2),
+    ("        { $_ } { 'truthy' }; { -not $_ } { 'falsy' }\n", 3),
+])
+def test_an_arm_counts_once_whatever_its_pattern_is(arms, ccn):
+    """An arm is a pattern and the block it runs (about_Switch). A pattern may be
+    a script block, and its own braces opened directly in the switch body like
+    the block's, so a script-block arm counted twice."""
+    assert _only(_switch("($n)", arms)).cyclomatic_complexity == ccn
+
+
+@pytest.mark.parametrize("line", ["git switch main", "Write-Output switch"])
+def test_a_switch_word_that_starts_no_statement_opens_no_body(line):
+    """`git switch main` runs git. Read as a switch statement, the next block
+    became its body and each block opening directly inside it an arm."""
+    code = ("function Update-Branch($x) {\n    " + line + "\n    if ($x) {\n"
+            "        foreach ($y in $x) { $y }\n    }\n}\n")
+
+    assert _only(code).cyclomatic_complexity == 3
+
+
+@pytest.mark.parametrize("statement", [":outer switch ($n) {", "$r = switch ($n) {",
+                                       "return $(switch ($n) {"])
+def test_a_switch_after_a_label_or_an_assignment_still_counts(statement):
+    closer = "})" if statement.endswith("$(switch ($n) {") else "}"
+    code = ("function f($n) {\n    " + statement + "\n        1 { 'a' }\n        2 { 'b' }\n"
+            "        default { 'c' }\n    " + closer + "\n}\n")
+
+    assert _only(code).cyclomatic_complexity == 3
+
+
 # --- hazard: comments ----------------------------------------------------------
 
 def test_keywords_in_a_line_comment_are_not_conditions():

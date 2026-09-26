@@ -1338,6 +1338,13 @@ each marks file re-seed once.
   the two columns, so it does not move.
 - A `[switch]` parameter type costs no cognitive complexity. It read as a switch
   statement: +1, and the block after it counted one level deeper.
+- A switch arm whose pattern is a script block, `{ $_ -gt 5 } { 'big' }`, costs 1. The
+  pattern's braces counted as a second arm, so it cost 2.
+- A switch whose flags or subject hold a `]` or a `;` counts its arms: `switch
+  ($m['k'])` and `switch -file $paths[0]` counted none.
+- `switch` opens a switch only where it starts a statement. `git switch main` opened
+  one, the next block became its body, and every block directly inside that one cost
+  a point as an arm.
 
 ### PowerShell finds the functions it lost
 
