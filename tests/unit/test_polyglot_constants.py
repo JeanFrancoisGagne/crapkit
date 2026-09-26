@@ -232,6 +232,27 @@ def test_a_comparison_of_a_three_way_result_still_mutates():
     assert mutated == ["bool lt = (a <=> b) <= 0;", "bool lt = (a <=> b) >= 0;"]
 
 
+@pytest.mark.parametrize("language", ["cpp", "objectivec", "java", "javascript", "typescript",
+                                      "tsx", "vue"])
+@pytest.mark.parametrize("line, mutated", [
+    ("while (n-->0) f();\n", ["while (n-->=0) f();", "while (n--<=0) f();"]),
+    ("while (n --> 0) f();\n", ["while (n -->= 0) f();", "while (n --<= 0) f();"]),
+    ("while (n-->=0) f();\n", ["while (n-->0) f();", "while (n--<0) f();"]),
+])
+def test_a_comparison_after_a_decrement_mutates(language, line, mutated):
+    """These languages lex `--` whole, so `n-->0` is `n-- > 0`. The table read
+    `->` out of `-->` instead, and `->` is no comparison, so the loop bound grew
+    no mutant and a test that never reached zero read as enough."""
+    found = [m.mutated for m in file_mutants(_script(language, line), None, language)]
+
+    assert found == mutated
+
+
+def test_a_member_access_after_a_decrement_is_still_no_comparison():
+    """`p--->y` is `(p--)->y` in C and C++: the `>` belongs to `->`."""
+    assert file_mutants("x = p--->y;\n", None, "cpp") == []
+
+
 @pytest.mark.parametrize("line", ["let y = x |> f\n", "let m = a <> b\n",
                                   "let r = f <^> xs\n", "let v = a >>> b\n"])
 def test_a_swift_custom_operator_is_one_token(line):

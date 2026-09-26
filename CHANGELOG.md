@@ -12,6 +12,12 @@
   which reads any run of operator characters as one operator (`x |> f` grew `x |>= f`).
   These operators now make no mutant, and a comparison beside one still makes its own.
   Kill rates on such files can fall. No CRAP score changes.
+- The decrement `--` split the other way. C, C++, Objective-C, Java, JavaScript and
+  TypeScript read `n-->0` as `n-- > 0`, but `mutate` read an arrow `->` out of it, so
+  the loop bound grew no mutant and a test that never reached zero read as enough.
+  `n-->0` and `n --> 0` now grow `n-->=0` and `n--<=0`, as `n-- > 0` always did, and
+  `p--->y`, which is `(p--)->y`, still grows none. Kill rates on such files can move
+  either way. No CRAP score changes.
 
 ### `mutate` flips a `&&` or `||` only where it joins two operands
 

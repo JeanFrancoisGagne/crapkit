@@ -67,10 +67,12 @@ _SHARED_LEXEMES = re.compile(r"\w+|===|!==|==|!=|<=|>=|<<=?|>>=?|&&|\|\||->|=>|\
 # (`a >>> b` grew `a >><= b`), C++'s three-way comparison and brace digraphs
 # (`a <=> b` grew `a <> b`), and Swift, which reads any run of operator
 # characters as one operator (`x |> f` grew `x |>= f`). Each entry belongs to
-# its languages alone: in C, Java and TypeScript `a<-1` is `a < -1`.
-_WHOLE_TOKENS = {"go": r"<-", "cpp": r"<=>|<%|%>", "objectivec": r"<=>|<%|%>",
+# its languages alone: in C, Java and TypeScript `a<-1` is `a < -1`. The
+# decrement `--` runs the other way: split, it left `->` in `n-->0`, which is
+# `n-- > 0`, and the loop bound grew no mutant at all.
+_WHOLE_TOKENS = {"go": r"<-", "cpp": r"<=>|<%|%>|--", "objectivec": r"<=>|<%|%>|--",
                  "swift": r"[-/=+!*%<>&|^~?]{2,}",
-                 **dict.fromkeys(("javascript", "typescript", "tsx", "vue", "java"), r">>>=?")}
+                 **dict.fromkeys(("javascript", "typescript", "tsx", "vue", "java"), r">>>=?|--")}
 _LEXEMES = {language: re.compile(f"{whole}|{_SHARED_LEXEMES.pattern}")
             for language, whole in _WHOLE_TOKENS.items()}
 # A connective opens an operand in two languages: Rust's `||` is a closure with
@@ -160,27 +162,27 @@ def refusal(language: str) -> str | None:
     return UNMUTABLE.get(language)
 
 
-def _covered_by_longer(mask: str, at: int, token: str) -> bool:
-    for p in _PROTECT:
-        if len(p) <= len(token):
-            continue
-        for start in range(max(0, at - len(p) + 1), at + 1):
-            if mask.startswith(p, start):
-                return True
-    return False
+def _covered_by_longer(mask: str, at: int, token: str, inside: frozenset = frozenset()) -> bool:
+    """A longer operator in `mask` holds `token`, unless that operator starts at
+    an offset in `inside`, the middle of a token lexed whole: `->` in `n-->0`
+    starts inside `--`, so its `>` is a comparison."""
+    return any(mask.startswith(p, start) and start not in inside
+               for p in _PROTECT if len(p) > len(token)
+               for start in range(max(0, at - len(p) + 1), at + 1))
 
 
 def _line_mutations(line: str, tokens: list, ops: dict) -> list[tuple[str, str]]:
     """Mutate whole code tokens, in the existing operator-table order."""
-    out = []
-    for source, targets in ops.items():
-        for at, token in tokens:
-            if token != source or _covered_by_longer(line, at, source):
-                continue
-            for target in targets:
-                out.append((line[:at] + target + line[at + len(source):],
-                            f"{source.strip()} -> {target.strip()}"))
-    return out
+    inside = frozenset(at + 1 for at, token in tokens if token == "--")
+    return [mutant for source, targets in ops.items()
+            for mutant in _source_mutations(line, tokens, source, targets, inside)]
+
+
+def _source_mutations(line: str, tokens: list, source: str, targets: tuple,
+                      inside: frozenset) -> list[tuple[str, str]]:
+    return [(line[:at] + target + line[at + len(source):], f"{source.strip()} -> {target.strip()}")
+            for at, token in tokens if token == source and not _covered_by_longer(line, at, source, inside)
+            for target in targets]
 
 
 def file_mutants(text: str, changed_lines: set[int] | None, language: str) -> list[Mutant]:
