@@ -99,12 +99,28 @@ def test_each_fallback_the_readme_prints_installs_a_working_crapkit(box, templat
 
 # --- the upgrade table in docs/upgrading.md ----------------------------------------
 
+UPGRADE_TABLE = "| Installation | Upgrade command |"
+
+
 def upgrade_row(installation: str) -> str:
-    """The command in docs/upgrading.md's table row for `installation`."""
+    """The command in the row for `installation` of docs/upgrading.md's upgrade
+    table. The removal table further down names pipx, uv tool and uvx in its
+    first column too, so the lookup stays inside the table this header opens."""
     page = (docsnip.root() / "docs" / "upgrading.md").read_text(encoding="utf-8")
-    rows = [line for line in page.splitlines() if line.startswith(f"| {installation} |")]
-    assert len(rows) == 1, f"docs/upgrading.md has {len(rows)} rows for {installation!r}"
+    table = page.split(UPGRADE_TABLE, 1)[1].split("\n\n", 1)[0]
+    rows = [line for line in table.splitlines() if line.startswith(f"| {installation} |")]
+    assert len(rows) == 1, f"docs/upgrading.md's upgrade table has {len(rows)} rows for {installation!r}"
     return rows[0].split("|")[2].strip().strip("`")
+
+
+@pytest.mark.kit
+@pytest.mark.parametrize("installation", ["pipx", "uv tool", "uvx"])
+def test_the_upgrade_row_is_read_from_the_upgrade_table(installation):
+    """The removal table repeats these three names. Read off the whole page, each
+    matched two rows and the upgrade cells stopped before running a command."""
+    command = upgrade_row(installation)
+
+    assert re.search(r"uninstall|cache clean", command) is None, command
 
 
 PIPX_FROM = "0.4.15"

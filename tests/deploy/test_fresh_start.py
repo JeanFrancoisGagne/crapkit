@@ -429,8 +429,6 @@ def test_the_system_pip_refuses_the_readme_line_with_pep_668(box):
 @cell("lin-sys-python-start", channel="system pip (Debian python3, EXTERNALLY-MANAGED)", harness="none",
       scenario="fresh: after the PEP 668 refusal, the README fallback runs", use_cases="install",
       os="linux", image="core", cadence="push")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-2: README Install names no command to run when "
-                                       "pip refuses with externally-managed-environment")
 def test_after_the_pep_668_refusal_the_readme_fallback_installs_crapkit(box, candidate):
     installers.system_pip(box)
     fallback = pep668_fallback()

@@ -28,8 +28,6 @@ ARMED_FIRST = ("deploy-bug deploy-git-11: a gate armed before `crapkit init` ref
 BELOW_TOP = ("deploy-bug deploy-git-8: with the crapkit root below the git top, the README Route 2 hook runs at "
              "the top and refuses every commit with `no crapkit.toml at TOP - nothing to analyze`; that line, "
              "also what next-item prints from a sibling package, names no `--repo`")
-WORKTREE_ROUTE1 = ("deploy-bug deploy-git-7: README Route 1 fails in a linked worktree, where .git is a file: "
-                   "`cannot create .git/hooks/pre-commit: Directory nonexistent`, and no gate is armed")
 
 
 def with_pytest_config(box, templates, name: str) -> Path:
@@ -225,7 +223,6 @@ def test_a_linked_worktree_measures_ranks_serves_and_advises(box, templates):
     gitsurf.assert_advised(gitsurf.advise(box, tree, tree / gitsurf.breach(tree)), "calc/route.py")
 
 
-@pytest.mark.xfail(strict=True, reason=WORKTREE_ROUTE1)
 @cell("lin-worktree", channel="pip venv", harness="git 2.47",
       scenario="fresh: README Route 1 from a linked worktree", use_cases="commit gate", os="linux", image="cells",
       cadence="push")
