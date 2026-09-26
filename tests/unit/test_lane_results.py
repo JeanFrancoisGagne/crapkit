@@ -182,21 +182,56 @@ def test_without_results_names_the_lanes_that_recorded_no_list():
 
 import re  # noqa: E402
 
-_RAW_READ = re.compile(r'(\.get\(|\[)"(failures|tests_total|tests_skipped)"'
-                       r'|"(failures|tests_total|tests_skipped)" in ')
+_FIELD = r"""["'](failures|tests_total|tests_skipped)["']"""
+_RAW_READ = re.compile(rf"(\.get\(|\[){_FIELD}|{_FIELD} in ")
+_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _python_files() -> list[Path]:
+    """Every module that could read a lane record: the package and the repo's
+    tools, whose release guard reads the verify run it publishes on."""
+    return [path for top in ("src/crapkit", "tools") for path in sorted((_ROOT / top).rglob("*.py"))
+            if path.name != "lane_results.py"]
 
 
 def test_no_module_but_lane_results_reads_a_lanes_result_fields():
     """Each raw read applied the absent-means-None rule by hand, and one that
     wrote `.get("tests_total", 0)` reported a lane that ran nothing as every test
     short. `read_results` is the one place that rule lives."""
-    src = Path(__file__).resolve().parents[2] / "src" / "crapkit"
-    raw = [f"{path.relative_to(src).as_posix()}:{number}"
-           for path in sorted(src.rglob("*.py")) if path.name != "lane_results.py"
+    raw = [f"{path.relative_to(_ROOT).as_posix()}:{number}"
+           for path in _python_files()
            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
            if _RAW_READ.search(line)]
 
     assert raw == []
+
+
+@pytest.mark.parametrize("line", [
+    'lane.get("failures")', "lane.get('tests_total')", "prov['tests_skipped']",
+    '"failures" in lane', "'tests_total' in prov",
+], ids=["get-double", "get-single", "index-single", "in-double", "in-single"])
+def test_the_one_reader_guard_sees_either_quote(line):
+    assert _RAW_READ.search(line)
+
+
+@pytest.mark.parametrize("prov, expected", [
+    ({"tests_total": True, "tests_skipped": False}, LaneResults(None, None, None, frozenset())),
+    ({"tests_total": "2", "tests_skipped": "0"}, LaneResults(None, None, None, frozenset())),
+    ({"tests_total": -1, "tests_skipped": 2.0}, LaneResults(None, None, None, frozenset())),
+    ({"tests_total": 0, "tests_skipped": 0}, LaneResults(0, 0, None, frozenset())),
+    ({"failures": {}}, LaneResults(None, None, None, frozenset())),
+    ({"failures": "t::a"}, LaneResults(None, None, None, frozenset())),
+    ({"failures": [1]}, LaneResults(None, None, None, frozenset())),
+    ({"failures": [], "retried_passes": "t::a"}, LaneResults(None, None, frozenset(), frozenset())),
+], ids=["bools", "strings", "negative-and-float", "zero-is-counted", "failures-a-dict",
+        "failures-a-string", "failures-not-ids", "retried-a-string"])
+def test_a_field_of_the_wrong_type_reads_as_not_recorded(prov, expected):
+    """A baseline file is JSON anyone can edit, and the release guard reads the
+    ledger's JSON: a count is an int of 0 or more and a list names test ids, and
+    any other value is no record at all, never a count or a list to compare."""
+    from crapkit.lane_results import read_results
+
+    assert read_results(prov) == expected
 
 
 @pytest.mark.parametrize("provenance, expected", [

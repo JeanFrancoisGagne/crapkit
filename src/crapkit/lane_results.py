@@ -45,11 +45,26 @@ class LaneResults(NamedTuple):
 
 def read_results(prov: dict, *, failures_trusted: bool = True) -> LaneResults:
     """A lane's provenance as a typed record. `failures_trusted` is False for a
-    run whose failure list cannot be forgiven from (the 0.7.x rule)."""
-    failures = prov.get("failures") if failures_trusted else None
-    return LaneResults(prov.get("tests_total"), prov.get("tests_skipped"),
-                       None if failures is None else frozenset(failures),
-                       frozenset(prov.get("retried_passes", ())))
+    run whose failure list cannot be forgiven from (the 0.7.x rule).
+
+    A baseline file is JSON anyone can edit, and the release guard reads the
+    ledger's JSON, so a field of the wrong type is not recorded: a count is an
+    int of 0 or more, and a list names test ids."""
+    failures = _ids(prov.get("failures")) if failures_trusted else None
+    return LaneResults(_count(prov.get("tests_total")), _count(prov.get("tests_skipped")),
+                       failures, _ids(prov.get("retried_passes")) or frozenset())
+
+
+def _count(value) -> int | None:
+    """A recorded count, or None: a bool, a string or a negative number counts nothing."""
+    return value if type(value) is int and value >= 0 else None
+
+
+def _ids(value) -> frozenset[str] | None:
+    """A recorded list of test ids, or None for any other value."""
+    if isinstance(value, (list, tuple)) and all(isinstance(item, str) for item in value):
+        return frozenset(value)
+    return None
 
 
 def recorded_failures(provenance: dict, name: str) -> frozenset[str]:

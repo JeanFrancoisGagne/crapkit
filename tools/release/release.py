@@ -730,16 +730,23 @@ def _test_lanes(stored):
 
 
 def _passing_lane(lane) -> bool:
-    if not isinstance(lane, dict) or lane.get("failures") != []:
-        return False
-    code = lane.get("exit_code")
-    return (type(code) is int and code == 0 and _passing_test_counts(lane)
-            and _test_artifact_digests(lane))
+    return isinstance(lane, dict) and _passing_results(lane) and _test_artifact_digests(lane)
 
 
-def _passing_test_counts(lane: dict) -> bool:
-    total, skipped = lane.get("tests_total"), lane.get("tests_skipped")
-    return type(total) is int and type(skipped) is int and 0 <= skipped < total
+def _passing_results(lane: dict) -> bool:
+    """Exit 0, an empty failure list and counts, read by crapkit's one reader of
+    a lane's results: the crapkit that wrote the verify run this guard reads."""
+    from crapkit.lane_results import read_results
+
+    results, code = read_results(lane), lane.get("exit_code")
+    return (type(code) is int and code == 0 and results.failures == frozenset()
+            and _passing_test_counts(results))
+
+
+def _passing_test_counts(results) -> bool:
+    """At least one test ran and not every test was skipped; either count
+    missing is no evidence."""
+    return None not in (results.tests, results.skipped) and results.skipped < results.tests
 
 
 def _test_artifact_digests(lane: dict) -> bool:
