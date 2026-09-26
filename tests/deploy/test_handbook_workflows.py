@@ -386,8 +386,15 @@ def _polyglot_env(box) -> None:
 
 
 def _polyglot_run(box, repo: Path) -> dict[str, tuple]:
-    """Each command of workflow 3's transcript: (what it printed, what the page prints)."""
-    return {command: (box.script(command, cwd=repo), printed) for command, printed in docsnip.outputs(pre(POLYGLOT))}
+    """Each command of workflow 3's transcript: (what it printed, what the page
+    prints). After init, the container rule goes on the py lane where the guard
+    would fire, so doctor's closing line counts the page's warnings alone."""
+    seen = {}
+    for command, printed in docsnip.outputs(pre(POLYGLOT)):
+        seen[command] = (box.script(command, cwd=repo), printed)
+        if command.startswith("crapkit init"):
+            installers.allow_containers_here(repo)
+    return seen
 
 
 def _rows(text: str) -> list[str]:
@@ -407,7 +414,7 @@ def test_day_one_on_a_polyglot_repo_prints_the_pages_init_and_rows(box):
 
     assert said(init[0]).splitlines() == init[1].splitlines()
     assert config.count("coverage_optional = true") == 2
-    assert (doctor[0].exit, said(doctor[0]).splitlines()[-1]) == (0, "doctor: no problems found")
+    assert (doctor[0].exit, said(doctor[0]).splitlines()[-1]) == (0, doctor[1].splitlines()[-1])
     assert shape(said(inventory[0])).startswith(shape(inventory[1]))
     assert _rows(said(worklist[0])) == _rows(html.unescape(worklist[1]))
 

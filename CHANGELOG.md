@@ -93,6 +93,8 @@ version stays 11, so no repo re-seeds.
   it finds no plugin. With no path it names Claude Code's plugin directory and then
   Codex's, and a path that holds no `.claude-plugin/plugin.json` gets a line that says
   what to pass instead. The onboard skill said that line named the path and nothing else.
+- The handbook's polyglot workflow shows the WARN doctor prints for the `ui` scope, whose
+  vitest line `init` writes commented out, and the closing line that counts it.
 
 ### GitHub Action
 
