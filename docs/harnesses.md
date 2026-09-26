@@ -471,7 +471,7 @@ extensions:
 |---|---|
 | Config file | `~/.config/goose/config.yaml` (`%APPDATA%\Block\goose\config\config.yaml` on Windows). `goose configure`, Add Extension, Command-line Extension writes the same entry. |
 | Starts in | The directory Goose runs in (measured, 1.52.0). |
-| Environment | Goose's own environment (measured). `envs` adds variables. |
+| Environment | Goose's own environment, with `~/.local/bin` and `/usr/local/bin` put first on `PATH` (measured, 1.52.0): a `crapkit` that pipx or `uv tool` left there starts ahead of the one your activated venv holds, so give `cmd` the absolute path of the crapkit you mean when you have both. Goose passes its provider keys (`OPENAI_API_KEY`, the `GOOSE_*` variables) to every stdio server too. `envs` adds variables. |
 | Versions | The deploy suite runs 1.52.0. |
 | Plugin hooks | None. `goose plugin install https://github.com/JeanFrancoisGagne/crapkit` prints `Error: No supported plugin format found` and installs nothing (measured, 1.52.0): Goose looks for a plugin manifest at the top of the repository, and crapkit's plugin sits under `plugin/` in Claude Code's layout. The block above is the way in. |
 | After an upgrade | Start a new session. |
