@@ -408,12 +408,14 @@ version and every marks file re-seeds once, with the same three commands as vers
 below.
 
 - A function's `nesting` in C, C++, Objective-C, Java, JavaScript, TypeScript, Go,
-  Rust, Swift, Zig and PowerShell reads the depth crapkit's cognitive pass measures, the
-  way Python has since 0.5.0. lizard's ND column, which those rows read before,
-  opened a level for `&&`, `||`, `case` and `try` and lost one at a `}` or a `;`, so
-  most rows that move go down: a switch reads 1 whatever its case count, and a
-  condition's operators add nothing. Rows go up where ND lost a level, as with nested
-  loops, an `if` inside an `else`, or a Rust `match`.
+  Rust, Swift, Zig, PowerShell and shell reads the depth crapkit's cognitive pass
+  measures, the way Python has since 0.5.0. lizard's ND column, which those rows read
+  before, opened a level for `&&`, `||`, `case` and `try` (PowerShell's `-and` and
+  `-or` too) and lost one at a `}` or a `;`, so most rows that move go down: a switch
+  reads 1 whatever its case count, a condition's operators add nothing, and a shell
+  line such as `[ "$a" ] && [ "$b" ] || echo no` opens no level. Rows go up where ND
+  lost a level, as with nested loops, an `if` inside an `else`, a Rust `match`, or a
+  shell or PowerShell `case`/`switch`, which ND read as no level.
 - `cognitive` drops in a function where a guard without braces (`if (a) return;`)
   comes before a block that is not a structure's, such as a bare `{`,
   `synchronized`, `@autoreleasepool` or a lambda's body: the structures inside that

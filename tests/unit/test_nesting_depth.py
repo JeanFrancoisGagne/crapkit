@@ -279,6 +279,27 @@ HEADER_BRACES = {
                     "            go();\n        }\n    }\n}\n"),
 }
 
+# Shell and PowerShell rows read ND through their readers' own keyword lists,
+# which held the logical operators. Each comment says what ND read.
+SCRIPT_DEPTHS = {
+    # ND 2: the inner `if` and the loop shared a level.
+    "nested.sh": ('f() {\n  if [ "$a" ]; then\n    if [ "$b" ]; then\n      while true; do\n'
+                  '        echo x\n      done\n    fi\n  fi\n}\n', 3),
+    # ND 2: `&&` and `||` each opened a level.
+    "logic.sh": ('f() {\n  [ "$a" ] && [ "$b" ] || echo no\n  echo done\n}\n', 0),
+    # ND 2: three sibling one-line `if`s stacked.
+    "flat.sh": ('f() {\n  if [ "$a" ]; then echo a; fi\n  if [ "$b" ]; then echo b; fi\n'
+                '  if [ "$c" ]; then echo c; fi\n}\n', 1),
+    # ND 0: `case ... esac` opened no level.
+    "case.sh": ('f() {\n  case "$1" in\n    a) echo a ;;\n    b) echo b ;;\n  esac\n}\n', 1),
+    # ND 3: `-and` and `-or` each opened a level.
+    "logic.ps1": ('function F($a, $b, $c) {\n    if ($a -and $b -or $c) {\n        go\n'
+                  '    }\n}\n', 1),
+    # ND 0: the switch opened no level.
+    "switch.ps1": ('function F($k) {\n    switch ($k) {\n        1 { go }\n        2 { go }\n'
+                   '        default { go }\n    }\n}\n', 1),
+}
+
 
 def _nesting(name: str, code: str) -> int:
     (record,) = analyze_source(name, code)
@@ -429,6 +450,13 @@ def test_a_brace_in_a_structures_header_is_not_its_body(name):
     (record,) = analyze_source(name, HEADER_BRACES[name])
 
     assert (record.nesting, record.cognitive) == (2, 3)
+
+
+@pytest.mark.parametrize("name", sorted(SCRIPT_DEPTHS))
+def test_a_shell_or_powershell_function_reads_the_depth_of_its_blocks(name):
+    source, depth = SCRIPT_DEPTHS[name]
+
+    assert _nesting(name, source) == depth
 
 
 def test_a_structure_in_another_structures_header_leaves_its_body_waiting():

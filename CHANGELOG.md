@@ -1227,7 +1227,9 @@ analysis-version bump, so each marks file re-seeds once
   closed a level at every `}` and at the first `;` after a structure without braces,
   and opened one for `&&`, `||`, `case`, `try` and even a parameter named `def`: three
   nested loops read 2, a Go `if a && b && c || d` read 4, a Go switch with three cases
-  read 3, and a braceless `if` before a loop left its level open over the loop's body.
+  read 3, a PowerShell `if ($a -and $b -or $c)` read 3 and its `switch` 0, a shell
+  `[ "$a" ] && [ "$b" ] || echo no` read 2, and a braceless `if` before a loop left
+  its level open over the loop's body.
   Now each `if`, `else`, loop, `switch` and `catch` body is a level whether it has
   braces or not, a conditional operator's arms are one, and logical operators, case
   labels, `try`, bare blocks and a `?` with no `:` open none. The [`nesting`
