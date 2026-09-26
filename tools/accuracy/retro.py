@@ -55,6 +55,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -97,8 +98,15 @@ def _read(path: Path) -> str:
 
 
 def _write(path: Path, text: str) -> None:
-    """Write UTF-8 text with the newlines as given, on every OS."""
-    path.write_bytes(text.encode())
+    """Write UTF-8 text with the newlines as given, on every OS. The text goes to a
+    sibling file first and replaces the table in one step, so a write that fails
+    halfway (a full disk emptied the ledger once) leaves the old table whole."""
+    partial = path.with_name(path.name + ".partial")
+    try:
+        partial.write_bytes(text.encode())
+        os.replace(partial, path)
+    finally:
+        partial.unlink(missing_ok=True)
 
 
 def _text(raw: bytes) -> str:
@@ -143,8 +151,19 @@ def write_table(path: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
     _write(path, "\n".join(body) + "\n")
 
 
+# A replay's evidence quotes the paths it failed on. The tables name those paths by
+# role, never by the user, drive or temp directory of the machine that replayed.
+LOCAL_PATHS = ((re.compile(r"""[^\s'"]*pytest-of-[^\s'"\\/]+[\\/]+pytest-\d+"""), "<tmp>"),
+               (re.compile(r"""(?:[A-Za-z]:)?[\\/]+(?:Users|home)[\\/]+[^\s'"\\/]+"""),
+                "<home>"))
+
+
 def _cell(value: str) -> str:
-    return " ".join(str(value).split())
+    """One table cell: on one line, with no local path in it."""
+    text = str(value)
+    for pattern, role in LOCAL_PATHS:
+        text = pattern.sub(role, text)
+    return " ".join(text.split())
 
 
 def row_key(row: dict) -> tuple[str, str]:
@@ -614,9 +633,11 @@ def _bug_for(bugs: list[dict], packet: str, listed: dict) -> dict:
 def synced_bugs(bugs: list[dict], tables: dict[str, list[dict]]) -> list[dict]:
     """bugs.tsv with each landed packet's rows replaced by the pairs its retro.tsv lists.
     A pair bugs.tsv already held keeps its place; a new one follows its bug's rows. A bug
-    no landed packet lists keeps its proposed rows, so a triaged fix never loses its last row."""
+    no landed packet lists keeps its proposed rows, so a triaged fix never loses its last row.
+    A packet that lists one pair once per fix commit gives it one row: the ledger keys on it."""
     fresh = [_bug_for(bugs, packet, listed) for packet, rows in tables.items() for listed in rows]
-    return sorted(_unsynced(bugs, tables) + fresh, key=_placed(bugs))
+    unique = {row_key(row): row for row in reversed(fresh)}
+    return sorted(_unsynced(bugs, tables) + list(unique.values()), key=_placed(bugs))
 
 
 def _unsynced(bugs: list[dict], tables: dict[str, list[dict]]) -> list[dict]:

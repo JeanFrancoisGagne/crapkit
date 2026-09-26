@@ -375,6 +375,42 @@ def _ledger_row(bug_id: str, before: str = "red", digest: str = "") -> dict:
             "digest": digest or retro.digest(NODE), "replayed": "2026-09-01", "note": ""}
 
 
+def test_a_table_write_that_fails_halfway_leaves_the_old_table(tmp_path, monkeypatch):
+    """A full disk once emptied ledger.tsv mid-write and lost a replay run's records."""
+    ledger = tmp_path / "ledger.tsv"
+    retro.write_table(ledger, retro.LEDGER_COLUMNS, [_ledger_row("R1")])
+    kept = ledger.read_bytes()
+    real = Path.write_bytes
+
+    def full_disk(path, data):
+        real(path, data[:10])
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Path, "write_bytes", full_disk)
+    with pytest.raises(OSError):
+        retro.write_table(ledger, retro.LEDGER_COLUMNS, [_ledger_row("R1"), _ledger_row("R2")])
+
+    assert ledger.read_bytes() == kept
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["ledger.tsv"]
+
+
+@pytest.mark.parametrize("evidence, cell", [
+    (r"--export C:\Users\ann\AppData\Local\Temp\pytest-of-ann\pytest-82559\defs\x.json",
+     r"--export <tmp>\defs\x.json"),
+    (r"root='E:\\scratch\\tmp\\pytest-of-ann\\pytest-105\\repo'", r"root='<tmp>\\repo'"),
+    ("lane 'js' FAILED: /tmp/pytest-of-ann/pytest-3/t0/cov.json",
+     "lane 'js' FAILED: <tmp>/t0/cov.json"),
+    (r'File "C:\Users\ann\uv\python\lib\runpy.py", line 88',
+     r'File "<home>\uv\python\lib\runpy.py", line 88'),
+    ("in /home/ann/src/a.py\nand\t/Users/ann/b.py", "in <home>/src/a.py and <home>/b.py"),
+    ("assert 3 == 0 in src/users/a.py", "assert 3 == 0 in src/users/a.py"),
+])
+def test_a_table_cell_names_no_local_path(evidence, cell):
+    """A replay's evidence quotes the temp and home paths it ran under; the committed
+    tables name them by role, so no user or machine reaches the public ledger."""
+    assert retro._cell(evidence) == cell
+
+
 @pytest.fixture
 def tables(tmp_path, monkeypatch):
     """bugs.tsv and ledger.tsv under tmp_path, and a replay that answers from `answers`."""
@@ -536,6 +572,19 @@ def test_a_packet_s_platform_all_syncs_as_any_and_replays_everywhere(tmp_path):
     row = next(row for row in synced if row["test"].endswith("test_everywhere"))
     assert row["platform"] == "any"
     assert retro.PLATFORMS[row["platform"]] == ""
+
+
+def test_a_pair_listed_once_per_fix_commit_syncs_as_one_row(tmp_path):
+    """A packet may list a bug's check once for each of its fix commits; the ledger keys
+    on (id, test), so bugs.tsv holds the pair once, with the first listing's platform."""
+    table = ("id\tfix_commit\ttest\tplatform\n"
+             "R3\taaa\ttests/accuracy/p1/test_a.py::test_both\twindows\n"
+             "R3\tbbb\ttests/accuracy/p1/test_a.py::test_both\tlinux\n")
+
+    synced = retro.synced_bugs(BUGS_BEFORE, retro.landed(_landed(tmp_path, table)))
+
+    both = [row for row in synced if row["test"].endswith("test_both")]
+    assert [(row["id"], row["platform"]) for row in both] == [("R3", "windows")]
 
 
 def test_sync_refuses_a_bug_bugs_tsv_does_not_know(tmp_path):
