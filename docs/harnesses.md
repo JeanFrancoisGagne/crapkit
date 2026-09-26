@@ -17,8 +17,9 @@ Three rules hold for every agent:
 - The tools read a scored run. Run `crapkit init` and `crapkit coverage` in the repository
   first; before that every tool answers with the missing-config or no-run result.
 
-The Claude Code plugin's advisory hook is a Claude Code hook. The other agents either do
-not load it or load it wrongly, and each section says which. The commit gate
+The Claude Code plugin's advisory hook is one shell command, `crapkit claude-hook --protocol 1`.
+Claude Code runs it, and so do Cursor, GitHub Copilot CLI and VS Code when they load the
+plugin; Codex and the other agents do not, and each section says which. The commit gate
 ([README: the gate](../README.md#the-gate)) is the check every agent shares, because git
 runs it.
 
@@ -29,10 +30,10 @@ runs it.
 | [Claude Agent SDK](#claude-agent-sdk) | `options.mcpServers` in code | runs when the plugin is loaded |
 | [claude-code-action](#claude-code-action) | a file `claude_args` names | none |
 | [Codex](#codex) | `~/.codex/config.toml` | none: the plugin's Codex manifest keeps it out |
-| [Cursor](#cursor) | `.cursor/mcp.json` | none from this config; see the section |
+| [Cursor](#cursor) | `.cursor/mcp.json` | runs, from the Claude Code plugin it imports |
 | [Windsurf](#windsurf) | `~/.codeium/windsurf/mcp_config.json` | none |
-| [VS Code with GitHub Copilot](#vs-code-with-github-copilot) | `.vscode/mcp.json` | none; do not add the plugin as a VS Code agent plugin |
-| [GitHub Copilot CLI](#github-copilot-cli) | `~/.copilot/mcp-config.json` | none; do not install the plugin with `copilot plugin install` |
+| [VS Code with GitHub Copilot](#vs-code-with-github-copilot) | `.vscode/mcp.json` | runs, from the plugin added as an agent plugin |
+| [GitHub Copilot CLI](#github-copilot-cli) | `~/.copilot/mcp-config.json` | runs, from the plugin `copilot plugin install` adds |
 | [Copilot cloud agent](#copilot-cloud-agent) | the repository's Copilot settings | none |
 | [Kiro](#kiro) | `.kiro/settings/mcp.json` | none |
 | [Gemini CLI](#gemini-cli) | `~/.gemini/settings.json` | none |
@@ -80,7 +81,7 @@ haven't granted it yet.` in place of the answer (measured, 2.1.281). Pass
 | Config file | The plugin carries this server already: `claude plugin install crapkit@crapkit` ([README](../README.md#the-claude-code-plugin)). Without the plugin, the block goes in `.mcp.json` at the repository root, or `claude mcp add --scope user crapkit -- crapkit mcp --repo /absolute/path/to/your/repo` writes it into `~/.claude.json`. A user entry named `crapkit` hides the plugin's server. |
 | Starts in | The directory Claude Code runs in (measured, 2.1.281). A project `.mcp.json` can drop `--repo`. |
 | Environment | Claude Code's own environment, plus `CLAUDE_PROJECT_DIR` and `CLAUDECODE` (measured). `env` adds variables. |
-| Versions | The plugin's hook needs 2.1.139 or later. Older releases ignore the hook's `args`, run a bare `crapkit`, and hand its exit-2 usage error to the model after every matched edit; `crapkit doctor --plugin-root` names a Claude Code below that. The deploy suite runs 2.1.281. |
+| Versions | Any release with plugin support runs the plugin's hook, which is one shell command; the deploy cells run it on 2.1.138 as well. A plugin from 0.8.0 or earlier passes the hook's arguments in `args`, which releases before 2.1.139 drop; beside such a plugin, `crapkit doctor --plugin-root` names a Claude Code below 2.1.139. The deploy suite runs 2.1.281. |
 | Plugin hooks | Runs the advisory PostToolUse hook on `Edit` and `Write`. Add the `Bash` entry yourself ([README](../README.md#the-claude-code-plugin)). |
 | After an upgrade | `claude plugin marketplace update crapkit`, then `claude plugin update crapkit@crapkit --scope user`, then restart the session. A server from `.mcp.json` restarts with the session, or from `/mcp`. |
 
@@ -209,7 +210,7 @@ args = ["mcp", "--repo", "/absolute/path/to/your/repo"]
 | Starts in | The thread's working directory (measured, 0.156.1), or the table's `cwd`. |
 | Environment | Only the variables on Codex's allowlist, when they are set: `HOME`, `LOGNAME`, `PATH`, `SHELL`, `USER`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `TZ` on Linux and macOS. An activated virtualenv's `VIRTUAL_ENV` does not reach the server (measured, 0.156.1). `env = { KEY = "value" }` sets more, and `env_vars = ["VIRTUAL_ENV"]` passes named variables through. |
 | Versions | The README's two plugin lines need 0.131.0 or later: 0.130.0 has no `codex plugin add` (measured). The config block needs no plugin support. The deploy suite runs 0.156.1. |
-| Plugin hooks | None. The plugin's `.codex-plugin/plugin.json` empties `hooks`, because Codex keeps only each entry's `command` from Claude Code's `hooks/hooks.json` and would run a bare `crapkit` after every edit. A plugin from 0.8.0 or earlier has no Codex manifest, and Codex lists its hooks as untrusted: leave them so. |
+| Plugin hooks | None. The plugin's `.codex-plugin/plugin.json` empties `hooks`, because Codex reports an edit as `apply_patch` patch text, which the advisory does not read. A plugin from 0.8.0 or earlier has no Codex manifest, and Codex lists its hooks as untrusted PostToolUse hooks that each run a bare `crapkit`: leave them so. |
 | After an upgrade | Start a new thread. Codex upgrades configured git marketplaces when it starts, so upgrade the CLI first ([docs: upgrading](upgrading.md#plugin-and-mcp-clients)). |
 
 ## Cursor
@@ -231,7 +232,7 @@ args = ["mcp", "--repo", "/absolute/path/to/your/repo"]
 | Starts in | The project directory (measured, agent CLI 2026.09.23). |
 | Environment | Only `HOME`, `LC_CTYPE` and `PATH` (measured, agent CLI 2026.09.23). Put anything else under `env`. |
 | Versions | The deploy suite runs agent CLI 2026.09.23-86fc751. |
-| Plugin hooks | None from this config. Cursor can import a Claude Code plugin installed in the same home, and its converter keeps only each hook's `command`, `matcher` and `timeout` (read in the agent CLI's code), so crapkit's hook would run there as a bare `crapkit` that prints its usage and exits 2. The agent CLI lists no MCP server from the plugin: after the README's two plugin lines in the same home, `cursor-agent mcp list` shows none (measured), so give Cursor this block either way. |
+| Plugin hooks | The advisory hook, when Cursor imports the Claude Code plugin installed in the same home: its converter keeps each hook's `command`, `matcher` and `timeout` (read in the agent CLI's code), and the plugin's one hook needs nothing more. Cursor reads exit 2 as a deny, so the hook hands the advisory back as added context ([other harnesses](agent-json.md#other-harnesses)). The agent CLI lists no MCP server from the plugin: after the README's two plugin lines in the same home, `cursor-agent mcp list` shows none (measured), so give Cursor this block either way. |
 | After an upgrade | Restart the agent, or turn the server off and on in Cursor's MCP settings. |
 
 ## Windsurf
@@ -276,7 +277,7 @@ args = ["mcp", "--repo", "/absolute/path/to/your/repo"]
 | Starts in | Servers from the user profile start in your home directory, not the workspace, so the user file needs the absolute path. `"cwd"` sets it. |
 | Environment | VS Code's own environment. `env` and `envFile` add variables. Launched from the desktop rather than as `code` from a terminal, VS Code takes PATH from your login shell, so a crapkit that only an activated virtualenv holds fails with `spawn crapkit ENOENT` (measured, 1.139.0). Give `command` the absolute path, or install crapkit with pipx or `uv tool install`: one in `~/.local/bin` started. |
 | Versions | The deploy suite runs 1.139.0, in a check that does not block a release yet. |
-| Plugin hooks | None from this config. Do not add crapkit's Claude Code plugin to VS Code as an agent plugin: VS Code keeps only each hook's `command`, so every hook would run a bare `crapkit`, and it starts the plugin's server in the plugin's directory, where the server finds no repository (measured, 1.139.0). |
+| Plugin hooks | The advisory hook, when you add crapkit's Claude Code plugin to VS Code as an agent plugin: VS Code keeps each hook's `command` (read in 1.139.0's code) and runs it on every tool call whatever the matcher, and the hook judges only the tools that write a file ([other harnesses](agent-json.md#other-harnesses)). VS Code starts the plugin's own server in the plugin's directory, where the server finds no repository (measured, 1.139.0), so keep this block for the tools. |
 | After an upgrade | MCP: List Servers, pick crapkit, Restart Server. |
 
 ## GitHub Copilot CLI
@@ -300,7 +301,7 @@ args = ["mcp", "--repo", "/absolute/path/to/your/repo"]
 | Starts in | The directory Copilot runs in (measured, 1.0.88). |
 | Environment | Copilot's own environment (measured). `env` adds variables. |
 | Versions | The deploy suite runs 1.0.88. |
-| Plugin hooks | None from this config. Do not install crapkit's plugin with `copilot plugin install`: Copilot keeps only each hook's `command`, `matcher` and `timeout`, and one edit of a Python file then started 50 bare `crapkit` processes, each printing its usage, and held the edit for 29 seconds (measured, 1.0.88). |
+| Plugin hooks | The advisory hook, after `copilot plugin marketplace add JeanFrancoisGagne/crapkit` and `copilot plugin install crapkit@crapkit`: Copilot keeps each hook's `command`, `matcher` and `timeout`, and one edit of a Python file started `crapkit claude-hook --protocol 1` once (measured, 1.0.88). Copilot shows exit 2's output to the user alone, so the hook hands the advisory to the model as added context ([other harnesses](agent-json.md#other-harnesses)). |
 | After an upgrade | Start a new `copilot` session. |
 
 ## Copilot cloud agent

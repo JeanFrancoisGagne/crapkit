@@ -56,9 +56,9 @@ version stays 11, so no repo re-seeds.
   Code's `hooks/hooks.json` and listed its 50 handlers as PostToolUse hooks that each ran
   a bare `crapkit`, which exits 2 with its usage. Codex also offers `crapkit-onboard` to
   the model only when you name it.
-- The README names the floors: the plugin's hook needs Claude Code 2.1.139, and the Codex
-  plugin lines need Codex 0.131.0. `crapkit doctor --plugin-root` names a Claude Code
-  below 2.1.139.
+- The README names the Codex floor: the plugin lines need Codex 0.131.0. Beside a plugin
+  from 0.8.0, whose hooks pass `args`, `crapkit doctor --plugin-root` names a Claude Code
+  below 2.1.139, the first release that reads them.
 - The onboard and recover skills label each `claude plugin` command as Claude Code's and
   give the Codex command beside it.
 - An MCP call to a tool name 0.6.0 renamed answers with the new name, as in

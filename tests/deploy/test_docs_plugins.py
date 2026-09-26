@@ -5,9 +5,10 @@ skill that shows a `claude plugin` command has to say it is Claude Code's.
 The first cell installs the plugin with the README's two Codex lines through
 the kit's github.com mirror and reads the skills Codex installed with the
 same rule tests/unit/test_docs_claims_contract.py holds the source to. The
-second runs the README's lines on the floor releases the README names: the
-Claude Code plugin on 2.1.139, the first release the hook needs, and the
-Codex lines on 0.121.0, which the README says predates `codex plugin add`.
+second runs the README's lines on the oldest releases the deploy image carries:
+the Claude Code plugin on 2.1.138, since the README names no Claude Code floor
+for the plugin's one shell-form hook, and the Codex lines on 0.121.0, which
+the README says predates `codex plugin add`.
 
 Cells of the deploy-docs packet: the doc halves of lin-codex-plugin-fresh
 (skills name no unlabelled `claude` command) and lin-plugin-floors.
@@ -32,7 +33,7 @@ from test_docs_claims_contract import unlabelled_claude_calls
 paths = sys.argv[1:]
 print(json.dumps({path: unlabelled_claude_calls(open(path, encoding="utf-8").read()) for path in paths}))
 """
-CLAUDE_FLOOR, CODEX_BEFORE_ADD = "2.1.139", "0.121.0"
+CLAUDE_FLOOR, CODEX_BEFORE_ADD = "2.1.138", "0.121.0"
 
 
 def harnesses_on_path(box) -> None:
@@ -99,9 +100,10 @@ def claude_plugins(box, repo: Path) -> list[str]:
 
 
 @cell("docs-plugin-floors", channel="Claude and Codex marketplaces, README lines via the mirror",
-      harness="Claude Code 2.1.139, Codex 0.121.0",
-      scenario="fresh: the README's Claude Code plugin lines install on the floor it names, 2.1.139; its Codex "
-               "lines on 0.121.0 stop at `codex plugin add`, as the README says of releases before 0.131.0",
+      harness="Claude Code 2.1.138, Codex 0.121.0",
+      scenario="fresh: the README's Claude Code plugin lines install on the oldest release the image carries, "
+               "2.1.138; its Codex lines on 0.121.0 stop at `codex plugin add`, as the README says of releases "
+               "before 0.131.0",
       use_cases="plugin install", os="linux", image="core", cadence="nightly")
 def test_the_floors_the_readme_names_hold(box, candidate):
     gitmirror.make(box).publish(candidate.staged, candidate.version)

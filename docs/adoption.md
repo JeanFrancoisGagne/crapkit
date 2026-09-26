@@ -273,7 +273,7 @@ Every other agent takes the MCP server from its own config file, and
 | Codex | the plugin: three skills and the MCP server |
 | Continue | `crapkit mcp` from [its config](harnesses.md#continue), and the skills when you copy them into `.continue/skills`, `.claude/skills` or `~/.continue/skills` |
 | Zed | `crapkit mcp` from [its config](harnesses.md#zed), and the skills when you copy them into `~/.agents/skills` |
-| Cursor, GitHub Copilot CLI, VS Code | the advisory hook, from the Claude Code plugin they load; `crapkit mcp` from its config ([Cursor](harnesses.md#cursor), [GitHub Copilot CLI](harnesses.md#github-copilot-cli)) for the tools |
+| Cursor, GitHub Copilot CLI, VS Code | the advisory hook, from the Claude Code plugin they load; `crapkit mcp` from its config ([Cursor](harnesses.md#cursor), [GitHub Copilot CLI](harnesses.md#github-copilot-cli), [VS Code](harnesses.md#vs-code-with-github-copilot)) for the tools |
 | every other MCP client | `crapkit mcp` as a stdio server, from [its section](harnesses.md): twelve read-side tools, no skills, no hook; calls can write caches and store metadata |
 | Aider | `crapkit rescore --gate` as its [lint command](harnesses.md#aider) |
 | anything else | the pre-commit hook and CI, which are git and shell and need no harness at all |

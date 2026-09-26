@@ -349,10 +349,7 @@ ships three skills, the read-side MCP server, and one advisory PostToolUse hook 
 any function an edit pushed over its ceiling. Claude reaches two of the skills by itself,
 `crapkit` and `crapkit-recover`; the third you type, as `/crapkit:crapkit-onboard`, because
 wiring a repo up happens once and its description has no business in every turn's window.
-It adds no files to your repo, and it needs the crapkit CLI on PATH. The hook needs
-Claude Code 2.1.139 or later: an older release drops the hook's arguments and runs a bare
-`crapkit` after every matched edit, which prints its usage and exits 2, and
-`crapkit doctor --plugin-root` names the release it found.
+It adds no files to your repo, and it needs the crapkit CLI on PATH.
 
 The hook is one shell command, `crapkit claude-hook --protocol 1`, so it runs as written in
 any Claude Code version with plugin support, and in the other agents that load Claude Code

@@ -168,11 +168,14 @@ def test_the_summary_table_links_every_section():
 
 
 def test_the_floors_the_page_names_are_the_ones_the_deploy_pins_hold():
-    """The minimum versions a reader is told are the floors the deploy cells run."""
+    """The releases a reader is told the deploy cells run are the ones they run: the
+    pinned Claude Code and Codex, and the oldest Claude Code floor, where the hook
+    cells run the plugin's one shell-form hook."""
     pins = tomllib.loads((ROOT / "tools" / "deploy" / "pins.toml").read_text(encoding="utf-8"))["harness"]
     claude, codex = sections()["Claude Code"], sections()["Codex"]
+    oldest = min(pins["claude-code"]["floors"], key=lambda release: tuple(map(int, release.split("."))))
 
-    assert f"needs {pins['claude-code']['floors'][0]} or later" in claude
+    assert f"run it on {oldest} as well" in claude
     assert f"The deploy suite runs {pins['claude-code']['version']}" in claude
     assert f"The deploy suite runs {pins['codex']['version']}" in codex
 
