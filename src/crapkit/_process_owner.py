@@ -26,6 +26,7 @@ from .locks import exclusive_lock
 _OWN_GROUP = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
               if os.name == "nt" else {"start_new_session": True})
 
+_PROC = Path("/proc")
 _OWNER_INPUTS = set()
 _OWNER_INPUTS_LOCK = threading.RLock()
 
@@ -336,11 +337,24 @@ def _proc_group_member(path: Path, pid: str) -> bool:
     return fields[2] == pid.encode() and fields[0] not in (b"Z", b"X")
 
 
+def _proc_stat_records() -> list[Path]:
+    """Each /proc/<pid>/stat, named from one listing of /proc and never
+    statted: Python 3.11's glob stats each record it names, and a process that
+    exits in between answers ESRCH, which pathlib raised, so a lane stopped
+    while any process on the host exited failed with `[Errno 3] No such
+    process`. `_proc_group_member` reads a record that is gone as no member."""
+    return [_PROC / name / "stat" for name in os.listdir(_PROC) if name.isdigit()]
+
+
 def _group_active(pid: int) -> bool:
     """Wait for descriptor closure; zombies cannot keep writing or own locks."""
     if sys.platform.startswith("linux"):
-        return any(_proc_group_member(path, str(pid))
-                   for path in Path("/proc").glob("[0-9]*/stat"))
+        return any(_proc_group_member(path, str(pid)) for path in _proc_stat_records())
+    return _ps_group_active(pid)
+
+
+def _ps_group_active(pid: int) -> bool:
+    """`_group_active` where no /proc holds the table: one `ps` listing."""
     result = subprocess.run(["ps", "-A", "-o", "pgid=", "-o", "stat="],
                             capture_output=True, text=True, check=True)
     return any(group == str(pid) and not state.startswith("Z")

@@ -1,8 +1,10 @@
 """Exercise foreign OS decisions beside the real native lifecycle regressions."""
 from concurrent.futures import ThreadPoolExecutor
 import ctypes
+import os
 from threading import Event
 import subprocess
+import sys
 from types import SimpleNamespace
 from unittest.mock import Mock, call
 
@@ -52,14 +54,34 @@ def test_a_disappearing_proc_record_does_not_keep_a_group_alive(tmp_path, text):
     (['100 (peer) S 1 72', '101 (writer) R 1 71'], True),
 ])
 def test_linux_group_scan_waits_only_for_active_members(tmp_path, monkeypatch, records, expected):
-    files = []
     for index, record in enumerate(records):
-        path = tmp_path / str(index)
-        path.write_text(record)
-        files.append(path)
+        (tmp_path / str(100 + index)).mkdir()
+        (tmp_path / str(100 + index) / 'stat').write_text(record)
+    (tmp_path / 'self').mkdir()  # /proc holds names that are not pids
+    (tmp_path / 'self' / 'stat').write_text('1 (other) S 1 71')
     monkeypatch.setattr(owner, 'sys', SimpleNamespace(platform='linux'))
-    monkeypatch.setattr(owner, 'Path', lambda root: SimpleNamespace(glob=lambda pattern: files))
+    monkeypatch.setattr(owner, '_PROC', tmp_path)
     assert owner._group_active(71) is expected
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='reads the host /proc')
+def test_a_process_that_exits_mid_scan_does_not_fail_the_scan(monkeypatch):
+    """A process that exits while the owner scans /proc answers ESRCH
+    (ProcessLookupError), not ENOENT, for its /proc/<pid>/stat. Python 3.11's
+    glob stats each record it names and lets ESRCH out, so on 3.11 a lane
+    stopped while any process on the host exited failed with
+    `[Errno 3] No such process: '/proc/<pid>/stat'` (exit 5)."""
+    gone = f'/proc/{os.getpid()}/stat'
+    real_stat = os.stat
+
+    def stat(path, *args, **kwargs):
+        if os.fspath(path) == gone:
+            raise ProcessLookupError(3, 'No such process', gone)
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, 'stat', stat)
+    # No process is in this group, so the scan reads every record, this one too.
+    assert owner._group_active(2 ** 22 + 1) is False
 
 
 @pytest.mark.parametrize(('listing', 'expected'), [

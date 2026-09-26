@@ -39,7 +39,7 @@ SUBPROCESS_CALLS = frozenset({"run", "Popen", "check_output", "call", "check_cal
 ALLOWED = {
     ("_process_owner.py", "_external_owner", "text pipe"):
         "the owner process crapkit starts writes json.dumps output, which is ASCII",
-    ("_process_owner.py", "_group_active", "text pipe"):
+    ("_process_owner.py", "_ps_group_active", "text pipe"):
         "`ps -o pgid= -o stat=` prints group ids and state letters, ASCII in every locale",
     ("analyze.py", "load_cache", "open"):
         "crapkit's own analysis cache; a torn or foreign byte is a ValueError that reads as a miss",

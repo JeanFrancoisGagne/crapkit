@@ -1048,6 +1048,15 @@ The exit codes, the lane environment and the files that change on upgrade are in
   over, and deleting the coupling cache alone changed nothing. A cache 0.8.0 wrote reads
   as a full clone's, so an upgrade does not walk a full clone's history again.
 
+### A process that exits while a lane stops no longer fails the lane
+
+- On Linux under Python 3.11, a lane failed at exit 5 with `[Errno 3] No such process:
+  '/proc/<pid>/stat'` when any process on the host exited while the measurement owner
+  waited for the lane's process group to end. The owner found each `/proc/<pid>/stat`
+  through a glob, and Python 3.11's glob stats each path it names, which raises for a
+  process that is gone. The owner now lists `/proc` once and reads each record, and a
+  record that is gone reads as no member of the group.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.
