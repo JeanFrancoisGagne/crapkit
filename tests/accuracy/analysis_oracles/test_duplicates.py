@@ -43,11 +43,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import subprocess
+from typing import NamedTuple
 
 import pytest
 
-from accuracy.analysis_oracles import analysis_inventory
+from accuracy.analysis_oracles import analysis_corpora, analysis_inventory
 from accuracy.analysis_oracles.oracles import symilar_adapter
 from accuracy.kit import drive, oracles, rulings, runlog
 
@@ -345,23 +347,164 @@ def _outside(found: dict, aside: set) -> dict:
     return {key: value for key, value in found.items() if not set(key) & aside}
 
 
+def _python_corpus(request, name: str) -> tuple[dict, Path, list[dict]]:
+    """(files, repo root, inventory rows) for the push hand set, crapkit's src,
+    the standard library or a full-corpus Python member."""
+    if name == "hand":
+        return (hand_files(), request.getfixturevalue("hand").root,
+                request.getfixturevalue("hand_rows"))
+    if name in ("src", "stdlib"):
+        measured = request.getfixturevalue(f"{name}_inventory")
+        files = request.getfixturevalue(f"{name}_corpus").files
+    else:
+        files = analysis_corpora.member_files(request.getfixturevalue("full_corpus"), name,
+                                              (".py",))
+        measured = request.getfixturevalue("measure_set")(files)
+    return files, Path(measured.root), list(measured.rows)
+
+
+def _crapkit_pairs(root: Path, similarity: float) -> dict:
+    return _pairs_by_key(drive.Driver(root).json(
+        "duplication", "--similarity", str(similarity), "--top", "10000000"))
+
+
 @pytest.mark.nightly
-@pytest.mark.parametrize("corpus, similarity, floor", [("src", 0.01, 5), ("stdlib", 0.5, 3000)])
+@pytest.mark.parametrize("corpus, similarity, floor", [("src", 0.01, 5), ("stdlib", 0.5, 3000),
+                                                       ("click", 0.01, 30)])
 def test_brute_force_over_a_corpus_gives_crapkit_s_pairs(request, corpus, similarity, floor):
-    """The self-diff over crapkit's own source at --similarity 0.01, so every pair
-    that shares one window is compared, and over the standard library at 0.5
-    (4,474 pairs on 3.12)."""
-    files = request.getfixturevalue(f"{corpus}_corpus").files
-    measured = request.getfixturevalue(f"{corpus}_inventory")
-    payload = drive.Driver(Path(measured.root)).json(
-        "duplication", "--similarity", str(similarity), "--top", "10000000")
-    rows, texts = list(measured.rows), _decoded(files)
+    """The self-diff over crapkit's own source and click at --similarity 0.01, so
+    every pair that shares one window is compared, and over the standard
+    library at 0.5 (4,474 pairs on 3.12)."""
+    files, root, rows = _python_corpus(request, corpus)
+    texts = _decoded(files)
     aside = symilar_adapter.set_aside(rows, texts)
     runlog.note("skipped_files", oracle=f"brute force {corpus}: functions set aside (ao-140)",
                 count=len(aside))
     found = _outside(symilar_adapter.brute_force(rows, texts, similarity), aside)
     assert len(found) >= floor
-    assert _outside(_pairs_by_key(payload), aside) == found
+    assert _outside(_crapkit_pairs(root, similarity), aside) == found
+
+
+# --- pylint's symilar, the nightly oracle ---------------------------------------------------
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("corpus, floor", [("hand", 20), ("src", 5), ("click", 30),
+                                           ("requests", 5)])
+def test_symilar_runs_give_crapkit_s_pairs(request, oracle, corpus, floor, tmp_path):
+    """Every pair that shares one window (--similarity 0.01), with its
+    containment worked from the runs symilar reports over one file per function."""
+    oracle("pylint")
+    files, root, rows = _python_corpus(request, corpus)
+    texts = _decoded(files)
+    aside = symilar_adapter.set_aside(rows, texts)
+    runlog.note("skipped_files", oracle=f"symilar {corpus}: functions set aside (ao-140)",
+                count=len(aside))
+    found = _outside(symilar_adapter.pairs(rows, texts, tmp_path / "functions", 0.01), aside)
+    assert len(found) >= floor
+    assert _outside(_crapkit_pairs(root, 0.01), aside) == found
+
+
+ONE_BODY = [f"value_{line} = combine(items, {line}) or limit" for line in range(10)]
+EVERY_BODY = [f"entry_{line} = pick(items, limit, {line})" for line in range(10)]
+GRID = ["grid = [", "    [", "    ],", "]"]  # one line of the four holds a word character
+WINDOW = ["first = items[0]", "second = items[-1]", "middle = first + second",
+          "span = middle - limit"]
+
+
+def _one_window(name: str, shared: list[str]) -> str:
+    """A 12-line function sharing only `shared`, 4 lines, with its twin: 1/9."""
+    own = [f"{name}_{line} = {line} + limit" for line in range(7)]
+    return _function(name, [*own[:3], *shared, *own[3:]])
+
+
+def symilar_hand_files() -> dict:
+    return {
+        "scheme_a.py": _function("scheme_a", BODY), "scheme_b.py": _noisy("scheme_b"),
+        "one.py": _function("one_a", ONE_BODY) + _function("one_b", ONE_BODY),
+        **{f"every_{tag}.py": _function(f"every_{tag}", EVERY_BODY) for tag in "abc"},
+        "content_a.py": _one_window("content_a", GRID),
+        "content_b.py": _one_window("content_b", GRID),
+        "window_a.py": _one_window("window_a", WINDOW),
+        "window_b.py": _one_window("window_b", WINDOW),
+    }
+
+
+class SymilarHand(NamedTuple):
+    root: Path  # the repo the hand cases are written in
+    rows: list  # crapkit's inventory rows for them
+    found: dict  # crapkit's pairs at --similarity 0.01, by bare names
+    written: dict  # the adapter's function files: {file: (row, lines)}
+    functions: Path  # the directory holding those files
+
+
+@pytest.fixture(scope="module")
+def symilar_hand(tmp_path_factory):
+    files = symilar_hand_files()
+    tree = {"crapkit.toml": analysis_inventory.config(analysis_inventory.languages_of(files)),
+            **files}
+    work = tmp_path_factory.mktemp("symilar-hand")
+    driver = drive.Driver(analysis_inventory.build(tree, work / "repo"))
+    assert driver.run("coverage").code == 0
+    found = pair_names(driver.json("duplication", "--similarity", "0.01", "--top", "1000"))
+    rows = list(analysis_inventory.run_inventory(driver.root, work / "rows.tsv").rows)
+    written = symilar_adapter.function_files(rows, _texts(files), work / "functions")
+    return SymilarHand(driver.root, rows, found, written, work / "functions")
+
+
+def _files_of(written: dict, names: set) -> list[str]:
+    return sorted(file for file, (row, _) in written.items() if _bare(row["long_name"]) in names)
+
+
+def _raw_scheme(case: SymilarHand, work: Path) -> int:
+    return len(symilar_adapter.couples(["scheme_a.py", "scheme_b.py"], case.root))
+
+
+def _raw_one_file(case: SymilarHand, work: Path) -> int:
+    return len(symilar_adapter.couples(["one.py"], case.root))
+
+
+def _raw_content_lines(case: SymilarHand, work: Path) -> int:
+    bare = symilar_adapter.function_files(case.rows, _texts(symilar_hand_files()), work, prefix="")
+    return len(symilar_adapter.couples(_files_of(bare, {"content_a", "content_b"}), work))
+
+
+def _raw_threshold(case: SymilarHand, work: Path) -> int:
+    names = _files_of(case.written, {"window_a", "window_b"})
+    return len(symilar_adapter.couples(names, case.functions, min_lines=4))
+
+
+def _raw_every_couple(case: SymilarHand, work: Path) -> int:
+    names = _files_of(case.written, {"every_a", "every_b", "every_c"})
+    return len(symilar_adapter.report(names, case.functions, min_lines=3))
+
+
+# ruling id -> (the case's functions, symilar's count of their pairs without the rule)
+SYMILAR_RULES = {
+    "AO-SYMILAR-SCHEME": ({"scheme_a", "scheme_b"}, _raw_scheme),
+    "AO-SYMILAR-ONE-FILE": ({"one_a", "one_b"}, _raw_one_file),
+    "AO-SYMILAR-CONTENT-LINES": ({"content_a", "content_b"}, _raw_content_lines),
+    "AO-SYMILAR-THRESHOLD": ({"window_a", "window_b"}, _raw_threshold),
+    "AO-SYMILAR-EVERY-COUPLE": ({"every_a", "every_b", "every_c"}, _raw_every_couple),
+}
+
+
+@pytest.mark.nightly
+@pytest.mark.parametrize("ruling_id", sorted(SYMILAR_RULES))
+def test_each_symilar_rule_is_pinned_by_a_hand_case(ruling_id, symilar_hand, oracle, tmp_path):
+    """The case's pairs as crapkit lists them, as the adapter works them out,
+    and how many symilar finds with the rule left out."""
+    oracle("pylint")
+    names, raw = SYMILAR_RULES[ruling_id]
+    mine = {pair: value for pair, value in symilar_hand.found.items() if pair <= names}
+    found = symilar_adapter.couples(sorted(symilar_hand.written), symilar_hand.functions)
+    adapter = _named(symilar_adapter.symilar_pairs(symilar_hand.written, found, 0.01))
+    assert {pair: value for pair, value in adapter.items() if pair <= names} == mine
+    rulings.pin_ruling(ruling_id, crapkit=len(mine), oracle=raw(symilar_hand, tmp_path / "raw"))
+
+
+def test_every_symilar_rule_has_a_hand_case():
+    assert sorted(SYMILAR_RULES) == sorted(set(re.findall(r"AO-SYMILAR-[A-Z-]+[A-Z]",
+                                                          symilar_adapter.__doc__)))
 
 
 # --- jscpd, the outside oracle ------------------------------------------------------------

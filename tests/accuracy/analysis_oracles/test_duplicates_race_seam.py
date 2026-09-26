@@ -55,7 +55,9 @@ def _indexed_runs(root: Path) -> list[int]:
 
 @pytest.fixture(scope="module")
 def stored(tmp_path_factory):
-    """Run 1 scored and its twin index stored, as the first brief on a run leaves it."""
+    """Run 1 scored and its twin index stored, as the first brief on a run leaves
+    it. A case restores .crapkit from the copy kept beside the repo: the race
+    writes only the store."""
     files = {path: _function(name) for path, name in NAMES.items()}
     tree = {"crapkit.toml": analysis_inventory.config(analysis_inventory.languages_of(files)),
             **files}
@@ -65,6 +67,13 @@ def stored(tmp_path_factory):
         done = driver.run(*args)
         assert done.code == 0, done.stderr
     assert _indexed_runs(root) == [1]
+    shutil.copytree(root / ".crapkit", root.parent / "pristine")
+    return root
+
+
+def _restored(root: Path) -> Path:
+    shutil.rmtree(root / ".crapkit")
+    shutil.copytree(root.parent / "pristine", root / ".crapkit")
     return root
 
 
@@ -161,13 +170,13 @@ def _twins(payload: dict) -> dict:
 
 
 @pytest.mark.parametrize("moment", sorted(MOMENTS))
-def test_brief_twins_survive_a_concurrent_store(stored, moment, monkeypatch, tmp_path):
+def test_brief_twins_survive_a_concurrent_store(stored, moment, monkeypatch):
     """R54: every packet of the batch lists its two twins at 0.875 however the
     newer index lands. The batch runs in this process, whatever
     CRAPKIT_ACCURACY_PYTHON says, because the race lives in its store calls."""
     from crapkit.store import SnapshotStore
 
-    root = Path(shutil.copytree(stored, tmp_path / "repo"))
+    root = _restored(stored)
     store_index = SnapshotStore.twin_index
     land = _once(lambda: _land_run_two(root, store_index))
     MOMENTS[moment](monkeypatch, land)
