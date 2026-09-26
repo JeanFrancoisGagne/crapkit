@@ -54,7 +54,7 @@ def test_a_walked_window_names_its_head_and_the_cutoff_git_named(tmp_path, git):
 
     assert window.cutoff == CUTOFF
     assert walk(git, window) == ("log", "--relative", f"--max-age={CUTOFF}",
-                                 churn_log.LOG_FORMAT, "--name-only", HEAD)
+                                 churn_log.LOG_FORMAT, "--encoding=UTF-8", "--name-only", HEAD)
 
 
 def test_a_stored_window_walks_from_the_head_its_key_names(tmp_path, git):

@@ -56,6 +56,8 @@ LOG_NAME = "churn-log-v2.z"
 # again is not something to leave in every upgraded repo.
 LEGACY_NAME = "churn-log.z"
 LOG_FORMAT = "--format=%x01%an%x02%at%x02%ct"
+# Names in UTF-8 whatever i18n.logOutputEncoding says: the reader decodes UTF-8.
+_LOG_ARGS = (LOG_FORMAT, "--encoding=UTF-8", "--name-only")
 CHUNK = 1 << 20
 # Characters of log text per compress call and file write. One call and one
 # write per line cost 0.36-0.57 s over a 635k-line log; a megabyte at a time,
@@ -66,7 +68,9 @@ _TRIM = methodcaller("rstrip", "\n")
 # the only kind that joins against ls-files rows when the root sits below the
 # repo top. A key without it names a top-relative log, and that one is cold —
 # served OR refreshed, it would feed every consumer paths that match nothing.
-RELATIVE_PATHS = "root-relative"
+# "-lf": lines end at LF alone. A log laid down before could hold an author
+# name cut at its \r, with the rest read as a path.
+RELATIVE_PATHS = "root-relative-lf"
 
 
 class Window(NamedTuple):
@@ -434,13 +438,13 @@ def _window_log(root: Path, months: int, head: str | None, cutoff: int | None) -
     end it moves the cutoff back. Only when git named no cutoff does the walk
     read the clock itself."""
     since = f"--since={months} months ago" if cutoff is None else f"--max-age={cutoff}"
-    return _git_lines(root, "log", "--relative", since, LOG_FORMAT, "--name-only",
+    return _git_lines(root, "log", "--relative", since, *_LOG_ARGS,
                       *([head] if head else []))
 
 
 def _range_log(root: Path, base: str, head: str) -> Iterator[str]:
     """Only what HEAD added on top of the cached log."""
-    return _git_lines(root, "log", "--relative", f"{base}..{head}", LOG_FORMAT, "--name-only")
+    return _git_lines(root, "log", "--relative", f"{base}..{head}", *_LOG_ARGS)
 
 
 def _window_cutoff(root: Path, months: int) -> int | None:

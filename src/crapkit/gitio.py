@@ -1,6 +1,7 @@
 """Git shell layer: the tracked-file universe and the current commit."""
 from __future__ import annotations
 
+import io
 import os
 import re
 import shutil
@@ -115,15 +116,20 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
 
     A failing command yields nothing and raises at the end of iteration, so the
     consumer never mistakes an empty stream for an empty history.
+
+    A line ends at LF alone, and a byte that is not UTF-8 reads as U+FFFD. git
+    keeps a \\r inside an author name, which text mode's universal newlines
+    turned into a line of its own, and passes a name's bytes through when the
+    commit declares no encoding, which a strict decode refused mid-walk.
     """
     try:
         proc = subprocess.Popen(["git", *_RELATIVE, *args], cwd=root, env=_environment(), stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, encoding="utf-8")
+                                stderr=subprocess.PIPE)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     with proc:
-        yield from proc.stdout
-        stderr = proc.stderr.read()
+        yield from io.TextIOWrapper(proc.stdout, encoding="utf-8", errors="replace", newline="\n")
+        stderr = proc.stderr.read().decode("utf-8", "replace")
     if proc.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed in {root}: {stderr.strip()}")
 

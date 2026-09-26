@@ -20,6 +20,23 @@
   reads the span's hunks, and asks git for the messages in UTF-8.
 - Scores, marks and the JSON field names do not change.
 
+### Churn reads an author name as one name, whatever bytes it holds
+
+- git keeps a `\r` or a `\x02` inside an author name. The churn window's log was read in
+  text mode, which split a name at its `\r`, and each commit's header was cut at its
+  first `\x02`, so the rest of the name was read as the commit's dates. That commit lost
+  both dates, its author counted as another, and after a `\r` the next carried refresh
+  dropped the commit as older than the window. The churn `authors` and `weight` of every
+  file it touched moved, and with them the `risk` that ranks the worklist. The log is now
+  split at LF alone and each header is read from the right.
+- A commit whose author name is not UTF-8 and declares no encoding, as an old import can
+  write, made `worklist`, `brief` and every other churn reader exit 1 with a
+  `UnicodeDecodeError` traceback. The name now reads with a replacement character, and
+  git hands names over in UTF-8 whatever `i18n.logOutputEncoding` says.
+- The churn caches under `.crapkit/` change their path-format key, so the first command
+  that reads churn after upgrading walks the window once more. Scores and marks do not
+  change.
+
 ### Every refused file is counted and named, once per run
 
 - A file no reader can tokenize is named on stderr under its own path, whatever another

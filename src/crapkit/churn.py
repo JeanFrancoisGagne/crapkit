@@ -53,9 +53,11 @@ def _stamp(raw: str) -> int | None:
 
 
 def _split_header(line: str) -> tuple[str, int | None, int | None]:
-    """Author, author date and commit date off a header; a date it lacks is None."""
-    name, _, dates = line[1:].partition("\x02")
-    at, _, ct = dates.partition("\x02")
+    """Author, author date and commit date off a header; a date it lacks is None.
+
+    Read from the right: git keeps a \\x02 inside an author name, never in a date."""
+    name, *dates = line[1:].rsplit("\x02", 2)
+    at, ct = (dates + ["", ""])[:2]
     return name, _stamp(at), _stamp(ct)
 
 
