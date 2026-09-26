@@ -2,6 +2,17 @@
 
 ## 0.8.1 — unreleased
 
+No score changes.
+
+### Coupled pairs that tie rank by their paths
+
+- `coupling` ranks two pairs whose support x confidence are equal by their paths, and
+  brief's `coupling` partners and `worklist --batches` read that order. crapkit
+  multiplied in binary floating point, where 3 x 0.1111 is 0.33330000000000004 and
+  1 x 0.3333 is 0.3333, so two tied pairs ranked by that rounding noise and `--top` kept
+  whichever it put first. A coupling cache an older crapkit wrote keeps the old order
+  until the next commit or midnight UTC.
+
 ### `explain --history` returns each commit message as git stored it
 
 - A body line that was `\x02` ended its commit's record there, and a body line starting
