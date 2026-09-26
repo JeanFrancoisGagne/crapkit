@@ -500,10 +500,15 @@ def _function_commits(root: Path, rel_path: str, start: int, end: int,
     """Commits that touched one line span, subject AND body, from `git log -L`.
 
     The body is what says why a span keeps changing; a subject line rarely does.
+    The span is the reader's, and git numbers it in HEAD's copy of the file at LF
+    only, so HEAD's bytes place it first.
     """
-    from ..gitio import _git
+    from ..diffparse import git_span
+    from ..gitio import _git, start_read
 
     try:
+        start, end = git_span(start_read(root, "cat-file", "blob", f"HEAD:./{rel_path}").result(),
+                              start, end)
         out = _git(root, "log", f"-L{start},{end}:{rel_path}", f"--format={_LOG_FORMAT}",
                    "--date=short", f"--max-count={limit}")
     except GitError:

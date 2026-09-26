@@ -16,6 +16,10 @@
 - Each of them now places a changed line by the bytes of the file it changed: the staged
   blob for the commit gate, the working tree for the rest. A file with no lone CR reads
   as before. No score moves, and marks need no re-seed.
+- `explain --history` made the same mistake the other way: it handed `git log -L` the
+  function's span in the reader's lines, so below a lone CR git followed the lines one
+  below the function and missed the commits that changed its def line. The span now
+  goes to git in git's lines, placed by HEAD's copy of the file.
 
 ### A form feed no longer moves a function in `brief`, `mutate` and `duplication`
 

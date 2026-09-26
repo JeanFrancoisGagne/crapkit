@@ -1,5 +1,5 @@
 """Staged-diff seam: git diff -U0 text in, per-file changed new-side line ranges out. Pure."""
-from crapkit.diffparse import changed_ranges, reader_ranges
+from crapkit.diffparse import changed_ranges, git_span, reader_ranges
 
 DIFF = """\
 diff --git a/src/app.ts b/src/app.ts
@@ -112,3 +112,22 @@ def test_every_file_is_placed_by_its_own_bytes():
     ranges = {"a.py": [(2, 2)], "b.py": [(2, 2)]}
     sides = {"a.py": b"x\ry\nz\n", "b.py": b"x\ny\n"}
     assert reader_ranges(ranges, sides.get) == {"a.py": [(3, 3)], "b.py": [(2, 2)]}
+
+
+# --- the reader's lines on git's lines -------------------------------------------------------
+# `git log -L` takes a span in git's numbers, and a span crapkit holds is the reader's.
+
+
+def test_a_reader_span_below_a_lone_cr_is_one_git_line_higher():
+    raw = b"# a\rx = 1\ndef f():\n    return 1\n"
+    assert git_span(raw, 3, 4) == (2, 3)
+
+
+def test_reader_lines_inside_one_git_line_are_that_git_line():
+    raw = b"def f(n):\r    if n:\r        return 1\r    return 2\r"
+    assert git_span(raw, 2, 4) == (1, 1)
+
+
+def test_a_span_in_a_file_with_no_lone_cr_or_no_bytes_keeps_its_lines():
+    assert git_span(b"a\r\nb\r\nc\r\n", 2, 3) == (2, 3)
+    assert git_span(None, 2, 3) == (2, 3)

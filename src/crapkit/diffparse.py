@@ -14,10 +14,12 @@ hunk at a phantom path the gate never checks.
 `changed_ranges` answers in git's line numbers, and git ends a line at LF only.
 Function spans and coverage lines come from readers that also end a line at a
 lone CR (analyze.decode_source, Python's compiler, coverage.py, ECMAScript), so
-anything compared with them goes through `reader_ranges` first.
+anything compared with them goes through `reader_ranges` first. `git_span` goes
+the other way, for a function's span handed to git (`git log -L`).
 """
 from __future__ import annotations
 
+from bisect import bisect_right
 import re
 from pathlib import Path
 from typing import Callable
@@ -164,3 +166,15 @@ def worktree_ranges(diff_text: str, root: Path) -> dict[str, list[tuple[int, int
     on the reader's lines. The diff's paths are root-relative (gitio runs every
     git with diff.relative)."""
     return reader_ranges(changed_ranges(diff_text), lambda rel: _file_bytes(root / rel))
+
+
+def git_span(raw: bytes | None, start: int, end: int) -> tuple[int, int]:
+    """A span of reader lines in git's numbers: the git lines that hold it.
+
+    `raw` is the file at the revision git will number the span in, or None where
+    there is none. A reader line past the end reads as the last git line.
+    """
+    if raw is None or not _LONE_CR.search(raw):
+        return start, end
+    starts = _git_line_starts(raw)[:-1]
+    return bisect_right(starts, start), bisect_right(starts, end)

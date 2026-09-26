@@ -760,7 +760,7 @@ Shared rules belong to these modules:
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators |
 | `sourcelines.py` | where a source's lines end: LF, CRLF and a lone CR, as the scores number them. Split source text with `source_lines`; `str.splitlines` also ends a line at a form feed and seven other characters |
-| `diffparse.py` | which lines a diff changed, on the lines a function span or a coverage report numbers. git ends a line at LF only and the reader also ends one at a lone CR, so `worktree_ranges` (a diff against the working tree) and `reader_ranges` (any other new side, such as the staged blobs) place each range by the new side's bytes. `changed_ranges` alone answers in git's numbers |
+| `diffparse.py` | which lines a diff changed, on the lines a function span or a coverage report numbers. git ends a line at LF only and the reader also ends one at a lone CR, so `worktree_ranges` (a diff against the working tree) and `reader_ranges` (any other new side, such as the staged blobs) place each range by the new side's bytes. `changed_ranges` alone answers in git's numbers, and `git_span` turns a function's span into git's numbers before it goes to git |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |
 
 `store.py` gained a `run_rollup` table: one row per run per scope, filled the first time

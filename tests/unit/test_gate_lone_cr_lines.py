@@ -13,6 +13,8 @@ diff one line up from the function it changed:
 
 Both committed a function at ccn 2 over a target of 1. verify, the advisory
 hook and mutate read a working-tree diff the same way and missed the same line.
+`explain --history` went the other way: it handed `git log -L` the reader's
+span, one git line below the function.
 """
 import argparse
 import io
@@ -23,6 +25,7 @@ from pathlib import Path
 from crapkit.cli import main
 from crapkit.cli.analyses import _mutation_targets
 from crapkit.cli.claude_hook import _advise
+from crapkit.cli.reports import _function_commits
 from crapkit.cli.scoring import _gate_candidates
 from crapkit.config import load_config_text
 from crapkit.hook import gate_staged
@@ -124,3 +127,14 @@ def test_mutate_targets_the_line_the_edit_changed(tmp_path):
     (repo / "m.py").write_bytes(LONE_CR.replace(b"    if b:", b"    if b > 0:"))
 
     assert _mutation_targets(repo, None) == {"m.py": {10}}
+
+
+def test_history_lists_the_commits_that_touched_the_function_below_a_lone_cr(tmp_path):
+    """The span is the reader's, 9-12; `git log -L` numbers the same lines 8-11."""
+    repo = committed(tmp_path, {"m.py": LONE_CR})
+    (repo / "m.py").write_bytes(EDITED)
+    git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "def line")
+
+    commits = _function_commits(repo, "m.py", 9, 12)
+
+    assert [c["subject"] for c in commits] == ["def line", "base"]
