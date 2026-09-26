@@ -518,6 +518,18 @@ def test_doctor_names_one_missing_runner_per_segment(tmp_path):
                         "does not resolve on PATH"]
 
 
+@pytest.mark.parametrize("shape", ['("{py}" -m pytest --cov) > lane.log',
+                                   '"{py}" -m pytest --cov &2>err.log "{py}" -m coverage json'])
+def test_doctor_under_cmd_names_the_program_cmd_exe_starts(tmp_path, monkeypatch, shape):
+    """cmd.exe starts python in a block's `(python ...)` and after `&2>err.log`,
+    where the 2 is a handle because `&` stands before it (verified argv). Doctor
+    read `(C:/.../python` and `2` as runners and failed a lane that runs."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    command = shape.format(py=sys.executable)
+
+    assert _lane_command_problems(tmp_path, _doctor_lane(command)) == []
+
+
 def test_doctor_says_nothing_about_a_test_path_inside_a_quoted_value(tmp_path):
     """-k "tests/gone.py or x" is one argument to pytest, not a file the repo
     owes. The split read '"tests/gone.py' as a named script and doctor failed a

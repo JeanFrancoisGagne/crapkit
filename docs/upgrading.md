@@ -203,11 +203,14 @@ saved-artifact read.
 
 The full-suite guard reads a lane command the way the shell that runs it does, operators
 and redirections that touch a word included. Lanes it refused for `py.json&& python -m
-coverage json`, `>"lane.log"` or `tests>lane.log` now load. One Windows shape that loaded
-now exits 3: a caret-escaped quote around an `&`, as in `-k ^"x & python -m pytest
-pylib/unit^"`, because cmd.exe starts a second pytest there and the coverage came from
-its narrowed run. [How a lane command is read](lanes.md#how-a-lane-command-is-read) has
-every rule. No score moves.
+coverage json`, `>"lane.log"` or `tests>lane.log` now load, and so do these Windows
+shapes: `>lane.log ; 2>&1`, where cmd.exe drops the `;` between the two redirections,
+and a block such as `(python -m pytest --cov=src ) > lane.log`, where `doctor` now finds
+python instead of naming `(python`. One Windows shape that loaded now exits 3: a
+caret-escaped quote around an `&`, as in `-k ^"x & python -m pytest pylib/unit^"`,
+because cmd.exe starts a second pytest there and the coverage came from its narrowed
+run. [How a lane command is read](lanes.md#how-a-lane-command-is-read) has every rule.
+No score moves.
 
 `test_retention_days` and `test_retention_count` are ignored. `crapkit doctor` warns
 once for each key a config sets; delete them. Test evidence retention is now the

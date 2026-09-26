@@ -67,9 +67,11 @@ decide whether a token narrows the run, and `doctor` uses it to decide which wor
 runner and which words are files the repo owes.
 
 On Windows the line is read twice, as it is when it runs. cmd.exe reads it first, for
-its commands, carets and redirections, and hands each program the rest. The program then
-splits its line into arguments with the C runtime's rules, which python and node share.
-The two passes disagree about carets and backslashes, and the guard reads both.
+its commands, blocks, carets and redirections, and hands each program the rest. The
+program then splits its line into arguments with the C runtime's rules, which python
+and node share. The two passes disagree about carets, backslashes and cmd.exe's
+delimiters (`;`, `,`, `=` and a non-breaking space as well as the blanks), and the guard
+reads both.
 
 | What you write | How it reads |
 |---|---|
@@ -81,15 +83,23 @@ The two passes disagree about carets and backslashes, and the guard reads both.
 | `--cov-report=json:"cov/py 1.json"` | One argument. A quote opens a quoted run wherever it sits, mid-token included. |
 | `-k "" tests` | Three arguments. An empty pair of quotes writes an empty argument, so `tests` stays the positional it is. Dropping it would slide `tests` onto `-k` and the narrowing lane would load clean. |
 | `pytest --cov && coverage json` | Two commands. `&&`, `\|\|`, `&` and `\|` each start a new one, blank beside them or not (`py.json&& coverage json` is two commands too), and every segment that runs the runner is checked on its own. |
-| `pytest --cov > lane.log 2>&1` | The redirections are the shell's; the runner never sees them, or their targets, quoted or not (`>"lane log.txt"`). A redirection touching a word leaves that word: `tests>lane.log` hands pytest `tests`. A digit touching `>` names a stream only where a word starts, so `a2>x` hands on `a2`. A quoted `">"` is an argument and stays. |
-| `pytest --cov; echo done` | On sh the `;` ends the command, and so does `;echo done`. To cmd.exe it is an ordinary character, so `echo` and `done` land in pytest's argv and the lane is refused. |
+| `pytest --cov > lane.log 2>&1` | The redirections are the shell's; the runner never sees them, or their targets, quoted or not (`>"lane log.txt"`). A redirection touching a word leaves that word: `tests>lane.log` hands pytest `tests`. A quoted `">"` is an argument and stays. |
+| `a2>x`, `>lane.log;2>&1` | On sh a number names the stream only when it is the whole word, so `a2>x` hands on `a2`. cmd.exe takes the digit when a delimiter, a quote, `&`, `\|` or a parenthesis stands in front of it, caret or not: `a2>x` hands on `a2`, and `a^\|2>x` hands on `a\|`. cmd.exe also drops the delimiters between two redirections, so `>lane.log;2>&1` hands pytest nothing, while `>lane.log ;b` hands it `;b`. |
+| `(pytest --cov) > lane.log` | pytest gets `--cov` on both shells. sh runs the parentheses as a subshell. On cmd.exe a `(` where a command starts opens a block, an unquoted `)` inside it ends the command, and a block still open at the end of the line runs nothing on that line. Anywhere else, as in `-k (a)`, both are text. |
+| `pytest --cov; echo done` | On sh the `;` ends the command, and so does `;echo done`. To cmd.exe it is an ordinary character, so `echo` and `done` land in pytest's argv and the lane is refused. It does end the program's name: `python;-m pytest` starts python with `;-m` and `pytest`. |
 | a line break | On sh a line break ends the command the way `;` does, and a backslash at the end of a line joins it to the next. cmd.exe runs the first line only. |
 | `--cov # the whole suite` | On sh a `#` that starts a word comments out the rest of the line. To cmd.exe it is text. |
-| a non-breaking space in a value | Not a word break. Both shells break words on space and tab only, so a value pasted out of rendered docs stays one token. |
+| a non-breaking space in a value | Not a word break. Both shells break words on space and tab only, so a value pasted out of rendered docs stays one token. cmd.exe does count it among its delimiters, so after `>` it ends the file name. |
 
 A quote that never closes: sh refuses the line, and crapkit reads that quote as an
 ordinary character, because a rough lint beats a crash at config load. cmd.exe runs the
 line, the quoted run takes the rest of it, and crapkit reads it the same way.
+
+One cmd.exe rule crapkit leaves out: a block on either side of a `|` runs in a second
+cmd.exe, which reads the block's text again, so its carets work twice. In
+`(pytest -k a ^& echo b) | more` the second read starts `echo`. crapkit reads the block
+once, so there it counts more arguments than pytest gets and may refuse a lane that
+runs. Take the carets out of the block, or take the block out of the pipe.
 
 ### The refusals, as they print
 

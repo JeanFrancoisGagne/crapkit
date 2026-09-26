@@ -368,12 +368,84 @@ def test_under_cmd_a_doubled_quote_inside_a_run_writes_one_quote():
     assert shell_words('pytest -k "a""b" c', cmd=True) == ["pytest", "-k", 'a"b', "c"]
 
 
-def test_under_cmd_a_handle_digit_is_the_redirections_only_where_a_word_starts():
-    """cmd.exe reads the digit touching `>` as a handle when a blank, `;`, `,`,
-    `=` or a quote stands before it (verified argv: `a2>x` -> ["a2"], `"a"2>x`
-    -> ["a"], `a;2>x` -> ["a;"], `a 2 >x` -> ["a", "2"], `a 22>x` -> ["a", "22"])."""
+def test_under_cmd_a_handle_digit_is_the_redirections_behind_a_delimiter_an_operator_or_a_quote():
+    """cmd.exe reads the digit touching `>` as a handle when one of its
+    delimiters, a quote, `&`, `|`, `(` or `)` stands before it, escaped by a
+    caret or not; a `<`, `>` or `^` before it leaves the digit text (verified
+    argv: `a2>x` -> ["a2"], `"a"2>x` -> ["a"], `a;2>x` -> ["a;"], `a 2 >x` ->
+    ["a", "2"], `a 22>x` -> ["a", "22"], `a^|2>x` -> ["a|"], `a^<2>x` ->
+    ["a<2"], `a^^2>x` -> ["a^2"], and `rec a &2>x rec b` starts rec with ["b"])."""
     assert shell_words('pytest a2>x "b"2>x c;2>x 2 >x 22>x', cmd=True) == \
         ["pytest", "a2", "b", "c;", "2", "22"]
+    assert shell_words("pytest a^&2>x b^|2>x c^(2>x d)2>x e\u00a02>x f^<2>x g^^2>x", cmd=True) == \
+        ["pytest", "a&", "b|", "c(", "d)", "e\u00a0", "f<2", "g^2"]
+    assert shell_segments("pytest --cov &2>x pytest b|2>x tee", cmd=True) == \
+        [["pytest", "--cov"], ["pytest", "b"], ["tee"]]
+
+
+def test_under_cmd_delimiters_between_two_redirections_are_dropped():
+    """cmd.exe drops the delimiters that stand between one redirection and the
+    next, and keeps them anywhere else (verified argv: `>o1;2>o2` -> [],
+    `>o1 ; 2>o2 ; b` -> [";", "b"], `>o1 ;b` -> [";b"], `a ; >o1` -> ["a", ";"],
+    and `-k ^"a >o1 ;, 2>o2 b^"` -> ["-k", "a  b"], which also shows the blanks
+    go with them)."""
+    assert shell_words("pytest >o1;2>o2 a >x ; 2>y ; b >z ;c d ; >w", cmd=True) == \
+        ["pytest", "a", ";", "b", ";c", "d", ";"]
+    assert shell_words('pytest -k ^"a >x ;, 2>y b^"', cmd=True) == ["pytest", "-k", "a  b"]
+    assert shell_words("pytest >x ^; 2>y >z \"\" 2>&1 ; 1>&2", cmd=True) == ["pytest", ";", ""]
+
+
+def test_under_cmd_the_program_name_ends_at_any_of_cmd_exes_delimiters():
+    """cmd.exe ends the name of the program it starts at `;`, `,`, `=` or a
+    non-breaking space as well as at a blank, escaped by a caret or not, and
+    hands the program the rest (verified argv: `python;rec.py b`,
+    `python^;rec.py b` and `"python";rec.py b` all start python with
+    [";rec.py", "b"]). The runner splits on blanks only, so reading the line in
+    one pass named `python;rec.py` as the program."""
+    for command in ("python;-m pytest", "python^;-m pytest", '"python";-m pytest'):
+        assert shell_segments(command, cmd=True) == [["python", ";-m", "pytest"]]
+    # cmd.exe drops U+000B and U+000C with the blanks behind the name (verified
+    # argv for `python<VT>rec.py b`: ["rec.py", "b"]); a `;` stops that.
+    vt, ff = chr(0x0B), chr(0x0C)
+    assert shell_segments(f"python{vt}-m pytest & python {ff}{vt};-m", cmd=True) == \
+        [["python", "-m", "pytest"], ["python", ";-m"]]
+    assert shell_segments("python,-m pytest & \u00a0python\u00a0-m", cmd=True) == \
+        [["python", ",-m", "pytest"], ["python", "\u00a0-m"]]
+
+
+def test_under_cmd_a_non_breaking_space_is_a_delimiter_to_cmd_exe_and_text_to_the_runner():
+    """cmd.exe counts U+00A0, U+000B and U+000C among its delimiters, and the
+    runner splits on space and tab only (verified argv: `>o1\\xa0b` ->
+    ["\\xa0b"], `>\\xa0o1 b` -> ["b"], `a\\xa0b` -> ["a\\xa0b"])."""
+    assert shell_words("pytest >o1\u00a0b >\u00a0o2 c a\u00a0b >o3\u000b2>o4 d\u000c2>x",
+                       cmd=True) == ["pytest", "\u00a0b", "c", "a\u00a0b", "d\u000c"]
+
+
+def test_under_cmd_parentheses_open_and_close_a_block_only_where_cmd_exe_reads_one():
+    """A `(` where a command starts opens a block, and inside one an unquoted,
+    unescaped `)` ends the command. Anywhere else both are text (verified argv:
+    `(rec a) & rec b` -> ["a"], ["b"]; `rec (a) b` -> ["(a)", "b"]; `rec a) b`
+    -> ["a)", "b"]; `(rec "a)" b)` and `(rec a^) b)` -> ["a)", "b"])."""
+    assert shell_segments("((pytest a) && pytest b) & pytest (c) d) e", cmd=True) == \
+        [["pytest", "a"], ["pytest", "b"], ["pytest", "(c)", "d)", "e"]]
+    assert shell_segments('( pytest "a)" b^) c )', cmd=True) == [["pytest", "a)", "b)", "c"]]
+
+
+def test_under_cmd_a_redirection_target_ends_at_the_parenthesis_that_closes_a_block():
+    """Inside a block `)` ends a redirection target, and outside one it is part
+    of the target (verified argv: `(rec >x) & rec a) b` -> [], ["a)", "b"], and
+    `rec >x)y b` -> ["b"]). Letting the target swallow the block's `)` left the
+    block open, and the next `)` ended a command cmd.exe runs on."""
+    assert shell_segments("(pytest >x) & pytest a) b >x)y c", cmd=True) == \
+        [["pytest"], ["pytest", "a)", "b", "c"]]
+
+
+def test_under_cmd_a_block_left_open_runs_nothing_on_the_line():
+    """cmd.exe reads the whole line first, and a block still open where it ends
+    runs nothing, the commands in front of it included (verified: no program
+    starts for `rec b & (rec a`, `(rec "a)"` or `(rec a<LF>rec b)`)."""
+    for command in ("pytest b & (pytest a", '(pytest "a)"', "(pytest a^)", "(pytest a\npytest b)"):
+        assert shell_segments(command, cmd=True) == []
 
 
 def test_under_cmd_a_redirection_target_ends_where_cmd_exe_ends_it():
@@ -382,6 +454,14 @@ def test_under_cmd_a_redirection_target_ends_where_cmd_exe_ends_it():
     the file named xy)."""
     assert shell_words('pytest >x;y b > "x"y c 2>"x y"z d >x>y e', cmd=True) == \
         ["pytest", ";y", "b", "c", "d", "e"]
+
+
+def test_under_cmd_its_delimiters_are_skipped_after_a_handle_ampersand():
+    """`2>&;1` sends stderr to stdout as `2>&1` does (verified argv for
+    `a 2>&;1 b`: ["a", "b"]). Reading the `&` as an operator started a second
+    command named `;1`."""
+    assert shell_segments("pytest a 2>&;1 b 2>&,1 c 2>& 1 d", cmd=True) == \
+        [["pytest", "a", "b", "c", "d"]]
 
 
 def test_under_cmd_its_delimiters_are_skipped_before_a_target_and_a_command():

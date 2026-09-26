@@ -189,40 +189,100 @@ def _sh_segments(command: str) -> list[list[str]]:
     return line.commands
 
 
+# cmd.exe's delimiters: space, tab, `;`, `,`, `=`, U+000B, U+000C and U+00A0.
+# The program splits its line on space and tab only, so the rest reach it as
+# text: `;` ends nothing (verified argv for `--cov=src; echo done`:
+# ["--cov=src;", "echo", "done"]).
+_CMD_DELIMITERS = " \t;,=\x0b\x0c\xa0"
+
 # cmd.exe's own pass over the line, before the program sees it. A double quote
 # opens or closes a quoted run and stays in the text, and a run left open takes
 # the rest of the line. Outside a run a caret is dropped and hands on the
 # character behind it, so a quote it hands on opens no run for cmd.exe. `&&`,
-# `||`, `&` and `|` end the command whatever touches them. `;` ends nothing and
-# reaches the program as text (verified argv for `--cov=src; echo done`:
-# ["--cov=src;", "echo", "done"]); with `,` and `=` it is one of cmd.exe's
-# delimiters, skipped before a command and before a redirection's target, and
-# ending that target. A redirection leaves with its target, quoted parts and
-# all, and with a handle digit when a delimiter or a quote stands before the
-# digit (`a2>x` hands on `a2`). cmd.exe drops a carriage return and runs the
-# first line only.
-_CMD_PIECE = re.compile(r"""
-    (?P<run>"[^"\n]*"?)
-  | \^(?P<escaped>[^\n]?)
-  | (?P<end>&&|\|\||[&|])
-  | (?P<redirection>(?:(?<![^ \t;,="])[0-9])?(?:>>?|<)
-        (?:&[ \t]*[0-9]|[ \t;,=]*(?:"[^"\n]*"?|\^[^\n]?|[^ \t;,=<>&|"^\n])*))
-  | (?P<stop>\n.*)
-  | (?P<char>.)
-""", re.X | re.S)
-_CMD_TEXT = frozenset({"run", "escaped", "char"})
-_CMD_DELIMITERS = " \t;,="
+# `||`, `&` and `|` end the command whatever touches them, and a `(` where a
+# command starts opens a block, inside which `)` ends it. A redirection leaves
+# with its target, which starts past any delimiters and ends at the next one
+# (inside a block at a `)` as well), and with a handle digit when a delimiter,
+# a quote, `&`, `|`, `(` or `)` stands before the digit, caret or not (`a2>x`
+# hands on `a2`, `a^|2>x` on `a|`). The delimiters between one redirection and
+# the next leave with them (`>lane.log;2>&1` hands on nothing); anywhere else
+# they stay. cmd.exe drops a carriage return and runs the first line only.
+def _cmd_piece(target_ends: str) -> re.Pattern:
+    """cmd.exe's pieces, with what else ends a redirection target."""
+    return re.compile(rf"""
+        (?P<run>"[^"\n]*"?)
+      | \^(?P<escaped>[^\n]?)
+      | (?P<end>&&|\|\||[&|])
+      | (?P<open>\()
+      | (?P<close>\))
+      | (?P<redirection>(?:(?<![^{_CMD_DELIMITERS}"&|()])[0-9])?(?:>>?|<)
+            (?:&[{_CMD_DELIMITERS}]*[0-9]
+              |[{_CMD_DELIMITERS}]*(?:"[^"\n]*"?|\^[^\n]?|[^{_CMD_DELIMITERS}<>&|"^\n{target_ends}])*)
+            (?:[{_CMD_DELIMITERS}]*(?=[0-9]?[<>]))?)
+      | (?P<stop>\n.*)
+      | (?P<char>.)
+    """, re.X | re.S)
+
+
+_CMD_PIECE, _CMD_BLOCK_PIECE = _cmd_piece(""), _cmd_piece(")")
+
+
+class _CmdLines:
+    """The line cmd.exe hands the program of each command, as the pieces arrive."""
+
+    def __init__(self) -> None:
+        self.lines = [""]
+        self.blocks = 0  # the parentheses cmd.exe has opened and not closed
+
+    def read(self, command: str, at: int) -> int:
+        """Read the piece at `at`; the index the next one starts at."""
+        piece = (_CMD_BLOCK_PIECE if self.blocks else _CMD_PIECE).match(command, at)
+        _CMD_STEPS[piece.lastgroup](self, piece[piece.lastgroup])
+        return piece.end()
+
+    def text(self, text: str) -> None:
+        self.lines[-1] += text
+
+    def end(self, _text: str = "") -> None:
+        self.lines.append("")
+
+    def skip(self, _text: str) -> None:
+        """A redirection, or the lines behind the first: no program sees them."""
+
+    def open(self, text: str) -> None:
+        """`(` opens a block where a command starts, and is text anywhere else."""
+        if self.lines[-1].strip(_CMD_DELIMITERS):
+            self.text(text)
+        else:
+            self.blocks += 1
+
+    def close(self, text: str) -> None:
+        """`)` ends the command inside a block, and is text outside one."""
+        if not self.blocks:
+            return self.text(text)
+        self.blocks -= 1
+        self.end()
+
+
+_CMD_STEPS = {"run": _CmdLines.text, "escaped": _CmdLines.text, "char": _CmdLines.text,
+              "end": _CmdLines.end, "open": _CmdLines.open, "close": _CmdLines.close,
+              "redirection": _CmdLines.skip, "stop": _CmdLines.skip}
 
 
 def _cmd_lines(command: str) -> list[str]:
-    """The command line cmd.exe hands the program of each command on the line."""
-    lines = [""]
-    for piece in _CMD_PIECE.finditer(command.replace("\r", "")):
-        if piece.lastgroup == "end":
-            lines.append("")
-        elif piece.lastgroup in _CMD_TEXT:
-            lines[-1] += piece[piece.lastgroup]
-    return lines
+    """The command line cmd.exe hands the program of each command on the line.
+    cmd.exe reads the whole line before it runs any of it, and runs none of it
+    when a block is still open where the line ends."""
+    command, lines, at = command.replace("\r", ""), _CmdLines(), 0
+    while at < len(command):
+        at = lines.read(command, at)
+    return [] if lines.blocks else lines.lines
+
+
+# The program cmd.exe starts: past its delimiters, up to the next one outside a
+# quoted run, a caret in front of it or not. cmd.exe drops the blanks behind the
+# name, U+000B and U+000C among them, and hands the program the rest.
+_CMD_NAME = re.compile(rf'[{_CMD_DELIMITERS}]*((?:"[^"]*"?|[^{_CMD_DELIMITERS}"])*)[ \t\x0b\x0c]*')
 
 
 # How the program reads the line cmd.exe hands it: the C runtime's rules, which
@@ -271,12 +331,19 @@ def _runner_words(line: str) -> list[str]:
     return words + _closed(word)
 
 
+def _cmd_argv(line: str) -> list[str]:
+    """The program's name as cmd.exe ends it, then the argv the program builds
+    from the rest: `python;-m pytest` starts python with `;-m` and `pytest`."""
+    name = _CMD_NAME.match(line)
+    return _runner_words(name[1]) + _runner_words(line[name.end():])
+
+
 def _cmd_segments(command: str) -> list[list[str]]:
     """One argv per command on the line: cmd.exe's pass, then the program's own
     reader over the line cmd.exe hands it. The two differ, and the guard has to
     read both: `^"` is text to cmd.exe and a quote to the program, and `\\"` is a
     quote to cmd.exe and text inside the program's quoted run."""
-    return [_runner_words(line.lstrip(_CMD_DELIMITERS)) for line in _cmd_lines(command)]
+    return [_cmd_argv(line) for line in _cmd_lines(command)]
 
 
 def _quote_hint(command: str) -> str:

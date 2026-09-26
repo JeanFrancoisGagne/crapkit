@@ -689,6 +689,33 @@ def test_under_cmd_only_the_first_line_runs(monkeypatch):
     assert _covpy_lane_basic("python -m pytest --cov=pylib\npython -m pytest pylib/unit").command
 
 
+@pytest.mark.parametrize("tail", [">lane.log;2>&1", ">lane.log,2>err.log", ">lane.log , 2>&1",
+                                  ">lane.log=2>&1", '>"lane.log";2>&1'])
+def test_under_cmd_delimiters_between_two_redirections_reach_no_program(monkeypatch, tail):
+    """cmd.exe drops the `;`, `,`, `=` and blanks that stand between one
+    redirection and the next (verified argv for `--cov=calc >lane.log;2>&1`:
+    ["--cov=calc"]). Reading them as text handed pytest a `;` and refused a
+    lane that runs the whole suite."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    command = f"python -m pytest --cov=pylib --cov-report=json:.crapkit/cov/py.json {tail}"
+    assert _covpy_lane(command).command == command
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane(f"{command} pylib/unit")
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def test_under_cmd_a_block_hands_on_the_commands_inside_it(monkeypatch):
+    """A `(` where a command starts opens a block, and the `)` that closes it
+    ends the command in front of it (verified argv for `(rec a && rec b)`:
+    ["a"], then ["b"]). Reading the parentheses as text refused `)` as a
+    positional, and named `pylib/unit)` where pytest gets `pylib/unit`."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    assert _covpy_lane("(python -m pytest --cov=pylib ) > lane.log 2>&1").command
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane("(python -m pytest --cov=pylib & python -m pytest pylib/unit)")
+    assert "'pylib/unit'" in str(caught.value)
+
+
 def test_under_cmd_a_quoted_path_inside_a_flag_value_is_not_a_positional(monkeypatch):
     """cmd.exe hands pytest `--cov-report=json:a b\\py.json`, one argument, so the
     lane runs. Reading the quote as a word boundary refused it and named

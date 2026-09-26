@@ -20,9 +20,17 @@ lane commands the way the shell that runs them does:
   so `-k "a\" tests \"b"` is one value and loads.
 - On sh a line break ends the command, a backslash at the end of a line joins it to the
   next, and a `#` that starts a word starts a comment. cmd.exe runs the first line only,
-  drops carriage returns, lets a quote that never closes take the rest of the line, skips
-  `;`, `,` and `=` before a command or a redirection target, and reads a digit touching
-  `>` as a stream only where a word starts.
+  drops carriage returns, and lets a quote that never closes take the rest of the line.
+- cmd.exe's delimiters are `;`, `,`, `=` and a non-breaking space as well as the blanks.
+  It skips them before a command or a redirection target, ends the program's name and a
+  target at them, and drops them between two redirections: `>lane.log ; 2>&1` hands
+  pytest nothing and loads, where it was refused naming `;`. A digit touching `>` is the
+  stream when a delimiter, a quote, `&`, `|` or a parenthesis stands in front of it, so
+  `a^|2>x` hands on `a|`.
+- On cmd.exe a `(` where a command starts opens a block and its `)` ends the command,
+  so `(python -m pytest --cov=src ) > lane.log` loads and `doctor` finds python in it; a
+  block left open runs nothing on the line. `doctor` also stops naming the `2` of
+  `&2>err.log` as a runner.
 
 ### A portable baseline forgives the failures its run had
 
