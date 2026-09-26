@@ -375,7 +375,7 @@ def index_blobs(root: Path, paths=()) -> dict[str, str]:
 def worktree_blobs(root: Path, paths) -> dict[str, str]:
     """path -> the blob id `git add` would give each file on disk, through the
     repo's filters: one process for every name that can ride hash-object's
-    line-framed stdin, and one each for a name holding a line break.
+    line-framed stdin, and one each for any other name (`_rides_stdin_paths`).
 
     hash-object reads a `--stdin-paths` name from the checkout's top, not from
     the cwd as it reads a file argument, so under a root one directory down (a
@@ -384,7 +384,7 @@ def worktree_blobs(root: Path, paths) -> dict[str, str]:
     cannot say" where it should have named the file."""
     paths = list(paths)
     prefix = _show_prefix(root) if paths else ""
-    framed = [path for path in paths if not _line_paths([prefix + path])]
+    framed = [path for path in paths if _rides_stdin_paths(prefix + path)]
     blobs = _hashed(root, prefix, framed)
     return {**blobs, **_hashed_alone(root, set(paths) - blobs.keys())}
 
@@ -405,9 +405,17 @@ def _hashed(root: Path, prefix: str, paths: list[str]) -> dict[str, str]:
     return dict(zip(paths, out.decode("utf-8").split()))
 
 
+def _rides_stdin_paths(line: str) -> bool:
+    """Whether `line` reaches hash-object's `--stdin-paths` as written. git
+    reads one name per line and C-unquotes a line that starts with a double
+    quote: `"a".ts` at the checkout top came back as the blob of the file `a`,
+    and `"d` failed the whole request as badly quoted."""
+    return not (_line_paths([line]) or line.startswith('"'))
+
+
 def _hashed_alone(root: Path, paths) -> dict[str, str]:
-    """Names holding a line break, each hashed as a file argument, which git
-    reads from the cwd."""
+    """Names that cannot ride `--stdin-paths`, each hashed as a file argument,
+    which git reads from the cwd as written."""
     return {path: _Started(root, ("hash-object", "--", path), stdin=False).result().decode("utf-8").strip()
             for path in sorted(paths)}
 

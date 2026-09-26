@@ -101,6 +101,26 @@ def test_a_name_that_is_not_utf8_is_hashed_by_its_own_bytes(repository, nested):
     assert gitio.worktree_blobs(root, [name]) == {name: wanted}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="needs a file name holding a double quote, which only a "
+                    "POSIX filesystem holds; runs on the ubuntu CI jobs")
+@pytest.mark.parametrize("name", ['"a".ts', '"d', '"'])
+@pytest.mark.parametrize("nested", [False, True])
+def test_a_name_that_starts_with_a_double_quote_is_hashed_by_its_own_name(repository, name, nested):
+    """hash-object --stdin-paths C-unquotes a line that starts with a double
+    quote. At the checkout top `"a".ts` went out as that line and came back as
+    the blob of the file `a`, so an edit to `"a".ts` left its stamp fresh; `"d`
+    made git fail with "line is badly quoted" and every lane read "git cannot
+    say". Such a name is hashed as a file argument, which git reads as written."""
+    root = repository / "app" if nested else repository
+    root.mkdir(exist_ok=True)
+    (root / "a").write_bytes(b"unrelated\n")
+    (root / name).write_bytes(b"x = 1\n")
+
+    wanted = {path: git(root, "hash-object", "--", path).decode("ascii").strip() for path in (name, "a")}
+
+    assert gitio.worktree_blobs(root, [name, "a"]) == wanted
+
+
 @pytest.mark.parametrize("workers", [1, 2])
 def test_mutation_workers_receive_dirty_leading_space_dependency(repository, workers):
     source = "def enabled():\n    return True\n"
