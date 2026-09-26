@@ -36,6 +36,11 @@ class FnCoverage(NamedTuple):
     branches_covered: int
     statements_total: int = 0
     statements_covered: int = 0
+    # The producer was told to leave the function out, so no test moves its number.
+    excluded: bool = False
+    # The reader lists every function the producer measured in this file, so a
+    # function missing from the list was left out on purpose.
+    full_listing: bool = False
 
     @property
     def coverage(self) -> float:
@@ -240,12 +245,21 @@ def _attach_statements(fn_spans: list[list], cov: dict) -> None:
             best[_S_COV] += 1 if hits_by_id.get(sid, 0) > 0 else 0
 
 
+def _instrumented(cov: dict) -> bool:
+    """Whether this file entry is an instrumenter's own output, whose fnMap
+    lists every function it did not skip. istanbul writes a statement for
+    each one it counts, so an entry with statements is; a hand-built entry
+    that carries fnMap alone cannot say what it left out."""
+    return bool(cov.get("statementMap"))
+
+
 def _file_coverage(cov: dict) -> list[FnCoverage]:
     clamped = _admit_hits(cov)
     fn_spans = _fn_spans(cov)
     _attach_branches(fn_spans, cov)
     _attach_statements(fn_spans, cov)
-    rows = [FnCoverage(*s[_COUNTS]) for s in fn_spans]
+    full = _instrumented(cov)
+    rows = [FnCoverage(*s[_COUNTS], full_listing=full) for s in fn_spans]
     return ClampedBranchCounts(rows, clamped) if clamped else rows
 
 

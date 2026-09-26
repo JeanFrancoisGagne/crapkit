@@ -35,7 +35,8 @@ _SAMPLE = 3
 
 def _admit_summary(name: str, summary: dict) -> dict:
     pairs = (("num_branches", "covered_branches"), ("num_statements", "covered_lines"))
-    counts = {}
+    counts = {"excluded_lines": coverage_count(summary.get("excluded_lines", 0),
+                                               f"{name}: excluded_lines")}
     for total, covered in pairs:
         counts[total] = coverage_count(summary.get(total, 0), f"{name}: {total}")
         counts[covered] = coverage_count(summary.get(covered, 0), f"{name}: {covered}")
@@ -44,8 +45,19 @@ def _admit_summary(name: str, summary: dict) -> dict:
     return counts
 
 
+def _excluded(summary: dict) -> bool:
+    """Whether coverage.py was told to leave the whole function out: a
+    `# pragma: no cover` def, or exclude patterns that took every statement,
+    leave a region with excluded lines and no statement to measure."""
+    return summary["num_statements"] == 0 and summary["excluded_lines"] > 0
+
+
 def _region_lines(fn: dict) -> list[int]:
-    return list(fn.get("executed_lines", ())) + list(fn.get("missing_lines", ()))
+    """The lines a region holds, its excluded ones included: an excluded
+    function keeps no other, and a function whose last lines are excluded
+    ends where its source does."""
+    return [*fn.get("executed_lines", ()), *fn.get("missing_lines", ()),
+            *(fn.get("excluded_lines") or ())]
 
 
 class _Statements:
@@ -89,7 +101,8 @@ def _fn_coverage(name: str, fn: dict, statements: _Statements) -> FnCoverage:
                       branches_total=summary.get("num_branches", 0),
                       branches_covered=summary.get("covered_branches", 0),
                       statements_total=summary.get("num_statements", 0),
-                      statements_covered=summary.get("covered_lines", 0))
+                      statements_covered=summary.get("covered_lines", 0),
+                      excluded=_excluded(summary))
 
 
 def has_regions(data: object) -> bool:

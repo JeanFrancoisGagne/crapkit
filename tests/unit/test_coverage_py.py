@@ -214,3 +214,40 @@ def test_a_nested_def_joins_its_own_region_in_a_report_with_no_start_line():
     assert [(row.long_name, row.cov) for row in scored] == [
         ("outer( flag )", 0.5), ("outer.inner( value )", 0.0),
         ("wrap( items )", 1.0), ("wrap.each( item )", 0.0)]
+
+
+def _excluded_region(executed, excluded, start_line=None):
+    region = {"executed_lines": executed, "missing_lines": [], "excluded_lines": excluded,
+              "summary": {"covered_lines": 0, "num_statements": 0, "num_branches": 0,
+                          "covered_branches": 0, "excluded_lines": len(excluded)}}
+    return {**region, "start_line": start_line} if start_line else region
+
+
+# 92 def excluded(value):  # pragma: no cover      97 def stub():
+# 93     if value and value > 0:                   98     ...
+# 94         return 1                              99 def partly(value):
+# 95     return 0                                 100     if value is None:
+#                                                 101         raise NotImplementedError
+#                                                 102     return value
+def _pragma_report(version, executed, start_lines):
+    excluded, stub = start_lines
+    return {"meta": {"branch_coverage": True, "version": version}, "files": {"m.py": {
+        "functions": {
+            "": _region([1, 92, 97, 99], []),
+            "excluded": _excluded_region(executed, [93, 94, 95], excluded),
+            "stub": _excluded_region([], [98], stub),
+            "partly": {**_region([100, 102], []), "excluded_lines": [101]},
+        }}}}
+
+
+def test_a_region_whose_every_statement_is_excluded_is_marked_excluded():
+    """coverage.py keeps the region of a `# pragma: no cover` def, and of a
+    stub whose body is `...`, with no statements and its lines excluded.
+    7.10.6 also lists the excluded lines a call ran as executed. A region
+    that keeps any statement is measured as before."""
+    for report in (_pragma_report("7.16.1", [], (92, 97)),
+                   _pragma_report("7.10.6", [93, 94], (None, None))):
+        fns = parse_coveragepy(json.dumps(report), path_prefix="")["m.py"]
+
+        assert [(fn.name, fn.start, fn.end, fn.excluded) for fn in fns] == [
+            ("excluded", 92, 95, True), ("stub", 97, 98, True), ("partly", 99, 102, False)]

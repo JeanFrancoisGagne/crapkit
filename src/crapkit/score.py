@@ -3,10 +3,12 @@
 The inventory is the master list: every function gets a scored row. Coverage
 joins by path plus span overlap. Flags never conflate: measured (a lane's
 artifact spoke about the file), untested (lane covers the scope, artifact
-silent on this function), no-lane (no lane covers the scope at all), cc-only
-(the scope declares coverage_optional, so no coverage number can exist).
-The three zero-coverage flags all score cov=0; the flag says whether the
-missing number is a testing gap, a tooling gap, or by design.
+silent on this function), excluded (the artifact measured the file and was
+told to leave this function out), no-lane (no lane covers the scope at all),
+cc-only (the scope declares coverage_optional, so no coverage number can
+exist). The four zero-coverage flags all score cov=0; the flag says whether
+the missing number is a testing gap, a tooling gap, or by design, and the two
+by-design flags score crap = ccn.
 """
 from __future__ import annotations
 
@@ -176,12 +178,16 @@ def remedy(ccn: int, score: float, ceiling: int, shared_span: bool = False) -> s
     return "split-lines" if shared_span else "add-tests"
 
 
+# No coverage number can exist for these, by the scope's choice or the
+# producer's: crap IS ccn, the pre-commit hook's rule.
+_SCORED_ON_CCN = ("cc-only", "excluded")
+
+
 def _finish(row, cov: float, flag: str, *, target: int, scope_targets,
             shared_span: bool = False) -> ScoredRow:
-    # cc-only is the pre-commit hook's rule: crap IS ccn, so remedy can only
-    # answer ok or decompose. Feeding it cov=0 through the formula would say
-    # add-tests about code no test can reach.
-    score = float(row.ccn) if flag == "cc-only" else crap(row.ccn, cov)
+    # Remedy can then only answer ok or decompose. Feeding cov=0 through the
+    # formula would say add-tests about code no test can reach.
+    score = float(row.ccn) if flag in _SCORED_ON_CCN else crap(row.ccn, cov)
     ceiling = scope_targets.get(row.scope, target) if scope_targets else target
     # Positional, and NOT *row: cognitive and occurrence trail both tuples with four
     # fields between, so splicing the row in whole lands it in cov. Building
@@ -221,7 +227,7 @@ def _named_overlay_cov(row, by_key: dict, positions: dict) -> tuple[float, str]:
     named = _nearest_overlay(row, by_key.get((row.path, row.long_name)))
     unique = len(positions[(row.path, row.long_name, row.start)]) == 1
     match = _overlay_match(row, named, unique)
-    return (match.cov, "measured") if match is not None else (0.0, "untested")
+    return (match.cov, match.flag) if match is not None else (0.0, "untested")
 
 
 def _overlay_positions(rows) -> dict:
@@ -292,8 +298,23 @@ def _span_join_cov(row, coverage_by_path: dict, start_index: dict) -> tuple[floa
     if match is None:
         match = _best_match(row, candidates)
     if match is None:
-        return 0.0, "untested"
-    return match.coverage, "measured"
+        return _unlisted(candidates)
+    return (0.0, "excluded") if match.excluded else (match.coverage, "measured")
+
+
+def _unlisted(candidates: list) -> tuple[float, str]:
+    """A function the artifact does not list in a file it measured.
+
+    istanbul lists every function it instruments, and an `istanbul ignore
+    next` or `v8 ignore next` hint drops one from that list, so a file whose
+    full listing names others left this one out on purpose. A file listed
+    with no functions at all proves nothing, and neither does a hand-built
+    entry with no statements, nor coverage.py's list, which folds two defs of
+    one name into one region: their gaps stay untested.
+    """
+    if any(fn.full_listing for fn in candidates):
+        return 0.0, "excluded"
+    return 0.0, "untested"
 
 
 def overlay_stale_coverage(
@@ -312,8 +333,9 @@ def overlay_stale_coverage(
     when callbacks share a line. A renamed or new function joins NOTHING —
     a span join here would hand it a neighbour's stale number and mislead
     the preview. A function on a span another one shares, or a Python def on
-    its own def line, scores as uncovered, as score_rows scores it, so the
-    preview never passes what the next coverage run fails. Coverage values are
+    its own def line that the baseline did not read excluded, scores as
+    uncovered, as score_rows scores it, so the preview never passes what the
+    next coverage run fails. Coverage values are
     the baseline's; the caller labels them stale. A legacy-identity refusal
     names BASELINE_RUN_ID, the run the baseline rows came from.
     """
@@ -322,30 +344,35 @@ def overlay_stale_coverage(
     positions = _overlay_positions(rows)
     by_key: dict[tuple[str, str], list[ScoredRow]] = {}
     for r in baseline_scored:
-        if r.flag == "measured":
+        if r.flag in _JOINED_FLAGS:
             by_key.setdefault((r.path, r.long_name), []).append(r)
 
     shared = _shared_source_spans(rows, lane_scopes, cc_only_scopes)
     scored = []
     for row in rows:
         verdict = _cov_without_join(row, lane_scopes, cc_only_scopes)
-        on_shared = _on_shared_span(row, verdict, shared)
-        cov, flag = verdict or _floored_overlay_cov(row, on_shared, by_key, positions)
+        cov, flag = verdict or _floored_overlay_cov(row, shared, by_key, positions)
         scored.append(_finish(row, cov, flag, target=target, scope_targets=scope_targets,
-                              shared_span=on_shared))
+                              shared_span=_on_shared_span(row, verdict, shared)))
     return scored
 
 
-def _floored_overlay_cov(row, on_shared: bool, by_key: dict, positions: dict) -> tuple[float, str]:
+# The flags a baseline row carries when a lane's artifact spoke about it.
+_JOINED_FLAGS = ("measured", "excluded")
+
+
+def _floored_overlay_cov(row, shared: dict, by_key: dict, positions: dict) -> tuple[float, str]:
     """Uncovered on a shared span, the floor score_rows gives a measured one.
 
     Joining by name there handed two functions edited onto one line their old
     separate numbers, and the preview called ok what the coverage run scores
-    untested. Tests cannot lift the floor: only splitting the span can.
+    untested. Tests cannot lift the floor: only splitting the span can. An
+    excluded function stays excluded on its own def line, as score_rows
+    scores it.
     """
-    if on_shared:
+    if (row.path, row.start, row.end) in shared:
         return 0.0, "untested"
-    return _named_overlay_cov(row, by_key, positions)
+    return _def_line_floor(row, _named_overlay_cov(row, by_key, positions))
 
 
 class SharedSpanFold:
@@ -435,9 +462,17 @@ def _joined_cov(row, ambiguous: dict, coverage_by_path: dict,
     """Uncovered on an ambiguous span or a def line, never the neighbour's
     number: the honest floor for a function whose measurement cannot be told
     from another's."""
-    if (row.path, row.start, row.end) in ambiguous or shares_its_def_line(row):
+    if (row.path, row.start, row.end) in ambiguous:
         return 0.0, "untested"
-    return _span_join_cov(row, coverage_by_path, start_index)
+    return _def_line_floor(row, _span_join_cov(row, coverage_by_path, start_index))
+
+
+def _def_line_floor(row, joined: tuple[float, str]) -> tuple[float, str]:
+    """Uncovered on a def line, where coverage.py cannot show a call. An
+    excluded def was never measured at all, so it keeps its flag."""
+    if joined[1] != "excluded" and shares_its_def_line(row):
+        return 0.0, "untested"
+    return joined
 
 
 def _on_shared_span(row, verdict, shared: dict) -> bool:

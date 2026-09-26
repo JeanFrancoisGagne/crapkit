@@ -241,6 +241,14 @@ then the one that starts later, then the one `fnMap` lists first.
 A function with neither a branch nor a statement in its span scores on `f` alone: 1.0 when
 it was called, 0.0 when it was not.
 
+`/* istanbul ignore next */` and `/* v8 ignore next */` drop the function after them from
+`fnMap`, with its branches and statements. A function the source holds and `fnMap` leaves
+out, in a file whose `fnMap` lists others beside a `statementMap`, reads `excluded`:
+`crap = ccn`, remedy `ok` or `decompose`, because no test can move its number. Through
+0.8.0 it read `untested` with `add-tests` advice no test could follow. The statements are
+the proof that an instrumenter wrote the entry: a hand-built entry with `fnMap` alone
+cannot say what it left out, so a function missing from it stays `untested`.
+
 The outer object is keyed by path. crapkit strips the crapkit root off an absolute key and
 takes any other key as it stands, so root-relative keys work too. `path_prefix` is
 coverage.py's key and does nothing here.
@@ -608,6 +616,17 @@ its encloser's body shared a start line with the encloser's region, and a nested
 further down overlapped the encloser's region by one line more than its own, which lacked
 the def line. Either way the join handed the nested def the encloser's number, so a helper
 no test called read as tested as the function around it.
+
+### A function coverage.py excludes
+
+`# pragma: no cover` on a def line, or an `exclude_lines` or `exclude_also` pattern that
+takes every statement in a function, leaves coverage.py a region with no statements and
+its lines under `excluded_lines`. coverage.py's default patterns also exclude a stub whose
+body is `...`. That function reads `excluded`: `crap = ccn`, remedy `ok` or `decompose`.
+A pattern that takes some statements and leaves others, such as a `raise
+NotImplementedError` line, excludes those lines and the function is measured on the rest.
+Through 0.8.0 an excluded function read `untested`, `crap = ccn^2 + ccn`, with `add-tests`
+advice no test could follow.
 
 ### `--continue-on-collection-errors`
 

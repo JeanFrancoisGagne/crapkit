@@ -95,7 +95,7 @@ def test_composite_artifact_parses_through_both_public_entry_points():
     assert list(per_file) == ["src/a \"quoted\" {braced}.ts",
                               "src/\u00fcn\u00efcode-\u2603.ts", "src/plain.ts"]
     assert per_file["src/plain.ts"] == [
-        FnCoverage("go", 1, 4, True, 0, 0, 2, 1)]
+        FnCoverage("go", 1, 4, True, 0, 0, 2, 1, full_listing=True)]
     assert parse_istanbul_missing(text, repo_root="C:/repo")["src/plain.ts"] == {3}
 
 
@@ -130,7 +130,7 @@ def _scan_attribution(cov):
         _scan_add(spans, branch["loc"]["start"]["line"], 4, len(hits), _taken(hits))
     for sid, stmt in cov["statementMap"].items():
         _scan_add(spans, stmt["start"]["line"], 6, 1, _taken([cov["s"].get(sid, 0)]))
-    return [FnCoverage(*s[:8]) for s in spans]
+    return [FnCoverage(*s[:8], full_listing=bool(cov["statementMap"])) for s in spans]
 
 
 def _dense_file(n_fns=200, seed=20260822):

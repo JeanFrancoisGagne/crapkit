@@ -74,7 +74,7 @@ _CODE_DDL = """CREATE TABLE IF NOT EXISTS {table} (
 # stores that met the same names in a different order hold different integers,
 # and a store is a file people copy between machines. A name from outside this
 # list is still stored, at a code minted after these.
-_CODE_SEEDS = {"flags": ("measured", "untested", "no-lane", "cc-only"),
+_CODE_SEEDS = {"flags": ("measured", "untested", "no-lane", "cc-only", "excluded"),
                "remedies": ("ok", "add-tests", "decompose", "split-lines")}
 
 # One run's shingle index, for brief's twins and for duplication: the marker

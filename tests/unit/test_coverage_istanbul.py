@@ -158,3 +158,14 @@ def test_a_branch_that_opens_before_a_function_on_its_line_is_the_enclosers():
 
     assert (by_name["choose"].branches_total, by_name["choose"].branches_covered) == (3, 2)
     assert (by_name["(anonymous_1)"].branches_total, by_name["(anonymous_1)"].coverage) == (0, 0.0)
+
+
+def test_only_an_instrumenters_own_entry_lists_every_function():
+    """A file entry with statements is istanbul's own output, so a function
+    its fnMap leaves out was skipped by an ignore hint. An entry built by hand
+    with fnMap alone cannot say what it left out."""
+    instrumented = parse_istanbul(json.dumps(DECLARED_ARROWS), repo_root="C:/repo")["src/arrows.js"]
+    hand_built = parse_istanbul(json.dumps(ARTIFACT), repo_root="C:\\repo")["src/app.ts"]
+
+    assert ({fn.full_listing for fn in instrumented}, {fn.full_listing for fn in hand_built}) == (
+        {True}, {False})

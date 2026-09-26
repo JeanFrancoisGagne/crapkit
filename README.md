@@ -822,10 +822,12 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 |---|---|---|
 | `measured` | A lane artifact spoke about this function. | Real `cov`. |
 | `untested` | A lane covers the scope, but its artifact is silent on this function, which normally means no test imports the file. | `cov = 0`. A testing gap, and `uncovered_lines` comes back `null` because no artifact can name lines it never saw. |
+| `excluded` | A lane's artifact measured the file and was told to leave this function out: `# pragma: no cover`, or an `exclude_lines` pattern that takes every statement in it, under coverage.py; `/* istanbul ignore next */` or `/* v8 ignore next */` under istanbul. istanbul drops such a function from the file's `fnMap`, so a function missing from an instrumented file's `fnMap` (one written beside its `statementMap`) that lists others reads `excluded` too. | `crap = ccn`, and `remedy` can only be `ok` or `decompose`: no test can move its number. `uncovered_lines` comes back `[]`. To have it measured, remove the exclusion. |
 | `no-lane` | No lane's `scopes` list names this function's scope. | `cov = 0`. A tooling gap, not a testing gap. `next-item` never hands one out and counts them in `skipped_no_lane`; `worklist` ranks them and marks the row `no-lane`, because a wiring gap is a risk you have to see. |
 | `cc-only` | The scope sets `coverage_optional = true`, so no coverage number can exist. | `crap = ccn`, and `remedy` can only be `ok` or `decompose`. `uncovered_lines` comes back `null` with a note naming that setting. |
 
-The coverage summary counts all four as `measured` / `untested` / `no_lane` / `cc_only`.
+The coverage summary counts all five as `measured` / `untested` / `excluded` / `no_lane` /
+`cc_only`.
 
 ### Remedy: what to do about it
 

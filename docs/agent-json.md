@@ -125,9 +125,9 @@ $ crapkit next-item
 | `cognitive` | int | Sonar-spec cognitive complexity, measured in every language crapkit scans. Reporting only, never gated. |
 | `nloc` | int | Non-comment lines of code, lizard's NLOC: comment-only lines and blank lines do not count. |
 | `nesting` | int | Maximum nesting depth. A Python row reads it off crapkit's cognitive pass: the deepest that pass's nesting stack gets, one level per `if`, `elif`, `else`, `for`, `while`, `except` and comprehension `for`, none for `with`, `try`, `finally`, `match`, `case` or a nested `def` (a nested function's blocks count on its own row). A flat function of seven `if`s reads 1, a three-deep one reads 3, an `if` inside a `with` inside an `if` reads 2. Every other language keeps lizard's ND column. |
-| `cov` | float | Branch coverage in the span, 0.0 to 1.0. With no branches it falls back to statement coverage, and with no statements to invoked-or-not (1.0 or 0.0). Python `and`/`or` add to `ccn`, but coverage.py records no branch arc for them, so a short-circuit no test takes leaves `cov` unchanged. An `untested`, `no-lane` or `cc-only` row reads 0.0. |
-| `flag` | string | `measured`, `untested`, `no-lane` or `cc-only`. See the [README](../README.md#flags-why-a-coverage-number-is-missing). `untested` also marks a function the artifact cannot tell apart from another: one whose line span another function shares, or a Python def whose body starts on the line its signature ends. That row scores `cov` 0.0 whatever the tests do, and its `uncovered_lines` still lists what the artifact saw, `[]` when every line ran; its `remedy` is `split-lines` once `crap` is over `target`. |
-| `crap` | float | The score, `ccn^2 * (1 - cov)^3 + ccn`, unrounded. A `cc-only` row scores `ccn`, since no coverage number can exist for it. |
+| `cov` | float | Branch coverage in the span, 0.0 to 1.0. With no branches it falls back to statement coverage, and with no statements to invoked-or-not (1.0 or 0.0). Python `and`/`or` add to `ccn`, but coverage.py records no branch arc for them, so a short-circuit no test takes leaves `cov` unchanged. An `untested`, `excluded`, `no-lane` or `cc-only` row reads 0.0. |
+| `flag` | string | `measured`, `untested`, `excluded`, `no-lane` or `cc-only`. See the [README](../README.md#flags-why-a-coverage-number-is-missing). `untested` also marks a function the artifact cannot tell apart from another: one whose line span another function shares, or a Python def whose body starts on the line its signature ends. That row scores `cov` 0.0 whatever the tests do, and its `uncovered_lines` still lists what the artifact saw, `[]` when every line ran; its `remedy` is `split-lines` once `crap` is over `target`. |
+| `crap` | float | The score, `ccn^2 * (1 - cov)^3 + ccn`, unrounded. A `cc-only` or `excluded` row scores `ccn`, since no test can move a number its lane was told not to measure. |
 | `remedy` | string | `decompose`, `split-lines`, `add-tests` or `ok`. `split-lines` means another function shares the source lines, or a Python def's body starts on the line its signature ends under a coverage.py lane, which reads that body as the `def` statement that runs at import; either way no test lowers the score until the definitions, or the signature and its body, are on separate lines. Judged against `target`, the ceiling `crapkit.toml` holds now, not the one the run was scored under: an uncommitted ceiling edit moves the remedy, and what the queue offers, before the next run lands. |
 | `target` | int | This scope's effective ceiling: the highest CRAP a function may carry, and so also the highest `ccn`, since CRAP never falls below `ccn`. A scope's own `target` overrides the `[crapkit]` one. |
 | `commits`, `authors` | int | Churn for the file in the window. |
@@ -185,7 +185,9 @@ rereads the artifact until a run does, so committing alone leaves the lines null
 `untested` no test imports the file, so no artifact was ever going to mention it: the whole
 span is dark and the first test is the move, not another `coverage` run. On `cc-only` the
 scope set `coverage_optional`, so no artifact can ever name lines for it and nothing to do
-will change that. A `no-lane` row is a wiring gap; `next-item` never hands one out.
+will change that. A `no-lane` row is a wiring gap; `next-item` never hands one out. An
+`excluded` row comes back `[]`, not null: the artifact measured the file and was told to
+leave the function out, so `crap` is `ccn` and only `decompose` moves it.
 
 ### `reasons`, and the stop condition
 
@@ -871,7 +873,7 @@ reasonably look at `committed_findings` alone.
 
 ## `coverage`
 
-The run summary: corpus size, the four flags counted, the grade, and provenance for every
+The run summary: corpus size, the five flags counted, the grade, and provenance for every
 lane that spoke.
 
 ```
@@ -887,6 +889,7 @@ $ crapkit coverage --json
   "commit": "9a1d11895c5ff5b791b497a13294494fdab949ce",
   "crap_load": 124.07,
   "db": "/repo/.crapkit/crap.sqlite",
+  "excluded": 0,
   "files": 2,
   "functions": 3,
   "grade": "F",
@@ -917,7 +920,7 @@ $ crapkit coverage --json
 | `files`, `functions` | Corpus size. |
 | `cache_hits` | Files served from the content-hash analysis cache. |
 | `skipped_max_bytes` | Files dropped by `[exclude] max_file_bytes`. |
-| `measured`, `untested`, `no_lane`, `cc_only` | The four flags, counted. They sum to `functions`. |
+| `measured`, `untested`, `excluded`, `no_lane`, `cc_only` | The five flags, counted. They sum to `functions`. |
 | `over_target` | Functions whose `crap` exceeds their scope ceiling, counted over the measured scopes: on a `partial` run the scopes in `unmeasured_scopes` are left out, since a skipped lane's functions score at cov 0 and would read as this run's debt. On a full run that is every function. The key keeps its name; the ceiling is what the config's `target` sets. |
 | `crap_load` | Sum of every function's CRAP, added exactly (`math.fsum`) and rounded to 2 dp. `trend` prints the same number for this run. |
 | `grade` | The letter for over-ceiling density over the same functions `over_target` counts. `A+` only at exactly zero. |

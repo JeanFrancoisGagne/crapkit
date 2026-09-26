@@ -50,8 +50,8 @@ _OCCURRENCE = {"type": "integer", "description": (
 _COV_DESCRIPTION = ("branch coverage inside the span, 0.0 to 1.0; statement coverage when the "
                     "span has no branches, and invoked-or-not (1.0 or 0.0) when it has no "
                     "statements; Python and/or add to ccn but coverage.py records no branch arc "
-                    "for them; 0.0 on an untested, no-lane or cc-only row")
-_CRAP_DESCRIPTION = "ccn^2 x (1 - cov)^3 + ccn, or ccn on a cc-only row"
+                    "for them; 0.0 on an untested, excluded, no-lane or cc-only row")
+_CRAP_DESCRIPTION = "ccn^2 x (1 - cov)^3 + ccn, or ccn on a cc-only or excluded row"
 _CEILING_DESCRIPTION = "the highest CRAP a function may carry, and so also the highest ccn"
 _UNCOVERED_PATHS_DESCRIPTION = "(1 - cov) x ccn rounded half to even, so 2.5 reads 2"
 
@@ -85,9 +85,9 @@ _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared s
  'nesting': {'type': 'integer', 'description': 'maximum nesting depth'},
  'cov': {'type': 'number', 'description': _COV_DESCRIPTION},
  'flag': {'type': 'string',
-          'description': 'measured, untested, no-lane or cc-only: whether a lane artifact could '
+          'description': 'measured, untested, excluded, no-lane or cc-only: whether a lane artifact could '
                          'measure this span',
-          'enum': ('measured', 'untested', 'no-lane', 'cc-only')},
+          'enum': ('measured', 'untested', 'excluded', 'no-lane', 'cc-only')},
  'crap': {'type': 'number', 'description': 'the score: ' + _CRAP_DESCRIPTION},
  'remedy': _REMEDY,
  'target': {'type': 'integer',
@@ -133,9 +133,9 @@ _WORKLIST_ITEM = {'type': 'object',
                 'risk': {'type': 'number',
                          'description': 'ccn x weight, four decimals: the sort key'},
                 'flag': {'type': ('string', 'null'),
-                         'description': 'measured, untested, no-lane or cc-only; null on an '
+                         'description': 'measured, untested, excluded, no-lane or cc-only; null on an '
                                         'inventory-only run',
-                         'enum': ('measured', 'untested', 'no-lane', 'cc-only', None)},
+                         'enum': ('measured', 'untested', 'excluded', 'no-lane', 'cc-only', None)},
                 'remedy': {'type': ('string', 'null'),
                            'description': 'decompose, split-lines, add-tests or ok, as the run '
                                           'judged it; null on an inventory-only run. A row a '
@@ -556,9 +556,9 @@ TOOLS: tuple[dict, ...] = (
                         "description": _COV_DESCRIPTION},
                     "flag": {
                         "type": "string",
-                        "description": ("measured, untested, no-lane or cc-only: whether a lane "
+                        "description": ("measured, untested, excluded, no-lane or cc-only: whether a lane "
                         "artifact could measure this span"),
-                        "enum": ("measured", "untested", "no-lane", "cc-only")},
+                        "enum": ("measured", "untested", "excluded", "no-lane", "cc-only")},
                     "crap": {
                         "type": "number",
                         "description": "the score: " + _CRAP_DESCRIPTION},
@@ -939,9 +939,9 @@ TOOLS: tuple[dict, ...] = (
                                                         + "; null on an inventory run")},
                                     "flag": {
                                         "type": ("string", "null"),
-                                        "description": ("measured, untested, no-lane or cc-only; null "
+                                        "description": ("measured, untested, excluded, no-lane or cc-only; null "
                                         "on an inventory-only run"),
-                                        "enum": ("measured", "untested", "no-lane", "cc-only", None)}}}},
+                                        "enum": ("measured", "untested", "excluded", "no-lane", "cc-only", None)}}}},
                         "ratchet_mark": {
                             "type": ("number", "null"),
                             "description": "the committed ratchet mark, or null"},
@@ -1371,9 +1371,9 @@ TOOLS: tuple[dict, ...] = (
                             "description": "from the baseline run: " + _COV_DESCRIPTION},
                         "flag": {
                             "type": "string",
-                            "description": ("measured, untested, no-lane or cc-only: whether a lane "
+                            "description": ("measured, untested, excluded, no-lane or cc-only: whether a lane "
                             "artifact could measure this span"),
-                            "enum": ("measured", "untested", "no-lane", "cc-only")},
+                            "enum": ("measured", "untested", "excluded", "no-lane", "cc-only")},
                         "crap": {
                             "type": "number",
                             "description": ("score from fresh ccn and baseline cov: "

@@ -458,7 +458,7 @@ def _export_scored(root: Path, export: str, scored) -> None:
 
 
 def _flag_counts(scored) -> dict[str, int]:
-    flags = {"measured": 0, "untested": 0, "no-lane": 0, "cc-only": 0}
+    flags = {"measured": 0, "untested": 0, "excluded": 0, "no-lane": 0, "cc-only": 0}
     for r in scored:
         flags[r.flag] += 1
     return flags
@@ -493,7 +493,7 @@ def _coverage_summary(run_id: int, run: _ScoredRun, cfg, shape: _RunShape, db_pa
         "run_id": run_id, "commit": run.commit, "files": run.corpus.files,
         "functions": len(run.scored), "cache_hits": run.cache_hits,
         "measured": flags["measured"], "untested": flags["untested"],
-        "no_lane": flags["no-lane"], "cc_only": flags["cc-only"],
+        "excluded": flags["excluded"], "no_lane": flags["no-lane"], "cc_only": flags["cc-only"],
         "skipped_max_bytes": run.corpus.skipped_max_bytes,
         "over_target": over, "grade": grade(over, len(judged)),
         "by_scope": _by_scope(run.scored, cfg),
@@ -522,9 +522,10 @@ def _partial_opening(shape: _RunShape) -> str:
 
 
 def _bucket_text(summary: dict) -> str:
-    """The four flags counted, zero buckets dropped: `2 measured / 1 no-lane`."""
+    """The five flags counted, zero buckets dropped: `2 measured / 1 no-lane`."""
     buckets = [(summary["measured"], "measured"), (summary["untested"], "untested"),
-               (summary["no_lane"], "no-lane"), (summary["cc_only"], "cc-only")]
+               (summary["excluded"], "excluded"), (summary["no_lane"], "no-lane"),
+               (summary["cc_only"], "cc-only")]
     return " / ".join(f"{n} {word}" for n, word in buckets if n)
 
 

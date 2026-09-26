@@ -443,7 +443,9 @@ word:
   and the only remedy is `decompose`.
 
 `[]` means the artifact answered and nothing is dark. The note is prose and may be
-reworded; `flag` is the contract.
+reworded; `flag` is the contract. `flag: "excluded"` comes with `[]`: the lane's coverage
+tool was told to leave the function out (`# pragma: no cover`, `istanbul ignore next`), so
+`crap` is `ccn` and the only remedy is `decompose`.
 
 `--top N` replaces `item{}` with `items[]`. `--exclude FRAG` (repeatable) skips items whose
 path or function name contains FRAG. `--scope NAME` (repeatable) restricts to the named
