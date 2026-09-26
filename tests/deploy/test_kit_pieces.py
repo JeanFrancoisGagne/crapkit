@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+import hang_guard
 from kit import cells, docsnip, gitmirror, hooks_rules, profiles, pyindex, repos, sandbox, shim, stub_anthropic, stub_openai, wheels
 from kit.mcp_client import McpClient
 from kit.transcript import Step, Transcript
@@ -164,6 +165,21 @@ def test_the_shim_records_a_start_and_still_runs_crapkit(box, candidate):
     assert starts[0]["cwd"] == str(box.root) and starts[0]["env"]["HOME"] == box.env["HOME"]
     # The process that started crapkit, through the .exe launcher on Windows.
     assert [start["ppid"] for start in starts] == [os.getpid(), os.getpid()]
+
+
+def test_the_shim_passes_crapkit_s_exit_code_while_its_stdin_stays_open(box, candidate):
+    """doctor --plugin-root probes `crapkit --version` with its own stdin
+    inherited and never closed. The shim died at shutdown with a fatal
+    error while its forwarding thread held stdin, and doctor reported that
+    crapkit did not answer."""
+    launcher = shim.install(box, venv_crapkit(box)) / shim.launcher_name()
+    with McpClient.in_box(box, [str(launcher), "--version"], cwd=box.root) as client:
+        code = hang_guard.exited(client.process)
+        printed = client.replies.get(timeout=hang_guard.HANG_SECONDS) or ""
+        err = client.stderr_text()
+
+    assert code == 0 and "Fatal Python error" not in err, err
+    assert candidate.version in printed
 
 
 def test_the_shim_is_a_real_executable_the_way_a_pip_install_is(box, candidate):

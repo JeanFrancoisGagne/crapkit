@@ -122,4 +122,9 @@ def main() -> None:
     threading.Thread(target=forward, args=(source, child.stdin), daemon=True).start()
     code = child.wait()
     record("exit", code=code)
-    sys.exit(code)
+    # os._exit, not sys.exit: when the client still holds stdin open, the
+    # forwarding thread sits in a read on sys.stdin, and interpreter shutdown
+    # then dies with "Fatal Python error: _enter_buffered_busy" (exit 139, or
+    # 0xC0000005 on Windows) in place of crapkit's own code. Nothing is left to
+    # flush: the child wrote its output to the inherited stdout itself.
+    os._exit(code)
