@@ -1444,6 +1444,11 @@ is rebuilt at the first `duplication` or `brief` after upgrading.
   quotes; shell leaves out `#`; PowerShell `#` and `<# #>`; Zig `//`; every other
   language `//` and `/* */`, where a block comment's lines without a leading `*` were
   read as code.
+- A block comment opened after code, `int x = a; /* starts here`, leaves its later lines
+  out, where only those starting with `*` were left out before. An opener after an open
+  quote or a `//` on its line opens nothing, and so does one that no later line of the
+  function closes: a line starting with `/*` inside a template literal is code, as are the
+  lines after it.
 
 ## 0.8.0 — 2026-09-23
 

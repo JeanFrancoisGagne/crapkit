@@ -46,10 +46,10 @@ SHINGLE_FORMAT = f"v3 blake2b-8 window {WINDOW}"
 class _Comments(NamedTuple):
     """How one language writes a comment line.
 
-    `line` holds the prefixes that make a whole line a comment. `block` opens a
-    comment at a line's start and closes it wherever the closer falls, or is
-    None in a language without one. `starts` is every prefix that sends a line
-    down the slow path: the line prefixes and the block opener."""
+    `line` holds the prefixes that make a whole line a comment. `block` is the
+    opener and closer of a block comment, or None in a language without one.
+    `starts` is every prefix that sends a line down the slow path: the line
+    prefixes and the block opener."""
 
     line: tuple[str, ...]
     block: tuple[str, str] | None
@@ -63,7 +63,9 @@ def _comments(line: tuple[str, ...], block: tuple[str, str] | None = None) -> _C
 # A comment is what the language's reference calls one, so a Python `// 2` or
 # `**kwargs` line, a C `*out = x;` or `#define` line and a Rust `#[attr]` line
 # are code. Python's docstrings are string literals; a line starting with
-# three quotes is left out all the same, as it always was.
+# three quotes is left out all the same, as it always was. The markers are read
+# at a line's start, and a block opener after code too; no string is parsed,
+# and a block comment ends at its first closer, nested or not.
 _C_FAMILY = _comments(("//",), ("/*", "*/"))
 _COMMENTS = {"python": _comments(("#", '"""', "'''")), "shell": _comments(("#",)),
              "powershell": _comments(("#",), ("<#", "#>")), "zig": _comments(("//",))}
@@ -135,6 +137,24 @@ def _opening(text: str, comments: _Comments) -> tuple[str | None, int]:
     return None, 0
 
 
+def _quoted_or_commented(head: str, comments: _Comments) -> bool:
+    """`head`, a line up to a block opener, leaves the opener in a string, by
+    an odd count of one kind of quote, or in a line comment."""
+    return any(head.count(quote) % 2 for quote in "\"'`") \
+        or any(marker in head for marker in comments.line)
+
+
+def _opens_after_code(text: str, comments: _Comments) -> bool:
+    """A code line ends inside a block comment: its last opener follows a space
+    or tab, stands clear of strings and line comments, and nothing after it on
+    the line closes it. `"src/*"` and `'case $x in /*) ;;'` hold theirs in a
+    string."""
+    opener, closer = comments.block
+    at = text.rfind(opener)
+    return at > 0 and text[at - 1] in " \t" and closer not in text[at + len(opener):] \
+        and not _quoted_or_commented(text[:at], comments)
+
+
 def _uncommented(text: str, closer: str | None, comments: _Comments) -> tuple[str, str | None]:
     """What of a stripped line is code, and the block closer still awaited
     after it. A line holding code after a closed block comment is code. One
@@ -151,18 +171,53 @@ def _uncommented(text: str, closer: str | None, comments: _Comments) -> tuple[st
     return ("" if text.startswith(comments.line) else text), None
 
 
+def _read(text: str, closer: str | None, comments: _Comments) -> tuple[str, str | None]:
+    """What of a stripped line is code, and the block closer awaited after it.
+    Only a line inside a block comment or starting like a comment pays for the
+    closer and prefix checks."""
+    if closer is not None or text.startswith(comments.starts):
+        text, closer = _uncommented(text, closer, comments)
+    if text and _opens_after_code(text, comments):
+        closer = comments.block[1]
+    return text, closer
+
+
+def _last_closing(joined: str, closer: str) -> int:
+    """The index of the last line holding `closer`, -1 when none does."""
+    at = joined.rfind(closer)
+    return joined.count("\n", 0, at) if at >= 0 else -1
+
+
+def _block_lines(lines: list[str], joined: str, comments: _Comments) -> list[str]:
+    """The code lines of a function that holds a block opener, read with the
+    closer each line leaves awaited. A block comment is one a later line of the
+    function closes: a function cannot end inside a comment, so an opener
+    nothing closes sat in a string, a `/*` line in a template literal, and read
+    as a comment it hid every line after it."""
+    last, picked, closer = _last_closing(joined, comments.block[1]), [], None
+    for at, text in enumerate(lines):
+        code, closer = _read(text, closer, comments)
+        if closer is not None and at >= last:
+            code, closer = text, None
+        if code:
+            picked.append("".join(text.split()))  # whitespace never distinguishes a clone
+    return picked
+
+
+def _plain_lines(lines: list[str], comments: _Comments) -> list[str]:
+    """The code lines of a function that holds no block opener: a line is a
+    comment line by its start alone."""
+    return ["".join(text.split()) for text in lines if text and not text.startswith(comments.line)]
+
+
 def _code_lines(raw_lines, comments: _Comments) -> list[str]:
     """Each code line with its whitespace removed, blank and comment lines left
-    out. Only a line inside a block comment or starting like a comment pays
-    for the closer and prefix checks."""
-    picked, closer = [], None
-    for raw in raw_lines:
-        text = raw.strip()
-        if closer is not None or text.startswith(comments.starts):
-            text, closer = _uncommented(text, closer, comments)
-        if text:
-            picked.append("".join(raw.split()))  # whitespace never distinguishes a clone
-    return picked
+    out. Most functions hold no block opener and are read without state."""
+    lines = list(map(str.strip, raw_lines))
+    joined = "\n".join(lines)
+    if comments.block is not None and comments.block[0] in joined:
+        return _block_lines(lines, joined, comments)
+    return _plain_lines(lines, comments)
 
 
 def _normalized_lines(source: _Source, r) -> list[str]:

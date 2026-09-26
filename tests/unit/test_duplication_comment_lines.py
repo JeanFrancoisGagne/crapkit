@@ -139,3 +139,60 @@ def test_a_line_of_many_closed_block_comments_before_its_code_is_code():
     ((_, shingles),) = function_index(rows, {"m.js": NL.join(lines) + NL}, min_lines=1).functions()
 
     assert shingles == len(lines) - 3
+
+
+# A block comment the reader opens must be one a later line of the function
+# closes. A function's text cannot end inside a comment, so an opener nothing
+# closes sat in a string: a `/*` or `<#` line inside a template literal or a
+# here-string. Read as a comment, it hid every line after it.
+UNCLOSED = {
+    "template-literal": ("m.ts", ['function banner(a: number): string {', '  const css = `',
+                                  '/* banner', '`;', '  a += 1;', '  a *= 2;', '  return css + a;',
+                                  '}'], 8),
+    "here-string": ("m.ps1", ['function Get-Banner {', '    $text = @"', '<# banner', '"@',
+                              '    $count = 1', '    $count += 2', '    $text', '}'], 8),
+    "reopened-after-the-last-closer": ("m.c", ['int bump(int a) {', '    /* note */ /* half',
+                                               '    a += 1;', '    a *= 2;', '    return a;', '}'], 6),
+}
+
+
+@pytest.mark.parametrize("shape", UNCLOSED)
+def test_a_block_opener_no_later_line_closes_is_code(shape):
+    path, lines, kept = UNCLOSED[shape]
+    rows = [row(path, "f", 1, len(lines))]
+
+    ((_, shingles),) = function_index(rows, {path: NL.join(lines) + NL}, min_lines=1).functions()
+
+    assert shingles == kept - 3
+
+
+# A block comment opened after code, past a space or tab, runs on to its
+# closer, so its later lines are comment lines: ` * and goes on` and ` */`
+# here. The opener must stand clear of a string or a line comment: after a
+# quote, or after `//`, it opens nothing.
+AFTER_CODE = {
+    "c": ("m.c", ['int clamp(int a) {', '    int x = a; /* starts here', '     * and goes on',
+                  '     */', '    return x;', '}'], 4),
+    "javascript": ("m.js", ['function clamp(a) {', '  const x = a;\t/* starts here',
+                            '    and goes on', '  */', '  return x;', '}'], 4),
+    "powershell": ("m.ps1", ['function Get-Clamp {', '    $x = 1 <# starts here', '    and goes on',
+                             '    #>', '    $x', '}'], 4),
+    "then-code-after-the-closer": ("m.c", ['int clamp(int a) {', '    int x = a; /* starts',
+                                           '     * more */ x += 1;', '    return x;', '}'], 5),
+    "in-a-line-comment": ("m.c", ['int clamp(int a) {', '    int x = a; // see /* here', '    x += 1;',
+                                  '    x *= 2;', '    /* note */', '    return x;', '}'], 6),
+    "in-a-string": ("m.js", ['function clamp(dir) {', '  const glob = dir + "/*";', '  let n = 1;',
+                             '  n += 2;', '  /* note */', '  return glob + n;', '}'], 6),
+    "never-closed": ("m.c", ['int clamp(int a) {', '    int x = a; /* never closed', '    x += 1;',
+                             '    x *= 2;', '    return x;', '}'], 6),
+}
+
+
+@pytest.mark.parametrize("shape", AFTER_CODE)
+def test_a_block_comment_opened_after_code_leaves_its_later_lines_out(shape):
+    path, lines, kept = AFTER_CODE[shape]
+    rows = [row(path, "f", 1, len(lines))]
+
+    ((_, shingles),) = function_index(rows, {path: NL.join(lines) + NL}, min_lines=1).functions()
+
+    assert shingles == max(kept - 3, 0)
