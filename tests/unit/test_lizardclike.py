@@ -307,6 +307,63 @@ def test_pointers_prototypes_and_products_declare_no_function():
     assert [(r.long_name, r.start) for r in records] == [("g()", 7)]
 
 
+CONSTRAINED = "template <class T>\nvoid f(T t) {} {\n  if (t) {}\n}\nint g() { return 1; }\n"
+F_AND_G = [("f( T t)", 2, 2, 1, 1), ("g()", 5, 1, 0, 0)]  # (long name, start, ccn, cog, nest)
+
+REQUIRES_CLAUSES = {  # label: (source, rows), by hand from [dcl.decl] and [temp.pre]
+    "concept": (CONSTRAINED.replace("{}", "requires C<T>", 1), F_AND_G),
+    "conjunction": (CONSTRAINED.replace("{}", "requires A<T> && B<T>", 1), F_AND_G),
+    "parenthesized": (CONSTRAINED.replace("{}", "requires (sizeof(T) > 1)", 1), F_AND_G),
+    "requires-expression": (CONSTRAINED.replace("{}", "requires requires (T x) { x + 1; }", 1),
+                            F_AND_G),
+    "leading": ("template <class T> requires C<T>\nvoid f(T t) {\n  if (t) {}\n}\n"
+                "int g() { return 1; }\n", F_AND_G),
+    "leading requires-expression": (
+        "template <class T> requires requires (T x) { x + 1; }\nvoid f(T t) {\n  if (t) {}\n}\n"
+        "int g() { return 1; }\n", F_AND_G),
+    "const member": ("struct S {\n  void f(int t) const requires C<int> {\n    if (t) {}\n  }\n"
+                     "  int g() { return 1; }\n};\n",
+                     [("S::f( int t) const", 2, 2, 1, 1), ("S::g()", 5, 1, 0, 0)]),
+    "constructor with initializers": (
+        "struct S {\n  constexpr S(const S& o) noexcept(N<T>)\n    requires C<T>\n    : x{o.x} {\n"
+        "    if (x) {}\n  }\n  int g() { return 1; }\n};\n",
+        [("S::S( const S & o)", 2, 2, 1, 1), ("S::g()", 7, 1, 0, 0)]),
+    "declaration": ("template <class T>\nvoid f(T t) requires C<T>;\nint g() { return 1; }\n",
+                    [("g()", 3, 1, 0, 0)]),
+    "deleted": ("struct S {\n  void f() requires C<T> = delete;\n  int g() { return 1; }\n};\n",
+                [("S::g()", 3, 1, 0, 0)]),
+}
+
+
+@pytest.mark.parametrize("source,rows", REQUIRES_CLAUSES.values(), ids=REQUIRES_CLAUSES.keys())
+def test_a_requires_clause_leaves_the_function_its_row(source, rows):
+    """lizard read a trailing `requires` as an old-style C parameter: the function
+    had no row, and one was named after its body's first statement, `if( t)`,
+    with the if's decision lost. A `&&` in the clause decides nothing."""
+    records = analyze_source("p.cpp", source, note=False)
+
+    assert [(r.long_name, r.start, r.ccn_std, r.cognitive, r.nesting) for r in records] == rows
+
+
+@pytest.mark.parametrize("concept", ["concept C = requires (T a) { a + 1; };",
+                                     "concept D = C<T> && requires { typename T::x; };"])
+def test_a_requires_expression_is_no_function(concept):
+    """A concept's requires-expression read as a function named `requires`,
+    whose body was the requirements: MSVC STL's <concepts> had 9 such rows."""
+    records = analyze_source("p.cpp", f"template <class T>\n{concept}\n{NEXT}", note=False)
+
+    assert [(r.long_name, r.start) for r in records] == [("g()", 3)]
+
+
+def test_a_c_function_named_requires_keeps_its_row():
+    """`requires` is a keyword in C++20 and an identifier in C."""
+    source = "int requires(int a) {\n  if (a) {\n    return 1;\n  }\n  return 0;\n}\n"
+
+    (record,) = analyze_source("p.c", source, note=False)
+
+    assert (record.long_name, record.ccn_std) == ("requires( int a)", 2)
+
+
 INSTANCE_VARIABLES = {
     "class extension": "@interface Extension () {\n    int _first;\n    int _second;\n}\n@end\n",
     "extension adopting a protocol": "@interface Adopting () <NSCopying> {\n    int _phase;\n"

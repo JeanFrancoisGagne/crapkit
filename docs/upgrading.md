@@ -211,7 +211,8 @@ same three commands as version 11 below.
 - Functions that had no row get one: those after a `<` comparison in a default
   template argument or a member initializer, which lizard read as a template bracket,
   a function returning a function pointer after a return type that ends in `*` or
-  `&`, `char *(*get(void))(void)`, and the member functions of a class defined inside
+  `&`, `char *(*get(void))(void)`, a C++20 function with a trailing requires-clause,
+  `void f(T t) requires C<T>`, and the member functions of a class defined inside
   a function. The function around such a class no longer pays for its members'
   decisions, so its `ccn` and `cognitive` fall. In Java, methods get rows after an
   annotated local variable, an enum constant with a body or an annotation element
@@ -224,9 +225,11 @@ same three commands as version 11 below.
   over its ceiling fails the gate the next time its file changes, and `ratchet seed`
   marks it.
 - Rows that were not functions go: a declaration whose trailing return type holds
-  braces, an Objective-C instance-variable block, a Java enum constant, an annotation
-  element with a braced default, a Java field's anonymous class, and a Java record
-  declared first in a class or interface body, which read as a method named after it.
+  braces, an Objective-C instance-variable block, a C++20 concept's requires-expression
+  (`requires( T a)`), a row named after the first statement of a function with a
+  requires-clause (`if( t)`), a Java enum constant, an annotation element with a
+  braced default, a Java field's anonymous class, and a Java record declared first in
+  a class or interface body, which read as a method named after it.
 - Rows named after an attribute take the function's name: `__attribute__((noinline))`,
   `API_AVAILABLE( ios(10))`, or `)` for an Objective-C method, and Java rows named
   after an annotation with arguments, `InlineMe( replacement = ...)`. A member of a

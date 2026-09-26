@@ -829,6 +829,15 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   by a macro, `STRINGLIB(find)(const STRINGLIB_CHAR *str, ...)`, read `STRINGLIB`. They
   read `get`, `max` and `find`, a new ratchet key: 94 rows in the MSVC STL's `<limits>`
   and `<random>` and 24 in CPython 3.13's stringlib change name and nothing else.
+- A C++20 requires-clause no longer hides the function it constrains. lizard read a
+  trailing `requires`, `void f(T t) requires C<T> {`, as an old-style C parameter: the
+  function had no row, and a row was named after the first statement of its body,
+  `if( t)`, or after a constructor's first member initializer, with the rest of the
+  body left out. A concept's requires-expression, `concept C = requires (T a) { a + 1;
+  };`, read as a function named `requires`. In the MSVC STL's `<ranges>`, 458
+  functions get a row and 66 rows that were no function go; `<concepts>` and
+  `<iterator>` lose 14 more and gain 19. A `&&` in the clause opens no nesting level,
+  so 13 functions that had a row read one `nesting` level less.
 
 ### Java methods that were hidden, invented or misnamed
 

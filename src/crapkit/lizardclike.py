@@ -61,6 +61,13 @@ Functions lizard hid, invented or misnamed
   A name in parentheses, `T (max)()`, read `T( max)()`; so did a name a macro
   builds, `STRINGLIB(find)(...)`. `nested_declarator` finds the name and the
   list beside it, and the rest of the declarator is read as return type.
+* A C++20 requires-clause after a parameter list, `void f(T t) requires C<T> {`
+  (ISO/IEC 14882:2020 [dcl.decl]), read as an old-style C parameter: the
+  function had no row, and one was named after the first statement of its
+  body, `if( t)`, or after a constructor's first member initializer. A
+  concept's requires-expression, `concept C = requires (T a) { a + 1; };`,
+  read as a function named requires. `_RequiresClause` reads a trailing clause
+  to the body, and `_state_requires` skips a requires-expression at file scope.
 
 The `&&` of a reference
 -----------------------
@@ -157,6 +164,16 @@ _NO_PARAMETER = (["void"], ["..."])
 # words: `: public Base<int>, ns::Other`.
 _CLASS_KEYS = frozenset({"struct", "class", "union"})
 _BASE_TOKENS = frozenset({"::", "<", ">", ",", "..."})
+
+# What stands before a C++20 `requires` at file scope: a template head's `>`, a
+# concept's `=`, a constraint's `&&`, `||`, `(` or `!`, or `requires` itself.
+# A `;` too: lizard reads both branches of an `#if`, so a concept's second
+# definition, under `#else`, follows the first one's `;`.
+_BEFORE_A_REQUIREMENT = frozenset({">", "=", "&&", "||", "(", "!", "requires", ";"})
+
+# What ends a trailing requires-clause outside brackets: the body's `{`, a
+# declaration's `;`, a constructor's member-initializer `:`.
+_CLAUSE_ENDS = frozenset({"{", ";", ":"})
 
 # What ends a class's name in its head: lizard's own list.
 _NAME_ENDS = frozenset({"<", ":", "final", "[", "extends", "implements"})
@@ -387,6 +404,7 @@ class _CFixes(ParameterCount):
         self.crapkit_named = []
         self.crapkit_suffix = 0
         self.crapkit_declarator = []
+        self.crapkit_clause = None
 
     def try_new_function(self, name):
         """Note whether this name follows a return type. The `>` that closes a
@@ -450,11 +468,28 @@ class _CFixes(ParameterCount):
         """
         if token in _VIRT_SPECIFIERS:
             return
-        if self.crapkit_typed and _is_word(token) and token not in _DECLARATOR_WORDS:
+        if token == "requires":
+            self.crapkit_clause = _RequiresClause()
+            self._state = self._state_requires_clause
+        elif self._may_be_an_attribute(token):
             self.crapkit_word = token
             self._state = self._state_attribute_word
-            return
-        CLikeStates._state_dec_to_imp(self, token)
+        else:
+            CLikeStates._state_dec_to_imp(self, token)
+
+    def _may_be_an_attribute(self, token) -> bool:
+        return self.crapkit_typed and _is_word(token) and token not in _DECLARATOR_WORDS
+
+    def _state_requires_clause(self, token):
+        """A trailing requires-clause, `void f(T t) requires C<T> {` (ISO/IEC
+        14882:2020 [dcl.decl]), read to what ends it. lizard read `requires` as
+        an old-style C parameter, lost the function, and named a row after the
+        body's first statement: `if( t)`. A `&&` in the clause opens no nesting
+        level, as one in the parameter list opens none."""
+        if self.crapkit_clause.ends(token):
+            _forget_the_parameters(self.context.current_function)
+            self._state = self._state_dec_to_imp
+            self._state(token)
 
     def _state_attribute_word(self, token):
         """The token after that word: a `(` opens the attribute's arguments."""
@@ -524,15 +559,53 @@ class _CFixes(ParameterCount):
 
     def _state_global(self, token):
         """`struct`, `class` and `union` open a head, read before lizard sees it,
-        and so does a `(` after `*` or `&`, which may open a nested declarator."""
-        if token in _CLASS_KEYS and self.last_token != "enum":
+        and so do a `(` after `*` or `&`, which may open a nested declarator, and
+        `requires`, which names no function."""
+        if self._opens_a_class_head(token):
             self.crapkit_class, self.crapkit_held = _ClassHead(), [token]
             self._state = self._state_class_head
         elif token == "(" and self.last_token in _POINTER_ENDS:
             self.crapkit_declarator = [token]
             self._state = self._state_pointer_declarator
+        elif self._opens_a_requirement(token):
+            self._state = self._state_requires
         else:
             super()._state_global(token)
+
+    def _opens_a_class_head(self, token) -> bool:
+        return token in _CLASS_KEYS and self.last_token != "enum"
+
+    def _opens_a_requirement(self, token) -> bool:
+        """`requires` after a template head, an `=`, a `&&` or another
+        `requires`. After a type it is a C function's name: `int requires(int a)`."""
+        return token == "requires" and self.last_token in _BEFORE_A_REQUIREMENT
+
+    def _state_requires(self, token):
+        """The token after `requires` at file scope. A requires-expression,
+        `concept C = requires (T a) { a + 1; };`, read as a function named
+        requires whose body was the requirements; its parameters and its
+        requirements are skipped. A requires-clause before a declaration,
+        `requires C<T> void f(T t)`, reads on as lizard reads it."""
+        if token == "(":
+            self.next(self._state_requirement_parameters, token)
+        elif token == "{":
+            self.next(self._state_requirements, token)
+        else:
+            self.next(self._state_global, token)
+
+    @CodeStateMachine.read_inside_brackets_then("()", "_state_after_requirement_parameters")
+    def _state_requirement_parameters(self, _):
+        """`(T a)`, or the parenthesized constraint of a clause: `(N > 1)`."""
+
+    def _state_after_requirement_parameters(self, token):
+        if token == "{":
+            self.next(self._state_requirements, token)
+        else:
+            self.next(self._state_global, token)
+
+    @CodeStateMachine.read_inside_brackets_then("{}", "_state_global")
+    def _state_requirements(self, _):
+        """`{ a + 1; }`: a requires-expression's requirements, which are no body."""
 
     def _state_pointer_declarator(self, token):
         """A group after `*` or `&`, held to its `)`: `char *(*get(void))(void)`
@@ -595,7 +668,7 @@ class _CFixes(ParameterCount):
             opened = head.reads(token)
             self.crapkit_head = head if opened is None else None
             return bool(opened)
-        if token in _CLASS_KEYS and self.last_token != "enum":
+        if self._opens_a_class_head(token):
             self.crapkit_head = _ClassHead()
         return False
 
@@ -689,6 +762,31 @@ class _ClassHead:
 
 def _in_a_base_clause(token: str):
     return None if _is_word(token) or token in _BASE_TOKENS else False
+
+
+class _RequiresClause:
+    """The tokens of a trailing requires-clause, up to the one that ends it.
+
+    Outside brackets, a `{` opens the body, a `;` ends a declaration and a `:`
+    opens a constructor's member initializers. A requires-expression inside the
+    clause, `requires requires (T x) { x + 1; }`, holds braces of its own: the
+    first `{` after its `requires` opens its requirements, not the body.
+    """
+
+    def __init__(self):
+        self.depth = 0
+        self.expression = False  # a `requires` whose requirements have not opened
+
+    def ends(self, token: str) -> bool:
+        if self.depth == 0 and token in _CLAUSE_ENDS and not self.expression:
+            return True
+        self._read(token)
+        return False
+
+    def _read(self, token: str) -> None:
+        if self.depth == 0:
+            self.expression = token == "requires" or (self.expression and token != "{")
+        self.depth += _BRACKET_DEPTH.get(token, 0)
 
 
 class _ObjCFixes:
