@@ -842,6 +842,16 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   and hid what followed.
 - A method of an anonymous or local class inside a method is named with its class once:
   `A::go.run()`, where it read `A::A::go.run()`. The name is a new ratchet key.
+- A record or an interface declared inside a method, `record R(int x) {...}` or
+  `interface I {...}` (JLS sec. 14.3), has rows for its methods. lizard read their
+  methods as statements of the method around them, which paid their `ccn`. A local
+  variable named `record` still declares nothing.
+- A field or an abstract method at the end of an anonymous or local class no longer
+  takes the row of the method the class sits in. lizard kept the member's name current,
+  so the row came out as `A::outer.y`, starting on the field's line. The method now
+  counts the class's field and annotation lines in its `nloc` wherever they stand;
+  those before the class's first method counted for no function, so Guava's
+  `Iterators.cycle` reads `nloc` 13 where it read 11.
 - `params` counts `String args[]`, which read 0.
 - A parameter list opens no nesting level, as in C++: a wildcard `?` that lizard read
   as a conditional, `BiFunction<? super K, ? super @Nullable V, ...>`, read one level.

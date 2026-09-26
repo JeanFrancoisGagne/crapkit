@@ -23,6 +23,10 @@ Methods lizard hid, invented or misnamed
   and any other default ran on to the next `{` in the file (sec. 9.6.1).
 * A method of a class declared inside a method was named with its class twice,
   `A::A::go.run`; it reads `A::go.run`.
+* A record or interface declared inside a method (sec. 14.3) was read as the
+  method's statements, which hid its methods and charged the method their ccn.
+* A field or an abstract method ending a class declared inside a method took
+  that method's row: its name stayed current to the method's closing `}`.
 
 Parameters
 ----------
@@ -82,7 +86,21 @@ class _JavaFixes(ParameterCount):
 
     def _try_start_a_class(self, token, after_unqualified_annotation=False):
         self.crapkit_enum = token == "enum"
+        if self.in_method_body and token == "record":
+            self._state = self._state_local_record
+            return True
+        if self.in_method_body and token == "interface":
+            token = "class"
         return super()._try_start_a_class(token, after_unqualified_annotation)
+
+    def _state_local_record(self, token):
+        """`record` in a method body declares a local record when a name follows
+        it (sec. 14.3), and is a variable anywhere else."""
+        if token[0].isalpha() and token != "instanceof":
+            self.class_name, self.is_record, self.in_record_constructor = None, True, False
+            self.next(self._state_class_declaration, token)
+        else:
+            self.next(self._state_global, token)
 
     def _state_class_declaration(self, token):
         """An enum's body starts with its constants."""
@@ -132,6 +150,16 @@ class JavaFamilyStates(_JavaFixes, JavaStates):
 
 class JavaTypeBodyStates(_JavaFixes, JavaClassBodyStates):
     """lizard's class-body states, with the readings above."""
+
+    def _state_global(self, token):
+        """Between the members of a class declared in a method, that method is
+        current again. A field or an abstract method opens no function, and its
+        name stayed current: the method's closing `}` then ended the row under
+        that name, from the member's line."""
+        super()._state_global(token)
+        method = self.context.last_function
+        if method is not None and self._state == self._state_global:
+            self.context.current_function = method
 
     def read_enum_constants(self):
         self._state = self._state_enum_constants

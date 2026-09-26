@@ -155,6 +155,66 @@ def test_a_method_nested_in_a_method_is_named_once_after_its_class(label):
     assert names[0] == name
 
 
+LOCAL_TYPES = {  # label: the head of a type declared in outer's body (sec. 14.3)
+    "class": "class L {",
+    "enum": "enum L { ONE;",
+    "record": "record L(int x) {",
+    "generic record after an annotation": "@Deprecated record L<T>(T x) {",
+    "interface": "interface L {",
+}
+
+
+@pytest.mark.parametrize("label", LOCAL_TYPES)
+def test_a_type_declared_in_a_method_holds_methods_the_method_does_not_pay_for(label):
+    """sec. 14.3: a method body may declare a class, enum, record or interface.
+    lizard read a local record or interface as statements of the method around
+    it, which took the ccn of their methods and left them no row."""
+    modifier = "default " if label == "interface" else ""
+    source = ("class A {\n    int outer(int a) {\n        " + LOCAL_TYPES[label] + "\n"
+              "            " + modifier + "int twice(int n) { if (n > 0) { return n; } return 0; }\n"
+              "        }\n        return a;\n    }\n}\n")
+
+    rows = [(r.start, r.end, r.ccn_std) for r in analyze_source("A.java", source, note=False)]
+
+    assert rows == [(4, 4, 2), (2, 7, 1)]
+
+
+TRAILING_MEMBERS = {  # label: a type in outer's body that ends on a member with no body
+    "field after a method in a local class": "class L { int f() { return 1; } int y; }",
+    "field in an anonymous class": "Runnable r = new Runnable() { public void run() { } int y = 3; };",
+    "abstract method in a local interface": "interface L { int f(int x); }",
+    "abstract method in a local abstract class": "abstract class L { abstract int f(); }",
+    "field in a local record": "record L(int x) { static int y; }",
+}
+
+
+@pytest.mark.parametrize("label", TRAILING_MEMBERS)
+def test_a_member_with_no_body_leaves_the_method_around_its_class_its_row(label):
+    """A field or an abstract method is no function, so the method the class
+    sits in stays current past it. lizard kept the member's name current, and
+    at the method's closing brace the row went out under that name, from the
+    member's line."""
+    source = ("class A {\n    int outer(int a) {\n        " + TRAILING_MEMBERS[label] + "\n"
+              "        if (a > 0) {\n            return a;\n        }\n        return 0;\n    }\n}\n")
+
+    rows = analyze_source("A.java", source, note=False)
+
+    assert [(r.long_name, r.start, r.end, r.ccn_std, r.cognitive) for r in rows][-1] == (
+        "A::outer( int a)", 2, 8, 2, 1)
+
+
+def test_a_variable_named_record_starts_no_record():
+    """`record` is a keyword only where a record's name follows it (sec. 3.9)."""
+    source = ("class A {\n    int outer(Object record) {\n        if (record instanceof String s) {\n"
+              "            return s.length();\n        }\n        record = null;\n"
+              "        return record == null ? 0 : 1;\n    }\n\n    int after(int n)" + BODY + "}\n")
+
+    rows = [(r.long_name, r.start, r.end, r.ccn_std) for r in analyze_source("A.java", source,
+                                                                              note=False)]
+
+    assert rows == [("A::outer( Object record)", 2, 8, 3), ("A::after( int n)", 10, 15, 2)]
+
+
 def test_java_resolves_to_crapkits_reader():
     assert lizard.get_reader_for("A.java") is lizardjava.JavaReader
 

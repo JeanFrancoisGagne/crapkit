@@ -214,7 +214,10 @@ same three commands as version 11 below.
   such a class no longer pays for its members' decisions, so its `ccn` and
   `cognitive` fall. In Java, methods get rows after an annotated local variable, an
   enum constant with a body or an annotation element with a default, and inside a
-  constant's body or an interface field's anonymous class. A newly listed function
+  constant's body, an interface field's anonymous class, or a record or interface
+  declared in a method, whose `ccn` falls the same way. A method whose anonymous or
+  local class ended on a field or an abstract method gets its row back under its own
+  name, with the class's field lines in its `nloc`. A newly listed function
   over its ceiling fails the gate the next time its file changes, and `ratchet seed`
   marks it.
 - Rows that were not functions go: a declaration whose trailing return type holds
