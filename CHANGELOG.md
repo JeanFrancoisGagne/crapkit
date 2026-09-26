@@ -28,6 +28,15 @@
 - A test file outside every scope when no scope declares a template now says so, where
   it said the file belonged to no declared scope.
 
+### `brief` marks a coupled test file by the rule `init` and `doctor` read
+
+- A coupling partner's `is_test` came from a name rule `brief` kept for itself. It said
+  `false` for `x_test.go` and `x_test.py`, which the default exclude globs drop as
+  tests, and `true` for `tools/test_deploy.sh`, which the scored corpus scores as
+  source. It now reads the test-file rule `init` and `doctor` use: a `test`, `tests` or
+  `__tests__` directory, or `test_x.py`, `x_test.py`, `x_test.go`, `x.test.*` and
+  `x.spec.*`. The MCP `get_function_brief` packet carries the same field.
+
 ### Coverage lands on the function that owns it
 
 - The istanbul reader places each counter by line and column: a statement counts from a

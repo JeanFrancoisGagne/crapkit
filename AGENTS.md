@@ -82,7 +82,7 @@ do next.
 | `file_functions`, `file_totals` | the siblings an extracted helper lands beside, and the file's rollup |
 | `regrowth` | `regrown: true` says an earlier decomposition of this function did not hold |
 | `attempts` | every claim already taken on it, oldest first. Not empty: read `regrowth.history` before repeating their split |
-| `coupling` | files that keep landing in the same commits: edit them in this session or not at all. `is_test: true` marks the ones outside the scored corpus |
+| `coupling` | files that keep landing in the same commits: edit them in this session or not at all. `is_test: true` marks a test file, by directory or by runner naming convention |
 | `duplication_twins` | near-duplicates. `contained: true` means one already fits inside the other, so one can call the other |
 | `uncovered_lines` | the exact lines to cover, same null-vs-`[]` contract as next-item |
 

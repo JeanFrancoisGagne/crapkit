@@ -492,7 +492,7 @@ current commit. Another `brief` re-reads the same snapshot and reports the same 
 
 | Key | Type | Meaning |
 |---|---|---|
-| `is_test` | bool | On a coupling partner: the path is a test file. Test paths are excluded from the corpus unconditionally, so a coupled test never appears in `file_functions` or the worklist, and it is still the file your edit breaks. |
+| `is_test` | bool | On a coupling partner: the path is a test file, by a `test`, `tests` or `__tests__` directory in any case or by a runner's naming convention (`test_x.py`, `x_test.py`, `x_test.go`, `x.test.ts`, `x.spec.ts`), the rule `init` and `doctor` read. A test directory leaves the corpus on its own and the default exclude globs drop those names, so a coupled test does not appear in `file_functions` or the worklist, and it is still the file your edit breaks. |
 | `contained` | bool | On a twin: every shingle of the smaller function appears in the larger. Containment, not mere similarity, so one of the two can call the other instead of being rewritten. |
 
 ### Name resolution

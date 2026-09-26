@@ -53,6 +53,10 @@ Re-emitting through `--baseline-tsv` copies the field as it found it, so a missi
 field stays missing. Readers skip stamp fields they do not know, so 0.8.0 reads a
 newer file and ignores `failures`.
 
+The file carries no lane test counts, so a verify against it cannot warn that a
+lane runs fewer tests or skips more than the baseline did. A verify against the
+stored run does.
+
 ## Reading exports in another tool
 
 Split the file at LF, remove one trailing CR from each physical row, and recognize

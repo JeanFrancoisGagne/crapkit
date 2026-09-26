@@ -865,11 +865,6 @@ def _owning_scope(path: str, scope_paths: dict[str, tuple[str, ...]]) -> str | N
     return owning_scope(path, path_matchers(scope_paths))
 
 
-def _is_test_path(path: str) -> bool:
-    parts = path.lower().split("/")
-    return any(p in ("test", "tests", "__tests__") for p in parts[:-1])         or parts[-1].startswith("test_") or ".test." in parts[-1] or ".spec." in parts[-1]
-
-
 _AMBIGUOUS_TEST = (
     "{path} is a test file outside every scope and {n} scopes declare templates "
     "({names}). Two routes work: name a SOURCE file from the scope you mean and "

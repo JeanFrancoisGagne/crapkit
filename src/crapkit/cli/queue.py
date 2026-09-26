@@ -519,10 +519,12 @@ def _brief_churn(churn: dict, path: str) -> dict | None:
 
 
 def _brief_coupling(ranked: list, path: str) -> list[dict]:
-    """This file's partners, cut out of the ranking every path in a batch shares."""
-    from .verifying import _is_test_path
+    """This file's partners, cut out of the ranking every path in a batch shares.
+    A partner is a test by the rule init and doctor read, directory or runner
+    naming convention, so x_test.go counts and tools/test_deploy.sh does not."""
+    from ..universe import is_test_file
 
-    return packet.coupling_partners(ranked, path, _is_test_path)
+    return packet.coupling_partners(ranked, path, is_test_file)
 
 
 def _brief_twins(loader, row) -> list[dict]:
