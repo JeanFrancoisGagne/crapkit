@@ -1107,6 +1107,81 @@ next time its file changes.
   in `nesting`, and no span moves. It shares the shell changes' analysis-version
   bump.
 
+## Unreleased
+
+### Cognitive complexity reads each language's own rules
+
+`cognitive` follows Sonar's Cognitive Complexity paper (v1.7). The pass that measures it
+read one set of keywords and one recursion and sequence rule for every language, so on
+common shapes it charged recursion, logical sequences and nesting that were not there
+and missed some that were. Each rule now reads the language it is in:
+
+- Recursion is a call to the function itself. Before, any token spelled like the name
+  lizard held when the body began counted: a local variable named like the function,
+  another object's method (`self.inner.close()`), `super().__init__()` inside an
+  `__init__`, a constructor inside C++'s `File::open`. A Go, shell or PowerShell
+  function that called itself, a Java method, a C++ method in a namespace or class and
+  a nested Python def cost nothing. A call now counts through no receiver, through
+  `self`, `this`, `Self`, `cls` or the function's own qualifier, as a command word in
+  shell and PowerShell, as a message to `self` with the whole selector in Objective-C,
+  and through a Go method's own receiver. In C++, Java and Swift, where several
+  functions can share a name, it must also pass as many arguments as the function
+  takes, so an overload that forwards to another is not recursion.
+- A sequence of logical operators costs +1 per bracket, across line breaks. A sequence
+  continued on the next line cost twice, a comma in a call's arguments split it, and a
+  negated group joined the sequence around it: `if (a && !(b && c))` reads 3, as the
+  paper scores it, where it read 2. `??` costs nothing: Swift charged it as an operator,
+  and lizard's JavaScript, TypeScript and PowerShell tokenizers split it into two `?`,
+  so `a ?? 0` cost 2. `and` and `or` are operators only in Python, Zig and the C family,
+  and not before a `:`, where they name an Objective-C selector part. GCC's `a ?: b`
+  costs what a conditional operator costs.
+- A word is a control structure only in a language that has it. `c.do(1)` in Python
+  and `do(n)` in Go read as do-while loops, `p.then(g).catch(h)` and `Symbol.for(k)` as
+  a catch and a loop, and Swift's `do`, which only opens the scope a `catch` handles, as
+  a loop. A word right after a `.` on its line names a member in every language.
+  Structures a language spells its own way cost nothing before and now cost what a loop,
+  an `if` or a `switch` costs: Swift's `repeat` and `guard`, Rust's `loop`, Go's
+  `select`, PowerShell's `trap` and a Python `match` statement. `match` is a soft
+  keyword, so `match = re.match(p, s)` still costs nothing.
+- A `while` right after a `}` is a do-while's tail only when a `do` (Swift: `repeat`)
+  opened that block. A loop after an `if` block or a Python dict literal cost nothing.
+- A `break` or `continue` costs +1 only with a label as the language spells one:
+  `'outer` in Rust, `:blk` in Zig, a count in shell, a name elsewhere. A Rust arm's
+  `Err(_) => continue,`, a Zig prong's `.eq => continue,`, a TypeScript key
+  `continue: false` and, in Go and Swift, a bare `break` before the next `case` each
+  read as a jump to a label.
+- A body without braces holds a nesting level in C, C++, Objective-C, Java,
+  JavaScript, TypeScript and Zig, so `for (const x of xs) if (x) visit(x);` reads 3
+  where it read 2. The structure also stops waiting for a `{` at the end of its
+  statement: after `if (a) return 0;` a bare block, a lambda's body or a switch's
+  `default: {` no longer sits one level too deep.
+- The block around a JavaScript or TypeScript arrow with a block body closes at its `}`.
+  lizard gives the arrow's `{` to the function around it, so that block never closed
+  its level and every structure after it sat one level deeper: a zod parser with many
+  `.then((r) => { ... })` calls read 133 and reads 109.
+- A Python comprehension's level closes with its bracket, so
+  `[p for p in a] + [q for q in b]` reads `cognitive` 2 and `nesting` 1 where it read 3
+  and 2. A line that continues a bracket starts no statement, so a conditional
+  expression split over lines costs 1, not 2, and a filter on its own line costs what
+  it costs on one line.
+- A Zig `else |err| if (...)` is an else-if and costs the flat +1 an else-if costs.
+
+Measured over 12,433 functions in 20 open-source projects: 1,125 move `cognitive`, 949
+down and 176 up. Python moves most, 617 of 5,967 rows; 464 of its 573 drops are the
+recursion rule, most of them a method that calls another object's method of the same
+name, as an `__init__` calls `super().__init__()` or a `close` calls
+`self.x.close()`. TypeScript moves 185 of 1,948, Swift 123 of 871
+and Objective-C 62 of 288; every other language moves fewer than 40. Python `nesting`
+comes from this pass and moves in 69 rows, 68 of them through the comprehension and
+continuation-line rules; a `match` statement and a loop after a dict literal now open
+a level. The other languages read `nesting` from lizard, so theirs does not move, and
+no `ccn` value moves.
+
+`cognitive` and `nesting` are reported and never gated, and neither `ccn` nor coverage
+moves, so no CRAP score, gate verdict or mark value moves. The change still needs an
+analysis-version bump, so each marks file re-seeds once
+([upgrading](docs/upgrading.md#next-analysis-version-cognitive-complexity-per-language)).
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

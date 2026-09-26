@@ -360,6 +360,41 @@ version 11 below.
   Quotes inside the subexpression pair among themselves, so a function that held
   `"$(Get-Item "x{")"` and had no row now has one, and can be over its ceiling.
 
+### Next analysis version: cognitive complexity per language
+
+The release after 0.8.0 reads `cognitive` by each language's own rules, so it raises
+the analysis version and every marks file re-seeds once, with the same three commands
+as [version 11](#analysis-version-11): `crapkit coverage`, `crapkit ratchet prune`,
+then `crapkit ratchet seed`. `ccn`, coverage and every function's name stay as they
+were, so this change moves no mark and no gate verdict: the re-seed only stamps the
+marks with the new version. Commit the marks file.
+
+Expect the `cognitive` column to change in `next-item --json`, `brief`, exports and
+the MCP tools on the first run after upgrading, most often by 1:
+
+- It drops where the pass charged recursion that was not there, the common case in
+  Python: a method that calls another object's method of the same name, as an
+  `__init__` calls `super().__init__()`, or a local variable named like its function.
+  It rises in Go, shell, PowerShell, Java and C++ functions that call themselves,
+  which cost nothing before.
+- A sequence of logical operators continued on the next line, or split by a comma in a
+  call's arguments, costs +1 once where it cost 2. A negated group such as
+  `a && !(b && c)` costs its own +1, and `??` costs nothing.
+- Swift's `repeat` and `guard`, Rust's `loop`, Go's `select`, PowerShell's `trap` and
+  a Python `match` statement cost what a loop, an `if` or a `switch` costs; they cost
+  nothing before. Words that are a keyword in another language, such as Python's
+  `c.do(1)` or JavaScript's `p.then(g).catch(h)`, cost nothing.
+- A structure inside a braceless body (`for (...) if (x) visit(x);`) costs one more in
+  C, C++, Objective-C, Java, JavaScript, TypeScript and Zig. A structure after a block
+  that holds a JavaScript or TypeScript arrow with a block body costs one less.
+
+In Python the same pass measures `nesting`, which moves too: a comprehension's level
+closes with its bracket, so `[p for p in a] + [q for q in b]` reads 1 where it read 2,
+and a `match` statement opens a level. The other languages keep lizard's `nesting`.
+Over 12,433 functions in 20 open-source projects, 1,125 moved `cognitive`, 892 of
+them by 1 and 1,056 by 3 or less, and 69 Python rows moved `nesting`. The
+[changelog](../CHANGELOG.md) lists every rule with an example.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or
