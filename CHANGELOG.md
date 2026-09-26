@@ -48,7 +48,28 @@
   NLOC move for a `.sh` or `.bash` function with a vertical tab, form feed,
   `\x1c`-`\x1e`, NEL, U+2028 or U+2029 on a heredoc line or on the line that opens one.
   This needs the next analysis version, so marks re-seed once with it; see
-  [docs/upgrading.md](docs/upgrading.md#next-analysis-version-shell-heredoc-lines).
+  [docs/upgrading.md](docs/upgrading.md#next-analysis-version-line-ends).
+
+### JavaScript and TypeScript coverage stays with its own function below a lone CR or U+2028
+
+- Coverage producers number a file's lines by their own rule. `@vitest/coverage-v8`
+  ends a JavaScript line at LF only. Babel, which jest, nyc and
+  `@vitest/coverage-istanbul` instrument with, and the source maps a TypeScript file's
+  positions come back through, also end one at a lone CR, U+2028 and U+2029. crapkit
+  ends one at LF, CRLF and a lone CR, and it took an istanbul artifact's line numbers
+  as its own. Five lone CRs above a function in a JavaScript file under a V8 lane gave
+  the function, run both ways, the 0% of the uncalled function below it; five U+2028
+  in a TypeScript string did the reverse. A file saved with CR-only line ends is one
+  line to V8, so every function in it shared one span.
+- The istanbul reader now places each position on crapkit's lines. For a file that
+  holds a lone CR, U+2028 or U+2029 it reads the source and takes the rule under which
+  each named function's name sits on its declaration line, and uses the column to find
+  the line inside one that V8 counted whole. A file with no named function has nothing
+  to decide by and keeps its numbers. Every other file keeps its numbers as they are.
+- `cov`, CRAP and the uncovered lines `verify` checks a diff against move for
+  JavaScript and TypeScript functions in such files, so this rides the next analysis
+  version too. The reader reads each measured file once per parse to tell: about 3 s
+  more on a 24 s parse of 29,615 file records on Windows.
 
 Go and Zig functions are read to where their signature ends, and no Go type switch,
 comment or Zig multiline string ends one early. A `//` comment ends at its line in every

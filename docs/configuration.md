@@ -70,7 +70,11 @@ changed line by the bytes of the file it changed, and a new file saved with CR-o
 line ends has every function in it judged. `explain --history` hands `git log -L` the
 function's span in git's lines. A form feed, or any other character
 Python's `str.splitlines` also splits at, ends no line: `brief`, `mutate` and
-`duplication` count lines the way the scores do.
+`duplication` count lines the way the scores do, and so does the shell reader's
+heredoc stripper. An istanbul lane's line numbers are placed the same way, since
+`@vitest/coverage-v8` ends a JavaScript line at LF only and Babel also ends one at
+U+2028 and U+2029; [the istanbul parser](lanes.md#what-the-istanbul-parser-reads)
+says how.
 
 ## `[crapkit]`
 

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from . import covstream
 from .errors import ToolError
+from .istanbul_lines import on_reader_lines
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -277,15 +278,21 @@ def _dead_lines(cov: dict) -> set[int]:
 _BAD_ISTANBUL = "unparseable istanbul artifact"
 
 
+def _records(w, repo_root: str):
+    """(repo-relative path, record) per measured file, the record's positions on the
+    lines the reader numbers that file by (istanbul_lines)."""
+    for abs_path, cov in covstream.split_window(w):
+        rel = _rel_path(abs_path, repo_root)
+        yield rel, on_reader_lines(cov, Path(repo_root, rel))
+
+
 def _istanbul_map(w, repo_root: str, per_file) -> dict:
-    return {_rel_path(abs_path, repo_root): per_file(cov)
-            for abs_path, cov in covstream.split_window(w)}
+    return {rel: per_file(cov) for rel, cov in _records(w, repo_root)}
 
 
 def _istanbul_both(w, repo_root: str) -> tuple[dict, dict]:
     per_file, dead = {}, {}
-    for abs_path, cov in covstream.split_window(w):
-        rel = _rel_path(abs_path, repo_root)
+    for rel, cov in _records(w, repo_root):
         per_file[rel] = _file_coverage(cov)
         dead[rel] = _dead_lines(cov)
     return per_file, dead

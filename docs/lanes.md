@@ -273,6 +273,15 @@ function a hint drops sits inside its encloser's span and reads the encloser's n
 `excluded`: jest's `v8` provider and c8 also leave out a nested callback V8 never compiled,
 so a missing nested function cannot be told from an uncalled one.
 
+Line numbers are placed on crapkit's own lines, which end at LF, CRLF and a lone CR.
+Producers number by their own rule: `@vitest/coverage-v8` ends a JavaScript line at LF
+only, and Babel (jest, nyc, `@vitest/coverage-istanbul`) and TypeScript source maps also
+end one at U+2028 and U+2029. Only a file that holds a lone CR, U+2028 or U+2029 can read
+differently, and for one crapkit reads the source and takes the rule under which each
+named function's name sits on the line its `decl.start` gives, with `column` placing a
+position inside a line V8 counted whole. A file with no named function keeps its numbers
+as written.
+
 The outer object is keyed by path. crapkit strips the crapkit root off an absolute key and
 takes any other key as it stands, so root-relative keys work too. `path_prefix` is
 coverage.py's key and does nothing here.

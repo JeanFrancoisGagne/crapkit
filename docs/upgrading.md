@@ -171,10 +171,11 @@ version for it. Here is what moves:
 Re-seed once: `crapkit coverage`, `crapkit ratchet prune`, then `crapkit ratchet seed`.
 Prune drops the marks of the rows that go away or change key.
 
-### Next analysis version: shell heredoc lines
+### Next analysis version: line ends
 
-The release after 0.8.0 moves some shell numbers, so it raises the analysis version and
-every marks file re-seeds once, with the same three commands as version 11 below.
+The release after 0.8.0 moves some shell numbers and some JavaScript and TypeScript
+coverage, so it raises the analysis version and every marks file re-seeds once, with
+the same three commands as version 11 below.
 
 - The shell reader ends a heredoc line at LF only, as bash does. It used to end one at
   a vertical tab, form feed, `\x1c`-`\x1e`, NEL, U+2028 and U+2029 too. A body line
@@ -184,6 +185,13 @@ every marks file re-seeds once, with the same three commands as version 11 below
   such a line, up where body text had counted and down where code had been blanked. A
   function the change puts over its ceiling fails the gate the next time its file
   changes.
+- An istanbul lane's line numbers land on crapkit's own lines. `@vitest/coverage-v8`
+  ends a JavaScript line at LF only; Babel (jest, nyc, `@vitest/coverage-istanbul`) and
+  TypeScript source maps also end one at U+2028 and U+2029; crapkit ends one at LF,
+  CRLF and a lone CR. Below a lone CR or a U+2028 the coverage of one function went to
+  a neighbor, so `cov`, CRAP and the uncovered lines `verify` checks a diff against
+  move for JavaScript and TypeScript functions in such files. A function that reads
+  less covered now can go over its ceiling.
 
 ### Analysis version 11
 
