@@ -146,6 +146,88 @@ def test_a_member_arrow_is_not_a_comparison():
     assert mutated == {"if (n->size > 2) { return 1; }", "if (n->size < 2) { return 1; }"}
 
 
+# --- one token in its own language, never a comparison -------------------------
+
+@pytest.mark.parametrize("source", [
+    "ch <- v\n",
+    "ch<-v\n",
+    "v := <-ch\n",
+    "func pump(in <-chan int, out chan<- int) {}\n",
+])
+def test_the_go_channel_arrow_is_not_a_comparison(source):
+    """Go spec, Send statements and Receive operator: `<-` is one token. Read as
+    `<` it grew `ch <=- v` and `v := >=-ch`, which do not compile, so every one
+    died on the compiler and counted as a kill no test made."""
+    assert file_mutants(source, None, "go") == []
+
+
+def test_a_go_comparison_beside_the_arrow_still_mutates():
+    """The arrow takes only its own two characters: a `<` of its own on the
+    same line keeps its mutants."""
+    mutated = [m.mutated for m in file_mutants("ok := <-ch < n\n", None, "go")]
+
+    assert mutated == ["ok := <-ch <= n", "ok := <-ch >= n"]
+
+
+def test_less_than_minus_is_a_comparison_where_go_is_not_the_language():
+    """Only Go lexes `<-` as one token. In C++, TypeScript and Java `a<-1` is
+    `a < -1`, and its mutants are real ones."""
+    languages = ("cpp", "typescript", "java")
+    mutated = {language: [m.mutated for m in file_mutants("x = a<-1;\n", None, language)]
+               for language in languages}
+
+    assert mutated == {language: ["x = a<=-1;", "x = a>=-1;"] for language in languages}
+
+
+def _script(language: str, line: str) -> str:
+    return f"<script>\n{line}</script>\n" if language == "vue" else line
+
+
+@pytest.mark.parametrize("language", ["javascript", "typescript", "tsx", "vue", "java"])
+@pytest.mark.parametrize("line", ["x = a >>> b;\n", "a >>>= b;\n"])
+def test_the_unsigned_shift_is_not_a_comparison(language, line):
+    """ECMAScript and the JLS lex `>>>` and `>>>=` as one token. Split into
+    `>>` and a `>` it grew `a >><= b`, which does not compile, and `a >>>= b`,
+    an assignment where a shift stood."""
+    assert file_mutants(_script(language, line), None, language) == []
+
+
+def test_a_comparison_after_an_unsigned_shift_still_mutates():
+    mutated = [m.mutated for m in file_mutants("ok = (a >>> 1) > b;\n", None, "java")]
+
+    assert mutated == ["ok = (a >>> 1) >= b;", "ok = (a >>> 1) <= b;"]
+
+
+@pytest.mark.parametrize("language", ["cpp", "objectivec"])
+@pytest.mark.parametrize("line", ["auto r = a <=> b;\n", "void f() <% g(); %>\n"])
+def test_the_three_way_comparison_and_brace_digraphs_are_one_token(language, line):
+    """C++ lexes `<=>` whole, and C and C++ read `<%` and `%>` as `{` and `}`.
+    Split, `a <=> b` grew `a <> b` and `a >> b`, and `<% g(); %>` grew
+    `<=% g(); %>`: none of them compiles."""
+    assert file_mutants(line, None, language) == []
+
+
+def test_a_comparison_of_a_three_way_result_still_mutates():
+    mutated = [m.mutated for m in file_mutants("bool lt = (a <=> b) < 0;\n", None, "cpp")]
+
+    assert mutated == ["bool lt = (a <=> b) <= 0;", "bool lt = (a <=> b) >= 0;"]
+
+
+@pytest.mark.parametrize("line", ["let y = x |> f\n", "let m = a <> b\n",
+                                  "let r = f <^> xs\n", "let v = a >>> b\n"])
+def test_a_swift_custom_operator_is_one_token(line):
+    """The Swift reference, Lexical Structure, Operators: a run of operator
+    characters is one operator. `x |> f` grew `x |>= f` and `x |<= f`, operators
+    nobody declared, so the compiler killed them."""
+    assert file_mutants(line, None, "swift") == []
+
+
+def test_a_swift_comparison_that_is_its_whole_run_still_mutates():
+    mutated = [m.mutated for m in file_mutants("let ok = xs |> count >= n\n", None, "swift")]
+
+    assert mutated == ["let ok = xs |> count > n", "let ok = xs |> count < n"]
+
+
 # --- the language set a user actually reads -----------------------------------
 
 DISPLAY = {"typescript": "TypeScript", "tsx": "TSX", "javascript": "JavaScript",

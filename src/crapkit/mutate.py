@@ -55,7 +55,20 @@ _PROTECT = ("===", "!==", "==", "!=", "<=", ">=", "=>", "->", "..<", "...")
 # Keep lexer selection aligned with the source languages the corpus admits.
 _LANGUAGE_BY_SUFFIX = {suffix: language for language, suffixes in LANGUAGE_EXTENSIONS.items()
                        for suffix in suffixes}
-_LEXEMES = re.compile(r"\w+|===|!==|==|!=|<=|>=|<<=?|>>=?|&&|\|\||->|=>|\.\.<|\.\.\.|[<>]")
+_SHARED_LEXEMES = re.compile(r"\w+|===|!==|==|!=|<=|>=|<<=?|>>=?|&&|\|\||->|=>|\.\.<|\.\.\.|[<>]")
+# Operators a language lexes as one token where the shared alternatives would
+# split them and leave a piece that reads as a comparison. A mutant of that
+# piece does not compile, so the compiler kills it and the run counts a kill no
+# test made: Go's channel arrow (`ch <- v` grew `ch <=- v`), the unsigned shift
+# (`a >>> b` grew `a >><= b`), C++'s three-way comparison and brace digraphs
+# (`a <=> b` grew `a <> b`), and Swift, which reads any run of operator
+# characters as one operator (`x |> f` grew `x |>= f`). Each entry belongs to
+# its languages alone: in C, Java and TypeScript `a<-1` is `a < -1`.
+_WHOLE_TOKENS = {"go": r"<-", "cpp": r"<=>|<%|%>", "objectivec": r"<=>|<%|%>",
+                 "swift": r"[-/=+!*%<>&|^~?]{2,}",
+                 **dict.fromkeys(("javascript", "typescript", "tsx", "vue", "java"), r">>>=?")}
+_LEXEMES = {language: re.compile(f"{whole}|{_SHARED_LEXEMES.pattern}")
+            for language, whole in _WHOLE_TOKENS.items()}
 _SYNTAX = re.compile(r"\w+|::|->|=>|<=|>=|==|!=|&&|\|\||<<|\.\.<|\.\.\.|[^\s]")
 _TYPE_ARGUMENTS = re.compile(r"(?:[\w\s:,.?*\[\]'<>]|&(?!&))+")
 _ANGLE_LANGUAGES = {"typescript", "tsx", "vue", "cpp", "rust", "java", "swift", "objectivec"}
@@ -159,7 +172,8 @@ def _code_tokens(text: str, language: str):
     lexed = list(get_lexer_by_name(aliases.get(language, language)).get_tokens_unprocessed(text))
     mask, syntax = _code_masks(text, lexed, language)
     protected, ambiguous = _type_angles(syntax, lexed, language)
-    tokens = ((match.start(), match.group()) for match in _LEXEMES.finditer(mask)
+    lexemes = _LEXEMES.get(language, _SHARED_LEXEMES)
+    tokens = ((match.start(), match.group()) for match in lexemes.finditer(mask)
               if match.start() not in protected)
     return tokens, ambiguous
 

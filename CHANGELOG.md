@@ -2,6 +2,17 @@
 
 ## 0.8.1 — unreleased
 
+### `mutate` keeps an operator its language reads as one token whole
+
+- `mutate` read Go's channel arrow `<-` as the comparison `<`: `ch <- v` grew `ch <=- v`
+  and `v := <-ch` grew `v := >=-ch`. Neither compiles, so the compiler killed them and
+  the run counted kills no test made, which raised a Go file's kill rate. The same split
+  hit `>>>` and `>>>=` in JavaScript, TypeScript, Vue and Java (`a >>> b` grew
+  `a >><= b` and `a >>>= b`), C++'s `<=>` and its `<%` and `%>` digraphs, and Swift,
+  which reads any run of operator characters as one operator (`x |> f` grew `x |>= f`).
+  These operators now make no mutant, and a comparison beside one still makes its own.
+  Kill rates on such files can fall. No CRAP score changes.
+
 No score changes.
 
 ### Batches are placed by the risk of all their rows
