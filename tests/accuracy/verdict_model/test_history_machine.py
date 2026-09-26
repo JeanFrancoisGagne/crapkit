@@ -14,12 +14,19 @@ every step:
   mark rose;
 - `trend` lists exactly the trusted runs.
 
+- on a copy of the repo, `verify` against the store's baseline and `verify`
+  against the TSV record it emits (--emit-baseline, then --baseline-tsv) give
+  one verdict: the same exit and JSON but for the run ids, and under ruling
+  V8 a failure the baseline had counts as new under the record. Both read the
+  lanes' artifacts on disk, so only the baseline's source differs.
+
 Each verify also checks the baseline it named, the gate, regression and
 new-failure sets, the exit code and, on a pass, the tighten (with damping). The
-`tsv` command verifies a copy of the repo against the TSV the store's baseline
-emits, which must give the model's gate and ratchet findings, and its whole
-verdict when the baseline had no failing test (ruling V8). After a runs prune
-every read command answers as before.
+`tsv` command verifies a fresh clone (no .crapkit/) against that record, which
+must give the model's gate and ratchet findings, and its whole verdict when the
+baseline had no failing test (ruling V8). Around a runs prune every read
+command runs twice, and each answer is what test_retention.read_commands
+allows: unchanged, or less the pruned runs where it lists the run history.
 
 test_every_step_in_one_scripted_history walks one fixed history through every
 command, so each is exercised on every push whatever the machine draws.
@@ -30,7 +37,10 @@ from collections import Counter
 from dataclasses import dataclass, replace
 import itertools
 import json
+import os
 import shutil
+import stat
+import sys
 
 from hypothesis import strategies as st
 from hypothesis.stateful import (RuleBasedStateMachine, initialize, invariant, rule,
@@ -40,6 +50,7 @@ import pytest
 from accuracy.kit import repos
 from accuracy.kit.settings import process
 from accuracy.verdict_model import model_verdict as model
+from accuracy.verdict_model import test_retention as retention
 from accuracy.verdict_model import verdict_world as vw
 
 START = (vw.World()
@@ -51,12 +62,22 @@ START = (vw.World()
          .with_test(vw.Test("flaky")))
 NAMES = {"app": ("a1", "a2", "a3"), "lib": ("b1", "b2", "b3")}
 OLD_METRIC = "crapkit-analysis=10 lizard=1.24.0"
-READS = (("worklist", "--json"), ("next-item",), ("overrides", "--json"))
+READS = retention.read_commands({vw.FILES[scope]: names for scope, names in NAMES.items()})
+# The store-against-record check: both verifies read the lanes' artifacts on disk
+# (docs/lanes.md:982, --reuse-artifacts), so they score one measurement, and neither
+# tightens, so the marks stay as the state left them.
+ONE_MEASUREMENT = ("verify", "--reuse-artifacts", "--no-tighten", "--json")
+RECORD = ".crapkit/record.tsv"
+# The two answers differ here by design: the record names no run (README.md:794,
+# --baseline-tsv), and each store numbers its own runs.
+RUN_IDS = frozenset({"baseline_run", "run_id"})
 # Weighted: a verify is the step most worth repeating.
 COMMANDS = ("verify", "verify", "verify", "coverage", "coverage", "one_lane", "inventory",
             "override", "hook", "hook_grant", "seed", "prune", "runs_prune", "upgrade", "tsv")
-# How often each command ran this session, printed so a reader sees what was explored.
+# How often each command ran this session, and how each state's record check ended,
+# printed so a reader sees what was explored.
 STEPS: Counter = Counter()
+RECORDS: Counter = Counter()
 
 
 @dataclass
@@ -200,6 +221,7 @@ class History(RuleBasedStateMachine):
         self._check_marks()
         if self.history:
             self._check_listing()
+        self._record_agrees()
 
     # --- model helpers ---------------------------------------------------------------------
 
@@ -402,14 +424,18 @@ class History(RuleBasedStateMachine):
     # --- retention ---------------------------------------------------------------------------
 
     def runs_prune(self):
-        before = self._reads()
+        """Every read command before and after `runs prune --keep 1`; each
+        answer after it is the one test_retention.read_commands allows. The
+        index is refreshed first: ruling V12, see retention.fresh_index."""
+        retention.fresh_index(self.sc)
+        before = retention.answers(self.sc, READS)
         keep = model.keep_set([m.run for m in self.history], 1, self.overrides,
                               digest_pair(self.history))
         result = self.sc.run("runs", "prune", "--keep", "1")
         assert result.code == 0, result.stdout + result.stderr
         self.history = [m for m in self.history if m.id in keep]
-        after = self._reads()
-        assert after == before, f"{_moved(before, after)}\n{self._tree_state(after)}"
+        want, after = retention.after_prune(before, READS, keep), retention.answers(self.sc, READS)
+        assert after == want, f"{retention.moved(want, after)}\n{self._tree_state(after)}"
 
     def _tree_state(self, after: dict) -> str:
         """What a staleness note reads, for the failure report: HEAD, each lane
@@ -417,17 +443,11 @@ class History(RuleBasedStateMachine):
         third read of the same state agrees with the second."""
         stamps = json.loads((self.sc.root / ".crapkit" / "artifacts.json").read_text(encoding="utf-8"))
         commits = {path: entry.get("commit") for path, entry in stamps.items()}
-        third = self._reads()
+        third = retention.answers(self.sc, READS)
         return (f"HEAD {self.sc.head()} stamps {commits} status "
                 f"{repos.git(self.sc.top, 'status', '--porcelain')!r} free_bytes "
                 f"{shutil.disk_usage(self.sc.root).free} third read against the second:\n"
-                f"{_moved(after, third) or 'the same'}")
-
-    def _reads(self) -> dict:
-        answers = {args: self.sc.run(*args).stdout for args in READS}
-        trend = self.sc.json("trend")["runs"] if self._baseline() else []
-        answers["newest trend row"] = json.dumps(trend[-1:], sort_keys=True)
-        return answers
+                f"{retention.moved(after, third) or 'the same'}")
 
     # --- the portable baseline ---------------------------------------------------------------
 
@@ -452,6 +472,22 @@ class History(RuleBasedStateMachine):
 
     # --- after every step -------------------------------------------------------------------
 
+    def _record_agrees(self) -> None:
+        """On a copy, verify against the store's baseline and against the
+        record it emits give one verdict. The store stays for the second
+        verify, which README.md:794 lets --baseline-tsv pass over; `tsv` checks
+        the clone that has none. A state whose verify refuses before it picks
+        a baseline (no trusted run, exit 1; marks under another metric, exit
+        3) emits no record, and `_refused` checks those exits."""
+        if self._baseline() is None or self._stamp_refused():
+            RECORDS["no record"] += 1
+            return
+        copy = self.sc.copy(self.sc.top.parent / f"{self.sc.top.name}-one{next(self.side)}")
+        store = copy.run(*ONE_MEASUREMENT, "--emit-baseline", RECORD)
+        record = copy.run(*ONE_MEASUREMENT, "--baseline-tsv", RECORD)
+        _discard(copy.top)
+        RECORDS[one_verdict(store, record)] += 1
+
     def _check_marks(self) -> None:
         text = self.sc.marks_text()
         assert (text is None) == (self.marks is None)
@@ -475,6 +511,46 @@ class History(RuleBasedStateMachine):
             [m.id for m in self.history if model.trusted(m.run)]
 
 
+def one_verdict(store, record) -> str:
+    """The exit and every JSON field but the run ids agree. Ruling V8
+    (calc-bug verdict-model-3, pinned in test_baseline_tsv.py): the record
+    carries no test failures, so a failure the store's baseline had, and
+    forgives, counts as new under the record. Returns which rule held."""
+    ours, theirs = _verdict_fields(store), _verdict_fields(record)
+    forgiven = frozenset(ours.get("forgiven_failures", ()))
+    report = f"store: {store.code} {store.stdout}{store.stderr}\nrecord: {record.code} {record.stdout}{record.stderr}"
+    if not forgiven:
+        assert (record.code, theirs) == (store.code, ours), report
+        return f"one verdict, exit {store.code}"
+    base, got = json_verdict(store.json()), json_verdict(record.json())
+    assert (got.gate, got.ratchet, got.new_failures) == \
+        (base.gate, base.ratchet, base.new_failures | forgiven), report
+    assert record.code == got.exit, report
+    return "V8"
+
+
+def _verdict_fields(result) -> dict:
+    payload = retention.parsed(result.stdout)
+    if not isinstance(payload, dict):
+        return {"stdout": payload}
+    return {key: value for key, value in payload.items() if key not in RUN_IDS}
+
+
+# rmtree names its error hook onexc from Python 3.12 and onerror before it.
+_ON_ERROR = "onexc" if sys.version_info >= (3, 12) else "onerror"
+
+
+def _discard(top) -> None:
+    """Delete a checked copy. git writes its objects read-only, which Windows
+    will not delete until the bit is cleared."""
+    shutil.rmtree(top, **{_ON_ERROR: _clear_and_retry})
+
+
+def _clear_and_retry(function, path, _error) -> None:
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
+
+
 def _override_exit(expected: Verdict, granted: bool) -> int:
     """A granted override exits 0; a refused one keeps the verdict's exit."""
     return 0 if granted else expected.exit
@@ -494,7 +570,7 @@ def _machine(tmp_path, templates):
 @pytest.mark.process
 def test_the_run_history_follows_the_model(repo_templates, tmp_path):
     run_state_machine_as_test(_machine(tmp_path, repo_templates), settings=process)
-    print("history machine commands:", dict(STEPS))
+    print("history machine commands:", dict(STEPS), "record checks:", dict(RECORDS))
 
 
 SCRIPT = (
@@ -537,14 +613,47 @@ def test_every_step_in_one_scripted_history(repo_templates, tmp_path):
 def test_the_prune_report_names_each_moved_field_and_the_tree(repo_templates, tmp_path):
     """The runs_prune failure report: one line per moved field with both
     values, then HEAD, the stamps, git status and a third read of the state."""
-    before = {("r",): json.dumps({"a": 1, "b": [1, 2]}), ("same",): "x"}
-    after = {("r",): json.dumps({"a": 1, "b": [1, 3], "c": 0}), ("same",): "x"}
-    assert _moved(before, after) == ("('r',) .b[1]: before=2 after=3\n"
-                                      "('r',) .c: before=None after=0")
+    want = {("r",): {"a": 1, "b": [1, 2]}, ("same",): "x"}
+    got = {("r",): {"a": 1, "b": [1, 3], "c": 0}, ("same",): "x"}
+    assert retention.moved(want, got) == ("('r',) .b[1]: want=2 got=3\n"
+                                          "('r',) .c: want=None got=0")
     machine = History(tmp_path, repo_templates)
     machine.measured()
-    report = machine._tree_state(machine._reads())
+    report = machine._tree_state(retention.answers(machine.sc, READS))
     assert (f"HEAD {machine.sc.head()}" in report, report.endswith("the same")) == (True, True), report
+
+
+def _verified(code: int, **fields) -> vw.drive.Result:
+    """A verify answer, as the two sides of the record check print one."""
+    payload = {"gate_violations": [], "ratchet_regressions": [], "new_failures": [],
+               "forgiven_failures": [], "baseline_run": 4, "run_id": 9, **fields}
+    return vw.drive.Result(("verify",), code, json.dumps(payload), "")
+
+
+GATE = [{"path": "src/app.py", "key_name": "a3( x )", "long_name": "a3( x )"}]
+ONE_VERDICT = {
+    "only the run ids differ": (_verified(0), _verified(0, baseline_run=None, run_id=1), True),
+    "a gate finding differs": (_verified(6, gate_violations=GATE), _verified(0), False),
+    "the exit differs": (_verified(0), _verified(6), False),
+    "V8: the forgiven failure is new": (_verified(0, forgiven_failures=["t::known"]),
+                                        _verified(8, new_failures=["t::known"]), True),
+    "V8, but the record exits 0": (_verified(0, forgiven_failures=["t::known"]),
+                                   _verified(0, new_failures=["t::known"]), False),
+    "both refuse alike": (vw.drive.Result(("verify",), 5, "", "a"), vw.drive.Result(("verify",), 5, "", "b"), True),
+    "one refuses": (_verified(0), vw.drive.Result(("verify",), 5, "", ""), False),
+}
+
+
+@pytest.mark.parametrize("case", sorted(ONE_VERDICT))
+def test_one_verdict_allows_only_the_run_ids_and_v8(case):
+    """one_verdict's table, worked from its docstring."""
+    store, record, holds = ONE_VERDICT[case]
+    try:
+        one_verdict(store, record)
+    except AssertionError:
+        assert not holds
+    else:
+        assert holds
 
 
 # --- one history per past defect -------------------------------------------------------------
@@ -953,39 +1062,3 @@ def test_history_leaves_out_only_runs_that_cannot_place_twins(make_repo, path, n
     assert result.code == 0, result.stdout + result.stderr
     (function,) = result.json()["functions"]
     assert [row["run_id"] for row in function["history"]] == runs
-
-
-def _moved(before: dict, after: dict) -> str:
-    """One line per field whose answer moved, both values in full: a str, so
-    the failure report prints it whole instead of an abbreviated repr."""
-    return "\n".join(f"{key} {field}: before={pair[0]!r} after={pair[1]!r}"
-                     for key in before if before[key] != after[key]
-                     for field, pair in _changed(before[key], after[key]).items())
-
-
-def _changed(old_text: str, new_text: str) -> dict:
-    old, new = _leaves(_parsed(old_text)), _leaves(_parsed(new_text))
-    return {k: (old.get(k), new.get(k)) for k in sorted(old.keys() | new.keys()) if old.get(k) != new.get(k)}
-
-
-def _parsed(text: str):
-    try:
-        return json.loads(text)
-    except ValueError:
-        return text
-
-
-def _leaves(value, where: str = "") -> dict:
-    """A JSON value as {path: scalar}."""
-    items = _children(value, where)
-    if items is None:
-        return {where: value}
-    return dict(pair for key, child in items for pair in _leaves(child, key).items())
-
-
-def _children(value, where: str):
-    if isinstance(value, dict):
-        return [(f"{where}.{key}", child) for key, child in value.items()]
-    if isinstance(value, list):
-        return [(f"{where}[{number}]", child) for number, child in enumerate(value)]
-    return None
