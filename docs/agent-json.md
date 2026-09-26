@@ -1697,7 +1697,8 @@ would without it. Each is a tool result with
 the precedent the missing-config answer set; the reason is recorded in
 [ADR 0001](adr/0001-mcp-invalid-arguments-are-tool-results.md). Protocol errors stay
 reserved for the protocol: an unknown method answers `-32601`, `params` that is not a JSON
-object answers `-32602` (`tools/call takes params as a JSON object, got an array`), and an
+object answers `-32602` (`tools/call takes params as a JSON object, got an array`), a
+message with an `id` and no `method`, `result` or `error` answers `-32600`, and an
 exception escaping the server answers `-32603` and the loop reads on, so no single call
 ends the session.
 `ping` answers an empty result, so a client's keepalive never reads as an error.

@@ -54,6 +54,18 @@ def test_a_response_to_no_pending_request_changes_nothing(tmp_path, answer):
     assert session.served() is session, "the server still waits for its own answer"
 
 
+@pytest.mark.parametrize("message", [{"id": 5}, {"id": 5, "params": {}}])
+def test_a_message_with_an_id_that_is_neither_a_request_nor_a_response_is_invalid(tmp_path,
+                                                                                message):
+    """The client waits on the id, so silence would hang it: JSON-RPC gives
+    such a message -32600. 0.8.0 answered -32601 for the empty method name."""
+    reply = mcp_server._reply(_session(tmp_path), {"jsonrpc": "2.0", **message})
+
+    assert reply == {"jsonrpc": "2.0", "id": 5, "error": {
+        "code": -32600, "message": "invalid request: a message with an id needs a method, or "
+                                   "a result or an error when it answers the server's request"}}
+
+
 @pytest.mark.parametrize("roots", [None, "x", [7, {"uri": 7}, {"uri": "https://example.com/a"}]])
 def test_an_answer_with_no_local_folder_names_none(tmp_path, roots):
     session = _session(tmp_path)

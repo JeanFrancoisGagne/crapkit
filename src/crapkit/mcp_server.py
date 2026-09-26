@@ -2255,10 +2255,21 @@ def _handle(root, msg: dict, run_cli=None) -> dict | None:
     directory."""
     session = _session(root)
     if "method" not in msg:
-        return session.take(msg)
+        return _without_method(session, msg)
     if "id" not in msg:
         return _notified(session, msg["method"])
     return _request(session, msg, run_cli)
+
+
+def _without_method(session: _Session, msg: dict) -> dict | None:
+    """A response is taken and gets no reply, as does a message with no id.
+    A message with an id and no result or error is neither: the client waits
+    on that id, so it gets the -32600 JSON-RPC gives an invalid request."""
+    if "result" in msg or "error" in msg or "id" not in msg:
+        return session.take(msg)
+    return _respond(msg["id"], error={"code": -32600, "message": (
+        "invalid request: a message with an id needs a method, or a result or an error when "
+        "it answers the server's request")})
 
 
 def _version() -> str:

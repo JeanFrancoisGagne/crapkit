@@ -384,7 +384,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   `notifications/initialized` and again after `notifications/roots/list_changed`, and a
   call that arrives before the answer waits for it, up to 10 seconds. A server started
   with `--repo` never asks: it serves or refuses that directory as named. A response the
-  server never asked for gets no reply; it used to get a `-32601` error.
+  server never asked for gets no reply; it used to get a `-32601` error. A message with an
+  `id` and no `method`, `result` or `error` answers `-32600`, the JSON-RPC code for an
+  invalid request, where it also got `-32601`.
 - A server started at or below the plugin directory the client names in `PLUGIN_ROOT`,
   `COPILOT_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT` no longer walks up from there. A plugin
   loaded from a crapkit checkout found crapkit's own `crapkit.toml` above the plugin
