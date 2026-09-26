@@ -174,7 +174,7 @@ def _uncommented(text: str, closer: str | None, comments: _Comments) -> tuple[st
 def _read(text: str, closer: str | None, comments: _Comments) -> tuple[str, str | None]:
     """What of a stripped line is code, and the block closer awaited after it.
     Only a line inside a block comment or starting like a comment pays for the
-    closer and prefix checks."""
+    prefix checks; a code line pays one search for an opener after its code."""
     if closer is not None or text.startswith(comments.starts):
         text, closer = _uncommented(text, closer, comments)
     if text and _opens_after_code(text, comments):
