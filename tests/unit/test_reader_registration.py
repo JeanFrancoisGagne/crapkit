@@ -35,6 +35,8 @@ from crapkit.lizardrust import CorrectedRustReader
 from crapkit.lizardrust import register as register_rust
 from crapkit.lizardshell import ShellReader
 from crapkit.lizardshell import register as register_shell
+from crapkit.lizardswift import CorrectedSwiftReader
+from crapkit.lizardswift import register as register_swift
 from crapkit.universe import LANGUAGE_EXTENSIONS
 
 # The suffix each crapkit-owned reader must answer to, and the reader itself.
@@ -43,7 +45,8 @@ CRAPKIT_READERS = {".rs": CorrectedRustReader, ".sh": ShellReader, ".bash": Shel
                    ".go": CorrectedGoReader, ".zig": CorrectedZigReader,
                    ".c": lizardclike.CLikeReader, ".cpp": lizardclike.CLikeReader,
                    ".h": lizardclike.CLikeReader, ".m": lizardclike.ObjCReader,
-                   ".mm": lizardclike.ObjCReader, ".java": lizardjava.JavaReader}
+                   ".mm": lizardclike.ObjCReader, ".java": lizardjava.JavaReader,
+                   ".swift": CorrectedSwiftReader}
 
 
 def _get_reader_for(name: str):
@@ -76,6 +79,7 @@ def test_registering_all_three_again_in_any_order_appends_nothing():
         register_powershell()
         register_shell()
         register_rust()
+        register_swift()
 
     assert languages() == before
 
@@ -126,7 +130,7 @@ def test_a_spawned_child_importing_analyze_resolves_all_three():
     probe = ("import crapkit.analyze;"
              "from lizard_languages import get_reader_for as g;"
              "print([g('p' + s).__module__ + '.' + g('p' + s).__name__"
-             " for s in ('.rs', '.sh', '.ps1', '.go', '.zig', '.c', '.m', '.java')])")
+             " for s in ('.rs', '.sh', '.ps1', '.go', '.zig', '.c', '.m', '.java', '.swift')])")
 
     out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True,
                          check=True).stdout
@@ -135,4 +139,4 @@ def test_a_spawned_child_importing_analyze_resolves_all_three():
             "'crapkit.lizardpowershell.PowerShellReader', "
             "'crapkit.lizardgolike.CorrectedGoReader', 'crapkit.lizardgolike.CorrectedZigReader', "
             "'crapkit.lizardclike.CLikeReader', 'crapkit.lizardclike.ObjCReader', "
-            "'crapkit.lizardjava.JavaReader']") in out
+            "'crapkit.lizardjava.JavaReader', 'crapkit.lizardswift.CorrectedSwiftReader']") in out

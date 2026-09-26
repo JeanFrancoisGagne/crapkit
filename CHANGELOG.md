@@ -940,6 +940,26 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   level too deep, and the `&&` had hidden that by flipping the counter's state. The
   function now reads what the same body reads with `T` for `T&&`.
 
+## Unreleased
+
+### Swift functions the reader hid get their rows
+
+- Swift files go through crapkit's own reader, built on lizard 1.24.0's. lizard's reader
+  took seven Swift shapes for a declaration or a preprocessor line, and each one opened
+  a function or dropped a brace where the code has neither: the function holding the
+  shape ran on to a later `}`, and the functions after it had no row. `super.init(...)`
+  and `.init(...)`, `r.get()` and `case .get`, `Socket(protocol: p)`, `return type`,
+  `#fileID` and `if #available(...) {`, a failable `init?`, and a closure passed after a
+  comma now read as the code says. Measured on Alamofire 5's 44 source files against
+  tree-sitter-swift: 52 of the 832 functions it parses had no row and 13 more ended on
+  the wrong line; now all 832 start and end where it says. The 51 rows that were made
+  up are gone.
+- A function that swallowed its neighbours shrinks, and its ccn and cognitive fall
+  with them; a function that had no row is listed, and the gate reads it the next time
+  its file changes. A function lizard already read whole keeps its long name, so its
+  mark keeps its key. The change needs an analysis-version bump, which makes each marks
+  file re-seed once.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

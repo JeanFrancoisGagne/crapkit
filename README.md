@@ -352,6 +352,12 @@ where the language does. A function type such as `var cb func(int) error` opens 
 function, a result type's braces are not the body, and a parameter of function type counts
 once.
 
+Python and Swift read through crapkit's subclasses of lizard's readers too. lizard's Python
+reader ends a def at the first `)` of a signature that runs past it, so crapkit reads the
+signature to the body's colon. lizard's Swift reader takes `super.init(...)`, `r.get()` and
+`Socket(protocol: p)` for declarations and `#fileID` for the start of a preprocessor line,
+which hid the functions after them, so crapkit reads each one as the name or literal it is.
+
 C, C++, Objective-C and Java run on lizard's readers with crapkit's fixes on top. lizard
 hid every function after some constructs, named rows after an attribute or a macro, and
 left unnamed and array parameters out of `params`; the

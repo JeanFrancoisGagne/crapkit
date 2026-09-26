@@ -29,6 +29,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     from .lizardpython import register as _register_python
     from .lizardrust import register as _register_rust
     from .lizardshell import register as _register_shell
+    from .lizardswift import register as _register_swift
     from .lizardtypescript import LizardExtension as _TypeScriptExpressions
     from .lizardtypescript import mask_templates, reads_templates, uses_type_syntax
 
@@ -45,21 +46,24 @@ from .keys import bare_name
 # (crapkit #72), `.go` and `.zig` to one that reads a function type as a
 # function, the C family's suffixes to readers that leave out unnamed and
 # array parameters and every Objective-C argument, `.java` to one that hides
-# the methods after an annotated local variable, and `.sh` and `.ps1` resolve
-# to nothing at all, which lizard answers with CLikeReader rather than a
-# failure. In lizard's Java, Swift and JavaScript-family readers a `//` comment
-# runs on into the next line after a backslash, as only C's does. All eight
-# registrations belong HERE, at the module scope of the module a
-# ProcessPoolExecutor child imports, or spawned workers measure with the
-# readers lizard shipped and report plausible wrong numbers.
+# the methods after an annotated local variable, `.swift` to one that reads
+# `super.init(...)`, `r.get()` and `#fileID` as declarations and hides the
+# functions after them, and `.sh` and `.ps1` resolve to nothing at all, which
+# lizard answers with CLikeReader rather than a failure. In lizard's Java, Swift
+# and JavaScript-family readers a `//` comment runs on into the next line after
+# a backslash, as only C's does. All nine registrations belong HERE, at the
+# module scope of the module a ProcessPoolExecutor child imports, or spawned
+# workers measure with the readers lizard shipped and report plausible wrong
+# numbers.
 #
 # lizardshell and lizardpowershell already register themselves on import, and
-# lizardrust, lizardpython, lizardgolike, lizardclike, lizardjava and
-# lizardlinecomment deliberately do not (rebinding a name in another package's
-# namespace is not something an import should do quietly). Calling all eight
-# keeps the wiring readable in one place and costs nothing: each is idempotent.
-# lizardlinecomment goes last: its probe then checks the Java reader that
-# lizardjava put in place, which inherits the comment rule from lizard's.
+# lizardrust, lizardpython, lizardgolike, lizardclike, lizardjava, lizardswift
+# and lizardlinecomment deliberately do not (rebinding a name in another
+# package's namespace is not something an import should do quietly). Calling all
+# nine keeps the wiring readable in one place and costs nothing: each is
+# idempotent. lizardlinecomment goes last: its probe then checks the Java and
+# Swift readers that lizardjava and lizardswift put in place, which inherit the
+# comment rule from lizard's.
 _register_rust()
 _register_shell()
 _register_powershell()
@@ -67,6 +71,7 @@ _register_python()
 _register_golike()
 _register_clike()
 _register_java()
+_register_swift()
 _register_line_comments()
 
 _POOL_THRESHOLD = 16
