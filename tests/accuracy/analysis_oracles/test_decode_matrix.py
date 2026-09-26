@@ -12,17 +12,24 @@ signature, not text (Unicode Standard sec. 23.8; Python's utf-8-sig codec).
 - metamorphic: every byte variant gives the rows of the UTF-8 LF variant.
 - interpreter locale: PYTHONUTF8=0 (cp1252 on Windows) and PYTHONUTF8=1 read
   the same rows (R16: `function Write-Café` read three ways before the fix).
+- self-diff: hook-precommit decodes a staged blob in memory for a small commit
+  and reads it back from a temp tree for a large one; both gate the same
+  functions for every byte variant, and (hand) every function of a new file.
+  A lone CR is a line end to the reader and not to git's diff: two strict
+  xfails (calc-bug analysis-oracles-150).
 No crapkit import.
 """
 from __future__ import annotations
 
 import ast
 import codecs
+from pathlib import Path
 import re
 
 import pytest
 
 from accuracy.analysis_oracles import analysis_inventory
+from accuracy.kit import drive, repos, rulings
 
 pytestmark = pytest.mark.process
 
@@ -141,3 +148,102 @@ def test_non_ascii_names_equal_under_cp1252_and_utf8(measured, lang):
 def test_the_model_reads_its_own_hand_rows():
     for lang, text in (("py", PY_TEXT), ("ps1", PS_TEXT)):
         assert [row[:3] for row in HAND[lang]] == model_functions(lang, text.encode("utf-8"))
+
+
+# --- self-diff: the two reads of a staged blob in hook-precommit ---------------------------------
+
+# hook-precommit reads staged blobs (src/crapkit/hook.py staged_records): below
+# 16 files it decodes each blob in memory; at 16 or more it writes them to a
+# temp tree and reads the files back. Every byte variant is staged both ways.
+# Every function holds one if, so ccn 2 (NIST SP 500-235 sec. 4.1) is over a
+# target of 1, and a new file's diff adds every line, so the gate names every
+# function: (name, start, ccn) read off the text.
+HOOK_TEXTS = {"py": ("def café(n):\n    if n:\n        return 1\n    return 2\n\n\n"
+                     "def second(m):\n    if m:\n        return m\n    return 0\n"),
+              "ps1": ("function Write-Café($n) {\n    if ($n) {\n        return 1\n    }\n"
+                      "    return 2\n}\n\nfunction Get-Second($m) {\n    if ($m) {\n"
+                      "        return $m\n    }\n    return 0\n}\n")}
+HOOK_HAND = {"py": [("café", 1, 2), ("second", 7, 2)],
+             "ps1": [("Write-Café", 1, 2), ("Get-Second", 8, 2)]}
+HOOK_FILES = {f"{lang}/{name}.{lang}": data for lang, text in HOOK_TEXTS.items()
+              for name, data in _variants(text).items()}
+HOOK_CONFIG = ('[crapkit]\ntarget = 1\n\n[[scope]]\nname = "all"\npaths = ["."]\n'
+               'languages = ["python", "powershell"]\ncoverage_optional = true\n')
+# The gate's lines: `  ccn   2  py/utf8-lf.py:7  second( m )`.
+GATED = re.compile(r"^ +ccn +(\d+) +(\S+):(\d+) +(.+)$", re.M)
+# git numbers lines at LF only; a lone CR ends a line for the reader (above).
+CR_ONLY = "utf8-cr"
+
+
+def _gated(stdout: str) -> dict[str, list[tuple]]:
+    found: dict[str, list[tuple]] = {}
+    for ccn, path, start, name in GATED.findall(stdout):
+        found.setdefault(path, []).append((analysis_inventory.bare(name), int(start), int(ccn)))
+    return {path: sorted(rows, key=lambda row: row[1]) for path, rows in found.items()}
+
+
+def _hook(root: Path, dirs: tuple, spawn: bool = False) -> dict[str, list[tuple]]:
+    repos.git(root, "reset", "-q")
+    repos.git(root, "add", *dirs)
+    done = drive.Driver(root, spawn=spawn).run("hook-precommit")
+    assert done.code == 6, done.stdout + done.stderr
+    return _gated(done.stdout)
+
+
+def _new_repo(files: dict, top: Path) -> Path:
+    root = analysis_inventory.build({"crapkit.toml": HOOK_CONFIG}, top)
+    for path, data in files.items():
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_bytes(data)
+    return root
+
+
+@pytest.fixture(scope="module")
+def hook_arms(tmp_path_factory):
+    """{arm: {path: gated rows}}. All 16 files staged take the temp tree, spawned,
+    since that arm can reach the analysis pool; each language's 8 alone take
+    the in-memory blob."""
+    root = _new_repo(HOOK_FILES, tmp_path_factory.mktemp("hook") / "repo")
+    return {"temp tree": _hook(root, ("py", "ps1"), spawn=True),
+            "blob": {**_hook(root, ("py",)), **_hook(root, ("ps1",))}}
+
+
+@pytest.mark.parametrize("lang", sorted(HOOK_TEXTS))
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_the_staged_blob_and_the_temp_tree_gate_the_same_functions(hook_arms, lang, variant):
+    path = f"{lang}/{variant}.{lang}"
+    assert hook_arms["blob"].get(path) == hook_arms["temp tree"].get(path)
+
+
+@pytest.mark.parametrize("arm", ["blob", "temp tree"])
+@pytest.mark.parametrize("lang", sorted(HOOK_TEXTS))
+@pytest.mark.parametrize("variant", [variant for variant in VARIANTS if variant != CR_ONLY])
+def test_the_hook_gates_every_function_of_a_new_file(hook_arms, arm, lang, variant):
+    assert hook_arms[arm].get(f"{lang}/{variant}.{lang}") == HOOK_HAND[lang]
+
+
+@rulings.applies("AO-HOOK-CR-ONLY")
+@pytest.mark.parametrize("lang", sorted(HOOK_TEXTS))
+def test_a_new_cr_only_file_gates_every_function(hook_arms, lang):
+    gated = hook_arms["blob"].get(f"{lang}/{CR_ONLY}.{lang}", [])
+    rulings.pin_ruling("AO-HOOK-CR-ONLY", crapkit=len(gated), oracle=len(HOOK_HAND[lang]))
+
+
+# `x = 1` sits after a lone CR: git line 1, reader and Python line 2. The edit is
+# on `target`'s def line, git line 8, reader line 9.
+LONE_CR = (b"# note\rx = 1\n" b"def first(a):\n    if a:\n        return 1\n    return 2\n\n\n"
+           b"def target(b):\n    if b:\n        return 1\n    return 2\n")
+
+
+@rulings.applies("AO-HOOK-LONE-CR-SHIFT")
+def test_an_edit_below_a_lone_cr_gates_the_edited_function(tmp_path):
+    root = _new_repo({}, tmp_path / "repo")
+    (root / "m.py").write_bytes(LONE_CR)
+    repos.git(root, "add", "m.py")
+    repos.git(root, "commit", "-q", "-m", "m", date=repos.EPOCH)
+    (root / "m.py").write_bytes(LONE_CR.replace(b"def target(b):", b"def target(b, c=0):"))
+    repos.git(root, "add", "m.py")
+    done = drive.Driver(root).run("hook-precommit")
+    gated = [row[0] for row in _gated(done.stdout).get("m.py", [])]
+    rulings.pin_ruling("AO-HOOK-LONE-CR-SHIFT", crapkit=",".join(gated) or "none",
+                       oracle="target")
