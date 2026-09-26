@@ -31,8 +31,9 @@ Any other agent takes the MCP server from its own config file:
 One install carries all three skills and the read-side MCP server, at a version that
 tracks the CLI's; in Claude Code it also carries the advisory PostToolUse hook.
 `crapkit doctor --plugin-root` reports drift between the two later. With no path it
-reads Claude Code's own plugin directory; with a path it takes the plugin root or any
-directory above it, `~/.claude` included. In Codex, pass the installed copy,
+reads Claude Code's own plugin directory, then Codex's when Claude Code holds none; with a
+path it takes the plugin root or any directory above it, `~/.claude` and `~/.codex`
+included. To check the Codex copy on a machine where Claude Code holds one too, pass it:
 `~/.codex/plugins/cache/crapkit/crapkit/VERSION`. When it picks a root for you it names
 the one it chose:
 
@@ -50,9 +51,9 @@ the commands that fix it:
     crapkit doctor: no installed crapkit plugin under DIR or CODEX_DIR. Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit`, then `claude plugin install crapkit@crapkit`; Codex with `codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, pass --plugin-root PATH.
 
 With a PATH you typed that holds no `.claude-plugin/plugin.json` at or under it, the line
-names the path and nothing else:
+names the path and where to point instead:
 
-    crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json
+    crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json, so it is no plugin root; name the plugin root or a directory above it, or run `crapkit doctor --plugin-root` with no PATH to check the installs Claude Code and Codex recorded.
 
 No install command in that one, because the path is what to correct. An empty directory and
 a path that does not exist both get it.

@@ -53,11 +53,15 @@ def printed(box, repo: Path, block: docsnip.Fence, names: dict) -> list[tuple[li
 
 
 def no_install_line(box, repo: Path) -> tuple[str, dict]:
-    """doctor --plugin-root with no path, where Claude Code holds no plugin."""
-    empty = box.root / "fresh-claude-config"
-    empty.mkdir(exist_ok=True)
-    step = box.run(["crapkit", "doctor", "--plugin-root"], cwd=repo, env={"CLAUDE_CONFIG_DIR": str(empty)}, expect=1)
-    return step.stdout, {"DIR": str(empty / "plugins")}
+    """doctor --plugin-root with no path, where neither Claude Code nor Codex
+    holds a plugin: the fences before this one installed both, so both homes
+    are fresh. CODEX_DIR goes first, since DIR is part of its name."""
+    claude, codex = box.root / "fresh-claude-config", box.root / "fresh-codex-home"
+    for home in (claude, codex):
+        home.mkdir(exist_ok=True)
+    env = {"CLAUDE_CONFIG_DIR": str(claude), "CODEX_HOME": str(codex)}
+    step = box.run(["crapkit", "doctor", "--plugin-root"], cwd=repo, env=env, expect=1)
+    return step.stdout, {"CODEX_DIR": str(codex), "DIR": str(claude / "plugins")}
 
 
 def no_manifest_line(box, repo: Path) -> tuple[str, dict]:

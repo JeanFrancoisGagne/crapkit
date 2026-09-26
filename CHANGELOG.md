@@ -89,6 +89,10 @@ version stays 11, so no repo re-seeds.
   cloud.
 - A crapkit hook that `core.hooksPath` sends git away from, and pre-commit run in CI over
   an empty index, each get a WARN: both passed every commit without judging it.
+- The onboard and recover skills print the lines `crapkit doctor --plugin-root` prints when
+  it finds no plugin. With no path it names Claude Code's plugin directory and then
+  Codex's, and a path that holds no `.claude-plugin/plugin.json` gets a line that says
+  what to pass instead. The onboard skill said that line named the path and nothing else.
 
 ### GitHub Action
 

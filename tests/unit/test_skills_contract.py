@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from crapkit.cli import main
 from crapkit.cli.parser import build_parser
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -386,3 +387,36 @@ def test_the_plugin_root_transcript_pins_no_release():
                if "crapkit doctor: checking" in ln]
 
     assert _RELEASE.search(line) is None, line
+
+
+def _onboard_line(start: str) -> str:
+    """The onboarding skill's one indented output line that starts with `start`."""
+    (line,) = [ln.strip() for ln in _doc(ONBOARD_SKILL).splitlines() if ln.startswith("    " + start)]
+    return line
+
+
+def _printed_as_the_page_spells_it(argv: list[str], capsys, places: dict[str, Path]) -> str:
+    """What `crapkit ARGV` prints, each concrete path put back as the page's placeholder."""
+    main(argv)
+    out = capsys.readouterr().out.strip()
+    for placeholder, path in places.items():
+        out = out.replace(str(path), placeholder)
+    return out
+
+
+def test_the_onboard_skill_prints_the_lines_doctor_prints_when_it_finds_no_plugin(tmp_path, monkeypatch,
+                                                                                    capsys):
+    """An agent onboarding matches what doctor printed against these two lines to
+    tell a missing install from a mistyped path. A line doctor rewrote and the
+    page did not matches nothing, and the page's advice goes with it."""
+    places = {"CODEX_DIR": tmp_path / "codex", "DIR": tmp_path / "claude" / "plugins",
+              "PATH": tmp_path / "not-a-plugin"}
+    places["PATH"].mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(places["CODEX_DIR"]))
+
+    no_install = _printed_as_the_page_spells_it(["doctor", "--plugin-root"], capsys, places)
+    no_root = _printed_as_the_page_spells_it(["doctor", "--plugin-root", str(places["PATH"])], capsys, places)
+
+    assert no_install == _onboard_line("crapkit doctor: no installed crapkit plugin under")
+    assert no_root == _onboard_line("crapkit doctor: the plugin at PATH has no")

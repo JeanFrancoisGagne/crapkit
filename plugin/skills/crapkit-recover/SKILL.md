@@ -28,10 +28,10 @@ Four more lines come out of `crapkit doctor --plugin-root`, same exit 1.
 "crapkit doctor: the plugin at PATH asks for hook protocol N" means the plugin is ahead of
 the CLI, so the advisory hook exits 0 in silence on every edit.
 "crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json" means the path is not
-a plugin root and holds no crapkit install below it. "crapkit doctor: no installed crapkit
-plugin under DIR" means the bare flag found nothing in Claude Code's plugin directory: in
-Claude Code, install with `claude plugin install crapkit@crapkit`; in Codex, pass the
-installed copy, `crapkit doctor --plugin-root ~/.codex/plugins/cache/crapkit/crapkit/VERSION`.
+a plugin root and holds no crapkit install below it: pass the plugin root or a directory
+above it. "crapkit doctor: no installed crapkit plugin under DIR or CODEX_DIR" means the
+bare flag found nothing in Claude Code's plugin directory or in Codex's: install the plugin
+with the commands the line names, Claude Code's or Codex's.
 "crapkit doctor: FAIL no `crapkit` on PATH" means the plugin is installed but the bare name
 its hooks and `.mcp.json` spawn resolves nowhere, so every PostToolUse edit fires a command
 that cannot start and the MCP server never comes up. A `pip install` into a project `.venv`
