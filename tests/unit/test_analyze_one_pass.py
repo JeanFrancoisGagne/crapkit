@@ -108,11 +108,12 @@ def test_analyze_one_reads_each_file_in_a_single_lizard_pass(tmp_path, monkeypat
 def _two_pass(abs_path: str, rel_path: str):
     """analyze_one as it stood before the single pass, kept as the reference.
 
-    Standard+ND for every column but one, modified for ccn_mod, merged on
+    Standard for every column but one, modified for ccn_mod, merged on
     (path, start, end, long_name). Nothing calls this in production any more; it
-    is here so the replacement stays provably equal to it.
+    is here so the replacement stays provably equal to it. lizard's ND extension
+    left it with the column it fed: `nesting` is the cognitive pass's depth.
     """
-    std = _raw(abs_path, rel_path, [Cognitive()] + lizard.get_extensions(["ND"]))
+    std = _raw(abs_path, rel_path, [Cognitive()] + lizard.get_extensions([]))
     mod = _raw(abs_path, rel_path, lizard.get_extensions(["modified"]))
     return merge_passes(std, mod)
 
@@ -122,19 +123,16 @@ def _raw(abs_path: str, rel_path: str, extensions):
     return [RawFn(path=rel_path, long_name=f.long_name, start=f.start_line,
                   end=f.end_line, ccn=f.cyclomatic_complexity, nloc=f.nloc,
                   params=len(f.parameters),
-                  nesting=_nesting(rel_path, f),
+                  nesting=_nesting(f),
                   cognitive=getattr(f, "cognitive_complexity", 0) or 0)
             for f in analysis.function_list]
 
 
-def _nesting(rel_path: str, f) -> int:
-    """0.5.0, spec item 15: a Python row's nesting is the depth the cognitive
-    pass measured, and so is a shell row's; every other language keeps lizard's
-    ND column. The reference spells the rule out rather than importing the
-    production helper."""
-    if rel_path.endswith((".py", ".sh", ".bash")):
-        return getattr(f, "cognitive_nesting", 0) or 0
-    return getattr(f, "max_nesting_depth", 0) or 0
+def _nesting(f) -> int:
+    """A row's nesting is the depth the cognitive pass measured, in every
+    language (Python's since 0.5.0, spec item 15). The reference spells the rule
+    out rather than reading the production record."""
+    return getattr(f, "cognitive_nesting", 0) or 0
 
 
 def _corpus() -> list[Path]:
@@ -178,4 +176,5 @@ def test_every_column_survives_the_single_pass(tmp_path):
     (rec,) = _records(tmp_path, "f.ts", src)
 
     assert (rec.path, rec.start, rec.end) == ("f.ts", 1, 6)
-    assert (rec.nloc, rec.params, rec.nesting, rec.cognitive) == (6, 2, 3, 4)
+    # nesting 2, the for and the if: the `&&` in the condition opens no level.
+    assert (rec.nloc, rec.params, rec.nesting, rec.cognitive) == (6, 2, 2, 4)

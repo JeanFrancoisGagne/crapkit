@@ -288,9 +288,9 @@ level inside the match costs: +2 in a match at the top of a function. Rust keeps
 set in both reported columns too:
 `loop` is charged as a loop and opens a nesting level, `?` is neither an increment nor
 a level (an early return, or the relaxed bound in `?Sized`), and `catch`, `switch`,
-`foreach`, `case` and `def` are names. The nesting column is lizard's, and it still
-reads the `for` of a `for<'a>` binder, and of a trait implemented inside a function, as
-a loop, one level where there is none.
+`foreach`, `case` and `def` are names. The nesting column reads the same pass, so the
+`for` of a `for<'a>` binder, and of a trait implemented inside a function, opens no
+level there either.
 
 **A `//` comment ends at its line, except in `cpp` and `objectivec`.** That holds even when
 the comment ends in a backslash (`// C:\dir\`). lizard read such a comment on into the next

@@ -156,7 +156,7 @@ KNOWN LIMITS
 
 NESTING DEPTH
     A shell row's `nesting` is the deepest that same extension's block stack
-    gets, not lizard's ND column (analyze._nesting_depth). ND closes a level on a
+    gets, as every row's is, not lizard's ND column. ND closes a level on a
     `}` or at a `;`, and shell closes a block with a word, so every block leaked
     a level: seven ifs side by side read 6, four nested read 3, and a `case` read
     0. Read off the stack, the seven read 1, the four read 4, and a `case` opens

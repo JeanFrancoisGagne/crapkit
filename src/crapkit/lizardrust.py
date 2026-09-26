@@ -58,11 +58,12 @@ Accepted, documented, not solved
 * `?` error propagation stays counted: upstream puts it in
   `_ternary_operators`, and this reader inherits that as measured rather than
   changing two things at once. tests/unit/test_lizardrust.py pins it at +1.
-* lizard's nesting column reads the `for` of a `for<'a>` binder, and of an
-  `impl Trait for Type` inside a function, as a loop, one level where there is
-  none. It reads keywords with no context around them, and gluing the binder
-  into one token would break the `<`/`>` count lizard uses to skip a generic
-  parameter list. test_rust_cognitive_nesting.py and test_rust_for.py pin it.
+* The `for` of a `for<'a>` binder, and of an `impl Trait for Type` inside a
+  function, stays in the token stream; crapkit's cognitive pass tells it from
+  a loop (lizardcognitive._resolve_for), and the nesting column reads that
+  pass. Gluing the binder into one token would break the `<`/`>` count lizard
+  uses to skip a generic parameter list. test_rust_cognitive_nesting.py and
+  test_rust_for.py pin both columns.
 * `ccn_mod` (analyze.py's modified column) is unchanged, so a Rust match now
   costs the same in both columns. lizard's modified pass keys off
   `reader._keyword_match`, which upstream never sets for Rust; setting it here

@@ -65,13 +65,21 @@ Rust fn's signature never counts either: it is every token before the body's
 
 Attribution follows lizard's function splitting (a nested arrow's tokens are
 the arrow's), exactly as ccn is attributed today. Ternary branches do not
-deepen nesting (a structure inside a ternary arm is rare enough to accept).
+deepen the nesting a structure inside them is charged at (a structure inside a
+ternary arm is rare enough to accept).
 
 The deepest the per-function stack gets is recorded too, as
-`cognitive_nesting`. analyze.py reads it as the `nesting` column of a Python or
-shell row, because lizard's ND extension closes a level only on a `}` or at a
-`;`: a flat Python function of seven `if`s read 7, and seven shell ifs side by
-side read 6. Brace languages keep lizard's column.
+`cognitive_nesting`, and analyze.py reads it as the `nesting` column of every
+row. lizard's ND extension, which the column used to come from, counted
+structures in Python rather than depth (a flat function of seven `if`s read 7),
+closed a shell block only on a `}` or at a `;` (seven shell ifs side by side
+read 6), and in brace languages it closed a level at every `}` and at the first
+`;` after a braceless structure, and opened one for `&&`, `||`, `case`, `try`
+and `def`: three nested loops read 2, and a Go condition with three operators
+read 4. Two levels the stack itself never holds count toward the depth as
+well: the body of a structure that has no braces (`if (a) return 0;`, see
+`_open_body`), and the arms of a conditional operator, counted once its `:`
+arrives (see `_arms_token`).
 
 Where this extension sits in lizard's chain is load-bearing and differs by
 reader: the python rules read whitespace tokens that lizard's own
@@ -563,10 +571,29 @@ _SHELL_BODY_WORDS = frozenset({"do", "then", "in"})
 _SHELL_BLOCK = None
 
 
-# What a bracket does to the depth a Python signature is read at. The signature
-# ends at the first `:` with none open, so a colon in a default's lambda, a dict
-# default, a slice in an annotation or a type parameter's bound is not the end.
-_SIGNATURE_DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
+# What a bracket does to a depth read in brackets: where a Python signature
+# ends (the first `:` with none open, so a colon in a default's lambda, a dict
+# default, a slice in an annotation or a type parameter's bound is not the end),
+# and which `:` finishes a conditional operator (the one at its `?`'s depth, so
+# a key in an object literal arm is not it).
+_BRACKET_DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
+
+# Words that start a statement, and so end the conditional operators before them
+# where a line break is invisible (the Swift reader drops whitespace) or a
+# statement needs no `;`.
+_STATEMENT_WORDS = frozenset({"return", "let", "var", "const", "throw"})
+
+# What ends the statement a `?` waiting for its `:` sits in, at the `?`'s depth.
+# A `,` is not among them: `c ? f<A, B>() : d` puts one in the first arm.
+_QUESTION_ENDS = frozenset({";"}) | _STATEMENT_WORDS
+
+# What ends a conditional operator's second arm at its depth: `f(a ? b : c, d)`.
+_ARM_ENDS = _QUESTION_ENDS | {","}
+
+# The first tokens of a line that continue the statement on the line above: a
+# call chain's `.` and a conditional operator's `?` and `:`. A line ending in a
+# `?` or `:` continues too.
+_CONTINUATIONS = frozenset({".", "?", ":"})
 
 # What a bracket does to the depth a Swift parameter list is read at; see
 # _swift_signature. A generic's angle brackets hold commas too.
@@ -580,7 +607,8 @@ class _FnState:
                  "prev", "prev2", "label_check", "dialect", "call_pending", "call",
                  "messages", "runs", "run_break", "word_op", "braces", "closed_do",
                  "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies", "do_tail",
-                 "ended", "brace_base", "scopes", "home", "bare_call", "shadowed", "importing",
+                 "ended", "questions", "arms", "brace_base", "scopes", "home", "bare_call",
+                 "shadowed", "importing",
                  "after_group", "own_calls", "closed_call", "signature")
 
     def __init__(self, fn=None, dialect: _Dialect = _DEFAULT_DIALECT, scopes: _Scopes | None = None):
@@ -594,13 +622,15 @@ class _FnState:
         self.importing = False   # Python: inside an import statement; see _binds
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
-        self.max_depth = 0       # the deepest the stack has been
+        self.max_depth = 0       # the deepest level reached: see _reach
         self.brace_depth = 0     # counted from where the function started; see _state_for
         self.brace_base = 0      # the stream's brace depth where the function started
         self.line_indent = 0
         self.at_line_start = True
         self.pending = False     # a counting structure awaits its '{' (braced languages)
         self.bracket_depth = 0   # brackets of every kind open; see _body_token
+        self.questions = []      # bracket depths of `?`s whose `:` has not come
+        self.arms = []           # bracket depths of conditional operators past their `:`
         self.bodies = []          # [bracket depth, phase, structure] per body; see _open_body
         self.ended = None         # the depth a statement just ended at; see _end_statement
         self.else_pending = False
@@ -1003,10 +1033,13 @@ def _resolve_question(state: _FnState, token: str, is_python: bool) -> bool:
     nothing (Sonar v1.7, Ignore shorthand), so the pair is consumed."""
     state.question_pending = False
     if token == "?":
+        del state.questions[-1:]
         return True
     if _is_conditional(state, token):
         state.total += 1 + _nesting(state, is_python)
         _conditional_run(state)
+    else:
+        del state.questions[-1:]  # it opens no arms either; see _colon
     return False
 
 
@@ -1109,17 +1142,102 @@ def _nesting(state: _FnState, is_python: bool) -> int:
     return len(state.stack) + sum(1 for body in state.bodies if body[1] in _HOLDING)
 
 
+def _reach(state: _FnState, depth: int) -> None:
+    """The deepest level the function reaches, which is its `nesting` column.
+    Every level passes through here: a pushed block, a body with no braces and
+    the arms of a conditional operator."""
+    state.max_depth = max(state.max_depth, depth)
+
+
 def _push(state: _FnState, entry) -> None:
-    """One more open block. Every push passes through here, so the deepest the
-    stack gets is measured once, in one place."""
+    """One more open block."""
     state.stack.append(entry)
-    state.max_depth = max(state.max_depth, len(state.stack))
+    _reach(state, _nesting(state, False))
+
+
+# --- the arms of a conditional operator ------------------------------------------
+#
+# A conditional operator's arms are a level no block holds (a body without
+# braces is the other; see the section on bodies below). They end with the
+# statement they sit in: a `;` or a word that starts a statement at the `?`'s
+# bracket depth, a `,` for the second arm, the close of a bracket around them,
+# and a line break the next line does not continue, since a line may end a
+# statement that has no `;`.
+
+def _arms_token(state: _FnState, token: str) -> None:
+    """One token of a brace language, read for the conditional operators whose
+    `:` has not come and for those past it. Most tokens touch neither, and pay
+    three tests."""
+    if state.at_line_start and not _continues(state, token):
+        _forget_arms(state, state.bracket_depth)
+    step = _ARM_STEPS.get(token)
+    if step is not None:
+        step(state, token)
+
+
+def _continues(state: _FnState, token: str) -> bool:
+    """Whether a line's first token carries on the statement above it: it is,
+    or it follows, one of `_CONTINUATIONS`."""
+    return token in _CONTINUATIONS or state.prev in _CONTINUATIONS
+
+
+def _forget_arms(state: _FnState, depth: int) -> None:
+    _forget(state.questions, depth)
+    _forget(state.arms, depth)
+
+
+def _arms_bracket(state: _FnState, token: str) -> None:
+    """A bracket moves the depth the arms are read at, where the body rules do
+    not already keep it, and a closing one ends the operators inside it."""
+    if not state.dialect.braceless:
+        state.bracket_depth += _BRACKET_DEPTH[token]
+    if _BRACKET_DEPTH[token] < 0:
+        _forget_arms(state, state.bracket_depth + 1)
+
+
+def _arms_statement(state: _FnState, token: str) -> None:
+    depth = state.bracket_depth
+    if token in _QUESTION_ENDS:
+        _forget(state.questions, depth)
+    _forget(state.arms, depth)
+
+
+def _colon(state: _FnState, _token: str) -> None:
+    """The `:` of a conditional operator: its arms sit one level below the
+    levels around them and below every conditional operator they sit in, so
+    `a ? 1 : b ? 2 : 3` reaches 2."""
+    if state.questions and state.questions[-1] == state.bracket_depth:
+        state.questions.pop()
+        if _opens_arms(state):
+            _reach(state, _nesting(state, False) + len(state.questions) + len(state.arms) + 1)
+            state.arms.append(state.bracket_depth)
+
+
+def _opens_arms(state: _FnState) -> bool:
+    """A conditional operator's arms are a level, except in shell, whose
+    arithmetic `?:` counts in ccn and cognitive only, and in a C-family default
+    argument, which is evaluated where the function is called: `int f(int a =
+    k ? 1 : 2)` opens nothing in `f`."""
+    return not (state.dialect.shell_blocks or state.dialect.declarator_and and state.brace_depth == 0)
+
+
+def _forget(depths: list, depth: int) -> None:
+    """Drop the entries at `depth` or deeper, whose statement or bracket ended."""
+    while depths and depths[-1] >= depth:
+        depths.pop()
+
+
+# The tokens the rules above read, each to the rule that reads it.
+_ARM_STEPS = {":": _colon, **dict.fromkeys(_BRACKET_DEPTH, _arms_bracket),
+              **dict.fromkeys(_ARM_ENDS, _arms_statement)}
 
 
 def _consume(state: _FnState, token: str, is_python: bool) -> None:
     if _signature(state, token, is_python):
         return
     _observe(state, token)
+    if not is_python:
+        _arms_token(state, token)
     if token in ("{", "}"):
         _brace(state, token)
     elif token in _BOOL_OPS:
@@ -1451,7 +1569,7 @@ def _signature_token(state: _FnState, token: str) -> None:
     if token == ":" and state.signature_depth == 0:
         state.body_started = True
     else:
-        state.signature_depth += _SIGNATURE_DEPTH.get(token, 0)
+        state.signature_depth += _BRACKET_DEPTH.get(token, 0)
 
 
 def _brace(state: _FnState, token: str) -> None:
@@ -1696,6 +1814,8 @@ def _question(state: _FnState, _token: str, _is_python: bool) -> None:
     them: it returns early on an error or relaxes a `?Sized` bound, and an
     early return is no increment."""
     state.question_pending = _counts_question(state)
+    if state.question_pending:
+        state.questions.append(state.bracket_depth)  # its `:` opens the arms
 
 
 def _jump(state: _FnState, _token: str, is_python: bool) -> None:
@@ -2019,8 +2139,10 @@ def _push_structure(state: _FnState, is_python: bool, token: str = "") -> None:
 
 def _open_body(state: _FnState, token: str) -> None:
     """A structure's body, waiting for its header, or for a `do`, for its
-    first token."""
+    first token. Its level is reached here, one below the levels around it,
+    whichever way the body turns out."""
     phase = _AWAITING if token in state.dialect.do_loops else _FRESH
+    _reach(state, _nesting(state, False) + 1)
     state.bodies.append([state.bracket_depth, phase, token])
 
 

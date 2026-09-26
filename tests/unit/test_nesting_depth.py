@@ -7,10 +7,19 @@ opposite shapes (measured on 0.4.15, and on `lizard -Ens`: flat 3 ifs -> 3,
 nested 3 -> 6). crapkit's cognitive pass already keeps a per-function stack of
 open blocks for the Sonar nesting increment; the deepest that stack gets is the
 depth a reader means by "nesting". Spec item 15, decision 13: Python rows read
-that depth, brace languages keep lizard's column. Shell rows read it too, since
-ND never closes a block that ends in `fi`, `done` or `esac`.
+that depth.
+
+Brace languages kept lizard's column until its bookkeeping proved wrong on
+ordinary code: every `}` closes a level though only a keyword opens one, a `;`
+closes a level a braceless structure opened, and `&&`, `||`, `case`, `try` and
+`def` each open one. Three nested loops read 2, a Go condition with three
+operators read 4, and a parameter named `def` read 2. Shell rows had read the
+stack already, since ND never closes a block that ends in `fi`, `done` or
+`esac`. Every language now reads the cognitive pass's stack.
 """
 from pathlib import Path
+
+import pytest
 
 from crapkit.analyze import analyze_source
 
@@ -99,7 +108,7 @@ register()
 
 # lizard's ND reads 3: `for`, `if`, and the first `&&` of a condition each add
 # a level. The cognitive stack reads 2 for the same shape (it charges `&&` flat),
-# so a brace row that reads 3 is one that kept lizard's column.
+# so a brace row that reads 3 is one that still reads lizard's column.
 TS = """export function f(a: number, b: number) {
   for (const x of [a, b]) {
     if (x > 0 && x < 9) { return x; }
@@ -107,6 +116,118 @@ TS = """export function f(a: number, b: number) {
   return 0;
 }
 """
+
+_LOOP = ("for (int i = 0; i < 3; i++) {\n        if (x) {\n            go();\n        }\n"
+         "    }\n")
+
+# file: (source, depth worked by hand from Sonar Cognitive Complexity v1.7 App. B2:
+# if, else if, else, a conditional operator, switch, each loop and catch open a
+# level; a logical operator, a case label, try, a bare block, @synchronized and
+# @autoreleasepool open none). Each comment names what lizard's ND column read.
+BRACE_DEPTHS = {
+    # ND 2: its hidden-bracket counter took each C-style for for a braceless one,
+    # and the first `;` of the header closed the level before the body opened.
+    "loops.c": ("int nested_loops(int n) {\n    int t = 0;\n    for (int i = 0; i < n; i++) {\n"
+                "        for (int j = 0; j < n; j++) {\n            for (int k = 0; k < n; k++) {\n"
+                "                t++;\n            }\n        }\n    }\n    return t;\n}\n", 3),
+    # ND 2 for the next five: a `{` before the for, any `{`, sent it down the same path.
+    "if.c": ("void f(int x) {\n    if (x) {\n    " + _LOOP + "    }\n}\n", 3),
+    "bare.c": ("void f(int x) {\n    {\n    " + _LOOP + "    }\n}\n", 2),
+    "pool.m": ("void f(int x) {\n    @autoreleasepool {\n    " + _LOOP + "    }\n}\n", 2),
+    "init.c": ("int f(int x) {\n    int xs[2] = {1, 2};\n    " + _LOOP + "    return 0;\n}\n", 2),
+    "sync.java": ("class K {\n    void f(int x) {\n        synchronized (this) {\n"
+                  "            for (int i = 0; i < 3; i++) {\n                if (x > 0) {\n"
+                  "                    go();\n                }\n            }\n        }\n"
+                  "    }\n}\n", 2),
+    "if.go": ("package p\n\nfunc f(x int) {\n\tif x > 0 {\n\t\tfor i := 0; i < 3; i++ {\n"
+              "\t\t\tif x > 1 {\n\t\t\t\tgo1()\n\t\t\t}\n\t\t}\n\t}\n}\n", 3),
+    # ND 4: each operator of an unparenthesized condition opened a level.
+    "logic.go": ("package p\n\nfunc Logic(a, b, c, d bool) int {\n\tif a && b && c || d {\n"
+                 "\t\treturn 1\n\t}\n\treturn 0\n}\n", 1),
+    # ND 2: the first operator of a parenthesized condition opened a level.
+    "logic.c": ("int logic(int a, int b, int c, int d) {\n    if (a && b && c || d) {\n"
+                "        return 1;\n    }\n    return 0;\n}\n", 1),
+    # ND 3: each case label opened a level the next one did not close.
+    "pick.go": ("package p\n\nfunc Pick(k int) int {\n\tswitch k {\n\tcase 1:\n\t\treturn 10\n"
+                "\tcase 2:\n\t\treturn 20\n\tdefault:\n\t\treturn 0\n\t}\n}\n", 1),
+    # ND 2: the case label opened a level.
+    "pick.c": ("int pick(int k) {\n    switch (k) {\n    case 1:\n        return 10;\n"
+               "    case 2:\n        return 20;\n    default:\n        return 0;\n    }\n}\n", 1),
+    # ND 2 for both: ND's token set holds Python's `def`.
+    "def.go": ("package p\n\nfunc Default(def int) int {\n\treturn def\n}\n", 0),
+    "def.js": ("export function wire(inst, def) {\n  init(inst, def);\n}\n", 0),
+    # ND 1: the `;` after the initializer closed the if's level.
+    "init.go": ("package p\n\nfunc InitAfterIf(a []int) int {\n\tif len(a) == 0 {\n"
+                "\t\treturn 0\n\t}\n\tif n := len(a); n > 1 {\n\t\tfor range a {\n"
+                "\t\t\tn--\n\t\t}\n\t}\n\treturn 1\n}\n", 2),
+    # ND 1: `g();` closed the second if's level.
+    "sibling.c": ("int sibling_ifs(int a, int b, int c) {\n    if (a > 0) {\n        return a;\n"
+                  "    }\n    if (b) {\n        g();\n        if (c) {\n            return 1;\n"
+                  "        }\n    }\n    return 0;\n}\n", 2),
+    # ND 3: the braceless if left its level open over the loop.
+    "braceless.c": ("int braceless_then_loop(int a, int n) {\n    if (a) return 0;\n"
+                    "    for (int i = 0; i < n; i++) {\n        if (i) return 1;\n    }\n"
+                    "    return 2;\n}\n", 2),
+    "braceless.zig": ("fn f(a: bool, n: u32) u32 {\n    if (a) return 0;\n    var i: u32 = 0;\n"
+                      "    while (i < n) : (i += 1) {\n        if (i == 3) return 1;\n    }\n"
+                      "    return 2;\n}\n", 2),
+    # ND 2: the first conditional operator left its level open.
+    "ternaries.c": ("int two_ternaries(int x, int y) {\n    int a = x ? 1 : 2;\n"
+                    "    int b = y ? 3 : 4;\n    return a + b;\n}\n", 1),
+    "arm.js": ("function f(c) {\n  return c ? { a: 1 } : { b: 2 };\n}\n", 1),
+    "ternary.ps1": ("function F($a) {\n  $b = $a ? 1 : 2\n  return $b\n}\n", 1),
+    # A guard with no `;` still has a body one level down (ND 1, and right).
+    "guard.js": ("function g(x) {\n  if (!x) return\n  return x.y\n}\n", 1),
+    # ND 1: an else opened no level.
+    "else.c": ("int f(int a, int b) {\n    if (a) {\n        return 1;\n    } else {\n"
+               "        if (b) {\n            return 2;\n        }\n    }\n    return 0;\n}\n", 2),
+    "else-braceless.c": ("int f(int a) {\n    if (a) return 1;\n    else return 2;\n}\n", 1),
+    # ND 0: ND's token set holds no guard.
+    "guard.swift": ("func f(x: Int?) -> Int {\n    guard let v = x else {\n        return 0\n"
+                    "    }\n    return v\n}\n", 1),
+    # ND 1: `?` opened a level, though Rust and Zig have no conditional operator
+    # and TypeScript's `??` is not one.
+    "try.rs": ("fn f() -> Result<u8, E> {\n    let v = g()?;\n    Ok(v)\n}\n", 0),
+    "optional.zig": ("fn g(x: ?u32) u32 {\n    const v = x orelse 0;\n    return v;\n}\n", 0),
+    "coalesce.ts": ("function f(a?: number) {\n  const x = a ?? 0\n  const y: number = 1\n"
+                    "  return x + y\n}\n", 0),
+    # ND 1: a declarator `&&` opened a level.
+    "take.cpp": ("void take(Widget&& w) {\n    use(w);\n}\n", 0),
+    # A body without braces is a level for what it holds: a conditional operator
+    # inside it sits two down, and so does the braced if that is a for's body.
+    "ternary-in-body.c": ("int pick(int a, int b) {\n    if (a) b = b > 0 ? 1 : 2;\n"
+                          "    return b;\n}\n", 2),
+    "braceless-for.c": ("void walk(int n) {\n    for (int i = 0; i < n; ++i)\n"
+                        "        if (i) {\n            show(i);\n        }\n}\n", 2),
+    # A `{` on the line after its header is still the body's.
+    "allman.c": ("int f(int a, int b)\n{\n    if (a)\n    {\n        if (b)\n        {\n"
+                 "            return 1;\n        }\n    }\n    return 0;\n}\n", 2),
+    # A conditional operator in another's arm sits a level below it; one after
+    # another's statement, or beside it in an argument list, does not.
+    "chained.java": ("class T {\n    static int pick(int a, int b) {\n        return a > 0\n"
+                     "            ? 1\n            : b > 0\n                ? 2\n"
+                     "                : 3;\n    }\n}\n", 2),
+    "args.c": ("int g(int a) {\n    return f(a ? 1 : 2, a ? 3 : 4);\n}\n", 1),
+    # The `,` of a template argument list sits in the first arm, not after it.
+    "template-arm.cpp": ("auto f() -> int {\n  return N <= M ? enc<C, T>()\n"
+                         "                : bit | N;\n}\n", 1),
+    # With no `;`, a line break ends the statement: the second operator and the
+    # second if are siblings of the first.
+    "no-semicolons.ts": ("function f(x: boolean, y: boolean) {\n  const a = x ? 1 : 2\n"
+                         "  const b = y ? 3 : 4\n  return a + b\n}\n", 1),
+    "guard-then-if.js": ("function h(x) {\n  if (!x) return\n  if (x.y) {\n    go()\n  }\n}\n", 1),
+    # The `{` of an argument is not a body, and ends with the call.
+    "call-body.js": ("function send(err, res) {\n  if (err) return res.json({ error: err });\n"
+                     "  return res.end();\n}\n", 1),
+    # GNU C's `a ?: b` is `a ? a : b`; outside C, `size?: T` marks an optional
+    # property and starts no conditional operator.
+    "elvis.m": ("int elvis(int a, int b) {\n    return a ?: b;\n}\n", 1),
+    "optional.tsx": ("function Badge({ size }: { size?: \"sm\" | \"lg\" }) {\n"
+                     "  return <span>{size}</span>\n}\n", 0),
+    # Zig's `else |err| if` links an else-if chain, one level deep.
+    "payload-else.zig": ("fn f(x: anyerror!u8, e: anyerror) !void {\n    if (x) |v| {\n"
+                         "        use(v);\n    } else |err| if (err != e) return err;\n}\n", 1),
+}
 
 
 def _nesting(name: str, code: str) -> int:
@@ -175,8 +296,15 @@ def test_a_module_level_call_of_the_function_just_defined_is_not_recursion():
     assert (row.nesting, row.cognitive) == (1, 1)
 
 
-def test_a_brace_language_keeps_lizards_depth():
-    assert _nesting("f.ts", TS) == 3
+def test_a_logical_operator_opens_no_level_in_a_brace_language():
+    assert _nesting("f.ts", TS) == 2
+
+
+@pytest.mark.parametrize("name", sorted(BRACE_DEPTHS))
+def test_a_brace_language_reads_the_depth_of_its_blocks(name):
+    source, depth = BRACE_DEPTHS[name]
+
+    assert _nesting(name, source) == depth
 
 
 # --- shell: blocks close on words, so the depth comes off the cognitive pass ----
@@ -247,13 +375,15 @@ def test_bash_files_read_the_same_depth_as_sh_files():
 
 
 def test_the_agent_json_page_names_where_each_languages_nesting_comes_from():
-    """The row a reader of `next-item --json` lands on has to say which column a
-    Python number is, or 7 and 1 for the same flat function across an upgrade
+    """The row a reader of `next-item --json` lands on has to say where the
+    number comes from, or 7 and 1 for the same flat function across an upgrade
     reads as a regression; and it has to say what opens a level, or a reader
-    who counts blocks calls the number wrong (`with` opens none)."""
+    who counts blocks calls the number wrong (`with` opens none in Python, a
+    `case` label and `&&` none anywhere)."""
     page = (ROOT / "docs" / "agent-json.md").read_text(encoding="utf-8")
     rows = [ln for ln in page.splitlines() if ln.startswith("| `nesting` |")]
     assert len(rows) == 1, f"expected one `nesting` row, found {len(rows)}"
-    row = rows[0]
-    named = ("cognitive", "lizard", "Python", "shell", "`with`", "`except`", "`esac`")
-    assert [word for word in named if word not in row] == [], row
+    missing = [word for word in ("cognitive", "every language", "Python", "shell", "`with`",
+                                 "`except`", "`esac`", "`case`", "`&&`", "`?`")
+               if word not in rows[0]]
+    assert missing == [], rows[0]

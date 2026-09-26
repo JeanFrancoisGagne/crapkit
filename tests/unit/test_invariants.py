@@ -114,7 +114,7 @@ def test_the_record_check_escapes_every_per_file_catch_all(monkeypatch, tmp_path
     no such refusal, so none of the three per-file handlers may swallow it."""
     from crapkit import analyze
 
-    monkeypatch.setattr(analyze, "_nesting_depth", lambda rel_path, fn: -1)
+    monkeypatch.setattr(analyze, "_parameter_count", lambda fn: -1)
     code = "def f(x):\n    return x\n"
     with pytest.raises(InternalCheckError):
         analyze.analyze_source("a.py", code)

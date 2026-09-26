@@ -401,6 +401,23 @@ Over 12,432 functions in 20 open-source projects, 1,082 move `cognitive`, 851 of
 them by 1 and 1,014 by 3 or less, and 69 Python rows move `nesting`. The
 [changelog](../CHANGELOG.md) lists every rule with an example.
 
+### Next analysis version: nesting in every language
+
+The release after 0.8.0 moves `nesting` outside Python, so it raises the analysis
+version and every marks file re-seeds once, with the same three commands as version 11
+below.
+
+- A function's `nesting` in C, C++, Objective-C, Java, JavaScript, TypeScript, Go,
+  Rust, Swift, Zig and PowerShell reads the depth crapkit's cognitive pass measures, the
+  way Python has since 0.5.0. lizard's ND column, which those rows read before,
+  opened a level for `&&`, `||`, `case` and `try` and lost one at a `}` or a `;`, so
+  most rows that move go down: a switch reads 1 whatever its case count, and a
+  condition's operators add nothing. Rows go up where ND lost a level, as with nested
+  loops, an `if` inside an `else`, or a Rust `match`.
+- `nesting` is reported and never gated, so no verdict moves with it. Expect the
+  column to change in `next-item --json`, exports and `brief` on the first run after
+  upgrading; the [`nesting` row](agent-json.md#item-fields) says what opens a level.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or

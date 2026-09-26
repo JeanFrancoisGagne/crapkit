@@ -410,8 +410,12 @@ def _chain(cognitive_index: int) -> list:
     of 10. The delta comes last either way, where the modified pass used to sit.
     lizard's comment_counter goes behind `_LineEndComments`; `index` raises on a
     lizard that no longer lists it.
+
+    lizard's ND extension is not in it: the `nesting` column is the depth the
+    cognitive pass measures (see lizardcognitive), and ND's own count read
+    three nested loops as 2 and a Go condition with three operators as 4.
     """
-    extensions = lizard.get_extensions(["ND"])
+    extensions = lizard.get_extensions([])
     extensions[extensions.index(lizard.comment_counter)] = _comment_counter
     extensions.insert(cognitive_index, _Cognitive())
     return [_TypeScriptExpressions(), _ReaderLookahead(), *extensions, _ModifiedDelta(), _PythonBodies(),
@@ -440,25 +444,6 @@ def _extensions_for(rel_path: str) -> list:
     return _EXTENSIONS
 
 
-# The suffixes whose `nesting` is not lizard's: Python's (`PythonReader.ext`)
-# and shell's (`ShellReader.ext`). lizard's ND extension closes a level only on
-# a `}` or at a `;`, and neither language closes a block that way. For Python
-# it counted STRUCTURES rather than depth: a flat function of seven `if`s read
-# 7 and a three-deep one read 3, the same number for opposite shapes. Shell
-# closes with `fi`, `done` and `esac`, so every block leaked a level: seven ifs
-# side by side read 6, four nested read 3, and a `case` read 0. The cognitive
-# pass keeps a per-function stack of open blocks for the Sonar nesting
-# increment, closing them by indent or by those words, and the deepest it gets
-# is the depth. Brace languages keep lizard's column, which reads their braces.
-_DEPTH_FROM_COGNITIVE_SUFFIXES = (".py", ".sh", ".bash")
-
-
-def _nesting_depth(rel_path: str, fn) -> int:
-    if rel_path.lower().endswith(_DEPTH_FROM_COGNITIVE_SUFFIXES):
-        return getattr(fn, "cognitive_nesting", 0) or 0
-    return getattr(fn, "max_nesting_depth", 0) or 0
-
-
 def _parameter_count(fn) -> int:
     """The count a crapkit reader kept (lizardclike's `crapkit_params`), else one
     per parameter name lizard read."""
@@ -481,7 +466,7 @@ def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
         ccn=min(std, mod),
         nloc=fn.nloc,
         params=_parameter_count(fn),
-        nesting=_nesting_depth(rel_path, fn),
+        nesting=getattr(fn, "cognitive_nesting", 0) or 0,
         cognitive=getattr(fn, "cognitive_complexity", 0) or 0,
         occurrence=occurrence,
         inline_body=int(getattr(fn, "crapkit_inline_body", False)),

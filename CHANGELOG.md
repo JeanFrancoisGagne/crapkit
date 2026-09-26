@@ -1218,6 +1218,30 @@ moves, so no CRAP score, gate verdict or mark value moves. The change still need
 analysis-version bump, so each marks file re-seeds once
 ([upgrading](docs/upgrading.md#next-analysis-version-cognitive-complexity-per-language)).
 
+## Unreleased
+
+### Nesting reads block depth in every language
+
+- `nesting` comes from crapkit's cognitive pass in every language, as it has for
+  Python since 0.5.0. The other languages read lizard's ND column, which
+  closed a level at every `}` and at the first `;` after a structure without braces,
+  and opened one for `&&`, `||`, `case`, `try` and even a parameter named `def`: three
+  nested loops read 2, a Go `if a && b && c || d` read 4, a Go switch with three cases
+  read 3, and a braceless `if` before a loop left its level open over the loop's body.
+  Now each `if`, `else`, loop, `switch` and `catch` body is a level whether it has
+  braces or not, a conditional operator's arms are one, and logical operators, case
+  labels, `try`, bare blocks and a `?` with no `:` open none. The [`nesting`
+  row](docs/agent-json.md#item-fields) lists what counts in each language.
+- Measured over 21,099 functions in 20 open-source projects: 1,469 of the 6,465
+  functions outside Python move, 1,266 down and 203 up. No Python row moves, and no
+  `ccn` or `cognitive` value moves anywhere. Against an independent tree-sitter reading
+  of Sonar's nesting rules over 3,198 functions in C, C++, Objective-C, Java, Go, Rust,
+  Swift, Zig and shell, crapkit agreed on 2,275 before and 2,942 now. Most of the rest
+  are closures, which open no level in crapkit's reading and one in that oracle's.
+- `nesting` is reported and never gated, so no gate verdict moves with it. The change
+  needs an analysis-version bump, which makes each marks file re-seed once
+  ([upgrading](docs/upgrading.md#next-analysis-version-nesting-in-every-language)).
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

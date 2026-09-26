@@ -146,12 +146,13 @@ def test_names_other_languages_keep_as_keywords_decide_nothing():
 
 
 def test_a_higher_ranked_binder_is_no_loop_in_cognitive():
-    """Accepted: lizard's nesting column reads the binder's `for` as a loop and
-    counts a level for it, 2 where the hand count is 1. The binder sits in the
-    signature, and that column reads no context around a keyword."""
+    """The binder sits in the signature and loops over nothing. The nesting
+    column reads the cognitive pass, which counts no level for it: the hand
+    count, 1. lizard's nesting column, which the row used to read, read the
+    binder's `for` as a loop and counted 2."""
     record = one(HIGHER_RANKED)
 
-    assert (record.ccn_std, record.cognitive, record.nesting) == (2, 1, 2)
+    assert (record.ccn_std, record.cognitive, record.nesting) == (2, 1, 1)
 
 
 def test_a_name_spelled_switch_is_no_switch_in_python_or_shell():

@@ -87,11 +87,12 @@ LOOPS = """pub fn loops(v: &[i32], k: Kind) -> i32 {
 
 
 def test_a_binder_in_a_let_is_no_loop():
-    """Accepted: lizard's nesting column reads the binder's `for` as a loop
-    and counts a level for it, 3 where the hand count is 2."""
+    """The nesting column reads the cognitive pass, which reads the binder's
+    `for` as no loop: the hand count, 2. lizard's nesting column, which the row
+    used to read, counted a level for it, 3."""
     found = rows(BINDER_IN_A_LET)["binder_let"]
 
-    assert (found.ccn_std, found.cognitive, found.nesting) == (3, 3, 3)
+    assert (found.ccn_std, found.cognitive, found.nesting) == (3, 3, 2)
 
 
 def test_a_binder_between_an_if_and_its_block_leaves_the_if_its_level():
@@ -108,10 +109,10 @@ def test_a_trait_implemented_inside_a_function_is_no_loop():
     assert (found["show"].ccn_std, found["from"].ccn_std) == (1, 1)
 
 
-def test_the_nesting_column_reads_an_implementation_as_a_loop():
-    """Accepted: lizard's nesting column reads a keyword with no context
-    around it, so a trait implemented inside a function opens a level, 1
-    where the hand count is 0. ccn and cognitive read it right."""
+def test_the_nesting_column_reads_no_loop_in_an_implementation():
+    """A trait implemented inside a function opens no level: the hand count, 0.
+    The nesting column reads the cognitive pass, which reads the `for` of `impl
+    Trait for Type` as no loop; lizard's nesting column read it as one, 1."""
     code = ("pub fn guard() -> Guard {\n"
             "    impl Drop for Guard {\n"
             "        fn drop(&mut self) {}\n"
@@ -120,7 +121,7 @@ def test_the_nesting_column_reads_an_implementation_as_a_loop():
             "}\n")
     found = rows(code)["guard"]
 
-    assert (found.ccn_std, found.cognitive, found.nesting) == (1, 0, 1)
+    assert (found.ccn_std, found.cognitive, found.nesting) == (1, 0, 0)
 
 
 def test_a_loop_counts_whatever_stands_before_it():

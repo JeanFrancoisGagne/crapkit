@@ -281,10 +281,6 @@ class PowerShellReader(CodeReader, ScriptLanguageMixIn):
     _case_keywords = set()      # arms are counted by position, see the docstring
     _ternary_operators = {"?"}
 
-    # What lizard's ND extension treats as a nesting structure; its default set
-    # is the C family's and mentions neither `elseif` nor `until`.
-    loops = {"if", "elseif", "for", "foreach", "while", "until", "-and", "-or"}
-
     def __init__(self, context):
         super().__init__(context)
         self.parallel_states = [PowerShellStates(context), SwitchArmStates(context)]
