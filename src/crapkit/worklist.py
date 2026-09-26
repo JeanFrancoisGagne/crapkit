@@ -19,7 +19,6 @@ reports empty once nothing it ranks has work left. Each entry carries the run's
 from __future__ import annotations
 
 from collections.abc import Mapping
-import math
 from types import MappingProxyType
 from typing import NamedTuple
 
@@ -31,6 +30,7 @@ from .score import over_ceiling
 
 
 HOT_MIN_CCN = 3  # hot promotion reaches no lower than this, whatever the floor
+RISK_PLACES = 4  # a risk is ccn x weight rounded to this many decimal places
 
 
 def over_target_floor(min_ceiling: int) -> int:
@@ -182,7 +182,7 @@ class Worklist(NamedTuple):
 def _entry(r: InventoryRow, churn: FileChurn, marks: Marks, ratchet: RatchetMarks) -> WorklistEntry:
     return WorklistEntry(r.scope, r.path, r.long_name, r.start, r.end,
                          r.ccn, r.ccn_std, r.nloc, churn.commits, churn.authors,
-                         churn.weight, round(r.ccn * churn.weight, 4),
+                         churn.weight, round(r.ccn * churn.weight, RISK_PLACES),
                          *marks.verdict(r), *marks.score(r), ratchet.of(r), position(r)[1])
 
 
@@ -340,11 +340,12 @@ def _units(active: list[WorklistEntry], rep: dict[str, str]) -> list[list[Workli
     return [entries for _, entries in sorted(groups.items(), key=_unit_key)]
 
 
-def _risk(entries: list[WorklistEntry]) -> float:
-    """A batch's risk, summed exactly (math.fsum). Python 3.11's sum() adds left
-    to right, so two batches whose risks tie could read unequal there, and the
-    worklist split and ordered differently than on 3.12."""
-    return math.fsum(e.risk for e in entries)
+def _risk(entries: list[WorklistEntry]) -> int:
+    """The entries' summed risk in whole ten-thousandths, the places a risk is
+    rounded to, so equal sums tie. Summed as floats, 0.7 + 0.1 is
+    0.7999999999999999: of two batches holding 0.8 that one read as lighter,
+    took the next unit from the emptier batch and broke the tie on files."""
+    return sum(round(e.risk * 10 ** RISK_PLACES) for e in entries)
 
 
 def _bin_key(entries: list[WorklistEntry]) -> tuple:

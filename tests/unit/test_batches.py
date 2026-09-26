@@ -115,3 +115,20 @@ def test_a_pair_naming_a_file_no_worklist_entry_mentions_is_harmless():
 def test_non_positive_batch_count_is_rejected_loudly():
     with pytest.raises(ValueError, match="batches"):
         split_batches(FOUR, [], batches=0)
+
+
+def test_a_tie_in_summed_risk_goes_to_the_emptier_batch():
+    """After c.py, a.py and b.py, both batches hold 0.8, so d.py joins c.py's,
+    the emptier one. In binary floating point 0.7 + 0.1 is 0.7999999999999999,
+    which read as the lighter batch and took d.py."""
+    entries = [entry("c.py", risk=0.8), entry("a.py", risk=0.7), entry("b.py", risk=0.1),
+               entry("d.py", risk=0.1)]
+    assert files_of(split_batches(entries, [], batches=2)) == [["c.py", "d.py"],
+                                                                 ["a.py", "b.py"]]
+
+
+def test_batches_of_equal_risk_come_in_file_order():
+    """Both batches hold 0.8, so their files order them; 0.7 + 0.1 summed in
+    floats read as less and put c.py's batch first."""
+    entries = [entry("c.py", risk=0.8), entry("a.py", risk=0.7), entry("b.py", risk=0.1)]
+    assert files_of(split_batches(entries, [], batches=2)) == [["a.py", "b.py"], ["c.py"]]

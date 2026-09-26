@@ -21,6 +21,15 @@ No score changes.
   0.2 listed in that noise's order and the `--override` refusal named whichever came
   first.
 
+### Batches whose risks sum to the same total
+
+- `worklist --batches` sums each batch's `risk` exactly, in whole ten-thousandths, the
+  places a risk is rounded to. It summed floats, where 0.7 + 0.1 is 0.7999999999999999,
+  so of two batches holding 0.8 that one read as lighter: it took the next file instead
+  of the batch with fewer entries, and batches of equal risk came out of file order. On
+  Python 3.11 three risks that add up to exactly 117.4173 read 117.41729999999998, so
+  the same worklist also split differently on 3.11 and 3.12.
+
 ### `explain --history` returns each commit message as git stored it
 
 - A body line that was `\x02` ended its commit's record there, and a body line starting
@@ -498,10 +507,6 @@ lane commands the way the shell that runs them does:
   upgrade sums every run again; a first fill of 960,000 scored rows takes 6.6 s, up
   from 5.9 s. A run with no scored function prints a load of `0.0`, not `0`. Loads are not
   stored in the marks file, so nothing re-seeds.
-- `worklist --batches` adds each batch's risk the same way. On Python 3.11 three risks
-  that add up to exactly 117.4173 read 117.41729999999998, so a tie with a one-function
-  batch went to the fuller batch rather than the emptier one, and the same worklist
-  split differently on 3.11 and 3.12.
 
 ### crapkit stops before it stores or prints a number that breaks its definition
 
