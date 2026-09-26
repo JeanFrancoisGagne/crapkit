@@ -311,7 +311,7 @@ gha-action-windows = { packet = "deploy-action", cadence = "nightly", job = "dep
 lin-repeat = { packet = "deploy-ci", cadence = "nightly", job = "deploy.yml:lin-repeat" }
 win-repeat = { packet = "deploy-ci", cadence = "nightly", job = "deploy.yml:win-repeat" }
 lock-drift = { packet = "deploy-ci", cadence = "nightly", job = "deploy.yml:lock-drift" }
-lin-clock = { packet = "deploy-ci", cadence = "nightly", job = "deploy.yml:lin-clock", blocked = "faketime" }
+lin-clock = { packet = "deploy-ci", cadence = "nightly", job = "deploy.yml:lin-clock" }
 
 # weekly
 mac-core = { packet = "unowned", cadence = "weekly", os = "macos" }
@@ -336,7 +336,6 @@ published-action-tag = { packet = "deploy-action", cadence = "published", job = 
 # that name it, once the gap closes.
 
 [gaps]
-faketime = "under run.py --faketime +400d the push set in :core fails ten tests that pass on the real clock: the Claude Code, Codex and Cursor cells (lin-claude-plugin-fresh, lin-claude-mcp-scopes, lin-codex-mcp-add, lin-cursor-cli, lin-up-claude-plugin-0.7.6, lin-plugin-floor-doctor-silent, lin-plugin-validate-strict) and three kit isolation checks"
 host-cells-unwritten = "no packet writes lin-host-up-docker-0.7.6, lin-devcontainer, lin-codex-cloud-sim or lin-podman yet; weekly-host names only the last two, and a run whose cells do not exist collects nothing, so pytest exits 5"
 windows-linux-containers = "the windows-2025 runner's Docker runs Windows containers only, so no CI job can build the Linux product image docs-docker-user serves; its Windows half runs on a Windows machine with Docker Desktop"
 
@@ -424,7 +423,6 @@ measured = 0
 runner = "linux"
 when = ["nightly", "release"]
 runs = ["--cadence push --os linux --image core --cache gha --faketime +400d -n 4"]
-blocked = "faketime"
 timeout = 30
 measured = 0
 

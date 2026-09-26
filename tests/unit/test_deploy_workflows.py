@@ -210,9 +210,10 @@ def test_the_nightly_schedule_runs_the_nightly_set_and_no_blocked_job(tmp_path):
     plan = scope(tmp_path, EVENT_NAME="schedule", SCHEDULE="17 6 * * *")
 
     assert plan["cadence"] == "nightly" and set(plan["jobs"]) == scheduled("nightly")
-    assert {"nightly-linux-core", "nightly-linux-full", "nightly-act", "lin-repeat"} <= _names(plan, "linux")
+    linux = {"nightly-linux-core", "nightly-linux-full", "nightly-act", "lin-repeat", "lin-clock"}
+    assert linux <= _names(plan, "linux")
     assert {"win-repeat", "nightly-windows-a", "nightly-windows-b"} == _names(plan, "windows")
-    assert "lin-clock" not in plan["jobs"] and _names(plan, "host") == {"nightly-host"}
+    assert _names(plan, "host") == {"nightly-host"}
     assert plan["linux"][0]["runs"] == ["--cadence nightly --os linux --image core --cache gha -n 4"]
 
 
@@ -230,7 +231,8 @@ def test_a_release_dispatch_runs_nightly_and_weekly_entries_with_the_release_cad
 
     assert plan["cadence"] == "release" and set(plan["jobs"]) == scheduled("release")
     assert {"nightly-linux-core", "weekly-online"} <= _names(plan, "linux")
-    assert all("--cadence release" in args for entry in plan["linux"] if entry["name"] != "lin-repeat"
+    pushed = ("lin-repeat", "lin-clock")  # the push set by design: twice cold, and on a moved clock
+    assert all("--cadence release" in args for entry in plan["linux"] if entry["name"] not in pushed
                for args in entry["runs"])
 
 

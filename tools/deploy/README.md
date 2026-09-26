@@ -229,7 +229,7 @@ re-runs of that pull request can read them.
 | `lin-repeat` | `core` | `--no-cache` | a cold build is the point |
 | `weekly-online` | `core` | `gha` | the scope `deploy-linux` keeps warm; 30-minute timeout |
 | `published-online` | `core` | `gha` | the scope `deploy-linux` keeps warm; 30-minute timeout |
-| `lin-clock` | `core` | `gha` | blocked (faketime) |
+| `lin-clock` | `core` | `gha` | the scope `deploy-linux` keeps warm |
 | `weekly-py315` | `core` | `gha` | the scope `deploy-linux` keeps warm |
 | `latest-harnesses` | `full-latest` | `local` | rebuilt every ISO week with each harness at its newest release |
 | `weekly-arm64` | `cells-arm64` | `local` | the arm64 runner; no other job builds `cells-arm64` |
