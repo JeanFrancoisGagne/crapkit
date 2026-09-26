@@ -2,6 +2,25 @@
 
 ## 0.8.1 — unreleased
 
+### A next step printed under `python -m crapkit` runs in Git Bash and PowerShell
+
+- When `python -m crapkit` started crapkit, every next step and refusal names the
+  interpreter's path, and on Windows two of the shells a reader pastes into could not
+  run that line. Printed bare, `C:\app\.venv\Scripts\python.exe -m crapkit coverage`
+  reached Git Bash as `C:app.venvScriptspython.exe` and exited 127, because bash reads
+  each backslash as an escape. A path holding a space went in double quotes, which
+  PowerShell reads at the start of a line as a string, so the line stopped at `-m` with
+  a parse error. The path now prints with forward slashes, which cmd.exe, PowerShell and
+  Git Bash all open, and a segment holding a space or a shell operator is quoted on its
+  own, `C:/"Program Files"/Python311/python.exe`, so the line never opens with a quote.
+- A venv's `python.exe`, run from cmd.exe, ends its own name at the first space unless
+  the line opens with a quote. So before quoting a segment, crapkit looks for a spelling
+  of the same file with no space: the directories a link points at, then the 8.3 short
+  name. When there is none, cmd.exe still cannot run a venv interpreter whose path holds
+  a space; PowerShell, pwsh and Git Bash can.
+- On POSIX an interpreter path that needs quoting goes in single quotes, so sh no longer
+  expands a `$` or a backtick inside it.
+
 ### A SARIF log names a schema URI that answers
 
 - Every SARIF log `--sarif` writes named its schema at

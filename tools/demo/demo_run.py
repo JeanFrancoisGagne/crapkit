@@ -105,20 +105,16 @@ def redact(text: str, repo: Path) -> str:
     the interpreter's absolute path; the frame shows the console script a
     reader installs, the same command by another name.
     """
-    for spelling in _module_spellings():
-        text = text.replace(spelling, _SHOWN_NAME)
+    text = _MODULE_RUN.sub(_SHOWN_NAME, text)
     for spelling in _spellings(repo):
         text = text.replace(spelling, ".")
     text = _TIMESTAMP.sub("<time>", text)
     return _DURATION.sub("<duration>", text)
 
 
-def _module_spellings() -> tuple[str, ...]:
-    """`python -m crapkit` as `invocation._self` prints it: the interpreter,
-    quoted when its path holds a space, in both separator styles."""
-    forms = {sys.executable, sys.executable.replace("\\", "/")}
-    quoted = {f'"{f}"' if " " in f else f for f in forms}
-    return tuple(sorted((f"{q} -m crapkit" for q in quoted), key=len, reverse=True))
+# `python -m crapkit` as `invocation._self` prints it: the interpreter's path as
+# one shell word, bare, with quoted segments, or single-quoted on POSIX.
+_MODULE_RUN = re.compile(r"""(?:"[^"\n]*"|'[^'\n]*'|[^\s`"'])+ -m crapkit\b""")
 
 
 def _spellings(repo: Path) -> tuple[str, ...]:
