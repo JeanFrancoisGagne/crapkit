@@ -342,24 +342,29 @@ def _shallow_fix(root: Path) -> str:
 
 def ancestry(root: Path, commit: str, other: str = "HEAD") -> bool | None:
     """True when `commit` is at or behind `other`, False when git says it is
-    not, None when git cannot tell (a commit this clone does not hold). git
-    counts a commit as its own ancestor, which is what "at or behind" needs.
-
-    git exits 1 for no and 128 when it cannot read a commit. A repository with
-    no commit at all is not a no: it raises what the repository lacks, where
-    verify used to blame a rebase for it."""
+    not, None when git cannot tell: a commit this clone does not hold, or a
+    repository git cannot read (`is_ancestor` names which). git counts a commit
+    as its own ancestor, which is what "at or behind" needs; it exits 1 for no
+    and 128 when it cannot read a commit."""
     res = _spawn(root, ("merge-base", "--is-ancestor", commit, other), binary=True)
-    gap = _gap_behind(root, res.returncode)
-    if gap:
-        raise GitError(gap)
     return {0: True, 1: False}.get(res.returncode)
 
 
 def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
-    """True only when git proves `commit` is at or behind `other`. A commit
-    this clone does not hold is a no, which verify then blames on a shallow
-    clone or a rebase."""
-    return ancestry(root, commit, other) is True
+    """True only when git proves `commit` is at or behind `other`."""
+    return proven_ancestor(root, ancestry(root, commit, other))
+
+
+def proven_ancestor(root: Path, answer: bool | None) -> bool:
+    """`answer` as a yes or no. A commit this clone does not hold is a no,
+    which verify then blames on a shallow clone or a rebase. A repository with
+    no commit at all, or one git cannot open, is not a no: it raises what the
+    repository lacks, where verify used to blame a rebase for it."""
+    if answer is None:
+        gap = _repository_gap(root)
+        if gap:
+            raise GitError(gap)
+    return answer is True
 
 
 def branches_containing(root: Path, commit: str) -> list[str]:
@@ -913,8 +918,9 @@ class GitFacts:
             return self._diffs[commit]
 
     def is_ancestor(self, commit: str, other: str = "HEAD") -> bool:
-        """True only when git proves `commit` is at or behind `other`."""
-        return self.ancestry(commit, other) is True
+        """True only when git proves `commit` is at or behind `other`; raises
+        what the repository lacks as the module's `is_ancestor` does."""
+        return proven_ancestor(self.root, self.ancestry(commit, other))
 
     def ancestry(self, commit: str, other: str = "HEAD") -> bool | None:
         """`ancestry`, memoized per (commit, other) the way the diffs are: verify
