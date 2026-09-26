@@ -449,14 +449,16 @@ def parse_coveragepy_contexts_file(path: Path | str, *, path_prefix: str,
 # --- the adapter a lane reads through ------------------------------------------
 #
 # The walk takes path_prefix and takes no repo root, so a refusal is about the
-# environment the lane binds to, and the prefix is a real knob. A path this tree
-# spelled absolutely is the runner's own switch: path_prefix only prepends. The
-# adapter then spells each root-relative key as git does (_speller).
+# environment the lane binds to or a report copied in from elsewhere. path_prefix
+# only prepends, so it rebases neither another tree's path nor this tree's path
+# spelled absolutely: that one is the runner's own switch. The adapter then
+# spells each root-relative key as git does (_speller).
 
 WRONG_TREE_FIX = ("Point the lane at this checkout's own environment (a bare "
                   "`python -m pytest` binds to whichever venv the shell has active - run "
                   "it through the project's manager, `uv run python -m pytest ...`), or "
-                  "set path_prefix when the runner reports paths relative to a subdirectory")
+                  "rerun the lane here rather than reusing a report copied from another "
+                  "checkout; path_prefix only prepends, so it cannot rebase these paths")
 ABSOLUTE_FIX = ("Make the runner write relative paths: `relative_files = true` "
                 "under `[tool.coverage.run]` in pyproject.toml, or "
                 "`[run] relative_files = true` in .coveragerc, then rerun the lane")

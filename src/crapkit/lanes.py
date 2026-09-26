@@ -707,7 +707,13 @@ def _zero_overlap(lane: Lane, coverage: dict, declared) -> str:
     measured, and that none of it is in scope. The two messages part company
     after it, and a sentence kept in two places is a sentence that drifts."""
     return (f"lane {lane.name!r} measured {len(coverage)} file(s), none of them under the "
-            f"paths its scopes declare ({first_few(sorted(declared))})")
+            f"paths its scopes declare ({first_few(sorted(_scope_as_written(p) for p in declared))})")
+
+
+def _scope_as_written(scope_path: str) -> str:
+    """A declared scope path as crapkit.toml writes it: the root is '' once
+    read, and printed bare it named nothing, `declare ()`."""
+    return scope_path or "."
 
 
 def _wrong_tree_message(lane: Lane, coverage: dict, declared, outside: list[str]) -> str:

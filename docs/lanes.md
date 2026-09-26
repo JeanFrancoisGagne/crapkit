@@ -1868,7 +1868,7 @@ lane:
 
 ```
 $ crapkit coverage
-crapkit: lane 'py' FAILED: lane 'py' measured 3 file(s), none of them under the paths its scopes declare (src), and 3 of them outside this checkout entirely - .crapkit/cov/py.json describes a different tree, so joining it would score every function in those scopes untested; it reports paths like /other/checkout/src/faro/core.py, /other/checkout/src/faro/util.py, /other/checkout/src/faro/widgets.py. Point the lane at this checkout's own environment (a bare `python -m pytest` binds to whichever venv the shell has active - run it through the project's manager, `uv run python -m pytest ...`), or set path_prefix when the runner reports paths relative to a subdirectory
+crapkit: lane 'py' FAILED: lane 'py' measured 3 file(s), none of them under the paths its scopes declare (src), and 3 of them outside this checkout entirely - .crapkit/cov/py.json describes a different tree, so joining it would score every function in those scopes untested; it reports paths like /other/checkout/src/faro/core.py, /other/checkout/src/faro/util.py, /other/checkout/src/faro/widgets.py. Point the lane at this checkout's own environment (a bare `python -m pytest` binds to whichever venv the shell has active - run it through the project's manager, `uv run python -m pytest ...`), or rerun the lane here rather than reusing a report copied from another checkout; path_prefix only prepends, so it cannot rebase these paths
 ```
 
 Coverage joins on path and nothing else, so such an artifact contributes exactly nothing

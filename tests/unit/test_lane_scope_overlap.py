@@ -215,6 +215,29 @@ def test_a_key_from_another_tree_reaches_no_scope_whatever_the_prefix(tmp_path, 
     assert elsewhere.replace("\\", "/") in message, "quoted as the runner wrote it"
 
 
+DECLARED_AS = {"prefix-is-the-scope": "(backend)", "prefix-with-slash": "(backend)",
+               "root-scope": "(.)", "root-scope-with-prefix": "(.)"}
+
+
+@pytest.mark.parametrize("which", REACHED_BY_GLUE)
+def test_the_wrong_tree_refusal_names_the_declared_paths_and_a_step_not_yet_taken(tmp_path,
+                                                                                  which):
+    """A root scope's path is '', which printed as `declare ()`, and every lane
+    was told to "set path_prefix", a step the prefixed lanes had taken and one
+    that only prepends, so it rebases no path from another tree."""
+    paths, prefix = REACHED_BY_GLUE[which]
+    _artifact(tmp_path, OTHER)
+
+    with pytest.raises(ToolError) as raised:
+        _run(tmp_path, _lane(scopes=("backend",), path_prefix=prefix), {"backend": paths})
+
+    message = str(raised.value)
+    assert f"the paths its scopes declare {DECLARED_AS[which]}, and 1 of them" in message
+    assert "set path_prefix" not in message
+    assert "rerun the lane here rather than reusing a report copied from another checkout" \
+        in message
+
+
 @pytest.mark.parametrize("which", REACHED_BY_GLUE)
 def test_an_absolute_key_under_this_checkout_is_refused_under_any_prefix(tmp_path, which):
     """The same glue hid the absolute-path refusal: this tree, spelled
