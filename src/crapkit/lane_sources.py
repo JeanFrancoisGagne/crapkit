@@ -21,6 +21,11 @@ hashed. The trade: git decides "unchanged" from the index's stat cache, so a
 same-size edit whose old modification time was put back (`cp -p`, `tar -x`,
 `rsync -t`) keeps the index's id. That is a named limit until the cost of
 hashing every file is measured.
+
+`watch` records and compares through `record` too: its first poll records every
+watched file's id, and each later poll asks again only for the files whose
+mtime moved, so a touch and a line-ending rewrite git stores as the same blob
+rescore nothing there either.
 """
 from __future__ import annotations
 

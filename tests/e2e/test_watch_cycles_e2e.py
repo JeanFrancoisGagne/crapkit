@@ -9,8 +9,10 @@ in-process runs whose only stub is the clock (each change lands during the
 poll's own sleep, and the rescore that fires is a real child process), and an
 interrupt during that same sleep.
 
-A poll reads an mtime as the fast path and content as the verdict: a touch or a
-save of the same bytes is no change, an edit and a new file in a scope are. A
+A poll reads an mtime as the fast path and content as the verdict, git's blob id
+from the content record: a touch, a save of the same bytes or a line-ending
+rewrite git stores as the same blob is no change, an edit and a new file in a
+scope are. A
 same-size edit put back under its old mtime is the one change a poll cannot
 see, the named limit it shares with the analysis stat index.
 """
@@ -118,6 +120,16 @@ def _same_bytes(repo: Path) -> None:
     _later(app)
 
 
+def _crlf_under_autocrlf(repo: Path) -> None:
+    """A checkout under core.autocrlf=true rewriting the file's line endings:
+    git stores those bytes as the committed LF blob, so no content moved."""
+    subprocess.run(["git", "config", "core.autocrlf", "true"], cwd=repo, check=True,
+                   capture_output=True)
+    app = repo / "src" / "app.py"
+    app.write_bytes(APP.replace("\n", "\r\n").encode("utf-8"))
+    _later(app)
+
+
 def _restored_mtime(repo: Path) -> None:
     """cp -p, touch -r, robocopy: new bytes of the same length under the old mtime."""
     app = repo / "src" / "app.py"
@@ -148,12 +160,13 @@ def _delete(repo: Path) -> None:
     (_add_in_scope, "--- changed: src/fresh.py", "fresh"),
     (_touch, None, None),
     (_same_bytes, None, None),
+    (_crlf_under_autocrlf, None, None),
     (_add_ignored, None, None),
     (_add_outside_scopes, None, None),
     (_delete, None, None),
     # The named limit: a poll takes an unmoved mtime as unchanged content.
     (_restored_mtime, None, None),
-], ids=["edit", "add-in-scope", "touch", "same-bytes-rewrite", "add-ignored",
+], ids=["edit", "add-in-scope", "touch", "same-bytes-rewrite", "crlf-under-autocrlf", "add-ignored",
         "add-outside-scopes", "delete", "same-size-restored-mtime-limit"])
 def test_a_poll_rescores_what_changed_content_during_it(
         scored_repo: Path, monkeypatch, capfd, change, announced, rescored):
@@ -206,6 +219,35 @@ def test_a_relisting_git_refuses_keeps_the_last_list_and_names_the_error_once(
             "in repo: fatal: index file corrupt); fix what git reports. Until git lists them, "
             "each poll reads the last list and asks git again") in out.splitlines(), out
     assert "--- changed: src/app.py" in out, "the edit on the kept list is still rescored"
+
+
+def test_a_content_read_git_refuses_is_named_once_and_the_edit_lands_when_git_answers(
+        scored_repo: Path, monkeypatch, capfd):
+    """watch reads content through the content record, so a git failure there
+    is named the way a listing failure is, and the edit it hid is rescored on
+    the first poll git answers."""
+    from crapkit import watch
+
+    real = watch.record
+    refusals = iter([False, True, True])  # the start's snapshot reads, the next two polls fail
+
+    def record(root, paths, within=()):
+        if next(refusals, False):
+            raise GitError("git diff failed in repo: fatal: index file corrupt")
+        return real(root, paths, within)
+
+    monkeypatch.setattr(watch, "record", record)
+    changes = iter([_edit, lambda repo: None, lambda repo: None])
+    monkeypatch.setattr(time, "sleep", lambda seconds: next(changes)(scored_repo))
+
+    assert cmd_watch(watch_args(scored_repo, "--cycles", "3")) == 0
+
+    out = capfd.readouterr().out
+    assert out.count("index file corrupt") == 1, out
+    assert ("crapkit watch: git could not read the content of src/app.py (git diff failed in "
+            "repo: fatal: index file corrupt); fix what git reports. Until git answers, each "
+            "poll asks again and rescores nothing it could not read") in out.splitlines(), out
+    assert out.count("--- changed: src/app.py") == 1, out
 
 
 def test_an_untouched_repo_finishes_its_cycles_without_rescoring(scored_repo: Path, capfd):
