@@ -20,9 +20,17 @@
   method `.catch()` cost 1 in ccn, in cognitive and in nesting, `.switch()` 1 in
   ccn_mod and in cognitive, and a loop variable named `case` a nesting level each time
   it appeared.
+- A signature that reaches a `;` before any `{` has no body: a trait's required method,
+  an `extern` block's foreign function, a `fn` pointer type. lizard waited through the
+  `;` for a `{`, listed the signature as a function that ran through the next body, and
+  gave the function it swallowed no row. Such a signature is now no function.
+- A comma inside a parameter's type or pattern, `(char, char)` or `HashMap<K, V>`,
+  parts no parameters. The long name keeps its spelling.
 - Measured over 229 files of a Rust workspace: ccn rises in 184 of 3,523 rows and falls
   in 208, cognitive falls in 989 and rises in 27, and nesting falls in 861 and rises
-  in 8. Every rise in cognitive or nesting holds a `loop`.
+  in 8. Every rise in cognitive or nesting holds a `loop`. Six rows of bodiless
+  signatures are gone, three functions get the row they never had, and `params` falls
+  in 5.
 - A parameter typed `&&T` now reads `& &` in the function's long name, so that
   function's ratchet key changes; the workspace has none.
 - In Python and shell, a name spelled `switch` no longer adds 1 to ccn_mod. Neither

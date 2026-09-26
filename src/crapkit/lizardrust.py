@@ -34,6 +34,12 @@ reader read a Rust token as the C token of the same spelling:
     it, so ccn, cognitive and nesting all see the `|x|` or `&x` they already
     read as nothing. A parameter typed `&&T` spells `& &` in its long name.
 
+Two more corrections decide which functions exist and what they declare, in
+`CorrectedRustStates`: a signature that reaches a `;` or a `}` before any `{`
+has no body and is listed as no function, and a comma inside a parameter's
+type or pattern parts no parameters. `loops` hands lizard's nesting column
+Rust's structures in place of C's.
+
 Accepted, documented, not solved
 --------------------------------
 * `macro_rules!` bodies use `=>` for their own rules, so each rule adds a point
@@ -42,6 +48,10 @@ Accepted, documented, not solved
 * `?` error propagation stays counted: upstream puts it in
   `_ternary_operators`, and this reader inherits that as measured rather than
   changing two things at once. tests/unit/test_lizardrust.py pins it at +1.
+* lizard's nesting column reads the `for` of a `for<'a>` binder as a loop, one
+  level where there is none. It reads keywords with no context around them,
+  and gluing the binder into one token would break the `<`/`>` count lizard
+  uses to skip a generic parameter list. test_rust_cognitive_nesting.py pins it.
 * `ccn_mod` (analyze.py's modified column) is unchanged, so a Rust match now
   costs the same in both columns. lizard's modified pass keys off
   `reader._keyword_match`, which upstream never sets for Rust; setting it here
@@ -112,6 +122,10 @@ _OPERAND_TAIL = frozenset(")]}?_\"'")
 # The two operators Rust also writes as a pair of one-character tokens.
 _PAIRS = frozenset({"||", "&&"})
 
+# What a bracket inside a signature does to its type depth. Parentheses are
+# counted apart, by the state machine that reads the parameter list.
+_TYPE_DEPTH = {"<": 1, "[": 1, ">": -1, "]": -1}
+
 
 def _ends_operand(token: str | None) -> bool:
     """Whether `token` can end the left operand of a binary operator."""
@@ -175,17 +189,71 @@ class RustDecisionStates(CodeStateMachine):
         return token == "else" and self.previous_code_token != "}"
 
 
-class CorrectedRustStates(RustStates):
-    """lizard's RustStates, with a signature that decides nothing.
+def _join_comma(fn) -> None:
+    """A comma inside one parameter's type or pattern, kept in that parameter.
 
-    The conditions counted between `fn` and the body's `{` came from tokens
-    that only declare, so the `{` sets the function back to its base of 1.
+    The long name gets the ` ,` lizard has always written there, because the
+    long name is the ratchet key.
     """
+    fn.add_to_long_name(" ,")
+    if fn.full_parameters:
+        fn.full_parameters[-1] += " ,"
+
+
+class CorrectedRustStates(RustStates):
+    """lizard's RustStates, with a signature read the way Rust declares it.
+
+    * The conditions counted between `fn` and the body's `{` came from tokens
+      that only declare, so the `{` sets the function back to its base of 1.
+    * A signature that reaches a `;` or a `}` before any `{` has no body: a
+      trait's required method, an `extern` block's foreign function, a `fn`
+      pointer type. It is listed as no function. lizard waited for a `{`
+      through both, so the next function's body became the signature's and the
+      next function got no row.
+    * A comma inside a parameter's type or pattern, `(char, char)` or
+      `HashMap<K, V>`, parts no parameters.
+
+    `type_depth` counts the `<` and `[` open in the signature, so the comma in
+    `HashMap<K, V>` and the `;` in `-> [u8; 4]` read as the type's own.
+    """
+
+    def __init__(self, context):
+        super().__init__(context)
+        self.type_depth = 0
+
+    @CodeStateMachine.read_inside_brackets_then("()", "_expect_function_impl")
+    def _function_dec(self, token):
+        if token in "()":
+            return
+        self.type_depth += _TYPE_DEPTH.get(token, 0)
+        if token == "," and self._nested():
+            _join_comma(self.context.current_function)
+        else:
+            self.context.parameter(token)
+
+    def _nested(self) -> bool:
+        """Inside a parenthesis, an angle bracket or a square bracket of its own."""
+        return self.br_count > 1 or self.type_depth > 0
 
     def _expect_function_impl(self, token):
         if token == "{":
-            self.context.current_function.cyclomatic_complexity = 1
+            self._body(token)
+        elif token in (";", "}") and self.type_depth == 0:
+            self._no_body(token)
+        else:
+            self.type_depth += _TYPE_DEPTH.get(token, 0)
+
+    def _body(self, token):
+        self.type_depth = 0
+        self.context.current_function.cyclomatic_complexity = 1
         super()._expect_function_impl(token)
+
+    def _no_body(self, token):
+        """Drop the function the signature opened and hand `token` to the block
+        around it, where a `}` closes that block."""
+        self.type_depth = 0
+        self.context.current_function = self.context.stacked_functions.pop()
+        self.next(self._state_global, token)
 
 
 class CorrectedRustReader(_StockRustReader):

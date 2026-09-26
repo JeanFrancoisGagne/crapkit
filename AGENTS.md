@@ -800,7 +800,7 @@ Five reader modules sit beside the core, all registered in `analyze.py`'s
 | Module | What it does |
 |---|---|
 | `lizardcognitive.py` | Sonar-spec cognitive complexity as a lizard token-stream extension, so every language pays the same rules with no second parse |
-| `lizardrust.py` | counts Rust `match` arms, which lizard does not (lizard #494) |
+| `lizardrust.py` | reads Rust where lizard's reader reads C: `match` arms (lizard #494), signatures, `\|\|` or `&&` with no operand, let-else, bodiless signatures, parameter commas, the nesting keyword set |
 | `lizardshell.py` | a shell reader, because lizard ships none and answers `.sh` with `CLikeReader` instead of an error |
 | `lizardpowershell.py` | a PowerShell reader, same reason, plus a cp1252 decode fallback |
 | `lizardtypescript.py` | separates JavaScript and TypeScript expression arrows at commas and preserves their source spans; refuses unresolved TypeScript angle syntax; blanks the template-literal characters lizard's tokenizer misreads, such as a nested template's backticks, before a JavaScript-family reader sees the file |

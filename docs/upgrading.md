@@ -120,6 +120,10 @@ every marks file re-seeds once, with the same three commands as version 11 below
 - `?` costs nothing in cognitive or nesting and keeps its 1 in ccn.
 - `loop` is a loop in cognitive and nesting.
 - `catch`, `switch`, `foreach`, `case` and `def` are names, not structures.
+- A trait's required method, a foreign function and a `fn` pointer type have no row,
+  and a function one of them swallowed gets its own. Prune drops the marks of the
+  rows that are gone, and seed marks the new ones.
+- `params` counts a parameter of tuple or generic type once.
 - A parameter typed `&&T` reads `& &` in the function's long name, so that function
   takes a new ratchet key. Prune drops the old one.
 - In Python and shell, a name spelled `switch` no longer adds to ccn_mod. The gated

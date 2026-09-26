@@ -232,8 +232,10 @@ as lizard #494), so crapkit counts each non-wildcard arm the way C counts a `cas
 lizard reads a Rust token as the C token of the same spelling, crapkit reads it as Rust: a
 signature decides nothing, so a `where` clause, a `?Sized` bound and a `for<'a>` binder
 add nothing to ccn; a `||` or `&&` with no operand before it (`move || n`, `|&&x|`) is no
-operator in any column; and a let-else is one decision. Each correction retires the day
-upstream fixes its defect.
+operator in any column; and a let-else is one decision. A signature that ends in `;`, such
+as a trait's required method or a foreign function, is no function, and a comma inside a
+parameter's type parts no parameters. Each correction retires the day upstream fixes its
+defect.
 
 The cognitive column charges a Rust `match` like a `switch`: +1 plus the nesting it sits
 in, arms free. The two columns therefore say different things about one block on purpose.
