@@ -5,22 +5,24 @@ git diffing every commit's tree, and worklist, next-item and coupling each paid
 it in full on every invocation, at an unmoved HEAD. Every one of them reaches
 git through this module, so `.crapkit/churn-cache-v2.json` has one writer.
 
-The key is (HEAD sha, window months, UTC date, path format). The sha pins the
-history; the window pins the command; the date is there because the window
-cutoff is counted back from the clock, so yesterday's cache describes a window
-one day wider than today's; the format marker retires maps whose
-paths predate exact path decoding. Anything else is a miss, and a miss
-rebuilds.
+The key is (HEAD sha, window months, UTC date, path format, history depth).
+The sha pins which history; the depth (churn_log.history_depth, git's shallow
+boundary) pins how much of it the clone holds; the window pins the command;
+the date is there because the window cutoff is counted back from the clock, so
+yesterday's cache describes a window one day wider than today's; the format
+marker retires maps whose paths predate exact path decoding. Anything else is
+a miss, and a miss rebuilds.
 
 A miss is not a full parse when it can be avoided: the map is computed from
 the window's commits, which `churn_commits` keeps, so a HEAD that grew from
 the stored table walks only the new commits (see that module).
 
 A cache is disposable: unreadable, corrupt or unkeyable content reads as cold,
-never as a crash. Uncommitted work is invisible to churn either way. The one
-thing a sha does not pin is depth — deepening a shallow clone adds history
-under an unmoved HEAD — and that resolves itself at the next date rollover,
-because a shallow clone keeps no commit table to carry.
+never as a crash. Uncommitted work is invisible to churn either way. Deepening
+a shallow clone adds history under an unmoved HEAD, so `git fetch --unshallow`
+or `--deepen` changes the depth in the key and the next read rebuilds from the
+whole history; a shallow clone keeps no commit table to carry, and the log
+refuses to carry a log cut at another depth.
 """
 from __future__ import annotations
 
@@ -30,7 +32,8 @@ from pathlib import Path
 
 from .churn import FileChurn, WindowCommits, fold
 from .churn_commits import carried_commits, store_commits
-from .churn_log import Window, has_cache, stored_window, sweep_legacy, walked_window
+from .churn_log import (Window, has_cache, history_depth, stored_window, sweep_legacy,
+                        walked_window)
 from .errors import GitError
 from .gitio import head_commit
 from .gitpaths import PATH_FORMAT
@@ -103,14 +106,18 @@ def _utc_date() -> str:
 
 
 def _cache_key(root: Path, months: int) -> dict | None:
-    """None when HEAD is unreadable — then there is nothing safe to key on."""
+    """None when HEAD or the history depth is unreadable — then there is
+    nothing safe to key on."""
     try:
         head = head_commit(root)
     except GitError:
         return None
+    depth = history_depth(root)
+    if depth is None:
+        return None
     # Old decoded maps trimmed path content and must read as cold.
     return {"head": head, "months": months, "date": _utc_date(),
-            "paths": PATH_FORMAT}
+            "paths": PATH_FORMAT, "depth": depth}
 
 
 def _read_cache(path: Path, key: dict | None) -> dict[str, FileChurn] | None:

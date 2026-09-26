@@ -160,3 +160,63 @@ def test_coupling_is_byte_identical_across_runs(churned_repo: Path):
     assert cold.returncode == 0, cold.stdout + cold.stderr
     warm = run_cli(churned_repo, "coupling", "--json", "--min-support", "1")
     assert warm.stdout == cold.stdout
+
+
+OTHER_PY = "def other(x):\n    return x\n"
+
+
+def _deepening_clone(tmp_path: Path) -> Path:
+    """A depth-1 clone of a history where src/app.py and src/other.py change
+    together in six commits and HEAD touches neither. The clone sees one
+    commit; `git fetch --unshallow` brings the other six under the same HEAD."""
+    source = tmp_path / "history"
+    write(source / "crapkit.toml", TOML)
+    write(source / "lane.py", LANE_SCRIPT)
+    write(source / ".gitignore", ".crapkit/\ncov.json\n__pycache__/\n")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=source, check=True,
+                   capture_output=True)
+    for i in range(6):
+        write(source / "src" / "app.py", APP_PY + f"\nBUILD = {i}\n")
+        write(source / "src" / "other.py", OTHER_PY + f"\nBUILD = {i}\n")
+        commit(source, f"co-change {i}")
+    write(source / "README.md", "readme\n")
+    commit(source, "docs")
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", "--depth", "1", source.as_uri(), str(clone)],
+                   check=True, capture_output=True)
+    return clone
+
+
+def _app_commits(repo: Path) -> int:
+    assert run_cli(repo, "inventory").returncode == 0
+    res = run_cli(repo, "worklist", "--json")
+    assert res.returncode == 0, res.stdout + res.stderr
+    return next(e["commits"] for e in json.loads(res.stdout)["active"]
+                if e["path"] == "src/app.py")
+
+
+def _pair_support(repo: Path) -> int:
+    res = run_cli(repo, "coupling", "--json")
+    assert res.returncode == 0, res.stdout + res.stderr
+    return next((p["support"] for p in json.loads(res.stdout)["pairs"]
+                 if p["files"] == ["src/app.py", "src/other.py"]), 0)
+
+
+@pytest.mark.parametrize("read, shallow, full", [
+    (_app_commits, 1, 6),
+    (_pair_support, 0, 6),
+], ids=["churn", "coupling"])
+def test_a_deepened_clone_answers_from_its_whole_history_the_same_day(
+        tmp_path: Path, read, shallow, full):
+    """HEAD does not move when a shallow clone is deepened, so a key of HEAD,
+    window and date served the one-commit answer until the UTC date rolled. The
+    key holds git's shallow boundary now, and no cache has to be deleted."""
+    clone = _deepening_clone(tmp_path)
+    before = head(clone)
+    assert read(clone) == shallow, "a depth-1 clone sees one commit"
+
+    subprocess.run(["git", "fetch", "-q", "--unshallow"], cwd=clone, check=True,
+                   capture_output=True)
+
+    assert head(clone) == before
+    assert read(clone) == full, "the cached shallow answer outlived the deepen"

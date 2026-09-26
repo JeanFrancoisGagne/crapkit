@@ -112,7 +112,8 @@ def _banner(payload: dict) -> str:
     """
     lanes = payload["lanes"]
     reasons = (_no_lane_reason(lanes) + _stale_lane_reason(lanes)
-               + _behind_head_reason(payload["worklist"]))
+               + _behind_head_reason(payload["worklist"])
+               + _changed_files_reason(payload["worklist"]))
     if reasons:
         return ('<div class="banner stale"><p class="shout">Read this before the '
                 'numbers below</p>' + "".join(reasons) + "</div>")
@@ -134,17 +135,24 @@ def _no_lane_reason(lanes: list[dict]) -> list[str]:
 def _stale_lane_reason(lanes: list[dict]) -> list[str]:
     """The blackout, stated at its real size.
 
-    A single stale lane makes `load_uncovered` return no line numbers for ANY
-    path, not just that lane's. Uncommitted edits count, which is the normal
-    state of a tree somebody generates a report from.
+    A stale lane whose stamp recorded no blob ids makes `load_uncovered` return
+    no line numbers for ANY path, not just that lane's. A lane whose stamp did
+    withholds only the files whose bytes moved since it measured them, and the
+    note names them.
     """
     stale = [lane for lane in lanes if lane["note"]]
     if not stale:
         return []
-    return [f"<p><b>{len(stale)} of {len(lanes)} lanes are stale.</b> One stale lane "
-            "blacks out line-level coverage repo-wide, not just its own scopes. "
-            "Commit or revert the edits, then rerun <code>crapkit coverage</code>.</p>"
+    return [f"<p><b>{len(stale)} of {len(lanes)} lanes are stale.</b> "
+            f"{_stale_reach(stale)} Rerun <code>crapkit coverage</code>.</p>"
             + _lane_list(stale)]
+
+
+def _stale_reach(stale: list[dict]) -> str:
+    if any(lane.get("blackout", True) for lane in stale):
+        return "One stale lane blacks out line-level coverage repo-wide, not just its own scopes."
+    return ("The files each note names show no dark lines until the lane runs again; "
+            "every other file keeps its own.")
 
 
 def _lane_list(stale: list[dict]) -> str:
@@ -160,6 +168,17 @@ def _behind_head_reason(wl: dict) -> list[str]:
             f'<code>{_esc(wl["commit"][:11])}</code> and HEAD has moved on. Fresh '
             f'artifacts do not rescue a run measured at another commit: rerun '
             '<code>crapkit coverage</code>.</p>']
+
+
+def _changed_files_reason(wl: dict) -> list[str]:
+    """Files the run scored hold other content now. A lane's note covers the
+    lines its artifact names; this covers every number the run scored, a
+    coverage_optional scope's included, which no lane note speaks for."""
+    count = wl.get("scored_changes")
+    if not count:
+        return []
+    return [f'<p><b>{_esc(count)} file(s) the run scored changed since.</b> Its numbers '
+            'describe those files as they were: rerun <code>crapkit coverage</code>.</p>']
 
 
 # --- per-scope grades --------------------------------------------------------

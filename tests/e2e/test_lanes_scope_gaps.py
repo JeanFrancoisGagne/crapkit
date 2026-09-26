@@ -278,7 +278,8 @@ def test_uncovered_lines_are_withheld_after_source_changes(repo, committed):
     assert shown.returncode == 0, shown.stderr
     packet = json.loads(shown.stdout)
     assert packet["uncovered_lines"] is None
-    assert "files in its scopes changed" in packet["uncovered_lines_note"]
+    assert "src/app.ts changed since" in packet["uncovered_lines_note"], "the note names the file"
+    assert "measured it" in packet["uncovered_lines_note"]
     assert _lane_runs(repo) == 1
 
 

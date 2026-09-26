@@ -1,0 +1,27 @@
+{
+  "case": "unborn_staged_breach",
+  "why": "Before a repo's first commit `git diff HEAD` exits 128, and that failure read as an empty diff: the staged file counted as tracked and unchanged, so a new project's first breach drew silence while the same file left unstaged drew the advisory. With no commit, every function in the file is new, so the file is judged whole.",
+  "fixture": "unborn_staged_breach",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "content": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {
+    "exit": 2,
+    "stderr": [
+      "crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)",
+      "  ccn 8  calc/grade.py:1  sprawl( n )",
+      "the commit gate enforces this; decompose there or mark the debt"
+    ]
+  }
+}

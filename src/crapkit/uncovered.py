@@ -19,19 +19,27 @@ from threading import Lock
 from typing import NamedTuple
 
 from .invocation import _self
+from .lane_freshness import Freshness
 
 
 class MissingLines(NamedTuple):
     """Per-file dead lines, plus the reason there are none to report.
 
     A populated `note` overrides everything: no span gets lines, because the
-    only lines available would be the wrong ones.
+    only lines available would be the wrong ones. `drift` answers per file
+    (lane_freshness): a file whose bytes moved since a lane measured it gets
+    that lane's note and no lines, and every other file keeps its own.
     """
     by_path: dict[str, set[int]]
     note: str
+    drift: Freshness | None = None
+
+    def moved(self, path: str) -> str:
+        """Why this file's lines point at bytes it no longer holds, or ""."""
+        return self.drift.file_note(path) if self.drift is not None else ""
 
     def in_span(self, path: str, start: int, end: int) -> list[int]:
-        if self.note:
+        if self.note or self.moved(path):
             return []
         return sorted(n for n in self.by_path.get(path, ()) if start <= n <= end)
 
@@ -54,8 +62,9 @@ class MissingLines(NamedTuple):
         unjoined = _UNJOINED_NOTES.get(flag)
         if unjoined:
             return unjoined(path, scope)
-        if self.note:
-            return self.note
+        why = self.note or self.moved(path)
+        if why:
+            return why
         if path in self.by_path:
             return ""
         return _absent_note(path, flag)
@@ -110,19 +119,19 @@ def _parse_missing(lane, root: Path, artifact: Path) -> dict[str, set[int]]:
 # lines fall out of that same decode, so the lane hands them here instead of
 # leaving this module to reopen the file and decode it all again.
 
-def _artifact_key(artifact: Path) -> tuple | None:
-    """Identity plus enough state to notice a rewrite, or None when the file
-    cannot be stat'd.
+def _artifact_key(artifact: Path, digest: str = "") -> tuple | None:
+    """The artifact's path and the sha256 of its bytes, or None when it cannot
+    be read. The walk hands its own digest over; the reader that asks later
+    hashes the file, which costs a read and never a decode.
 
-    Not the sha256, though the walk has one: the reader that asks does not, so
-    keying on a digest would buy back the second full read this whole path
-    exists to avoid.
+    It keyed on the modification time and size, so a same-size rewrite that
+    kept the old time between the walk and the read served the walked lines
+    for bytes that no longer held them.
     """
-    try:
-        stat = os.stat(artifact)
-    except OSError:
-        return None
-    return (os.path.abspath(artifact), stat.st_mtime_ns, stat.st_size)
+    from .lane_stamps import file_sha256
+
+    digest = digest or file_sha256(artifact)
+    return (os.path.abspath(artifact), digest) if digest else None
 
 
 def _fold_into(missing: dict[str, set[int]], lines_by_path: dict[str, set[int]]) -> None:
@@ -144,8 +153,10 @@ class DeadLineFold:
         self._missing: dict[str, set[int]] = {}
         self._sources: set[tuple] = set()
 
-    def add(self, artifact: Path, dead: dict[str, set[int]]) -> None:
-        key = _artifact_key(artifact)
+    def add(self, artifact: Path, dead: dict[str, set[int]], digest: str = "") -> None:
+        """The walk's dead lines for `artifact`, keyed on `digest`, the sha256 of
+        the bytes it walked (hashed now when the caller has none)."""
+        key = _artifact_key(artifact, digest)
         if key is None:
             return
         with self._lock:
@@ -190,41 +201,43 @@ def missing_by_path(root: Path, cfg, *, folded: DeadLineFold | None = None) -> d
     return missing
 
 
-def _artifact_state(root: Path, lane, scope_paths: dict, git) -> str:
+def _artifact_state(root: Path, lane, fresh: Freshness) -> str:
     """What stops this lane's artifact from naming line numbers, or "" when nothing does."""
-    from .lanes import lane_sources_unchanged
-
     if not (root / lane.artifact).is_file():
         return f"lane {lane.name!r}: no artifact at {lane.artifact}"
-    if not lane_sources_unchanged(root, lane, scope_paths, git):
-        return (f"lane {lane.name!r}: files in its scopes changed since {lane.artifact} "
-                "was written (uncommitted edits count), so its line numbers are stale - "
-                f"commit or revert them, then rerun `{_self()} coverage`")
+    moved = fresh.lines(lane)
+    if moved:
+        return (f"lane {lane.name!r}: {moved}, so the line numbers in {lane.artifact} are "
+                f"stale - rerun `{_self()} coverage` to measure the tree as it is")
     return ""
+
+
+def lane_views(root: Path, cfg, git=None) -> list[dict]:
+    """{name, note, blackout} for every declared lane: why its line numbers are
+    unusable ("" when its artifact still describes the tree), and whether that
+    withholds every file's lines or only the files the note names.
+
+    A lane whose stamp recorded blob ids withholds only the files whose bytes
+    moved. Any other stale lane still withholds every file, because nothing
+    says which of its lines survived. The report's banner reads this list.
+    """
+    with Freshness(root, cfg.lanes, cfg.scope_paths, git=git) as fresh:
+        return [{"name": lane.name, "note": _artifact_state(root, lane, fresh),
+                 "blackout": fresh.blackout(lane)}
+                for lane in cfg.lanes]
 
 
 def lane_states(root: Path, cfg, git=None) -> list[tuple[str, str]]:
     """(lane name, why its line numbers are unusable) for every declared lane,
-    "" for a lane whose artifact still describes the tree.
-
-    `load_uncovered` joins these into one note and throws the per-lane detail
-    away, which is the right shape for "no lines for any path" and the wrong one
-    for a reader who wants to know WHICH lane to rerun. The report's staleness
-    banner reads this list; the joined note is built from it, so a lane cannot be
-    fresh in one and stale in the other.
-
-    Without `git` the reads start together, scoped to the lanes' scope paths
-    (lanes.staleness_reads).
-    """
-    from .lanes import staleness_reads
-
-    with staleness_reads(root, cfg.lanes, cfg.scope_paths, git) as facts:
-        return [(lane.name, _artifact_state(root, lane, cfg.scope_paths, facts))
-                for lane in cfg.lanes]
+    "" for a lane whose artifact still describes the tree."""
+    return [(view["name"], view["note"]) for view in lane_views(root, cfg, git)]
 
 
-def _staleness_note(root: Path, cfg, git) -> str:
-    return "; ".join(note for _, note in lane_states(root, cfg, git) if note)
+def _blackout(root: Path, cfg, fresh: Freshness) -> str:
+    """The note that withholds every file: from the stale lanes whose stamps
+    do not answer per file."""
+    notes = [_artifact_state(root, lane, fresh) for lane in cfg.lanes if fresh.blackout(lane)]
+    return "; ".join(note for note in notes if note)
 
 
 def load_uncovered(root: Path, cfg, git=None) -> MissingLines:
@@ -238,10 +251,11 @@ def load_uncovered(root: Path, cfg, git=None) -> MissingLines:
 
     if not cfg.lanes:
         return MissingLines({}, "no [[lane]] declared, so no artifact can say which lines are dark")
-    note = _staleness_note(root, cfg, git)
+    with Freshness(root, cfg.lanes, cfg.scope_paths, git=git) as fresh:
+        note = _blackout(root, cfg, fresh)
     if note:
         return MissingLines({}, note)
     try:
-        return MissingLines(missing_by_path(root, cfg), "")
+        return MissingLines(missing_by_path(root, cfg), "", fresh)
     except ToolError as exc:
         return MissingLines({}, f"unreadable lane artifact: {exc}")

@@ -153,6 +153,7 @@ EXIT=0
 
 $ crapkit verify
 verify OK @ 4a06338604a vs baseline 4a06338604a (1 changed files)
+  changed files: calc/grade.py
 EXIT=0
 ```
 
@@ -166,6 +167,7 @@ EXIT=6
 
 $ crapkit verify
 verify FAILED @ 4a06338604a vs baseline 4a06338604a (1 changed files)
+  changed files: calc/grade.py
   GATE  crap     76.6  ccn  17 cov 41%  calc/grade.py:1  classify( score , attempts , late , bonus )  -> decompose  [dirty]
   RATCHET  calc/grade.py  classify( score , attempts , late , bonus ): 51.5698 -> 76.6293  [dirty]
   findings: 0 committed / 2 dirty (uncommitted edits and untracked files)
@@ -204,9 +206,11 @@ score. It is idempotent, and it can only lower: rerunning after an improvement r
 **Seed once, early.** Skipping it means a legacy repo's existing debt carries no marks, so
 the ratchet check has nothing to compare and coverage rot on untouched code goes unnoticed.
 `verify` still gates the diff, but the standing debt is unprotected. Since 0.5.1 every
-verify counts that gap: `warning: N function(s) over the ceiling carry no ratchet mark, so
-a rise on them (coverage loss included) passes unseen; record them with `crapkit ratchet
-seed`` on stderr, and `unmarked_over_target` in `--json`. It fires no exit code and is
+verify counts that gap: `warning: N function(s) over the ceiling carry no ratchet mark
+(<first three, each as path and function>), so a rise on them (coverage loss included) passes
+unseen; record them with `crapkit ratchet seed`` on stderr, and `unmarked_over_target` in
+`--json`. Since 0.8.1 the line names the first three functions and counts the rest as `and N
+more`. It fires no exit code and is
 silent at zero, which is the state of a repo with no debt and of one seeded in full: a
 header-only marks file is not a mistake, it says nothing is over the ceiling.
 
@@ -347,6 +351,7 @@ EXIT=3
 $ crapkit verify
 warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) - run `crapkit coverage`, then re-baseline with `crapkit ratchet seed` to stamp it
 verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files) ratchet: restamped -> git add crapkit-ratchet.tsv
+  changed files: crapkit-ratchet.tsv
 EXIT=0
 ```
 
@@ -441,7 +446,7 @@ only diff-visible record. Running `prune` is you confirming.
 
 ```
 $ crapkit ratchet prune
-crapkit-ratchet.tsv: pruned 0, followed 2 rename(s) - 2 mark(s) vs run 11 (7d09097ea8a)
+crapkit-ratchet.tsv: pruned 0, followed 2 rename(s) (calc/grade.py -> calc/grading.py) - 2 mark(s) vs run 11 (7d09097ea8a)
 ```
 
 **A rename follows instead of dropping.** Before pruning, crapkit asks git for renames since
@@ -459,6 +464,37 @@ calc/grade.py	audit( rows , strict , cap , floor , verbose )	132.0000
 calc/grading.py	audit( rows , strict , cap , floor , verbose )	132.0000
 ```
 
+The count is marks, and the parenthesis names the renames they followed, `old -> new`, up
+to three and then `and N more`.
+
+### When the first run's commit is gone
+
+The rename diff starts at the store's first run, so git has to hold that commit. A clone
+can lack it: a depth-1 CI checkout with `.crapkit` restored from a cache, a `rebase -f
+--root` followed by gc, or a first run taken on a feature branch that was squash-merged,
+deleted and collected. prune then reads renames from the oldest run whose commit the clone
+does hold, and says so on stderr:
+
+```
+note: run 1's commit 35f524b3f89 is not in this clone, so renames were followed from run 2 (647bfd3173c), the oldest run whose commit it holds
+```
+
+A marked file that left the checkout before that run is one git cannot account for: it
+may have been renamed or deleted. prune refuses with exit 4 and writes nothing, naming the
+commit, the files and the fetch:
+
+```
+$ crapkit ratchet prune
+crapkit: ratchet prune: run 1's commit 35f524b3f89 is not in this clone, so git cannot say whether src/old.py was renamed or deleted, and prune would drop the marks there as repaid debt; this shallow clone does not hold it: set fetch-depth: 0 on the checkout or run git fetch --unshallow, then prune again; nothing was written
+EXIT=4
+```
+
+In a full clone the fix is `git fetch origin <commit>`. When no remote holds the commit any
+more, follow each rename with `crapkit ratchet move OLD NEW` ([below](#moving-marks-by-hand))
+and delete a deleted file's marks from the marks file by hand. Before 0.8.1 prune read the
+missing commit as "nothing was renamed" and dropped the renamed file's marks as repaid debt,
+with `followed 0 rename(s)` and no word about why.
+
 ### A crapkit root below the git top
 
 Marks are keyed on paths relative to the crapkit root, and since 0.4.5 every git spawn asks
@@ -468,7 +504,7 @@ renames like any other. Here the top holds `pkg/`, crapkit runs in `pkg`, and th
 
 ```
 $ crapkit ratchet prune
-crapkit-ratchet.tsv: pruned 0, followed 1 rename(s) - 2 mark(s) vs run 2 (db28702d61c)
+crapkit-ratchet.tsv: pruned 0, followed 1 rename(s) (calc/grade.py -> calc/grading.py) - 2 mark(s) vs run 2 (db28702d61c)
 ```
 
 The marks file says `calc/grade.py` before and `calc/grading.py` after, and carries the
@@ -704,6 +740,7 @@ to do about it:
 ```
 $ crapkit verify
 verify OK @ 8c780bb18da vs baseline 8c780bb18da (3 changed files) ratchet: 6 dropped, 1 tightened -> git add crapkit-ratchet.tsv
+  changed files: app/m.py, app/n.py, tests/test_m.py
 ```
 
 `dropped` counts marks whose function is now at or under its ceiling; `tightened` counts
@@ -723,6 +760,7 @@ touched it. That is the point: coverage rot regresses functions nobody edited.
 ```
 $ crapkit verify
 verify FAILED @ 8c780bb18da vs baseline 8c780bb18da (1 changed files)
+  changed files: tests/test_m.py
   RATCHET  app/m.py  pick( a , b , c ): 10.75 -> 20.0
   findings: 1 committed / 0 dirty (uncommitted edits and untracked files)
 EXIT=7
@@ -752,6 +790,25 @@ file empty; before this, an emptied file was restamped into a header with no row
 `"ratchet_source": "committed"` with the commit in `ratchet_source_commit` and the committed
 marks' digest in `ratchet_source_sha256`. When the clone does not hold the history since the
 baseline, verify refuses with exit 4 rather than judge against no marks.
+
+The `changed files:` line under the verdict names the files behind the count: the first
+three, then `and N more`. `--json` lists them all as `changed_paths` beside the
+`changed_files` count. verify judges git-tracked files only, so a new source file inside a
+scope that nobody has `git add`ed is not judged, and verify says so on stderr instead of
+reading it as no change:
+
+```
+warning: 1 untracked file(s) in a scope were not judged (src/added.ts): verify scores git-tracked files only; `git add` them to have them judged
+```
+
+`--json` carries those paths as `untracked_in_scope`. A file no scope would score (a note, a
+file outside every scope) is not named.
+
+Which files changed is git's answer, and git reads it from its stat cache: a same-size edit
+whose old modification time was put back (two writes inside one clock tick, or a copy that
+keeps times) reads as unchanged to verify's changed files and its committed/dirty split, to
+`rescore --gate`, to the commit hook's re-stage note and to the files `mutate` copies into its
+workers, the same way `git status` and `git add` miss it until the file's mtime moves again.
 
 Comparison happens at the precision the mark is stored at (four decimals). `cov` is a
 division, so long decimals are routine and an unrounded compare would wedge an unchanged
@@ -821,6 +878,7 @@ With it configured:
 ```
 $ crapkit verify --override "shipping the hotfix, ticket 412"
 verify OK @ 8c780bb18da vs baseline 8c780bb18da (2 changed files) ratchet: 1 mark granted -> git add crapkit-ratchet.tsv
+  changed files: app/m.py, tests/test_m.py
   OVERRIDDEN  app/m.py:9  route( a , b , c , d )
 EXIT=0
 ```
@@ -841,6 +899,7 @@ naming the cause and the escape; the exit code stays the verdict's:
 ```
 $ crapkit verify --override "hotfix INV-412 ships tonight; decompose next sprint"
 verify FAILED @ 8c780bb18da vs baseline 8c780bb18da (1 changed files)
+  changed files: app/billing/invoice.py
   GATE  crap    380.0  ccn  19 cov 0%  app/billing/invoice.py:88  check_band( r , t )  -> decompose
   RATCHET  app/billing/invoice.py  check_band( r , t ): 240.0 -> 380.0
   findings: 1 committed / 0 dirty (uncommitted edits and untracked files)

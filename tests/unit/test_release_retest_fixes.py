@@ -72,12 +72,15 @@ class _FakeLog:
 
 
 def test_stale_artifact_note_names_uncommitted_edits_and_the_remedy():
-    from crapkit import uncovered
+    """The cause is lanes' sentence, which the reuse warning prints too; the
+    remedy is the note's own, and a rerun is the one move that clears it."""
+    from crapkit import lane_freshness, uncovered
     import inspect
 
-    src = inspect.getsource(uncovered._artifact_state)
-    assert "uncommitted" in src, "the note must name the real cause"
-    assert "commit" in src
+    assert "uncommitted" in inspect.getsource(lane_freshness._scope_drift), \
+        "the note must name the real cause"
+    assert "rerun" in inspect.getsource(uncovered._artifact_state)
+    assert "rerun" in inspect.getsource(lane_freshness.Freshness._file_note)
 
 
 def test_test_files_route_to_the_only_templated_scope():

@@ -1,5 +1,5 @@
 """End-to-end: `--reuse-artifacts` refuses the artifact a lane's last attempt
-failed to write, and a salvage written after that attempt reuses again.
+failed to write, and a salvage with new bytes written after that attempt reuses again.
 
 On 0.4.15 a lane that stopped writing its artifact was refused by `coverage`
 (exit 5, "wrote no artifact this run") and then scored by `coverage
@@ -10,6 +10,7 @@ The lane command is a counting wrapper so each test can say how many times
 the lane really ran: reuse never reruns, and `--reuse-unchanged` reruns a lane
 whose last attempt wrote nothing instead of trusting its stamp.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -85,13 +86,42 @@ def _lane_command(repo: Path, line: str) -> None:
     (repo / "crapkit.toml").write_text(text.replace(current, line), encoding="utf-8")
 
 
+ARTIFACT = Path("coverage") / "coverage-final.json"
+
+
 def _salvage(repo: Path) -> None:
-    """What the shard recipe ends in: the artifact rewritten by hand after the
-    failed attempt, with a modification time the failed attempt never saw."""
+    """What the shard recipe ends in: the artifact combined again by hand after
+    the failed attempt, which holds other bytes than the refused file."""
     subprocess.run([sys.executable, "make_cov.py"], cwd=repo, check=True, capture_output=True)
-    artifact = repo / "coverage" / "coverage-final.json"
+    artifact = repo / ARTIFACT
+    artifact.write_text(json.dumps(json.loads(artifact.read_text(encoding="utf-8")), indent=2),
+                        encoding="utf-8")
+
+
+def _touch(repo: Path) -> Path:
+    artifact = repo / ARTIFACT
     later = artifact.stat().st_mtime_ns + 5_000_000_000
     os.utime(artifact, ns=(later, later))
+    return repo
+
+
+def _copy_checkout(repo: Path) -> Path:
+    """A copy of the whole checkout that keeps no times; the copy is where
+    the next command runs."""
+    copy = repo.parent / "copy"
+    shutil.copytree(repo, copy, copy_function=shutil.copy)
+    return copy
+
+
+def _same_bytes(repo: Path) -> Path:
+    artifact = repo / ARTIFACT
+    artifact.write_bytes(artifact.read_bytes())
+    return repo
+
+
+def _stamps_deleted(repo: Path) -> Path:
+    (repo / ".crapkit" / "artifacts.json").unlink()
+    return repo
 
 
 def _measured_then_dead(repo: Path) -> None:
@@ -132,9 +162,10 @@ def test_verify_refuses_the_artifact_the_last_attempt_failed_to_write(repo: Path
 
 
 def test_a_salvage_written_after_the_failed_attempt_reuses(repo: Path):
-    """A coverage JSON combined by hand from the killed run's shards is newer
-    than the refused file, so the recipe the shard hint gives still ends in a
-    scored run."""
+    """A coverage JSON combined by hand from the killed run's shards holds new
+    bytes, so the recipe the shard hint gives still ends in a scored run.
+    Rewritten: the salvage used to be the same bytes under a later time, which
+    pinned a touch as a salvage."""
     _measured_then_dead(repo)
     assert run_cli(repo, "coverage", "--reuse-artifacts").returncode == 5
     _salvage(repo)
@@ -144,6 +175,31 @@ def test_a_salvage_written_after_the_failed_attempt_reuses(repo: Path):
     assert res.returncode == 0, res.stderr
     assert "wrote no artifact" not in res.stderr
     assert _run_count(repo) == 1, "the salvage was read, not rerun"
+
+
+# (stale-touch shape-9, boundary-10, history-3) what happens to the leftover,
+# each keeping its bytes; --reuse-artifacts and --reuse-unchanged both refuse it
+KEPT_BYTES = {"touch": _touch, "copy-checkout-without-times": _copy_checkout,
+              "same-bytes-rewrite": _same_bytes, "stamps-file-deleted": _stamps_deleted}
+
+
+@pytest.mark.parametrize("event", sorted(KEPT_BYTES))
+@pytest.mark.parametrize("flag", ["--reuse-artifacts", "--reuse-unchanged"])
+def test_the_leftover_stays_refused_while_it_holds_the_same_bytes(repo: Path, flag, event):
+    _measured_then_dead(repo)
+    if flag == "--reuse-unchanged":
+        _lane_command(repo, ALIVE)
+    root = KEPT_BYTES[event](repo)
+
+    res = run_cli(root, "coverage", flag, "--json")
+
+    assert "reusing without rerun" not in res.stderr, res.stderr
+    if flag == "--reuse-artifacts":
+        assert res.returncode == 5, res.stderr
+        assert "lane 'unit' wrote no artifact on its last attempt" in res.stderr, res.stderr
+        return
+    assert res.returncode == 0, res.stderr
+    assert _run_count(root) == 2, "the lane whose last attempt failed ran again"
 
 
 def test_reuse_unchanged_reruns_a_lane_whose_last_attempt_wrote_nothing(repo: Path):
@@ -158,3 +214,57 @@ def test_reuse_unchanged_reruns_a_lane_whose_last_attempt_wrote_nothing(repo: Pa
     assert res.returncode == 0, res.stderr
     assert "reusing without rerun" not in res.stderr
     assert _run_count(repo) == 2, "the lane whose last attempt failed has to run again"
+
+
+def _killed_attempt(repo: Path) -> None:
+    """What a kill during the lane's attempt leaves: the artifact set aside under
+    .crapkit/aside/ by an attempt that never ran its exit."""
+    from crapkit.lane_outputs import owned
+
+    owned(repo, "unit", (ARTIFACT.as_posix(),)).__enter__()
+    assert not (repo / ARTIFACT).exists()
+
+
+# (the flag, the words the lane line prints once the artifact is back)
+AFTER_KILL = {"--reuse-artifacts": "reuses", "--reuse-unchanged": "reusing without rerun"}
+
+
+@pytest.mark.parametrize("flag", sorted(AFTER_KILL))
+def test_the_artifact_a_killed_attempt_set_aside_is_reused(repo: Path, flag):
+    """A kill or a CI timeout runs no cleanup. `--reuse-artifacts` exited 5 with
+    "produced no artifact" and never named the copy, and the next attempt
+    removed it."""
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    _killed_attempt(repo)
+
+    res = run_cli(repo, "coverage", flag, "--json")
+
+    assert res.returncode == 0, res.stderr
+    assert ("crapkit: lane 'unit': coverage/coverage-final.json is back at its path; an "
+            "attempt that did not finish (a kill or a timeout) had set it aside under "
+            ".crapkit/aside/") in res.stderr, res.stderr
+    assert _run_count(repo) == 1, "the artifact the killed attempt set aside was reused"
+    assert not (repo / ".crapkit" / "aside").exists()
+
+
+# (stale-touch boundary-10) what happens to the leftover before an agent asks
+# for the function's dark lines
+BEFORE_BRIEF = {"no-touch": lambda repo: repo, "touch": _touch}
+
+
+@pytest.mark.parametrize("event", sorted(BEFORE_BRIEF))
+def test_the_dark_line_note_names_the_failed_attempt(repo: Path, event):
+    """Nothing under the lane's scope changed, so a note that blamed changed
+    files named a cause that did not happen. The failed attempt is the cause."""
+    _measured_then_dead(repo)
+    BEFORE_BRIEF[event](repo)
+
+    packet = json.loads(run_cli(repo, "brief", "src/app.ts", "dispatch", "--json").stdout)
+
+    assert packet["uncovered_lines"] is None, "the leftover's lines are withheld"
+    note = packet["uncovered_lines_note"]
+    assert note.startswith(
+        "lane 'unit': its last attempt wrote no artifact, and the coverage/coverage-final.json "
+        "on disk predates it, so the line numbers in coverage/coverage-final.json are stale"), note
+    assert note.endswith("coverage` to measure the tree as it is"), note
+    assert "changed" not in note, note

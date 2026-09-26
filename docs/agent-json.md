@@ -63,6 +63,7 @@ $ crapkit next-item
 
 ```json
 {
+  "commands": {"refresh": "crapkit coverage --reuse-unchanged"},
   "commit": "8c14f3daa8e88230c5b702d8f452ee2616d4de30",
   "empty": false,
   "item": {
@@ -92,6 +93,7 @@ $ crapkit next-item
   },
   "run_id": 1,
   "schema": 1,
+  "scored_changes": 0,
   "shallow": false,
   "skipped_no_lane": 0,
   "stale": false
@@ -106,7 +108,9 @@ $ crapkit next-item
 | `commit` | string | yes | That run's commit, full sha. |
 | `empty` | bool | yes | Whether there is work to hand out. |
 | `skipped_no_lane` | int | yes | Rows above the floor that no lane covers. They are excluded from ranking because their `cov = 0` is a tooling gap, not a testing gap. |
-| `stale` | bool | yes | `true` when the ranked run's commit is not HEAD, so `cov`, `crap` and `uncovered_lines` describe an older tree. Same field, same rule as [`worklist`](#worklist). |
+| `stale` | bool | yes | `true` when the ranked run's commit is not HEAD. It judges the commit, not the files: see [`stale` and `scored_changes`](#stale-and-scored_changes-does-the-run-still-describe-the-files). Same field, same rule as [`worklist`](#worklist). |
+| `scored_changes` | int or **null** | yes | How many files the ranked run scored hold other content now than the run recorded. `0` means the numbers describe the files on disk. `null` means crapkit cannot compare: the run recorded no content, or git failed reading the tree. |
+| `commands` | object | yes | `{refresh}`: the call that answers `stale` and `scored_changes`, the same string a [`brief` packet's](#commands-steps-3-to-5-already-written) `commands.refresh` holds. |
 | `shallow` | bool | yes | `true` when the checkout is a shallow clone, so `commits`, `authors` and the churn that breaks ties in the ranking count only the commits the clone holds: a depth-1 clone counts one commit per file. stderr carries one line naming the fix, `set fetch-depth: 0 on the checkout or run git fetch --unshallow`. `false` in a full clone. Same field, same rule as [`worklist`](#worklist). |
 | `item` | object | when `empty` is false and `--top` is absent or 1 | The one item. |
 | `items` | array | when `empty` is false and `--top` > 1 | Up to N items, same object shape. |
@@ -159,7 +163,7 @@ runs:
 {
   "flag": "measured",
   "uncovered_lines": null,
-  "uncovered_lines_note": "lane 'py': files in its scopes changed since .crapkit/cov/py.json was written (uncommitted edits count), so its line numbers are stale - commit or revert them, then rerun `crapkit coverage`"
+  "uncovered_lines_note": "lane 'py': calc/grade.py changed since .crapkit/cov/py.json measured it, so its line numbers there are stale - rerun `crapkit coverage` to measure it again"
 }
 ```
 
@@ -189,15 +193,70 @@ runs:
 
 A repo with no `[[lane]]` at all answers `no [[lane]] declared, so no artifact can say
 which lines are dark`, and an artifact that will not parse answers `unreadable lane
-artifact: ...`. The key is opt-in, so a repo whose artifacts answer never emits it at all.
+artifact: ...`. When git cannot say whether the file changed since the lane measured it,
+the lines are withheld too and the note quotes git's error: `lane 'py': git cannot say
+whether calc/grade.py changed since .crapkit/cov/py.json measured it (...), so its line
+numbers there are withheld`, then the rerun once git answers. The key is opt-in, so a repo whose artifacts answer never emits it at all.
 
-The move differs per flag. On `measured` a lane did speak about the file and its artifact
-has since gone stale: commit or revert the edits, then rerun `crapkit coverage`. Nothing
-rereads the artifact until a run does, so committing alone leaves the lines null. On
-`untested` no test imports the file, so no artifact was ever going to mention it: the whole
-span is dark and the first test is the move, not another `coverage` run. On `cc-only` the
-scope set `coverage_optional`, so no artifact can ever name lines for it and nothing to do
-will change that. A `no-lane` row is a wiring gap; `next-item` never hands one out.
+The move differs per flag. On `measured` a lane did speak about the file and the file's
+bytes have changed since, so the lines the artifact holds point at code that moved. Rerun
+`crapkit coverage`. Committing changes nothing: the lane's stamp holds a digest of every
+file under its scopes as its run left them, and only a file whose bytes differ from that
+digest loses its lines. A touch, a mode bit, a CRLF checkout, an amend, a rebase and a
+shallow CI clone with `.crapkit/` restored leave the lines in place, and an edit reverted
+after the lane measured it withholds them. Every other file keeps its lines. An artifact
+whose stamp crapkit 0.8.0 or older wrote records no digests: until the next `crapkit
+coverage` it is judged by git's diff since its commit, and while that says stale every
+file's lines are null, with a note that names the files, a commit HEAD no longer descends
+from, or the git error that left the question open. On
+`untested` no test imports the file, so no artifact was ever going to mention it: the
+whole span is dark and the first test is the move, not another `coverage` run. On
+`cc-only` the scope set `coverage_optional`, so no artifact can ever name lines for it and
+nothing to do will change that. A `no-lane` row is a wiring gap; `next-item` never hands
+one out.
+
+### `stale` and `scored_changes`: does the run still describe the files?
+
+Two fields answer two questions, and every payload that ranks a run carries both
+(`next-item`, `brief`, `brief --batch`, `worklist --json` and the MCP tools that print
+them).
+
+`stale` keeps the meaning it has had since schema 1: the ranked run's commit is not HEAD.
+It judges the commit and never the content. An amend that moves no byte, an empty commit
+and a commit that touches only a README all set it, with every scored number still true.
+An uncommitted rewrite of a scored function leaves it `false`, while the packet hands out
+the pre-edit `ccn`, `crap` and span beside a `source` read from disk.
+
+`scored_changes` is the content answer. Each scored run records the content of every file
+it scored, and `scored_changes` counts the files whose content differs now, deleted files
+included. A touch, a same-bytes rewrite and a commit that moves no scored byte leave it at
+`0`; an edit to a scored file raises it, committed or not, and so does reverting an edit
+the run measured. It compares content through the same record lane stamps use, so the
+limits [docs/lanes.md](lanes.md) names for lane freshness apply here too. `null` means
+crapkit cannot compare: the run recorded no content, or git failed while reading the tree.
+crapkit 0.8.0 and older wrote no record, so their runs read `null` until the next
+`crapkit coverage` writes one. A git failure is never counted as `0` or as a change; the
+plain `worklist` quotes git's error. Treat `null` as "unknown" and run `commands.refresh`.
+
+| Change after the run | `stale` | `scored_changes` |
+|---|---|---|
+| nothing, or a touch | `false` | `0` |
+| uncommitted edit to a scored file | `false` | `1` or more |
+| coverage measured on an uncommitted edit, then the edit reverted | `false` | `1` or more |
+| `commit --amend -m`, `commit --allow-empty`, a commit outside every scope | `true` | `0` |
+| the run recorded no content, or git failed reading the tree | either | `null` |
+
+The plain `worklist` prints each case on stderr, and names up to three changed files:
+
+```
+warning: 2 file(s) changed since run 4 scored them: calc/grade.py, calc/report.py — rerun `crapkit coverage`
+warning: cannot tell which files changed since run 4 scored them, because git failed: <git's error> — fix what git reports, then rerun `crapkit coverage`
+```
+
+`commands.refresh` answers both. Schema 2, planned for crapkit 0.9.0, redefines `stale`
+as "a scored file's content differs from the run's", which is what `scored_changes > 0`
+says today. Until then read `scored_changes` for the content question and `stale` for the
+commit question.
 
 ### `reasons`, and the stop condition
 
@@ -229,9 +288,12 @@ An empty queue must say what was filtered, or the silence reads as done.
 | `all_remaining_at_or_under_target` | **Present only when candidates remained but every one has `remedy: "ok"`.** |
 
 **The stop condition is `empty == true` AND `skipped_claimed` 0-or-absent AND
-`reasons.no_lane_over_target` 0-or-absent.** `empty` alone says the queue has nothing to
-hand out, which two things cause without the work being done: a claim hides a row from
-every session, and a scope no lane measures can hold debt that never ranks. The
+`reasons.no_lane_over_target` 0-or-absent AND `scored_changes == 0`.** `empty` alone says
+the queue has nothing to hand out, which three things cause without the work being done:
+a claim hides a row from every session, a scope no lane measures can hold debt that never
+ranks, and the ranked run can describe files your own edits have since changed. The last
+is `scored_changes`: anything but `0`, `null` included, means run `commands.refresh` and
+ask again. The
 `worklist_floor` is not one of them. It withheld no over-target row on its way here,
 whatever that row's ccn. Do not loop on "is there an item" either, because a function at
 ccn 6 with 100% coverage clears the `ccn >= 5` floor forever and would be handed back
@@ -390,6 +452,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
     "nloc": 17, "occurrence": 1, "params": 4, "path": "app/parse_csv.py", "remedy": "decompose",
     "scope": "app", "start": 1
   },
+  "scored_changes": 0,
   "source": "def parse_row(text, strict, sep, header):\n    fields = _split(text, sep)\n    if header and fields and fields[0] == \"id\":\n        return None\n    if strict and len(fields) < 3:\n        raise ValueError(\"short row\")\n    if not strict and not fields:\n        return []\n    out = []\n    for field in fields:\n        if field == \"\":\n            out.append(None)\n        elif field.isdigit():\n            out.append(int(field))\n        else:\n            out.append(field.strip())\n    return out",
   "shallow": false,
   "stale": false,
@@ -414,7 +477,8 @@ $ crapkit brief app/parse_csv.py parse_row --json
 | `params` | array of object | no | Its parameters in declaration order, each `{name, type}`: `name` as declared, `type` the annotation as lizard printed it, or `null` when there is none. A new test can call the function without opening the file. `scored.params` is the count of these. |
 | `scored` | object | no | The whole scored row: the 17 fields above, including `occurrence`, `params` and `ccn_mod`. `next-item` does not carry the latter two. |
 | `target` | int | no | The scope's effective ceiling. |
-| `stale` | bool | no | `true` when `commit` is not HEAD, so every number here describes an older tree. Run `commands.refresh` first. |
+| `stale` | bool | no | `true` when `commit` is not HEAD. It judges the commit, not the files; see [`stale` and `scored_changes`](#stale-and-scored_changes-does-the-run-still-describe-the-files). |
+| `scored_changes` | int or **null** | **yes** | How many files the run scored hold other content now than the run recorded, as on `next-item`. Not `0` (or `null`, when crapkit cannot compare): run `commands.refresh` before trusting any number here. |
 | `shallow` | bool | no | `true` when the checkout is a shallow clone, so `churn` and `gate_rule.mark_age_days` count only the commits the clone holds: in a depth-1 clone every file changed once and every mark is 0 days old. stderr carries one line naming the fix, `set fetch-depth: 0 on the checkout or run git fetch --unshallow`. The numbers keep their values. |
 | `file_functions` | array | no | Every scored function in the same file: `function`, `start`, `end`, `occurrence`, `ccn`, `crap`, `remedy`. What an extracted helper lands beside, and what names are already taken. |
 | `file_totals` | object | no | That file rolled up: `functions`, `over_target`, `crap_load`. |
@@ -459,7 +523,7 @@ session need not read the config to learn which number it is aiming at.
 | `scoped_tests` | string or null | A `crapkit test-scoped` call for the packet's literal file. It selects the scope's template and executes it from the project root with the inherited environment and literal filename transport. `null` when the scope declares no template; `doctor` warns about the gap. |
 | `scoped_tests_note` | string | Present **only** when `scoped_tests` is `null`, naming the scope that declares no template. |
 | `verify` | string | The `verify` call. Step 5, the only authoritative one. |
-| `refresh` | string | The `coverage --reuse-unchanged` call that refreshes this packet. It reuses a lane only at the same clean HEAD with unchanged configuration, inherited environment and coverage/JUnit bytes, or, for a lane that declares `inputs`, while nothing under those paths, its lane table or its `env` changed and its coverage/JUnit bytes match; otherwise it runs the lane. Run it first when `stale` is `true`. |
+| `refresh` | string | The `coverage --reuse-unchanged` call that refreshes this packet. It reuses a lane only at the same clean HEAD with unchanged configuration, inherited environment and coverage/JUnit bytes, or, for a lane that declares `inputs`, while nothing under those paths, its lane table or its `env` changed and its coverage/JUnit bytes match; otherwise it runs the lane. Run it first when `scored_changes` is not `0` or `stale` is `true`. |
 | `refresh_writes_run` | bool | Always `true`. `refresh` appends a scored coverage run to `.crapkit/crap.sqlite`. Other commands can write caches or test artifacts; this field does not promise filesystem read-only execution. |
 
 Each value is a whole command line. Run it as given to preserve filename quoting
@@ -492,9 +556,11 @@ Windows encoded form. Activate the intended environment before executing them.
 `test-scoped` then runs the owning scope's configured template; a template with
 no `{files}` still runs its declared arguments unchanged.
 
-`refresh` is what `stale: true` asks for, and the only thing that answers it. `stale`
-compares the run's commit against HEAD, so nothing clears it but a run landing on the
-current commit. Another `brief` re-reads the same snapshot and reports the same staleness.
+`refresh` is what `stale: true` and a `scored_changes` above `0` ask for, and the only thing
+that answers them. `stale` compares the run's commit against HEAD, so nothing clears it but
+a run landing on the current commit, and `scored_changes` falls to `0` only when a run
+records the content on disk now. Another `brief` re-reads the same snapshot and reports the
+same answers.
 
 ### `regrowth`: did this get fixed before?
 
@@ -606,11 +672,13 @@ $ crapkit brief --batch 3 --json
 
 ```json
 {
+  "commands": {"refresh": "crapkit coverage --reuse-unchanged"},
   "commit": "9c7eed1a91d12a4b84b51ecefbbf9e1f5551d216",
   "packets": [{"function": "parse_line( text , strict , sep , header )", "...": "..."},
               {"function": "parse_row( text , strict , sep , header )", "...": "..."}],
   "run_id": 4,
   "schema": 1,
+  "scored_changes": 0,
   "shallow": false,
   "stale": false
 }
@@ -618,8 +686,9 @@ $ crapkit brief --batch 3 --json
 
 | Key | Meaning |
 |---|---|
-| `packets` | Up to N packets, in `next-item` order (`crap` descending), skipping every function an open claim holds, as `next-item` does. Each one is the object above without `schema`; it keeps its own `run_id`, `commit`, `stale` and `shallow`. |
-| `run_id`, `commit`, `stale`, `shallow` | Repeated on the envelope, because every packet in one call comes from one run and one checkout. The shallow-clone line goes to stderr once per call. |
+| `packets` | Up to N packets, in `next-item` order (`crap` descending), skipping every function an open claim holds, as `next-item` does. Each one is the object above without `schema`; it keeps its own `run_id`, `commit`, `stale`, `scored_changes` and `shallow`. |
+| `run_id`, `commit`, `stale`, `scored_changes`, `shallow` | Repeated on the envelope, because every packet in one call comes from one run and one checkout. The shallow-clone line goes to stderr once per call. |
+| `commands` | `{refresh}`, as on `next-item`. |
 | `skipped_claimed` | Present only when an open claim hid a queue row: how many it hid, the count `next-item` prints under the same key. Absent, never `0`. |
 | `schema` | `1`, as everywhere. |
 
@@ -666,12 +735,14 @@ $ crapkit worklist --json
   ],
   "active_total": 2,
   "churn_window_months": 12,
+  "commands": {"refresh": "crapkit coverage --reuse-unchanged"},
   "commit": "8c14f3daa8e88230c5b702d8f452ee2616d4de30",
   "dormant_count": 0,
   "dormant_top": [],
   "floor": 5,
   "run_id": 1,
   "schema": 1,
+  "scored_changes": 0,
   "shallow": false,
   "stale": false
 }
@@ -681,6 +752,8 @@ $ crapkit worklist --json
 |---|---|---|
 | `run_id`, `commit` | int, string | The run ranked, and its commit. |
 | `stale` | bool | `true` when the run's commit is not HEAD. In plain output this also prints a stderr warning; in JSON it is only this field. |
+| `scored_changes` | int or null | How many files the run scored hold other content now than the run recorded; `null` when the run recorded none or git failed reading the tree. In plain output a count above `0` prints a stderr warning naming up to three of the files. See [`stale` and `scored_changes`](#stale-and-scored_changes-does-the-run-still-describe-the-files). |
+| `commands` | object | `{refresh}`, as on `next-item`. |
 | `shallow` | bool | `true` when the checkout is a shallow clone. `commits`, `authors`, `weight` and `risk` count only the commits the clone holds, so in a depth-1 clone every file reads one commit and the ranking is ccn order. Plain and JSON output both print one stderr line, `warning: churn counts read only the commits this clone holds; this shallow clone does not hold every commit: set fetch-depth: 0 on the checkout or run git fetch --unshallow`, and the Action's comment repeats it above its table. `false` in a full clone. |
 | `floor` | int | The effective `worklist_floor`, echoed so a caller need not read the config. |
 | `churn_window_months` | int | Same. |
@@ -775,6 +848,7 @@ $ crapkit verify --json
   "baseline_commit": "8c780bb18da329dfe039b55d14faa5a6dc9fcb50",
   "baseline_run": 8,
   "changed_files": 1,
+  "changed_paths": ["app/m.py"],
   "commit": "8c780bb18da329dfe039b55d14faa5a6dc9fcb50",
   "committed_findings": 1,
   "diff_uncovered": [],
@@ -809,7 +883,8 @@ $ crapkit verify --json
   "tool_versions": {"crapkit": "<version>", "lizard": "1.24.0"},
   "unmarked_over_target": 0,
   "unread_files": [],
-  "unreadable_names": []
+  "unreadable_names": [],
+  "untracked_in_scope": []
 }
 ```
 
@@ -823,6 +898,8 @@ $ crapkit verify --json
 | `commit` | string | The commit the verified tree is at. Equal to `baseline_commit` when you are verifying uncommitted work. |
 | `changed_files` | int | Files in the diff being judged. |
 | `unreadable_names` | array of strings | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`: the names the `crapkit: left out` lines on stderr give. `[]` when every name is UTF-8. A scope that takes such a name never gets here: the command exits 3 first. |
+| `changed_paths` | array of strings | Those files, sorted, since 0.8.1. The text form names the first three on a line under the verdict, `changed files: app/m.py, app/n.py, tests/test_m.py`, then `and N more`. |
+| `untracked_in_scope` | array of strings | Source files inside a scope that git does not track, since 0.8.1. verify's diff and corpus hold git-tracked files only, so these were not judged. The text form warns on stderr, names the first three and says to `git add` them. |
 
 ### Findings
 
@@ -839,7 +916,7 @@ $ crapkit verify --json
 | `retried_passes` | array of new failures that passed their [flake retry](lanes.md#flake-retest) | none; the text form names them on the OK line as `(N new failures passed on rerun, first ID)` |
 | `lanes_without_results` | array of lane names that declare no `results_artifact`, so they recorded no test results this run and nothing checked their tests for new failures. A lane that declares one and whose junit `--reuse-artifacts` cannot read is not listed: verify exits 5 naming the lane and the junit, and stores no run | none; stderr names a lane with no `results_artifact` whose command exited nonzero (`warning: lane 'x' exited 1 and declares no results_artifact ...`) |
 | `lanes_without_baseline_results` | array of lane names holding a new failure that no trusted run at or behind the baseline recorded a failure list for, so the failure may predate the change | none itself; those failures are in `new_failures` and still fire exit 8, and stderr names each lane |
-| `unmarked_over_target` | int: functions over their ceiling that carry no ratchet mark, the standing debt neither the gate (touched functions only) nor the ratchet check (marks only) guards | none; the text form prints one `warning: N function(s) over the ceiling carry no ratchet mark ...` line on stderr when it is not zero, naming `ratchet seed` as the fix |
+| `unmarked_over_target` | int: functions over their ceiling that carry no ratchet mark, the standing debt neither the gate (touched functions only) nor the ratchet check (marks only) guards | none; the text form prints one `warning: N function(s) over the ceiling carry no ratchet mark ...` line on stderr when it is not zero, naming the first three as path and function and `ratchet seed` as the fix |
 
 `key_name` on a gate violation is the ratchet key: the `long_name` when one function in
 the file holds that name, and `long_name#2` for the second function holding it. It is the
@@ -1004,7 +1081,8 @@ lane named in it as `lane ui failed` and listed after the line as `  lane 'ui' F
 counts `over` and the grade over the measured scopes only, and ends with `-> rerun changed
 lanes: crapkit coverage --reuse-unchanged`. With uncommitted changes in the tree that line
 adds ``(the working tree has uncommitted changes, so every lane that lists no `inputs`
-reruns)``.
+reruns)``. When git cannot say whether the tree is clean, the line says so instead and
+quotes git's error, since no lane without `inputs` can be reused then either.
 
 ---
 
@@ -1028,6 +1106,7 @@ $ crapkit doctor --json
       "artifact_present": true,
       "commit": "9a1d11895c5ff5b791b497a13294494fdab949ce",
       "name": "py",
+      "refusal": null,
       "seconds": 1.1
     }
   ],
@@ -1043,12 +1122,12 @@ $ crapkit doctor --json
 | Key | Meaning |
 |---|---|
 | `problems` | The FAIL findings, as text. **Non-empty is exit 1.** |
-| `warnings` | The WARN findings: unmeasured directories, scopes a lane measures with no `scoped_tests` template, lanes writing their artifacts at the repo root instead of under `.crapkit/`, and lanes with no `results_artifact`. Exit stays 0. |
+| `warnings` | The WARN findings: unmeasured directories, scopes a lane measures with no `scoped_tests` template, lanes writing their artifacts at the repo root instead of under `.crapkit/`, lanes with no `results_artifact`, a lane whose artifact on disk is the leftover its last attempt failed to replace (the lane's `refusal`, prefixed `lane '<name>': `), and a `.crapkit/artifacts.json` crapkit cannot read. Exit stays 0. |
 | `versions` | crapkit, lizard, python. `lizard` is `null` when it is not importable, which is also a FAIL. |
 | `analysis_version` | The analysis semantics version, currently `12`. Together with `lizard` it forms the ratchet's metric stamp. Follow [the upgrade checks](upgrading.md#measure-before-changing-marks) before restamping; changed function identity can require a reviewed mapping. |
 | `store` | `.crapkit/crap.sqlite`: whether it exists and how big it is. `present: false` and `size_bytes: 0` on a fresh repo. |
 | `newest_run` | `{id, kind, verdict_ok}`, or `null` when nothing has run. `verdict_ok` is `null` for non-verify runs. |
-| `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. |
+| `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. `refusal` (since 0.8.1) is `null`, or the sentence saying why `--reuse-artifacts` will not score the file on disk: the lane's last attempt wrote no artifact, and the file predates that attempt, or `.crapkit/artifacts.json` cannot be read, so crapkit cannot tell whether the file is such a leftover. doctor asks the question `--reuse-artifacts` asks, so both give one answer for a lane. `artifact_present: true` beside a `refusal` is a file reuse will not score, not the lane's output. |
 
 `note`-level findings (a file over `max_file_bytes`, no lanes declared, a coverage.py lane
 an environment manager heads and doctor therefore did not probe) appear in the plain output
@@ -1245,7 +1324,7 @@ no renames. The report says so on stderr, naming the commit, and the ages count 
 | `claims --json` | Above. |
 | `digest` | **Never JSON.** Plain lines, and silent when nothing changed. |
 | `report` | No payload of its own. It writes one self-contained HTML page to `.crapkit/report.html` (or `--out PATH`, repo-relative, or an absolute path you name) and prints that path on stdout, rendering the `worklist` and `trend` payloads above at their defaults. Read those two instead of parsing the page. |
-| `explain` | Plain lines by default. `--json` emits the same content as one sorted-keys object with `schema` 1: the score per run, the ratchet mark, and under `--history` the commits that touched the function, each carrying its message `body` alongside its sha. `NAME` takes a start line as of 0.4.5, the same form `brief` takes. |
+| `explain` | Plain lines by default. `--json` emits the same content as one sorted-keys object with `schema` 1: the score per run, the ratchet mark, and under `--history` the commits that touched the function, each carrying its message `body` alongside its sha. `NAME` takes a start line as of 0.4.5, the same form `brief` takes. `--history` reads the span the newest run measured on the working tree, maps it through the uncommitted diff onto HEAD's lines, and asks `git log -L` about those. `commits` is `null` with a `commits_note` when the span holds only uncommitted lines (`pkg/m.py:9-10 holds only uncommitted lines, so no commit has touched it yet`) and when git cannot answer, quoting git's error and ending ``fix what git reports, then run `crapkit explain --history` again``. `--tests` withholds its test ids whenever the file's dark lines are withheld: `tests` is `null` and `tests_note` repeats `uncovered_lines_note`, because the contexts sit on the same stale line numbers. |
 
 ### Read commands that write
 
@@ -1358,7 +1437,7 @@ file. The plugin registers it async with a 20-second timeout, so no edit waits o
 | Exit | Means | Output |
 |---|---|---|
 | `0` | nothing to say | stdout and stderr both empty |
-| `2` | a changed function is over its ceiling, or the edit changed a file no reader could read | three or more lines on stderr, which reach the model |
+| `2` | a changed function is over its ceiling, or a changed file went unjudged | three or more lines on stderr, which reach the model |
 
 Captured from a real run, on a file whose `route` reached ccn 7 under a ceiling of 6:
 
@@ -1387,8 +1466,22 @@ A tracked file the edit left unchanged against `HEAD` stays silent, as the commi
 passes an unread file nobody staged.
 
 It judges the functions the edit touched, not the whole file. Judging the file would fire on
-every edit in a repo with seeded debt and say nothing new. An untracked file is the one
-exception: `git diff` can see none of it, so every function in it counts.
+every edit in a repo with seeded debt and say nothing new. An untracked file is one
+exception: `git diff` can see none of it, so every function in it counts. A file staged
+before the repo's first commit is the other: with no commit to diff against, every function
+in it is new.
+
+Since 0.8.1 an edit the hook could not judge exits 2 too, in the same three-line shape. A
+changed file no reader could read used to score as zero functions, and zero records read as
+zero breaches, so a ccn-8 function beside one construct the reader refused passed in
+silence. The head line now says `could not read calc/grade.py, so no function in it was
+judged`, the second line quotes the reader's reason, and the third says what to change. When
+HEAD resolves and git still fails, as with a corrupt index, the head line says `git could
+not report what changed in calc/grade.py`, the second line quotes git's own words (`git diff
+HEAD -- calc/grade.py: fatal: .git/index: index file smaller than expected`), and no function
+is listed: a failed read no longer passes for an untracked file. A file the edit left as
+HEAD has it stays silent, readable or not, as the commit gate never judges an untouched file.
+A machine with no git at all stays on the silence ladder.
 
 That diff runs root-relative since 0.4.5, the way every other git spawn crapkit makes does,
 so a `crapkit.toml` below the git top gets advisories on the paths the commit gate will
@@ -1404,6 +1497,16 @@ several; the exit is 2 when any of them breached. That is what catches source wr
 Each bound has its own reason. The window keeps a later `ls` from re-advising a file that was
 already dirty before this command ran. The cap is there because PostToolUse waits this
 process out, so a large dirty tree would be a stall rather than a reason to judge all of it.
+
+The window judges an mtime, and a touch, a same-bytes rewrite or a test run right after an
+Edit moves one with no new content. So since 0.8.1 the hook also remembers what it judged:
+each judgement records the sha256 of the bytes it read, per session and per file, under
+`<git dir>/crapkit/claude-hook/<session_id>/`, and a fresh file whose bytes match that record
+is skipped. An advisory is said once per content per session. A payload with no usable
+`session_id` gets no memory and judges as before; a session idle for seven days is pruned
+when another starts. The working tree stays byte-identical. Source that lands with an old
+mtime is never judged here: a command that ran longer than the window, `cp -p`, `mv`, an
+unpacked archive. That is the documented miss, and the commit gate catches it.
 And only Python is judged, because every other language stays the commit gate's business,
 which is what keeps the fallback cheap enough to pay per shell call. The status read is
 `git status --porcelain -z -uall`, so a heredoc that creates a whole new directory of source
@@ -1441,7 +1544,7 @@ Five rungs, each exiting 0 with both streams empty. Any uncaught exception does 
 | event | stdin is not one JSON object, or not a `PostToolUse` carrying `tool_input.file_path` or a `tool_input.command` |
 | repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config. On a `Bash` event: no git repo above the command's `cwd`, or no changed `*.py` fresh enough to judge |
 | git state | mid-rebase, mid-merge or mid-cherry-pick |
-| verdict | no scope claims the file, the file holds no function, no changed function is over the ceiling, or every one that is carries a ratchet mark |
+| verdict | no scope claims the file, a reader read it and found no functions, no changed function is over the ceiling, or every one that is carries a ratchet mark |
 
 Since 0.4.7 the protocol rung is checked first, ahead of the event shape and ahead of every
 git call, so a payload for a protocol this CLI does not answer costs nothing but the read of

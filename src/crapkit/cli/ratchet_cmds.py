@@ -12,6 +12,7 @@ from typing import NamedTuple
 
 from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
+from ..named import first_few
 from ..store import SnapshotStore
 from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
                       _print_json, _ratchet_or_die, _repo_relative, _stand)
@@ -235,34 +236,170 @@ def _ratchet_move(root: Path, cfg, files: list, cwd: Path | None) -> int:
     return 0
 
 
-def _prune_renames(root: Path, store: SnapshotStore) -> dict[str, str]:
+class _Renames(NamedTuple):
+    """The renames prune can see, and the run their diff starts from.
+
+    `missing` is the store's first run when this clone does not hold its
+    commit; `anchor` is then the oldest run whose commit it does hold, or None
+    when it holds none.
+    """
+    pairs: dict[str, str]
+    anchor: dict | None
+    missing: dict | None = None
+
+
+def _prune_renames(root: Path, runs: list[dict]) -> _Renames:
     """Renames a mark could have lived through, as one tree-to-tree diff.
 
     Anchored at the store's FIRST run: a mark can only have been seeded from a
     run, so no mark era starts before it, and rename detection compares two trees
     rather than walking history, so the widest window costs the same as a narrow
-    one and cannot invent a pairing. An anchor a rebase rewrote away yields no
-    renames and prune drops exactly as it did before.
+    one and cannot invent a pairing. A clone that lacks that commit (a rebase
+    and gc, a squash-merged branch gc collected, a depth-1 CI clone) diffs from
+    the oldest run it holds instead, and `_refuse_unseen_renames` refuses the
+    marks that window cannot answer for. Any other git failure is named: it used
+    to read as "no renames", and a renamed file's marks dropped as repaid debt.
     """
     from ..errors import GitError
+    from ..gitio import has_commit, renamed_paths
+
+    first = runs[0]
+    try:
+        return _Renames(renamed_paths(root, first["commit"]), first)
+    except GitError:
+        if has_commit(root, first["commit"]):
+            raise
+    if not _git_work_tree(root):
+        print(f"note: {root} is not a git work tree, so prune followed no renames",
+              file=sys.stderr)
+        return _Renames({}, None)
+    return _held_renames(root, runs)
+
+
+def _git_work_tree(root: Path) -> bool:
+    """Whether git manages `root` at all. A directory outside every repository
+    holds no history a file could have been renamed in."""
+    from ..errors import GitError
+    from ..gitio import worktree_root
+
+    try:
+        worktree_root(root)
+    except GitError:
+        return False
+    return True
+
+
+def _held_renames(root: Path, runs: list[dict]) -> _Renames:
+    """The renames since the oldest run whose commit this clone holds."""
     from ..gitio import renamed_paths
 
-    runs = store.list_runs()
-    if not runs:
-        return {}
-    try:
-        return renamed_paths(root, runs[0]["commit"])
-    except GitError:
-        return {}
+    anchor = _oldest_held(root, runs)
+    if anchor is None:
+        return _Renames({}, None, runs[0])
+    return _Renames(renamed_paths(root, anchor["commit"]), anchor, runs[0])
+
+
+def _oldest_held(root: Path, runs: list[dict]) -> dict | None:
+    """The oldest of `runs` whose commit this clone holds, asking git once per
+    commit: runs share commits, and a shallow CI clone lacks most of them."""
+    from ..gitio import has_commit
+
+    asked: dict[str, bool] = {}
+    for run in runs:
+        commit = run["commit"]
+        if commit not in asked:
+            asked[commit] = has_commit(root, commit)
+        if asked[commit]:
+            return run
+    return None
 
 
 def _pruned(root: Path, store: SnapshotStore, prior: list, fresh: list) -> tuple[list, str]:
     """Prune, renames first: a file git moved is a relocated mark, not repaid debt."""
     from ..ratchet import follow_renames, prune_ratchet
 
-    followed, moved = follow_renames(prior, fresh, _prune_renames(root, store))
+    renames = _prune_renames(root, store.list_runs())
+    followed, moved = follow_renames(prior, fresh, renames.pairs)
     entries, dropped = prune_ratchet(followed, fresh)
-    return entries, f"pruned {dropped}, followed {moved} rename(s)"
+    _refuse_unseen_renames(root, renames, _left_the_corpus(followed, entries, fresh))
+    _note_window(renames)
+    return entries, (f"pruned {dropped}, followed {moved} rename(s)"
+                     f"{_followed_names(prior, followed, renames.pairs)}")
+
+
+def _left_the_corpus(followed: list, kept: list, fresh: list) -> list[str]:
+    """The paths of dropped marks that hold no row in the run: only a file that
+    left could have been renamed. A path that still scores cannot be a rename's
+    source, so its dropped marks are code that left, whatever the anchor."""
+    scored, kept_marks = {row.path for row in fresh}, set(kept)
+    return sorted({e.path for e in followed if e not in kept_marks and e.path not in scored})
+
+
+def _refuse_unseen_renames(root: Path, renames: _Renames, left: list[str]) -> None:
+    """Exit 4, before anything is written, when the first run's commit is gone
+    and a dropped mark's file may have been renamed where no held commit shows.
+
+    A file still in the checkout was not renamed. A file the anchor's tree held
+    and HEAD's does not shows in the diff from the anchor, so its rename was
+    seen or there was none. What is left left before the oldest held run.
+    """
+    from ..errors import GitError
+
+    if renames.missing is None or not left:
+        return
+    unseen = _unseen(root, renames.anchor, left)
+    if unseen:
+        raise GitError(_unseen_refusal(root, renames.missing, unseen))
+
+
+def _unseen(root: Path, anchor: dict | None, left: list[str]) -> list[str]:
+    from ..gitio import diff_names_since, ls_files
+
+    known = set(ls_files(root))
+    if anchor is not None:
+        known.update(diff_names_since(root, anchor["commit"]))
+    return [path for path in left if path not in known]
+
+
+def _unseen_refusal(root: Path, missing: dict, unseen: list[str]) -> str:
+    commit = missing["commit"]
+    return (f"ratchet prune: run {missing['id']}'s commit {commit[:11]} is not in this clone, so "
+            f"git cannot say whether {first_few(unseen)} was renamed or deleted, and prune would "
+            f"drop the marks there as repaid debt; {_anchor_fetch(root, commit)}; nothing was written")
+
+
+def _anchor_fetch(root: Path, commit: str) -> str:
+    """The fetch that brings the anchor back, and the way on when none can."""
+    from ..gitio import is_shallow
+
+    if is_shallow(root):
+        return ("this shallow clone does not hold it: set fetch-depth: 0 on the checkout or run "
+                "git fetch --unshallow, then prune again")
+    return (f"fetch it with `git fetch origin {commit}` and prune again, or, when no remote holds "
+            f"it, move a renamed file's marks with `{_self()} ratchet move OLD NEW` and delete a "
+            "deleted file's marks from the marks file by hand")
+
+
+def _followed_names(prior: list, followed: list, pairs: dict[str, str]) -> str:
+    """` (a.py -> b.py, ...)`: the renames the marks followed, up to three."""
+    kept = set(followed)
+    moved = sorted({f"{e.path} -> {pairs[e.path]}" for e in prior if e not in kept})
+    return f" ({first_few(moved)})" if moved else ""
+
+
+def _note_window(renames: _Renames) -> None:
+    """One stderr line when the first run's commit is gone, naming the run the
+    renames were read from instead. stderr, so the prune line keeps its shape."""
+    if renames.missing is None:
+        return
+    gone = (f"note: run {renames.missing['id']}'s commit {renames.missing['commit'][:11]} "
+            "is not in this clone")
+    if renames.anchor is None:
+        print(f"{gone}, and no run's commit is, so no rename was followed", file=sys.stderr)
+        return
+    print(f"{gone}, so renames were followed from run {renames.anchor['id']} "
+          f"({renames.anchor['commit'][:11]}), the oldest run whose commit it holds",
+          file=sys.stderr)
 
 
 def _print_ratchet_report(report: dict, violations: list, ratchet_file: str) -> None:

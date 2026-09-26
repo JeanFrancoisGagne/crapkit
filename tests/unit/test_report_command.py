@@ -151,11 +151,11 @@ def test_lane_states_reports_no_note_for_an_artifact_that_still_describes_the_tr
 def test_the_joined_note_load_uncovered_reports_is_built_from_the_same_states(tmp_path):
     """One source of truth: a lane the list calls fresh cannot show up in the
     note that blacks out every line number repo-wide."""
-    from crapkit.uncovered import _staleness_note, lane_states
+    from crapkit.uncovered import lane_states, load_uncovered
 
     cfg = _config(("a", "a.json"), ("b", "b.json"))
 
-    note = _staleness_note(tmp_path, cfg, _CleanGit())
+    note = load_uncovered(tmp_path, cfg, _CleanGit()).note
 
     assert note == "; ".join(n for _, n in lane_states(tmp_path, cfg, _CleanGit()) if n)
     assert "lane 'a'" in note and "lane 'b'" in note

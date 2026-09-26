@@ -15,6 +15,8 @@ import os
 import time
 from pathlib import Path
 
+import pytest
+
 import crapkit.analyze as analyze
 from crapkit.analyze import analyze_files, analyze_one, content_hash, fingerprint
 from crapkit.merge import FunctionRecord
@@ -225,3 +227,69 @@ def test_a_missing_file_still_raises_when_it_is_handed_to_the_analyzer(tmp_path)
 
     with pytest.raises(OSError):
         analyze_files(tmp_path, ["gone.ts"], cache={})
+
+
+# --- the stat index against every way a file changes ----------------------------
+#
+# One row per way a file changes between two runs, judged by what the second
+# run scores against what the file holds. The last row is the named limit: a
+# same-length rewrite under a restored mtime keeps the stamped hash. What
+# hashing every file would cost to close it is measured in 0.9.0.
+
+def _touch(path: Path, settled: int) -> None:
+    _settle(path, settled + 1000)
+
+
+def _crlf_checkout(path: Path, settled: int) -> None:
+    """core.autocrlf=true rewrites the file with CRLF endings and a new mtime."""
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    _settle(path, settled + 1000)
+
+
+def _same_size_edit(path: Path, settled: int) -> None:
+    path.write_text(BETA, encoding="utf-8")
+    _settle(path, settled + 1000)
+
+
+def _same_size_edit_restored_mtime(path: Path, settled: int) -> None:
+    """cp -p, rsync -t, tar -x, touch -r: new bytes under the stamped mtime."""
+    path.write_text(BETA, encoding="utf-8")
+    _settle(path, settled)
+
+
+@pytest.mark.parametrize("change, scored, hits", [
+    (_touch, ["aa"], 1),
+    (_crlf_checkout, ["aa"], 0),
+    (_same_size_edit, ["bb"], 0),
+    (_same_size_edit_restored_mtime, ["aa"], 1),  # the named limit: stale
+], ids=["touch", "crlf-checkout", "same-size-edit", "restored-mtime-limit"])
+def test_a_second_run_scores_what_the_file_holds_but_under_a_restored_mtime(
+        tmp_path, change, scored, hits):
+    settled = time.time_ns() - HOUR_NS
+    path = _write(tmp_path, "a.ts", ALPHA, settled)
+    _, _, cache = analyze_files(tmp_path, ["a.ts"], cache={})
+
+    change(path, settled)
+    records, hit, _ = analyze_files(tmp_path, ["a.ts"], cache=cache)
+
+    assert (_names(records, "a.ts"), hit) == (scored, hits)
+
+
+def test_a_symlink_repointed_to_a_same_size_target_under_one_mtime_is_the_named_limit(tmp_path):
+    """stat follows the link, so the new target's (mtime_ns, size) is the old
+    one's and the stamped hash is served: the same limit as a restored mtime."""
+    settled = time.time_ns() - HOUR_NS
+    _write(tmp_path, "one.txt", ALPHA, settled)
+    _write(tmp_path, "two.txt", BETA, settled)
+    link = tmp_path / "a.ts"
+    try:
+        link.symlink_to("one.txt")
+    except OSError as exc:
+        pytest.skip(f"this host cannot create a symlink (Windows without developer mode): {exc}")
+    _, _, cache = analyze_files(tmp_path, ["a.ts"], cache={})
+
+    link.unlink()
+    link.symlink_to("two.txt")
+    stale, _, _ = analyze_files(tmp_path, ["a.ts"], cache=cache)
+
+    assert _names(stale, "a.ts") == ["aa"], "documented: stat cannot see a retarget like this"

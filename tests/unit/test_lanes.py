@@ -109,8 +109,8 @@ def test_the_stale_artifact_refusal_still_carries_the_log_and_its_tail(tmp_path)
 
 
 def test_a_rerun_that_writes_the_same_bytes_is_still_this_run_s_artifact(tmp_path):
-    """Freshness is the mtime, not the content: a runner that rewrites an
-    identical report bumps it, so a byte-identical rerun must stay green."""
+    """The declared file sits aside while the attempt runs, so a runner that
+    rewrites an identical report wrote it, and a byte-identical rerun stays green."""
     (tmp_path / "cov.json").write_text(ISTANBUL, encoding="utf-8")
     script = tmp_path / "write.py"
     script.write_text(f"open('cov.json', 'w', encoding='utf-8').write({ISTANBUL!r})\n",

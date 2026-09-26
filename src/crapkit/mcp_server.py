@@ -72,6 +72,26 @@ def _unread_files_schema(payload: str, key: str) -> dict:
 _SHALLOW_CHURN = schema_of("worklist --json", "shallow")
 _UNMEASURED = schema_of("next-item", "item.unmeasured")
 
+# Whether the ranked run still describes the files on disk, said once for every
+# payload that carries it. `stale` keeps its schema 1 meaning, the run's commit
+# against HEAD; `scored_changes`, the content answer beside it, and the
+# commands.refresh that answers both are 0.8.1 fields, declared once in
+# agent_fields.
+_STALE = {
+    "type": "boolean",
+    "description": ("true when the run's commit is not HEAD. It judges the commit, not the "
+    "files: an amend or a commit that touched no scored file sets it, and an uncommitted "
+    "edit leaves it false; scored_changes counts the files whose content moved. "
+    "Schema 2 redefines it as that content difference")}
+# brief's commands.refresh is 0.8.0's field; it names the same call the added one does.
+_REFRESH = schema_of("next-item", "commands.refresh")
+
+
+def _refresh_commands(payload: str) -> dict:
+    return {"type": "object",
+            "description": "the call that answers stale and scored_changes; run it as given",
+            "properties": {"refresh": schema_of(payload, "commands.refresh")}}
+
 _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared scope that owns the file'},
  'path': {'type': 'string', 'description': 'repo-relative source path, forward slashes'},
  'function': {'type': 'string',
@@ -207,11 +227,9 @@ TOOLS: tuple[dict, ...] = (
             "commit": {
                 "type": "string",
                 "description": "that run's commit, full sha"},
-            "stale": {
-                "type": "boolean",
-                "description": ("true when the run's commit is not HEAD, so cov, crap and "
-                "uncovered_lines describe an older tree; crapkit coverage "
-                "--reuse-unchanged (get_function_brief's commands.refresh) clears it")},
+            "stale": _STALE,
+            "scored_changes": schema_of("next-item", "scored_changes"),
+            "commands": _refresh_commands("next-item"),
             "shallow": _SHALLOW_CHURN,
             "empty": {
                 "type": "boolean",
@@ -241,7 +259,7 @@ TOOLS: tuple[dict, ...] = (
                 "type": "object",
                 "description": ("why the queue is empty, present only when empty is true; the stop "
                 "condition is empty true with skipped_claimed and no_lane_over_target "
-                "both 0 or absent"),
+                "both 0 or absent and scored_changes 0"),
                 "properties": {
                     "below_floor": {
                         "type": "integer",
@@ -299,11 +317,9 @@ TOOLS: tuple[dict, ...] = (
             "commit": {
                 "type": "string",
                 "description": "that run's commit, full sha"},
-            "stale": {
-                "type": "boolean",
-                "description": ("true when the run's commit is not HEAD, so cov, crap and "
-                "uncovered_lines describe an older tree; crapkit coverage "
-                "--reuse-unchanged (get_function_brief's commands.refresh) clears it")},
+            "stale": _STALE,
+            "scored_changes": schema_of("worklist --json", "scored_changes"),
+            "commands": _refresh_commands("worklist --json"),
             "shallow": _SHALLOW_CHURN,
             "floor": {
                 "type": "integer",
@@ -496,10 +512,8 @@ TOOLS: tuple[dict, ...] = (
             "commit": {
                 "type": "string",
                 "description": "that run's commit, full sha"},
-            "stale": {
-                "type": "boolean",
-                "description": ("true when the run's commit is not HEAD, so every number here "
-                "describes an older tree; run commands.refresh first")},
+            "stale": _STALE,
+            "scored_changes": schema_of("brief --json", "scored_changes"),
             "shallow": schema_of("brief --json", "shallow"),
             "unmeasured": schema_of("brief --json", "unmeasured"),
             "path": {
@@ -692,10 +706,7 @@ TOOLS: tuple[dict, ...] = (
                     "verify": {
                         "type": "string",
                         "description": "the crapkit verify call: the only authoritative verdict"},
-                    "refresh": {
-                        "type": "string",
-                        "description": ("crapkit coverage --reuse-unchanged: the cheapest run that "
-                        "clears stale")},
+                    "refresh": _REFRESH,
                     "refresh_writes_run": {
                         "type": "boolean",
                         "description": ("always true: refresh writes a coverage run to the store; "
@@ -1126,6 +1137,10 @@ TOOLS: tuple[dict, ...] = (
                             "type": ("string", "null"),
                             "description": ("commit stamped on the artifact, null for a lane that "
                             "never ran")},
+                        "refusal": {
+                            "type": ("string", "null"),
+                            "description": ("why --reuse-artifacts will not score the artifact on "
+                            "disk (the lane's last attempt left it unwritten), null when it would")},
                         "seconds": {
                             "type": ("number", "null"),
                             "description": "how long the lane took last time, null when it never ran"}}}}},

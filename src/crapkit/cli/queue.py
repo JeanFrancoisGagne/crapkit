@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 from .. import keys, packet
 from ..churn_cache import load_churn
@@ -16,6 +17,7 @@ from ..gitio import head_commit, ls_files, shallow_checkout, shallow_warning
 from ..invocation import _self
 from ..repopath import Fragment, fragments
 from ..keys import claim_key, key_names, key_of, lookup, position, split_ordinal
+from ..named import first_few
 from ..score import SCORED_COLUMNS
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
@@ -93,7 +95,7 @@ def cmd_next_item(args: argparse.Namespace) -> int:
     commit = head_commit(root)
     ranked, conflicts = _maybe_claim(commit, args.claim, ranked, handles, args.top)
     head = _next_head(latest, skipped_no_lane, skipped_claimed + conflicts,
-                      latest["commit"] != commit, shallow_checkout(root))
+                      run_freshness(root, store, latest, commit), shallow_checkout(root))
     _warn_shallow(head["shallow"], "churn counts")
     _emit_next(store, head, ranked, args.top, adm, cfg, scored, excludes, scopes,
                lambda: load_uncovered(root, cfg), handles)
@@ -155,18 +157,70 @@ def _claim_available(row, held: dict, legacy: set, handles) -> bool:
     return pair not in legacy and (not precise or handles.key(row) not in precise)
 
 
+class RunFreshness(NamedTuple):
+    """Whether the run a payload ranks still describes the tree.
+
+    `stale` keeps the meaning it has always had: the run's commit is not HEAD.
+    It says nothing about content, so an amend that moves no byte sets it and
+    an uncommitted rewrite of a scored function leaves it false. `changed`
+    names the files the run scored that hold other content now than the run
+    recorded, or is None for a run that recorded none (every run 0.8.0 wrote)
+    and when git could not read the tree to compare, whose error `unread`
+    carries. 0.9.0's schema 2 redefines `stale` from `changed`, here and
+    nowhere else.
+    """
+    stale: bool
+    changed: list[str] | None
+    unread: str = ""
+
+    @property
+    def scored_changes(self) -> int | None:
+        return None if self.changed is None else len(self.changed)
+
+    def fields(self) -> dict:
+        """The two keys every payload about a scored run carries."""
+        return {"stale": self.stale, "scored_changes": self.scored_changes}
+
+    def envelope(self) -> dict:
+        """The two keys plus the command that answers them, for a payload that
+        names no per-file commands of its own."""
+        return {**self.fields(), "commands": packet.refresh_command()}
+
+
+def run_freshness(root: Path, store, latest: dict, head: str) -> RunFreshness:
+    """`stale` and the scored files that moved since the run, for every payload
+    that carries them, so no two payloads can disagree about one run."""
+    changed, unread = _moved_since(root, store.run_sources(latest["id"]))
+    return RunFreshness(latest["commit"] != head, changed, unread)
+
+
+def _moved_since(root: Path, recorded: dict | None) -> tuple[list[str] | None, str]:
+    """The recorded files whose content differs now, deleted ones included,
+    and "". None and git's error when git cannot read the tree: a failed read
+    is neither "changed" nor "unchanged"."""
+    from ..errors import GitError
+    from ..lane_sources import moved
+
+    if recorded is None:
+        return None, ""
+    try:
+        return moved(root, recorded), ""
+    except GitError as exc:
+        return None, str(exc)
+
+
 def _next_head(latest: dict, skipped_no_lane: int, skipped_claimed: int,
-               stale: bool, shallow: bool) -> dict:
+               fresh: RunFreshness, shallow: bool) -> dict:
     """skipped_claimed appears only when a claim actually hid something, so a
     store nobody ever claimed in emits exactly the JSON it emitted before.
 
-    `stale` is the same verdict worklist prints its warning from: the snapshot
-    describes a commit HEAD has moved past, so the spans in it may have moved.
-    `shallow` says the churn the queue ranks ties on was counted in a clone
-    that holds only part of its history.
+    `stale` and `scored_changes` are the verdict worklist prints its warnings
+    from, and `commands.refresh` is the one call that answers both. `shallow`
+    says the churn the queue ranks ties on was counted in a clone that holds
+    only part of its history.
     """
     head = {"run_id": latest["id"], "commit": latest["commit"],
-            "skipped_no_lane": skipped_no_lane, "stale": stale, "shallow": shallow}
+            "skipped_no_lane": skipped_no_lane, **fresh.envelope(), "shallow": shallow}
     if skipped_claimed:
         head["skipped_claimed"] = skipped_claimed
     return head
@@ -629,8 +683,10 @@ class _BriefLoader:
     def head(self) -> str:
         return self._once("head", lambda: head_commit(self.root))
 
-    def stale(self) -> bool:
-        return self.latest["commit"] != self.head()
+    def freshness(self) -> RunFreshness:
+        """One read of HEAD and of the run's record for a whole batch."""
+        return self._once("freshness",
+                          lambda: run_freshness(self.root, self.store, self.latest, self.head()))
 
     def versions(self) -> dict:
         return self._once("versions", _brief_versions)
@@ -755,7 +811,7 @@ def _packet_context(loader, row, rows: list) -> dict:
         "file_totals": packet.file_totals(rows, cfg.scope_targets, cfg.target),
         "gate_rule": _packet_gate(loader, row),
         "lane": packet.lane_record(packet.lane_for(scope, cfg.lanes)),
-        "stale": loader.stale(),
+        **loader.freshness().fields(),
         "shallow": loader.shallow,
         "versions": loader.versions(),
         "commands": _packet_commands(cfg, row, scope),
@@ -887,7 +943,7 @@ def _brief_batch(loader, count: int) -> dict:
     rows, skipped_claimed = _batch_rows(loader, count)
     loader.prime_attempts(rows)
     out = {"run_id": loader.latest["id"], "commit": loader.latest["commit"],
-           "stale": loader.stale(), "shallow": loader.shallow,
+           **loader.freshness().envelope(), "shallow": loader.shallow,
            "packets": [_brief_packet(loader, row) for row in rows]}
     if skipped_claimed:
         out["skipped_claimed"] = skipped_claimed
@@ -926,10 +982,30 @@ def _resolve_top(requested: int | None, cfg) -> int:
     return top
 
 
-def _stale_warning(stale: bool, as_json: bool, latest: dict) -> None:
-    if stale and not as_json:
-        print(f"warning: snapshot is for {latest['commit'][:11]}, HEAD has moved on - "
-              f"rerun `{_self()} coverage`", file=sys.stderr)
+def _stale_warning(fresh: RunFreshness, as_json: bool, latest: dict) -> None:
+    """The plain table's warnings; --json carries the same verdict as fields."""
+    if as_json:
+        return
+    for line in _freshness_warnings(fresh, latest):
+        print(line, file=sys.stderr)
+
+
+def _freshness_warnings(fresh: RunFreshness, latest: dict) -> list[str]:
+    """One line per way the run no longer matches: HEAD moved past its commit,
+    and files it scored hold other content now. Either can happen without the
+    other, and the second names the files so the reader can check them."""
+    lines = []
+    if fresh.stale:
+        lines.append(f"warning: snapshot is for {latest['commit'][:11]}, HEAD has moved on - "
+                     f"rerun `{_self()} coverage`")
+    if fresh.changed:
+        lines.append(f"warning: {len(fresh.changed)} file(s) changed since run {latest['id']} "
+                     f"scored them: {first_few(fresh.changed)} - rerun `{_self()} coverage`")
+    if fresh.unread:
+        lines.append(f"warning: cannot tell which files changed since run {latest['id']} "
+                     f"scored them, because git failed: {fresh.unread} - fix what git "
+                     f"reports, then rerun `{_self()} coverage`")
+    return lines
 
 
 def _entry_json(e) -> dict:
@@ -960,14 +1036,17 @@ def _row_marker(e) -> str:
     return "  " + " ".join(marks) if marks else ""
 
 
-def _worklist_payload(wl, latest: dict, cfg, stale: bool, batches: list | None) -> dict:
+def _worklist_payload(wl, latest: dict, cfg, stale: bool, batches: list | None, *,
+                      changed: list[str] | None = None) -> dict:
     """The queue, plus `batches` when one was asked for.
 
     ADDED, never swapped in: a reader that wants active[] or stale off a batched
     call gets them, because the cut is a second view of the same queue.
+    `changed` is RunFreshness.changed: None when the run recorded no content.
     """
     payload = {
-        "run_id": latest["id"], "commit": latest["commit"], "stale": stale,
+        "run_id": latest["id"], "commit": latest["commit"],
+        **RunFreshness(stale, changed).envelope(),
         "floor": cfg.worklist_floor, "churn_window_months": cfg.churn_window_months,
         "active": [_entry_json(e) for e in wl.active],
         # what the cap hid: distinct from the over-ceiling total `trend` carries
@@ -1001,12 +1080,13 @@ def _cap_label(requested: int | None, top: int) -> str:
     return f"--top {top}" if requested is not None else f"worklist_top {top}"
 
 
-def _worklist_print(as_json: bool, wl, latest: dict, cfg, stale: bool,
+def _worklist_print(as_json: bool, wl, latest: dict, cfg, fresh: RunFreshness,
                     batches: list | None, cap: str, shallow: bool) -> None:
-    _stale_warning(stale, as_json, latest)
+    _stale_warning(fresh, as_json, latest)
     _warn_shallow(shallow, "churn counts")
     if as_json:
-        _print_json({**_worklist_payload(wl, latest, cfg, stale, batches), "shallow": shallow})
+        _print_json({**_worklist_payload(wl, latest, cfg, fresh.stale, batches,
+                                         changed=fresh.changed), "shallow": shallow})
         return
     print(f"worklist @ {latest['commit'][:11]} (run {latest['id']}, floor ccn>={cfg.worklist_floor}, "
           f"churn {cfg.churn_window_months}mo) - {len(wl.active)} of {wl.active_total} active "
@@ -1056,7 +1136,8 @@ def cmd_worklist(args: argparse.Namespace) -> int:
     top = _resolve_top(args.top, cfg)
     wl = _worklist_for(root, cfg, store, latest, top=top, scopes=scopes)
     batches = _worklist_batches(root, cfg, wl.active, args.batches)
-    _worklist_print(args.json, wl, latest, cfg, latest["commit"] != head_commit(root), batches,
+    _worklist_print(args.json, wl, latest, cfg,
+                    run_freshness(root, store, latest, head_commit(root)), batches,
                     _cap_label(args.top, top), shallow_checkout(root))
     return 0
 

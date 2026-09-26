@@ -8,8 +8,9 @@ invocation, at an unmoved HEAD. On a 72k-commit consumer that is 0.95 s and
 The deflated churn log removed git's walk; it did not remove this one, because
 the pairing reads that log's per-commit structure line by line either way.
 
-The key is the churn map's key (HEAD sha, window months, UTC date, path format)
-plus a digest of the tracked set. The tracked set is there because ranking
+The key is the churn map's key (HEAD sha, window months, UTC date, path format,
+history depth) plus a digest of the tracked set. The depth is git's shallow
+boundary: deepening a clone adds co-changes under an unmoved HEAD. The tracked set is there because ranking
 drops any pair naming a file `git ls-files` no longer lists, and ls-files reads
 the INDEX, which moves without HEAD: `git rm --cached src/util.py` leaves the
 sha alone and must still retire every pair naming util.py. The digest costs
@@ -34,7 +35,7 @@ from datetime import datetime, timezone
 from hashlib import blake2b
 from pathlib import Path
 
-from .churn_log import log_lines
+from .churn_log import history_depth, log_lines
 from .coupling import change_coupling_lines
 from .errors import GitError
 from .gitio import head_commit
@@ -81,13 +82,17 @@ def _utc_date() -> str:
 
 
 def _cache_key(root: Path, months: int, paths: list[str]) -> dict | None:
-    """None when HEAD is unreadable: then there is nothing safe to key on."""
+    """None when HEAD or the history depth is unreadable: then there is
+    nothing safe to key on."""
     try:
         head = head_commit(root)
     except GitError:
         return None
+    depth = history_depth(root)
+    if depth is None:
+        return None
     return {"head": head, "months": months, "date": _utc_date(),
-            "paths": PATH_FORMAT, "tracked": _tracked_digest(paths)}
+            "paths": PATH_FORMAT, "depth": depth, "tracked": _tracked_digest(paths)}
 
 
 def _read_cache(path: Path, key: dict | None) -> list[dict] | None:

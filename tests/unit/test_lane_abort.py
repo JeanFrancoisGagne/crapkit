@@ -29,10 +29,12 @@ def writing(root: Path, *names: str) -> str:
     """A command that writes the files the fixture planted, so the lane under
     test is one that RAN and produced them. A command writing nothing is now
     refused for reusing the previous run's artifact, which is a different
-    failure from the junit these tests are about."""
+    failure from the junit these tests are about. It copies them from the
+    planted/ copies `lane_over` keeps: the runner moves the declared files
+    aside before the attempt, so touching them writes nothing."""
     script = root / "runner.py"
-    script.write_text("import os\n" + "".join(f"os.utime({n!r})\n" for n in names),
-                      encoding="utf-8")
+    script.write_text("import shutil\n" + "".join(
+        f"shutil.copyfile({'planted/' + n!r}, {n!r})\n" for n in names), encoding="utf-8")
     return f'"{sys.executable}" "{script}"'
 
 
@@ -49,8 +51,10 @@ def istanbul(root: Path) -> str:
 
 
 def lane_over(root: Path, junit: str, command: str = "never runs") -> Lane:
-    (root / "cov.json").write_text(istanbul(root), encoding="utf-8")
-    (root / "junit.xml").write_text(junit, encoding="utf-8")
+    (root / "planted").mkdir(exist_ok=True)
+    for name, text in (("cov.json", istanbul(root)), ("junit.xml", junit)):
+        (root / name).write_text(text, encoding="utf-8")
+        (root / "planted" / name).write_text(text, encoding="utf-8")
     return Lane(name="py", command=command, artifact="cov.json", parser="istanbul",
                 scopes=("src",), results_artifact="junit.xml")
 

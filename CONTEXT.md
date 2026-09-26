@@ -59,6 +59,16 @@ _Avoid_: dependencies, sources (a scope's paths are its sources)
 The coverage file a lane writes and crapkit reads.
 _Avoid_: report (a report is crapkit's own HTML page)
 
+**Stamp**:
+What a lane run records beside its artifact in `.crapkit/artifacts.json`: the commit, the reuse proof or why it did not hold, and the lane's content record. Read once per command.
+
+**Content record**:
+The git blob id of each file, the id `git add` would store, taken when a lane or a scored run read it. Freshness compares these ids with the tree; git's index answers for a file its stat cache calls unchanged, so a same-size edit under a restored modification time is a named limit.
+_Avoid_: digest, snapshot (a snapshot is a run in the store)
+
+**Leftover**:
+The artifact a lane's failed attempt left in place, which is the previous run's file. Reuse refuses it while it holds the same bytes.
+
 **Exclude**:
 A glob that removes files from the corpus before inventory.
 
@@ -80,6 +90,13 @@ A run in which some declared lanes did not run; never a baseline.
 
 **Legacy run**:
 A stored run written before crapkit recorded where same-line functions sit. Its same-line twins cannot be told apart: a function's history leaves the run out, and a command that must read the twins from it, such as a seed, refuses and names the run.
+
+**Stale**:
+The run's commit is not HEAD. It judges the commit, not the files: an amend that moves no byte makes a run stale, and an uncommitted edit leaves it fresh. Schema 2, planned for 0.9.0, redefines it as the content question.
+_Avoid_: out of date (say whether the commit or the content moved)
+
+**Scored changes**:
+How many files a run scored hold other content now than the run recorded, deleted files included; null when crapkit cannot compare. `0` is the only value that says the run's numbers describe the files on disk.
 
 **Baseline**:
 The trusted earlier run a verdict compares against.
@@ -108,6 +125,10 @@ _Avoid_: flaky failure, forgiven failure
 
 **Gate**:
 The rule that a new or changed function may not exceed its ceiling; enforced by the pre-commit hook, `verify` and the Action.
+
+**Advisory**:
+What `claude-hook` prints after an agent's edit lands: exit 2 and stderr naming each changed function over its ceiling, or naming a changed file it could not judge because no reader could read it or git could not report the change. It blocks nothing. After a `Bash` event it judges each file's bytes once per session.
+_Avoid_: gate, block (the edit is already on disk)
 
 ### Debt
 

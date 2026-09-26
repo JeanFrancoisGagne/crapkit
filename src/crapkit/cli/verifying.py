@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from .. import config
 from ..errors import ConfigError, CrapkitError, ToolError
 from ..invocation import _self
+from ..named import first_few
 from ..repopath import typed_path
 from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
@@ -96,22 +97,37 @@ def _verify_baseline(root: Path, store: SnapshotStore, requested: int | None) ->
     return pick.run
 
 
-def _require_ancestor(git, commit: str) -> None:
-    """Exit 4 when the baseline's commit is not behind HEAD, blaming the right
-    thing: a shallow clone never fetched the commit, and the fix is a deeper
-    fetch, not the fresh baseline the rewrite message asks for."""
+def _require_ancestor(git, commit: str, held=None) -> None:
+    """Exit 4 when the baseline's commit is not behind HEAD.
+
+    `held(commit)` says whether this clone holds the commit at all. `git
+    merge-base --is-ancestor` exits 128 on a commit it does not hold, which read
+    as "not an ancestor" and was blamed on a rewrite."""
     from ..errors import GitError
 
     if git.is_ancestor(commit):
         return
+    raise GitError(_not_behind(git, commit, held))
+
+
+def _not_behind(git, commit: str, held) -> str:
+    """Why the baseline's commit is not behind HEAD, blaming the right thing.
+
+    A shallow clone never fetched the commit, and a store copied from another
+    clone (a CI cache keyed on a branch) can name one this checkout never
+    fetched. The fix for both is a fetch, not the fresh baseline the rewrite
+    sentence asks for. An amend keeps the old commit in the object store, so
+    that one still reads as a rewrite."""
     if git.is_shallow():
-        raise GitError(
-            f"baseline commit {commit[:11]} is not an ancestor of HEAD in this shallow clone, "
-            "which does not hold it; set fetch-depth: 0 on the checkout or run "
-            "git fetch --unshallow")
-    raise GitError(
-        f"baseline commit {commit[:11]} is not an ancestor of HEAD "
-        f"(rebase or amend rewrote history) - run `{_self()} coverage` for a fresh baseline")
+        return (f"baseline commit {commit[:11]} is not an ancestor of HEAD in this shallow clone, "
+                "which does not hold it; set fetch-depth: 0 on the checkout or run "
+                "git fetch --unshallow")
+    if held is not None and not held(commit):
+        return (f"baseline commit {commit[:11]} is not in this clone, so git cannot say whether "
+                f"it is behind HEAD; fetch it with `git fetch origin {commit}`, or run "
+                f"`{_self()} coverage` here for a baseline this clone holds")
+    return (f"baseline commit {commit[:11]} is not an ancestor of HEAD "
+            f"(rebase or amend rewrote history) - run `{_self()} coverage` for a fresh baseline")
 
 
 def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
@@ -181,11 +197,11 @@ def _verify_basis(root: Path, store: SnapshotStore, args, git) -> tuple[dict, st
     --base pins the basis to merge-base(REF, HEAD) instead of the baseline run's
     own commit; without it the two are the same commit and nothing changes.
     """
-    from ..gitio import merge_base
+    from ..gitio import has_commit, merge_base
 
     basis = merge_base(root, args.base) if args.base else None
     baseline = _pick_baseline(root, store, args, basis, git)
-    _require_ancestor(git, baseline["commit"])
+    _require_ancestor(git, baseline["commit"], held=lambda commit: has_commit(root, commit))
     return baseline, basis or baseline["commit"]
 
 
@@ -761,6 +777,7 @@ def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
         "baseline_commit": baseline["commit"],
         "commit": commit,
         "changed_files": len(ranges),
+        "changed_paths": sorted(ranges),
         **_finding_lists(verdict),
         "new_failures": verdict.new_failures,
         "forgiven_failures": list(verdict.forgiven_failures),
@@ -785,9 +802,33 @@ def _warn_standing_debt(unmarked: list) -> None:
     """
     if not unmarked:
         return
-    print(f"warning: {len(unmarked)} function(s) over the ceiling carry no ratchet mark, so a "
-          f"rise on them (coverage loss included) passes unseen; record them with "
-          f"`{_self()} ratchet seed`", file=sys.stderr)
+    named = first_few([f"{row.path} {row.long_name}" for row in unmarked])
+    print(f"warning: {len(unmarked)} function(s) over the ceiling carry no ratchet mark "
+          f"({named}), so a rise on them (coverage loss included) passes unseen; record them "
+          f"with `{_self()} ratchet seed`", file=sys.stderr)
+
+
+def _untracked_in_scope(root: Path, cfg) -> list[str]:
+    """Source files a scope would score if git tracked them.
+
+    verify's diff and its corpus hold git-tracked files only, so a new file
+    nobody added was judged as nothing and read as `(0 changed files)`. Asked
+    before any lane runs, like the dirty set: a file a lane writes is the
+    lane's output, not somebody's unjudged work."""
+    from ..gitio import untracked_files
+    from ..universe import assign_files
+
+    by_scope = assign_files(untracked_files(root), cfg)
+    return sorted(path for paths in by_scope.values() for path in paths)
+
+
+def _warn_untracked_in_scope(untracked: list[str]) -> None:
+    """stderr, because `--json` prints one object on stdout; the paths are in
+    it as `untracked_in_scope`."""
+    if untracked:
+        print(f"warning: {len(untracked)} untracked file(s) in a scope were not judged "
+              f"({first_few(untracked)}): verify scores git-tracked files only; `git add` "
+              "them to have them judged", file=sys.stderr)
 
 
 def _warn_diff_uncovered(uncovered: list) -> None:
@@ -871,8 +912,16 @@ def _report_verify(as_json: bool, out: dict, verdict, ratchet_file: str) -> None
           f"({out['changed_files']} changed files)"
           f"{_forgiven_suffix(out)}{_retried_suffix(out)}"
           f"{_ratchet_suffix(out['ratchet_changes'], verdict.overridden, ratchet_file)}")
+    _print_changed_paths(out["changed_paths"])
     _print_verify_findings(verdict)
     _print_finding_split(verdict)
+
+
+def _print_changed_paths(paths: list[str]) -> None:
+    """The files behind the count, on their own line so the verdict line keeps
+    its shape. Nothing for an empty diff."""
+    if paths:
+        print(f"  changed files: {first_few(paths)}")
 
 
 def _refuse_lane_less_verify(cfg) -> None:
@@ -914,6 +963,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     # cannot enlarge the set this verdict blames on somebody else.
     git = GitFacts(root)
     dirty = set(git.status_names())
+    untracked = _untracked_in_scope(root, cfg)
     baseline, basis = _verify_basis(root, store, args, git)
     judged = _judged_marks(root, saved, baseline, cfg.ratchet_file)
     _guard_ratchet_stamp(judged.marks, cfg.ratchet_file, _seed_source(store, args, baseline))
@@ -929,6 +979,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _refuse_unreadable_junits(cfg.lanes, provenance)
 
     ranges = changed_ranges(diff_since(root, basis))
+    _warn_untracked_in_scope(untracked)
     ratchet = judged.marks.entries
     key_version = _check_ratchet_identity(judged.marks.text or "", root, cfg.ratchet_file,
                                           scored, store, entries=ratchet)
@@ -955,7 +1006,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     verdict = with_unread(verdict, run.corpus.unread, set(ranges) | dirty, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
-                             lanes=_stored_lanes(provenance, verdict.retried_passes), kind="verify")
+                             lanes=_stored_lanes(provenance, verdict.retried_passes), kind="verify",
+                             sources=run.sources)
     verdict = _apply_verify_override(store, run_id, root, cfg, verdict, args.override,
                                      key_version=key_version, identity_rows=scored,
                                      ratchet_input=saved)
@@ -970,7 +1022,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
                     **_receipt(tool_versions, saved, judged, changes),
                     "lanes_without_results": without_results(provenance),
                     "lanes_without_baseline_results": unjudged,
-                    "unreadable_names": _unreadable_json(run.corpus.unreadable)},
+                    "unreadable_names": _unreadable_json(run.corpus.unreadable),
+                    "untracked_in_scope": untracked},
                    verdict, cfg.ratchet_file)
     _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict)

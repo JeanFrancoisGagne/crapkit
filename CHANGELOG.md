@@ -62,6 +62,19 @@
   current)` still answers for the last trusted run and raises a DeprecationWarning; it
   goes in 0.9.0. See the [upgrade
   guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#library-callers).
+- Library API: `lanes.lane_sources_unchanged` keeps its 0.8.0 arguments and its bool
+  answer through 0.8.x, and warns with a `DeprecationWarning` when called; 0.9.0 removes
+  it. Read `lane_freshness.Freshness(root, lanes, scope_paths).lines(lane)` instead: an
+  empty string means the lane's lines are fresh, any other string is the reason they are
+  not. `lanes.staleness_reads` keeps its 0.8.0 arguments through 0.8.x too, warns the
+  same way, and yields the value `lane_sources_unchanged` takes as `git`, so the 0.8.0
+  pattern of one `with` block around every lane's call still runs. Use
+  `lane_freshness.Freshness(root, lanes, scope_paths)` as that context instead: it reads
+  the stamp file once for every lane. `MissingLines` takes an optional third field,
+  `drift`, and `uncovered.lane_views` returns each lane's note with `blackout`, whether it
+  withholds every file's lines.
+- Library API: `lanes.uncommitted_changes` raises `GitError` when git cannot say,
+  where it returned `[]`.
 
 ### A lane with no test results is not a lane that ran 0 tests or failed none
 
@@ -143,9 +156,10 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   print `override refused: 1 unread file (PATH: REASON) never qualifies for an override`
   with what to do about the file.
 - The advisory hook (`crapkit claude-hook`) exits 2 when an edit leaves a file no reader
-  can read, with `crapkit advisory: PATH could not be read, so no function in it was
-  judged (the edit landed; nothing was blocked)`, an `UNREAD` line and the fix. It exited
-  0 in silence, so an agent learned of the file only when the commit gate refused it. A
+  can read, with `crapkit advisory: could not read PATH, so no function in it was judged
+  (the edit landed; nothing was blocked)`, the reader's reason, and a last line that says
+  the commit gate refuses the file once staged and what to change. It exited 0 in
+  silence, so an agent learned of the file only when the commit gate refused it. A
   tracked file the edit left unchanged against `HEAD` stays silent. The Action's comment
   counts an unread file among the gate violations (`1 gate violation (1 unread file)`),
   where its count line read `0 gate violations` under a failed gate.
@@ -712,6 +726,264 @@ The exit codes, the lane environment and the files that change on upgrade are in
 - tools/action/comment.py strips escape codes through crapkit.plaintext, the one strip
   every other reader of a child's text uses, so rendering saved payloads by hand needs
   crapkit installed. The Action installs it before that step, as it did before.
+
+### A lane's staleness is about bytes: it names the files that moved, and a `touch` is not one
+
+- A `touch` that leaves a file's bytes alone no longer makes a lane stale. In a repo that
+  sets `diff.autoRefreshIndex=false`, git named every file whose modification time moved,
+  so a reused lane printed "1 file(s) in its scopes changed", `next-item` and `brief`
+  withheld its dark lines, `--reuse-unchanged` reran it and `verify` counted the file
+  dirty. crapkit's git reads now set `diff.autoRefreshIndex=true`, so git compares the
+  content through the repo's filters, and a CRLF checkout under `core.autocrlf=true`
+  still matches its LF blob.
+- A lane's line numbers go stale when the bytes they point into change, and only then.
+  Each run's stamp now records the git blob id of every file under the lane's scopes
+  (`blobs` in `.crapkit/artifacts.json`), the id `git add` would store, and the
+  `--reuse-artifacts` warning, the `uncovered_lines_note` and the report banner compare
+  blob ids instead of asking git about the stamp's commit. git's index gives the id of a
+  file its worktree diff calls unchanged, and `git hash-object --stdin-paths` hashes the
+  rest through the repo's filters, so a CRLF checkout under `core.autocrlf=true` keeps its
+  blob's id, and a submodule is recorded by the commit checked out in it. A message-only
+  amend, a rebase, a detached HEAD, a mode bit and a shallow CI clone with `.crapkit/`
+  restored used to withhold every dark line; they no longer do. An artifact measured on
+  an uncommitted edit is fresh at once, and reverting that edit now withholds the lines,
+  where git called the tree clean and the old lines were served against the reverted
+  file.
+- The dead lines crapkit folds out of a lane's artifact for diff coverage are cached by the
+  artifact's sha256. The key was its path, modification time and size, so an artifact
+  rewritten with the same size under its old time served the lines of bytes it no longer
+  held.
+- A stale file withholds its own dark lines and no others. One edit used to black out
+  line-level coverage for every file in the repo. The note names the file and says to
+  rerun `crapkit coverage`, since committing changes nothing.
+- The `--reuse-artifacts` warning and the report banner name up to three of the files
+  that moved. The warning counted the files and named none, and the note named neither.
+  The warning now ends with the rerun that measures them: ``rerun the lane (`crapkit
+  coverage --lane unit`) to measure the tree as it is``.
+- A stamp written by 0.8.0 or older holds no blob ids and is judged by its commit until
+  the next `crapkit coverage` replaces it. When git cannot answer, for an old stamp or a
+  new one, the warning and the note say so and quote git's error. The note said "files in
+  its scopes changed" for that case, for an artifact no stamp vouches for and for a stamp
+  commit HEAD does not descend from, and the warning printed nothing at all.
+- The `--reuse-artifacts` warning, the dark-line note, the report banner and
+  `--reuse-unchanged` read one verdict per lane, taken from one read of
+  `.crapkit/artifacts.json` per command. On a 0.8.0 stamp the warning skipped the ancestry
+  and refusal checks the note ran, so after an amend the warning said nothing while the
+  note called the lane stale. A 0.8.0 stamp whose commit this clone does not hold now
+  says `git cannot say which files in its scopes changed since` that commit, where it said
+  the commit was not behind HEAD.
+
+### `--reuse-unchanged` reuses a lane whose inputs did not move, and reruns one whose inputs did, whatever git's diff skips
+
+- A lane that lists `inputs` is reused across a message-only amend, a rebase onto a
+  commit outside its inputs, or a switch to a sibling branch with the same inputs.
+  Reuse now compares the tree under the inputs at the stamp's commit with the working
+  tree, where it required that commit to be behind HEAD. A clone that does not hold the
+  commit reruns the lane and says so, with the fetch to run in a shallow clone.
+- The untracked files a lane's own run writes, such as `.coverage` from pytest-cov at
+  the root or `__pycache__` under its scopes, no longer void its proof. The stamp lists
+  them under `byproducts`. With the `.gitignore` that `crapkit init` writes, which holds
+  only `.crapkit/`, the first run's own output left its stamp without a proof, and the
+  lane never reused.
+- A same-size edit whose old modification time was put back (`cp -p`, `tar -x`, `rsync
+  -t`, `touch -r`), or a second same-size write inside one clock tick, is still not seen
+  by any reader that asks git: lane reuse and the dark-line note, verify's changed files
+  and its split of committed and dirty findings, `rescore --gate`, the commit hook's note
+  that a staged file differs from the working tree, and the files `mutate` copies into its
+  workers. git answers "unchanged" from its index's stat data, as `git status` and `git
+  add` do, and crapkit trusts that answer rather than read every file on every run. The
+  analysis cache and `watch` compare the modification time and size the same way, and the
+  analysis cache also misses a symlink re-pointed to a same-size target with the same
+  time. `touch` the files after restoring them, and every reader compares their content.
+  The cost of hashing every source is measured for 0.9.0 before that changes.
+- An edit git's own diff skips is a change: a file flagged `--skip-worktree` or
+  `--assume-unchanged` whose bytes differ from the index, and an edit inside a
+  submodule whose `.gitmodules` entry says `ignore = dirty`. Lane reuse, verify's split
+  of committed and dirty findings, and the working-tree copy `mutate` hands its workers
+  all read it; `mutate` judged every mutant against the index's copy of such a test.
+- A lane's proof holds the crapkit version, with `inputs` or without, so an upgrade reruns
+  every lane once and says `the crapkit version changed`. A lane with `inputs` records the
+  parts of its proof too, so its rerun names what moved, as a lane without them does. The
+  proof reads `crapkit.toml` with CRLF as LF, so a checkout under `core.autocrlf=true` is
+  no longer a config change. `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `TMUX`,
+  `VSCODE_GIT_IPC_HANDLE` and `PSModulePath` join the session variables it leaves out,
+  so a new terminal or login reruns nothing. `PATHEXT` stays in it, because it decides
+  what `cmd.exe` starts for a lane's first word, so a switch from PowerShell to Git Bash
+  reruns and names `PATHEXT` alone.
+- The line that reuses a lane names what its proof leaves out, since an edit there reuses
+  the artifact by design: `crapkit: lane 'py': measurement inputs unchanged; reusing
+  without rerun (artifact built at 8c14f3daa8e); its proof leaves out gitignored files and
+  anything outside the repository`. For a lane with `inputs` it names gitignored files,
+  files outside its inputs and inherited environment variables.
+- A lane measured over uncommitted changes has no proof, and its rerun now names them:
+  `its stamp holds no proof: it was measured with 2 uncommitted change(s): calc/grade.py,
+  calc/report.py`.
+- On Windows a same-bytes touch could make a lane's change read fail with `index file
+  open failed: Permission denied`, which read as a changed file: 7 to 12 of 300 touches
+  on git's default config. The staged diff and the untracked listing now start after
+  the worktree diff, which can rewrite the index, has finished.
+- Every git process crapkit starts sets `GIT_OPTIONAL_LOCKS=0`, so `git status` and the
+  other reads that honor it compare a file whose stat data moved without writing the
+  refreshed entry back to `.git/index`, and crapkit's reads leave the index alone while
+  another git runs in the same checkout.
+- A partial run's `-> rerun changed lanes` line says when git cannot tell whether the
+  tree is clean, and quotes git's error. It printed nothing, as for a clean tree.
+
+### A failed lane's leftover stays refused until new bytes replace it
+
+- Whether a lane's attempt wrote its artifact was judged by the file's modification time,
+  so a command that only touched the old report (a make rule, a cache restore that sets
+  times) passed, and crapkit scored the previous run's coverage and stamped it with the
+  new commit. A lane's declared outputs now move under `.crapkit/aside/` before its
+  attempts start, so a file at a declared path afterwards is one an attempt wrote, and a
+  leftover goes back only where nothing was written. The flake retest runs the same way,
+  and a retest that rewrote its junit inside the old file's time tick is read. A lane
+  command that reads its previous report back finds no file at the declared path while it
+  runs.
+- A kill or a CI timeout while a lane runs no longer loses the lane's previous artifact.
+  The files an attempt that never finished set aside stayed under `.crapkit/aside/`,
+  `--reuse-artifacts` exited 5 with `produced no artifact` and never named them, and the
+  next attempt removed them. The next command that measures or reuses the lane now puts
+  each back first and says so: `crapkit: lane 'unit': coverage/coverage-final.json is
+  back at its path; an attempt that did not finish (a kill or a timeout) had set it aside
+  under .crapkit/aside/`. A file written at the path since stays, and the line names
+  where the copy sits.
+- A failed attempt's leftover stays refused while it holds the same bytes. The refusal was
+  keyed on the leftover's modification time, so a `touch`, a copy of the checkout that
+  drops times, or a same-bytes rewrite handed the dead lane's numbers back to
+  `--reuse-artifacts` and `--reuse-unchanged`. The stamp now records the leftover's sha256
+  (`refused_sha256`), and the snapshot store keeps a copy of each refusal, so deleting
+  `.crapkit/artifacts.json` does not lift it. New bytes lift it, as a run of the lane or a
+  salvage writes them. A refusal 0.8.0 recorded still holds by its modification time.
+- `doctor --json` gives each lane a `refusal`: the sentence `--reuse-artifacts` refuses the
+  lane's artifact with, or `null`, from the same question reuse asks. A leftover a failed
+  attempt left behind showed as `artifact_present: true` beside "no problems found".
+  doctor now WARNs on it.
+
+### `scored_changes` says whether the run still describes the files
+
+- `next-item`, `brief`, `brief --batch`, `worklist --json`, the report payload and the MCP
+  tools that print them add `scored_changes`: how many files the ranked run scored hold
+  other content now than the run recorded, deleted files included, or `null` when the run
+  recorded none, as every run 0.8.0 wrote, or git cannot read the tree to compare. `stale`
+  keeps its meaning, the run's commit is not HEAD, and it judges the commit and not the
+  files: an uncommitted rewrite of a scored function left it `false` while `next-item`
+  handed out the pre-edit ccn and span, a run measured on an edit that was later reverted
+  read fresh, and an amend, an empty commit or a README-only commit set it `true` over an
+  identical tree. 0.9.0's schema 2 redefines `stale` as a content difference. Each
+  coverage and verify run now records the blob id of every file it scored in the store; a
+  store 0.8.0 wrote opens as before, and its runs read `null`.
+- Every payload that carries `stale` carries `commands.refresh`, the one call that answers
+  both fields.
+- The stop rule in AGENTS.md, `docs/agent-json.md` and the crapkit skill gains a fourth
+  clause, `scored_changes == 0`. Anything but `0`, `null` included, means run
+  `commands.refresh` and ask again.
+- The plain `worklist` warns on stderr when files the run scored changed since, and names
+  up to three: `2 file(s) changed since run 4 scored them: calc/grade.py, calc/report.py`.
+  When git cannot read the tree it says that instead, `cannot tell which files changed
+  since run 4 scored them, because git failed:` then git's error and ``fix what git
+  reports, then rerun `crapkit coverage` ``, and `scored_changes` is `null`: a failed
+  read is neither "changed" nor "unchanged".
+- The `report` page's banner counts them too: `2 file(s) the run scored changed since`.
+  An uncommitted edit in a `coverage_optional` scope left `stale` false and no lane note
+  to speak for it, so the page showed the numbers from before the edit with no banner.
+- `explain --tests` withholds a file's test ids whenever its dark lines are withheld, and
+  `tests_note` repeats `uncovered_lines_note`. The ids sit on the same line numbers, so
+  after two functions swapped places it credited one with the tests that ran the other. A
+  lane that records no contexts keeps its guidance line.
+- `explain --history` maps the span the run measured through the uncommitted diff onto
+  HEAD's lines before it asks `git log -L`. Four uncommitted lines above a function listed
+  the commits of the function below it, and forty made git refuse the span, which read as
+  an empty list. A span with no line in HEAD, every span before the first commit included,
+  answers `commits: null` with `commits_note` `pkg/m.py:9-10 holds only uncommitted lines,
+  so no commit has touched it yet`, and a git failure quotes git's error in `commits_note`
+  instead of answering `[]`, then says ``fix what git reports, then run `crapkit explain
+  --history` again``.
+
+### A git question that fails is named, and a count names its files
+
+- `verify` tells a baseline commit this clone does not hold from one a rewrite left
+  behind. `git merge-base --is-ancestor` fails on a commit the clone lacks, and verify
+  blamed a rebase or an amend and asked for a fresh baseline. A store copied from
+  another clone, or a CI cache keyed on a branch, can name a commit this checkout never
+  fetched, and the refusal now says `baseline commit a74260f321f is not in this clone,
+  so git cannot say whether it is behind HEAD` and names the `git fetch origin` that
+  brings it. It still exits 4, and the shallow-clone and rewrite sentences are as
+  they were.
+- `ratchet prune` refuses to drop a marked file's debt when the commit its renames start
+  from is gone. The rename diff starts at the store's first run, and a clone can lack that
+  commit: a depth-1 CI checkout with `.crapkit/` restored, a rebase followed by gc, a
+  squash-merged branch that was collected. prune read the failed diff as "nothing was
+  renamed" and dropped a renamed file's marks as repaid debt, printing `followed 0
+  rename(s)`. It now reads renames from the oldest run whose commit the clone holds and
+  says so on stderr, and when a marked file left the checkout before that run it exits 4
+  before writing anything: `run 1's commit 35f524b3f89 is not in this clone, so git
+  cannot say whether src/old.py was renamed or deleted`, then the fetch that brings the
+  commit back, or `ratchet move` when no remote holds it.
+- The prune line names the renames it followed, up to three:
+  `followed 1 rename(s) (calc/grade.py -> calc/grading.py)`.
+- `verify` names the files behind its count, on a line under the verdict: the first three,
+  then `and N more`, as in `changed files: app/m.py, app/n.py, tests/test_m.py`. `--json`
+  lists them all as `changed_paths` beside the `changed_files` count.
+- A source file inside a scope that nobody has `git add`ed is not judged, because verify's
+  diff and its corpus hold git-tracked files only, and it read as `(0 changed files)`.
+  verify now says so on stderr, ``warning: 1 untracked file(s) in a scope were not judged
+  (src/added.ts): verify scores git-tracked files only; `git add` them to have them
+  judged``, and `--json` carries the paths as `untracked_in_scope`.
+- The warning that counts functions over the ceiling with no ratchet mark names the first
+  three, each as its path and function.
+- `init` on a repo whose source nobody has added names up to three of the files: ``run `git
+  add` first (2 untracked source file(s) found: lib/util.py, src/app.ts)``. It gave the
+  count alone.
+- The GitHub Action names a base diff git refused. On the `actions/checkout` default, a
+  depth-1 clone without the base commit, `git diff base.sha...HEAD` failed, the step read
+  the failure as an empty list and logged `0 changed file(s)`, and the comment ranked the
+  whole repository with no reason. The step now logs git's first line, and the comment
+  says under its worklist heading that the base diff failed, quotes git, and names
+  `fetch-depth: 0`. A push logs `no base commit on this event: the comment ranks the whole
+  repository`. The step's count names up to three files, and so does the comment's verdict
+  line, from verify's `changed_paths`: ``1 changed file (`app/calc.py`)``. The README's
+  example comment renders that line from a saved payload that carries `changed_paths`.
+
+### claude-hook remembers what it judged, and says what it could not judge
+
+- The `Bash` fallback records the bytes each judgement read, per Claude Code session and
+  per file, under `.git/crapkit/claude-hook/<session_id>/`, and skips a recent file whose
+  bytes match. A `touch`, a same-bytes rewrite, or a test run right after an `Edit` moved
+  an mtime into the 12-second window and repeated an advisory the session had already
+  read. The window and the 25-file cap are unchanged. A session idle for 7 days is pruned
+  when another one starts. Content that arrives with an old mtime (`mv`, `cp -p`, an
+  unpacked archive, or a file a long command wrote well before it returned) is still not
+  judged by the fallback; the commit gate judges it.
+- Before a repo's first commit the hook judges the edited file whole. `git diff HEAD`
+  fails there, the hook read the failure as an empty diff, and a staged breach drew
+  silence while the same file unstaged drew the advisory.
+- When git fails for another reason, such as a corrupt index, the advisory says `git could
+  not report what changed in PATH, so no function in it was judged`, quotes git's error
+  and lists no function. It read the failed `git ls-files` as "untracked" and listed
+  every legacy function in the file. `ls-files` now reads its path literally, so an
+  untracked `calc/[id].py` no longer matches a tracked `calc/i.py`.
+
+### watch reads content, and the history caches know their depth
+
+- `watch` rescores a file when its bytes change, not when its mtime moves. A touch, or an
+  editor saving the same bytes, printed `--- changed: src/app.ts` and ran a rescore that
+  labeled the file's coverage STALE; now a file whose mtime moved is read and compared
+  with the content recorded for it, and nothing prints. Each poll lists the files your
+  scopes claim again, tracked or not yet added, so a file created while `watch` runs is
+  rescored; the list used to come from `git ls-files` once, at start. When git cannot
+  list them, `watch` keeps polling the last list and says so once, quoting git and ending
+  `fix what git reports. Until git lists them, each poll reads the last list and asks git
+  again`. New bytes written under the file's old mtime (`cp -p`, `touch -r`) are not
+  seen, the same limit the analysis cache has. The first line reads `watching 12 file(s)
+  in scope`, where it said `tracked files`, because the count now holds the files not yet
+  added too.
+- After `git fetch --unshallow` or `--deepen` at an unmoved HEAD, the churn map, the churn
+  log and the coupling cache rebuild from the whole history. Their keys held HEAD but not
+  how much history the clone holds, so `worklist` kept a shallow clone's churn (1 commit
+  where the history held 6) and `coupling` kept zero pairs until the UTC date rolled
+  over, and deleting the coupling cache alone changed nothing. A cache 0.8.0 wrote reads
+  as a full clone's, so an upgrade does not walk a full clone's history again.
 
 ## 0.8.0 — 2026-09-23
 

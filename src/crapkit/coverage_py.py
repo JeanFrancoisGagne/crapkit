@@ -33,6 +33,7 @@ from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
 from .repopath import Reported, file_separators
 from .repotext import json_kind, utf8_spelling
+from .named import first_few
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -46,7 +47,6 @@ _OLD_COVERAGE = f"needs {COVERAGE_FLOOR}"
 # user to do: the report was edited, merged or truncated after coverage.py
 # wrote it, and only a fresh one holds the numbers.
 _REGENERATE = "regenerate the report with `coverage json`"
-_SAMPLE = 3
 
 
 _PAIRS = (("num_branches", "covered_branches"), ("num_statements", "covered_lines"))
@@ -176,12 +176,6 @@ def _named(label: str) -> str:
     return f"{label}: " if label else ""
 
 
-def _sample(paths: list[str]) -> str:
-    rest = len(paths) - _SAMPLE
-    shown = ", ".join(sorted(paths)[:_SAMPLE])
-    return f"{shown} and {rest} more" if rest > 0 else shown
-
-
 def judge_branch(branch: bool, per_file: dict[str, list[FnCoverage]], label: str = "") -> None:
     """No branch data downgrades the coverage term; it does not fail the lane.
 
@@ -217,8 +211,8 @@ def _refuse_branchless(branchless: list[str]) -> None:
     if branchless:
         raise ToolError(
             f"coverage.py report measures branches, but {len(branchless)} function(s) carry no "
-            f"branch counts ({_sample(branchless)}), so crapkit cannot tell how many of their "
-            f"branches ran; {_REGENERATE}")
+            f"branch counts ({first_few(sorted(branchless))}), so crapkit cannot tell how many "
+            f"of their branches ran; {_REGENERATE}")
 
 
 def judge_regions(regionless: list[str], total: int, label: str = "") -> None:
@@ -234,7 +228,7 @@ def judge_regions(regionless: list[str], total: int, label: str = "") -> None:
         raise ToolError(f"coverage.py report has no function regions for any of its "
                         f"{total} file(s) - {_OLD_COVERAGE}")
     print(f"crapkit: {_named(label)}coverage.py report has no function regions for "
-          f"{len(regionless)} of {total} file(s) ({_sample(regionless)}) - those files "
+          f"{len(regionless)} of {total} file(s) ({first_few(sorted(regionless))}) - those files "
           f"are skipped and the rest of the report is scored", file=sys.stderr)
 
 

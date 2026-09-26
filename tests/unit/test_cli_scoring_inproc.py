@@ -398,10 +398,17 @@ def test_the_summary_labels_every_ceiling_in_force(repo, capsys):
 
 
 def _stamp_real_measurement(repo, capsys) -> None:
+    """Lanes that write the seeded artifacts again, from planted/ copies: the
+    runner moves a declared file aside before its attempt, so a touch writes
+    nothing."""
     seed_artifacts(repo)
+    (repo / "planted").mkdir()
     text = (repo / "crapkit.toml").read_text(encoding="utf-8")
     for name in ("unit", "ui"):
-        command = json.dumps(f'python -c "import os; os.utime(\'coverage/{name}.json\')"')
+        (repo / "planted" / f"{name}.json").write_bytes(
+            (repo / "coverage" / f"{name}.json").read_bytes())
+        command = json.dumps(f'python -c "import shutil; shutil.copyfile('
+                             f'\'planted/{name}.json\', \'coverage/{name}.json\')"')
         text = text.replace('command = "python -c pass"\nartifact',
                             f'command = {command}\nartifact', 1)
     (repo / "crapkit.toml").write_text(text, encoding="utf-8")

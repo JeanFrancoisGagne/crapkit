@@ -194,8 +194,10 @@ reads as `inputs`, and `--reuse-unchanged` then reuses it across commits while
 nothing under those paths, its lane table or its `env` changed. The reuse proof
 covers that field, so the first `--reuse-unchanged` after upgrading to 0.8.0 reruns
 every lane once, and an older stamp without the proof reruns its lane; each rerun
-prints `lane 'x': rerunning:` and the reason. Ignored files, installed dependencies and
-external services remain outside this proof. See
+prints `lane 'x': rerunning:` and the reason. Since 0.8.1 every lane's proof also holds
+the crapkit version, so each upgrade reruns every lane once with `the crapkit version
+changed`. Ignored files, installed dependencies and external services remain outside
+this proof, and the line that reuses a lane names what its proof leaves out. See
 [artifact reuse](lanes.md#reusing-artifacts) before choosing an explicit
 saved-artifact read.
 
@@ -408,6 +410,71 @@ another checkout fails with the wrong-tree refusal ([another
 tree](lanes.md#an-artifact-that-measured-a-different-tree)), and a run with no lane left
 exits 5, where 0.8.0 scored every function in its scopes untested and exited 0.
 
+## Freshness in 0.8.1
+
+0.8.1 decides whether a run, a lane or an edit still describes the tree by its
+content, where 0.8.0 read a commit, a modification time or a count. Most of that
+needs nothing from you. These parts change what a script or an agent loop reads.
+
+**Agent loops read `scored_changes`.** `next-item`, `brief`, `brief --batch`,
+`worklist --json` and the MCP tools add `scored_changes`: how many files the ranked
+run scored hold other content now, your own uncommitted edits included. `stale`
+keeps its 0.8.0 meaning, HEAD moved past the run's commit, so an amend sets it with
+no byte moved and an uncommitted edit leaves it `false`. The stop rule gains a
+fourth clause, `scored_changes == 0`: anything but `0`, `null` included, means run
+`commands.refresh` and ask again. A run 0.8.0 wrote recorded no content, so it reads
+`null` until the first `crapkit coverage` after the upgrade. A loop written against
+the three-clause rule in [AGENTS.md](../AGENTS.md#the-termination-rule) or
+[docs/agent-json.md](agent-json.md#reasons-and-the-stop-condition) needs the fourth.
+
+**Lane stamps hold blob ids.** A lane's stamp in `.crapkit/artifacts.json` now records
+the git blob id of each file under its scopes (`blobs`). A stamp 0.8.0 wrote records
+only its commit, and crapkit judges it by that commit, as 0.8.0 did, until the lane runs
+again. Run `crapkit coverage` once after the upgrade to write stamps in the new form.
+
+**A failed lane's leftover stays refused until new bytes replace it.** When a lane's
+attempt fails and leaves the previous run's artifact in place, `--reuse-artifacts` and
+`--reuse-unchanged` refuse that file. 0.8.0 keyed the refusal on its modification time,
+so a `touch`, a copy of the checkout that drops times, or a same-bytes rewrite lifted it.
+0.8.1 keys it on the file's sha256 and keeps a copy in `.crapkit/crap.sqlite`: a touch
+keeps the leftover refused, deleting `.crapkit/artifacts.json` does not lift it, and new
+bytes lift it, from a run of the lane or a salvage you write. A refusal 0.8.0 recorded
+still holds by its modification time until the lane runs again.
+
+**A lane's declared outputs sit under `.crapkit/aside/` while it runs.** crapkit moves
+the artifact and results files a lane declares out of the way before its attempts start,
+and puts one back only where no attempt wrote a new one. A lane command that reads or
+appends to its own previous report finds nothing at that path; write the report fresh
+each run. When crapkit is killed while a lane runs, the next command that measures or
+reuses that lane puts the files back before it reads them, and prints a line for each.
+
+**A same-size edit that keeps the old modification time can pass unseen.**
+`cp -p`, `tar -x`, `rsync -t` and `touch -r` write new bytes under the file's old
+mtime. crapkit's analysis cache and `watch` compare the mtime and size before they
+read a file, and git answers "unchanged" from its index's stat data for lane reuse,
+verify's changed files and its split of committed and dirty findings, `rescore --gate`,
+the commit hook's note that a staged file differs from the working tree, and the files
+`mutate` copies into its workers. `touch` the files after restoring them that way, and
+every reader compares their content. 0.9.0 measures what hashing every file costs
+before it changes this.
+
+**claude-hook writes one directory.** Its `Bash` fallback records the bytes each
+advisory judged under `.git/crapkit/claude-hook/<session_id>/`, one directory per
+Claude Code session, and removes a session idle for 7 days when another one starts.
+Delete the directory to make the hook judge those files again.
+
+**`ratchet prune` can exit 4 in a shallow clone.** Its rename diff starts at the
+store's first run, and a depth-1 CI checkout with `.crapkit/` restored lacks that
+commit. 0.8.0 read the failed diff as "nothing was renamed" and dropped a renamed
+file's marks as repaid. 0.8.1 reads renames from the oldest run whose commit the
+clone holds, and when a marked file left the checkout before that run it exits 4
+before writing anything, naming the commit and the `git fetch` that brings it back.
+Run prune in a clone that holds the store's first commit, or run that fetch first.
+
+**verify names a baseline commit the clone never fetched.** It still exits 4. It
+now says `baseline commit ... is not in this clone` and names the `git fetch origin`
+that brings the commit, where it blamed a rebase or an amend.
+
 ## Plugin and MCP clients
 
 After upgrading the intended CLI, refresh Claude Code's marketplace before updating
@@ -455,6 +522,17 @@ still answers for one last trusted run's lane provenance and raises a
 DeprecationWarning; call `crapkit.lane_results.suite_drops(behind, current)`, where
 `behind` returns the trusted runs newest first, each with its lane provenance under
 `lanes`. The old name goes in 0.9.0.
+
+`lanes.lane_sources_unchanged` keeps its 0.8.0 arguments and
+its bool answer through 0.8.x and warns with a `DeprecationWarning` when called;
+0.9.0 removes it. Read `lane_freshness.Freshness(root, lanes, scope_paths).lines(lane)`
+instead: an empty string means fresh, any other string is the reason.
+`lanes.staleness_reads` stays through 0.8.x on the same terms: it warns, and the value
+it yields is what `lane_sources_unchanged` takes as `git`. Replace the `with` block with
+`with lane_freshness.Freshness(root, lanes, scope_paths) as fresh:`, which reads the
+stamp file once for every lane.
+`lanes.uncommitted_changes` raises `GitError` when git cannot say which changes the
+checkout holds, where 0.8.0 returned `[]`, which read as a clean tree.
 
 ## Windows launcher locks
 

@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 from .. import __version__
 from ..cache import merged_cache
-from ..errors import ConfigError, CrapkitError, ToolError
+from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..gitio import GitFacts, ls_files
 from ..invocation import _self
 from ..repopath import typed_path
@@ -185,31 +185,32 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     return 0
 
 
-def _lane_reuse(root: Path, lane, reuse_artifacts: bool, reuse_unchanged: bool):
+def _lane_reuse(fresh, lane, reuse_artifacts: bool, reuse_unchanged: bool):
     """The lane's verdict under --reuse-unchanged, None when that was not asked,
     with one stderr line either way: the commit it reuses, or why it reruns. A
     declined reuse printed nothing, and on a large consumer repo it costs a
     rerun of up to 88 minutes."""
-    from ..lanes import lane_reuse_verdict
-
     if reuse_artifacts or not reuse_unchanged:
         return None
-    verdict = lane_reuse_verdict(root, lane)
-    _report_reuse(lane.name, verdict)
+    verdict = fresh.reuse(lane)
+    _report_reuse(lane.name, verdict, fresh.leaves_out(lane))
     return verdict
 
 
-def _report_reuse(name: str, verdict) -> None:
-    if verdict.commit:
-        print(f"crapkit: lane {name!r}: measurement inputs unchanged; reusing without rerun "
-              f"(artifact built at {verdict.commit[:11]})", file=sys.stderr)
-    else:
+def _report_reuse(name: str, verdict, leaves_out: str) -> None:
+    """A reuse names what its proof leaves out: gitignored files and whatever
+    lives outside the repository never enter it, so an edit there reuses."""
+    if not verdict.commit:
         print(f"crapkit: lane {name!r}: rerunning: {verdict.reason}", file=sys.stderr)
+        return
+    print(f"crapkit: lane {name!r}: measurement inputs unchanged; reusing without rerun "
+          f"(artifact built at {verdict.commit[:11]}); its proof leaves out {leaves_out}",
+          file=sys.stderr)
 
 
-def _reuse_decisions(root: Path, lanes, reuse_artifacts: bool, reuse_unchanged: bool):
+def _reuse_decisions(fresh, lanes, reuse_artifacts: bool, reuse_unchanged: bool):
     """Each lane's verdict under --reuse-unchanged, and whether the lane reuses."""
-    verdicts = {lane: _lane_reuse(root, lane, reuse_artifacts, reuse_unchanged) for lane in lanes}
+    verdicts = {lane: _lane_reuse(fresh, lane, reuse_artifacts, reuse_unchanged) for lane in lanes}
     return verdicts, {lane: _reused(verdict, reuse_artifacts) for lane, verdict in verdicts.items()}
 
 
@@ -230,45 +231,45 @@ def _progress(message: str) -> None:
     sys.stderr.write(f"crapkit: {message}\n")
 
 
-def _run_one_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git, dead_lines=None, owner=None):
+def _run_one_lane(fresh, lane, reuse: bool, dead_lines=None, owner=None):
     """One lane's outcome or the error that failed it; a failed lane never sinks
-    the run. The error object, not its text: a refusal carries the modification
-    times of the files the attempt left unwritten, which the fold persists."""
+    the run. The error object, not its text: a refusal carries the sha256 of
+    each file the attempt left unwritten, which the fold persists."""
     from ..lanes import run_lane
 
     try:
-        return run_lane(root, lane, reuse_artifact=reuse, scope_paths=scope_paths, git=git,
-                        dead_lines=dead_lines, owner=owner), ""
+        return run_lane(fresh.root, lane, reuse_artifact=reuse, dead_lines=dead_lines,
+                        owner=owner, freshness=fresh), ""
     except ToolError as exc:
         return None, exc
 
 
-def _traced_lane(root: Path, lane, reuse: bool, scope_paths: dict | None, git, dead_lines=None, owner=None):
+def _traced_lane(fresh, lane, reuse: bool, dead_lines=None, owner=None):
     _progress(f"lane {lane.name!r} started")
-    outcome = _run_one_lane(root, lane, reuse, scope_paths, git, dead_lines, owner)
+    outcome = _run_one_lane(fresh, lane, reuse, dead_lines, owner)
     _progress(f"lane {lane.name!r} finished")
     return outcome
 
 
-def _execute_parallel(root: Path, ordered, reuse: dict, scope_paths, git, max_parallel: int,
-                      dead_lines=None, owner=None) -> dict:
+def _execute_parallel(fresh, ordered, reuse: dict, max_parallel: int, dead_lines=None,
+                      owner=None) -> dict:
     """Lanes are subprocess-bound, so threads are enough: subprocess.run drops the
     GIL for the whole command and each lane streams to its own log file."""
     from concurrent.futures import ThreadPoolExecutor
 
     with ThreadPoolExecutor(max_workers=max_parallel) as pool:
-        futures = {lane: pool.submit(_traced_lane, root, lane, reuse[lane], scope_paths, git, dead_lines, owner)
+        futures = {lane: pool.submit(_traced_lane, fresh, lane, reuse[lane], dead_lines, owner)
                    for lane in ordered}
     return {lane: future.result() for lane, future in futures.items()}
 
 
-def _execute_lanes(root: Path, ordered, reuse: dict, scope_paths, git, max_parallel: int,
-                   dead_lines=None, owner=None) -> dict:
+def _execute_lanes(fresh, ordered, reuse: dict, max_parallel: int, dead_lines=None,
+                   owner=None) -> dict:
     """Lane outcomes, serial below 2 and parallel otherwise."""
     if max_parallel < 2:
-        return {lane: _run_one_lane(root, lane, reuse[lane], scope_paths, git, dead_lines, owner)
+        return {lane: _run_one_lane(fresh, lane, reuse[lane], dead_lines, owner)
                 for lane in ordered}
-    return _execute_parallel(root, ordered, reuse, scope_paths, git, max_parallel, dead_lines, owner)
+    return _execute_parallel(fresh, ordered, reuse, max_parallel, dead_lines, owner)
 
 
 def _refuse_all_failed(lanes, lane_errors: dict, succeeded: list) -> None:
@@ -323,17 +324,18 @@ def _run_owned_lanes(root, lanes, reuse_artifacts, scope_paths, reuse_unchanged,
 
     Every reuse decision is taken up front, on one thread: it reads the working
     tree and a lane command WRITES to the working tree, so deciding lane by lane
-    would let one lane's output change the next lane's answer. Results then merge
-    in declaration order however the lanes finished, so max_parallel_lanes moves
-    wall time only — never a score.
+    would let one lane's output change the next lane's answer. The stamp file is
+    read once for the whole command (lane_freshness.Freshness). Results then
+    merge in declaration order however the lanes finished, so
+    max_parallel_lanes moves wall time only — never a score.
     """
+    from ..lane_freshness import Freshness
     from ..lanes import lane_order
 
-    facts = git or GitFacts(root)
-    verdicts, reuse = _reuse_decisions(root, lanes, reuse_artifacts, reuse_unchanged)
-    ordered = lane_order(root, list(lanes)) if max_parallel > 1 else list(lanes)
-    outcomes = _execute_lanes(root, ordered, reuse, scope_paths, facts, max_parallel,
-                              dead_lines, owner)
+    fresh = Freshness(root, lanes, scope_paths, git=git or GitFacts(root))
+    verdicts, reuse = _reuse_decisions(fresh, lanes, reuse_artifacts, reuse_unchanged)
+    ordered = lane_order(root, list(lanes), fresh.stamps) if max_parallel > 1 else list(lanes)
+    outcomes = _execute_lanes(fresh, ordered, reuse, max_parallel, dead_lines, owner)
     if owner is not None:
         owner.check()
     collected = _collect_lanes(root, lanes, outcomes)
@@ -350,7 +352,8 @@ class _ScoredRun(NamedTuple):
     inside the lanes that ran. coverage exits 5 on a lane error and reads no test
     failure; verify refuses to conclude on a lane error and weighs each test
     failure against its baseline. `corpus` and `cache_hits` are coverage's report
-    line, which is why verify names neither."""
+    line, which is why verify names neither. `sources` is the run's content
+    record for the store (store.write_run), None when git could not give it."""
     commit: str
     scored: list
     provenance: dict
@@ -360,6 +363,7 @@ class _ScoredRun(NamedTuple):
     corpus: _Corpus
     cache_hits: int
     dead_lines: DeadLineFold | None = None
+    sources: dict | None = None
 
 
 def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchanged: bool = False,
@@ -374,6 +378,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
 
     git = git or GitFacts(root)
     commit, rows, corpus, cache_hits, tool_versions = _build_inventory(root, cfg, git)
+    sources = _content_record(root, rows)
     dead_lines = DeadLineFold()
 
     coverage_by_path, provenance, lane_errors, succeeded = _run_lanes(
@@ -389,9 +394,19 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
                         cc_only_scopes=cfg.coverage_optional_scopes,
                         shared_spans=shared_spans)
     _note_shared_spans(shared_spans, cfg)
-    test_failures = set(failure_ids(provenance))
-    return _ScoredRun(commit, scored, provenance, lane_errors, test_failures, tool_versions,
-                      corpus, cache_hits, dead_lines)
+    return _ScoredRun(commit, scored, provenance, lane_errors, set(failure_ids(provenance)),
+                      tool_versions, corpus, cache_hits, dead_lines, sources)
+
+
+def _content_record(root: Path, rows) -> dict | None:
+    """The git blob id of every scored file as the inventory read it, which
+    `scored_changes` compares with the tree; None when git cannot give it."""
+    from ..lane_sources import record
+
+    try:
+        return record(root, {row.path for row in rows})
+    except GitError:
+        return None
 
 
 _SPANS_NAMED = 3
@@ -597,12 +612,20 @@ def _next_command(kind: str, root: Path) -> str:
 # What the hinted run does on a dirty tree: reuse proves a lane without `inputs`
 # only at a clean HEAD, so every such lane runs again.
 _DIRTY_TREE_NOTE = "(the working tree has uncommitted changes, so every lane that lists no `inputs` reruns)"
+_UNREAD_TREE_NOTE = ("(git cannot say whether the working tree is clean ({error}), so every lane "
+                     "that lists no `inputs` reruns)")
 
 
 def _dirty_note(root: Path) -> str:
-    from ..lanes import uncommitted_changes
+    """The note for a dirty tree, and for a tree git cannot read: that one
+    proves no lane either, and reading the failure as clean hid the note."""
+    from ..lane_freshness import uncommitted_changes
 
-    return f" {_DIRTY_TREE_NOTE}" if uncommitted_changes(root) else ""
+    try:
+        dirty = uncommitted_changes(root)
+    except GitError as exc:
+        return f" {_UNREAD_TREE_NOTE.format(error=exc)}"
+    return f" {_DIRTY_TREE_NOTE}" if dirty else ""
 
 
 def _print_coverage(as_json: bool, summary: dict, shape: _RunShape, root: Path) -> None:
@@ -646,7 +669,7 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     _warn_suite_drop(store, run.provenance)
     shape = _run_shape(lanes, cfg, run)
     run_id = store.write_run(commit=run.commit, tool_versions=run.tool_versions, rows=run.scored,
-                             lanes=run.provenance, kind=shape.kind)
+                             lanes=run.provenance, kind=shape.kind, sources=run.sources)
     _record_twin_index(root, store, run_id)
     if args.export:
         _export_scored(root, args.export, run.scored)

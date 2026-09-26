@@ -87,3 +87,4 @@ def test_reuse_artifacts_warns_when_the_artifact_went_stale(counting_repo: Path)
     assert res.returncode == 0, res.stderr
     assert _run_count(counting_repo) == 1, "--reuse-artifacts never reruns"
     assert "stale" in res.stderr, "reuse over a moved scope must say the coverage is stale"
+    assert "(src/app.ts)" in res.stderr, "and name the file that moved"

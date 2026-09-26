@@ -202,7 +202,11 @@ runs:
     # otherwise put its own commits in the pull request's table. base.sha is
     # empty on a push, and a shallow clone does not hold the commit it names;
     # either way the list is empty and the comment ranks the whole repository
-    # instead of a slice of it.
+    # instead of a slice of it. git's refusal goes to the log and to
+    # crapkit-changed.error, so a list the diff never produced does not read as
+    # "the pull request changed nothing" and the comment can say why it ranks
+    # everything. The count's line comes from the comment builder, which names
+    # the first three files by crapkit's one rule for such lists.
     - name: the changed files
       shell: bash
       env:
@@ -210,11 +214,24 @@ runs:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
       run: |
         changed="$CRAPKIT_STATE/crapkit-changed.txt"
+        failed="$CRAPKIT_STATE/crapkit-changed.error"
         : > "$changed"
-        if [ -n "$BASE_SHA" ]; then
-          git diff --name-only "$BASE_SHA...HEAD" -z > "$changed" || : > "$changed"
+        : > "$failed"
+        code=0
+        if [ -z "$BASE_SHA" ]; then
+          echo "no base commit on this event: the comment ranks the whole repository"
+        else
+          git diff --name-only "$BASE_SHA...HEAD" -z > "$changed" 2> "$failed" || code=$?
         fi
-        echo "$(tr -cd '\0' < "$changed" | wc -c) changed file(s)"
+        if [ "$code" != 0 ]; then
+          : > "$changed"
+          [ -s "$failed" ] || echo "git diff exited $code" > "$failed"
+          echo "the base diff ${BASE_SHA:0:11}...HEAD failed, so the comment ranks the whole repository: $(head -n 1 "$failed")"
+        elif [ -n "$BASE_SHA" ]; then
+          cat "$failed" >&2
+          : > "$failed"
+          python "$GITHUB_ACTION_PATH/tools/action/comment.py" --changed-z "$changed" --changed-line
+        fi
 
     - name: build the comment
       shell: bash
@@ -231,6 +248,7 @@ runs:
           --base-reason "$CRAPKIT_STATE/crapkit-base.reason" \
           --worklist "$CRAPKIT_STATE/crapkit-worklist.json" \
           --changed-z "$CRAPKIT_STATE/crapkit-changed.txt" \
+          --changed-error "$CRAPKIT_STATE/crapkit-changed.error" \
           --top "$TOP" \
           --out "$CRAPKIT_STATE/crapkit-comment.md" \
           --json-out "$CRAPKIT_STATE/crapkit-comment.json"

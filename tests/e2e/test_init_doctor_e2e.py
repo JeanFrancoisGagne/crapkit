@@ -64,19 +64,25 @@ def _bare_git_repo(tmp_path: Path, name: str) -> Path:
     return repo
 
 
-def test_init_blames_untracked_source_instead_of_the_working_directory(tmp_path: Path):
+@pytest.mark.parametrize("names, named", [
+    (["app/m.py", "app/n.py"], "2 untracked source file(s) found: app/m.py, app/n.py"),
+    (["lib/e.ts", "app/b.py", "app/a.py", "lib/d.ts", "app/c.py"],
+     "5 untracked source file(s) found: app/a.py, app/b.py, app/c.py and 2 more"),
+], ids=["two", "five"])
+def test_init_blames_untracked_source_and_names_it(tmp_path: Path, names, named):
     """crapkit reads `git ls-files`, so source nobody added is source it cannot
-    see. Blaming the directory sends a first-time user to the wrong place."""
+    see. Blaming the directory sends a first-time user to the wrong place, and
+    a count alone leaves them to find the files git has not been told about."""
     repo = _bare_git_repo(tmp_path, "untracked")
-    (repo / "app").mkdir()
-    (repo / "app" / "m.py").write_text("def g(x):\n    return x or 0\n", encoding="utf-8")
-    (repo / "app" / "n.py").write_text("def h(x):\n    return x and 1\n", encoding="utf-8")
+    for name in names:
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text("def g(x):\n    return x or 0\n", encoding="utf-8")
 
     res = run_cli(repo, "init")
 
     assert res.returncode == 3
     assert "git-tracked" in res.stderr and "git add" in res.stderr
-    assert "2 untracked source file(s)" in res.stderr
+    assert f"({named})" in res.stderr
     assert "is this the repo root" not in res.stderr
 
 

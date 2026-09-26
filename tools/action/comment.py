@@ -11,6 +11,10 @@ three saved files and you get the byte-identical comment the job would post,
 which is how the rendering in README's action section was produced. It imports
 crapkit.plaintext, so run it where crapkit is installed; the action installs
 crapkit from its own checkout before this step.
+
+It runs under the Python the action installs crapkit into, so a list it names
+goes through crapkit.named, the one rule for the first three names and a count.
+With --changed-line it prints the line the changed-files step logs instead.
 """
 from __future__ import annotations
 
@@ -21,6 +25,7 @@ import re
 import sys
 from pathlib import Path
 
+from crapkit.named import first_few
 from crapkit.plaintext import strip_escapes, strip_junit_escapes
 
 # The line that makes the comment findable. The action greps for it to decide
@@ -252,9 +257,27 @@ def _findings(verify: dict) -> str:
     return ", ".join(parts)
 
 
+def _code(value) -> str:
+    """A code span that stays one span on one line, whatever the path holds."""
+    return "`" + str(value).translate(_CELL_BREAKS).replace("`", "\\u0060") + "`"
+
+
+def _named(paths: list) -> str:
+    """` (`a`, `b`, `c` and 2 more)`: the files behind verify's count, so a
+    reader can check what it judged. "" for a verify that listed none (0.8.0
+    printed the count alone)."""
+    return f" ({first_few(_code(path) for path in paths)})" if paths else ""
+
+
+def changed_line(paths: list[str]) -> str:
+    """The changed-files step's log line: `5 changed file(s): a, b, c and 2 more`."""
+    return f"{len(paths)} changed file(s)" + (f": {first_few(paths)}" if paths else "")
+
+
 def _against(verify: dict) -> str:
     return (f"Run {verify.get('run_id')} against {_baseline_name(verify)}, "
-            f"{_plural(verify.get('changed_files', 0), 'changed file')}")
+            f"{_plural(verify.get('changed_files', 0), 'changed file')}"
+            f"{_named(verify.get('changed_paths') or [])}")
 
 
 def _baseline_name(verify: dict) -> str:
@@ -399,7 +422,8 @@ def _in_diff(active: list[dict], changed: list[str]) -> list[dict]:
 def named_by_findings(verify: dict | None) -> set[tuple[str, str]]:
     """The (path, function) pairs verify's findings name: gate violations,
     ratchet regressions and overridden entries. These are the only function
-    identities the comment holds, verify's `changed_files` being a count."""
+    identities the comment holds: verify's `changed_paths` names files, not
+    functions."""
     found = itertools.chain.from_iterable((verify or {}).get(key) or [] for key in _FINDING_LISTS)
     return {(entry.get("path"), entry.get("long_name")) for entry in found}
 
@@ -474,16 +498,34 @@ def worklist_gap(worklist: dict | None) -> str | None:
     return None
 
 
-def _worklist_section(worklist, changed: list[str], entries: list[dict]) -> list[str]:
+def _worklist_section(worklist, changed: list[str], entries: list[dict],
+                      changed_error: str | None = None) -> list[str]:
     gap = worklist_gap(worklist)
     if gap is not None:
-        return [_scope_line(changed, None), "", gap]
+        return [*_scope_lines(changed, None, changed_error), "", gap]
     shallow = [SHALLOW_LINE, ""] if worklist.get("shallow") else []
-    return [_scope_line(changed, entries), "", *shallow, table(entries)]
+    return [*_scope_lines(changed, entries, changed_error), "", *shallow, table(entries)]
+
+
+def _scope_lines(changed: list[str], entries: list[dict] | None,
+                 changed_error: str | None) -> list[str]:
+    """The heading, and why it ranks everything when git refused the base diff.
+
+    An empty list from a failed diff is not "the pull request changed
+    nothing"; git's first line and the checkout setting that fixes the usual
+    cause go under the heading."""
+    heading = _scope_line(changed, entries)
+    if not changed_error:
+        return [heading]
+    return [heading, "",
+            f"The base diff failed ({_code(_first_line(changed_error))}), so the rows rank the "
+            "whole repository, not this pull request's files. A shallow clone lacks the base "
+            "commit: `fetch-depth: 0` on `actions/checkout` brings it."]
 
 
 def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: int,
-         base_reason: str | None = None, coverage_exit: int = 0) -> str:
+         base_reason: str | None = None, coverage_exit: int = 0,
+         changed_error: str | None = None) -> str:
     """The whole comment. The marker leads, so a truncated body still carries
     it and the next run still edits this comment instead of adding one."""
     entries = rows(worklist, changed, top, named_by_findings(verify))
@@ -492,7 +534,7 @@ def body(coverage, verify, exit_code: int, worklist, changed: list[str], top: in
     return "\n".join([MARKER, "", "## crapkit", "",
                       scored_line(coverage), "",
                       verdict, "",
-                      *_worklist_section(worklist, changed, entries), ""])
+                      *_worklist_section(worklist, changed, entries, changed_error), ""])
 
 
 def request_text(text: str) -> str:
@@ -543,19 +585,30 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--worklist", help="crapkit worklist --json output")
     parser.add_argument("--changed", help="file holding one changed path per line")
     parser.add_argument("--changed-z", help="file holding NUL-separated Git paths")
+    parser.add_argument("--changed-error", help="file holding git's error when the base diff "
+                        "failed; empty or missing when it ran")
     parser.add_argument("--top", default=str(_DEFAULT_TOP),
                         help="rows to render (default 5); a value that is not a whole number "
                              "warns and renders 5")
-    parser.add_argument("--out", required=True, help="where to write the markdown")
+    parser.add_argument("--out", help="where to write the markdown; required unless --changed-line")
     parser.add_argument("--json-out", help="where to write the {\"body\": ...} gh api sends")
-    return parser.parse_args(argv)
+    parser.add_argument("--changed-line", action="store_true",
+                        help="print the changed-files step's log line for --changed-z and write nothing")
+    args = parser.parse_args(argv)
+    if args.out is None and not args.changed_line:
+        parser.error("--out is required to render the comment")
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse(argv)
+    if args.changed_line:
+        print(changed_line(_changed_paths(args)))
+        return 0
     text = body(_read_json(args.coverage), _read_json(args.verify), args.verify_exit,
                 _read_json(args.worklist), _changed_paths(args), top_rows(args.top),
-                _base_reason(args.base_sha, args.base_reason), args.coverage_exit)
+                _base_reason(args.base_sha, args.base_reason), args.coverage_exit,
+                _read_text(args.changed_error).strip() or None)
     Path(args.out).write_text(text, encoding="utf-8", newline="\n")
     if args.json_out:
         Path(args.json_out).write_text(json.dumps({"body": request_text(text)}),

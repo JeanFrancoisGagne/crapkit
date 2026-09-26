@@ -1,8 +1,12 @@
 """A cache hit must describe the same reader and valid on-disk data."""
 import json
+import platform
 
+import lizard
 import pytest
 
+import crapkit
+import crapkit.analyze as analyze
 from crapkit.analyze import analyze_files, fingerprint, load_cache, save_cache
 
 
@@ -123,3 +127,79 @@ def test_malformed_stat_index_shapes_do_not_break_analysis(tmp_path, stamps):
     records, hits, _ = analyze_files(tmp_path, ['same.sh'], cache={})
     assert hits == 0
     assert records['same.sh'][0].long_name == 'f()'
+
+
+# --- what the fingerprint holds ------------------------------------------------
+#
+# Every input that can move a record turns the whole cache cold: crapkit's
+# version, the analysis version and lizard's version. The Python version is
+# left out on purpose, because lizard tokenizes with its own regular
+# expressions and no record moves with it; the golden below holds that on every
+# Python the CI matrix runs.
+
+
+@pytest.mark.parametrize('bump', [
+    lambda mp: mp.setattr(analyze, 'ANALYSIS_VERSION', analyze.ANALYSIS_VERSION + 1),
+    lambda mp: mp.setattr(lizard, 'version', lizard.version + '.post1'),
+    lambda mp: mp.setattr(crapkit, '__version__', crapkit.__version__ + '.post1'),
+], ids=['analysis-version', 'lizard-version', 'crapkit-version'])
+def test_a_moved_input_turns_every_entry_cold(persisted_cache, monkeypatch, bump):
+    path, _, cold = persisted_cache
+    bump(monkeypatch)
+
+    warm, hits, _ = analyze_files(path.parent, ['same.sh'], cache=load_cache(path))
+
+    assert hits == 0
+    assert warm == cold
+
+
+def test_the_fingerprint_leaves_the_python_version_out():
+    assert platform.python_version() not in fingerprint()
+    assert 'python' not in fingerprint().lower()
+
+
+GOLDEN_CORPUS = {
+    'app.py': ("def pick(kind, n):\n    if kind == 'a' and n:\n        return 1\n"
+               "    for i in range(n):\n        if i % 2:\n            return i\n    return 0\n\n\n"
+               "class Box:\n    def open(self, x):\n        return x or 0\n"),
+    'app.ts': ("export function dispatch(kind: string): number {\n  switch (kind) {\n"
+               "    case 'a': return 1;\n    case 'b': return 2;\n    default: return 0;\n  }\n}\n\n"
+               "export const twice = (n: number): number => (n > 0 ? n * 2 : -n);\n"),
+    'main.go': ("package main\n\nfunc clamp(n int) int {\n\tif n < 0 {\n\t\treturn 0\n"
+                "\t} else if n > 9 {\n\t\treturn 9\n\t}\n\treturn n\n}\n"),
+    'lib.rs': ("pub fn sign(n: i32) -> i32 {\n    match n {\n        0 => 0,\n"
+               "        x if x > 0 => 1,\n        _ => -1,\n    }\n}\n"),
+    'calc.cpp': ("int total(int *xs, int n) {\n    int t = 0;\n    for (int i = 0; i < n; ++i) {\n"
+                 "        if (xs[i] > 0 && xs[i] < 100) t += xs[i];\n    }\n    return t;\n}\n"),
+}
+
+# Measured under CPython 3.11.2, 3.12.14, 3.13.15 and 3.14.7 with lizard 1.24.0
+# at analysis version 11: the same tuples on all four. An analyzer change that
+# moves them bumps ANALYSIS_VERSION and rewrites this table; a row that moves
+# on one Python only means the fingerprint needs the Python version.
+GOLDEN_RECORDS = [
+    ('app.py', 'pick( kind , n )', 1, 7, 5, 5, 5, 7, 2, 2, 5, 1, 0),
+    ('app.py', 'open( self , x )', 11, 12, 2, 2, 2, 2, 2, 0, 1, 1, 0),
+    ('app.ts', 'dispatch ( kind )', 1, 9, 3, 2, 2, 8, 1, 1, 1, 1, 0),
+    ('app.ts', 'twice ( n )', 9, 9, 2, 2, 2, 1, 1, 1, 1, 1, 0),
+    ('calc.cpp', 'total( int * xs , int n)', 1, 7, 4, 4, 4, 7, 2, 3, 4, 1, 0),
+    ('lib.rs', 'sign n : i32', 1, 7, 4, 4, 4, 7, 1, 1, 3, 1, 0),
+    ('main.go', 'clamp n int', 3, 10, 3, 3, 3, 8, 1, 1, 2, 1, 0),
+]
+
+
+def _flat(records: dict) -> list[tuple]:
+    return [tuple(r) for path in sorted(records) for r in records[path]]
+
+
+@pytest.mark.skipif((analyze.ANALYSIS_VERSION, lizard.version) != (11, '1.24.0'),
+                    reason='the golden was measured at analysis version 11 with lizard 1.24.0')
+def test_every_python_the_ci_runs_computes_the_records_a_cache_would_serve(tmp_path):
+    """A cache written under one Python is served under another, so the
+    records have to be the ones that Python would compute itself."""
+    for name, text in GOLDEN_CORPUS.items():
+        (tmp_path / name).write_text(text, encoding='utf-8', newline='\n')
+
+    records, _, _ = analyze_files(tmp_path, sorted(GOLDEN_CORPUS), cache={})
+
+    assert _flat(records) == GOLDEN_RECORDS

@@ -21,11 +21,13 @@ from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self, quoted_path
 from ..lane_command import (LaunchSpec, expand_launchers, first_word, launch_spec,
                             pytest_head, pytest_python, python_token)
+from ..named import first_few
 from ..repopath import typed_path
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..gitpaths import readable
 from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
+from ..watch import Snapshot, poll, snapshot
 from ._shared import (_command_root, _file_sizer, _init_root, _load_repo_config, _print_json,
                       _say_left_out, repo_text)
 
@@ -291,11 +293,12 @@ def _no_scopes_reason(root: Path) -> str:
     from ..gitio import untracked_files
     from ..scaffold import source_candidates
 
-    untracked = source_candidates(untracked_files(root))
+    untracked = sorted(source_candidates(untracked_files(root)))
     if not untracked:
         return "no source files found to scope - is this the repo root?"
     return ("no tracked source files to scope - crapkit scores git-tracked files only; "
-            f"run `git add` first ({len(untracked)} untracked source file(s) found)")
+            f"run `git add` first ({len(untracked)} untracked source file(s) found: "
+            f"{first_few(untracked)})")
 
 
 _PROBE_TIMEOUT_SECONDS = 15
@@ -1404,19 +1407,33 @@ def _newest_run_report(store: SnapshotStore | None) -> dict | None:
             "verdict_ok": runs[-1]["verdict_ok"]}
 
 
-def _lane_report(root: Path, lane, stamp: dict) -> dict:
+def _lane_report(root: Path, lane, stamps) -> dict:
+    stamp = stamps.entry(lane.artifact)
     return {"artifact": lane.artifact,
             "artifact_present": (root / lane.artifact).is_file(),
             "commit": stamp.get("commit"),
             "name": lane.name,
+            "refusal": _lane_refusal(lane, stamps),
             "seconds": stamp.get("seconds")}
 
 
 def _lane_reports(root: Path, cfg) -> list[dict]:
-    from ..lanes import read_stamps, stamp_for
+    from ..lane_stamps import read
 
-    stamps = read_stamps(root)
-    return [_lane_report(root, lane, stamp_for(stamps, lane.artifact)) for lane in cfg.lanes]
+    stamps = read(root)
+    return [_lane_report(root, lane, stamps) for lane in cfg.lanes]
+
+
+def _lane_refusal(lane, stamps) -> str | None:
+    """Why --reuse-artifacts refuses the lane's artifact, or None when it would
+    score it. It is the question reuse itself asks (lane_stamps.Stamps.refusal),
+    so both give one answer for a leftover, touched or not, and for an artifact
+    whose record crapkit cannot read. An artifact on disk used to read as the
+    lane's healthy output even when its last attempt wrote nothing."""
+    cause = stamps.refusal(lane.artifact).cause(lane.artifact)
+    if not cause:
+        return None
+    return f"{cause}; --reuse-artifacts will not score it until a run of the lane writes it again"
 
 
 def _unreadable_stamp_note(key: str, writers: dict[str, str]) -> str:
@@ -1426,30 +1443,42 @@ def _unreadable_stamp_note(key: str, writers: dict[str, str]) -> str:
     writer = writers.get(key)
     fix = (f"lane {writer!r} replaces it on its next successful run, or delete the entry"
            if writer else "no declared lane writes this key, so delete the entry")
-    return (f".crapkit/artifacts.json: the entry for {key!r} is not an object, so crapkit "
+    from ..lane_stamps import STAMPS_FILE
+
+    return (f"{STAMPS_FILE}: the entry for {key!r} is not an object, so crapkit "
             f"reads it as no stamp (no commit, no duration) and `--reuse-artifacts` refuses the "
             f"lane while it stands; {fix}")
 
 
-def _unreadable_file_note(reason: str) -> str:
-    return (f".crapkit/artifacts.json cannot be read ({reason}), so every lane reads as "
-            "unstamped and `--reuse-artifacts` refuses each lane whose artifact is on disk; "
-            "the next real run of any lane rewrites the file, or delete it to reuse the "
-            "artifacts as they stand")
-
-
 def _doctor_stamps(root: Path, lanes) -> list[Finding]:
-    """WARN, never FAIL: every reader already takes a mangled entry as no stamp.
-    Named anyway, because the file is hand-edited and the reader has to find the
-    line doctor skipped."""
-    from ..lanes import UnreadableStamps, read_stamps, unreadable_stamps
+    """WARN, never FAIL: every reader already takes a mangled entry, or a file
+    it cannot read, as no stamp. Named anyway, because the file is hand-edited
+    and the reader has to find the line doctor skipped. A refused leftover is a
+    WARN too: the lane's next run clears it."""
+    from ..lane_stamps import read
 
-    stamps = read_stamps(root)
-    if isinstance(stamps, UnreadableStamps):
-        return [Finding("WARN", _unreadable_file_note(stamps.reason))]
+    stamps = read(root)
+    if stamps.unreadable:
+        return [Finding("WARN", _unreadable_stamps_file_note(stamps.unreadable))]
     writers = {lane.artifact: lane.name for lane in lanes}
-    return [Finding("WARN", _unreadable_stamp_note(key, writers))
-            for key in unreadable_stamps(stamps)]
+    mangled = [Finding("WARN", _unreadable_stamp_note(key, writers)) for key in stamps.mangled()]
+    return mangled + _refusal_findings(lanes, stamps)
+
+
+def _refusal_findings(lanes, stamps) -> list[Finding]:
+    """One WARN per lane whose artifact --reuse-artifacts refuses."""
+    refusals = ((lane, _lane_refusal(lane, stamps)) for lane in lanes)
+    return [Finding("WARN", f"lane {lane.name!r}: {refusal}") for lane, refusal in refusals
+            if refusal]
+
+
+def _unreadable_stamps_file_note(fault: str) -> str:
+    from ..lane_stamps import STAMPS_FILE
+
+    return (f"{STAMPS_FILE} cannot be read ({fault}), so crapkit reads it as no stamps: "
+            "--reuse-unchanged reruns every lane and --reuse-artifacts refuses every lane's "
+            "artifact, since it cannot tell a failed attempt's leftover; the next lane run "
+            "writes the file again, or delete it")
 
 
 def _doctor_report(root: Path, cfg, findings: list[Finding]) -> dict:
@@ -1885,11 +1914,49 @@ def _watch_rescore(root: Path, moved: list[str]) -> None:
 
 
 def _watched_files(root: Path, cfg) -> list[str]:
-    """Every tracked file a scope claims, flat — the whole subject of one poll.
-    Read once per watch, so each unreadable name is named once."""
-    universe = scan_files(ls_files(root), cfg, size_of=_file_sizer(root))
-    _say_left_out(universe.unreadable)
+    """Every file a scope claims, tracked or not yet added, ignored ones left
+    out, flat: the whole subject of one poll. Listed again each poll, so a
+    file created in a scope while the watch runs is rescored too. The first
+    poll's scan names the unreadable names it left out (cmd_watch). Raises
+    GitError."""
+    return _flat(_watched_scan(root, cfg))
+
+
+def _watched_scan(root: Path, cfg):
+    """The scan of every file under the declared scope paths: git looks for new
+    files there only, since over the whole tree of a 33k-file repo that search
+    took 0.88 s a poll, under its scopes 0.27 s. A claimed name that is not
+    UTF-8 is refused and an unclaimed one is left out, as at every scan."""
+    from ..lane_changes import visible_paths
+
+    declared = tuple(dict.fromkeys(path for scope in cfg.scopes for path in scope.paths))
+    return scan_files(list(visible_paths(root, declared)), cfg, size_of=_file_sizer(root))
+
+
+def _flat(universe) -> list[str]:
     return [f for files in universe.by_scope.values() for f in files]
+
+
+class _Watching(NamedTuple):
+    """What one poll hands the next: the files it listed, what it saw, and
+    the git error its listing hit, "" when git listed them."""
+    files: list[str]
+    seen: Snapshot
+    fault: str
+
+
+def _relisted(root: Path, cfg, state: _Watching) -> tuple[list[str], str]:
+    """This poll's files. When git cannot list them, the last poll's files, and
+    the error named on the first poll that hits it, not on every one after."""
+    try:
+        return _watched_files(root, cfg), ""
+    except GitError as exc:
+        fault = str(exc)
+    if fault != state.fault:
+        print(f"crapkit watch: could not list the files your scopes claim ({fault}); "
+              "fix what git reports. Until git lists them, each poll reads the last list "
+              "and asks git again", flush=True)
+    return state.files, fault
 
 
 def _watch_cycles(cycles: int | None):
@@ -1907,36 +1974,36 @@ def _watch_cycles(cycles: int | None):
 
 def _watch_banner(watched: int, interval: float, cycles: int | None) -> str:
     """The first line, naming how this run ends. Telling an operator to press
-    ctrl-c on a `--cycles 3` run describes a loop that is not the one running."""
+    ctrl-c on a `--cycles 3` run describes a loop that is not the one running.
+    `watched` counts every file a scope claims, untracked ones included."""
     stop = "ctrl-c to stop" if cycles is None else f"{cycles} poll(s) then stop"
-    return f"watching {watched} tracked files every {interval}s - {stop}"
+    return f"watching {watched} file(s) in scope every {interval}s - {stop}"
 
 
-def _watch_cycle(root: Path, files: list[str], prev: dict[str, float],
-                 interval: float) -> dict[str, float]:
-    """One poll: wait, re-stat, rescore whatever moved; the new snapshot out."""
+def _watch_cycle(root: Path, cfg, state: _Watching, interval: float) -> _Watching:
+    """One poll: wait, list the files again, rescore whatever holds new bytes;
+    what the next poll starts from out."""
     import time
 
-    from ..watch import changed_paths, snapshot_mtimes
-
     time.sleep(interval)
-    cur = snapshot_mtimes(root, files)
-    moved = changed_paths(prev, cur)
+    files, fault = _relisted(root, cfg, state)
+    seen, moved = poll(root, files, state.seen)
     if moved:
         _watch_rescore(root, moved)
-    return cur
+    return _Watching(files, seen, fault)
 
 
 def cmd_watch(args: argparse.Namespace) -> int:
-    from ..watch import snapshot_mtimes
-
     root = _command_root(args.repo)
-    files = _watched_files(root, _load_repo_config(root))
-    prev = snapshot_mtimes(root, files)
-    print(_watch_banner(len(prev), args.interval, args.cycles), flush=True)
+    cfg = _load_repo_config(root)
+    universe = _watched_scan(root, cfg)
+    _say_left_out(universe.unreadable)
+    files = _flat(universe)
+    state = _Watching(files, snapshot(root, files), "")
+    print(_watch_banner(len(state.seen.mtimes), args.interval, args.cycles), flush=True)
     try:
         for _ in _watch_cycles(args.cycles):
-            prev = _watch_cycle(root, files, prev, args.interval)
+            state = _watch_cycle(root, cfg, state, args.interval)
     except KeyboardInterrupt:
         pass
     return 0

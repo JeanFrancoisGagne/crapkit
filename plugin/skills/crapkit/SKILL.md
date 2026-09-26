@@ -55,11 +55,25 @@ plugin registers `Edit|Write`. A clean tree, a file older than the window, or a 
 outside any repo all stay silent, so what an advisory names here is source written seconds
 ago, never the tree's standing debt.
 
+The hook remembers, per session, the bytes each advisory judged, so a touch, a same-bytes
+rewrite or a test run after your edit does not repeat an advisory you already heard. New
+bytes are judged again. Source that lands with an old mtime (a command that ran longer than
+the window, `cp -p`, `mv`, an unpacked archive) is never judged here; the commit gate
+catches it.
+
+An advisory that says `could not read <file>` or `git could not report what changed in
+<file>` judged nothing in that file. It is not a pass: fix what its second line quotes, the
+reader's reason or git's error, before you trust silence from the hook on that file.
+
 ## Two fields decide whether a number is worth reading
 
-Read `stale` and `uncovered_lines_note` first. `stale: true` means the run predates HEAD:
-run `commands.refresh` before anything else. `uncovered_lines: null` means no artifact named
-lines for this file, and `flag` says which case you are in:
+Read `scored_changes` and `uncovered_lines_note` first. `scored_changes` counts the files
+the run scored whose content changed since, your own uncommitted edits included. Anything
+but `0`, `null` included, means run `commands.refresh` before anything else. `stale: true`
+says only that HEAD moved past the run's commit, which an amend does with no byte moved.
+The loop is done when `crapkit next-item` says `empty: true` with `scored_changes: 0`,
+`skipped_claimed` absent and `reasons.no_lane_over_target` 0. `uncovered_lines: null`
+means no artifact named lines for this file, and `flag` says which case you are in:
 
 - `untested`: write the first test at the public seam, then `crapkit coverage`. The lines appear. The exception is `remedy: split-lines`: another function shares the source lines, or a Python def's body starts on the line its signature ends, so no test moves the score. Put each definition on its own lines, and such a def's body on its own line after the signature, first.
 - `measured`: the artifact no longer matches the tree. Commit or revert the edits, then `crapkit coverage`.

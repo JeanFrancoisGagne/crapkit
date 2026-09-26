@@ -74,6 +74,11 @@ class _Store:
         self._seen("twin_index")
         return build()
 
+    def run_sources(self, run_id):
+        """A run that recorded no content, as every run 0.8.0 wrote."""
+        self._seen("run_sources")
+        return None
+
 
 @pytest.fixture()
 def counted(monkeypatch) -> dict:

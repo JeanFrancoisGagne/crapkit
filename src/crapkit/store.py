@@ -145,6 +145,15 @@ CREATE TABLE IF NOT EXISTS run_collisions (
     legacy INTEGER NOT NULL,
     PRIMARY KEY (run_id, identity_id)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS run_sources (
+    run_id INTEGER PRIMARY KEY REFERENCES runs(id),
+    blobs BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS lane_refusals (
+    artifact TEXT PRIMARY KEY,
+    sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+) WITHOUT ROWID;
 {_TWIN_DDL}
 """
 
@@ -167,7 +176,9 @@ CREATE INDEX IF NOT EXISTS idx_attempts_identity ON attempts(path, key_name);
 _DEAD_INDEXES = ("idx_functions_run_path", "idx_identities_path")
 
 _CURRENT_OBJECTS = frozenset(("runs", "identities", "flags", "remedies", "functions",
-                              "overrides", "attempts", "run_rollup", "run_collisions", "idx_functions_run",
+                              "overrides", "attempts", "run_rollup", "run_collisions", "lane_refusals",
+                              "run_sources",
+                              "idx_functions_run",
                               "idx_functions_identity", "idx_attempts_open", "idx_attempts_identity",
                               *_TWIN_TABLES))
 _ADDED_COLUMNS = {"functions": {"cov", "flag", "crap", "remedy", "cognitive", "identity_id", "occurrence",
@@ -847,7 +858,12 @@ class SnapshotStore:
         return self._codes[table].ids
 
     def write_run(self, *, commit: str, tool_versions: dict[str, str], rows: list,
-                  lanes: dict | None = None, kind: str = "coverage") -> int:
+                  lanes: dict | None = None, kind: str = "coverage",
+                  sources: dict[str, str] | None = None) -> int:
+        """One run and its rows in one transaction. `sources` is the run's
+        content record, the git blob id of every scored file as the run read
+        it; None records none, which `run_sources` answers for every run a
+        crapkit older than 0.8.1 wrote."""
         flag_names, remedy_names = _verdict_names(rows)
         with self._conn:
             cur = self._conn.execute(
@@ -856,6 +872,7 @@ class SnapshotStore:
                  _deflate(json.dumps(lanes or {}, sort_keys=True)), kind),
             )
             run_id = cur.lastrowid
+            self._write_sources(run_id, sources)
             ids = self._identity_ids(rows)
             flags = self._code_ids("flags", flag_names)
             remedies = self._code_ids("remedies", remedy_names)
@@ -868,6 +885,18 @@ class SnapshotStore:
                 ((run_id, ids[row[:3]], *_writable(row, flags, remedies)) for row in rows),
             )
         return run_id
+
+    def _write_sources(self, run_id: int, sources: dict[str, str] | None) -> None:
+        if sources is not None:
+            self._conn.execute("INSERT INTO run_sources (run_id, blobs) VALUES (?, ?)",
+                               (run_id, _deflate(json.dumps(sources, sort_keys=True))))
+
+    def run_sources(self, run_id: int) -> dict[str, str] | None:
+        """path -> the git blob id each scored file held when the run read it,
+        or None when the run recorded none."""
+        row = self._conn.execute("SELECT blobs FROM run_sources WHERE run_id = ?",
+                                 (run_id,)).fetchone()
+        return None if row is None else json.loads(_inflate(row[0]))
 
     def read_rows(self, run_id: int, *, min_ccn: int = 0,
                   scopes: list[str] | None = None) -> list[InventoryRow]:
@@ -1251,6 +1280,24 @@ class SnapshotStore:
             self._conn.execute("UPDATE runs SET verdict_ok = ?, findings = ? WHERE id = ?",
                                (1 if ok else 0, findings, run_id))
 
+    def record_refusals(self, refused: dict[str, str]) -> None:
+        """Keep each artifact's refused sha256 (lane_stamps): the copy of a
+        refusal that outlives a deleted or unreadable .crapkit/artifacts.json."""
+        with self._conn:
+            self._conn.executemany(
+                "INSERT OR REPLACE INTO lane_refusals (artifact, sha256) VALUES (?, ?)",
+                sorted(refused.items()))
+
+    def clear_refusals(self, artifacts) -> None:
+        """Drop the refusal of each artifact a run just measured."""
+        with self._conn:
+            self._conn.executemany("DELETE FROM lane_refusals WHERE artifact = ?",
+                                   [(artifact,) for artifact in artifacts])
+
+    def lane_refusals(self) -> dict[str, str]:
+        """artifact -> the sha256 of the leftover its lane's last attempt left."""
+        return dict(self._conn.execute("SELECT artifact, sha256 FROM lane_refusals"))
+
     def list_runs(self) -> list[dict]:
         cur = self._conn.execute(
             "SELECT id, commit_sha, tool_versions, lanes, kind, verdict_ok, findings, "
@@ -1502,6 +1549,7 @@ class SnapshotStore:
             self._conn.executemany("DELETE FROM functions WHERE run_id = ?", doomed)
             self._conn.executemany("DELETE FROM run_rollup WHERE run_id = ?", doomed)
             self._conn.executemany("DELETE FROM run_collisions WHERE run_id = ?", doomed)
+            self._conn.executemany("DELETE FROM run_sources WHERE run_id = ?", doomed)
             self._drop_twins("run_id = ?", doomed)
             self._conn.executemany("DELETE FROM runs WHERE id = ?", doomed)
         return len(doomed)

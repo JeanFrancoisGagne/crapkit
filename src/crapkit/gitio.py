@@ -50,8 +50,17 @@ _NO_FILE = {"0" * 40, "0" * 64}  # the side of a commit that added or deleted th
 # stored and re-encodes only a commit whose header names another encoding. A
 # commit with no header that holds bytes that are not UTF-8 still comes out as
 # written, and the readers below take those through repotext.lenient.
+#
+# diff.autoRefreshIndex answers whether a file changed at all. On by default,
+# a worktree `git diff --name-only` checks each stat-dirty file's content
+# through the repo's filters and drops the ones that still match. Off, it names
+# every file whose mtime moved, so a `touch` read as an edit: lane staleness
+# said "1 file(s) in its scopes changed", reuse refused a clean tree and verify
+# counted the file dirty. On, a CRLF checkout under core.autocrlf=true still
+# matches its LF blob, which a raw-bytes comparison would not.
 _RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false",
-             "-c", "i18n.logOutputEncoding=UTF-8")
+             "-c", "i18n.logOutputEncoding=UTF-8",
+             "-c", "diff.autoRefreshIndex=true")
 # Parsed patches are a protocol, independent of display settings and converters.
 _PATCH = ("-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
           "--no-ext-diff", "--no-textconv", "--inter-hunk-context=0",
@@ -59,9 +68,23 @@ _PATCH = ("-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=
 
 
 def _environment() -> dict[str, str]:
-    """GIT_DIFF_OPTS overrides even explicit -U0; it is display state."""
+    """GIT_DIFF_OPTS overrides even explicit -U0; it is display state.
+
+    GIT_OPTIONAL_LOCKS=0 is git's own spelling of `--no-optional-locks`, set on
+    every process here because crapkit never wants an index write it did not
+    ask for: `git status` and the other commands that honor it compare a
+    stat-dirty file's content without writing the refreshed entry back to
+    .git/index. On Windows that write-back made a sibling read that opened the
+    index at the same moment fail with `index file open failed: Permission
+    denied`. `git diff` (2.43) writes it back whatever this says, which is why
+    lane_changes starts its index reads after the worktree diff and the content
+    record reads one after the other. A command that must lock the index
+    (`add`, a worktree checkout) takes that lock anyway. The environment rather
+    than the flag, so the subcommand stays the first word after the `-c` pairs.
+    """
     environment = dict(os.environ)
     environment.pop("GIT_DIFF_OPTS", None)
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
     return environment
 
 
@@ -223,9 +246,15 @@ def unstaged_paths(root: Path) -> set[str]:
     return set(_diff_names(root))
 
 
+# --ignore-submodules=none: a `.gitmodules` entry with `ignore = dirty` hides
+# an edit inside the submodule from a plain `git diff`, and lane reuse then
+# republished a lane whose tests read that submodule.
+_NAME_DIFF = ("diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z")
+
+
 def _diff_names(root: Path, *args: str) -> list[str]:
     """One `git diff --name-only` answer with exact root-relative paths."""
-    return _git_paths(root, "diff", "--name-only", "--no-renames", "-z", *args)
+    return _git_paths(root, *_NAME_DIFF, *args)
 
 
 def diff_since(root: Path, commit: str) -> str:
@@ -284,10 +313,109 @@ def status_names(root: Path) -> list[str]:
     Untracked files are in the set because lane reuse reads it: a test file that
     exists and git has never seen still makes that lane's coverage stale. The
     dirty-file set verify builds from this only ever meets tracked rows, so the
-    wider answer cannot relabel a finding there.
+    wider answer cannot relabel a finding there. So are the edits git's diff
+    never compares (`hidden_edits`).
     """
     return sorted({*_diff_names(root, "--cached"), *_diff_names(root),
-                   *untracked_files(root)})
+                   *untracked_files(root), *hidden_edits(root)})
+
+
+def hidden_edits(root: Path, *paths: str) -> list[str]:
+    """Tracked files flagged skip-worktree or assume-unchanged whose bytes on
+    disk hold other content than the index, under `paths` (all when none).
+
+    `git diff` and `git status` never compare such a file, so an edit to one
+    was invisible: lane reuse republished coverage its tests no longer earn,
+    verify called the finding committed, and `mutate` judged every mutant with
+    the index's copy of the test. A flagged file that is not on disk (outside a
+    sparse checkout's cone) is not an edit. git hashes the disk bytes through
+    the repo's filters, so a CRLF checkout still matches its LF blob.
+    """
+    flagged = _on_disk(root, _flagged(root, paths))
+    if not flagged:
+        return []
+    index = index_blobs(root, flagged)
+    return [path for path, blob in worktree_blobs(root, flagged).items()
+            if blob != index.get(path)]
+
+
+def worktree_changes(root: Path, paths: tuple[str, ...] = ()) -> list[str]:
+    """Tracked files under `paths` (all when none) whose content on disk differs
+    from the index: git's worktree diff, which compares a stat-dirty file's
+    content through the repo's filters, plus the flagged files it never
+    compares (`hidden_edits`). A deleted file is in it, and so is a submodule
+    whose checkout moved or holds an edit."""
+    names = _git_paths(root, "--literal-pathspecs", *_NAME_DIFF, "--", *paths)
+    return sorted({*names, *hidden_edits(root, *paths)})
+
+
+def _on_disk(root: Path, paths: list[str]) -> list[str]:
+    """The files present in the checkout."""
+    return [path for path in paths if (root / path).is_file()]
+
+
+def _flagged(root: Path, paths: tuple[str, ...]) -> list[str]:
+    """`ls-files -v` tags a skip-worktree file `S` and an assume-unchanged one
+    in lowercase."""
+    records = _git_paths(root, "--literal-pathspecs", "ls-files", "-v", "-z", "--", *paths)
+    return [record[2:] for record in records if record[:1] == "S" or record[:1].islower()]
+
+
+def index_blobs(root: Path, paths=()) -> dict[str, str]:
+    """path -> the object id the index holds for each tracked path under `paths`
+    (all when none), from `mode id stage<TAB>path` records: a blob id for a
+    file, the checked-out commit for a submodule."""
+    blobs = {}
+    for record in _git_paths(root, "--literal-pathspecs", "ls-files", "-s", "-z", "--", *paths):
+        meta, _, path = record.partition("\t")
+        blobs[path] = meta.split(" ")[1]
+    return blobs
+
+
+def worktree_blobs(root: Path, paths) -> dict[str, str]:
+    """path -> the blob id `git add` would give each file on disk, through the
+    repo's filters: one process for every name that can ride hash-object's
+    line-framed stdin, and one each for a name holding a line break.
+
+    hash-object reads a `--stdin-paths` name from the checkout's top, not from
+    the cwd as it reads a file argument, so under a root one directory down (a
+    monorepo member) each name carries the root's prefix. Without it every
+    edited file there came back `could not open`, and each lane read "git
+    cannot say" where it should have named the file."""
+    paths = list(paths)
+    prefix = _show_prefix(root) if paths else ""
+    framed = [path for path in paths if not _line_paths([prefix + path])]
+    blobs = _hashed(root, prefix, framed)
+    return {**blobs, **_hashed_alone(root, set(paths) - blobs.keys())}
+
+
+def _show_prefix(root: Path) -> str:
+    """The root's path below the checkout's top, ending in `/`, or "" at the top."""
+    return _git(root, "rev-parse", "--show-prefix").removesuffix("\n")
+
+
+def _hashed(root: Path, prefix: str, paths: list[str]) -> dict[str, str]:
+    """Each name goes out as its own bytes: a name that is not UTF-8 arrives in
+    its surrogateescape spelling, which strict UTF-8 refuses to encode, as a
+    file argument's encoding does not."""
+    if not paths:
+        return {}
+    read = _Started(root, ("hash-object", "--stdin-paths"), stdin=True)
+    out = read.result("".join(f"{prefix}{path}\n" for path in paths).encode("utf-8", "surrogateescape"))
+    return dict(zip(paths, out.decode("utf-8").split()))
+
+
+def _hashed_alone(root: Path, paths) -> dict[str, str]:
+    """Names holding a line break, each hashed as a file argument, which git
+    reads from the cwd."""
+    return {path: _Started(root, ("hash-object", "--", path), stdin=False).result().decode("utf-8").strip()
+            for path in sorted(paths)}
+
+
+def has_commit(root: Path, commit: str) -> bool:
+    """Whether this clone holds the commit: a shallow clone or a rewritten and
+    collected history does not."""
+    return _spawn(root, ("cat-file", "-e", f"{commit}^{{commit}}")).returncode == 0
 
 
 _SHALLOW_FIX = ("this shallow clone does not hold every commit: set fetch-depth: 0 on the "
@@ -344,7 +472,7 @@ def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
     ancestor, which is what "at or behind" needs."""
     try:
         res = subprocess.run(["git", "merge-base", "--is-ancestor", commit, other],
-                             cwd=root, capture_output=True)
+                             cwd=root, env=_environment(), capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     return res.returncode == 0
@@ -393,7 +521,7 @@ def commits_touching(root: Path, rev_range: str, rel_path: str) -> list[str]:
 
 def _batch_stream(root: Path, requests: bytes) -> bytes:
     try:
-        res = subprocess.run(["git", "cat-file", "--batch"], cwd=root,
+        res = subprocess.run(["git", "cat-file", "--batch"], cwd=root, env=_environment(),
                              input=requests, capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
@@ -478,7 +606,7 @@ class _Started:
         except FileNotFoundError as exc:
             raise GitError("git executable not found") from exc
 
-    def result(self, payload=None):
+    def result(self, payload=None) -> bytes:
         out, err = self._proc.communicate(payload)
         if self._proc.returncode != 0:
             raise GitError(f"git {' '.join(self._args)} failed in {self._root}: {lenient(err).strip()}")

@@ -54,6 +54,13 @@ _UNREAD = ("changed files no reader could read, so none of their functions was j
            "refusal, which check_gate answers as this verdict)")
 _UNREAD_PATH = "repo-relative path of the file, each byte that is not UTF-8 spelled \\xNN"
 _UNREAD_REASON = "the reader's refusal, naming the line and what to change"
+_SCORED_CHANGES = ("how many files the run scored hold other content now than the run "
+                   "recorded, deleted files included; 0 means the numbers describe the files on "
+                   "disk; null when crapkit cannot compare: the run recorded no content (crapkit "
+                   "0.8.0 or older wrote it) or git failed reading the tree; treat null like any "
+                   "count above 0 and run commands.refresh")
+_REFRESH = ("crapkit coverage --reuse-unchanged: the cheapest run that brings scored_changes to 0 "
+            "and clears stale")
 _UNREAD_DIRTY = "true when the file has uncommitted edits or is untracked"
 
 
@@ -73,6 +80,10 @@ ADDED = (
     AddedField("brief --json", "shallow", ("boolean",),
                _SHALLOW.format(counts="churn and gate_rule.mark_age_days")),
     AddedField("brief --json", "unmeasured", ("boolean",), _UNMEASURED),
+    *(AddedField(payload, "scored_changes", ("integer", "null"), _SCORED_CHANGES)
+      for payload in ("worklist --json", "next-item", "brief --json")),
+    *(AddedField(payload, "commands.refresh", ("string",), _REFRESH)
+      for payload in ("worklist --json", "next-item")),
     AddedField("ratchet report --json", "shallow", ("boolean",),
                _SHALLOW.format(counts="ages and repayments") + ", and crapkit ratchet report "
                "--enforce refuses to judge the debt policy there (exit 4)"),
@@ -89,6 +100,12 @@ ADDED = (
     AddedField("verify --json", "lanes_without_baseline_results", ("array",),
                "lanes with a new failure whose baseline, and every trusted run behind it, "
                "recorded no failure list: those failures may predate the change"),
+    AddedField("verify --json", "changed_paths", ("array",),
+               "the files behind changed_files, sorted: every file the diff since the baseline "
+               "commit changed, uncommitted edits included"),
+    AddedField("verify --json", "untracked_in_scope", ("array",),
+               "source files inside a scope that git does not track; verify judges git-tracked "
+               "files only, so these were not judged; git add them to judge them"),
     AddedField("verify --json", "ratchet_source", ("string",),
                "which marks verify judged against: tree, the marks file as read, or committed, "
                "the newest marks committed since the baseline when that file is missing or blank"),

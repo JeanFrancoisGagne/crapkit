@@ -39,11 +39,12 @@ there can reach the WindowsApps stub or the base interpreter the venv wraps.
 
 `commands.refresh` is the fourth string: it creates a `coverage` run.
 Automatic reuse requires the same clean HEAD and unchanged configuration,
-environment and coverage/JUnit bytes, or, for a lane that lists its `inputs`, no
+environment, crapkit version and coverage/JUnit bytes, or, for a lane that lists its `inputs`, no
 change under those paths, its lane table or its `env` since the artifact's commit;
 every other lane reruns. That is what
-`stale: true` asks for. Nothing else clears it, because nothing else lands a run on the
-current commit. `commands.refresh_writes_run: true` marks that ledger write.
+`stale: true` and a `scored_changes` above `0` ask for. Nothing else answers them: `stale`
+clears only when a run lands on the current commit, and `scored_changes` falls to `0` only
+when a run records the content on disk now. `commands.refresh_writes_run: true` marks that ledger write.
 The other commands can still write caches or test artifacts; the field does not
 promise filesystem read-only execution.
 
@@ -78,7 +79,8 @@ do next.
 | `notes` | the repo's and the scope's house rules, carried in from crapkit.toml |
 | `gate_rule` | `ceiling` is the number step 3 judges ccn against; `binds` is the gate's scope rule as one fixed sentence: print it, do not branch on it |
 | `commands` | the literal strings for steps 3, 4 and 5, plus `refresh` and `refresh_writes_run` |
-| `stale` | `true` means the run predates HEAD: run `commands.refresh` before trusting `cov` |
+| `scored_changes` | how many files the run scored hold other content now, your own edits included. Anything but `0`, `null` included: run `commands.refresh` before trusting `cov` or `source` |
+| `stale` | `true` means HEAD moved past the run's commit; it says nothing about the files |
 | `file_functions`, `file_totals` | the siblings an extracted helper lands beside, and the file's rollup |
 | `regrowth` | `regrown: true` says an earlier decomposition of this function did not hold |
 | `attempts` | every claim already taken on it, oldest first. Not empty: read `regrowth.history` before repeating their split |
@@ -135,7 +137,7 @@ exits 1:
 
     crapkit brief --batch 5 --json
 
-`{"schema": 1, "run_id": ..., "commit": ..., "stale": ..., "packets": [...]}`: the top N
+`{"schema": 1, "run_id": ..., "commit": ..., "stale": ..., "scored_changes": ..., "commands": {"refresh": ...}, "packets": [...]}`: the top N
 of the queue as N packets, `crap` descending, built from one read of the store, the
 churn log and the ratchet file. Hand one packet to one session. A function another
 session holds under `next-item --claim` is skipped, as `next-item` skips it, and the
@@ -291,8 +293,10 @@ lane subset, or a lane that failed).
 The lines verify prints, one per finding kind, collected here from separate runs:
 
     verify OK @ f6e9bde18a7 vs baseline f6e9bde18a7 (1 changed files)
+      changed files: calc/grade.py
     crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/py.json (command exit 4); lane log: /repo/.crapkit/lane-py.log; last output: ...
     verify FAILED @ 3a45b8a9b6c vs baseline 03d9cac1397 (1 changed files)
+      changed files: calc/report.py
       GATE  crap     42.0  ccn   6 cov 0%  calc/report.py:22  bucket( counts , low , high , invert , label )  -> add-tests  [dirty]
       RATCHET  calc/report.py  spread( counts , low , high , invert , label , pad ): 8.0 -> 72.0
       NEW FAILURE  tests.test_curve::test_normalized  [dirty]
@@ -314,9 +318,19 @@ make and writes three lines to stderr when that edit pushed a function over its 
       ccn 9  calc/grade.py:67  curve( scores , mode , floor , ceiling , skip_none )
     the commit gate enforces this; decompose there or mark the debt
 
-Nothing was blocked and nothing was written. Read it as the earliest warning that step 3
-will fail, not as a rejected edit. A function the committed ratchet already marks never
-triggers it, and a repo with no `crapkit.toml` never hears from the hook at all.
+Nothing was blocked and nothing in your tree was written. Read it as the earliest warning
+that step 3 will fail, not as a rejected edit. A function the committed ratchet already
+marks never triggers it, and a repo with no `crapkit.toml` never hears from the hook at
+all. Before the repo's first commit there is no HEAD to diff against, so every function in
+the edited file counts as changed.
+
+The same exit 2 comes with a different head line when the hook could not judge the edit.
+`crapkit advisory: could not read calc/grade.py, so no function in it was judged (the edit
+landed; nothing was blocked)` means no reader could parse the file, and the next line
+quotes the reader's reason: fix what it names, or list the file under `[exclude] globs`.
+`crapkit advisory: git could not report what changed in calc/grade.py, so no function in it
+was judged (the edit landed; nothing was blocked)` quotes git's error instead, a corrupt
+index for one. Neither is a clean verdict, and no function was checked.
 
 An edit that leaves a file no reader can read (a TypeScript arrow body the reader refuses,
 a Python def cut off at its signature) gets the same three-line shape, opening
@@ -327,10 +341,15 @@ staged, so fix what the reason names before you commit.
 An edit event names its file. A `Bash` event names none, so the hook reads the working
 tree instead: the dirty or untracked `*.py` files whose mtime falls inside a 12-second
 window, 25 at most, each judged exactly the way an edited file is. Write source through a
-heredoc and you still get the advice. Three things make it silent: a clean tree, a file
-that was already dirty before this command ran, and a shell whose cwd is outside any git
-repo. It judges `*.py` and nothing else; every other language stays the commit gate's
-business.
+heredoc and you still get the advice. The hook records the bytes each judgement read, per
+session, under `.git/crapkit/claude-hook/`, and skips a file whose bytes it already
+judged, so a `touch`, a same-bytes rewrite or a test run after an edit does not repeat an
+advisory. Four things make it silent: a clean tree, a file whose mtime is older than the
+window, a file this session already judged at these bytes, and a shell whose cwd is
+outside any git repo. A file moved or copied in with its old mtime (`mv`, `cp -p`, an
+unpacked archive) is never judged here, and neither is one a long command wrote well
+before it returned. It judges `*.py` and nothing else; every other language stays the
+commit gate's business.
 
 That fallback fires only where a `Bash` matcher is registered, which the shipped plugin
 does not do; [README.md](README.md#the-claude-code-plugin) has the snippet and the cost.
@@ -421,7 +440,7 @@ Where a packet's `PATH` and `FUNCTION` come from when no orchestrator handed you
 `next-item` always prints one JSON object on stdout and has no `--json` flag. One real
 payload, one line, sorted keys:
 
-    {"commit": "f6e9bde18a7b4a4d4a0610c16b0526bd9aefc6c6", "empty": false, "item": {"authors": 1, "ccn": 11, "ccn_std": 11, "cognitive": 15, "commits": 6, "cov": 0.0, "crap": 132.0, "end": 84, "est_splits": 2, "est_uncovered_paths": 11, "flag": "measured", "function": "curve( scores , mode , floor , ceiling , skip_none )", "handle": "curve", "nesting": 3, "nloc": 17, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 67, "target": 6, "uncovered_lines": [69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84], "unmeasured": false}, "run_id": 5, "schema": 1, "shallow": false, "skipped_no_lane": 0, "stale": false}
+    {"commands": {"refresh": "crapkit coverage --reuse-unchanged"}, "commit": "f6e9bde18a7b4a4d4a0610c16b0526bd9aefc6c6", "empty": false, "item": {"authors": 1, "ccn": 11, "ccn_std": 11, "cognitive": 15, "commits": 6, "cov": 0.0, "crap": 132.0, "end": 84, "est_splits": 2, "est_uncovered_paths": 11, "flag": "measured", "function": "curve( scores , mode , floor , ceiling , skip_none )", "handle": "curve", "nesting": 3, "nloc": 17, "path": "calc/grade.py", "remedy": "decompose", "scope": "calc", "start": 67, "target": 6, "uncovered_lines": [69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84], "unmeasured": false}, "run_id": 5, "schema": 1, "scored_changes": 0, "shallow": false, "skipped_no_lane": 0, "stale": false}
 
 Act on these fields:
 
@@ -435,7 +454,8 @@ Act on these fields:
 | `function` | pass verbatim to `brief` and `claims release` |
 | `handle` | the shorter name form, and the one to use on a function printed as `(anonymous)`: `(anonymous)#2` names a position in the file, so it outlives your own edit |
 | `start` | the other name form `brief` takes; a line number, so an edit above it invalidates it |
-| `stale` | `true` means the run predates HEAD; rerun `crapkit coverage` before acting on `cov` |
+| `scored_changes` | how many files the run scored hold other content now, your own uncommitted edits included. Anything but `0`, `null` included, means run `commands.refresh` before acting on `cov` or the span; `null` means the run recorded no content (crapkit 0.8.0 and older) or git could not read the tree to compare |
+| `stale` | `true` means HEAD moved past the run's commit. It judges the commit, not the files: an amend or an empty commit sets it with every number still true, and an uncommitted edit leaves it `false`, so read `scored_changes` for the content |
 | `unmeasured` | `true` means no measurement stands behind `cov` (`flag` `cc-only`, or `no-lane` on a `brief`), so `cov` 0.0 and `est_uncovered_paths` are stand-ins, and `brief`'s text prints `not measured`. A test does not move them: a `no-lane` scope needs a lane, and a `cc-only` scope has none by design |
 | `shallow` | on the envelope: `true` means the checkout is a shallow clone, so `commits`, `authors` and churn count only the commits it holds (one per file at depth 1), and stderr names the fix, `set fetch-depth: 0 on the checkout or run git fetch --unshallow` |
 
@@ -447,10 +467,11 @@ word:
   whole span is dark. The move is to write the first test at the public seam and rerun
   `crapkit coverage`; the lines then appear. Committing changes nothing here, and neither
   does verify. This is the common case on a clean tree.
-- `flag: "measured"`: a lane did measure this file, but its artifact no longer matches the
-  tree, usually because files in the lane's scopes carry uncommitted edits. Commit or
-  revert the edits, then rerun `crapkit coverage`. Committing alone does not bring the
-  lines back: nothing rereads the artifact until a run does.
+- `flag: "measured"`: a lane did measure this file, but the file's bytes changed since,
+  usually by your own edit. Rerun `crapkit coverage`. Committing changes nothing here,
+  and a touch, a mode bit, an amend or a rebase never withholds the lines: the lane's
+  stamp holds the git blob id of each file it measured, and only another blob counts. Every
+  other file keeps its lines.
 - `flag: "cc-only"`: the scope sets `coverage_optional = true`, so no artifact was ever
   going to name lines for it. Nothing clears this one, and nothing should: `crap` is `ccn`
   and the only remedy is `decompose`.
@@ -464,22 +485,27 @@ configured scopes, matched exactly rather than as a substring.
 
 ## The termination rule
 
-**Stop looping when all three of these hold in one bare `crapkit next-item`, and not
+**Stop looping when all four of these hold in one bare `crapkit next-item`, and not
 before:**
 
     empty                        true
     skipped_claimed              0, or absent
     reasons.no_lane_over_target  0, or absent
+    scored_changes               0
 
-    {"commit": "8d10c13303dfd9ef4172d9f736582ff4ffa96e60", "empty": true, "reasons": {"all_remaining_at_or_under_target": 4, "below_floor": 1, "churn_window_months": 12, "excluded_by_flag": 0, "no_churn_in_window": 0, "no_lane": 0, "no_lane_over_target": 0}, "run_id": 3, "schema": 1, "shallow": false, "skipped_no_lane": 0, "stale": false}
+    {"commands": {"refresh": "crapkit coverage --reuse-unchanged"}, "commit": "8d10c13303dfd9ef4172d9f736582ff4ffa96e60", "empty": true, "reasons": {"all_remaining_at_or_under_target": 4, "below_floor": 1, "churn_window_months": 12, "excluded_by_flag": 0, "no_churn_in_window": 0, "no_lane": 0, "no_lane_over_target": 0}, "run_id": 3, "schema": 1, "scored_changes": 0, "shallow": false, "skipped_no_lane": 0, "stale": false}
 
 That payload is a finished burn-down. `empty: true` on its own is not: it says the queue
-has nothing to hand out, and two things stop it handing out work that still exists. A
+has nothing to hand out, and three things stop it handing out work that still exists. A
 claim hides a row from every session, yours included. A `no-lane` row never reaches this
 queue, because its `cov = 0` is a tooling gap rather than a testing one, and
 `no_lane_over_target` counts how many of those rows are over their ceiling anyway. Either
 count non-zero means work is left somewhere the queue cannot reach. `crapkit worklist` does
-rank those rows, marked `no-lane`, so the gap stays visible somewhere.
+rank those rows, marked `no-lane`, so the gap stays visible somewhere. And the queue ranks
+the run, not the tree: `scored_changes` counts the files the run scored whose content
+changed since, your own last edit included. Anything but `0`, `null` included, means run
+`commands.refresh` and ask again. `stale` is not part of the rule: it says HEAD moved past
+the run's commit, which an amend does with no byte moved.
 
 The two read the same run, the newest trusted one, so where they disagree it is about
 ranking and never about which snapshot each is describing. `ratchet seed` and `prune` pick
@@ -777,6 +803,11 @@ Shared rules belong to these modules:
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators. A name that is not UTF-8 comes back in its surrogateescape spelling and `readable` tells it apart; each reader decides what it means, and nothing here prints |
 | `repotext.py` | how bytes crapkit did not write become text. One named kind per source: a file the repository owns (`repo_text`, refused by the byte), JSON (`repo_json`, and `JsonStream` for a coverage artifact read a chunk at a time), the marks file, git's free text and a runner's output (`lenient`), bytes handed back to git (`escaped`), a plugin's JSON as Claude Code reads it, source files and OS text. `tests/unit/test_decode_guard.py` fails on a decode policy spelled anywhere else |
+| `lane_sources.py` | the content record: the git blob id each file under a lane's scopes held when its artifact measured it. `record` is the one rule: git's index gives the id of a file its worktree diff calls unchanged, and `gitio.worktree_blobs` hashes the rest through the repo's filters with one `git hash-object --stdin-paths`, each name prefixed with the root's path below the checkout's top (`git rev-parse --show-prefix`), because git reads a `--stdin-paths` name from the top and not from the cwd. The stamp keeps it as `blobs` and every staleness reader compares it, so commit history never decides. The index fast path trusts git's stat cache, so a same-size edit under a restored modification time keeps the old id, a named limit |
+| `lane_stamps.py` | what `.crapkit/artifacts.json` says, read once per command into explicit states (absent, unreadable, mangled, legacy, recorded). `read(root).refusal(artifact)` is the one refusal query: a reader that decides whether the artifact on disk may be scored asks it and nothing else, and quotes its `cause`. No other module parses the file. Writes replace the file in one step and copy each refusal into the snapshot store |
+| `lane_freshness.py` | whether a lane's measurement still describes the tree. `Freshness` reads the stamp file once per command and gives each lane one verdict: its line numbers, per file for a stamp with blob ids (`file_note`), and whether `--reuse-unchanged` may reuse it (`reuse`). The `--reuse-artifacts` warning, the dark-line note, the report banner and reuse render that verdict and decide nothing of their own. `proof_parts` is the one proof builder for both lane kinds |
+| `lane_outputs.py` | which declared files an attempt wrote. `owned` moves a lane's declared outputs under `.crapkit/aside/` before its attempts and puts a leftover back only where no attempt wrote one; its sha256 is what a refusal records. `put_back` returns what an attempt that never finished left there, and `lanes.measurement_owner` calls it once the lock is held |
+| `named.py` | how a message names a list of files or functions: `first_few` gives the first three in the caller's order and a count of the rest. The GitHub Action's comment builder (`tools/action/comment.py`) calls it too, for its verdict line and for the changed-files step's log line, and `tests/unit/test_named_lists.py` fails on a copy in src, tools or `action.yml` |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |
 
 `store.py` gained a `run_rollup` table: one row per run per scope, filled the first time
@@ -810,7 +841,9 @@ their owning modules; there is no second export registry to maintain.
 `claude_hook.py` carries two rules the other families do not, and both are load-bearing.
 Its module scope imports stdlib only, because every edit on the machine pays for it. And
 it never opens the snapshot store. Opening an older store can still migrate it, and
-a per-edit hook has no reason to read or change snapshot state.
+a per-edit hook has no reason to read or change snapshot state. The one thing it writes
+is its session memory under the git directory, so the working tree stays as the edit left
+it.
 
 Five reader modules sit beside the core, all registered in `analyze.py`'s
 `deferred_pygments()` block:

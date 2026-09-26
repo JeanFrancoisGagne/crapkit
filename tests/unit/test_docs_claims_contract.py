@@ -554,6 +554,62 @@ def test_the_recover_skill_files_each_path_shape_under_the_verdict_it_gets():
     assert "will score untested" in err and "will score untested" in section,         "the warning's own words, so a reader can search for what they saw"
 
 
+def _stale_lane(root: Path, moved: tuple) -> tuple:
+    """(lane, scope paths, git, recorded blob ids) for the pages' `py` lane: its
+    run measured calc/grade.py and calc/hot.py at 525a3276065, and the files in
+    `moved` hold other bytes now. That commit is not in this repo, so only the
+    blob ids the stamp recorded are judged."""
+    from types import SimpleNamespace
+
+    from crapkit.config import Lane
+    from crapkit.lane_sources import record
+    from crapkit.lanes import write_stamps
+
+    lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
+                parser="coveragepy", scopes=("calc",))
+    (root / ".crapkit" / "cov").mkdir(parents=True)
+    (root / lane.artifact).write_text("{}", encoding="utf-8")
+    (root / "calc").mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    for name in ("calc/grade.py", "calc/hot.py"):
+        (root / name).write_text("def f():\n    return 1\n", encoding="utf-8")
+    recorded = {name: "0" * 40 if name in moved else blob
+                for name, blob in record(root, ["calc/grade.py", "calc/hot.py"]).items()}
+    write_stamps(root, {lane.artifact: {"commit": "525a3276065" + "0" * 29, "lane": "py",
+                                        "blobs": recorded}})
+    git = SimpleNamespace(root=root)
+    return lane, {"calc": ("calc",)}, git, recorded
+
+
+def test_the_lanes_page_prints_the_reuse_warning_the_lane_writes(tmp_path, capsys, monkeypatch):
+    """The `--reuse-artifacts` transcript is the lane's own warning. The page
+    quoted one that counted the changed files and named none of them."""
+    from crapkit.lanes import _warn_stale_artifact
+
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
+    lane, scopes, git, _ = _stale_lane(tmp_path, ("calc/grade.py", "calc/hot.py"))
+    _warn_stale_artifact(git, lane, scopes)
+
+    warning = capsys.readouterr().err.strip()
+    assert warning and warning in _doc("docs/lanes.md")
+
+
+def test_the_agent_json_page_prints_the_stale_note_the_reader_writes(tmp_path, monkeypatch):
+    """The `measured` example of `uncovered_lines_note` is the note a file whose
+    bytes moved gets. It said "files in its scopes changed" whatever the cause
+    and named none."""
+    from crapkit.lane_freshness import Freshness
+    from crapkit.uncovered import MissingLines
+
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
+    lane, scopes, _, _ = _stale_lane(tmp_path, ("calc/grade.py",))
+    lines = MissingLines({}, "", Freshness(tmp_path, (lane,), scopes))
+    note = lines.note_for("calc/grade.py")
+
+    assert note and json.dumps(note, ensure_ascii=False) in _doc("docs/agent-json.md")
+    assert lines.moved("calc/hot.py") == "", "a file whose bytes did not move keeps its lines"
+
+
 def test_the_lanes_page_quotes_the_drop_threshold_the_code_warns_at():
     from crapkit.lane_results import SUITE_DROP_FRACTION, suite_drops
 
@@ -665,11 +721,12 @@ def _payload_splits(ccn: int) -> int:
 # --- the stale-artifact move -------------------------------------------------
 
 def test_no_page_says_committing_alone_clears_a_stale_artifact():
-    """It does not: nothing rereads the artifact until a run does. The runtime
-    note has always said so; the prose on both pages did not."""
+    """It does not: nothing rereads the artifact until a run does, and the
+    staleness is about the file's bytes, which a commit leaves as they are. The
+    runtime note has always said to rerun; the prose on both pages did not."""
     for page in ("AGENTS.md", "docs/agent-json.md"):
         text = " ".join(_doc(page).lower().split())
-        assert "commit or revert the edits, then rerun `crapkit coverage`" in text, \
+        assert "rerun `crapkit coverage`. committing changes nothing" in text, \
             f"{page} never names the working move"
         assert "committing (or the verify at the end of the loop) clears it" not in text
 
@@ -1007,3 +1064,17 @@ def test_each_doc_page_is_read_from_disk_once(monkeypatch):
 
     assert reads == ["README.md", "AGENTS.md"]
     _doc.cache_clear()
+
+
+def test_the_agent_json_page_prints_the_worklist_warnings_the_queue_writes(monkeypatch):
+    """The plain worklist's two content warnings, as the page quotes them, with
+    git's own words standing in for the error git gives."""
+    from crapkit.cli.queue import RunFreshness, _freshness_warnings
+
+    monkeypatch.setattr(sys, "argv", ["crapkit"])
+    latest = {"id": 4, "commit": "c" * 40}
+    changed = _freshness_warnings(RunFreshness(False, ["calc/grade.py", "calc/report.py"]), latest)
+    unread = _freshness_warnings(RunFreshness(False, None, "<git's error>"), latest)
+
+    for line in changed + unread:
+        assert f"\n{line}\n" in _doc("docs/agent-json.md"), line
