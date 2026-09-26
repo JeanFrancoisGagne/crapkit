@@ -956,7 +956,7 @@ cells = ["lin-claude-plugin-fresh", "lin-codex-autoupgrade", "lin-claude-plugin-
 
 [[doc]]
 page = "docs/agent-json.md"
-headings = ["`claude-hook`"]
+headings = ["`claude-hook`", "Other harnesses"]
 cells = ["lin-claude-hook-stub", "lin-up-bash-matcher-0.7.6", "lin-hooks-sim"]
 
 [[doc]]
