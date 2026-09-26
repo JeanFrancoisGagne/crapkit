@@ -109,3 +109,53 @@ o-extension-adopting	shapes.m	_offset	rows	0	Apple, Programming with Objective-C
 o-name-variable	shapes.m	serializer	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; Recursion: the local variable serializer is no call	AO-COG-RECURSION-NAME-C
 o-pragmas	shapes.m	pragmas	nloc	7	lizard 1.24.0 README: nloc counts lines of code without comments; the three #pragma lines are code	AO-C-DIRECTIVE-NLOC
 o-pragmas	shapes.m	pragmas	start	59	C11 sec. 6.9.1: a function starts on its declaring line	
+o-pick-with	methods.m	pick:	start	12	Apple, Programming with Objective-C: a method starts on its declaring line	
+o-pick-with	methods.m	pick:	end	19	Apple, Programming with Objective-C: a method ends at the brace that closes its body	
+o-pick-with	methods.m	pick:	ccn_std	6	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if, &&, else if, || and a conditional operator	
+o-pick-with	methods.m	pick:	ccn_mod	6	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; no switch	
+o-pick-with	methods.m	pick:	cognitive	5	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the && run +1, else if +1, the || run +1, ternary +1	
+o-pick-with	methods.m	pick:	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each arm's body and the ternary's operands one level deep	AO-N-CONDITION-C
+o-scan	methods.m	scan:	start	21	Apple, Programming with Objective-C: a method starts on its declaring line	
+o-scan	methods.m	scan:	end	28	Apple, Programming with Objective-C: a method ends at the brace that closes its body	
+o-scan	methods.m	scan:	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a for...in loop (Apple, Programming with Objective-C, Fast Enumeration) and an if	
+o-scan	methods.m	scan:	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; foreach +1, the if inside it +2	
+o-scan	methods.m	scan:	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: an if inside a foreach	
+o-recover	methods.m	recover:	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; an @catch clause (Apple, Programming with Objective-C, Dealing with Errors) and an if	
+o-recover	methods.m	recover:	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; catch +1, the if inside it +2; @try and @finally add nothing	
+o-recover	methods.m	recover:	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: an if inside a catch; @try and @finally open no level	
+o-locked	methods.m	locked:	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if; Apple, Threading Programming Guide, Using the @synchronized Directive; Advanced Memory Management Programming Guide, Using Autorelease Pool Blocks: neither is a branch or loop, and B2 lists no such block	
+o-locked	methods.m	locked:	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the if +1 at nesting 0; Apple, Threading Programming Guide, Using the @synchronized Directive; Advanced Memory Management Programming Guide, Using Autorelease Pool Blocks: neither is a branch or loop, and B2 lists no such block	
+o-locked	methods.m	locked:	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if body; Apple, Threading Programming Guide, Using the @synchronized Directive; Advanced Memory Management Programming Guide, Using Autorelease Pool Blocks: neither is a branch or loop, and B2 lists no such block	
+o-drained	methods.m	drained:	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a while and an if	
+o-drained	methods.m	drained:	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; while +1, the if inside it +2; @autoreleasepool adds nothing	
+o-drained	methods.m	drained:	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: an if inside a while; Apple, Threading Programming Guide, Using the @synchronized Directive; Advanced Memory Management Programming Guide, Using Autorelease Pool Blocks: neither is a branch or loop, and B2 lists no such block	
+o-kind	methods.m	kind:	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; three case labels, default excluded	
+o-kind	methods.m	kind:	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; the switch is one decision	
+o-kind	methods.m	kind:	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; switch +1	
+o-kind	methods.m	kind:	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the case bodies sit inside the switch	AO-N-CASE-C
+o-count	methods.m	count:	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+o-count	methods.m	count:	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the if +1, and Recursion +1 for [self count:], the method's own selector	
+o-each	methods.m	each:	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision; a block type is no branch	
+o-each	methods.m	each:	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+o-twice	methods.m	twice:	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a class method (+) with one conditional operator	
+o-twice	methods.m	twice:	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1	
+o-twice	methods.m	twice:	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the ternary's operands	
+o-tally	methods.m	tally	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a for...in loop and an if	
+o-tally	methods.m	tally	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; foreach +1, the if inside it +2	
+o-tally	methods.m	tally	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: an if inside a foreach	
+o-tally	methods.m	tally	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions (a C function is Objective-C): the parameters the function declares	
+o-tally	methods.m	tally	nloc	9	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's nine lines	
+o-attempt	methods.m	attempt	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one @catch clause	
+o-attempt	methods.m	attempt	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; catch +1; @try adds nothing	
+o-attempt	methods.m	attempt	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the catch body	
+o-held	methods.m	held	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if; Apple, Threading Programming Guide, Using the @synchronized Directive; Advanced Memory Management Programming Guide, Using Autorelease Pool Blocks: neither is a branch or loop, and B2 lists no such block	
+o-held	methods.m	held	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the if +1 at nesting 0; Apple, Threading Programming Guide, Using the @synchronized Directive; Advanced Memory Management Programming Guide, Using Autorelease Pool Blocks: neither is a branch or loop, and B2 lists no such block	
+o-held	methods.m	held	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if body; Apple, Threading Programming Guide, Using the @synchronized Directive; Advanced Memory Management Programming Guide, Using Autorelease Pool Blocks: neither is a branch or loop, and B2 lists no such block	
+o-elvis	defects.m	elvis	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one binary decision; GCC manual sec. 6.8 Conditionals with Omitted Operands: `a ?: b` is `a ? a : b` with a evaluated once	
+o-elvis	defects.m	elvis	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B1 ternary operator +1; GCC manual sec. 6.8 Conditionals with Omitted Operands: `a ?: b` is `a ? a : b` with a evaluated once	AO-C-ELVIS-COG
+o-trailing-attribute	defects.m	run:	start	16	Apple, Programming with Objective-C: a method starts on its declaring line; the availability attribute before the body is part of the declaration (Clang Language Extensions, Objective-C @available and availability attributes)	AO-TRAILING-ATTRIBUTE
+o-for-after-brace	defects.m	drain:	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: an if inside a for; Apple, Threading Programming Guide, Using the @synchronized Directive; Advanced Memory Management Programming Guide, Using Autorelease Pool Blocks: neither is a branch or loop, and B2 lists no such block	AO-ND-FOR-AFTER-BRACE
+o-for-after-brace	defects.m	drain:	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, the if inside it +2	
+o-for-after-brace	defects.m	drain:	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a for and an if	
+o-finish	defects.m	finish:	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+o-finish	defects.m	finish:	start	35	Apple, Programming with Objective-C: a method starts on its declaring line	

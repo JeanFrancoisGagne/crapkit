@@ -35,3 +35,13 @@ eq-flat-seven	equivalence.mm	flat_seven	cognitive	7	Sonar Cognitive Complexity v
 eq-flat-seven	equivalence.mm	flat_seven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
 eq-flat-seven	equivalence.mm	flat_seven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
 eq-flat-seven	equivalence.mm	flat_seven	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general] (a C++ function is Objective-C++): the parameters the function declares	
+m-countdown	methods.mm	countdown:	start	10	Apple, Programming with Objective-C: a method starts on its declaring line	
+m-countdown	methods.mm	countdown:	end	18	Apple, Programming with Objective-C: a method ends at the brace that closes its body	
+m-countdown	methods.mm	countdown:	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a while and an if	
+m-countdown	methods.mm	countdown:	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; while +1, the if inside it +2	
+m-countdown	methods.mm	countdown:	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: an if inside a while	
+m-deref	methods.mm	deref:	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if (ISO/IEC 14882:2020 [lex.nullptr]: nullptr is a literal)	
+m-deref	methods.mm	deref:	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1	
+m-after	methods.mm	after:	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one for	
+m-after	methods.mm	after:	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1	
+m-after	methods.mm	after:	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the for body	
