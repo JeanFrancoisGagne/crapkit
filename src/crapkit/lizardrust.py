@@ -123,8 +123,11 @@ _OPERAND_TAIL = frozenset(")]}?_\"'")
 _PAIRS = frozenset({"||", "&&"})
 
 # What a bracket inside a signature does to its type depth. Parentheses are
-# counted apart, by the state machine that reads the parameter list.
+# counted apart, by the state machine that reads the parameter list. In that
+# list a `{` also opens a struct pattern's fields, `Point { x, y }: Point`;
+# after it, a `{` opens the body.
 _TYPE_DEPTH = {"<": 1, "[": 1, ">": -1, "]": -1}
+_PARAMETER_DEPTH = {**_TYPE_DEPTH, "{": 1, "}": -1}
 
 
 def _ends_operand(token: str | None) -> bool:
@@ -210,11 +213,12 @@ class CorrectedRustStates(RustStates):
       pointer type. It is listed as no function. lizard waited for a `{`
       through both, so the next function's body became the signature's and the
       next function got no row.
-    * A comma inside a parameter's type or pattern, `(char, char)` or
-      `HashMap<K, V>`, parts no parameters.
+    * A comma inside a parameter's type or pattern, `(char, char)`,
+      `HashMap<K, V>` or `Point { x, y }`, parts no parameters.
 
-    `type_depth` counts the `<` and `[` open in the signature, so the comma in
-    `HashMap<K, V>` and the `;` in `-> [u8; 4]` read as the type's own.
+    `type_depth` counts the `<` and `[` open in the signature, and the `{` of a
+    struct pattern in its parameter list, so the comma in `HashMap<K, V>` and
+    the `;` in `-> [u8; 4]` read as the type's own.
     """
 
     def __init__(self, context):
@@ -225,14 +229,15 @@ class CorrectedRustStates(RustStates):
     def _function_dec(self, token):
         if token in "()":
             return
-        self.type_depth += _TYPE_DEPTH.get(token, 0)
+        self.type_depth += _PARAMETER_DEPTH.get(token, 0)
         if token == "," and self._nested():
             _join_comma(self.context.current_function)
         else:
             self.context.parameter(token)
 
     def _nested(self) -> bool:
-        """Inside a parenthesis, an angle bracket or a square bracket of its own."""
+        """Inside a bracket of the parameter's own: a parenthesis, an angle
+        bracket, a square bracket or a struct pattern's brace."""
         return self.br_count > 1 or self.type_depth > 0
 
     def _expect_function_impl(self, token):

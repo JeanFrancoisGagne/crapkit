@@ -159,6 +159,16 @@ def test_commas_inside_a_pattern_or_a_type_part_no_parameters():
     assert record.params == 3
 
 
+def test_commas_inside_a_struct_pattern_part_no_parameters():
+    """The Rust Reference (Functions): a parameter is a pattern, and a struct
+    pattern's fields sit in braces. Two parameters, and the name as before."""
+    code = "pub fn struct_pattern(Point { x, y }: Point, _: i32) -> i32 {\n    x + y\n}\n"
+    (record,) = analyze_source("src/lib.rs", code, note=False)
+
+    assert record.params == 2
+    assert record.long_name == "struct_pattern Point { x , y } : Point , _ : i32"
+
+
 def test_a_comma_before_any_parameter_token_parts_nothing():
     """`((), n)` reaches its comma with every token so far a parenthesis,
     which the long name never spells. One parameter, and the name as before."""
