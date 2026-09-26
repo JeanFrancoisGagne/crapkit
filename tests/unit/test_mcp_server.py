@@ -20,6 +20,7 @@ import pytest
 from crapkit import mcp_server
 from crapkit.mcp_server import TOOLS, build_argv, serve, tool_listing
 from hang_guard import HANG_SECONDS
+from path_spellings import msys
 
 
 def _rpc(msg_id, method, params="omitted"):
@@ -644,14 +645,14 @@ def test_values_at_the_edge_of_their_type_reach_the_cli_as_given(monkeypatch, tm
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="needs Windows path rules")
-@pytest.mark.parametrize("prefix", ["/c", "/mnt/c"])
+@pytest.mark.parametrize("mount", ["/", "/mnt/"], ids=["msys", "wsl"])
 def test_a_repo_in_a_git_bash_or_wsl_spelling_serves_the_checkout_it_names(monkeypatch, tmp_path,
-                                                                            prefix):
+                                                                            mount):
     r"""A model on Windows writes `/c/Users/...`, the shell spelling it sees in
     its own transcript. Read as `C:\c\Users\...`, the call named no
     directory and got the no-config answer for a measured checkout."""
     calls = _cli_answers(monkeypatch, 0, json.dumps({"runs": [], "schema": 1}))
-    spelled = prefix + tmp_path.resolve().as_posix()[2:]
+    spelled = msys(tmp_path, mount)
     replies = _serve(monkeypatch, tmp_path, [_call(1, "list_runs", {"repo": spelled})])
 
     assert replies[1]["result"]["isError"] is False, replies[1]

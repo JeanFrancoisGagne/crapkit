@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -175,7 +175,8 @@ def test_a_path_with_no_root_this_os_reads_lands_nowhere(tmp_path, monkeypatch, 
     if os.name == "nt" and raw.startswith("C:"):
         pytest.skip("needs POSIX path rules")
     root = _tree(tmp_path)
-    (root / "C:" / "repo" / "src" / "pkg").mkdir(parents=True)
+    if os.name != "nt":  # on Windows `root / "C:"` is drive C's working directory
+        (root / "C:" / "repo" / "src" / "pkg").mkdir(parents=True)
     monkeypatch.chdir(root)
 
     assert inside(raw, root) is None
@@ -349,6 +350,23 @@ def test_the_fragment_entry_matches_a_typed_piece_of_the_path_git_spells(tmp_pat
 # entry they all call.
 
 from path_spellings import SPELLINGS, spelled  # noqa: E402
+
+
+class _OnDriveE(PureWindowsPath):
+    """A checkout on E:, resolved already, as a temp dir off C: is."""
+
+    def resolve(self):
+        return self
+
+
+@pytest.mark.parametrize("which, prefix", [("msys", "/e/"), ("wsl", "/mnt/e/")])
+def test_the_msys_and_wsl_spellings_name_the_drive_the_checkout_is_on(which, prefix):
+    r"""Git Bash spells E:\work as /e/work and WSL as /mnt/e/work. A helper that
+    wrote /c whatever the drive named a file on C: that does not exist, so
+    every msys and wsl row failed where TEMP is on another drive."""
+    spell = SPELLINGS[which][1]
+
+    assert spell(_OnDriveE("E:/work/repo")) == prefix + "work/repo/src/app.ts"
 
 
 def _app_tree(root: Path) -> Path:

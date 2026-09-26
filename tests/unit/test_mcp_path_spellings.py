@@ -25,7 +25,7 @@ from cli_inproc_repo import add_knotty, commit_all, repo, seed_artifacts, templa
 from crapkit import mcp_server
 from crapkit.cli import main
 
-from path_spellings import (SPELLINGS, admin_share, linked_checkout, lower_drive, need,
+from path_spellings import (SPELLINGS, admin_share, linked_checkout, lower_drive, msys, need,
                             need_case_sensitive, only_posix, spelled)
 
 
@@ -79,10 +79,6 @@ def test_check_gate_answers_every_path_spelling_as_it_answers_git_s(breached, ex
     assert exits == [6, 6]
 
 
-def _msys(root: Path, prefix: str) -> str:
-    return prefix + root.resolve().as_posix()[2:]
-
-
 # id -> (what the OS needs, the spelling of the checkout's root or a directory in it)
 REPO_SPELLINGS = {
     "native": ("", lambda root: str(root)),
@@ -91,8 +87,8 @@ REPO_SPELLINGS = {
     "linked-checkout": ("", lambda root: str(linked_checkout(root))),
     "forward-slashes": ("windows", lambda root: root.as_posix()),
     "lower-drive": ("windows", lower_drive),
-    "msys": ("windows", lambda root: _msys(root, "/c")),
-    "wsl": ("windows", lambda root: _msys(root, "/mnt/c")),
+    "msys": ("windows", msys),
+    "wsl": ("windows", lambda root: msys(root, "/mnt/")),
     "admin-share": ("windows", admin_share),
     "upper-cased": ("windows case", lambda root: str(root).upper()),
 }
@@ -115,7 +111,7 @@ def test_a_spawned_check_gate_reads_the_spelling_the_model_wrote(breached, which
     """The server's own spawn: the path and the repo cross a real process
     boundary as the argv the server built."""
     path = spelled(which, breached)
-    repo_arg = _msys(breached, "/c") if which == "msys" else str(breached) + os.sep
+    repo_arg = msys(breached) if which == "msys" else str(breached) + os.sep
 
     answer = _gate(breached, path, repo_arg)
 

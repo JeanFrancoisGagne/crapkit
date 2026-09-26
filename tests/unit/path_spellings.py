@@ -116,8 +116,11 @@ def linked_checkout(root: Path) -> Path:
     return link
 
 
-def _drive_tail(path: Path) -> str:
-    return path.resolve().as_posix()[2:]
+def msys(path: Path, mount: str = "/") -> str:
+    r"""Git Bash's spelling of `path` on the drive it is on: E:\w is /e/w. With
+    `mount` "/mnt/" it is WSL's, /mnt/e/w."""
+    full = path.resolve()
+    return mount + full.drive[0].lower() + full.as_posix()[2:]
 
 
 # id -> (what the OS needs, the spelling of src/app.ts under `root`): every way a
@@ -134,8 +137,8 @@ SPELLINGS = {
     "dot-dot-backslash": ("windows", lambda root: "src\\..\\src\\app.ts"),
     "absolute-forward": ("windows", lambda root: (root / "src" / "app.ts").resolve().as_posix()),
     "absolute-lower-drive": ("windows", lambda root: lower_drive(root / "src" / "app.ts")),
-    "msys": ("windows", lambda root: "/c" + _drive_tail(root / "src" / "app.ts")),
-    "wsl": ("windows", lambda root: "/mnt/c" + _drive_tail(root / "src" / "app.ts")),
+    "msys": ("windows", lambda root: msys(root / "src" / "app.ts")),
+    "wsl": ("windows", lambda root: msys(root / "src" / "app.ts", "/mnt/")),
     "admin-share": ("windows", lambda root: admin_share(root / "src" / "app.ts")),
     "short-name": ("windows", lambda root: short_name((root / "src" / "app.ts").resolve())),
     "dir-case": ("case", lambda root: "SRC/app.ts"),
