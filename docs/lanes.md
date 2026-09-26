@@ -1082,9 +1082,11 @@ that wrote none, `its stamp holds no proof` and why (the uncommitted changes it 
 measured with, a git read that failed while it was measured, or a crapkit that recorded
 no cause), uncommitted changes, `HEAD is X and its artifact was built at Y`,
 `crapkit.toml changed`, `its lane table changed`, `N environment variable(s) changed:
-NAME`, changes under a lane's `inputs` since its commit, or artifact bytes that differ
-from the stamp. `coverage --json` carries the same sentence per lane as
-`rerun_reason`, `""` for a lane it reused.
+NAME`, changes under a lane's `inputs` since its commit, an artifact built at a commit
+that is no longer behind HEAD, `nothing proves its inputs unchanged` and what git said
+when a read of them failed, or artifact bytes that differ from the stamp.
+`coverage --json` carries the same sentence per lane as `rerun_reason`, `""` for a lane
+it reused.
 
 Ignored inputs other than `crapkit.toml`, files outside the repository, installed
 dependencies and services are outside that proof. Run fresh coverage when those

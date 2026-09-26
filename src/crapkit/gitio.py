@@ -301,23 +301,34 @@ def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
     ancestor, which is what "at or behind" needs."""
     argv = ("merge-base", "--is-ancestor", commit, other)
     res = _spawn(root, argv, binary=True)
-    failure = f"git {' '.join(argv)} failed in {root}: {res.stderr.decode('utf-8', 'replace').strip()}"
-    return ancestry_answer(root, commit, res.returncode, failure)
+    said = res.stderr.decode("utf-8", "replace")
+    failure = f"git {' '.join(argv)} failed in {root}: {said.strip()}"
+    return ancestry_answer(root, commit, res.returncode, said, failure)
 
 
-def ancestry_answer(root: Path, commit: str, code: int, failure: str) -> bool:
-    """`merge-base --is-ancestor`'s exit code as an answer: 0 is yes and 1 is no.
+def ancestry_answer(root: Path, commit: str, code: int, said: str, failure: str) -> bool:
+    """`merge-base --is-ancestor`'s answer, from its exit code and `said`, its
+    stderr. Exit 0 is yes. Exit 1 is no only when git said nothing, the rule
+    merge_base reads its exit 1 by: git also exits 1, printing `error: Could
+    not read <sha>`, when a commit on its walk back from HEAD cannot be read.
+    Exit 128 comes both from a commit this clone does not hold, which is not
+    behind HEAD, and from a read that failed; `rev-parse --verify --quiet`
+    tells the two apart.
 
-    git exits 128 both for a commit this clone does not hold, which is not
-    behind HEAD, and for a read that failed, which is no answer at all: read as
-    "no", it told next-item that files in a lane's scopes changed on a tree
-    nobody touched. `rev-parse --verify --quiet` tells the two apart, and a
-    failed read raises GitError with `failure`, what git said."""
-    if code in (0, 1):
-        return code == 0
-    if _holds_commit(root, commit):
-        raise GitError(failure)
-    return False
+    A read that failed is no answer at all and raises GitError with `failure`.
+    Read as "no", it told next-item that the stamp commit was not behind HEAD,
+    or that files in a lane's scopes changed, on a tree nobody touched."""
+    if code == 0:
+        return True
+    if _answered_no(root, commit, code, said):
+        return False
+    raise GitError(failure)
+
+
+def _answered_no(root: Path, commit: str, code: int, said: str) -> bool:
+    if code == 1:
+        return not said.strip()
+    return not _holds_commit(root, commit)
 
 
 def _holds_commit(root: Path, commit: str) -> bool:
@@ -417,6 +428,7 @@ class _Started:
 
     def __init__(self, root: Path, args: tuple[str, ...], *, text: bool, stdin: bool) -> None:
         self._args, self._root, self._text = args, root, text
+        self.stderr = ""
         try:
             self._proc = subprocess.Popen(
                 ["git", *_RELATIVE, *args], cwd=root, env=_environment(),
@@ -432,10 +444,12 @@ class _Started:
         return self._proc.returncode
 
     def result(self, payload=None):
+        """The answer; a non-zero exit raises GitError and leaves what git said
+        in `stderr`, for the one read whose exit code is itself the answer."""
         out, err = self._proc.communicate(payload)
         if self._proc.returncode != 0:
-            text = err if self._text else err.decode("utf-8", "replace")
-            raise GitError(f"git {' '.join(self._args)} failed in {self._root}: {text.strip()}")
+            self.stderr = err if self._text else err.decode("utf-8", "replace")
+            raise GitError(f"git {' '.join(self._args)} failed in {self._root}: {self.stderr.strip()}")
         return out
 
     def close(self) -> None:

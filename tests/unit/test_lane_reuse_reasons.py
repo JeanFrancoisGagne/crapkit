@@ -126,6 +126,40 @@ def test_a_stamp_that_records_no_cause_keeps_the_old_sentence(tmp_path):
         "that recorded none")
 
 
+def test_an_unreadable_commit_since_the_stamp_is_named_as_a_failed_read(tmp_path):
+    """A lane that declares inputs is reused while its stamp commit is behind
+    HEAD. A commit on the way back to it cannot be read, so `merge-base
+    --is-ancestor` exits 1, its "no", and prints `error: Could not read <sha>`:
+    the rerun said the artifact was built at a commit not behind HEAD."""
+    lane = _lane()._replace(inputs=("src", "make_cov.py"))
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.ts").write_text("export function one() {\n  return 1;\n}\n", encoding="utf-8")
+    (tmp_path / "make_cov.py").write_text(MAKE_COV, encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".crapkit/\nout/\n", encoding="utf-8")
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    write_stamps(tmp_path, {lane.artifact: run_lane(tmp_path, lane).stamp})
+    lost = _note_commit(tmp_path, "two")
+    _note_commit(tmp_path, "three")
+    loose = tmp_path / ".git" / "objects" / lost[:2] / lost[2:]
+    loose.chmod(0o644)
+    loose.unlink()
+
+    reason = lane_reuse_verdict(tmp_path, lane).reason
+
+    assert reason.startswith("nothing proves its inputs unchanged: git "), reason
+    assert "merge-base --is-ancestor" in reason and lost in reason
+
+
+def _note_commit(repo: Path, text: str) -> str:
+    (repo / "notes.txt").write_text(text, encoding="utf-8")
+    _git(repo, "add", "notes.txt")
+    _git(repo, "commit", "-q", "-m", text)
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
 def test_a_clean_measurement_records_no_cause(tmp_path):
     stamp = read_stamps(_measured(tmp_path))[_lane().artifact]
 

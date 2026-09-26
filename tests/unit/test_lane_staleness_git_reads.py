@@ -95,13 +95,17 @@ def test_every_staleness_read_starts_before_any_is_waited_on(repo, git_spawns):
     assert "start" not in kinds[first_wait:], kinds
 
 
+def _diff_and_status_starts(events: list) -> list:
+    return [argv for kind, argv in events
+            if kind == "start" and ("diff" in argv or "status" in argv)]
+
+
 def test_diff_and_status_reads_ask_only_about_lane_scopes(repo, git_spawns):
     root, cfg = repo
 
     lane_states(root, cfg)
 
-    reads = [argv for kind, argv in git_spawns
-             if kind == "start" and ("diff" in argv or "status" in argv)]
+    reads = _diff_and_status_starts(git_spawns)
     assert any("status" in argv for argv in reads)
     for argv in reads:
         assert _after(argv, "--") == ["src", "web", "lib"], argv
@@ -220,6 +224,29 @@ def test_a_failed_read_names_no_changed_file(repo, monkeypatch, command):
         assert states[lane].startswith(f"lane '{lane}': git could not tell which files"), states
         assert "no-such-ref" in states[lane]
         assert "changed since" not in states[lane] and "commit or revert" not in states[lane]
+
+
+def test_an_unreadable_commit_since_the_stamp_names_the_failed_read(repo):
+    """A commit between the stamp and HEAD cannot be read, so `merge-base
+    --is-ancestor` exits 1, its "no", and prints `error: Could not read <sha>`.
+    The stamp commit is still behind HEAD and the tree is clean: the note used
+    to say the artifact was built at a commit not behind HEAD."""
+    root, cfg = repo
+    _write(root, "docs/notes.md", "two\n")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-am", "two")
+    lost = _git(root, "rev-parse", "HEAD").strip()
+    _write(root, "docs/notes.md", "three\n")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-am", "three")
+    loose = root / ".git" / "objects" / lost[:2] / lost[2:]
+    loose.chmod(0o644)
+    loose.unlink()
+
+    states = dict(lane_states(root, cfg))
+
+    for lane in ("src", "web"):
+        assert states[lane].startswith(f"lane '{lane}': git could not tell which files"), states
+        assert lost in states[lane]
+        assert "not behind HEAD" not in states[lane] and "commit or revert" not in states[lane]
 
 
 def test_an_artifact_no_stamp_records_is_named_as_such(repo):

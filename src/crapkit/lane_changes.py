@@ -94,12 +94,12 @@ class ChangeReads:
         return read.result()
 
     def _succeeds(self, read, commit: str) -> bool:
-        """`merge-base --is-ancestor` answers in its exit code alone, read by
-        gitio.ancestry_answer: a failed read raises GitError, never "no"."""
+        """`merge-base --is-ancestor` answers in its exit code and stderr, read
+        by gitio.ancestry_answer: a failed read raises GitError, never "no"."""
         try:
             self._collect(read)
         except GitError as failure:
-            return ancestry_answer(self._root, commit, read.returncode, str(failure))
+            return ancestry_answer(self._root, commit, read.returncode, read.stderr, str(failure))
         return True
 
     def _ancestor_read(self, commit: str):

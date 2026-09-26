@@ -75,6 +75,22 @@ def test_a_commit_it_was_not_built_for_is_read_when_asked(repo):
         assert reads.diff_names_since(second) == ()
 
 
+def test_an_unreadable_commit_since_the_stamp_is_no_answer(repo):
+    """`merge-base --is-ancestor` exits 1, its "no", and prints `error: Could
+    not read <sha>` when a commit between the stamp and HEAD is unreadable."""
+    root, first = repo
+    _write(root, "docs/n.md", "two\n")
+    lost = _commit(root, "two")
+    _write(root, "docs/n.md", "three\n")
+    _commit(root, "three")
+    loose = root / ".git" / "objects" / lost[:2] / lost[2:]
+    loose.chmod(0o644)
+    loose.unlink()
+
+    with ChangeReads(root, (first,), ("src",)) as reads, pytest.raises(GitError, match=lost):
+        reads.is_ancestor(first)
+
+
 def test_a_commit_this_clone_does_not_hold_is_not_behind_head(repo):
     root, _ = repo
     with ChangeReads(root, ("0" * 40,), ("src",)) as reads:

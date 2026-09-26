@@ -9,8 +9,9 @@ from pathlib import Path
 
 import pytest
 
+from crapkit.cli.verifying import _require_ancestor
 from crapkit.errors import GitError
-from crapkit.gitio import is_ancestor, merge_base
+from crapkit.gitio import GitFacts, is_ancestor, merge_base
 
 
 def git(repo: Path, *args: str) -> str:
@@ -78,6 +79,40 @@ def test_a_failed_ancestry_read_is_no_answer(forked):
 
     with pytest.raises(GitError, match="merge-base --is-ancestor"):
         is_ancestor(repo, base, "refs/crapkit/no-such-ref")
+
+
+def _lose(repo: Path, sha: str) -> None:
+    """Delete one commit's loose object, as a failed disk or an interrupted
+    copy can: git holds the commits on both sides and cannot read this one."""
+    loose = repo / ".git" / "objects" / sha[:2] / sha[2:]
+    loose.chmod(0o644)
+    loose.unlink()
+
+
+def test_an_unreadable_commit_on_the_way_is_no_answer(forked):
+    """git walks from HEAD back to the commit it is asked about. When a commit
+    on that walk cannot be read, `merge-base --is-ancestor` exits 1, the exit
+    it gives for "no", and prints `error: Could not read <sha>`. That read is
+    no answer: taken as "no", next-item said the stamp commit was not behind
+    HEAD on a tree whose history still held it."""
+    repo, base, mid, _ = forked
+    _lose(repo, mid)
+
+    with pytest.raises(GitError, match=mid):
+        is_ancestor(repo, base)
+
+
+def test_verify_names_the_failed_read_not_a_rewritten_history(forked):
+    """The baseline check read the same failure as a rebase or an amend and
+    asked for a fresh baseline that the next run would refuse the same way."""
+    repo, base, mid, _ = forked
+    _lose(repo, mid)
+
+    with pytest.raises(GitError) as refused:
+        _require_ancestor(GitFacts(repo), base)
+
+    assert mid in str(refused.value)
+    assert "rewrote history" not in str(refused.value)
 
 
 def test_an_unrelated_history_has_no_merge_base(tmp_path: Path):
