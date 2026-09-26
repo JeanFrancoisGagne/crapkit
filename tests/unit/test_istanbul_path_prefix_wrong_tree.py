@@ -5,6 +5,11 @@ so the wrong-tree check takes it back off to see what the runner wrote. The
 istanbul reader never adds it. Taking it off an istanbul key anyway turned
 `/ci/other/checkout/a.ts`, a file from another tree, into `other/checkout/a.ts`,
 which reads as in-tree, and the refusal went silent.
+
+A root scope (`.`) claims any key, so the reach check asks it only of the keys
+the runner wrote relative to this checkout. Asked of every key, it found the
+root scope reached by the other tree's file, and every function scored untested
+with exit 0.
 """
 import json
 
@@ -30,12 +35,12 @@ def _lane(path_prefix: str) -> Lane:
                 parser="istanbul", scopes=("web",), path_prefix=path_prefix)
 
 
-def _refusal(tmp_path, path_prefix: str) -> str:
+def _refusal(tmp_path, path_prefix: str, scope_path: str = "web/src") -> str:
     (tmp_path / "cov.json").write_text(json.dumps({ELSEWHERE: _istanbul_file()}),
                                        encoding="utf-8")
     with pytest.raises(ToolError) as raised:
         run_lane(tmp_path, _lane(path_prefix), reuse_artifact=True,
-                 scope_paths={"web": ("web/src",)})
+                 scope_paths={"web": (scope_path,)})
     return str(raised.value)
 
 
@@ -49,3 +54,11 @@ def test_an_istanbul_lane_with_path_prefix_still_refuses_another_tree(tmp_path, 
 
 def test_the_same_artifact_refuses_the_same_way_without_the_key(tmp_path):
     assert "describes a different tree" in _refusal(tmp_path, "")
+
+
+@pytest.mark.parametrize("path_prefix", ["", "/ci/"])
+def test_a_root_scope_istanbul_lane_refuses_another_tree(tmp_path, path_prefix):
+    message = _refusal(tmp_path, path_prefix, scope_path=".")
+
+    assert "describes a different tree" in message
+    assert ELSEWHERE in message, "the path is quoted the way the artifact spells it"

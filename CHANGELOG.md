@@ -47,8 +47,9 @@
 - Three exit codes change. On Windows a root on a network share exits 3 before any lane
   starts, where every lane ran in `C:\Windows`. A lane whose `cwd` names no directory
   fails as that lane, and a run with no lane left exits 5, where `crapkit coverage` ended
-  in a Python traceback at exit 1. A lane with `path_prefix`, or scoped to the root, fed
-  another checkout's report fails the same way, where it exited 0.
+  in a Python traceback at exit 1. A lane with `path_prefix` fed another checkout's
+  coverage.py report, or a lane scoped to the root fed another checkout's coverage.py or
+  istanbul report, fails the same way, where it exited 0.
 - crapkit's own messages spell a dash as ` - ` where 0.8.0 printed an em dash, among
   them doctor on a repo with no lane and worklist, brief and digest before the first run.
   A script or a test that matches one of those lines has to match ` - ` now. A path or a
@@ -622,12 +623,13 @@ The exit codes, the lane environment and the files that change on upgrade are in
   are in another letter case (`SRC/app.ts` for git's `src/app.ts`) now keys git's file,
   where that file scored untested. A relative key written `./src/app.ts` keys git's file
   too.
-- A lane with `path_prefix`, or one whose scope is the root (`.`), fed a coverage.py
-  report written in another checkout fails with the wrong-tree refusal, as the same lane
-  without the prefix did. The reader glues the prefix onto every key, so `backend/` +
-  `/other/checkout/a.py` sat under the `backend` scope, and a root scope claimed any key;
-  every function in the scope scored untested with exit 0. An absolute key under this
-  checkout gets the `relative_files` refusal the same way.
+- A lane with `path_prefix` fed a coverage.py report written in another checkout, or a
+  lane whose scope is the root (`.`) fed a coverage.py or istanbul report written there,
+  fails with the wrong-tree refusal, as the same lane without the prefix or with a
+  narrower scope did. The coverage.py reader glues the prefix onto every key, so
+  `backend/` + `/other/checkout/a.py` sat under the `backend` scope, and a root scope
+  claimed any key; every function in the scope scored untested with exit 0. An absolute
+  key under this checkout gets the `relative_files` refusal the same way.
 - The coverage.py reader keys a file in the letter case its directories list, on a
   case-insensitive disk, whether the lane sets `path_prefix` or not: `PKG/mod.py` under
   `path_prefix = "backend"`, or `BACKEND/pkg/mod.py`, is git's `backend/pkg/mod.py`.

@@ -405,10 +405,12 @@ line that maps the share to a drive letter. A lane whose `cwd` names no director
 fails as a lane, `cwd <path> is not a directory, so the command never ran; fix cwd =
 'nope' for this lane in crapkit.toml, or create that directory`, and a run with no lane
 left exits 5, where 0.8.0 ended in a Python traceback and exit 1. A lane with
-`path_prefix`, or one whose scope is the root (`.`), fed a coverage.py report from
-another checkout fails with the wrong-tree refusal ([another
+`path_prefix`, or one whose scope is the root (`.`), fed a report from another checkout
+fails with the wrong-tree refusal ([another
 tree](lanes.md#an-artifact-that-measured-a-different-tree)), and a run with no lane left
-exits 5, where 0.8.0 scored every function in its scopes untested and exited 0.
+exits 5. 0.8.0 scored every function in its scopes untested and exited 0 when a
+`path_prefix` lane read such a coverage.py report, and when a root-scoped lane read
+such a coverage.py or istanbul report.
 
 ## Freshness in 0.8.1
 
