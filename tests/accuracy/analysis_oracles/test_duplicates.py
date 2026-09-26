@@ -7,28 +7,31 @@ in one file is dropped; ties keep one order across hash seeds. The docs do not
 say what a shingle is. The hand values below use crapkit's stated scheme
 (src/crapkit/dup.py module docstring: a window of 4 consecutive lines, each
 line stripped of all whitespace, blank and comment lines left out) and every
-function's whole span, def line included.
+function's own lines (README `duplication` row): its span less every line past
+the first of a function nested in it, which are that function's.
 
 Hand fixture (`hand` below):
 - copy_a and copy_b: the same 10 body lines, copy_b with comment lines, blank
   lines and wider spacing. 11 normalized lines each, so 8 shingles; the def
   lines differ, so 7 are shared: 7/8 = 0.875.
 - factory holds closure, whose 10 body lines are copy_a's: closure pairs with
-  copy_a and copy_b at 0.875, and factory never pairs with closure (R68).
+  copy_a and copy_b at 0.875. factory keeps 3 lines of its own, under
+  --min-lines 8, so it pairs with nothing (R68).
 - other: 11 lines unlike the rest, no pair.
-- outer (h.py) holds a nested copy of copy_a, def line and all, so every one
-  of copy_a's 8 shingles is in outer: containment 1.0 across two files.
+- outer (h.py) holds a nested copy of copy_a, def line and all. outer keeps 3
+  lines of its own and pairs with nothing; outer.copy_a holds every one of
+  copy_a's 8 shingles: containment 1.0 across two files.
 - big_e has 4006 body lines (4004 shingles). big_f shares its first 3206 body
   lines (3203 shingles): 3203/4004 = 0.799950... under 0.8, though it rounds
   to 0.8000 at 4 places. big_g shares 3207 (3204 shingles): 0.800200, a pair.
 - hub (t.py) holds four 12-line blocks; tie_1..tie_4 (u1.py..u4.py) each hold
   one of them under their own def line: 13 lines, 10 shingles, 9 inside the
-  block, so each pairs with hub at 9/10 = 0.9, a four-way tie under the two
-  pairs at 1.0 (copy_a with outer, and with outer.copy_a).
+  block, so each pairs with hub at 9/10 = 0.9, a four-way tie under the one
+  pair at 1.0 (copy_a with outer.copy_a).
 - star_a and star_b (s1.py, s2.py): 12 body lines, the 6th a `**first(items),`
   or `**second(items),` argument line, which is code. 13 lines, 10 shingles,
-  5 outside the differing line: 0.5, no pair. crapkit leaves the line out as a
-  comment and reads 8/9 = 0.8889 (analysis-oracles-140).
+  5 outside the differing line: 0.5, no pair. crapkit left the line out as a
+  comment and read 8/9 = 0.8889 until analysis-oracles-140 was fixed.
 - doc_a and doc_b (k1.py, k2.py): one 10-line body under two def lines and two
   one-line docstrings. crapkit leaves a line starting with three quotes out:
   11 lines, 7/8 = 0.875. Keeping the docstring, a string literal: 7/9 = 0.7778.
@@ -179,16 +182,15 @@ def test_threshold_boundary_matches_exact_containment(hand, pairs):
 
 @rulings.applies("AO-DUP-CONTAINED")
 def test_a_twin_marks_contained_when_the_spans_nest(hand):
-    """docs/agent-json.md:1175 reads `contained` as nesting: nested pairs are dropped,
-    so `contained` is 'therefore' false on every pair. :490 defines it as every
-    shingle of the smaller in the larger, which outer meets for copy_a at 1.0 from
-    another file. crapkit follows :1175; the row records :490's wording."""
-    closure = _twins(hand, "c.py", "closure")
-    assert (closure["factory"]["similarity"], closure["factory"]["contained"]) == (1.0, True)
-    outer = _twins(hand, "a.py", "copy_a")["outer"]
-    assert outer["similarity"] == 1.0
-    rulings.pin_ruling("AO-DUP-CONTAINED", crapkit=str(outer["contained"]).lower(),
-                       oracle="true")
+    """docs/agent-json.md:490 and :1175 read `contained` as nesting. Each function is
+    shingled from its own lines, so factory, 3 lines of its own, is no twin of the
+    closure inside it, and outer.copy_a, holding every shingle of copy_a from
+    another file, is a twin at 1.0 that is not contained."""
+    assert "factory" not in _twins(hand, "c.py", "closure")
+    twin = _twins(hand, "a.py", "copy_a")["outer.copy_a"]
+    assert twin["similarity"] == 1.0
+    rulings.pin_ruling("AO-DUP-CONTAINED", crapkit=str(twin["contained"]).lower(),
+                       oracle="false")
 
 
 @rulings.applies("AO-DUP-ENCLOSING-UNDER-MIN")
@@ -209,15 +211,15 @@ RENAMES = {"a.py": "lib/z_a.py", "b.py": "lib/y_b.py", "c.py": "lib/x_c.py", "d.
            "u2.py": "ties/t3.py", "u3.py": "ties/t2.py", "u4.py": "ties/t1.py"}
 RENAMED_NAMES = {"copy_a", "copy_b", "factory", "factory.closure", "other", "outer",
                  "outer.copy_a", "hub", "tie_1", "tie_2", "tie_3", "tie_4"}
-# --top 4 keeps the two pairs at 1.0 and cuts the 0.9 tie after two of its four
+# --top 4 keeps the one pair at 1.0 and cuts the 0.9 tie after three of its four
 # pairs. README: "Ties have a stable order across hash seeds"; the order kept
 # is by location (test_ties_are_ordered_by_location_not_by_arrival), so the
 # renamed layout keeps the ties that now sort first.
 TOP_FOUR = {
-    "given": [{"copy_a", "outer"}, {"copy_a", "outer.copy_a"}, {"hub", "tie_1"},
-              {"hub", "tie_2"}],
-    "renamed": [{"copy_a", "outer"}, {"copy_a", "outer.copy_a"}, {"hub", "tie_4"},
-                {"hub", "tie_3"}],
+    "given": [{"copy_a", "outer.copy_a"}, {"hub", "tie_1"}, {"hub", "tie_2"},
+              {"hub", "tie_3"}],
+    "renamed": [{"copy_a", "outer.copy_a"}, {"hub", "tie_4"}, {"hub", "tie_3"},
+                {"hub", "tie_2"}],
 }
 
 
@@ -252,7 +254,7 @@ def test_renamed_paths_give_the_same_pairs(pairs, renamed):
     similarities: a path only orders ties."""
     moved = pair_names(renamed.json("duplication", "--json"))
     assert moved == {names: value for names, value in pairs.items() if names <= RENAMED_NAMES}
-    assert len(moved) == 16
+    assert len(moved) == 10
 
 
 def _both_small(places: tuple) -> bool:
@@ -389,7 +391,7 @@ def test_brute_force_over_a_corpus_gives_crapkit_s_pairs(request, corpus, simila
 # --- pylint's symilar, the nightly oracle ---------------------------------------------------
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("corpus, floor", [("hand", 20), ("src", 5), ("click", 30),
+@pytest.mark.parametrize("corpus, floor", [("hand", 12), ("src", 5), ("click", 30),
                                            ("requests", 5)])
 def test_symilar_runs_give_crapkit_s_pairs(request, oracle, corpus, floor, tmp_path):
     """Every pair that shares one window (--similarity 0.01), with its

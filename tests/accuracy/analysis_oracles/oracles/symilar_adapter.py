@@ -2,17 +2,18 @@
 brute-force pass over every pair, and pylint 4.0.9's symilar.
 
 The scheme (the packet's hand values; docs/agent-json.md names only "shared
-shingles over the smaller function", a doc gap): a function's lines from its
-start to its end, each with every whitespace character removed, blank lines and
-comment lines left out, cut into windows of 4 consecutive lines. Containment is
+shingles over the smaller function", a doc gap): a function's own lines,
+its span less every line past the first of a function nested in it (README
+`duplication` row), each with every whitespace character removed, blank lines
+and comment lines left out, cut into windows of 4 consecutive lines. Containment is
 the windows two functions share over the smaller function's window count.
 Python's comment lines start with `#`; a line that opens or closes a docstring
-(its text starts with three quotes) is left out as crapkit leaves it out, a
-convention the docs do not state (AO-DUP-DOCSTRING-LINES).
+(its text starts with three quotes) is left out as crapkit leaves it out, the
+convention the README `duplication` row states (AO-DUP-DOCSTRING-LINES).
 
-crapkit also leaves out a Python code line whose text starts with `*`, `//` or
-`/*` (calc-bug analysis-oracles-140). The scheme keeps it; a function holding
-one is set aside and counted, never compared.
+crapkit left out a Python code line whose text starts with `*`, `//` or `/*`
+until calc-bug analysis-oracles-140 was fixed. The scheme keeps it; a function
+holding one is still set aside and counted, never compared.
 
 symilar (pylint 4.0.9, `python -m pylint.checkers.symilar`) reports the runs
 of equal lines two files share. Five transforms turn its runs into the
@@ -50,11 +51,25 @@ LEFT_OUT = ("#", '"""', "'''")
 CODE_PREFIXES = ("*", "//", "/*")
 
 
-def normalized(lines: list[str], start: int, end: int) -> list[str]:
-    """Lines start..end (1-based, inclusive) as the scheme reads them."""
-    kept = (raw for raw in lines[start - 1:end]
-            if raw.strip() and not raw.strip().startswith(LEFT_OUT))
+def normalized(lines: list[str], start: int, end: int,
+               taken: frozenset[int] = frozenset()) -> list[str]:
+    """Lines start..end (1-based, inclusive) as the scheme reads them, less the
+    line numbers in `taken`."""
+    kept = (raw for number, raw in enumerate(lines[start - 1:end], start)
+            if number not in taken and raw.strip() and not raw.strip().startswith(LEFT_OUT))
     return ["".join(raw.split()) for raw in kept]
+
+
+def _nested_in(inner: dict, outer: dict) -> bool:
+    """inner is another function inside outer's span: a shorter span in one file."""
+    return (inner["path"] == outer["path"] and _inside(inner, outer)
+            and (inner["start"], inner["end"]) != (outer["start"], outer["end"]))
+
+
+def taken_lines(row: dict, file_rows: list[dict]) -> frozenset[int]:
+    """Every line past the first of a function nested in `row`: that function's own."""
+    return frozenset(number for inner in file_rows if _nested_in(inner, row)
+                     for number in range(inner["start"] + 1, inner["end"] + 1))
 
 
 def windows(kept: list[str]) -> set[tuple[str, ...]]:
@@ -77,9 +92,13 @@ def set_aside(rows: list[dict], texts: dict[str, list[str]]) -> set[tuple]:
 
 
 def kept_functions(rows: list[dict], texts: dict[str, list[str]], min_lines: int = MIN_LINES):
-    """(row, kept lines) for each function whose kept lines reach min_lines."""
+    """(row, kept lines) for each function whose own kept lines reach min_lines."""
+    by_path: dict[str, list[dict]] = {}
     for row in rows:
-        kept = normalized(texts[row["path"]], row["start"], row["end"])
+        by_path.setdefault(row["path"], []).append(row)
+    for row in rows:
+        taken = taken_lines(row, by_path[row["path"]])
+        kept = normalized(texts[row["path"]], row["start"], row["end"], taken)
         if len(kept) >= min_lines:
             yield row, kept
 
