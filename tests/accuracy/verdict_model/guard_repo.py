@@ -304,18 +304,22 @@ _CMD_PASS = re.compile(r'''(?P<run>"[^"]*"?)
 
 
 def cmd_lines(command: str) -> list[str]:
-    """The command line cmd.exe hands the program of each command on the line."""
+    """The command line cmd.exe hands the program of each command on the line.
+    The blanks before an operator stay: inside an unclosed run they are text."""
     lines = [""]
     for part in _CMD_PASS.finditer(command):
         if part.lastgroup == "ends":
             lines.append("")
         elif part.lastgroup != "redirect":
             lines[-1] += part.group(part.lastgroup)
-    return [line.strip(" \t") for line in lines]
+    return [line.lstrip(" \t") for line in lines]
 
 
 def command_line_to_argv(line: str) -> list[str]:
-    """CommandLineToArgvW's words for one command line (win32 only)."""
+    """CommandLineToArgvW's words for one command line (win32 only). python.exe
+    builds its argv with the UCRT's reader, which differs on a doubled quote
+    inside a quoted run (`"x"" y"`: one word to the UCRT, two here); no row
+    holds one, and the check compares every split with python's own argv."""
     import ctypes
     from ctypes import wintypes
 

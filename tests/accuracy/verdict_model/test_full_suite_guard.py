@@ -411,6 +411,64 @@ def test_the_refused_word_is_one_the_shell_hands_the_runner(guard, row):
     assert _split_apart(_columns(row, word)) == {}
 
 
+# --- shapes past the docs' table (nightly) ------------------------------------------------------
+# Commands the table does not list, where crapkit reads a shell's words wrong.
+# Each verdict is the docs' rules read over the argv the real shell hands the
+# recorder, which the platform's split oracle matches. (row id, lane, the sh
+# verdict or None where the shape is cmd.exe's alone, the cmd.exe verdict,
+# {shell: the calc-bug its column pins} for each shell crapkit reads wrong)
+REDIRECT = ("calc-bug verdict-model-10: a redirection whose target is quoted and touches "
+            "the operator (>\"lane.log\") is read as an argument, and the lane is refused")
+CARET_QUOTE = ("calc-bug verdict-model-10: a caret-escaped quote opens a quoted run in crapkit's "
+               "reading, but not for cmd.exe, so an & after it starts a command crapkit never checks")
+BACKSLASH_QUOTE = ("calc-bug verdict-model-10: \\\" inside a quoted run ends the run in crapkit's "
+                   "reading; the runner's own reader writes a quote and keeps the run open")
+GLUED = ("calc-bug verdict-model-5: an operator touching a word (tests>lane.log, ;echo) is not "
+         "read as the shell's, so its words land in the runner's argv")
+PAST_THE_TABLE = [
+    ("redirect-quoted-target", g.Lane(f'{g.PYTEST} {g.COV} >"lane.log"'), OK, OK,
+     {"sh": REDIRECT, "cmd": REDIRECT}),
+    ("redirect-quoted-target-fd", g.Lane(f'{g.PYTEST} {g.COV} 2>"lane err.log"'), OK, OK,
+     {"cmd": REDIRECT}),
+    ("redirect-single-quoted-target", g.Lane(f"{g.PYTEST} {g.COV} >'lane.log'"), OK, OK,
+     {"sh": REDIRECT}),
+    ("caret-quoted-operator", g.Lane(f'{g.PYTEST} {g.COV} -k ^"x & {g.PYTEST} pylib/unit^"'),
+     None, "pylib/unit", {"cmd": CARET_QUOTE}),
+    ("backslash-quote", g.Lane(py('-k "a\\" tests \\"b"')), OK, OK, {"cmd": BACKSLASH_QUOTE}),
+    ("redirect-glued-to-a-word", g.Lane(py("tests>lane.log"), testpaths={"pyproject.toml": ("tests",)}),
+     OK, OK, {"sh": GLUED, "cmd": GLUED}),
+    ("semicolon-glued-to-the-next-word", g.Lane(f"{g.PYTEST} {g.COV} ;echo done"), OK, ";echo",
+     {"sh": GLUED}),
+]
+
+
+def _bug_marks(bug: str | None) -> list:
+    return [pytest.mark.xfail(strict=True, raises=rulings.RulingDefect, reason=bug)] if bug else []
+
+
+def _past_the_table() -> list:
+    """This shell's cases, each a strict xfail where crapkit reads it wrong."""
+    shell = "cmd" if g.WINDOWS else "sh"
+    return [pytest.param(row, id=row[0], marks=_bug_marks(row[4].get(shell)))
+            for row in PAST_THE_TABLE if expected(row) is not None]
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.parametrize("row", _past_the_table())
+def test_shapes_past_the_table_read_as_the_shell_reads_them(guard, row):
+    """The split oracle hands the runner what the real shell hands the
+    recorder, the docs' rules over that argv give the row's verdict, and
+    crapkit must give it too."""
+    root = guard.root(row[1])
+    argvs = g.shell_argvs(root, row[1].command, _runner(row[1]))
+    assert _split(row[1], g.WINDOWS) == argvs, g.cmd_lines(row[1].command)
+    assert _docs_reading(row[1], argvs) == expected(row)
+    word = g.verdict(root)
+    if word != expected(row):
+        raise rulings.RulingDefect(f"{row[0]}: crapkit reads {word!r}, the shell hands the runner {argvs}")
+
+
 # The oracles' own worked examples, written from the rules before the oracles
 # ran. sh: POSIX Shell Command Language 2.2 quoting, 2.3 token recognition,
 # 2.7 redirection (a descriptor number touches its operator), 2.9 lists.
@@ -425,7 +483,7 @@ SH_EXAMPLES = {
     "pytest -k '' tests": [["pytest", "-k", "", "tests"]],
     "pytest a\\ b": [["pytest", "a b"]],
 }
-# lanes.md:70-76: the line cmd.exe hands each program.
+# lanes.md:70-76: the line cmd.exe hands each program, trailing blanks aside.
 CMD_EXAMPLES = {
     'pytest -k ^"not slow^"': ['pytest -k "not slow"'],
     'pytest -k "a^b"': ['pytest -k "a^b"'],
@@ -455,7 +513,8 @@ def test_the_shlex_oracle_reads_sh_s_worked_examples():
 
 @pytest.mark.nightly
 def test_the_cmd_pass_hands_on_the_lines_lanes_md_names():
-    assert {command: g.cmd_lines(command) for command in CMD_EXAMPLES} == CMD_EXAMPLES
+    got = {command: [line.rstrip() for line in g.cmd_lines(command)] for command in CMD_EXAMPLES}
+    assert got == CMD_EXAMPLES
 
 
 @pytest.mark.nightly
