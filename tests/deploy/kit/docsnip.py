@@ -176,8 +176,12 @@ def fence(page: str, heading: str, *, index: int = 0, contains: str | None = Non
 
 
 def _holding(blocks: list[Fence], contains: str | None, lang: str | None = None) -> list[Fence]:
-    return [block for block in blocks
-            if (contains is None or contains in block.text) and (lang is None or block.lang == lang)]
+    return [block for block in blocks if _matches(block, contains, lang)]
+
+
+def _matches(block: Fence, contains: str | None, lang: str | None) -> bool:
+    """The fence holds `contains` and its info string is `lang`, each when named."""
+    return (contains is None or contains in block.text) and (lang is None or block.lang == lang)
 
 
 def _missing(page: str, heading: str, index: int, contains: str | None, under: list[Fence],

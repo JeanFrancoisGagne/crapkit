@@ -119,9 +119,9 @@ def pinned(line: str, version: str) -> str:
 
 
 def _without_ref(parts: list[str]) -> list[str]:
-    """The words of a command line with `--ref VALUE` left out."""
-    dropped = {index + 1 for index, part in enumerate(parts) if part == "--ref"}
-    return [part for index, part in enumerate(parts) if part != "--ref" and index not in dropped]
+    """The words of a command line with its `--ref VALUE` left out."""
+    ref = parts.index("--ref") if "--ref" in parts else None
+    return parts if ref is None else parts[:ref] + parts[ref + 2:]
 
 
 def claude_pinned_at(box, version: str, cwd: Path) -> None:

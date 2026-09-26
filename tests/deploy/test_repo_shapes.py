@@ -24,7 +24,7 @@ def start(box, repo: Path) -> dict[str, object]:
     the container guard applied after init; each line's step by its line."""
     steps = {}
     for line in gitsurf.start_lines():
-        steps[line] = box.script(line, cwd=repo, env=box.commit_env() if line.startswith("git commit") else None)
+        steps[line] = box.script(line, cwd=repo, env=gitsurf.dated(box, line))
         if line == "crapkit init" and steps[line].exit == 0:
             gitsurf.keyed_in_container(repo)
     return steps

@@ -170,10 +170,15 @@ def adopt(box, repo: Path, *, guard: bool = False) -> None:
         _start_step(box, repo, line, guard)
 
 
+def dated(box, line: str) -> dict | None:
+    """The fixed author and committer dates a start's `git commit` line runs with."""
+    return box.commit_env() if line.startswith("git commit") else None
+
+
 def _start_step(box, repo: Path, line: str, guard: bool) -> None:
     if line == "crapkit coverage" and guard:
         _refused_in_container(box, repo, line)
-    box.script(line, cwd=repo, env=box.commit_env() if line.startswith("git commit") else None, expect=0)
+    box.script(line, cwd=repo, env=dated(box, line), expect=0)
     if line == "crapkit init" and not guard:
         keyed_in_container(repo)
 

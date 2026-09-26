@@ -490,12 +490,15 @@ def _anthropic_results(item: dict) -> list[str]:
 
 
 def _gemini_results(item: dict) -> list[str]:
-    """The functionResponse parts of a Gemini content: the tool's `output`
-    text where the response holds one, else the response as JSON."""
-    responses = [part["functionResponse"].get("response") for part in item.get("parts") or []
-                 if isinstance(part, dict) and "functionResponse" in part]
-    return [answer["output"] if isinstance(answer, dict) and isinstance(answer.get("output"), str)
-            else json.dumps(answer) for answer in responses]
+    """The functionResponse parts of a Gemini content, each as its text."""
+    return [_output_text(part["functionResponse"].get("response")) for part in item.get("parts") or []
+            if isinstance(part, dict) and "functionResponse" in part]
+
+
+def _output_text(answer) -> str:
+    """A functionResponse's `output` text where it holds one, else the response as JSON."""
+    output = answer.get("output") if isinstance(answer, dict) else None
+    return output if isinstance(output, str) else json.dumps(answer)
 
 
 def _result_of(item: dict) -> list[str]:
