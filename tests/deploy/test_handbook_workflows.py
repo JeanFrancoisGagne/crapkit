@@ -419,19 +419,23 @@ def test_day_one_on_a_polyglot_repo_prints_the_pages_init_and_rows(box):
     assert _rows(said(worklist[0])) == _rows(html.unescape(worklist[1]))
 
 
+def _elided(transcript: str) -> re.Pattern:
+    """A page transcript as a pattern: each line as printed, each `…` one or
+    more lines the page leaves out."""
+    return re.compile("\n".join(r"[^\n]*(?:\n[^\n]*)*" if line == "…" else re.escape(line)
+                                for line in transcript.splitlines()))
+
+
 @cell("lin-handbook-polyglot", channel="pip venv", harness="none",
-      scenario="fresh: doctor prints the two FAIL lines workflow 3 tells the reader to read as a fork",
+      scenario="fresh: doctor prints what workflow 3 shows under `crapkit doctor`, in order, a `…` for each "
+               "run of lines the page leaves out",
       use_cases="doctor", os="linux", image="core", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-8: docs/handbook.html workflow 3 shows doctor "
-                                       "FAILing scopes infra and ops, but init now writes coverage_optional = true "
-                                       "for them and doctor prints no problems")
-def test_doctor_prints_the_fork_workflow_3_describes(box):
+def test_doctor_prints_what_workflow_3_shows(box):
     _polyglot_env(box)
     repo = polyglot_repo(box)
     doctor = dict(_polyglot_run(box, repo))["crapkit doctor"]
-    printed = [line for line in doctor[1].splitlines() if line.startswith("FAIL")]
 
-    assert printed and all(line in said(doctor[0]) for line in printed)
+    assert doctor[1].strip() and _elided(doctor[1]).fullmatch(said(doctor[0])), said(doctor[0])
 
 
 # --- 4: CI on a pull request ------------------------------------------------------------------
@@ -502,9 +506,6 @@ def test_ci_on_a_pull_request_reads_the_committed_baseline(box, templates):
 @cell("lin-handbook-ci", channel="pip venv", harness="none (a CI job's shell)",
       scenario="fresh: with only what the handbook's blocks commit, the PR job's fresh clone reaches a verdict",
       use_cases="verify --baseline-tsv", os="linux", image="core", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-channels-11: the handbook's Install and Enforcement "
-                                       "blocks commit only crapkit-ratchet.tsv, so the fresh clone workflow 4 runs "
-                                       "in has no crapkit.toml and verify --baseline-tsv refuses before a verdict")
 def test_the_handbook_blocks_alone_give_the_ci_clone_its_config(box, templates):
     repo = adopted(box, templates)
     box.run(["crapkit", "verify"], cwd=repo, expect=0)

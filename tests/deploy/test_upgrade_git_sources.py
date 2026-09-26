@@ -15,8 +15,6 @@ import hashlib
 import shutil
 from pathlib import Path
 
-import pytest
-
 from kit import docsnip, gitmirror, state
 from kit.cells import cell
 
@@ -29,10 +27,6 @@ HASH_SCRIPT = (
     "    digest.update(path.relative_to(root).as_posix().encode() + b'|' + path.read_bytes())\n"
     "print(digest.hexdigest())\n")
 LATER = "\n# a commit after the release, under the same version string\n"
-NO_GIT_REFRESH = pytest.mark.xfail(
-    strict=True, raises=state.GuideGap,
-    reason="deploy-bug deploy-upgrade-7 (doc gap): rerunning the README's `pip install git+https://...` line "
-           "after a new commit keeps the old code (same version string), and no doc names the line that refreshes it")
 
 
 def tree_hash(tree: Path) -> str:
@@ -67,7 +61,6 @@ def documented(*needles: str) -> bool:
     return any(all(needle in line for needle in needles) for page in pages for line in page.splitlines())
 
 
-@NO_GIT_REFRESH
 @cell("lin-up-pipgit", channel="pip git (README URL via mirror)", harness="none",
       scenario="upgrade: mirror commit A to B, same version string; which code runs (source hash)",
       use_cases="install refresh", os="linux", image="core", cadence="nightly")
