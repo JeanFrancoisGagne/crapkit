@@ -30,7 +30,6 @@ import functools
 import importlib.util
 import json
 import os
-import re
 import shutil
 import sys
 from pathlib import Path
@@ -262,29 +261,14 @@ def test_a_job_without_the_install_step_names_the_missing_lane(box, candidate):
                  "--comment-has", "**no verdict: `crapkit coverage` exited 5")
 
 
-def declares_input(name: str) -> bool:
-    """Whether the action.yml under test declares the input `name`."""
-    text = (wheels.SRC / "action.yml").read_text(encoding="utf-8")
-    return re.search(rf"^  {re.escape(name)}:\s*$", text, re.MULTILINE) is not None
-
-
-# A monorepo user sets the input whose description names their layout, once
-# action.yml has one; until then README's job is all there is.
-WORKDIR = declares_input("working-directory")
-
-
 @cell("gha-act-monorepo", channel="Action under act, README job", harness=HARNESS,
-      scenario="fresh: crapkit.toml in packages/api below the git top; README's job, with the action's "
-               "working-directory input when it has one; exit 3 or a verdict on packages/api",
+      scenario="fresh: crapkit.toml in packages/api below the git top; README's job with the action's "
+               "working-directory input; a verdict on packages/api",
       use_cases="Action verdict", os="linux", image="ci", cadence="nightly")
-@pytest.mark.xfail(not WORKDIR, strict=True,
-                   reason="deploy-bug deploy-action-1: the Action scores the workspace root, and a monorepo whose "
-                          "crapkit.toml sits in packages/api gets exit 3 with no input to point it there")
 def test_a_monorepo_gets_a_verdict_on_the_package_it_adopted(box, candidate):
     runner = act.Runner.make(box)
     root, built = build_consumer(box, candidate, "--container-ok", "--subdir", "packages/api")
-    inputs = {"gate": "true", **({"working-directory": "packages/api"} if WORKDIR else {})}
-    job = act.crapkit_job(published(box, candidate, runner), **inputs)
+    job = act.crapkit_job(published(box, candidate, runner), gate="true", **{"working-directory": "packages/api"})
     install = job.steps[job.find('pip install -e ".[dev]"')]
     job = job.with_step('pip install -e ".[dev]"', (*install, "  working-directory: packages/api"))
 
@@ -319,9 +303,6 @@ def test_an_action_pinned_behind_the_marks_refuses_until_the_pin_moves(box, cand
       scenario="skew: marks stamped by a newer analysis than the candidate's; the refusal says a newer crapkit "
                "wrote them and does not send the team to re-seed",
       use_cases="team skew", os="linux", image="ci", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-action-2: a stamp refusal from a crapkit older than the "
-                                       "marks says to run coverage and re-seed, which rewrites the team's newer "
-                                       "marks under the older stamp; it never says a newer crapkit wrote them")
 def test_marks_from_a_newer_crapkit_are_named_as_newer(box, candidate):
     runner = act.Runner.make(box)
     root, built = build_consumer(box, candidate, "--container-ok")
@@ -405,9 +386,6 @@ def test_moving_the_pin_carries_the_store_and_the_upgrade_steps_restore_the_gate
       scenario="upgrade: the store the @v0.7.6 step left holds a failed verify; the moved pin's refusal must "
                "not send the reader to a run id that exists only in that runner's store",
       use_cases="Action pin move", os="linux", image="ci", cadence="nightly")
-@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-action-3: the Action's comment quotes verify's remedy "
-                                       "`crapkit ratchet seed --baseline N`, and run N lives only in the CI "
-                                       "runner's .crapkit store, so the reader cannot run it")
 def test_the_moved_pins_refusal_names_no_run_the_reader_cannot_see(box, candidate):
     _, _, _, moved = move_the_pin(box, candidate)
     body = logged_comment(moved)
