@@ -23,7 +23,10 @@
 - A signature that reaches a `;` before any `{` has no body: a trait's required method,
   an `extern` block's foreign function, a `fn` pointer type. lizard waited through the
   `;` for a `{`, listed the signature as a function that ran through the next body, and
-  gave the function it swallowed no row. Such a signature is now no function.
+  gave the function it swallowed no row. Such a signature is now no function. A `fn`
+  pointer type is told apart at its `(`, so one inside a generic, `Vec<fn(i32) -> bool>`
+  or `Vec::<fn()>::new()`, no longer takes the block after its `let` and the decisions
+  in it.
 - A comma inside a parameter's type or pattern, `(char, char)`, `HashMap<K, V>` or a
   struct pattern's `Point { x, y }`, parts no parameters. The long name keeps its
   spelling.

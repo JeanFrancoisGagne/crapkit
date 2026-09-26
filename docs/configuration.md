@@ -233,8 +233,9 @@ lizard reads a Rust token as the C token of the same spelling, crapkit reads it 
 signature decides nothing, so a `where` clause, a `?Sized` bound and a `for<'a>` binder
 add nothing to ccn; a `||` or `&&` with no operand before it (`move || n`, `|&&x|`) is no
 operator in any column; and a let-else is one decision. A signature that ends in `;`, such
-as a trait's required method or a foreign function, is no function, and a comma inside a
-parameter's type or pattern parts no parameters. Each correction retires the day upstream
+as a trait's required method or a foreign function, is no function, and neither is a `fn`
+pointer type, `Vec<fn(i32) -> bool>` included. A comma inside a parameter's type or
+pattern parts no parameters. Each correction retires the day upstream
 fixes its defect.
 
 The cognitive column charges a Rust `match` like a `switch`: +1 plus the nesting it sits

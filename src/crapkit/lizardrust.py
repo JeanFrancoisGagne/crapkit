@@ -34,11 +34,12 @@ reader read a Rust token as the C token of the same spelling:
     it, so ccn, cognitive and nesting all see the `|x|` or `&x` they already
     read as nothing. A parameter typed `&&T` spells `& &` in its long name.
 
-Two more corrections decide which functions exist and what they declare, in
+Three more corrections decide which functions exist and what they declare, in
 `CorrectedRustStates`: a signature that reaches a `;` or a `}` before any `{`
-has no body and is listed as no function, and a comma inside a parameter's
-type or pattern parts no parameters. `loops` hands lizard's nesting column
-Rust's structures in place of C's.
+has no body and is listed as no function, a `fn` with its `(` right after it
+is a pointer type and opens no function wherever it stands, and a comma inside
+a parameter's type or pattern parts no parameters. `loops` hands lizard's
+nesting column Rust's structures in place of C's.
 
 Accepted, documented, not solved
 --------------------------------
@@ -209,10 +210,13 @@ class CorrectedRustStates(RustStates):
     * The conditions counted between `fn` and the body's `{` came from tokens
       that only declare, so the `{` sets the function back to its base of 1.
     * A signature that reaches a `;` or a `}` before any `{` has no body: a
-      trait's required method, an `extern` block's foreign function, a `fn`
-      pointer type. It is listed as no function. lizard waited for a `{`
-      through both, so the next function's body became the signature's and the
-      next function got no row.
+      trait's required method, an `extern` block's foreign function, a
+      signature in a macro's input. It is listed as no function. lizard waited
+      for a `{` through both, so the next function's body became the
+      signature's and the next function got no row.
+    * A `fn` pointer type, `fn(i32) -> bool`, is no function either. It is
+      told apart at its `(`, because inside `Vec<fn()>` the `;` after it is
+      not at the signature's depth.
     * A comma inside a parameter's type or pattern, `(char, char)`,
       `HashMap<K, V>` or `Point { x, y }`, parts no parameters.
 
@@ -224,6 +228,16 @@ class CorrectedRustStates(RustStates):
     def __init__(self, context):
         super().__init__(context)
         self.type_depth = 0
+
+    def _function_name(self, token):
+        """A `fn` right before a `(` spells a pointer type and opens no
+        function. Rust has no anonymous function item, and a pointer type
+        can stand inside brackets opened before it, `Vec<fn()>`, where no `;`
+        after it is at the signature's depth."""
+        if token == "(":
+            self._no_body(token)
+        else:
+            super()._function_name(token)
 
     @CodeStateMachine.read_inside_brackets_then("()", "_expect_function_impl")
     def _function_dec(self, token):
