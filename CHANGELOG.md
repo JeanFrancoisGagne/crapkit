@@ -575,6 +575,16 @@ lane commands the way the shell that runs them does:
   1.4 listed in that noise's order and the five-line cut kept whichever it put first.
   Moves and scores now compare at 4 decimal places.
 
+### Functions with the same CRAP rank by their tie-break
+
+- `next-item`, `brief --batch`, `verify`'s `gate_violations` and a bare twin name in `brief`
+  and `explain` compare CRAP at 4 decimal places, so equal scores tie and the stated
+  tie-break decides: more commits, then path and start line for the queue, path then
+  start line for the gate, the first in the file for twins. ccn 25 at 80% coverage and
+  ccn 5 at none both score 30, but the floats read 29.999999999999996 and 30.0, so
+  `next-item` handed out the function in the quieter file first and a bare twin name
+  picked the later twin.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

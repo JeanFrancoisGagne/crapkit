@@ -5,7 +5,7 @@ from accuracy.kit import exact
 
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
-from crapkit.verify import Verdict, evaluate
+from crapkit.verify import Verdict, evaluate, unmarked_over_ceiling
 
 
 def scored(path="src/a.ts", name="f( )", start=1, end=9, ccn=5, cov=1.0, crap=None, scope="src", flag="measured"):
@@ -115,3 +115,22 @@ def test_marks_that_rose_by_the_same_amount_list_in_path_order():
                  fresh_failures=set(), target=6)
     assert [(r.path, r.recorded, r.fresh_crap) for r in v.ratchet_regressions] == [
         ("src/c.ts", 7.0, 8.0), ("src/a.ts", 20.1, 20.3), ("src/b.ts", 10.1, 10.3)]
+
+
+# ccn 25 at 80% coverage and ccn 5 at none both score 30 exactly. The floats read
+# 29.999999999999996 and 30.0, and a sort on the float put the second first
+# whatever the paths said.
+SCORE_30 = [scored(path="src/a.ts", ccn=25, cov=0.8), scored(path="src/b.ts", ccn=5, cov=0.0)]
+
+
+def test_gate_violations_with_the_same_crap_list_in_path_order():
+    v = evaluate(fresh=SCORE_30, changed_ranges={"src/a.ts": [(1, 9)], "src/b.ts": [(1, 9)]},
+                 ratchet=[], baseline_failures=set(), fresh_failures=set(), target=6)
+
+    assert [g.path for g in v.gate_violations] == ["src/a.ts", "src/b.ts"]
+
+
+def test_unmarked_debt_with_the_same_crap_lists_in_path_order():
+    rows = unmarked_over_ceiling(SCORE_30, [], target=6)
+
+    assert [r.path for r in rows] == ["src/a.ts", "src/b.ts"]

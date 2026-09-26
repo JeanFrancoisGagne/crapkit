@@ -15,7 +15,7 @@ from ..errors import ConfigError, CrapkitError
 from ..gitio import head_commit, ls_files
 from ..invocation import _self
 from ..keys import claim_key, key_names, key_of, lookup, position, split_ordinal
-from ..score import SCORED_COLUMNS
+from ..score import CRAP_PLACES, SCORED_COLUMNS
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
 from ..worklist import (NO_RATCHET, Marks, RatchetMarks, Worklist, admission, build_worklist,
@@ -312,8 +312,13 @@ def _no_lane_gap(r, adm) -> bool:
 
 
 def _next_ranked(scored, adm):
+    """Worst CRAP first, compared at the 4 places a mark holds so equal scores
+    tie; then the file with more commits, then path and start line. Unrounded,
+    ccn 25 at 80% coverage read 29.999999999999996 against 30.0 for ccn 5 at
+    none, and the quieter file's function came first."""
     ranked = sorted((r for r in scored if _rankable(r, adm)),
-                    key=lambda r: (-r.crap, -adm.of(r.path).commits, r.path, r.start))
+                    key=lambda r: (-round(r.crap, CRAP_PLACES), -adm.of(r.path).commits,
+                                   r.path, r.start))
     return ranked, sum(1 for r in scored if _no_lane_gap(r, adm))
 
 

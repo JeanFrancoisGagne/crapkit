@@ -409,5 +409,9 @@ def _twin_key(rows: list, long_name: str, ordinal: int | None, run_id: int | Non
 
 def _severity(row) -> tuple:
     """Worst first, and the first in the file among equals. A row with no score,
-    as on an inventory run, ranks with every other unscored one."""
-    return row.crap or 0.0, -row.start, -position(row)[1]
+    as on an inventory run, ranks with every other unscored one.
+
+    Scores compare at the 4 places a mark holds (score.CRAP_PLACES; score imports
+    this module), so equal ones tie: ccn 25 at 80% coverage and ccn 5 at none
+    both score 30, which the floats read as 29.999999999999996 and 30.0."""
+    return round(row.crap or 0.0, 4), -row.start, -position(row)[1]

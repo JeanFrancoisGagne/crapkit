@@ -80,7 +80,8 @@ To address one twin by hand, `brief` and `explain` take the same suffix:
 `crapkit brief calc/iso_cost.py "__post_init__#2"`. A bare name still resolves, to the
 worst twin: the one the queue ranks. `brief`, `explain` and the MCP tool
 `get_function_history` all pick it, so the history and the mark each reports belong to
-that twin, wherever it sits in the file.
+that twin, wherever it sits in the file. Twins whose CRAP is equal to 4 decimal places
+resolve to the first in the file.
 
 ---
 

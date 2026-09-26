@@ -12,8 +12,8 @@ from accuracy.kit import exact
 import pytest
 
 from crapkit.churn import FileChurn
-from crapkit.cli.queue import _no_lane_gap, _rankable, _skip_reason
-from crapkit.score import ScoredRow
+from crapkit.cli.queue import _next_ranked, _no_lane_gap, _rankable, _skip_reason
+from crapkit.score import ScoredRow, crap
 from crapkit.worklist import HOT_MIN_CCN, Marks, admission, over_target_floor, sql_floor
 
 
@@ -186,3 +186,18 @@ def test_an_excluded_row_reports_the_flag_that_ate_it():
     adm = admission(CHURN, floor=5)
 
     assert _skip_reason(scored(), adm, ["dark"]) == "excluded_by_flag"
+
+
+def test_rows_with_the_same_crap_go_to_the_busier_file_first():
+    """next-item breaks a CRAP tie on the file's commits. ccn 25 at 80% coverage
+    and ccn 5 at none both score 30, but the floats read 29.999999999999996 and
+    30.0, so the quiet file's function came first."""
+    quiet = scored(path="util/quiet.py", ccn=5, remedy="add-tests")
+    busy = scored(path="util/busy.py", ccn=25, remedy="decompose")._replace(
+        cov=0.8, crap=crap(25, 0.8))
+    churn = {"util/quiet.py": FileChurn(commits=1, authors=1, weight=0.1),
+             "util/busy.py": FileChurn(commits=9, authors=2, weight=4.0)}
+
+    ranked, _ = _next_ranked([quiet, busy], admission(churn, floor=5))
+
+    assert [r.path for r in ranked] == ["util/busy.py", "util/quiet.py"]

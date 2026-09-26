@@ -53,7 +53,8 @@ does not change JSON schema 1.
 ## `next-item`
 
 The top of the burn-down queue: the rows a lane measures, whose remedy is not `ok`,
-ranked by **`crap` descending**. That ordering is the difference from
+ranked by **`crap` descending**. Scores equal at 4 decimal places go to the file with more
+commits in the churn window, then by path and start line. That ordering is the difference from
 [`worklist`](#worklist), which ranks the same run by risk and lists rows this command
 never offers, so the two do not lead with the same function.
 
@@ -820,7 +821,8 @@ the file holds that name, and `long_name#2` for the second function holding it. 
 string to look up in `crapkit-ratchet.tsv`, and `long_name` alone is not, whenever a file
 gives one name to several functions. `ratchet_regressions` carries the key in `long_name`
 already, because the entry it reports comes from the marks file. It lists the largest rise
-first, and rises equal at 4 places in path order.
+first, and rises equal at 4 places in path order. `gate_violations` lists the highest `crap`
+first, and scores equal at 4 places by path, then start line.
 
 **`diff_uncovered` truncates at 50 entries; `diff_uncovered_count` does not.** Above 50 the
 two disagree on purpose. Trust the count.
