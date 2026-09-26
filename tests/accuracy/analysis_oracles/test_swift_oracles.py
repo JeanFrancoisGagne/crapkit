@@ -1,10 +1,11 @@
 """Swift ccn against SwiftLint's cyclomatic_complexity rule.
 
 SwiftLint lives in the accuracy image (oracles/swiftlint_adapter.py), so this
-runs on the Linux nightly cell, over the Swift probe files. Each function
-tree-sitter lists is joined to crapkit's row and SwiftLint's answer by path and
-start line. A function a known crapkit defect shape covers is set aside for
-that column (ts_defect_shapes).
+runs on the Linux nightly cell, over the Swift probe files and the full
+corpus's Alamofire member. Each function tree-sitter lists is joined to
+crapkit's row and SwiftLint's answer by path and start line. A function a known
+crapkit defect shape covers is set aside for that column (ts_defect_shapes and
+ts_shapes_swift).
 
 SwiftLint counts from 0, counts a switch's default and leaves out `&&`, `||`,
 `?:` and `??`. The McCabe text starts at 1, excludes the default and counts a
@@ -13,10 +14,15 @@ counts `?:`, as the tree-sitter counter does. Each difference is a named
 transform with its own rulings row, and the operators are counted from
 tree-sitter nodes. A hand case pins each rule with SwiftLint's raw value and
 crapkit's.
+
+The tree-sitter counters that give those nodes misread two Swift shapes (a
+#if condition's && and a comment inside an else); each is a rulings row pinned
+here from a hand probe, with crapkit's value and the counter's.
 """
 import pytest
 
-from accuracy.analysis_oracles import analysis_tables, analysis_tstests
+from accuracy.analysis_oracles import analysis_corpora, analysis_tables, analysis_treesitter
+from accuracy.analysis_oracles import analysis_tstests
 from accuracy.analysis_oracles import analysis_tooldiff as tooldiff
 from accuracy.analysis_oracles.analysis_tooldiff import Tool
 from accuracy.analysis_oracles.oracles import swiftlint_adapter
@@ -66,6 +72,51 @@ def test_swift_probes_match_swiftlint(swift_probes, oracle):
 
     assert outcome.problems == []
     assert outcome.compared > 5
+
+
+@pytest.fixture(scope="module")
+def swift_corpus(full_corpus, measure_set, tmp_path_factory):
+    files = analysis_corpora.member_files(full_corpus, "alamofire", (".swift",))
+    return files, measure_set(files), tooldiff.written(files, tmp_path_factory.mktemp("sw-corpus"))
+
+
+def test_alamofire_matches_swiftlint(swift_corpus, oracle):
+    oracle("swiftlint")
+    outcome = tooldiff.differential("swiftlint", TOOLS["swiftlint"], LISTED, swift_corpus)
+
+    assert outcome.problems == []
+    assert outcome.compared > 300
+
+
+# --- the tree-sitter counters' misreadings, each pinned from a hand probe ------------------------
+
+COUNTS = "swift/Counts.swift"
+TREESITTER_BUGS = {"AO-SWIFT-DIRECTIVE-LOGICAL": ("directiveAnd", "ccn_std"),
+                   "AO-SWIFT-DIRECTIVE-LOGICAL-COG": ("directiveAnd", "cognitive"),
+                   "AO-TSCOG-SWIFT-ELSE-COMMENT": ("elseComment", "cognitive")}
+
+
+def _hand_value(function: str, metric: str) -> int:
+    return int(next(probe.expected for probe in analysis_tables.probes()
+                    if (probe.path, probe.function, probe.metric) == (COUNTS, function, metric)))
+
+
+def _treesitter_value(files: dict, function: str, metric: str) -> int:
+    data = files[COUNTS]
+    fn, spec, _ = next(item for item in analysis_treesitter.functions(COUNTS, data)
+                       if counters.name(item[0], data) == function)
+    return analysis_treesitter.values(fn, spec, data)[metric]
+
+
+@pytest.mark.parametrize("ruling_id", sorted(TREESITTER_BUGS))
+def test_each_treesitter_oracle_bug_is_pinned(ruling_id, swift_probes):
+    files, measured, _ = swift_probes
+    function, metric = TREESITTER_BUGS[ruling_id]
+    crapkit = analysis_tables.lookup(measured, COUNTS, function)[0][metric]
+
+    assert crapkit == _hand_value(function, metric)
+    rulings.pin_ruling(ruling_id, crapkit=crapkit,
+                       oracle=_treesitter_value(files, function, metric))
 
 
 # --- each rule's hand case: SwiftLint's raw value and crapkit's -----------------------------------
