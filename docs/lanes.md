@@ -346,6 +346,7 @@ cov
 crap.sqlite
 lane-py.log
 measurement.lock
+owner.log
 
 .crapkit/cov:
 junit-py.xml
@@ -360,6 +361,7 @@ py.json
 | `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took, the reuse `proof` with the digests it was taken over (`proof_parts`), and, for an artifact the lane's last attempt failed to write, the modification time of the file it left (`refused_mtime_ns`). Drives `--reuse-unchanged`, `doctor --tune` and the [reuse refusal](#the-artifact-a-failed-attempt-left-behind-is-refused). | |
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
 | `measurement.lock` | The lock a lane run holds on this checkout's lane logs and artifact stamps while its commands run, so two crapkit processes never measure one checkout at once. It stays behind between runs and holds nothing. | |
+| `owner.log` | What the measurement owner wrote to stderr: nothing on a run that ends normally, and a dated line and a traceback when it [stops early](#when-the-measurement-owner-stops). Every owner on this checkout appends to it. | |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. A file enters it once it has held still for two seconds, so a run right after the files were written, like the listing above, leaves no `stat-stamps.json` yet. | |
 | `churn-cache-v2.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
 | `churn-commits-v1.json` | The window's commits: each one's author, author date and commit date, and each path's commits. Read only when the churn map misses; a HEAD that grew from it walks only the new commits. Not kept in a shallow clone. | HEAD sha, window months, path format and the --since cutoff its commits were cut at, plus the body's size and CRC. |
@@ -1653,6 +1655,42 @@ each half came from. The banner counts only as a whole line, so log output quoti
 words mid-line starts no attempt, and attempt 1 writes no banner at all, which makes a
 bannerless log one attempt.
 
+### A Python child writes its log in UTF-8
+
+crapkit reads `.crapkit/lane-<name>.log` as UTF-8 and quotes its tail in the refusal. A
+Python child below 3.15 writes a pipe in the ANSI code page on Windows (cp1252) and in the
+locale's encoding on POSIX, and an inherited `PYTHONIOENCODING` overrides both. So crapkit
+sets `PYTHONIOENCODING=utf-8` for every lane child, its flake retest and every `mutate`
+suite run, unless the lane's `env` sets `PYTHONIOENCODING` itself: then the lane's value
+stands. Before 0.8.1 a refusal quoted `No module named 'caf�'` where the child printed
+`café`, a test that printed an emoji under `pytest -s` raised `UnicodeEncodeError`
+under crapkit alone while the lane still exited 0 and the CRAP load moved, and `mutate`
+refused the same suite as failing on the unmutated tree.
+
+The variable sets stdio only. A test that opens a file with no `encoding` still gets the
+locale's, and a child that is not Python ignores it.
+
+### When the measurement owner stops
+
+A lane run holds its locks through a helper process, the measurement owner, which also
+stops each command's process tree. When that helper stops early the command exits 5 with
+one of three lines, `before confirming ownership`, `during command registration` or
+`before publication`, and each names the file the helper's stderr went to:
+
+```
+crapkit: measurement owner stopped before confirming ownership; its error is at the end of /repo/.crapkit/owner.log
+```
+
+The file is `owner.log` in the `.crapkit/` of the checkout whose locks the owner holds,
+which is where `coverage`, `verify` and `mutate` write. An owner that holds no lock there,
+such as the one behind `test-scoped` or the MCP server, writes `owner.log` beside the
+measurement locks in `~/.cache/crapkit/`. Owners append, and each error starts with a
+dated line and the owner's process id, so the last entry is this run's. `it wrote nothing
+to` in place of `its error is at the end of` means no Python error ended the owner: a
+signal did, such as the one the OOM killer sends. When the file cannot be opened, the
+line ends at the reason. Before 0.8.1 the owner's stderr went nowhere, so one process on a
+Linux host whose name was not UTF-8 stopped every lane run with this line and no cause.
+
 ### A killed run leaves its coverage shards behind
 
 `coverage run --parallel-mode`, which pytest-xdist turns on for you, writes one
@@ -1676,6 +1714,16 @@ crapkit does not run the combine for you. Shards from an interrupted suite merge
 report that looks exactly like a whole run, and taking that for a full measurement is what
 the crashed-worker check above refuses. Whether a half-run is worth scoring is your call,
 and `--reuse-artifacts` is where you make it.
+
+Shards left under a directory whose name is not UTF-8, or named for a host whose name is
+not, come from a run that was not killed: coverage.py stores every measured path as UTF-8
+text, so its own combine failed with a `UnicodeEncodeError`, and a `coverage combine` by
+hand fails the same way. The refusal names the directory or the host name, with each byte
+that is not UTF-8 as `\xNN`, instead of the recipe:
+
+```
+crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/coverage.json (command exit 1); lane log: /home/ren\xe9/repo/.crapkit/lane-py.log; last output: ...; coverage.py cannot combine the shards it left in /home/ren\xe9/repo: the directory /home/ren\xe9/repo holds bytes that are not UTF-8, and coverage.py stores every path as UTF-8. Rename it to UTF-8 and run the lane again
+```
 
 ---
 

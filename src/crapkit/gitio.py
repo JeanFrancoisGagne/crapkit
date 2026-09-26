@@ -9,15 +9,20 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from itertools import chain
 from pathlib import Path
 from typing import NamedTuple
 
+from .diffparse import changed_ranges, rendered_ranges, text_line_ranges, utf16_line_spans
 from .errors import GitError, ToolError
-from .gitpaths import nul_paths, nul_records, split_record
-from .repotext import exact_text, lenient, lenient_lines
+from .gitpaths import nul_paths, readable, split_record
+from .records import record_lines
+from .repotext import escaped, lenient, lenient_lines, marks_text, utf16_marked
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
-_LOG_HEADER = re.compile(r"^\0(-?\d+) ([0-9a-f]+)\n", re.MULTILINE)
+_LOG_HEADER = re.compile(rb"^\0(-?\d+) ([0-9a-f]+)\n", re.MULTILINE)
+_INDEX_LINE = re.compile(rb"^index ([0-9a-f]+)\.\.([0-9a-f]+)", re.MULTILINE)
+_NO_FILE = {"0" * 40, "0" * 64}  # the side of a commit that added or deleted the file
 
 # Every path this module hands out is joined against root-relative rows, because
 # `git ls-files` answers relative to the cwd. Diffs do not: git names their files
@@ -91,7 +96,7 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subpro
     if binary:
         return res
     return subprocess.CompletedProcess(res.args, res.returncode,
-                                       exact_text(res.stdout), lenient(res.stderr))
+                                       escaped(res.stdout), lenient(res.stderr))
 
 
 def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: bool = False):
@@ -119,8 +124,8 @@ def _git_bytes(root: Path, *args: str) -> bytes:
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
-    """NUL path records, each name that is not UTF-8 left out and named on
-    stderr (gitpaths.nul_paths)."""
+    """NUL path records, each name that is not UTF-8 in its surrogateescape
+    spelling (gitpaths.nul_paths): the caller decides what such a name means."""
     return nul_paths(_git_bytes(root, *args))
 
 
@@ -195,7 +200,7 @@ def index_modes(root: Path, pathspec: str) -> dict[str, str]:
     modes = {}
     for record in _git_bytes(root, "ls-files", "-s", "-z", "--", pathspec).split(b"\0"):
         meta, path = split_record(record, 1)
-        if path:
+        if path and readable(path):  # git runs hooks by ASCII names; no other name is one
             modes[path] = meta.split(" ", 1)[0]
     return modes
 
@@ -260,9 +265,9 @@ def renamed_paths(root: Path, since: str, *, similarity: int = 50) -> dict[str, 
     so only renames wholly inside the root pair up here; a mark on a file moved
     in from above the root reads as new.
     """
-    fields = nul_records(_git_bytes(root, "diff", "--name-status", f"-M{similarity}", "-z", since, "HEAD"))
-    # A name that is not UTF-8 holds its record's place as None and pairs with nothing.
-    return {old: new for old, new in _rename_pairs(fields).items() if old is not None and new is not None}
+    fields = nul_paths(_git_bytes(root, "diff", "--name-status", f"-M{similarity}", "-z", since, "HEAD"))
+    # A name that is not UTF-8 keys no mark, so a rename to or from one pairs with nothing.
+    return {old: new for old, new in _rename_pairs(fields).items() if readable(old) and readable(new)}
 
 
 def status_names(root: Path) -> list[str]:
@@ -527,7 +532,7 @@ class SourcePatch:
 
     UTF-8 surrogateescape preserves opaque body bytes, including admitted cp1252
     source. It does not replace bytes or relax path decoding: a header or NUL
-    record that names a file in bytes that are not UTF-8 leaves that file out
+    record keeps a name that is not UTF-8 in its surrogateescape spelling
     (gitpaths), and every other path keeps its exact spelling.
     """
 
@@ -536,20 +541,46 @@ class SourcePatch:
         self._read = _Started(root, _source_diff_args(basis, paths), stdin=False)
 
     def result(self) -> str:
-        patch = exact_text(self._read.result())
+        patch = escaped(self._read.result())
         if "\nBinary files " not in patch:
             return patch
         paths = _binary_source_paths(self._root, self._basis, self._paths)
-        if not paths:
-            return patch
-        forced = _Started(self._root, _source_diff_args(self._basis, paths, force_text=True), stdin=False)
-        try:
-            return patch + exact_text(forced.result())
-        finally:
-            forced.close()
+        return patch + _forced_patch(self._root, self._basis, paths) if paths else patch
 
     def close(self) -> None:
         self._read.close()
+
+
+def _forced_patch(root: Path, basis: tuple[str, ...], paths: tuple[str, ...]) -> str:
+    """The `--text` patch of the source paths git summarized as binary. A UTF-16
+    one among them gets its ranges on its text lines: git counts a line at every
+    0A byte, and a character such as 上 (U+4E0A) holds one (PRD U29)."""
+    utf16 = {path: raw for path, raw in _new_sides(root, basis, paths).items() if utf16_marked(raw)}
+    plain = tuple(path for path in paths if path not in utf16)
+    return _text_patch(root, basis, plain) + _utf16_patch(root, basis, utf16)
+
+
+def _new_sides(root: Path, basis: tuple[str, ...], paths: tuple[str, ...]) -> dict[str, bytes]:
+    """What each path holds on the new side of the diff `basis` names: the
+    index under --cached, else the working tree. A path that side does not
+    hold, a deletion, has no entry."""
+    if "--cached" in basis:
+        return staged_blobs(root, _git_paths(root, "--literal-pathspecs", "ls-files", "-z", "--", *paths))
+    return {path: (root / path).read_bytes() for path in paths if (root / path).is_file()}
+
+
+def _text_patch(root: Path, basis: tuple[str, ...], paths: tuple[str, ...]) -> str:
+    if not paths:
+        return ""
+    return escaped(_git_bytes(root, *_source_diff_args(basis, paths, force_text=True)))
+
+
+def _utf16_patch(root: Path, basis: tuple[str, ...], sides: dict[str, bytes]) -> str:
+    """The UTF-16 files' ranges, git's lines moved onto text lines and rendered
+    back as a patch (diffparse), so every reader of the patch sees text lines."""
+    found = changed_ranges(_text_patch(root, basis, tuple(sides)))
+    return rendered_ranges({path: text_line_ranges(ranges, utf16_line_spans(sides[path]))
+                            for path, ranges in found.items() if path in sides})
 
 
 def _read_source_patch(root: Path, *basis: str) -> str:
@@ -636,13 +667,23 @@ def file_log(root: Path, rel_path: str) -> list[LogEntry]:
     30k-commit synthetic: 0.436s vs 0.257s, same events either way). The price
     is that renaming the file restarts its history at the rename, which
     `commit_renames` lets a reader name.
+
+    A patch reads as text, each byte that is not UTF-8 as U+FFFD, unless it
+    holds a NUL. That one may come from a UTF-16 revision, which PowerShell
+    5.1's bare Out-File saves: git splits its lines at every 0A byte, one byte
+    into the next line's first character, and only the first line carries the
+    byte-order mark. Such a commit reads from its two whole revisions instead,
+    each through repotext.marks_text, the rule every reader of the marks file
+    uses, as the lines one revision holds and the other does not.
     """
     # A path may hold U+0001, the old separator. Body NULs have +/- prefixes;
     # only a physical header line starts with the NUL timestamp marker. Raw LF
     # framing prevents CR in a legacy field from manufacturing a header line.
-    out = _git_text(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at %H",
-                    "-p", *_PATCH, "--text", "--", rel_path)
-    return _log_entries(out)
+    out = _git_bytes(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at %H",
+                     "-p", *_PATCH, "--full-index", "--text", "--", rel_path)
+    entries = _log_entries(out)
+    revisions = _revisions(root, [patch for *_, patch in entries if b"\0" in patch])
+    return [LogEntry(stamp, commit, _patch_text(patch, revisions)) for stamp, commit, patch in entries]
 
 
 def commit_renames(root: Path, commit: str) -> dict[str, str]:
@@ -656,18 +697,53 @@ def commit_renames(root: Path, commit: str) -> dict[str, str]:
     return _rename_pairs(fields)
 
 
-def _log_entries(out: str) -> list[LogEntry]:
+def _patch_sides(patch: bytes) -> tuple[str, ...]:
+    """The object ids of the file before and after one commit, from the
+    `index` line `--full-index` writes (an absent side is all zeros); () when
+    the patch has no such line."""
+    found = _INDEX_LINE.search(patch)
+    return (found[1].decode(), found[2].decode()) if found else ()
+
+
+def _revisions(root: Path, patches: list[bytes]) -> dict[str, bytes]:
+    """Each side those patches name, read whole from one `cat-file --batch`."""
+    ids = sorted(set(chain.from_iterable(map(_patch_sides, patches))) - _NO_FILE)
+    if not ids:
+        return {}
+    return _framed_blobs(_batch_stream(root, "".join(f"{oid}\n" for oid in ids).encode()), ids)
+
+
+def _patch_text(patch: bytes, revisions: dict[str, bytes]) -> str:
+    """One commit's patch as the +/- lines ratchet_report reads."""
+    sides = _patch_sides(patch) if b"\0" in patch else ()
+    if not sides:
+        return lenient(patch)
+    before, after = (list(record_lines(marks_text(revisions.get(side, b"")))) for side in sides)
+    return "\n".join(_only_in(before, after, "-") + _only_in(after, before, "+"))
+
+
+def _only_in(lines: list[str], other: list[str], sign: str) -> list[str]:
+    held = set(other)
+    return [sign + line for line in lines if line not in held]
+
+
+def _log_entries(out: bytes) -> list[tuple[int, str, bytes]]:
+    """(timestamp, commit, patch bytes) per `%x00%at %H` header, in log order."""
     entries = []
     head, start = None, 0
     for header in _LOG_HEADER.finditer(out):
         if head is not None:
-            entries.append(LogEntry(int(head.group(1)), head.group(2), out[start:header.start()]))
+            entries.append(_log_entry(head, out[start:header.start()]))
         head, start = header, header.end()
     if head is not None:
-        entries.append(LogEntry(int(head.group(1)), head.group(2), out[start:]))
+        entries.append(_log_entry(head, out[start:]))
     elif out:
         raise GitError("Git patch history has no timestamp header")
     return entries
+
+
+def _log_entry(header: re.Match, patch: bytes) -> tuple[int, str, bytes]:
+    return int(header[1]), header[2].decode(), patch
 
 
 # core.longpaths on the worktree calls, and on those alone. On a 31,459-file

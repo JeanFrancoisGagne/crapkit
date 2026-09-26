@@ -69,3 +69,32 @@ def test_the_same_config_without_the_bom_names_the_testpaths_pytest_runs(tmp_pat
     assert ran.returncode == 0 and "tests/test_a.py::test_a" in ran.stdout, ran
     assert pytest_testpaths_at(tmp_path) == ("tests",)
     assert pytest_testpaths(admin._marker_texts(tmp_path)) == ("tests",)
+PYTEST_FILES = {
+    "pytest.ini": "[pytest]\n# café\ntestpaths = tests\n",
+    "tox.ini": "[pytest]\n# café\ntestpaths = tests\n",
+    "setup.cfg": "[tool:pytest]\n# café\ntestpaths = tests\n",
+    "pyproject.toml": '[tool.pytest.ini_options]\n# café\ntestpaths = ["tests"]\n',
+}
+# How each file's bytes were saved, and the testpaths pytest 8.3 reads from them.
+# A byte-order mark reads as none: pytest itself stops on it (`unexpected line:
+# '\ufeff[pytest]'`, `Invalid statement (at line 1, column 1)`), so no lane can
+# collect by those testpaths. A Latin-1 byte in a comment reads as U+FFFD there.
+SAVED = [
+    ("utf8", lambda text: text.encode("utf-8"), ("tests",)),
+    ("utf8-bom", lambda text: b"\xef\xbb\xbf" + text.encode("utf-8"), ()),
+    ("latin1-comment", lambda text: text.encode("latin-1"), ("tests",)),
+    ("crlf", lambda text: text.replace("\n", "\r\n").encode("utf-8"), ("tests",)),
+]
+
+
+@pytest.mark.parametrize("save, expected", [row[1:] for row in SAVED], ids=[row[0] for row in SAVED])
+@pytest.mark.parametrize("name", list(PYTEST_FILES))
+def test_init_and_the_lane_guard_read_a_pytest_file_in_any_encoding_alike(tmp_path, name, save, expected):
+    """init (admin._marker_texts) and the lane guard (pytest_testpaths_at) read
+    the same bytes through one repotext kind, so they name the same testpaths."""
+    from crapkit.cli.admin import _marker_texts
+
+    (tmp_path / name).write_bytes(save(PYTEST_FILES[name]))
+
+    assert pytest_testpaths_at(tmp_path) == expected
+    assert pytest_testpaths(_marker_texts(tmp_path)) == expected

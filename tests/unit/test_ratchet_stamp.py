@@ -75,11 +75,15 @@ def test_a_lizard_bump_alone_conflicts():
 
 
 def test_marks_stamped_by_0_8_0_are_refused_until_one_reseed():
-    """Q9: a change that can move an existing function's coverage on the same
-    tree bumps the analysis version. 0.8.1's coverage.py reader refuses a report
-    without start_line and scores a nested function on its own region, so a
-    marks file stamped under 0.8.0's version 11 is not comparable and re-seeds
-    once. Kept at 11, verify compared the new scores against the old numbers."""
+    """Q9: a change that can move an existing function's ccn, name or coverage
+    on the same tree bumps the analysis version. 0.8.1's coverage.py reader
+    refuses a report without start_line and scores a nested function on its
+    own region; it reads a UTF-16 source that 0.8.0 scored as empty, and keys
+    an identifier holding one of the five bytes cp1252 leaves undefined by its
+    name, where it read `U+FFFD( x )` or C's `if( x)` at ccn 1 took the
+    function's place. So a marks file stamped under 0.8.0's version 11 is not
+    comparable and re-seeds once. Kept at 11, verify compared the new scores
+    against the old numbers."""
     import lizard
 
     from crapkit.analyze import ANALYSIS_VERSION

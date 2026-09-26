@@ -33,6 +33,12 @@ jobs:
           - os: windows-latest
             suite: unit e2e
     runs-on: ${{ matrix.os }}
+    # The Latin-1 locale rows build en_US.ISO-8859-1 and fr_FR.UTF-8 with
+    # localedef into a temp directory. Where a host cannot, they skip; here a
+    # skip would leave every Linux Latin-1 row unguarded, so they fail instead.
+    # Windows and macOS skip those rows by platform before they look.
+    env:
+      CRAPKIT_REQUIRE_LOCALES: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,6 +46,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - name: the locale sources localedef reads are there
+        if: runner.os == 'Linux'
+        run: test -f /usr/share/i18n/charmaps/ISO-8859-1.gz || { sudo apt-get update -q && sudo apt-get install -y -q locales; }
       # The dev extra is the whole install: the suite's fixture lanes shell out
       # to pytest with plugin flags, so anything they spell has to arrive here.
       # Quoted because zsh globs the bare `.[dev]` and pip never sees the extra.
@@ -168,6 +177,18 @@ jobs:
         run: claude plugin validate plugin --strict
       - name: the marketplace manifest validates
         run: claude plugin validate .
+      # doctor --plugin-root reads a manifest the way Claude Code reads it: a
+      # byte that is not UTF-8 as U+FFFD, a byte-order mark refused. The test
+      # asks this Claude Code, so a release that reads another way fails here.
+      # CRAPKIT_REQUIRE_CLAUDE turns a missing binary into a failure, not a skip.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: doctor reads a plugin manifest the way this Claude Code loads it
+        env:
+          CRAPKIT_REQUIRE_CLAUDE: "1"
+        run: python -m pytest tests/unit/test_r2_interface_paths.py -k claude_code_loads -p no:randomly
 
   # The composite action at the repo root is the one surface no Python test can
   # execute: `action.yml` is read by the runner, never imported. So crapkit runs
@@ -188,6 +209,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+    # As in `test`: the Latin-1 locale rows fail here rather than skip.
+    env:
+      CRAPKIT_REQUIRE_LOCALES: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -195,6 +219,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: the locale sources localedef reads are there
+        run: test -f /usr/share/i18n/charmaps/ISO-8859-1.gz || { sudo apt-get update -q && sudo apt-get install -y -q locales; }
       - run: pip install -e ".[dev]"
       - name: the console script resolves
         run: crapkit --version

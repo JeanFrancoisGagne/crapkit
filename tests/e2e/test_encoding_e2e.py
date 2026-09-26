@@ -207,16 +207,312 @@ def test_a_marks_file_saved_with_a_bom_holds_the_same_marks(scored_repo: Path):
     assert "added 0, tightened 0 - 1 mark(s) vs run " in seed.stdout, seed.stdout
 
 
-def test_a_utf16_marks_file_names_itself_and_the_fix(scored_repo: Path):
+# --- the marks file reads by its own mark, else UTF-8 with U+FFFD (Q20) ---------------
+#
+# A rewrite of a file whose read replaced a byte would save U+FFFD in place of the
+# name that held it, or drop the mark as a function that is gone, so every writer
+# refuses it by the byte. A UTF-16 file is written back as UTF-16, behind its mark
+# and in its own line ending, which is how PowerShell 5.1 saved it.
+
+CP1252_ROW = b"src/app.ts\tcaf\xe9( )\t50.0000\n"
+
+
+def _with_cp1252_mark(data: bytes) -> bytes:
+    """A second mark, its name saved by a cp1252 editor, in the row order a
+    rewrite would give it: `src/app.ts` sorts before `src/tangled.ts`."""
+    head, _, rows = data.partition(b"crap\n")
+    return head + b"crap\n" + CP1252_ROW + rows
+
+
+def _raised(data: bytes) -> bytes:
+    """The last mark's number raised, so the next seed or tighten rewrites the file."""
+    lines = data.split(b"\n")
+    path, name, _ = lines[-2].split(b"\t")
+    lines[-2] = b"\t".join((path, name, b"999.0000"))
+    return b"\n".join(lines)
+
+
+def _utf16_crlf(data: bytes) -> bytes:
+    """What `Get-Content` piped to a bare `Out-File` leaves in PowerShell 5.1."""
+    return _utf16(data.decode("utf-8").replace("\n", "\r\n"))
+
+
+MARKS_SHAPES = {
+    "cp1252-name": _with_cp1252_mark,
+    "cp1252-name-raised": lambda seeded: _raised(_with_cp1252_mark(seeded)),
+    "utf16-le-crlf": _utf16_crlf,
+    "utf16-le-crlf-raised": lambda seeded: _utf16_crlf(_raised(seeded)),
+    "utf16-be": lambda seeded: b"\xfe\xff" + seeded.decode("utf-8").encode("utf-16-be"),
+    "utf8-bom": lambda seeded: b"\xef\xbb\xbf" + seeded,
+}
+
+
+def _marks_as(scored_repo: Path, shape: str) -> bytes:
+    """Seed, then leave the marks file in `shape`; returns its bytes."""
     assert _run(scored_repo, "ratchet", "seed").returncode == 0
     marks = scored_repo / MARKS
-    marks.write_bytes(_utf16(marks.read_text(encoding="utf-8")))
+    marks.write_bytes(MARKS_SHAPES[shape](marks.read_bytes()))
+    return marks.read_bytes()
 
-    res = _run(scored_repo, "verify", "--reuse-artifacts")
 
-    assert res.returncode == 3, res.stderr
-    assert (f"crapkit: {MARKS} is not UTF-8 (first bytes ff fe = UTF-16, the "
-            "PowerShell 5.1 Out-File default); save it as UTF-8") in res.stderr, res.stderr
+READS = [
+    # id, shape, command, a line stdout carries
+    ("verify-cp1252", "cp1252-name", ("verify", "--reuse-artifacts"), "verify"),
+    ("report-cp1252", "cp1252-name", ("ratchet", "report"), "2 open mark(s)"),
+    ("report-json-cp1252", "cp1252-name", ("ratchet", "report", "--json"), "caf\\ufffd( )"),
+    ("brief-cp1252", "cp1252-name", ("brief", "src/tangled.ts", "tangled", "--json"), "ratchet_mark"),
+    ("verify-utf16", "utf16-le-crlf", ("verify", "--reuse-artifacts"), "verify"),
+    ("report-utf16", "utf16-le-crlf", ("ratchet", "report"), "1 open mark(s)"),
+    ("report-utf16-be", "utf16-be", ("ratchet", "report"), "1 open mark(s)"),
+    ("brief-utf16", "utf16-le-crlf", ("brief", "src/tangled.ts", "tangled", "--json"), "ratchet_mark"),
+    ("verify-bom", "utf8-bom", ("verify", "--reuse-artifacts"), "verify"),
+]
+
+
+@pytest.mark.parametrize("shape, command, said", [row[1:] for row in READS],
+                         ids=[row[0] for row in READS])
+def test_a_marks_file_in_any_encoding_reads_as_its_rows(scored_repo: Path, shape, command, said):
+    """A cp1252 file used to refuse at exit 3 in every command and a UTF-16 one
+    too; with nothing to rewrite, both now read, and the file keeps its bytes."""
+    before = _marks_as(scored_repo, shape)
+
+    res = _run(scored_repo, *command)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert said in res.stdout, res.stdout
+    assert "is not UTF-8" not in res.stderr, res.stderr
+    assert (scored_repo / MARKS).read_bytes() == before, "a read must not rewrite the marks"
+
+
+REFUSED_WRITES = [
+    # id, a command that would rewrite a marks file whose read replaced byte e9
+    ("seed", ("ratchet", "seed")),
+    ("verify-tighten", ("verify", "--reuse-artifacts")),
+    ("prune", ("ratchet", "prune")),
+    ("move", ("ratchet", "move", "src/app.ts", "src/moved.ts")),
+]
+
+
+@pytest.mark.parametrize("command", [row[1] for row in REFUSED_WRITES],
+                         ids=[row[0] for row in REFUSED_WRITES])
+def test_a_rewrite_that_would_save_u_fffd_refuses_by_the_byte(scored_repo: Path, command):
+    """seed and the tighten keep the `caf\\ufffd( )` mark and would save it in
+    place of `café( )`; prune would drop it as a function that is gone, and
+    move would carry it. The file is left as it was."""
+    before = _marks_as(scored_repo, "cp1252-name-raised")
+    offset = before.index(b"\xe9")
+
+    res = _run(scored_repo, *command)
+
+    assert res.returncode == 3, res.stdout + res.stderr
+    assert (f"crapkit: {MARKS} holds byte e9 at offset {offset}, which reads as U+FFFD, and "
+            "rewriting the file would save U+FFFD in its place; save it as UTF-8 and rerun; "
+            "file left unchanged") in res.stderr, res.stderr
+    assert (scored_repo / MARKS).read_bytes() == before
+
+
+@pytest.mark.parametrize("command", [("ratchet", "seed"), ("verify", "--reuse-artifacts")],
+                         ids=["seed", "verify-tighten"])
+def test_a_utf16_marks_file_is_rewritten_as_utf16_in_its_own_line_ending(scored_repo: Path, command):
+    """A UTF-8 rewrite would hand PowerShell 5.1 a file its next `Get-Content`
+    reads as cp1252."""
+    _marks_as(scored_repo, "utf16-le-crlf-raised")
+
+    res = _run(scored_repo, *command)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    written = (scored_repo / MARKS).read_bytes()
+    assert written.startswith(b"\xff\xfe"), written[:8]
+    text = written[2:].decode("utf-16-le")
+    assert text.count("\n") == text.count("\r\n") > 0, "CRLF kept on every line"
+    assert "999.0000" not in text, "the tighten reached the file"
+
+
+@pytest.mark.parametrize("body, code", [
+    (_utf16(PY_TOML), 3),
+    ((PY_TOML + "# caf\xe9\n").encode("cp1252"), 3),
+    (PY_TOML.encode(), 0),
+    (PY_TOML.replace("\n", "\r\n").encode(), 0),
+], ids=["utf16", "cp1252", "utf8", "crlf"])
+def test_crapkit_toml_keeps_its_refusal_whatever_the_marks_rule(tmp_path: Path, body, code):
+    """Q20 is the marks file's rule alone: crapkit.toml is parsed as TOML, and a
+    byte read as U+FFFD there would be a setting nobody wrote."""
+    res = _run(_py_repo(tmp_path, body), "inventory")
+
+    assert res.returncode == code, res.stderr
+    assert ("crapkit: crapkit.toml is not UTF-8 (" in res.stderr) == (code == 3), res.stderr
+
+
+def test_a_portable_baseline_keeps_its_refusal_whatever_the_marks_rule(scored_repo: Path):
+    """`verify --baseline-tsv` reads numbers verify judges against, so a byte
+    that is not UTF-8 there is refused by name, as in crapkit.toml."""
+    emitted = _run(scored_repo, "verify", "--reuse-artifacts", "--emit-baseline", "base.tsv")
+    assert emitted.returncode == 0, emitted.stdout + emitted.stderr
+    base = scored_repo / "base.tsv"
+    base.write_bytes(base.read_bytes() + b"# caf\xe9\n")
+
+    res = _run(scored_repo, "verify", "--reuse-artifacts", "--baseline-tsv", "base.tsv")
+
+    assert res.returncode == 3, res.stdout + res.stderr
+    assert "crapkit: base.tsv is not UTF-8 (byte e9 at offset " in res.stderr, res.stderr
+
+
+def test_valid_emoji_and_cjk_in_a_configuration_note_reach_brief(scored_repo: Path):
+    toml = scored_repo / "crapkit.toml"
+    note = "gardez le café \U0001f600 李雷"
+    toml.write_text(TS_TOML.replace("[crapkit]\n", f'[crapkit]\nnotes = ["{note}"]\n', 1),
+                    encoding="utf-8")
+
+    res = _run(scored_repo, "brief", "src/tangled.ts", "tangled", "--json")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert note in json.dumps(json.loads(res.stdout)["notes"], ensure_ascii=False)
+
+
+def _hook_marks(shape: str) -> bytes:
+    """A mark on `sprawl( n )` in pkg/café.py, beside a cp1252 mark on another
+    function when the shape asks for one."""
+    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+
+    rows = dump_ratchet([RatchetEntry("pkg/café.py", "sprawl( n )", 72.0)], key_version=1,
+                        stamp=metric_version()).encode("utf-8")
+    return {"none": b"", "utf8": rows, "cp1252-neighbour": rows + b"pkg/caf\xe9.py\tcaf\xe9( )\t9.0\n",
+            "utf16-le-crlf": _utf16_crlf(rows),
+            "utf16-be": b"\xfe\xff" + rows.decode("utf-8").encode("utf-16-be")}[shape]
+
+
+@pytest.mark.parametrize("shape", ["none", "utf8", "cp1252-neighbour", "utf16-le-crlf", "utf16-be"])
+def test_the_advisory_reads_its_marks_by_the_marks_rule(tmp_path: Path, shape):
+    """A UTF-16 or cp1252 marks file stopped the advisory at its strict read,
+    and the catch-all turned that into silence about every function in the
+    edit, the unmarked one included. The advisory now reads the file as every
+    other command does: the marked function stays quiet, the other is named."""
+    repo = _py_repo(tmp_path)
+    edited = repo / "pkg" / "café.py"
+    edited.write_text(BREACH + "\n\n" + BREACH.replace("sprawl", "unmarked"), encoding="utf-8")
+    if shape != "none":
+        (repo / MARKS).write_bytes(_hook_marks(shape))
+    payload = {"hook_event_name": "PostToolUse", "tool_name": "Edit",
+               "tool_input": {"file_path": str(edited)}, "cwd": str(repo)}
+
+    res = _run(repo, "claude-hook", "--protocol", "1", stdin=json.dumps(payload))
+
+    assert res.returncode == 2, res.stderr
+    assert "unmarked( n )" in res.stderr, res.stderr
+    assert ("sprawl( n )" in res.stderr) == (shape == "none"), res.stderr
+
+
+# --- the marks file's history reads by the same rule (Q20) ------------------------------
+
+DAY = 86400
+
+
+def _commit_marks(repo: Path, data: bytes, days_ago: int) -> None:
+    """The marks file committed as these exact bytes, dated `days_ago`: ages
+    count from the author date of the commit that brought a mark in."""
+    import os
+    import time
+
+    (repo / MARKS).write_bytes(data)
+    stamp = f"@{int(time.time()) - days_ago * DAY} +0000"
+    env = {**os.environ, "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp}
+    for args in (("add", MARKS), ("commit", "-q", "-m", f"marks {days_ago}d")):
+        subprocess.run(["git", "-c", "core.autocrlf=false", "-c", "user.email=t@t", "-c",
+                        "user.name=t", *args], cwd=repo, env=env, check=True, capture_output=True)
+
+
+PAST_MARKS = {
+    # id: one revision two days old, built from what seed wrote
+    "cp1252-comment": lambda seeded: seeded + b"# caf\xe9\n",
+    "cp1252-fn-name": _with_cp1252_mark,
+    "utf16-out-file": _utf16_crlf,
+    "utf8-bom": lambda seeded: b"\xef\xbb\xbf" + seeded,
+    "crlf": lambda seeded: seeded.replace(b"\n", b"\r\n"),
+    "nul": lambda seeded: seeded + b"# \x00\n",
+}
+
+
+def _mcp_report(repo: Path) -> dict:
+    frames = "\n".join([
+        _rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}}),
+        _rpc(2, "tools/call", {"name": "get_ratchet_report", "arguments": {}})]) + "\n"
+    res = _run(repo, "mcp", "--repo", str(repo), stdin=frames)
+    assert res.returncode == 0, res.stderr
+    call = {m["id"]: m for m in map(json.loads, res.stdout.strip().splitlines())}[2]["result"]
+    assert call["isError"] is False, call
+    return call["structuredContent"]
+
+
+@pytest.mark.parametrize("shape", PAST_MARKS)
+def test_every_reader_of_the_marks_history_ages_a_mark_from_the_revision_that_brought_it(
+        scored_repo: Path, shape):
+    """A UTF-16 revision read as no marks, so every mark in it looked repaid
+    and then added again by the next UTF-8 save, and its age restarted there.
+    A cp1252 revision stopped these readers with a traceback before that."""
+    assert _run(scored_repo, "ratchet", "seed").returncode == 0
+    seeded = (scored_repo / MARKS).read_bytes()
+    _commit_marks(scored_repo, PAST_MARKS[shape](seeded), days_ago=2)
+    _commit_marks(scored_repo, seeded, days_ago=0)
+
+    text = _run(scored_repo, "ratchet", "report")
+    as_json = _run(scored_repo, "ratchet", "report", "--json")
+    brief = _run(scored_repo, "brief", "src/tangled.ts", "tangled", "--json")
+
+    assert text.returncode == 0, text.stdout + text.stderr
+    assert "    2d  src/tangled.ts  tangled (" in text.stdout, text.stdout
+    for report in (json.loads(as_json.stdout), _mcp_report(scored_repo)):
+        ages = {row["path"]: row["age_days"] for row in report["oldest"]}
+        assert ages == {"src/tangled.ts": 2}, report
+    assert brief.returncode == 0, brief.stdout + brief.stderr
+    assert json.loads(brief.stdout)["gate_rule"]["mark_age_days"] == 2
+    for command in (("next-item",), ("worklist",)):
+        res = _run(scored_repo, *command)
+        assert res.returncode == 0, (command, res.stdout, res.stderr)
+
+
+# --- a byte cp1252 leaves undefined keeps a PowerShell name whole -----------------------
+
+PS_TOML = ('[crapkit]\ntarget = 6\n\n'
+           '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["powershell"]\n')
+PS_SPRAWL = (b"function Write-Caf%s {\n  param($n)\n"
+             + b"".join(b"  if ($n -eq %d) { $n += %d }\n" % (i, i) for i in range(1, 8))
+             + b"  return $n\n}\n")  # ccn 8, over the ceiling of 6
+
+
+PS_FILES = {
+    # id: the bytes of a .ps1 declaring one ccn-8 function
+    "byte-81-in-the-name": PS_SPRAWL % b"\x81",
+    "byte-9d-in-the-name": PS_SPRAWL % b"\x9d",
+    "utf8-twin": PS_SPRAWL % "é".encode(),
+    "cp1252": PS_SPRAWL % b"\xe9",
+    "utf16-le-bom": b"\xff\xfe" + (PS_SPRAWL % "é".encode()).decode().encode("utf-16-le"),
+    "utf16-be-bom": b"\xfe\xff" + (PS_SPRAWL % "é".encode()).decode().encode("utf-16-be"),
+    "utf8-bom": b"\xef\xbb\xbf" + PS_SPRAWL % "é".encode(),
+    "utf8-crlf": (PS_SPRAWL % "é".encode()).replace(b"\n", b"\r\n"),
+}
+
+
+@pytest.mark.parametrize("shape", PS_FILES)
+def test_a_powershell_file_in_any_encoding_is_scored_and_gated(tmp_path: Path, shape):
+    """Read as U+FFFD, a byte cp1252 leaves undefined split the name and the
+    declaration scored no function: inventory counted 0 where the UTF-8 twin
+    counts 1, and hook-precommit passed a staged ccn-8 function at exit 0 that
+    it blocks at exit 6 in UTF-8. A UTF-16 file did the same until 218679f."""
+    (tmp_path / "crapkit.toml").write_text(PS_TOML, encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "tool.ps1").write_bytes(PS_FILES[shape])
+    git_init_repo(tmp_path)
+    git_commit_all(tmp_path, "init")
+
+    inventory = _run(tmp_path, "inventory", "--json")
+    (tmp_path / "src" / "gated.ps1").write_bytes(PS_FILES[shape])
+    subprocess.run(["git", "add", "src/gated.ps1"], cwd=tmp_path, check=True, capture_output=True)
+    gate = _run(tmp_path, "hook-precommit")
+
+    assert inventory.returncode == 0, inventory.stderr
+    assert json.loads(inventory.stdout)["functions"] == 1
+    assert gate.returncode == 6, gate.stdout + gate.stderr
+    assert "Write-Caf" in gate.stdout, gate.stdout
 
 
 # --- doctor names a hook file git cannot spawn ---------------------------------------
@@ -341,17 +637,64 @@ def test_a_merge_side_saved_with_a_bom_merges_as_the_same_marks(tmp_path: Path):
     assert merged.endswith(b"src/a.ts\tf( )\t20.0000\n"), "both changed: the merge keeps the min"
 
 
-def test_a_utf16_merge_side_names_itself_and_the_fix(tmp_path: Path):
-    """A bare `Out-File` on OURS died as `UnicodeDecodeError: 'utf-8' codec
-    can't decode byte 0xff in position 0`, exit 1: the traceback every other
-    reader of the marks file already turns into a sentence."""
-    _merge_sides(tmp_path, _utf16(_marks("src/a.ts\tf( )\t30.0000\n")))
+@pytest.mark.parametrize("mark, codec, newline", [
+    (b"\xff\xfe", "utf-16-le", "\r\n"), (b"\xff\xfe", "utf-16-le", "\n"), (b"\xfe\xff", "utf-16-be", "\n"),
+], ids=["utf16-le-crlf", "utf16-le-lf", "utf16-be"])
+def test_a_utf16_merge_side_merges_and_stays_utf16(tmp_path: Path, mark, codec, newline):
+    """A bare `Out-File` on OURS died as `UnicodeDecodeError`, exit 1, and then
+    as a refusal to save the file as UTF-8, exit 3. OURS now reads as its rows
+    and the merge writes it back as it was saved."""
+    ours = _marks("src/a.ts\tf( )\t30.0000\n").replace("\n", newline)
+    _merge_sides(tmp_path, mark + ours.encode(codec))
 
     res = _run(tmp_path, "ratchet", "merge", "base.tsv", "ours.tsv", "theirs.tsv")
 
-    assert res.returncode == 3, res.stderr
-    assert ("crapkit: ours.tsv is not UTF-8 (first bytes ff fe = UTF-16, the PowerShell 5.1 "
-            "Out-File default); save it as UTF-8") in res.stderr, res.stderr
-    assert "Traceback" not in res.stderr
-    assert (tmp_path / "ours.tsv").read_bytes().startswith(b"\xff\xfe"), \
-        "a refused merge must not rewrite ours"
+    assert (res.returncode, res.stderr) == (0, ""), res.stdout + res.stderr
+    merged = (tmp_path / "ours.tsv").read_bytes()
+    assert merged == mark + _marks("src/a.ts\tf( )\t20.0000\n").replace("\n", newline).encode(codec)
+
+
+CAFE_CP1252 = b"src/a.ts\tcaf\xe9( )\t70.0000\n"
+CAFE_UTF8 = "src/a.ts\tcafé( )\t70.0000\n".encode()
+F50, F30, F20 = (_marks(f"src/a.ts\tf( )\t{n}.0000\n").encode() for n in (50, 30, 20))
+
+
+def _plus(marks: bytes, row: bytes) -> bytes:
+    """`row` placed where a rewrite sorts it: `café( )` and `caf\\ufffd( )`
+    both sort before `f( )`."""
+    head, _, rows = marks.partition(b"crap\n")
+    return head + b"crap\n" + row + rows
+
+
+MERGES = [
+    # id, base, ours, theirs, exit, the side a refusal names
+    ("base-cp1252", _plus(F50, CAFE_CP1252), _plus(F30, CAFE_UTF8), _plus(F20, CAFE_UTF8), 0, None),
+    ("all-sides-cp1252-merge-keeps-ours", _plus(F20, CAFE_CP1252), _plus(F20, CAFE_CP1252),
+     _plus(F20, CAFE_CP1252), 0, None),
+    ("ours-cp1252-name", F50, _plus(F30, CAFE_CP1252), F20, 3, "ours.tsv"),
+    ("theirs-cp1252-name", F50, F30, _plus(F20, CAFE_CP1252), 3, "theirs.tsv"),
+]
+
+
+@pytest.mark.parametrize("base, ours, theirs, code, named", [row[1:] for row in MERGES],
+                         ids=[row[0] for row in MERGES])
+def test_a_cp1252_merge_side_merges_unless_the_merge_would_save_u_fffd(
+        tmp_path: Path, base, ours, theirs, code, named):
+    """BASE only tells each side's change apart, so a name it read as U+FFFD
+    keys nothing ours or theirs holds and costs no mark. A merge that keeps
+    OURS as it is writes nothing. A side whose name would reach the rewritten
+    OURS as U+FFFD refuses, and git leaves the conflict for the rerun."""
+    for side, data in (("base.tsv", base), ("ours.tsv", ours), ("theirs.tsv", theirs)):
+        (tmp_path / side).write_bytes(data)
+
+    res = _run(tmp_path, "ratchet", "merge", "base.tsv", "ours.tsv", "theirs.tsv")
+
+    assert res.returncode == code, res.stdout + res.stderr
+    written = (tmp_path / "ours.tsv").read_bytes()
+    if named:
+        offset = (base, ours, theirs)[["base.tsv", "ours.tsv", "theirs.tsv"].index(named)].index(b"\xe9")
+        assert f"crapkit: {named} holds byte e9 at offset {offset}, which reads as U+FFFD" in res.stderr
+        assert written == ours, "a refused merge must not rewrite ours"
+    else:
+        assert b"\xef\xbf\xbd" not in written, "U+FFFD never reaches the merged file"
+        assert b"f( )\t20.0000" in written

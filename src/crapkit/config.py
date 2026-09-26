@@ -15,7 +15,7 @@ from typing import NamedTuple
 
 from .errors import ConfigError
 from .config_contract import admit, enum_values
-from .repotext import pytest_config_text
+from .repotext import plain_utf8
 
 # `cpp` is the whole C family, C included: lizard resolves every one of its
 # suffixes to a single CLikeReader, so a `c` label beside this one could never
@@ -387,7 +387,7 @@ def _toml_testpaths(text: str) -> tuple[str, ...] | None:
 def _pytest_text(directory: str | os.PathLike, name: str) -> str | None:
     """Read one candidate file without confusing absence with an empty file."""
     try:
-        return pytest_config_text((Path(directory) / name).read_bytes())
+        return plain_utf8((Path(directory) / name).read_bytes())
     except OSError:
         return None
 

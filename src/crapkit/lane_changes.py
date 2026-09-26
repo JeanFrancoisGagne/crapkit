@@ -34,8 +34,8 @@ def _start(root: Path, *args: str):
 
 def _names(out: bytes) -> tuple[str, ...]:
     """NUL records, decoded without newline conversion, quoting or trimming. A
-    file named in bytes that are not UTF-8 is left out, as gitio's whole-tree
-    reads leave it out."""
+    file named in bytes that are not UTF-8 is a change like any other: read as
+    no change, an edit under such a name reused a lane measured before it."""
     return tuple(nul_paths(out))
 
 

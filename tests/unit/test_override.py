@@ -108,23 +108,46 @@ def test_an_override_reads_a_marks_file_that_starts_with_a_bom(tmp_path):
     assert entries[("src/a.ts", "f( )")].crap == 12.0, "the prior mark survives the BOM"
 
 
-def test_an_override_refuses_a_utf16_marks_file_with_the_sentence_every_reader_says(tmp_path):
-    """The marks read is the one reader's: a bare `Out-File` save is the
-    configuration error naming the fix, not a UnicodeDecodeError out of the
-    grant step after the alert has already fired."""
+def test_an_override_on_a_utf16_marks_file_writes_it_back_as_utf16(tmp_path):
+    """The marks read is the one reader's: a bare `Out-File` save reads as its
+    rows, and the grant writes the file back behind its own byte-order mark,
+    where a UTF-8 rewrite would read as cp1252 in PowerShell 5.1."""
     store = SnapshotStore(tmp_path / "db.sqlite")
     run_id = store.write_run(commit="c", tool_versions={}, rows=[])
-    (tmp_path / "ratchet.tsv").write_bytes(b"\xff\xfe" + "src/a.ts\tf( )\t12.0\n".encode("utf-16-le"))
+    (tmp_path / "ratchet.tsv").write_bytes(b"\xff\xfe" + "src/b.ts\tg( )\t12.0\n".encode("utf-16-le"))
     alert_cmd, _ = ok_alert(tmp_path)
+
+    record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
+                    alert_command=alert_cmd, violations=[VIOLATION], reason="prod down",
+                    metric=metric_version())
+
+    written = (tmp_path / "ratchet.tsv").read_bytes()
+    assert written.startswith(b"\xff\xfe")
+    marks = {(e.path, e.long_name): e.crap for e in load_ratchet(written[2:].decode("utf-16-le"))}
+    assert marks == {("src/a.ts", "f( )"): 90.0, ("src/b.ts", "g( )"): 12.0}
+
+
+def test_an_override_on_a_cp1252_marks_file_refuses_before_its_alert(tmp_path):
+    """The grant would save U+FFFD in place of `café( )`, so it refuses by the
+    byte, and before the alert: a refused override leaves no alert line and no
+    audit row claiming a grant that never landed."""
+    store = SnapshotStore(tmp_path / "db.sqlite")
+    run_id = store.write_run(commit="c", tool_versions={}, rows=[])
+    before = b"src/b.ts\tcaf\xe9( )\t12.0\n"
+    (tmp_path / "ratchet.tsv").write_bytes(before)
+    alert_cmd, log = ok_alert(tmp_path)
 
     with pytest.raises(ConfigError) as refused:
         record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                         alert_command=alert_cmd, violations=[VIOLATION], reason="prod down",
                         metric=metric_version())
 
-    assert str(refused.value) == ("ratchet.tsv is not UTF-8 (first bytes ff fe = UTF-16, the "
-                                  "PowerShell 5.1 Out-File default); save it as UTF-8")
+    assert str(refused.value).startswith("ratchet.tsv holds byte e9 at offset 12, which reads as "
+                                         "U+FFFD")
     assert refused.value.exit_code == 3
+    assert not log.exists(), "no alert for a grant that was refused"
+    assert store.read_overrides(run_id) == []
+    assert (tmp_path / "ratchet.tsv").read_bytes() == before
 
 
 def test_hook_override_still_records_a_mark_for_a_new_function(tmp_path):

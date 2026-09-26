@@ -719,6 +719,7 @@ clears tempfile's cached directory for the call. These files do:
 | `test_claim_competition_e2e.py` | sessions racing for claims, three at once |
 | `test_cpp_family_admission_e2e.py`, `test_polyglot_admission_e2e.py` | repos big enough for the analysis pool, which forks its caller on Linux |
 | `test_verify_git_dedupe_e2e.py` | a counter patched onto `gitio` while `run_cli` builds the repo |
+| `test_latin1_locale_paths_e2e.py` | the locale the interpreter reads as it starts, and the `-X utf8` restart a Latin-1 one causes |
 
 Two files start their processes without the runner.
 `test_verify_reads_stores_older_crapkits_wrote_e2e.py` runs older releases, taken from
@@ -759,20 +760,21 @@ Shared rules belong to these modules:
 
 | Module | What it answers |
 |---|---|
-| `universe.py` | which scope owns a path. `owning_scope` is the only predicate, and the deepest declared `paths` entry wins |
+| `universe.py` | which scope owns a path. `owning_scope` is the only predicate, and the deepest declared `paths` entry wins. `scan_files` judges an unreadable name: refused when a scope takes it, else listed in `Universe.unreadable` for the command to name once (`left_out_lines`) |
 | `config.py` | what words a lane command holds. `shell_words` and `shell_segments` read it the way the shell that runs it reads it |
 | `config_contract.py` | which configuration shapes, keys and enum values are valid. Runtime admission, doctor and the generated editor schema share this vocabulary |
 | `procs.py` | how an owned command starts, is waited on and is bounded. `run_owned` and `run_bounded` stop descendants before returning or releasing leases |
-| `_process_owner.py` | who holds registered command trees. `own_processes` yields the in-process or guardian owner; `prepare` names a command's registration before spawn and `register_then` takes it back unread |
+| `_process_owner.py` | who holds registered command trees. `own_processes` yields the in-process or guardian owner; `prepare` names a command's registration before spawn and `register_then` takes it back unread; the owner's stderr goes to the `owner.log` `_log_path` names; `helper_flags` starts crapkit's own helper interpreters (the owner, the POSIX start gate) in this process's UTF-8 mode, and a lane's command never gets it |
 | `resources.py` | how cold analysis pools share a nonblocking worker budget; cached and small calls skip pool coordination |
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
-| `lane_command.py` | how a lane starts and how its command reads. `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike |
+| `lane_command.py` | how a lane starts and how its command reads. `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike; `child_environment` builds every lane, flake-retest and mutation child's environment |
 | `lane_results.py` | which run's record of a lane's test results a comparison reads. `read_results` parses a lane's record into `LaneResults`, where a lane with no junit this run has no count and no failure list (None), never 0 tests or no failures, and a list a verify older than 0.8.0 stored is not trusted; a comparison reads the run it compares against, else the newest run behind it that recorded one, else says it cannot compare. verify's baseline and coverage's `suite_drops` both walk it. No other module reads `failures`, `tests_total` or `tests_skipped` off a lane record, and `tests/unit/test_lane_results.py` fails on one that does |
 | `marks_history.py` | what the marks file held in the past: the history `ratchet report` and `brief` read mark ages off, the commit a renamed marks file's history starts at and the one line both print about it, and the newest committed marks verify judges a missing or emptied marks file against. A git read under it that fails raises `GitError`; none answers an empty history |
 | `agent_fields.py` | which fields a release adds to the agent JSON payloads: each one's payload, key, JSON types (null among them only where it may be null) and meaning. The MCP output schemas take those entries from it, and `tests/unit/test_agent_fields.py` checks the printed payloads, the MCP schemas and docs/agent-json.md against it. Add a field there first; JSON schema 1 never changes an existing field's meaning |
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
-| `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators |
+| `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators. A name that is not UTF-8 comes back in its surrogateescape spelling and `readable` tells it apart; each reader decides what it means, and nothing here prints |
+| `repotext.py` | how bytes crapkit did not write become text. One named kind per source: a file the repository owns (`repo_text`, refused by the byte), JSON (`repo_json`, and `JsonStream` for a coverage artifact read a chunk at a time), the marks file, git's free text and a runner's output (`lenient`), bytes handed back to git (`escaped`), a plugin's JSON as Claude Code reads it, source files and OS text. `tests/unit/test_decode_guard.py` fails on a decode policy spelled anywhere else |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |
 
 `store.py` gained a `run_rollup` table: one row per run per scope, filled the first time

@@ -4,8 +4,9 @@
 
 ### Upgrading from 0.8.0
 
-- The coverage.py reader moves to analysis version 12, so every repo re-seeds its marks
-  once: `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`.
+- The coverage.py reader and two source reads (a UTF-16 source, and an identifier holding
+  a byte cp1252 leaves undefined; see Text that is not UTF-8 below) move to analysis
+  version 12, so every repo re-seeds its marks once: `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`.
   When a failed verify pins the baseline, pass the new run to both, `crapkit ratchet prune
   --baseline N` and then `crapkit ratchet seed --baseline N`. Until then `verify` refuses
   the marks as recorded under another metric version. The first `inventory` or `coverage`
@@ -245,7 +246,7 @@ writes nothing.
   one object per plugin id, beside today's list of installs. That file, a `plugins` key
   that is null or a list, an install list holding null, and an `installPath` that is not
   a string all ended the command in a traceback. Such an entry now records nothing, and
-  the cache scan still finds the install. A UTF-8 BOM before either file reads past.
+  the cache scan still finds the install.
 - A `.claude-plugin/plugin.json` that is there but gives no version no longer reads as a
   missing file. A file that does not parse to an object says `has a
   .claude-plugin/plugin.json that is not a JSON object`, and an object whose `version` is
@@ -281,7 +282,9 @@ writes nothing.
 - `init` writes `.gitignore` before `crapkit.toml`. Run over a `crapkit.toml` an earlier run
   left behind, it adds the missing `.gitignore` entries, says so and exits 0, leaving
   `crapkit.toml` byte for byte; 0.8.0 refused with `crapkit.toml already exists`, so
-  `.crapkit/` was never ignored.
+  `.crapkit/` was never ignored. When that `.gitignore` is UTF-16, the step it cannot
+  finish, it exits 3 with the one line that names the file and the fix, where it went on to
+  say `crapkit.toml already exists ... edit it instead`, a file that needed nothing.
 
 ### The MCP server refuses `params` and `arguments` that are not objects in words an agent can act on
 
@@ -356,32 +359,53 @@ writes nothing.
 
 ### Text that is not UTF-8
 
-A commit, a file name, a report or an MCP frame in bytes that are not UTF-8 no longer ends
-a command in a traceback.
+A commit, file name, report or MCP frame that is not UTF-8 no longer ends a command with a traceback.
+Two of the source reads below move function keys and scores; they share the one analysis
+version bump under Upgrading from 0.8.0 above.
 
 - An author name, subject, body or patch line a commit stored in bytes that are not UTF-8
-  reads as U+FFFD, in every command that reads churn (`worklist`, `next-item`, `brief`,
-  `coupling` and the MCP tools) and in `explain --history`. One such commit inside the
-  12-month window stopped every churn reader with a UnicodeDecodeError, and on Windows
-  `explain --history` died with an AttributeError. Every git crapkit starts passes
+  reads as U+FFFD: in the churn window (`worklist`, `next-item`, `brief`, `coupling` and
+  the MCP tools) and in `explain --history` and `get_function_history`. One such commit
+  inside the 12-month window stopped every churn reader with a UnicodeDecodeError, and on
+  Windows `explain --history` died with an AttributeError after the decode failed in
+  subprocess's reader thread. Every git crapkit starts passes
   `-c i18n.logOutputEncoding=UTF-8`, so in a repo that sets `i18n.commitEncoding` or
-  `i18n.logOutputEncoding` a name stored as UTF-8 comes back as stored. A CR inside an
-  author name no longer cuts the commit off its dates. A past revision of the marks file
-  saved in cp1252 or UTF-16 no longer stops `ratchet report`, a `core.hooksPath` holding a
-  Latin-1 byte no longer ends `doctor`, and `verify --base` on such a ref gets its exit-4
-  sentence.
+  `i18n.logOutputEncoding` a name stored as UTF-8 comes back as stored, where `José` and
+  `Josè` had counted as one author. A CR inside an author name no longer cuts the commit
+  off its dates and doubles its churn weight. A `core.hooksPath` holding a Latin-1 byte no
+  longer ends `doctor`, and `verify --base` on such a ref gets its exit-4 sentence.
 - `mutate` builds and resets its worktree pool at a HEAD whose subject is not UTF-8.
   `git worktree add` and a kept tree's `checkout --force` print that subject, and the
-  strict read stopped the run before any mutant; on Linux a leftover file named in
-  Latin-1 did the same through `clean`.
+  strict read stopped the run before any mutant, with one worker or several; on Linux a
+  leftover file named in Latin-1 did the same through `clean`.
 - A file git names in bytes that are not UTF-8 (a Latin-1 name made on Linux, kept as it
-  was in a Windows clone's index) no longer ends every command with a UnicodeDecodeError.
-  When a scope takes it, `inventory`, `coverage`, `verify`, `doctor`, `watch` and
+  was in a Windows clone's index) no longer ends every command with a traceback. When a
+  scope takes it, `inventory`, `coverage`, `verify`, `doctor`, `watch` and
   `hook-precommit` exit 3 before any lane runs, with one line naming the file and
-  `git mv`, so no gate passes a source file no reader read. Any other such name, an
-  untracked one included, is left out and named once on stderr: `crapkit: left out NAME:
-  git names it in bytes that are not UTF-8, and crapkit reads every path as UTF-8; rename
-  it (git mv) to have it read`.
+  `git mv`, so no gate passes a source file no reader read; no second line calls the
+  same file left out. A tracked or staged name no scope takes is left out and named
+  once on stderr, and `inventory --json`, `coverage --json` and `verify --json` list it
+  in the new `unreadable_names` field. An untracked one is a change like any other:
+  `coverage --reuse-unchanged` reused a lane whose `inputs` held a new or edited
+  Latin-1 file with `measurement inputs unchanged`, where the same file under a UTF-8
+  name reran it. `claude-hook` read the working tree's names leniently, so a Bash-written
+  file named in Latin-1 under a scope named no file on disk and its breach passed with no
+  advisory; it now exits 2 with an advisory naming the file and the rename.
+- Under `--json`, the error object of each such refusal lists every refused file in a new
+  `unread_files` field, a `path` and a `reason` per file, where the stderr line names the
+  first and counts the rest. The `check_gate` MCP tool answers a `path` whose name is not
+  UTF-8 with a verdict, `gate.ok` false, `judged` 0 and the file in `gate.unread_files`
+  with `dirty` true, the entry shape `rescore --gate --json` lists,
+  where it answered `isError: true` with the error object.
+- Under a POSIX locale that is not UTF-8, `crapkit` restarts itself once with `-X utf8`,
+  so `coverage` scores, and `claude-hook` advises on, `pkg/café.py`; each opened
+  `pkg/caf\xe9.py`, which does not exist, and skipped the file as missing. The POSIX
+  start gate and the measurement owner start in UTF-8 mode with it, so the MCP tools
+  (`get_function_brief`, `check_gate` and the rest) reach such a file too, and the owner
+  holds the lane output crapkit means rather than a file beside it. Lane and
+  mutation children keep your locale, so a Python lane's coverage.py keys the file as
+  `pkg/cafÃ©.py`; crapkit reads that key back as `pkg/café.py`, where the file's
+  functions read as untested (5 measured files where a UTF-8 locale gives 6).
 - A path argument, an override reason (`CRAPKIT_OVERRIDE_REASON` or `verify --override`),
   a host name or a checkout directory in bytes that are not UTF-8 no longer ends a command
   with a UnicodeEncodeError. A path argument that names an existing file whose name is not
@@ -391,7 +415,10 @@ a command in a traceback.
   resolves as the OS spelled it, so under a checkout directory named in Latin-1 it lands
   inside the repo. An override sends its alert and stores all three audit records, where the
   store write failed after the alert had gone out; a lane run on such a host or under such
-  a directory takes its output lock.
+  a directory takes its output lock. A pytest-cov lane there still fails, since
+  coverage.py's own combine cannot store such a path, and the failure line now names the
+  directory or the host name and the rename; it called the shard coverage.py left what a
+  killed parallel run leaves and handed over a `coverage combine` that fails the same way.
 - A junit report declared ISO-8859-1 or written as UTF-16 is read as it declares, in
   `coverage`, `verify`, `verify --reuse-artifacts`, the flake retest and `doctor --tune`.
   Each ended with a UnicodeDecodeError. A report with no declaration is read as UTF-8, so a
@@ -400,16 +427,56 @@ a command in a traceback.
 - The MCP server reads on past a stdin frame holding a byte that is not UTF-8, which ended
   the session with exit 0 and nothing on stderr, and answers an `initialize` sent behind a
   UTF-8 byte-order mark.
+- A source file that opens with a UTF-16 byte-order mark, as PowerShell 5.1's `Out-File`
+  and the ISE save it, scores its functions. inventory read it as empty, the pre-commit
+  gate passed a ccn-8 function in it, and the advisory hook said nothing. An identifier
+  holding one of the five bytes cp1252 leaves undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D)
+  stays whole: a PowerShell function named with one was not scored, and the pre-commit
+  gate passed it at ccn 8. In Python, TypeScript, C and C# such a function keyed as
+  `\ufffd`, `(anonymous)` or `if`; it now keys by its name, under 0.8.1's analysis
+  version bump. `mutate` writes a mutant back in the file's own encoding: in a cp1252 or
+  Latin-1 file every accented byte outside the mutated line became EF BF BD, and 2 of 2
+  mutants read killed where the UTF-8 twin kills 0. `brief --json`'s `source` reads the
+  file the way the scorer does. An edit to a UTF-16 file is judged on the line it is on:
+  git counts a line at every 0A byte of such a file, and one character such as 上
+  (U+4E0A) above a ccn-8 function moved an edit on its last line below the function, so
+  `hook-precommit` exited 0 and `verify`, `claude-hook` and `mutate` read the edit as
+  touching nothing. The analysis cache version moves, so the first run reads
+  every file again.
+- Every reader of the marks file (`verify`, `ratchet report`, `brief`, the advisory hook,
+  the override grant and the merge driver) reads it by one rule: UTF-16 by its byte-order
+  mark, else UTF-8 with each other byte as U+FFFD. A cp1252 byte in one mark's name, or a
+  file saved by a bare PowerShell 5.1 `Out-File`, stopped each of them at exit 3. A write
+  that would save U+FFFD in place of a name (`ratchet seed`, `prune`, `move`, verify's
+  tighten, the merge driver) refuses at exit 3 naming the byte, and a UTF-16 file is
+  written back as UTF-16 in its own line endings. A past revision in cp1252 or UTF-16 no
+  longer stops `ratchet report`, and a UTF-16 one keeps each mark's entry date.
+- `init`'s reads of a `package.json` or `.gitignore` in UTF-16, behind a byte-order mark or
+  holding a byte that is not UTF-8 are in the `init` section above.
+- Lane, flake-retest and mutation children start with `PYTHONIOENCODING=utf-8` on every
+  OS unless the lane's `env` sets it. A refusal quotes `No module named 'café'` as the
+  child wrote it, a `pytest -s` test that prints an emoji passes under crapkit as it does
+  in a terminal, and `mutate` no longer refuses such a suite as failing on the unmutated
+  tree.
 - The Linux measurement owner reads every `/proc/<pid>/stat` as bytes, so a process
   anywhere on the host named in Latin-1, or a UTF-8 name the kernel cut mid-character, no
   longer stops `coverage`, `verify`, `test-scoped`, `mutate` and the MCP tools with
-  `measurement owner stopped before confirming ownership`.
-- A source file that opens with a UTF-16 byte-order mark, as PowerShell 5.1's `Out-File`
-  and the ISE save it, scores its functions. `inventory` read it as empty, the pre-commit
-  gate passed a ccn-8 function in it, and the advisory hook said nothing. `mutate` writes a
-  mutant back in the file's own encoding: in a cp1252 or Latin-1 file every accented byte
-  outside the mutated line became EF BF BD, and 2 of 2 mutants read killed where the UTF-8
-  twin kills 0. `brief --json`'s `source` reads the file the way the scorer does.
+  `measurement owner stopped`. The owner's stderr goes to `.crapkit/owner.log`, and each
+  exit-5 `measurement owner stopped` line names that file and says whether the owner
+  wrote to it.
+- `doctor --plugin-root` reads the PATH launcher's `--version` answer as bytes. A launcher
+  that prints a byte that is not UTF-8 gets the FAIL line, now `gave no readable answer
+  to crapkit --version`, and exit 1, with no reader-thread traceback on Windows. The
+  plugin manifest is read as Claude Code reads it: a byte that is not UTF-8 as U+FFFD, no
+  longer a missing plugin.json, and a byte-order mark as the error `claude plugin
+  validate` gives it.
+- `doctor` prints a note, exit code unchanged, for a scoped source that opens with a
+  UTF-16 byte-order mark, which git diffs as binary, and for an `i18n.commitEncoding`
+  that is not UTF-8, under which git labels the UTF-8 bytes Git for Windows writes with
+  that encoding and a reader that asks for UTF-8 gets `José` back as `JosÃ©`.
+
+The exit codes, the lane environment and the files that change on upgrade are in the
+[upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#text-that-is-not-utf-8).
 
 ## 0.8.0 — 2026-09-23
 

@@ -21,7 +21,7 @@ import tempfile
 import time
 from typing import IO
 
-from ._process_owner import CommandCancelled, close_input, kill_process_tree, own_processes
+from ._process_owner import CommandCancelled, close_input, helper_flags, kill_process_tree, own_processes
 from .errors import ToolError
 from .repotext import lenient
 
@@ -213,9 +213,10 @@ def _launched(command, stdout, stderr, owner, kwargs):
     with tempfile.TemporaryFile() as errors:
         launcher_stderr, descriptor, merge, passed = _launch_options(errors, stderr)
         registration, kwargs = owner.prepare({**kwargs, **passed})
-        # The base interpreter with startup hooks off starts nothing before its gate.
-        process = subprocess.Popen([getattr(sys, "_base_executable", sys.executable), "-I", "-S",
-                                    "-c", _OWNED_LAUNCH, json.dumps([command, descriptor, merge])],
+        # The base interpreter with startup hooks off starts nothing before its gate,
+        # and execs the command's text in the bytes this process would (helper_flags).
+        process = subprocess.Popen([getattr(sys, "_base_executable", sys.executable), *helper_flags(), "-I",
+                                    "-S", "-c", _OWNED_LAUNCH, json.dumps([command, descriptor, merge])],
                                    stdin=subprocess.PIPE, stdout=stdout, stderr=launcher_stderr,
                                    start_new_session=True, **kwargs)
         _hand_over(process, owner, registration, (_release_launcher, _dead_launcher, _kill_group))

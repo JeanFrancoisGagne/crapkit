@@ -107,6 +107,18 @@ def test_each_result_declares_every_field_it_carries(scored):
     assert gaps == {}
 
 
+def test_check_gates_verdict_on_a_name_that_is_not_utf8_declares_every_field(scored):
+    """The verdict the server builds from the CLI's exit-3 refusal: a POSIX
+    name holding byte e9, or on NTFS a lone surrogate."""
+    (scored / "src" / "caf\udce9.ts").write_text(KNOTTY, encoding="utf-8")
+
+    result = mcp_server._call_tool(scored, "check_gate", {"path": "src/caf\udce9.ts"})
+
+    assert result["isError"] is False, result["content"][0]["text"][-600:]
+    assert result["structuredContent"]["gate"]["unread_files"][0]["path"] == "src/caf\\xe9.ts"
+    assert undeclared(result["structuredContent"], _output_schema("check_gate")) == []
+
+
 def test_check_gate_ceilings_map_a_path_to_an_integer():
     ceilings = _output_schema("check_gate")["properties"]["gate"]["properties"]["ceilings"]
 

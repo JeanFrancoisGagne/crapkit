@@ -11,6 +11,7 @@ from pathlib import Path
 from ..churn_log import log_lines
 from ..errors import ConfigError, CrapkitError
 from ..gitio import ls_files
+from ..gitpaths import shown
 from ..invocation import _self
 from ._shared import (_command_root, _file_sizer, _load_repo_config, _load_sources, _open_store,
                       _stand,
@@ -94,7 +95,8 @@ def _corpus_targets(root: Path, cfg, targets: dict) -> tuple[dict, list[str]]:
     """
     from ..mutate import OUTSIDE_CORPUS, partition_by_corpus
 
-    kept, outside = partition_by_corpus(targets, cfg, size_of=_file_sizer(root))
+    kept, unscored = partition_by_corpus(targets, cfg, size_of=_file_sizer(root))
+    outside = [shown(rel) for rel in unscored]  # a name that is not UTF-8 shows its bytes as \xNN
     for rel in outside:
         print(f"crapkit: not mutating {rel}: {OUTSIDE_CORPUS}", file=sys.stderr)
     return kept, outside

@@ -22,6 +22,9 @@ MCP_TOOLS = {"worklist --json": "list_worklist", "next-item": "get_next_item",
 _EMPTY_SCOPES = ("each declared scope that claims no file, or whose every file no reader could "
                  "read, and how many files it claims (0 when it claims none); a scope whose "
                  "readable files hold no function is not listed")
+_UNREADABLE_NAMES = ("tracked or staged files no scope takes whose names git gives in bytes that "
+                     "are not UTF-8, left out of the run, each such byte spelled \\xNN; [] when "
+                     "every name is UTF-8")
 
 
 class AddedField(NamedTuple):
@@ -47,8 +50,9 @@ _UNMEASURED = ("true when no measurement stands behind cov: flag no-lane (no lan
                "scope) or cc-only (the scope asks for no coverage). cov 0.0 and "
                "est_uncovered_paths are then stand-ins, not a count of paths no test walks")
 _UNREAD = ("changed files no reader could read, so none of their functions was judged; any "
-           "entry fails the gate (exit 6)")
-_UNREAD_PATH = "repo-relative path of the file"
+           "entry fails the gate (exit 6, or for a file whose name is not UTF-8 the exit-3 "
+           "refusal, which check_gate answers as this verdict)")
+_UNREAD_PATH = "repo-relative path of the file, each byte that is not UTF-8 spelled \\xNN"
 _UNREAD_REASON = "the reader's refusal, naming the line and what to change"
 _UNREAD_DIRTY = "true when the file has uncommitted edits or is untracked"
 
@@ -97,6 +101,8 @@ ADDED = (
                _EMPTY_SCOPES),
     AddedField("inventory --json", "empty_scopes", ("object",),
                _EMPTY_SCOPES),
+    *(AddedField(payload, "unreadable_names", ("array",), _UNREADABLE_NAMES)
+      for payload in ("inventory --json", "coverage --json", "verify --json")),
     AddedField("mutate --json", "timed_out", ("integer",),
                "mutants whose suite ran past mutation_timeout_seconds, a count inside killed"),
     AddedField("mutate --json", "no_verdict", ("integer",),

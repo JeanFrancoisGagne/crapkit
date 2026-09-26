@@ -72,6 +72,63 @@ def test_the_precommit_gate_refuses_a_ccn8_function_staged_as_utf16(tmp_path, ca
     assert "tangled( a )" in capsys.readouterr().out
 
 
+UNDEFINED = [
+    # id, a declaration whose name holds the byte, the name each byte scores as
+    ("powershell", "a.ps1", b"function Write-Caf%s {\n  param($x)\n  if ($x) { return 1 }\n  return 2\n}\n",
+     "Write-Caf%s"),
+    ("python", "a.py", b"def caf%s(x):\n    if x:\n        return 1\n    return 2\n", "caf%s( x )"),
+    ("typescript", "a.ts", b"export function caf%s(x: number) {\n  if (x) { return 1; }\n  return 2;\n}\n",
+     "caf%s ( x )"),
+    ("c", "a.c", b"int caf%s(int x) {\n  if (x) { return 1; }\n  return 2;\n}\n", "caf%s( int x)"),
+    ("go", "a.go", b"package a\nfunc caf%s(x int) int {\n  if x > 0 { return 1 }\n  return 2\n}\n",
+     "caf%s x int"),
+    ("shell", "a.sh", b"caf%s() {\n  if [ \"$1\" ]; then echo 1; fi\n}\n", "caf%s()"),
+]
+STAND_INS = {0x81: "\u0181", 0x8D: "\u018d", 0x8F: "\u018f", 0x90: "\u0190", 0x9D: "\u019d"}
+
+
+@pytest.mark.parametrize("byte", STAND_INS, ids=[f"{b:02x}" for b in STAND_INS])
+@pytest.mark.parametrize("name, source, scored", [row[1:] for row in UNDEFINED],
+                         ids=[row[0] for row in UNDEFINED])
+def test_a_byte_cp1252_leaves_undefined_keeps_its_identifier_whole(tmp_path, byte, name, source, scored):
+    """cp932, cp936 and cp1251 sources hold these bytes, and read as U+FFFD the
+    identifier split in two: PowerShell, Go and shell dropped the function, and
+    Python, TypeScript and C named it `\\ufffd`, `(anonymous)` or `if`. Each
+    reads as the letter U+01NN, NN the byte, which no cp1252 file can spell."""
+    raw = source % bytes([byte])
+    path = tmp_path / name
+    path.write_bytes(raw)
+
+    records = analyze_one((str(path), name))[1]
+
+    assert [(r.long_name, r.ccn) for r in records] == [(scored % STAND_INS[byte], 2)]
+    assert staged_records({name: raw}) == {name: records}
+
+
+@pytest.mark.parametrize("raw, read", [
+    (b"# caf\xe9 \x81\n", "# café \u0181\n"),
+    ("# caf\u0081\n".encode(), "# caf\u0081\n"),
+], ids=["cp1252-file", "utf8-file-keeps-its-c1-control"])
+def test_only_a_cp1252_read_turns_the_five_bytes_into_letters(raw, read):
+    """A UTF-8 file that spells U+0081 holds that character, not a byte to stand in for."""
+    assert decode_source(raw) == read
+
+
+def test_a_cached_record_from_before_the_letters_is_read_again(tmp_path):
+    """A cache=7 record holds a file with such a byte as no function, or as one
+    named by half its identifier; read warm, it would keep hiding the function."""
+    from crapkit.analyze import analyze_files, fingerprint
+
+    (tmp_path / "a.ps1").write_bytes(UNDEFINED[0][2] % b"\x81")
+    _, _, old = analyze_files(tmp_path, ["a.ps1"], cache={})
+    old["fp"] = fingerprint().rsplit(";cache=", 1)[0] + ";cache=7"
+
+    records, hits, _ = analyze_files(tmp_path, ["a.ps1"], cache=old)
+
+    assert hits == 0
+    assert [r.long_name for r in records["a.ps1"]] == ["Write-CafƁ"]
+
+
 @pytest.mark.parametrize("encode", [row[1] for row in UTF16], ids=[row[0] for row in UTF16])
 def test_the_advisory_hook_reads_an_edited_utf16_file(tmp_path, encode):
     (tmp_path / "big.py").write_bytes(encode(TANGLED))

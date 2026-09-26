@@ -51,6 +51,7 @@ def _warn_skipped_runs(scored_runs: list[dict], pair) -> None:
 def _send_digest_alert(root: Path, cfg, prev: dict, cur: dict, lines: list[str]) -> None:
     """Hand the digest body to the configured alert command; a nonzero exit is fatal."""
     import subprocess
+
     from ..repotext import child_input
 
     if not cfg.alert_command.strip():

@@ -29,6 +29,7 @@ from .coverage_istanbul import FnCoverage
 from .coverage_format import lane_format
 from .errors import CrapkitError, GitError, ToolError
 from .gitio import GitFacts, worktree_root
+from .gitpaths import readable, shown
 from .lane_command import launch_spec, pytest_python
 from .procs import NoProgress, own_processes, run_bounded
 from .repotext import lenient, os_bytes
@@ -267,12 +268,32 @@ def _shard_hint(root: Path, lane: Lane) -> str:
     shards = sorted(shard_dir.glob(".coverage.*"))
     if not shards:
         return ""
+    unreadable = _unreadable_shard_name(shard_dir, shards[0])
+    if unreadable:
+        return unreadable
     target = Path(os.path.relpath(root / lane.artifact, shard_dir)).as_posix()
     noun, verb = ("shard", "sits") if len(shards) == 1 else ("shards", "sit")
     return (f"; {len(shards)} coverage {noun} ({shards[0].name}, ...) {verb} in "
             f"{shard_dir}, which is what a killed parallel run leaves behind: "
             f"`coverage combine && coverage json -o {target}` there, then a "
             "re-run with --reuse-artifacts, scores what that suite did measure")
+
+
+def _unreadable_shard_name(shard_dir: Path, shard: Path) -> str:
+    """Why coverage.py left shards and no report, when a name it stores holds
+    bytes that are not UTF-8: the directory it measured under, or the host name
+    it puts in each shard's name. coverage.py keeps every measured path as UTF-8
+    text, so its combine fails there, and `coverage combine` by hand fails the
+    same way; the rename is the fix, not the killed-run recipe."""
+    if not readable(str(shard_dir)):
+        named = f"the directory {shown(str(shard_dir))}"
+    elif not readable(shard.name):
+        named = f"this host's name, which coverage.py puts in each shard's name ({shown(shard.name)})"
+    else:
+        return ""
+    return (f"; coverage.py cannot combine the shards it left in {shown(str(shard_dir))}: {named} "
+            "holds bytes that are not UTF-8, and coverage.py stores every path as UTF-8. "
+            "Rename it to UTF-8 and run the lane again")
 
 
 def _no_artifact_head(root: Path, lane: Lane, stale: list[str], reuse: bool = False) -> str:
@@ -337,7 +358,7 @@ def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | 
     hint = f"; last output: {tail}" if tail else ""
     raise UnwrittenArtifact(
         f"lane {lane.name!r} {_no_artifact_head(root, lane, list(refused), reuse)}{detail}"
-        f"; lane log: {log_path}{hint}{_missing_plugin_hint(tail, lane)}"
+        f"; lane log: {shown(str(log_path))}{hint}{_missing_plugin_hint(tail, lane)}"
         f"{_shard_hint(root, lane)}", refused)
 
 
@@ -1113,13 +1134,14 @@ def _split_escaped(root: Path, escaped: list[str]) -> tuple[list[str], list[str]
 
 
 def _sample(paths) -> str:
-    """A few of them and a count of the rest. A lane scoped to forty declared
+    r"""A few of them and a count of the rest. A lane scoped to forty declared
     paths listed all forty, which pushed the sentence saying what to do off the
-    end of a line nobody reads that far into."""
+    end of a line nobody reads that far into. A name that is not UTF-8 shows
+    each such byte as `\xNN`, as every other line naming it does."""
     ordered = sorted(paths)
-    shown = ", ".join(ordered[:_SAMPLE_PATHS])
+    listed = ", ".join(shown(path) for path in ordered[:_SAMPLE_PATHS])
     rest = len(ordered) - _SAMPLE_PATHS
-    return f"{shown} and {rest} more" if rest > 0 else shown
+    return f"{listed} and {rest} more" if rest > 0 else listed
 
 
 def _zero_overlap(lane: Lane, coverage: dict, declared) -> str:
@@ -1284,19 +1306,6 @@ def _retested_passes(root: Path, lane: Lane, before: int | None) -> set[str]:
         return passed_test_ids(path.read_bytes())
     except (OSError, ToolError):
         return set()
-
-
-def _still_failed(root: Path, lane: Lane) -> set[str] | None:
-    """The failing ids in the lane's results artifact; None means unreadable."""
-    from .junitparse import failed_test_ids
-
-    results_path = root / lane.results_artifact
-    if not results_path.is_file():
-        return None
-    try:
-        return failed_test_ids(results_path.read_bytes())
-    except ToolError:
-        return None
 
 
 class LaneOutcome(NamedTuple):

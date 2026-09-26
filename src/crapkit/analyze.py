@@ -61,7 +61,11 @@ _POOL_THRESHOLD = 16
 ANALYSIS_VERSION = 12  # A coverage.py function region starts at the start_line the
 #                       report writes, and a report without one is refused: coverage
 #                       7.6 to 7.13.0 write none, and the start read off the body gave a
-#                       nested function its encloser's coverage.
+#                       nested function its encloser's coverage. A source that opens
+#                       with a UTF-16 byte-order mark is scored, where it read as empty,
+#                       and an identifier holding one of the five bytes cp1252 leaves
+#                       undefined keeps its name (0x81 reads as U+0181), where it keyed
+#                       as U+FFFD, `(anonymous)` or C's `if( x)` at ccn 1.
 # 11: a Python def is named by its name token and names each enclosing def once.
 #                       A Python def whose body sits on its colon line is listed and ends
 #                       with that logical line, so the lines after it go back to its
@@ -494,17 +498,26 @@ def _trusted_records(rel_path: str, functions) -> list[FunctionRecord]:
 # path::long_name, so those are three different rows for one commit, and a
 # Windows developer and a Linux CI cannot see each other's baseline.
 #
-# utf-8 first, cp1252 second, replacement for the five bytes cp1252 leaves
-# undefined. That is the whole rule and it is fixed rather than environmental:
-# all four cells above read `Write-Café`. The fallback is cp1252 rather than
-# latin-1 because Windows PowerShell 5.1 writes cp1252, and because latin-1
-# decodes every byte and so can never say it was wrong.
+# utf-8 first, cp1252 second. That is the whole rule and it is fixed rather
+# than environmental: all four cells above read `Write-Café`. The fallback is
+# cp1252 rather than latin-1 because Windows PowerShell 5.1 writes cp1252, and
+# because latin-1 decodes every byte and so can never say it was wrong.
+#
+# cp1252 leaves five bytes undefined: 0x81, 0x8D, 0x8F, 0x90 and 0x9D. A cp932,
+# cp936 or cp1251 source holds them inside identifiers, and read as U+FFFD, no
+# word character, the identifier split in two: `function Write-Caf\x81` scored
+# no function, and a Python `def caf\x81(x)` scored one named `\ufffd( x )`.
+# Each reads as the letter U+01NN instead, NN the byte (0x81 is `Ɓ`), so the
+# identifier stays one token and names the function. No cp1252 file can spell
+# those five letters, so no name read here collides with one the file wrote.
 #
 # UTF-16 is read when a byte-order mark says so, which is how `Out-File` and
 # the ISE write it. Decoded as cp1252 it was NUL-separated text that scored no
 # function with nothing said, and the pre-commit gate passed a ccn-8 function
 # in it that it refused in UTF-8. No mark can name a function in such a file,
 # since none was ever scored, so reading it moves no recorded number.
+#
+# repotext.source_chars holds the rule; this block is why it is the rule.
 
 
 def decode_source(raw: bytes) -> str:
@@ -614,12 +627,14 @@ def content_hash(path: Path) -> str:
 
 
 def fingerprint() -> str:
-    """cache=7: a UTF-16 file with a byte-order mark is decoded as UTF-16, where a
-    cache=6 record holds it as no function. cache=6: a JavaScript-family template
-    literal ends at its own closing backtick, which a cache=5 record's reader did
-    not do; cache=5 added inline_body."""
+    """cache=8: a byte cp1252 leaves undefined reads as a letter, where a cache=7
+    record read U+FFFD and split the identifier holding it. cache=7: a UTF-16
+    file with a byte-order mark is decoded as UTF-16, where a cache=6 record
+    holds it as no function. cache=6: a JavaScript-family template literal ends
+    at its own closing backtick, which a cache=5 record's reader did not do;
+    cache=5 added inline_body."""
     from . import __version__
-    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=7"
+    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=8"
 
 
 def _analysis_key(path: str, digest: str) -> str:

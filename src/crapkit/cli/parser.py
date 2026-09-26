@@ -104,9 +104,11 @@ def _is_crapkit_dist_info(name: str) -> bool:
 def _version_field(path: str) -> str | None:
     """METADATA's Version: header. Headers stop at the first blank line; the
     long description below it is free to contain anything."""
+    from ..repotext import lenient
+
     try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            return _version_header(handle)
+        with open(path, "rb") as handle:
+            return _version_header(lenient(line) for line in handle)
     except OSError:
         return None
 
@@ -563,7 +565,10 @@ def main(argv: list[str] | None = None) -> int:
 def _print_error_object(exc: CrapkitError) -> None:
     """The one object `--json` promised, when the command died before printing
     its own: a wrapper reads the sentence naming the fix off stdout instead of
-    "wrote no run summary". The stderr line and the exit code are unchanged."""
+    "wrote no run summary". The stderr line and the exit code are unchanged.
+    A refusal that names files adds them (`unread_files` for a name that is
+    not UTF-8)."""
     from ._shared import _print_json
 
-    _print_json({"error": {"exit": exc.exit_code, "kind": exc.kind, "message": str(exc)}})
+    _print_json({"error": {"exit": exc.exit_code, "kind": exc.kind, "message": str(exc),
+                           **exc.json_fields()}})

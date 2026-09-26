@@ -302,6 +302,28 @@ def test_a_second_init_with_nothing_left_to_do_still_refuses(tmp_path, capsys):
     assert (root / "crapkit.toml").read_bytes() == toml
 
 
+@pytest.mark.parametrize("before", ["build/\n".encode("utf-16"),
+                                    codecs.BOM_UTF16_BE + "build/\n".encode("utf-16-be")],
+                         ids=["gitignore-utf16-le", "gitignore-utf16-be"])
+def test_a_second_init_over_a_utf16_gitignore_names_the_gitignore_alone(tmp_path, capsys, before):
+    """The step left undone is .gitignore. The refusal named it and then said
+    `crapkit.toml already exists ... edit it instead`, sending the reader to a
+    file that needs nothing."""
+    root = _repo(tmp_path, {})
+    assert _init(root, capsys)[0] == 0
+    toml = (root / "crapkit.toml").read_bytes()
+    (root / ".gitignore").write_bytes(before)
+
+    code, out = _init(root, capsys)
+
+    assert code == 3
+    assert out.err == (f"crapkit: left .gitignore as it was: it is UTF-16 (first bytes "
+                       f"{before[:2].hex(' ')}, the PowerShell 5.1 Out-File default), which git "
+                       "cannot read; save it as UTF-8 and add .crapkit/\n")
+    assert (root / "crapkit.toml").read_bytes() == toml
+    assert (root / ".gitignore").read_bytes() == before
+
+
 def test_a_second_init_adds_the_entries_of_the_lanes_the_config_declares(tmp_path, capsys):
     """The lanes come from crapkit.toml as it stands, so a lane added by hand
     gets its artifact directory ignored too."""

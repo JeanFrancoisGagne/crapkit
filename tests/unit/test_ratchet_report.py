@@ -137,13 +137,14 @@ def test_the_ratchet_log_asks_git_for_zero_context_and_no_rename_walk(monkeypatc
     from crapkit import gitio
 
     seen = []
-    # _git_text reads git's bytes and decodes them itself: a CR inside a row
+    # The log is read as bytes and framed before any decode: a CR inside a row
     # must not become a Git header line, and a past revision saved in cp1252 or
     # UTF-16 must not end the read.
-    monkeypatch.setattr(gitio, "_git_text", lambda root, *args, **kwargs: seen.append((args, kwargs)) or "")
+    monkeypatch.setattr(gitio, "_git_bytes", lambda root, *args, **kwargs: seen.append((args, kwargs)) or b"")
     gitio.file_log(Path("."), "crapkit-ratchet.tsv")
     ((args, kwargs),) = seen
     assert "-U0" in args
     assert "--follow" not in args
     assert "--reverse" in args, "oldest-first ordering is what mark_events assumes"
+    assert "--full-index" in args, "a UTF-16 revision is read whole by the object id it names"
     assert kwargs == {}

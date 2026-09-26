@@ -137,14 +137,15 @@ class _LocalOwner(ProcessOwner):
 class _GuardianOwner(ProcessOwner):
     """The client of a guardian process that holds the locks and the trees."""
 
-    def __init__(self, process):
+    def __init__(self, process, log=None):
         super().__init__()
         self.process = process
+        self.log = log
 
     def receive(self) -> dict:
         line = self.process.stdout.readline()
         if not line:
-            raise ToolError("measurement owner stopped before confirming ownership")
+            raise self._stopped("before confirming ownership")
         result = json.loads(line)
         if not result.get("ok"):
             raise ToolError(result.get("error", "measurement owner refused the operation"))
@@ -156,11 +157,69 @@ class _GuardianOwner(ProcessOwner):
             self.process.stdin.flush()
             self.receive()
         except OSError as error:
-            raise ToolError("measurement owner stopped during command registration") from error
+            raise self._stopped("during command registration") from error
 
     def check(self) -> None:
         if self.process.poll() is not None:
-            raise ToolError("measurement owner stopped before publication")
+            raise self._stopped("before publication")
+
+    def _stopped(self, when: str) -> ToolError:
+        """The exit-5 line for every way the guardian can vanish, naming the
+        log its stderr went to and whether it wrote there."""
+        said = "" if self.log is None else self.log.said()
+        return ToolError(f"measurement owner stopped {when}{said}")
+
+
+class _OwnerLog:
+    """Where a guardian's stderr goes: appended to `_log_path`, and nowhere
+    when that file cannot be opened, since an owner that cannot log still
+    guards. Opened in append mode because owners of other commands on the
+    same checkout write to it too."""
+
+    def __init__(self, paths):
+        try:
+            self.path = _log_path(paths)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.stream = open(self.path, "ab")
+        except (OSError, RuntimeError):
+            self.stream = None
+        self.start = self.stream.tell() if self.stream else 0
+
+    def target(self):
+        """What Popen takes as the guardian's stderr."""
+        return self.stream or subprocess.DEVNULL
+
+    def close(self) -> None:
+        """The guardian holds its own descriptor once it has started."""
+        if self.stream:
+            self.stream.close()
+
+    def said(self) -> str:
+        """The clause that ends the exit-5 line. A killed guardian writes
+        nothing, and an older owner's traceback above this one's start is not
+        its cause."""
+        if self.stream is None:
+            return ""
+        if _size(self.path) > self.start:
+            return f"; its error is at the end of {self.path}"
+        return f"; it wrote nothing to {self.path}"
+
+
+def _log_path(paths) -> Path:
+    """`owner.log` in the `.crapkit` directory nearest one of the owner's
+    locks, which is the checkout it guards. An owner holding no lock there (a
+    scoped test run, the MCP server, a probe) logs beside the measurement
+    locks in the per-user cache."""
+    states = (parent for path in paths for parent in Path(path).parents if parent.name == ".crapkit")
+    state = next(states, None)
+    return (state or Path.home() / ".cache" / "crapkit") / "owner.log"
+
+
+def _size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
 
 
 @contextmanager
@@ -182,6 +241,19 @@ def own_processes(paths, *, optional: bool = False, label: str = "measurement"):
         yield owner
 
 
+def helper_flags() -> tuple[str, ...]:
+    """The interpreter options a helper crapkit starts takes, so it hands the OS
+    the bytes this process would for the same text.
+
+    A helper gets its command and its lease paths as text and spells them for
+    the OS itself. Under a Latin-1 locale crapkit runs in UTF-8 mode (the
+    restart cli.main makes), and a helper started without the flag spelled
+    `café` as b"caf\\xe9": the command's argument named no file, and the owner
+    locked a file beside the one this process meant. A lane's own command is
+    not a helper and keeps the locale it was given."""
+    return ("-X", "utf8") if sys.flags.utf8_mode else ()
+
+
 @contextmanager
 def _external_owner(paths, *, optional: bool = False, label: str = "measurement"):
     """Own measurement outputs across caller crashes and command cleanup."""
@@ -189,13 +261,18 @@ def _external_owner(paths, *, optional: bool = False, label: str = "measurement"
     bootstrap = ("import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); "
                  "runpy.run_module('crapkit._process_owner', run_name='__main__')")
     package_root = str(Path(__file__).resolve().parent.parent)
+    log = _OwnerLog(paths)
     with _OWNER_INPUTS_LOCK:
-        process = subprocess.Popen([sys.executable, "-c", bootstrap, package_root, json.dumps(options)],
-                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL, text=True, encoding="utf-8", **_OWN_GROUP)
+        try:
+            process = subprocess.Popen([sys.executable, *helper_flags(), "-c", bootstrap, package_root,
+                                        json.dumps(options)],
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                       stderr=log.target(), text=True, encoding="utf-8", **_OWN_GROUP)
+        finally:
+            log.close()
         raw_input = process.stdin.buffer.raw
         _OWNER_INPUTS.add(raw_input)
-    owner = _GuardianOwner(process)
+    owner = _GuardianOwner(process, log)
     try:
         owner.held = owner.receive()["held"]
         yield owner
@@ -333,5 +410,17 @@ def main(options: dict) -> None:
         _reply({"error": str(error)})
 
 
+def _logged_main(argv: list[str]) -> None:
+    """Run the guardian. An error it did not expect goes to its stderr, which
+    the caller points at owner.log, under a dated line naming this process:
+    owners of several commands append to one log."""
+    try:
+        main(json.loads(argv[1]))
+    except Exception:
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        print(f"{stamp} measurement owner {os.getpid()} stopped:", file=sys.stderr, flush=True)
+        raise
+
+
 if __name__ == "__main__":
-    main(json.loads(sys.argv[1]))
+    _logged_main(sys.argv)

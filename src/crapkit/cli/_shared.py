@@ -12,13 +12,14 @@ import sys
 from pathlib import Path
 
 from ..config import load_config_text
-from ..errors import ConfigError, CrapkitError, ToolError
+from ..errors import ConfigError, CrapkitError, ToolError, UnreadableNameError
 from ..gitpaths import readable, shown
 from ..invocation import _self
 from ..merge import UNREAD_ADVICE
-from ..repotext import os_text, repo_text
 from ..rootfind import find_root
 from ..store import SnapshotStore
+from ..repotext import marks_text, os_text, repo_text
+from ..universe import left_out_lines
 
 
 SCHEMA_VERSION = 1  # bumped whenever a --json field is removed or retyped
@@ -145,9 +146,24 @@ def _readable_argument(rel: str, root: Path) -> str:
     if readable(rel):
         return rel
     if os.path.lexists(root / rel):
-        raise ConfigError(f"{shown(rel)} is named in bytes that are not UTF-8, and crapkit reads "
-                          "every path as UTF-8: rename it (git mv) to a UTF-8 name")
+        raise UnreadableNameError(f"{shown(rel)} is named in bytes that are not UTF-8, and crapkit "
+                                  "reads every path as UTF-8: rename it (git mv) to a UTF-8 name",
+                                  [shown(rel)])
     return os_text(rel)
+
+
+def _say_left_out(names: tuple[str, ...]) -> None:
+    """The stderr lines for the unreadable names a command's scan left out:
+    one per name, the first five, then a count of the rest. Each command
+    calls this at its one scan, so it names each name once."""
+    for line in left_out_lines(names):
+        print(line, file=sys.stderr)
+
+
+def _unreadable_json(names: tuple[str, ...]) -> list[str]:
+    r"""The `unreadable_names` field: each name with its bytes that are not
+    UTF-8 as `\xNN`, the spelling the stderr line uses."""
+    return [shown(name) for name in names]
 
 
 def _below(cwd: Path | None, root: Path) -> bool:
@@ -270,10 +286,18 @@ def _ratchet_or_die(text: str, name: str) -> list:
         raise ConfigError(f"unreadable ratchet file {name}: {exc}") from exc
 
 
+def _marks_file_text(ratchet_path: Path) -> str:
+    """The marks file as every reader reads it: UTF-16 by its byte-order mark,
+    else UTF-8 with a BOM dropped and each other byte as U+FFFD
+    (`repotext.marks_text`). A writer reads through `RatchetFile`, which
+    refuses to save a byte this read replaced."""
+    return marks_text(ratchet_path.read_bytes())
+
+
 def _load_ratchet_or_die(ratchet_path: Path, name: str) -> list:
     if not ratchet_path.is_file():
         return []
-    return _ratchet_or_die(repo_text(ratchet_path, name), name)
+    return _ratchet_or_die(_marks_file_text(ratchet_path), name)
 
 
 def _dirty_tag(dirty: bool) -> str:
@@ -396,7 +420,7 @@ def _check_ratchet_identity(text: str, root: Path, name: str, rows, store=None,
 
 def _ratchet_key_version(root: Path, cfg, rows, store=None, entries=None) -> int:
     path = root / cfg.ratchet_file
-    text = repo_text(path, cfg.ratchet_file) if path.is_file() else ""
+    text = _marks_file_text(path) if path.is_file() else ""
     return _check_ratchet_identity(text, root, cfg.ratchet_file, rows, store, entries)
 
 
@@ -417,7 +441,7 @@ def _ratchet_entries(root: Path, cfg, rows=None, store=None) -> list | None:
     ratchet_path = root / cfg.ratchet_file
     if not ratchet_path.is_file():
         return None
-    text = repo_text(ratchet_path, cfg.ratchet_file)
+    text = _marks_file_text(ratchet_path)
     entries, complaints = read_ratchet(text)
     if rows is not None:
         _check_ratchet_identity(text, root, cfg.ratchet_file, rows, store, entries)

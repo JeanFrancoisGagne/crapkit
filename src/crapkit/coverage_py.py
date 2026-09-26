@@ -12,9 +12,17 @@ This module is also the coverage.py adapter (coverage_format looks it up from a
 lane's `parser`): it walks the report's "files" member through covstream's
 framing, keys each file with the lane's path_prefix, takes that prefix back off
 for the wrong-tree check, and owns the runner advice a refusal gives.
+
+Under a POSIX locale that is not UTF-8 the lane's own Python names files in that
+locale's encoding, so its report keys `pkg/café.py` as `pkg/cafÃ©.py`. The
+adapter reads such a key back through the locale's codec when the file it then
+names exists and the key as written does not (_respelled).
 """
 from __future__ import annotations
 
+import codecs
+import locale
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -22,7 +30,7 @@ from typing import TYPE_CHECKING
 from . import covstream
 from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
-from .repotext import json_kind
+from .repotext import json_kind, locale_spelling, utf8_spelling
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -408,16 +416,52 @@ UNMEASURED_READING = "or the runner reports paths this lane needs path_prefix to
 
 def read(lane: Lane, root: Path, artifact: Path) -> tuple[dict, dict, str]:
     """The lane's function coverage, dead lines and artifact digest, one walk."""
-    return parse_coveragepy_both_file(artifact, path_prefix=lane.path_prefix,
-                                      label=f"lane {lane.name!r}")
+    per_file, dead, digest = parse_coveragepy_both_file(artifact, path_prefix=lane.path_prefix,
+                                                        label=f"lane {lane.name!r}")
+    return _respelled(root, per_file), _respelled(root, dead), digest
 
 
 def missing(lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]:
     """The lines coverage.py reports as never run, per measured file."""
-    return parse_coveragepy_missing_file(artifact, path_prefix=lane.path_prefix)
+    return _respelled(root, parse_coveragepy_missing_file(artifact, path_prefix=lane.path_prefix))
 
 
 def contexts(lane: Lane, root: Path, artifact: Path, source_path: str) -> dict[int, list[str]]:
-    """line -> test ids for one repository path."""
+    """line -> test ids for one repository path, under the key the lane's child
+    wrote for it when its locale is not UTF-8."""
+    found = parse_coveragepy_contexts_file(artifact, path_prefix=lane.path_prefix,
+                                           source_path=source_path)
+    codec = _child_codec()
+    if found or codec is None or source_path.isascii():
+        return found
     return parse_coveragepy_contexts_file(artifact, path_prefix=lane.path_prefix,
-                                          source_path=source_path)
+                                          source_path=locale_spelling(source_path, codec))
+
+
+def _child_codec() -> str | None:
+    """The codec a lane's own Python names files in, when that is not UTF-8: a
+    POSIX locale such as en_US.ISO-8859-1, which the child keeps while crapkit
+    restarts itself in UTF-8 mode. Windows and macOS name files in UTF-8, and
+    Python reads the C locale as UTF-8."""
+    if os.name != "posix" or sys.platform == "darwin":
+        return None
+    codec = codecs.lookup(locale.getencoding()).name
+    return None if codec in ("utf-8", "ascii") else codec
+
+
+def _respelled(root: Path, by_key: dict) -> dict:
+    """The report's keys, each written in the child's locale read back as the
+    repository path it names."""
+    codec = _child_codec()
+    if codec is None:
+        return by_key
+    return {_respelled_key(root, key, codec): value for key, value in by_key.items()}
+
+
+def _respelled_key(root: Path, key: str, codec: str) -> str:
+    """`key` as the UTF-8 name its bytes spell, when that file exists and the
+    key as written names none; a file really named `cafÃ©.py` keeps its key."""
+    if key.isascii() or (root / key).exists():
+        return key
+    named = utf8_spelling(key, codec)
+    return named if named and (root / named).exists() else key

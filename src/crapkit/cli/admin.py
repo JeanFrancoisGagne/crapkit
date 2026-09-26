@@ -11,6 +11,7 @@ import re
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 
 from .. import __version__, config
 from ..config import load_config_text
@@ -21,8 +22,9 @@ from ..invocation import _self
 from ..lane_command import LaunchSpec, first_word, launch_spec, pytest_head, pytest_python
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
+from ..gitpaths import readable
 from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
-from ._shared import _command_root, _file_sizer, _load_repo_config, _print_json, repo_text
+from ._shared import _command_root, _file_sizer, _load_repo_config, _print_json, _say_left_out, repo_text
 
 
 def _present_lockfiles(root: Path) -> frozenset[str]:
@@ -157,10 +159,10 @@ def _present_markers(root: Path) -> frozenset[str]:
 def _marker_texts(root: Path) -> dict[str, str]:
     """The pytest config files this repo carries, by name. Presence of one picks
     the lane; `testpaths` inside it says whether one lane can measure them all."""
-    from ..repotext import pytest_config_text
+    from ..repotext import plain_utf8
     from ..scaffold import PYTEST_MARKERS
 
-    return {name: pytest_config_text((root / name).read_bytes())
+    return {name: plain_utf8((root / name).read_bytes())
             for name in PYTEST_MARKERS if (root / name).is_file()}
 
 
@@ -186,8 +188,13 @@ def _package_json(root: Path) -> dict:
 
 
 def _package_files(root: Path) -> list[str]:
-    return [path for path in ls_files(root) if path.rpartition("/")[2] == "package.json"
-            and "node_modules/" not in path and (root / path).is_file()]
+    return [path for path in ls_files(root) if _tracked_manifest(path) and (root / path).is_file()]
+
+
+def _tracked_manifest(path: str) -> bool:
+    """A tracked package.json outside node_modules. One under a directory whose
+    name is not UTF-8 has no cwd a lane can spell; init named it left out."""
+    return path.rpartition("/")[2] == "package.json" and "node_modules/" not in path and readable(path)
 
 
 def _package_object(root: Path, rel: str) -> dict | None:
@@ -502,20 +509,33 @@ def _store_ignored_above(root: Path) -> bool:
 
 
 def _ignores_store(gitignore: Path) -> bool:
-    if not gitignore.is_file():
-        return False
+    """Whether this .gitignore holds the store's line, read as git reads it:
+    past a UTF-8 BOM, which git skips."""
     from ..repotext import lenient
 
+    if not gitignore.is_file():
+        return False
     lines = {line.strip() for line in lenient(gitignore.read_bytes()).splitlines()}
     return bool(lines & {".crapkit/", ".crapkit"})
 
 
-def _extend_gitignore(root: Path, lanes: tuple) -> list[str]:
+class _GitignoreStep(NamedTuple):
+    """What init's .gitignore step did: the entries it appended, or, for a
+    UTF-16 file git cannot read, the sentence saying init left it as it was
+    and which entries to add. Each caller decides what that sentence is: a
+    first init prints it and still writes crapkit.toml, and a second init
+    refuses with it, since the .gitignore is the one step left to finish."""
+    added: list[str]
+    unreadable: str | None = None
+
+
+def _extend_gitignore(root: Path, lanes: tuple) -> _GitignoreStep:
     """Ignore what adopting crapkit will write: the store, and each lane's
     artifact. Without this the consumer's next `git status` is a wall of
     untracked coverage output nobody asked for. A nested configuration under a
     root whose .gitignore already ignores the store writes nothing (ADR 0002).
-    The entries it added come back, for the caller to print.
+    What it did comes back as a _GitignoreStep, for the caller to print or to
+    refuse with.
 
     git reads .gitignore as bytes, and so does this: every byte already there
     stays, a cp1252 comment included, and the entries take the file's own line
@@ -523,21 +543,22 @@ def _extend_gitignore(root: Path, lanes: tuple) -> list[str]:
     from ..repotext import utf16_marked
 
     if _store_ignored_above(root):
-        return []
+        return _GitignoreStep([])
     path = root / ".gitignore"
     raw = path.read_bytes() if path.is_file() else b""
     if utf16_marked(raw):
-        _name_unreadable_gitignore(raw, lanes)
-        return []
+        return _GitignoreStep([], _unreadable_gitignore(raw, lanes))
     extended, added = _extended_gitignore(raw, lanes)
     if added:
         path.write_bytes(extended)
-    return added
+    return _GitignoreStep(added)
 
 
-def _print_gitignore_added(added: list[str]) -> None:
-    if added:
-        print(f"added to .gitignore: {', '.join(added)}")
+def _print_gitignore_step(step: _GitignoreStep) -> None:
+    if step.unreadable:
+        print(f"crapkit: {step.unreadable}", file=sys.stderr)
+    if step.added:
+        print(f"added to .gitignore: {', '.join(step.added)}")
 
 
 def _extended_gitignore(raw: bytes, lanes: tuple) -> tuple[bytes, list[str]]:
@@ -553,12 +574,12 @@ def _extended_gitignore(raw: bytes, lanes: tuple) -> tuple[bytes, list[str]]:
     return raw + text[len(current):].replace("\n", newline).encode("utf-8"), added
 
 
-def _name_unreadable_gitignore(raw: bytes, lanes: tuple) -> None:
+def _unreadable_gitignore(raw: bytes, lanes: tuple) -> str:
     from ..scaffold import gitignore_entries
 
-    print(f"crapkit: left .gitignore as it was: it is UTF-16 (first bytes {raw[:2].hex(' ')}, "
-          "the PowerShell 5.1 Out-File default), which git cannot read; save it as UTF-8 "
-          f"and add {', '.join(gitignore_entries(lanes))}", file=sys.stderr)
+    return (f"left .gitignore as it was: it is UTF-16 (first bytes {raw[:2].hex(' ')}, "
+            "the PowerShell 5.1 Out-File default), which git cannot read; save it as UTF-8 "
+            f"and add {', '.join(gitignore_entries(lanes))}")
 
 
 def _refuse_claimed_by_ancestor(root: Path) -> None:
@@ -584,14 +605,17 @@ def _finish_init(root: Path) -> int:
     wrote crapkit.toml first, so a run that died on the .gitignore step left a
     config the next init refused to touch, and .crapkit/ was never ignored.
     The missing .gitignore entries come from the lanes crapkit.toml declares
-    now; crapkit.toml itself is left byte for byte. With nothing missing, this
-    is the refusal it always was."""
-    added = _extend_gitignore(root, _load_repo_config(root).lanes)
-    if not added:
+    now; crapkit.toml itself is left byte for byte. A UTF-16 .gitignore is the
+    step it cannot finish, so the refusal names that file and nothing else.
+    With nothing missing, this is the refusal it always was."""
+    step = _extend_gitignore(root, _load_repo_config(root).lanes)
+    if step.unreadable:
+        raise ConfigError(step.unreadable)
+    if not step.added:
         raise ConfigError(f"crapkit.toml already exists in {root} — edit it instead")
     print("crapkit.toml was already there and init left it as it was; it finished the step "
           "an earlier run left undone")
-    _print_gitignore_added(added)
+    _print_gitignore_step(step)
     return 0
 
 
@@ -607,7 +631,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if toml_path.is_file():
         return _finish_init(root)
     _refuse_claimed_by_ancestor(root)
-    files = ls_files(root)
+    files = _init_files(root)
     scopes = sniff_scopes(files)
     if not scopes:
         raise ConfigError(_no_scopes_reason(root))
@@ -624,11 +648,11 @@ def cmd_init(args: argparse.Namespace) -> int:
                         testpaths=pytest_testpaths(_marker_texts(root)),
                         tracked=files, package_json=packages)
     load_config_text(text)  # self-check: never write a config crapkit cannot read back
-    added = _extend_gitignore(root, live_lanes(lanes, scopes))
+    gitignore = _extend_gitignore(root, live_lanes(lanes, scopes))
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes, packages)
     _warn_missing_pytest_cov(root, live_lanes(lanes, scopes))
-    _print_gitignore_added(added)
+    _print_gitignore_step(gitignore)
     return 0
 
 
@@ -718,12 +742,46 @@ def _doctor_oversized(oversized: tuple[tuple[str, int], ...]) -> list[Finding]:
             for path, size in oversized]
 
 
+def _opens_utf16(path: Path) -> bool:
+    from ..repotext import utf16_marked
+
+    try:
+        with path.open("rb") as fh:
+            return utf16_marked(fh.read(2))
+    except OSError:
+        return False
+
+
+def _doctor_utf16_sources(root: Path, by_scope: dict) -> list[Finding]:
+    """A note, never a failure: crapkit scores a source that opens with a
+    UTF-16 byte-order mark, and git diffs it as binary (`Binary files ...
+    differ`). One file read of two bytes per scoped source."""
+    marked = sorted(f for files in by_scope.values() for f in files if _opens_utf16(root / f))
+    if not marked:
+        return []
+    return [Finding("note", f"{len(marked)} source file(s) open with a UTF-16 byte-order mark, "
+                            f"the PowerShell 5.1 Out-File default: {', '.join(marked)}. crapkit "
+                            "scores them, but git diffs them as binary; save them as UTF-8 "
+                            "(PowerShell: Set-Content -Encoding utf8) to diff them as text")]
+
+
+def _init_files(root: Path) -> list[str]:
+    """The tracked files init sniffs scopes from. No scope exists yet to take
+    an unreadable name, so each one is named left out and the config is still
+    written; the first command that loads it decides the claim."""
+    files = ls_files(root)
+    _say_left_out(tuple(sorted({path for path in files if not readable(path)})))
+    return [path for path in files if readable(path)]
+
+
 def _doctor_scopes(root: Path, cfg, files: list[str], show_files: bool) -> list[Finding]:
     universe = scan_files(files, cfg, size_of=_file_sizer(root))
+    _say_left_out(universe.unreadable)
     return (_doctor_scope_files(universe.by_scope, cfg, show_files)
             + _doctor_unclaimed(universe.unclaimed)
             + _doctor_uncovered(cfg)
-            + _doctor_oversized(universe.oversized))
+            + _doctor_oversized(universe.oversized)
+            + _doctor_utf16_sources(root, universe.by_scope))
 
 
 def _lane_problem(root: Path, lane) -> str | None:
@@ -1221,8 +1279,31 @@ def _doctor_commit_graph(root: Path) -> list[Finding]:
                             "--reachable --changed-paths`")]
 
 
+_UTF8_NAMES = frozenset({"utf-8", "utf8"})
+
+
+def _doctor_commit_encoding(root: Path) -> list[Finding]:
+    """A note, never a failure: i18n.commitEncoding only labels a commit, it
+    does not convert what the client typed. Git for Windows passes a message
+    and a name as UTF-8, so under ISO-8859-1 git stores UTF-8 bytes labelled
+    Latin-1, and every reader that asks for UTF-8, crapkit included, gets
+    `José` back as `JosÃ©`: one author counted twice in churn."""
+    from ..gitio import config_value
+
+    value = config_value(root, "i18n.commitEncoding")
+    if not value or value.lower() in _UTF8_NAMES:
+        return []
+    return [Finding("note", f"i18n.commitEncoding is {value}: git labels each new commit "
+                            f"{value} and crapkit reads commits back as UTF-8, so a name or "
+                            "subject a client wrote in UTF-8 (Git for Windows does) comes out "
+                            f"garbled, its accented letters read as {value} characters, in "
+                            "churn and history; unset it (git config --unset "
+                            f"i18n.commitEncoding) unless this repo's clients write {value}")]
+
+
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
                      show_files: bool) -> list[Finding]:
+    named = [f for f in files if readable(f)]
     return (_doctor_keys(raw)
             + _doctor_scopes(root, cfg, files, show_files)
             + _doctor_lanes(root, cfg)
@@ -1233,10 +1314,11 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_hook_modes(root)
             + _doctor_hook_encoding(root)
             + _doctor_commit_graph(root)
+            + _doctor_commit_encoding(root)
             + _doctor_tools()
-            + _doctor_scoped_tests(cfg, files)
-            + _doctor_unmeasured(root, cfg, files)
-            + _doctor_unread(root, cfg, files))
+            + _doctor_scoped_tests(cfg, named)
+            + _doctor_unmeasured(root, cfg, named)
+            + _doctor_unread(root, cfg, named))
 
 
 def _doctor_inputs(root: Path, lanes) -> list[Finding]:
@@ -1438,14 +1520,22 @@ def _plugin_json(path: Path) -> dict | None:
     Missing, unreadable, half-written and not an object all read the same,
     because doctor's job here is to name the file rather than to raise inside
     it. A plugin cache is written by an installer this process does not
-    control. repotext's JSON kind reads past a leading BOM, as Claude Code does.
+    control.
+
+    Read the way Claude Code reads it, since that is the reader this check
+    answers for: a byte that is not UTF-8 as U+FFFD, and a byte-order mark as
+    the JSON error it is to Node (`claude plugin validate` refuses one). A
+    strict read called a manifest Claude Code loads missing.
     """
-    from ..repotext import repo_json
+    import json
+
+    from ..repotext import plain_utf8
 
     try:
-        return repo_json(path, path.name)
-    except (OSError, ConfigError):
+        value = json.loads(plain_utf8(path.read_bytes()))
+    except (OSError, ValueError):
         return None
+    return value if isinstance(value, dict) else None
 
 
 def _hook_handlers(hooks: dict) -> list[dict]:
@@ -1604,16 +1694,29 @@ def _resolve_plugin_root(arg: str) -> tuple[Path | None, str]:
 
 
 def _probed_cli_version(executable: str) -> str | None:
-    """The launcher's declared version, or None when it cannot answer."""
+    """The launcher's declared version, or None when it cannot answer.
+
+    Read as bytes and decoded here: on Windows a text-mode read decodes in
+    subprocess's reader thread, so a byte that is not UTF-8 printed that
+    thread's traceback into doctor's stderr and never reached an except."""
     import subprocess
 
+    from ..repotext import lenient
+
     try:
-        done = subprocess.run([executable, "--version"], capture_output=True, encoding="utf-8",
+        done = subprocess.run([executable, "--version"], capture_output=True,
                               timeout=_PROBE_TIMEOUT_SECONDS)
-    except (OSError, subprocess.SubprocessError, UnicodeError):
+    except (OSError, subprocess.SubprocessError):
         return None
-    answer = (done.stdout or done.stderr).split() if done.returncode == 0 else []
-    return answer[1] if len(answer) == 2 and answer[0] == "crapkit" else None
+    return _declared_version(lenient(done.stdout or done.stderr)) if done.returncode == 0 else None
+
+
+def _declared_version(answer: str) -> str | None:
+    """The version in `crapkit X.Y.Z`. One holding U+FFFD, a byte that was not
+    UTF-8, is no version: printed, it named a CLI nothing on the machine is."""
+    words = answer.split()
+    readable = len(words) == 2 and words[0] == "crapkit" and "�" not in words[1]
+    return words[1] if readable else None
 
 
 @lru_cache(maxsize=None)
@@ -1650,6 +1753,24 @@ def _no_crapkit_on_path() -> str:
             "plugin at the environment holding it.")
 
 
+def _answering_cli() -> tuple[str, str] | None:
+    """The launcher the plugin spawns and the version it declares, or None
+    after the FAIL line that says why there is none. A launcher that exits
+    nonzero and one that answers in bytes that are not UTF-8 get the same
+    line. The second one did answer, so `did not answer` sent the reader after
+    the wrong fault."""
+    spawned = _spawned_cli()
+    if spawned is None:
+        print(_no_crapkit_on_path())
+        return None
+    executable, cli_version = spawned
+    if cli_version is None:
+        print(f"crapkit doctor: FAIL {executable} gave no readable answer to `crapkit --version`. "
+              "Repair this launcher or install crapkit on the PATH the plugin inherits.")
+        return None
+    return executable, cli_version
+
+
 def _name_found_root(root: Path, looked_in: str) -> None:
     """A root the search found, not one the operator typed: the glob reaches
     three levels under the named directory, so a source checkout can win over an
@@ -1681,15 +1802,10 @@ def _doctor_plugin(plugin_root: str) -> int:
               "`claude plugin install crapkit@crapkit`, or pass --plugin-root PATH)")
         return 1
     _name_found_root(root, looked_in)
-    spawned = _spawned_cli()
+    spawned = _answering_cli()
     if spawned is None:
-        print(_no_crapkit_on_path())
         return 1
     executable, cli_version = spawned
-    if cli_version is None:
-        print(f"crapkit doctor: FAIL {executable} did not answer `crapkit --version`. "
-              "Repair this launcher or install crapkit on the PATH the plugin inherits.")
-        return 1
     return _report_lines(plugin_handshake(
         where=str(root), version=_manifest_version(root), cli_version=cli_version,
         cli_where=executable, protocols=_hook_protocols(root), supported=PROTOCOL,
@@ -1731,9 +1847,11 @@ def _watch_rescore(root: Path, moved: list[str]) -> None:
 
 
 def _watched_files(root: Path, cfg) -> list[str]:
-    """Every tracked file a scope claims, flat — the whole subject of one poll."""
-    by_scope = assign_files(ls_files(root), cfg, size_of=_file_sizer(root))
-    return [f for files in by_scope.values() for f in files]
+    """Every tracked file a scope claims, flat — the whole subject of one poll.
+    Read once per watch, so each unreadable name is named once."""
+    universe = scan_files(ls_files(root), cfg, size_of=_file_sizer(root))
+    _say_left_out(universe.unreadable)
+    return [f for files in universe.by_scope.values() for f in files]
 
 
 def _watch_cycles(cycles: int | None):

@@ -70,9 +70,23 @@ every function from 7.13.1, and refuses a report without it at exit 5. Coverage 
 7.13.0 write none, and 0.8.0 took a region's start from its body: a nested function's
 `def` line sits in its encloser's region, so a nested function that never ran joined its
 encloser and scored as half covered. A report that carries `start_line` scores as it did
-in 0.8.0, so a repo already on coverage 7.13.1 or newer sees no score move. The stamp
-records the rules either way, so every marks file re-seeds once. The first `inventory` or
-`coverage` after the upgrade analyzes every file again.
+in 0.8.0, so a repo already on coverage 7.13.1 or newer sees no score move there.
+
+It also reads two kinds of source bytes as text where 0.8.0 did not, and each changes
+some functions' names or numbers:
+
+- A source file that opens with a UTF-16 byte-order mark, as PowerShell 5.1's
+  `Out-File` and the ISE save it, scores its functions. 0.8.0 read it as empty, so its
+  functions appear for the first time and one over its ceiling fails the gate the next
+  time its file changes.
+- An identifier that holds one of the five bytes cp1252 leaves undefined (0x81, 0x8D,
+  0x8F, 0x90, 0x9D) keeps its name, the byte read as the letter U+01NN. 0.8.0 keyed
+  such a function as `�( x )`, `(anonymous)` or, in C, `if( x)` at ccn 1; it now
+  keys as `cafƁ( x )` at its own ccn, so a mark under the old key names a function the
+  run lacks.
+
+The stamp records the rules either way, so every marks file re-seeds once. The first
+`inventory` or `coverage` after the upgrade analyzes every file again.
 
 After upgrading coverage.py where a lane needs it, in each repo:
 
@@ -85,7 +99,8 @@ crapkit ratchet seed
 `coverage` measures under version 12, and `ratchet seed` stamps the marks with the metric
 of the run it reads, so a seed from a run 0.8.0 measured keeps the old stamp and `verify`
 keeps refusing. `ratchet prune` goes first, as it did for version 11, and changes nothing
-while every marked function is still in the run. When a failed verify pins the baseline,
+while every marked function is still in the run; where a UTF-16 source or a name holding
+one of those five bytes moved a key, it drops the mark left under the old one. When a failed verify pins the baseline,
 seed and prune both read the pinned run: pass the new run's id to each, `crapkit ratchet
 prune --baseline N` then `crapkit ratchet seed --baseline N`; their lines and verify's
 refusal name it. Review the diff and commit it before the next `crapkit verify`.
@@ -314,6 +329,23 @@ upgrading from 0.4.15 or older, run `crapkit coverage` once without `--reuse-art
 before any reuse. Every lane runs: one that works writes its artifact and stamp again, and
 one that still writes nothing exits 5 and records the refusal the old release never
 wrote, so the next reuse refuses it with `wrote no artifact on its last attempt`.
+## Text that is not UTF-8
+
+In 0.8.1 a byte that is not UTF-8 in a commit, a file name, a report or an MCP frame
+reads as U+FFFD or is refused by name; 0.8.0 ended the command with a traceback. These
+answers change for automation that reads exit codes, lane output or the files crapkit
+writes:
+
+| What | 0.8.0 | 0.8.1 | Action |
+|---|---|---|---|
+| A file a scope takes whose name git holds in bytes that are not UTF-8 | every command exited 1 with a traceback | `inventory`, `coverage`, `verify`, `doctor`, `watch` and `hook-precommit` exit 3 naming the file and `git mv`; a name no scope takes is a warning, listed in `unreadable_names` under `--json` | Rename the file to UTF-8 ([file paths](configuration.md#file-paths-and-root-discovery)) |
+| An untracked file named in bytes that are not UTF-8 under a lane's `inputs` | `coverage` exited 1 with a traceback | `coverage --reuse-unchanged` reruns the lane, as for any other new file | None |
+| A POSIX locale that is not UTF-8 (`LANG=en_US.ISO-8859-1`) | a path with an accent named no file, so `coverage` skipped it as missing | `crapkit` restarts itself once as `python -X utf8`; lane and mutation children keep your locale and environment, and a coverage.py key the child spelled in the locale's encoding reads back as the file it names | None ([file paths](configuration.md#file-paths-and-root-discovery)) |
+| Lane, flake-retest and mutation children | wrote in their locale's encoding (cp1252 on most Windows machines), so a test printing an emoji failed under crapkit and passed in a terminal | start with `PYTHONIOENCODING=utf-8` on every OS, over any value inherited from the shell | A child that must write another encoding sets it in the lane's `env` (`env = { PYTHONIOENCODING = "cp1252" }`), which crapkit leaves alone ([lanes](lanes.md#a-python-child-writes-its-log-in-utf-8)) |
+| The measurement owner's stderr | discarded | `.crapkit/owner.log`, empty after a run that ends normally; each exit-5 `measurement owner stopped` line names it | Read the file the line names ([lanes](lanes.md#when-the-measurement-owner-stops)) |
+| A marks file holding a cp1252 byte, or saved as UTF-16 | every reader exited 3 | read with that byte as U+FFFD, or as UTF-16; a write that would save U+FFFD in place of a name exits 3 naming the byte | Fix the byte in the mark's name ([ratchet](ratchet.md#how-the-file-is-read)) |
+| A root `package.json` in UTF-16 or holding a byte that is not UTF-8 | `init` exited 1 with a traceback, after it wrote `crapkit.toml` | `init` exits 3 before it writes any file | Save it as UTF-8, then run `init` again |
+| `init` over an existing `crapkit.toml` | always exited 3 | exits 0 when it had `.gitignore` entries to add, and leaves `crapkit.toml` as it was | A script that read exit 3 as "already set up" reads the file instead |
 
 ## Plugin and MCP clients
 

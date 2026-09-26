@@ -163,13 +163,14 @@ def _advise_command(payload: dict) -> int:
 def _repo_top(cwd: Path) -> Path | None:
     """The git working-tree top above the command's own cwd, or None outside any
     repo. The event's `cwd` is where the command ran, and `status --porcelain`
-    names every file relative to this top whatever directory asks."""
+    names every file relative to this top whatever directory asks. A directory
+    named in bytes that are not UTF-8 keeps them, as every path git names does."""
+    from ..repotext import escaped
+
     if not cwd.is_dir():
         return None
-    res = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd,
-                         capture_output=True, text=True, encoding="utf-8",
-                         errors="replace")
-    top = res.stdout.strip()
+    res = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd, capture_output=True)
+    top = escaped(res.stdout).strip()
     return Path(top) if res.returncode == 0 and top else None
 
 
@@ -189,11 +190,13 @@ def _fresh_python(top: Path) -> list[Path]:
 def _porcelain(top: Path) -> str:
     """`git status --porcelain -z` over the whole tree, or "" when git cannot
     answer. -uall, because a heredoc that creates a new DIRECTORY of source
-    would otherwise arrive as one collapsed `?? newdir/` row naming no file."""
-    res = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], cwd=top,
-                         capture_output=True, text=True, encoding="utf-8",
-                         errors="replace")
-    return res.stdout if res.returncode == 0 else ""
+    would otherwise arrive as one collapsed `?? newdir/` row naming no file.
+    Each name keeps its bytes: read leniently, a Latin-1 name held U+FFFD,
+    named no file on disk, and a breach written under it passed in silence."""
+    from ..repotext import escaped
+
+    res = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], cwd=top, capture_output=True)
+    return escaped(res.stdout) if res.returncode == 0 else ""
 
 
 def _status_records(text: str) -> Iterator[tuple[str, str]]:
@@ -261,7 +264,11 @@ def _judge(root: Path, rel: str) -> int:
     31.4 ms and importing lizard costs 38.1, so the diff is started first and
     finishes inside the import that follows it.
     """
+    from ..gitpaths import readable
+
     cfg = _config(root)
+    if not readable(rel):
+        return _unreadable(cfg, rel)
     in_scope = _scoped(cfg, rel)
     if in_scope is None:
         return 0
@@ -275,6 +282,25 @@ def _judge(root: Path, rel: str) -> int:
         return _say(_unread_advisory(rel, records.reason))
     breaches, ceiling = _verdict(cfg, in_scope, rel, records, ranges)
     return _report(root, cfg, rel, breaches, ceiling, records)
+
+
+def _unreadable(cfg, rel: str) -> int:
+    """Exit 2 for a file a scope takes whose name git gives in bytes that are
+    not UTF-8. No function in it can be keyed, so none is judged, and the
+    commit gate refuses the file at exit 3 (Q17); saying nothing here would
+    pass it unread. Advisory wording, as rung 9's: the edit landed. A name no
+    scope takes stays silent, like any unscoped edit."""
+    from ..gitpaths import shown
+    from ..universe import claiming_scope
+
+    scope = claiming_scope(rel, cfg)
+    if scope is None:
+        return 0
+    print(f"crapkit advisory: {shown(rel)} is in scope {scope!r}, but git names it in bytes that "
+          "are not UTF-8 and crapkit reads every path as UTF-8, so no function in it was judged "
+          "(the edit landed; nothing was blocked)", file=sys.stderr)
+    print("the commit gate refuses such a file (exit 3); rename it to a UTF-8 name", file=sys.stderr)
+    return 2
 
 
 def _config(root: Path):
@@ -369,8 +395,7 @@ def _changed(root: Path, rel: str, diff_text: str):
 def _tracked(root: Path, rel: str) -> bool:
     """Whether git has this one path in the index. Asked only when the diff came
     back empty, which is the only case that cannot tell untracked from unchanged."""
-    listed = subprocess.run(["git", "ls-files", "--", rel], cwd=root, capture_output=True,
-                            text=True, encoding="utf-8", errors="replace")
+    listed = subprocess.run(["git", "ls-files", "--", rel], cwd=root, capture_output=True)
     return bool(listed.stdout.strip())
 
 
@@ -445,12 +470,15 @@ def _marks_for(marks_path: Path, rel: str, records=()) -> set[str]:
 
     Parse only this file's lines and the format comments. Whole-repo entry
     construction costs 35 ms for 40,303 marks and answers no extra question.
+    The file reads by `repotext.marks_text`, the rule every marks reader
+    shares, so a UTF-16 save keeps its marks and a cp1252 byte costs only the
+    mark whose name held it.
     """
-    from ..repotext import repo_text
+    from ..repotext import marks_text
 
     if not marks_path.is_file():
         return set()
-    text = repo_text(marks_path, marks_path.name)
+    text = marks_text(marks_path.read_bytes())
     return _known_marks(_file_lines(text, rel), records)
 
 

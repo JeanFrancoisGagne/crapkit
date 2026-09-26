@@ -26,9 +26,10 @@ from .analyze import analyze_jobs, analyze_source, decode_source, unread_reasons
 from .config import Config
 from .diffparse import changed_ranges
 from .gitio import GitReads
+from .gitpaths import readable
 from .keys import key_names, key_of
 from .merge import FunctionRecord
-from .universe import _source_extensions, assign_files, exclude_matcher, excluded
+from .universe import _source_extensions, exclude_matcher, excluded, scan_files
 
 # A commit's worth of files, not an inventory's, and never more workers than a
 # commit can keep busy: each worker re-imports lizard, which is the whole cost of
@@ -57,6 +58,7 @@ class StagedGate(NamedTuple):
     unscoped: list[str] = []  # staged source files no scope claims: ungated, but never silently
     records: tuple = ()  # full staged identities, including siblings below the ceiling
     unread: dict = {}  # staged path -> why no reader could read it: judged nothing, so refused
+    unreadable: tuple[str, ...] = ()  # staged names that are not UTF-8 and no scope takes
 
 
 def _touches(record: FunctionRecord, ranges: list[tuple[int, int]]) -> bool:
@@ -137,8 +139,9 @@ def _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, i
 def _gate_blind_to(path: str, checked: set[str], exts: tuple, match) -> bool:
     """A staged file the gate cannot judge but a scope language claims by
     extension. Files the config EXCLUDES (test trees, exclude globs) are
-    outside scopes on purpose and never a hole."""
-    return path not in checked and path.endswith(exts) and not excluded(path, match)
+    outside scopes on purpose and never a hole. An unreadable name is named
+    left out instead, once."""
+    return path not in checked and readable(path) and path.endswith(exts) and not excluded(path, match)
 
 
 def _unscoped_sources(staged: list[str], checked: set[str], cfg: Config) -> list[str]:
@@ -162,15 +165,16 @@ def gate_staged(root: Path, cfg: Config, reads=None) -> StagedGate:
     ranges_by_path = changed_ranges(reads.staged_diff())
     if not ranges_by_path:
         return StagedGate([])
-    in_scope = assign_files(sorted(ranges_by_path), cfg)
+    universe = scan_files(sorted(ranges_by_path), cfg)
+    in_scope = universe.by_scope
     checked_files = _claimed_files(in_scope)
     unscoped = _unscoped_sources(sorted(ranges_by_path), set(checked_files), cfg)
     if not checked_files:
-        return StagedGate([], unscoped)
+        return StagedGate([], unscoped, unreadable=universe.unreadable)
     records_by_path = staged_records(reads.staged_blobs(checked_files),
                                      worker_budget=cfg.analysis_worker_budget)
     return StagedGate(
         _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, in_scope),
         unscoped, tuple(chain.from_iterable(records_by_path.values())),
-        unread_reasons(records_by_path)
+        unread_reasons(records_by_path), universe.unreadable
     )

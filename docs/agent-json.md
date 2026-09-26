@@ -803,7 +803,8 @@ $ crapkit verify --json
   "schema": 1,
   "tool_versions": {"crapkit": "<version>", "lizard": "1.24.0"},
   "unmarked_over_target": 0,
-  "unread_files": []
+  "unread_files": [],
+  "unreadable_names": []
 }
 ```
 
@@ -816,6 +817,7 @@ $ crapkit verify --json
 | `baseline_run`, `baseline_commit` | int, string | What it was measured against. |
 | `commit` | string | The commit the verified tree is at. Equal to `baseline_commit` when you are verifying uncommitted work. |
 | `changed_files` | int | Files in the diff being judged. |
+| `unreadable_names` | array of strings | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`: the names the `crapkit: left out` lines on stderr give. `[]` when every name is UTF-8. A scope that takes such a name never gets here: the command exits 3 first. |
 
 ### Findings
 
@@ -946,6 +948,7 @@ $ crapkit coverage --json
   "schema": 1,
   "skipped_max_bytes": 0,
   "unmeasured_scopes": [],
+  "unreadable_names": [],
   "untested": 1
 }
 ```
@@ -957,6 +960,7 @@ $ crapkit coverage --json
 | `cache_hits` | Files served from the content-hash analysis cache. |
 | `skipped_max_bytes` | Files dropped by `[exclude] max_file_bytes`. |
 | `empty_scopes` | Scope name to its file count, for each declared scope that claims no file or whose every file no reader could read: `0` when its `paths` and `languages` claim no file (a renamed directory, a typo, the wrong language), else the number of files it claims, none of which a reader could read. A scope whose readable files hold no function is not listed: a reader measured each file, and a package of constants has no debt to hide. `{}` when no scope is in either case. Nothing in such a scope counts over the ceiling, so `grade` alone reads as a clean tree; stderr names the scope and what to fix. |
+| `unreadable_names` | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`. The `crapkit: left out` lines on stderr name the same files. `[]` when every name is UTF-8. |
 | `measured`, `untested`, `no_lane`, `cc_only` | The four flags, counted. They sum to `functions`. |
 | `over_target` | Functions whose `crap` exceeds their scope ceiling, counted over the measured scopes: on a `partial` run the scopes in `unmeasured_scopes` are left out, since a skipped lane's functions score at cov 0 and would read as this run's debt. On a full run that is every function. The key keeps its name; the ceiling is what the config's `target` sets. |
 | `crap_load` | Sum of the CRAP of every function in the scopes this run measured, over or under its ceiling: the same functions `over_target` and `grade` are taken over. Rounded to 2dp. On a `partial` run a scope in `unmeasured_scopes` carries its load under `by_scope` only: its functions score at the cov-0 stand-in, and summing them put a failed lane's code into this run's load beside 0 over the ceiling. |
@@ -969,7 +973,7 @@ $ crapkit coverage --json
 | `ceilings` | The ceilings in force: `default` (the `[crapkit] target`) and every scope whose own `target` differs from it, `{"default": 6, "reports": 12}`. Scopes at the default are not listed. |
 
 `inventory --json` is the same run summary minus everything coverage adds: `run_id`,
-`commit`, `files`, `functions`, `cache_hits`, `skipped_max_bytes`, `empty_scopes`, `db`.
+`commit`, `files`, `functions`, `cache_hits`, `skipped_max_bytes`, `empty_scopes`, `unreadable_names`, `db`.
 
 Coverage attribution uses line spans. When distinct functions share the same path,
 start line and end line, an artifact that overlaps that span cannot distinguish their
@@ -1309,14 +1313,25 @@ the sentence that names the fix instead of an empty stream:
 | `exit` | `kind` | Raised when |
 |---|---|---|
 | 1 | `state` | The store or the tree lacks what the command needs: no run, no scored run, no function matching the name, no open claim. |
-| 3 | `config` | `crapkit.toml` is missing, does not parse, or refuses a value; an unknown `--lane` or `--scope` is this too. |
+| 3 | `config` | `crapkit.toml` is missing, does not parse, or refuses a value; an unknown `--lane` or `--scope` is this too, and so is a file whose name is not UTF-8. |
 | 4 | `git` | A git command failed or a commit is missing: a baseline that is not an ancestor, a shallow clone, or `ratchet report --enforce` with a debt key set in a shallow clone, whose history cannot age a mark. |
 | 5 | `tool` | A lane or an external tool failed: every lane failed, an artifact the last attempt never wrote, lizard missing. |
 
 `message` is the stderr line without its `crapkit: ` prefix; that line and the exit code
-are unchanged. Verdict exits are not errors: `verify`'s 6 to 9 and `rescore --gate`'s 6
+are unchanged. A refusal of a file whose name is not UTF-8 (an argument naming one, or one
+a scope takes) adds `unread_files`, one object per file: `path`, each byte that is not
+UTF-8 spelled `\xNN`, and `reason`, which says to rename it with `git mv`. The stderr line
+names the first file and counts the rest; `unread_files` lists every one. Verdict exits are not errors: `verify`'s 6 to 9 and `rescore --gate`'s 6
 print their own payloads, with the verdict inside. Without `--json`, stdout stays empty
 on an error.
+
+Text copied out of git's history is never an error. `explain --history --json` and the
+`get_function_history` tool list each commit that touched the function as `commits[]`,
+with `sha`, `date`, `subject` and `body`. A subject or body a commit stored in bytes that
+are not UTF-8 (a Latin-1 message with no encoding header) arrives with each such byte as
+U+FFFD, so compare a subject by equality only when you know its commit was written in
+UTF-8. One stored as UTF-8 arrives as stored, whatever the repo's `i18n.commitEncoding`
+or `i18n.logOutputEncoding` says. Churn's author count reads names the same way.
 
 ---
 
@@ -1526,7 +1541,7 @@ can serve several checkouts.
 | `get_function_history` | `path`, `name`, `history` (bool: adds `commits` per function, the CLI's `--history`), `tests` (bool: adds `tests`, the CLI's `--tests`) | JSON text |
 | `check_config` | | JSON text (the `doctor --json` report) |
 | `get_next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`), `scope` (array of strings, as on `list_worklist`) | JSON text |
-| `check_gate` | `path` (repo-relative source file, or absolute inside the repo; outside the repo or missing is a config error, and an unchanged or unscoped file judges 0) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`'s rule (`ok`, `judged`, `ceilings`, `breaches`, `untracked`, `unread_files`). A ratchet mark pardons a changed function only while its crap sits at or under the mark, which is stricter than the pre-commit hook, where any mark pardons; the marks file is read only when a changed function breached, so a clean gate never reports a marks file it cannot parse. A breach exits 6 and answers as a result with `gate.ok` false, not a tool error |
+| `check_gate` | `path` (repo-relative source file, or absolute inside the repo; outside the repo or missing is a config error, and an unchanged or unscoped file judges 0) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`'s rule (`ok`, `judged`, `ceilings`, `breaches`, `untracked`, `unread_files`). A ratchet mark pardons a changed function only while its crap sits at or under the mark, which is stricter than the pre-commit hook, where any mark pardons; the marks file is read only when a changed function breached, so a clean gate never reports a marks file it cannot parse. A breach exits 6 and answers as a result with `gate.ok` false, not a tool error. A `path` naming a file whose name is not UTF-8 is refused before any judging, as every gate refuses it: the answer is a result with `gate.ok` false, `judged` 0 and the file in `gate.unread_files`, each item a `path`, the `reason` that says to rename it, and `dirty` true |
 
 Results arrive as MCP text content, and every tool's text is the payload of the CLI's
 `--json` form: parse it, or read `structuredContent`, which carries the same object parsed
@@ -1538,7 +1553,9 @@ the CLI prints, `{"error": {"exit", "kind", "message"}, "schema": 1}`, whose `me
 the stderr line; `get_next_item`, which has no `--json` flag, answers the stderr line itself.
 `check_gate` is the one exception to the exit rule: its exit 6 is the verdict, so a breach answers
 `isError: false` with `structuredContent` attached and `gate.ok` false, while exits 3, 4 and 5
-(and 1, no scored run yet) stay tool errors. `isError` is also
+(and 1, no scored run yet) stay tool errors. The one exit 3 it answers as a verdict is the
+refusal of a file whose name is not UTF-8: the CLI's error object lists it in
+`unread_files`, and `check_gate` returns `gate.ok` false with that list. `isError` is also
 true in the cases where no CLI call runs at all: the missing-config result above, an
 unknown tool name, and an argument the tool's own table refuses.
 

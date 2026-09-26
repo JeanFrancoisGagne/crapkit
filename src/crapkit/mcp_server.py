@@ -1319,6 +1319,7 @@ TOOLS: tuple[dict, ...] = (
         "positional": ("path",),
         "flags": {},
         "verdict_exits": (6,),
+        "unread_verdict": True,
         "description": ("Checks an edited file by rescore --gate's rule: each changed function's "
         "ccn against its scope's ceiling, pardoned only while its crap is at or under its "
         "ratchet mark. The hook's commit gate pardons any marked function, so this is "
@@ -1332,8 +1333,9 @@ TOOLS: tuple[dict, ...] = (
                 "type": "string",
                 "description": ("repo-relative, or absolute inside repo, source file to judge "
                 "as edited. Outside the repo or missing answers a config error, and an "
-                "unchanged or unscoped file judges 0. repo may be any directory under the "
-                "checkout, and path stays relative to the root it walks up to.")}},
+                "unchanged or unscoped file judges 0. A file whose name is not UTF-8 answers "
+                "gate.ok false with the name in gate.unread_files. repo may be any directory "
+                "under the checkout, and path stays relative to the root it walks up to.")}},
         "output": {
             "schema": {
                 "type": "integer",
@@ -1399,7 +1401,8 @@ TOOLS: tuple[dict, ...] = (
                     "ok": {
                         "type": "boolean",
                         "description": ("true when breaches and unread_files are empty; false is the "
-                        "verdict (CLI exit 6), delivered as a normal result")},
+                        "verdict (CLI exit 6, or 3 when a file's name is not UTF-8), delivered as "
+                        "a normal result")},
                     "judged": {
                         "type": "integer",
                         "description": ("functions the working tree changed since HEAD, an untracked "
@@ -1598,8 +1601,41 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
     text = proc.stdout if proc.stdout.strip() else proc.stderr
+    verdict = _unread_verdict(tool, proc.returncode, text)
+    if verdict is not None:
+        return _structured(_result(verdict, is_error=False))
     failed = proc.returncode != 0 and proc.returncode not in tool.get("verdict_exits", ())
     return _structured(_result(text, is_error=failed))
+
+
+def _unread_verdict(tool: dict, returncode: int, text: str) -> str | None:
+    """A gate tool's answer when the CLI refused a file whose name is not UTF-8.
+
+    Every CLI gate exits 3 on such a name, since no reader can key it. A tool
+    that speaks MCP maps that refusal to its own protocol, where a tool error
+    reads as a broken tool: the answer is the verdict the refusal is, a gate
+    that fails with nothing judged and each refused name in `unread_files`,
+    in the entry shape `rescore --gate --json` lists: `dirty` is true, since
+    the gate judges the working tree. Any other exit-3 answer stays the tool
+    error it was."""
+    if returncode != 3 or not tool.get("unread_verdict"):
+        return None
+    unread = _error_fields(text).get("unread_files")
+    if not unread:
+        return None
+    return json.dumps({"functions": [], "schema": 1, "gate": {
+        "ok": False, "judged": 0, "ceilings": {}, "breaches": [], "untracked": [],
+        "unread_files": [{**item, "dirty": True} for item in unread]}}, sort_keys=True)
+
+
+def _error_fields(text: str) -> dict:
+    """The inner object of the CLI's --json error answer, or {} for any other text."""
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return {}
+    error = parsed.get("error") if isinstance(parsed, dict) else None
+    return error if isinstance(error, dict) else {}
 
 
 # JSON Schema type names to the Python shapes json.loads produces for them. A
