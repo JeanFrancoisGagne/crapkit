@@ -150,6 +150,7 @@ cancels the run it replaces; every push to main runs to the end.
 | `deploy-linux-native` | `tools/deploy/toolchain.py`, then `run.py --native --os linux --cadence push --cell lin-native-start` on the bare runner, where the container guard does not apply. | A cell failure. |
 | `deploy-windows` | `tools/deploy/toolchain.py`, then `run.py --native --os windows --cadence push -n 4`: the Windows push cells under cmd.exe, both PowerShells and PortableGit. | A cell failure. |
 | `deploy-action` | `tools/deploy/consumer.py` builds a consumer beside the checkout, `uses: ./crapkit` scores it with gate "true" and delta "false" under a read-only pull-request token, and `tools/deploy/assert_action.py` checks the outcome, the log line and the comment. | An assertion about what the consumer sees. |
+| `deploy-action-log` | After `deploy-action`, `tools/deploy/assert_action.py --job deploy-action` reads that job's finished log through `gh api`: the gate line, and "no pull request on this event" on a push or the 403 from posting the comment on a pull request. | A line the log does not hold, or an action outcome other than failure. |
 
 Both verdict jobs check installed source bytes: a measurement before mapping
 coverage paths, the join before an uploaded measurement stands for its revision.

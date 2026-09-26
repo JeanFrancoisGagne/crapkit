@@ -423,6 +423,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    outputs:
+      outcome: ${{ steps.action.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -446,3 +448,29 @@ jobs:
           python crapkit/tools/deploy/assert_action.py
           --cell ${{ github.event_name == 'pull_request' && 'gha-action-readonly-token' || 'gha-action-consumer' }}
           --outcome "${{ steps.action.outcome }}"
+
+  # A step cannot read its own job's log, and the lines the action prints about
+  # its comment are only there: "no pull request on this event" on a push, and
+  # on a pull request gh's 403 and "posting the crapkit comment exited" with the
+  # gate line after it. This job reads deploy-action's finished log.
+  deploy-action-log:
+    needs: deploy-action
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: assert what deploy-action's log shows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python tools/deploy/assert_action.py
+          --cell ${{ github.event_name == 'pull_request' && 'gha-action-readonly-token' || 'gha-action-consumer' }}
+          --job deploy-action
+          --outcome "${{ needs.deploy-action.outputs.outcome }}"

@@ -719,6 +719,20 @@ def test_the_push_action_job_reads_pull_requests_only_and_gates_with_delta_off()
         re.findall(r"gha-action-[a-z-]+|steps\.action\.outcome", check["run"]))
 
 
+def test_the_action_log_job_reads_deploy_action_s_finished_log():
+    """A step cannot read its own job's log, so the posting lines are checked by
+    a job that needs deploy-action, runs whatever it concluded, and may read
+    the run's logs."""
+    job = CI["jobs"]["deploy-action-log"]
+    check = step_named(CI, "deploy-action-log", "assert what deploy-action's log shows")
+
+    assert (job["needs"], job["if"], job["runs-on"]) == ("deploy-action", "always()", PINS["runners"]["linux"])
+    assert job["permissions"] == {"contents": "read", "actions": "read"}
+    assert CI["jobs"]["deploy-action"]["outputs"] == {"outcome": "${{ steps.action.outcome }}"}
+    assert "--job deploy-action" in check["run"] and "needs.deploy-action.outputs.outcome" in check["run"]
+    assert check["env"] == {"GH_TOKEN": "${{ github.token }}"}
+
+
 def deploy_steps():
     return [step for name, step in steps(CI) if name in PUSH_JOBS] + [step for _, step in steps(DEPLOY)]
 
