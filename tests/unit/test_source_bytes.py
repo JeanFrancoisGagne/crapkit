@@ -122,7 +122,7 @@ def test_a_mutant_changes_its_own_line_and_no_other_byte(tmp_path, raw):
                                 mutation_timeout_seconds=120)
     mutant = next(m for m in _file_mutants(tmp_path, "m.py", None) if "x > 0" in m.original)
 
-    assert mutate_pool.run_one(tmp_path, cfg, mutant) is False
+    assert mutate_pool.run_one(tmp_path, cfg, mutant) is mutate_pool.MutantVerdict.SURVIVED
     seen = (tmp_path / "seen.bin").read_bytes().split(b"\n")
     before = raw.split(b"\n")
     assert [i for i, (a, b) in enumerate(zip(before, seen)) if a != b] == [mutant.line - 1]

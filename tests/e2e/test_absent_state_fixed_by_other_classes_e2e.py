@@ -563,10 +563,7 @@ def start_line_missing(region: dict) -> None:
                  ("coverage.json", "src/a.py: hot", "no statement counts and no branch"),
                  id="statement-counts-missing-with-no-branch"),
     pytest.param(start_line_missing, ("coverage.json", "hot", "start_line", "7.13.1"),
-                 id="start-line-missing", marks=pytest.mark.xfail(
-                     strict=True, reason="a region without start_line still scores; it holds "
-                                         "once the reader refuses it by name and the py extra "
-                                         "floor rises to coverage>=7.13.1 (Q34)")),
+                 id="start-line-missing"),
 ])
 def test_a_report_missing_a_member_is_refused_by_name(edit, names, tmp_path: Path):
     repo = coverage_py_report(tmp_path, edit)
