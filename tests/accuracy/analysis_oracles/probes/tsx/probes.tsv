@@ -40,3 +40,5 @@ eq-flat-seven	equivalence.tsx	flatSeven	cognitive	7	Sonar Cognitive Complexity v
 eq-flat-seven	equivalence.tsx	flatSeven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
 eq-flat-seven	equivalence.tsx	flatSeven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
 eq-flat-seven	equivalence.tsx	flatSeven	params	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters the function declares	
+corpus-optional-chain	corpus_optional_chain.tsx	focusIt	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: only structures open a nesting level; a?.focus() is an optional chain expression (ECMA-262 sec. 13.3.9)	AO-TSX-OPTIONAL-CHAIN-ND
+corpus-type-member	corpus_type_member.tsx	Link	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; an optional property (TypeScript handbook, Object Types) is a type, no decision	AO-TS-TYPE-QUESTION-MEMBER

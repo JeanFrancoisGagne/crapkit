@@ -1,8 +1,10 @@
 // Every function the TypeScript 6.0.2 compiler finds in a list of source files.
 //
 // Usage: node ts_functions.cjs <typescript module dir> <file>...
-// Prints one JSON object: {file: [{kind, name, start, column, end, endColumn,
-// params, paramList, defaults, returnType, features}]}.
+// Prints one JSON object: {file: {functions: [{kind, name, start, column, end,
+// endColumn, params, paramList, defaults, patternDefaults, returnType,
+// features, shapes}],
+// marks: [[shape, line, reach]]}}.
 //
 // A function is a node of kind FunctionDeclaration, FunctionExpression,
 // ArrowFunction, MethodDeclaration, Constructor, GetAccessor or SetAccessor
@@ -11,7 +13,9 @@
 // getLineAndCharacterOfPosition is 0-based). params is parameters.length with
 // a `this` parameter left out, since it is a type annotation, not an argument
 // (TypeScript handbook, "Declaring this in a Function"); defaults counts the
-// parameters with an initializer. paramList holds, for each of those
+// parameters with an initializer, patternDefaults the default values inside
+// destructuring patterns of the function's own code (`{ size = "md" }` in a
+// parameter or a declaration). paramList holds, for each of those
 // parameters, [the name's source text, the type annotation's source text or
 // null, whether it is a rest parameter]; the name's text of `...rest` is
 // `rest` and of `b?` is `b` (ParameterDeclaration keeps dotDotDotToken and
@@ -20,8 +24,10 @@
 // way: "or", "and", "nullish" (?? and ??=), "optional" (?.), "ternary",
 // "nested_ternary", "negated_logical" (! over a parenthesized && or ||),
 // "else", "switch", "label", "try", "recursion" (a call of the function's own
-// name), "nested_loop" (a loop inside a loop) and "nested_function". A .vue
-// file is read
+// name), "nested_loop" (a loop inside a loop) and "nested_function". shapes
+// names the constructs crapkit is known to misread that reach the function
+// (SHAPES below; test_js_corpus_oracles maps each to its rulings row), and
+// marks gives every such construct's line. A .vue file is read
 // from its first <script> block, parsed as TypeScript when lang="ts", with
 // lines counted from the top of the file (Vue SFC spec, "Language Blocks").
 // No crapkit: this file only reads the compiler.
@@ -154,22 +160,237 @@ function featuresOf(node, fn) {
   return found;
 }
 
-function features(fn) {
+// The names a function is called by: its own (nameOf), and for a function
+// assigned to a property (`a.b = function () {}`) the property's name.
+function namesOf(fn) {
+  const names = new Set([nameOf(fn)]);
+  const parent = fn.parent;
+  if (parent && ts.isBinaryExpression(parent) && ts.isPropertyAccessExpression(parent.left)) {
+    names.add(parent.left.name.text);
+  }
+  return names;
+}
+
+// An identifier spelled like one of the function's names that is not a plain
+// call of its own name: `this.router.route(path)` inside `route`, a variable
+// or a parameter named like it.
+function nameSpelled(node, fn) {
+  const named = Boolean(fn) && ts.isIdentifier(node) && namesOf(fn).has(node.text);
+  return named && node !== fn.name && !callsItself(node, fn);
+}
+
+// `node` is the callee of a plain call of fn's own name: direct recursion.
+function callsItself(node, fn) {
+  const parent = node.parent;
+  const callee = Boolean(parent) && ts.isCallExpression(parent) && parent.expression === node;
+  return callee && node.text === nameOf(fn);
+}
+
+// Words crapkit counts as a structure wherever they stand as a token: the
+// keywords of JavaScript and of the other languages it reads.
+const KEYWORD_NAMES = new Set(["catch", "if", "for", "while", "do", "case", "switch", "else",
+  "try", "goto", "foreach", "elif", "except", "and", "or"]);
+
+// A regular expression literal lizard's tokenizer leaves as code tokens: it
+// joins one only when the token before it ends in one of `=,({[?:!&|;` with
+// no space between, the literal holds no space and its flags are g, i or m
+// (lizard 1.24.0 js_style_regex_expression). One holding a character that
+// means something as code is the shape.
+// The characters and words are spelled out, not written as a regular
+// expression literal, which this very reader would misread.
+const JOINS_AFTER = "=,({[?:!&|;";
+const CODE_CHARACTERS = new Set(["?", "\"", "'", String.fromCharCode(96), "{", "}", "(", ")",
+  "[", "]"]);
+const CODE_WORDS = new Set(["if", "for", "while", "do", "case", "catch", "switch", "else"]);
+
+function joinedByLizard(node, text) {
+  const before = node.getSourceFile().text[node.getStart() - 1] || "";
+  const flags = text.slice(text.lastIndexOf("/") + 1);
+  const plain = !text.includes(" ") && !text.includes("\t");
+  return JOINS_AFTER.includes(before) && plain && [...flags].every((flag) => "gim".includes(flag));
+}
+
+function readsAsCode(body) {
+  const words = body.match(/[A-Za-z]+/g) || [];
+  return [...body].some((ch) => CODE_CHARACTERS.has(ch)) || words.some((w) => CODE_WORDS.has(w));
+}
+
+function regexAsCode(node) {
+  if (node.kind !== ts.SyntaxKind.RegularExpressionLiteral) return false;
+  const text = node.getText();
+  return !joinedByLizard(node, text) && readsAsCode(text.slice(1, text.lastIndexOf("/")));
+}
+
+// `a?.(x)` and `a?.[x]`: an optional call or element access.
+function optionalCall(node) {
+  return (ts.isCallExpression(node) || ts.isElementAccessExpression(node)) &&
+    Boolean(node.questionDotToken);
+}
+
+// An arrow whose expression body starts on a line after its `=>`.
+function arrowBodyBelow(node) {
+  if (!ts.isArrowFunction(node) || ts.isBlock(node.body)) return false;
+  const sf = node.getSourceFile();
+  const lineOf = (pos) => sf.getLineAndCharacterOfPosition(pos).line;
+  return lineOf(node.body.getStart()) > lineOf(node.equalsGreaterThanToken.getStart());
+}
+
+// A `?` inside a type: a conditional type, an optional member of a type
+// literal or interface, an optional mapped member.
+function typeQuestion(node) {
+  if (ts.isConditionalTypeNode(node)) return true;
+  const member = ts.isMappedTypeNode(node) || ts.isPropertySignature(node) ||
+    ts.isMethodSignature(node);
+  return member && Boolean(node.questionToken);
+}
+
+// A property's value that is a conditional over lines whose true branch is a
+// call (`a: p` then `? g(c)` then `: h`): the call's node, whose line crapkit
+// rows as a function.
+function ternaryCallRow(node) {
+  if (!ts.isConditionalExpression(node) || !ts.isPropertyAssignment(node.parent)) return false;
+  const sf = node.getSourceFile();
+  const lineOf = (child) => sf.getLineAndCharacterOfPosition(child.getStart()).line;
+  const below = lineOf(node.whenFalse) > lineOf(node.whenTrue);
+  return ts.isCallExpression(node.whenTrue) && below && node.whenTrue;
+}
+
+// A `function` with type parameters: `function f<T>`, `function <T>() {}`
+// (a generic method or arrow gets its row).
+function genericDeclaration(node) {
+  const declared = ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node);
+  return declared && Boolean(node.typeParameters);
+}
+
+// The shapes crapkit misreads. Each entry: [name, reach, test(node, fn)]. The
+// reach says which functions a shape marks: "own", the function whose own body
+// holds it; "self", the function it is; "tail", every function holding it and
+// every function after it inside the outermost of those; "after", every
+// function that ends after it; "line", none. fn is null for the last three.
+// Every shape also marks its line (the node a test returns, or the one it
+// passed), for a row crapkit lists where the compiler has no function.
+const SHAPES = [
+  // A value opening with a parenthesis right after `=` or a property's `:`.
+  ["paren_value", "own", (node) => parenValue(node)],
+  // The same holding a call: `const y = (g(n) * 2);`.
+  ["paren_value_call", "tail", (node) => parenValue(node) && holds(node, ts.isCallExpression)],
+  // The function's name spelled in its body other than as a call of itself.
+  ["name_spelled", "own", nameSpelled],
+  // An identifier spelled like a keyword: `promise.catch(f)`, `{ if: 1 }`.
+  ["keyword_name", "own", (node) => ts.isIdentifier(node) && KEYWORD_NAMES.has(node.text)],
+  ["regex_as_code", "after", regexAsCode],
+  ["optional_call", "tail", optionalCall],
+  ["arrow_body_below", "tail", arrowBodyBelow],
+  ["type_question", "own", typeQuestion],
+  // A function type `(a: T) => R` in a type position.
+  ["function_type", "tail", (node) => ts.isFunctionTypeNode(node)],
+  ["generic_declaration", "self", genericDeclaration],
+  ["ternary_call_row", "line", ternaryCallRow],
+  // A JSX spread attribute `<div {...props} />`.
+  ["jsx_spread", "after", (node) => ts.isJsxSpreadAttribute(node)],
+  // An optional chain `a?.b` in a .tsx file.
+  ["optional_chain_tsx", "own", (node) => node.kind === ts.SyntaxKind.QuestionDotToken &&
+    node.getSourceFile().languageVariant === ts.LanguageVariant.JSX &&
+    node.getSourceFile().fileName.toLowerCase().endsWith(".tsx")],
+];
+const reaching = (reach) => SHAPES.filter(([, where]) => where === reach);
+
+function shapesOf(node, fn, reach) {
+  return reaching(reach).filter(([, , test]) => test(node, fn)).map(([name]) => name);
+}
+
+// A node below `node` (at any depth) that passes `test`.
+function holds(node, test) {
+  let found = false;
+  const visit = (child) => {
+    found = found || test(child);
+    if (!found) ts.forEachChild(child, visit);
+  };
+  ts.forEachChild(node, visit);
+  return found;
+}
+
+// The right side of `=`, a declaration's initializer or a property's value.
+function isValueSlot(node) {
+  const parent = node.parent;
+  if (ts.isBinaryExpression(parent)) {
+    return parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && parent.right === node;
+  }
+  return (ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent)) &&
+    parent.initializer === node;
+}
+
+// The value of `=` or of a property's `:` that opens with a parenthesis and
+// is no arrow function: `x = (a || b)`, `{ v: (a) ? b : c }`.
+function parenValue(node) {
+  if (!node.parent || ts.isArrowFunction(node) || !isValueSlot(node)) return false;
+  return node.getText().startsWith("(");
+}
+
+// A default value inside a destructuring pattern (ESLint's AssignmentPattern
+// that is no parameter's own initializer).
+function patternDefault(node) {
+  return (ts.isBindingElement(node) && Boolean(node.initializer)) ||
+    (ts.isShorthandPropertyAssignment(node) && Boolean(node.objectAssignmentInitializer));
+}
+
+// {features, shapes, patternDefaults} of the function's own code, nested
+// functions left out.
+function own(fn) {
   const found = new Set();
+  const shapes = new Set(shapesOf(fn, fn, "self"));
+  let patterns = 0;
   const visit = (node) => {
     if (node !== fn && KINDS.has(node.kind)) {
       found.add("nested_function");
       return;
     }
     featuresOf(node, fn).forEach((name) => found.add(name));
+    shapesOf(node, fn, "own").forEach((name) => shapes.add(name));
+    patterns += patternDefault(node);
     ts.forEachChild(node, visit);
   };
   visit(fn);
-  return [...found].sort();
+  return { features: [...found].sort(), shapes, patterns };
 }
 
-function record(sf, node, offset) {
+// Every shape in the file: {name, reach, pos, outer}, outer being the
+// outermost function holding it (itself, for a function), or null.
+function placedShapes(sf) {
+  const found = [];
+  const visit = (node, outer) => {
+    const here = outer || (isFunction(node) ? node : null);
+    SHAPES.forEach(([name, reach, test]) => {
+      const at = hitNode(node, test(node, null));
+      if (at) found.push({ name, reach, pos: at.getStart(sf), outer: here });
+    });
+    ts.forEachChild(node, (child) => visit(child, here));
+  };
+  visit(sf, null);
+  return found;
+}
+
+const isFunction = (node) => KINDS.has(node.kind) && Boolean(node.body);
+
+// The node a shape test points at: the node itself for true, the node it
+// returned, or null.
+const hitNode = (node, hit) => (hit === true ? node : hit || null);
+
+function reaches(shape, fn) {
+  if (shape.reach === "after") return fn.end > shape.pos;
+  return shape.reach === "tail" && shape.outer !== null && inTail(shape, fn);
+}
+
+// fn holds the shape, or starts after it inside the shape's outermost function.
+function inTail(shape, fn) {
+  const holding = fn.getStart() <= shape.pos && shape.pos < fn.end;
+  return holding || (fn.getStart() > shape.pos && fn.end <= shape.outer.end);
+}
+
+function record(sf, node, offset, placed) {
   const end = sf.getLineAndCharacterOfPosition(node.end - 1);
+  const { features, shapes, patterns } = own(node);
+  placed.filter((shape) => reaches(shape, node)).forEach((shape) => shapes.add(shape.name));
   return {
     kind: ts.SyntaxKind[node.kind],
     name: nameOf(node),
@@ -180,23 +401,28 @@ function record(sf, node, offset) {
     params: params(node),
     paramList: paramList(node),
     defaults: node.parameters.filter((p) => p.initializer).length,
+    patternDefaults: patterns,
     returnType: Boolean(node.type),
-    features: features(node),
+    features,
+    shapes: [...shapes].sort(),
   };
 }
 
-function functions(file) {
+// {functions, marks}: marks holds [shape, line, reach] for every shape in the file.
+function listing(file) {
   const { text, kind, offset } = source(file);
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
+  const placed = placedShapes(sf);
   const out = [];
   const visit = (node) => {
-    if (KINDS.has(node.kind) && node.body) out.push(record(sf, node, offset));
+    if (isFunction(node)) out.push(record(sf, node, offset, placed));
     ts.forEachChild(node, visit);
   };
   visit(sf);
-  return out;
+  const marks = placed.map((shape) => [shape.name, line(sf, shape.pos, offset), shape.reach]);
+  return { functions: out, marks };
 }
 
 const result = {};
-for (const file of process.argv.slice(3)) result[file] = functions(file);
+for (const file of process.argv.slice(3)) result[file] = listing(file);
 process.stdout.write(JSON.stringify(result));

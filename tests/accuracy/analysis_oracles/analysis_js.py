@@ -19,13 +19,23 @@ from accuracy.analysis_oracles import analysis_shapes, analysis_tables
 from accuracy.analysis_oracles.oracles import node_oracles
 
 SUFFIXES = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".vue")
+# The probes of the shapes the corpus differential found crapkit misreading
+# (test_js_corpus_oracles SHAPES). Each holds one misread on purpose, pinned by
+# its hand probe and by that module's shape cases, so the push differentials
+# leave these files out.
+CORPUS_SHAPE_PROBES = "corpus_"
 
 
 def push_files() -> dict:
-    """The JS, TS and Vue probe files and the JS/TS shapes."""
+    """The JS, TS and Vue probe files and the JS/TS shapes, less the corpus
+    shape probes."""
     probes = {path: data for path, data in analysis_tables.probe_files().items()
-              if path.endswith(SUFFIXES)}
+              if path.endswith(SUFFIXES) and not is_corpus_shape_probe(path)}
     return {**probes, **analysis_shapes.ts_shape_files()}
+
+
+def is_corpus_shape_probe(path: str) -> bool:
+    return path.rpartition("/")[2].startswith(CORPUS_SHAPE_PROBES)
 
 
 @dataclass(frozen=True)
@@ -38,8 +48,11 @@ class Setup:
 
 
 def _defaults(fn, number: int) -> int:
-    """AO-ESLINT-DEFAULTS: ESLint's complexity adds 1 per default parameter value."""
-    return number - fn.defaults
+    """AO-ESLINT-DEFAULTS: ESLint's complexity adds 1 per default parameter
+    value; AO-ESLINT-PATTERN-DEFAULTS: and 1 per default value inside a
+    destructuring pattern (its AssignmentPattern), where crapkit adds nothing
+    for either."""
+    return number - fn.defaults - fn.pattern_defaults
 
 
 def _recursion(fn, number: int) -> int:
@@ -87,14 +100,16 @@ class Outcome:
     differing: list = field(default_factory=list)
 
 
-def _aside(fn, oracle: Oracle) -> str | None:
+def aside(fn, oracle: Oracle) -> str | None:
+    """The rulings ids that set fn aside from the oracle, joined by +, or None."""
     hits = sorted(oracle.set_aside[name] for name in fn.features if name in oracle.set_aside)
     if hits:
         return "+".join(hits)
     return "outside the shared constructs" if fn.features & oracle.only_without else None
 
 
-def _expected(fn, oracle: Oracle, numbers: dict) -> int | None:
+def expected(fn, oracle: Oracle, numbers: dict) -> int | None:
+    """The oracle's number for fn after its transform; None when it reports none."""
     raw = numbers.get(fn, 0 if oracle.zero_when_silent else None)
     return None if raw is None else oracle.transform(fn, raw)
 
@@ -102,7 +117,7 @@ def _expected(fn, oracle: Oracle, numbers: dict) -> int | None:
 def judge(outcome: Outcome, pairs: list, oracle: Oracle, numbers: dict) -> Outcome:
     """Compare every (crapkit row, compiler function) pair under one oracle."""
     for row, fn in pairs:
-        reason = _aside(fn, oracle)
+        reason = aside(fn, oracle)
         if reason:
             outcome.set_aside[reason] += 1
             continue
@@ -111,24 +126,26 @@ def judge(outcome: Outcome, pairs: list, oracle: Oracle, numbers: dict) -> Outco
 
 
 def _one(outcome: Outcome, row: dict, fn, oracle: Oracle, numbers: dict) -> None:
-    expected = _expected(fn, oracle, numbers)
+    want = expected(fn, oracle, numbers)
     outcome.compared += 1
-    if row[oracle.column] != expected:
-        outcome.differing.append((fn.path, fn.start, fn.name, row[oracle.column], expected))
+    if row[oracle.column] != want:
+        outcome.differing.append((fn.path, fn.start, fn.name, row[oracle.column], want))
 
 
-def _rows_on(rows: list[dict], line: int) -> list[dict]:
+def rows_on(rows: list[dict], line: int) -> list[dict]:
+    """crapkit's rows starting on `line`, in creation order."""
     return sorted((row for row in rows if row["start"] == line), key=lambda row: row["occurrence"])
 
 
-def _fns_on(fns: list, line: int) -> list:
+def fns_on(fns: list, line: int) -> list:
+    """The compiler's functions starting on `line`, left to right."""
     return sorted((fn for fn in fns if fn.start == line), key=lambda fn: fn.column)
 
 
 def _on(line: int, rows: list[dict], fns: list) -> list[tuple]:
     """The rows in creation order zipped with the functions left to right on
     one line, when there are as many of each; else nothing."""
-    ours, theirs = _rows_on(rows, line), _fns_on(fns, line)
+    ours, theirs = rows_on(rows, line), fns_on(fns, line)
     return list(zip(ours, theirs)) if len(ours) == len(theirs) else []
 
 
@@ -152,9 +169,9 @@ def case(setup: Setup, eslint, path: str, start: int, mode: str) -> tuple:
     """(crapkit's value, the oracle's number) for the function starting on a
     hand case's line."""
     oracle = ORACLES[mode]
-    (fn,) = _fns_on(in_file(setup.compiled, path), start)
-    (row,) = _rows_on(setup.measured.in_file(path), start)
-    return row[oracle.column], _expected(fn, Oracle(oracle.column, _same, {},
+    (fn,) = fns_on(in_file(setup.compiled, path), start)
+    (row,) = rows_on(setup.measured.in_file(path), start)
+    return row[oracle.column], expected(fn, Oracle(oracle.column, _same, {},
                                                     oracle.zero_when_silent), eslint(mode))
 
 

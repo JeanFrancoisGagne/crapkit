@@ -39,6 +39,8 @@ class Fn:
     return_type: bool
     features: frozenset
     param_list: tuple = ()  # ((name text, type text or None, rest), ...)
+    shapes: frozenset = frozenset()  # ts_functions.cjs SHAPES the function holds
+    pattern_defaults: int = 0  # default values inside destructuring patterns
 
 
 def write(files: dict, work: Path) -> list[str]:
@@ -57,27 +59,52 @@ def _node(argv: list[str], cwd: Path) -> dict:
     return json.loads(done.stdout)
 
 
-def functions(node_modules: Path, work: Path, paths: list[str]) -> list[Fn]:
-    """Every function the TypeScript compiler finds in `paths` (relative to work)."""
+def listing(node_modules: Path, work: Path, paths: list[str]) -> tuple[list[Fn], dict]:
+    """(every function the TypeScript compiler finds in `paths`, relative to
+    work; {path: [(shape, line, reach)]} for every misread shape
+    ts_functions.cjs finds), from one node process."""
     found = _node([str(HERE / "ts_functions.cjs"), str(node_modules / "typescript"), *paths],
                   work)
-    return [_fn(path, item) for path in paths for item in found[path]]
+    fns = [_fn(path, item) for path in paths for item in found[path]["functions"]]
+    return fns, {path: [tuple(mark) for mark in found[path]["marks"]] for path in paths}
+
+
+def functions(node_modules: Path, work: Path, paths: list[str]) -> list[Fn]:
+    """Every function the TypeScript compiler finds in `paths` (relative to work)."""
+    return listing(node_modules, work, paths)[0]
 
 
 def _fn(path: str, item: dict) -> Fn:
     return Fn(path, item["kind"], item["name"], item["start"], item["column"], item["end"],
               item["endColumn"], item["params"], item["defaults"], item["returnType"],
               frozenset(item["features"]),
-              tuple(tuple(param) for param in item.get("paramList", ())))
+              tuple(tuple(param) for param in item.get("paramList", ())),
+              frozenset(item.get("shapes", ())), item.get("patternDefaults", 0))
 
 
-def messages(node_modules: Path, work: Path, mode: str, paths: list[str]) -> dict[str, list]:
-    """{path: [(line, 0-based column, number)]} for the mode's rule."""
-    found = _node([str(HERE / "eslint_probe.mjs"), str(node_modules), mode, *paths], work)
+def lint(node_modules: Path, work: Path, modes: tuple, paths: list[str]) -> tuple[dict, dict]:
+    """({mode: {path: [(line, 0-based column, number)]}}, {path: fatal message})
+    for every mode's rule, from one node process over the whole list. A file
+    the parser rejects is in the second map and has no messages."""
+    found = _node([str(HERE / "eslint_probe.mjs"), str(node_modules), ",".join(modes), *paths],
+                  work)
+    return {mode: _numbers(found[mode], mode, paths) for mode in modes}, found["fatal"]
+
+
+def _numbers(found: dict, mode: str, paths: list[str]) -> dict[str, list]:
     pattern = NUMBERS[mode]
     return {path: [(item["line"], item["column"] - 1,
                     int(pattern.search(item["message"]).group(1)))
                    for item in found.get(path, [])] for path in paths}
+
+
+def messages(node_modules: Path, work: Path, mode: str, paths: list[str]) -> dict[str, list]:
+    """{path: [(line, 0-based column, number)]} for the mode's rule; every file
+    must parse."""
+    found, fatal = lint(node_modules, work, (mode,), paths)
+    if fatal:
+        raise RuntimeError(f"ESLint cannot parse {fatal}")
+    return found[mode]
 
 
 def _holds(fn: Fn, line: int, column: int) -> bool:
