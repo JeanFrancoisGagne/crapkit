@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Callable, NamedTuple
 
 from .invariants import check_rollup, check_totals
-from .score import ScoredRow, grade, over_ceiling
+from .score import ScoredRow, crap_load, grade, over_ceiling
 from .keys import key_names, key_of
 
 # scope -> the ceiling its rows are judged against
@@ -44,12 +44,13 @@ def _over_count(rows, ceiling_of: _CeilingOf) -> int:
 
 
 def _totals_by(rows: list[ScoredRow], ceiling_of: _CeilingOf) -> Totals:
-    return totals_from_counts(len(rows), _over_count(rows, ceiling_of), sum(r.crap for r in rows))
+    return totals_from_counts(len(rows), _over_count(rows, ceiling_of),
+                              crap_load(r.crap for r in rows))
 
 
 def totals_from_counts(functions: int, over_target: int, load: float) -> Totals:
     """The rounding rule, in one place. A caller that already has the three sums
-    (store.run_totals adds them up inside the scan) must round them exactly the
+    (store.run_totals reads them off the rollup) must round them exactly the
     way a caller holding the rows does, or the same run reads two ways. The
     sums are checked against their bounds first (`invariants.check_totals`)."""
     check_totals(functions, over_target, load)

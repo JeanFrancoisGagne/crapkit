@@ -425,7 +425,7 @@ TOOLS: tuple[dict, ...] = (
                             "description": "functions over their scope's ceiling"},
                         "crap_load": {
                             "type": "number",
-                            "description": "sum of every function's crap, two decimals"},
+                            "description": "exact sum of every function's crap (math.fsum), two decimals"},
                         "avg": {
                             "type": "number",
                             "description": "mean crap per function, four decimals"},
@@ -444,7 +444,7 @@ TOOLS: tuple[dict, ...] = (
                                         "description": "of those, over the scope's ceiling"},
                                     "crap_load": {
                                         "type": "number",
-                                        "description": "sum of crap over the scope"},
+                                        "description": "exact sum of crap over the scope (math.fsum), two decimals"},
                                     "grade": {
                                         "type": "string",
                                         "description": ("A+ at zero over_target, then A under 2% "
@@ -635,7 +635,7 @@ TOOLS: tuple[dict, ...] = (
                         "description": "of those, over their own scope's ceiling"},
                     "crap_load": {
                         "type": "number",
-                        "description": "sum of crap over the file"}}},
+                        "description": "exact sum of crap over the file (math.fsum), two decimals"}}},
             "gate_rule": {
                 "type": "object",
                 "description": "what check_gate will judge this edit by",

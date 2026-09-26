@@ -86,6 +86,26 @@ def test_the_same_worklist_and_history_always_split_the_same_way():
     assert files_of(first) == [["a.py", "b.py"], ["c.py", "d.py"]]
 
 
+def test_a_tie_in_batch_risk_goes_to_the_emptier_batch_on_every_python():
+    """a.py's three risks add up to exactly b.py's one, 117.4173. Left to right,
+    as Python 3.11's sum() adds, they made 117.41729999999998, so c.py joined
+    a.py there and b.py everywhere else."""
+    entries = [entry("b.py", risk=117.4173), entry("a.py", "f( )", 53.481),
+               entry("a.py", "g( )", 38.5333), entry("a.py", "h( )", 25.403),
+               entry("c.py", risk=1.0)]
+
+    assert files_of(split_batches(entries, [], batches=2)) == [["b.py", "c.py"], ["a.py"]]
+
+
+def test_batches_whose_risks_tie_are_ordered_by_file_on_every_python():
+    """y.py's three risks add up to exactly x.py's one, 36.9154. Left to right
+    they made 36.915400000000005, and Python 3.11 put y.py's batch first."""
+    entries = [entry("x.py", risk=36.9154), entry("y.py", "f( )", 22.83),
+               entry("y.py", "g( )", 12.593), entry("y.py", "h( )", 1.4924)]
+
+    assert files_of(split_batches(entries, [], batches=2)) == [["x.py"], ["y.py"]]
+
+
 def test_a_pair_naming_a_file_no_worklist_entry_mentions_is_harmless():
     batches = split_batches(FOUR, [pair("a.py", "zz.py")], batches=2)
     seen = [f for b in batches for f in b.files]

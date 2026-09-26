@@ -63,8 +63,8 @@ def test_a_second_read_never_scans_the_function_rows_again(tmp_path):
 
 
 def test_the_per_scope_read_is_served_from_the_same_fill(tmp_path):
-    """run_totals and run_scope_totals are one scan, not two: the whole-run
-    numbers are the per-scope numbers added up."""
+    """run_totals and run_scope_totals are one scan, not two: the fill writes
+    the whole-run numbers beside the per-scope ones."""
     store = seeded(tmp_path)
 
     store.run_totals(target=6)

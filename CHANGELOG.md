@@ -38,6 +38,23 @@
   re-seeds. `docs/agent-json.md`, AGENTS.md and the MCP output schemas now say half to
   even, where they gave a bare `round()` that reads as half up.
 
+### The CRAP load is the exact sum of the scores
+
+- `crap_load` in `coverage`, `trend`, the digest and a brief's file totals adds the
+  scores with `math.fsum` and rounds once. Python 3.11's `sum()` adds left to right and
+  SQLite's `SUM()` adds in scan order before SQLite 3.43, so eleven scores that add up to
+  507.62500000000006 printed 507.62 in one row order and 507.63 in another. `trend` also
+  added each scope's rounded load, so on any Python a run whose three scores add up to
+  257.12500000000006 printed 257.12 in `trend` and 257.13 in `coverage`. The rollup now
+  stores the whole run's totals beside each scope's, so the first `trend` after the
+  upgrade sums every run again; filling 960,000 scored rows took 6.6 s where it took
+  5.9 s. A run with no scored function prints a load of `0.0`, not `0`. Loads are not
+  stored in the marks file, so nothing re-seeds.
+- `worklist --batches` adds each batch's risk the same way. On Python 3.11 three risks
+  that add up to exactly 117.4173 read 117.41729999999998, so a tie with a one-function
+  batch went to the fuller batch rather than the emptier one, and the same worklist
+  split differently on 3.11 and 3.12.
+
 ### crapkit stops before it stores or prints a number that breaks its definition
 
 - Every number crapkit writes to the store, the marks file or a report now passes a

@@ -484,7 +484,7 @@ def _coverage_summary(run_id: int, run: _ScoredRun, cfg, shape: _RunShape, db_pa
     """The run's summary, its counts and grade checked against their bounds
     before anything prints it (`invariants.check_summary`)."""
     from ..invariants import check_summary
-    from ..score import grade, over_ceiling
+    from ..score import crap_load, grade, over_ceiling
 
     flags = _flag_counts(run.scored)
     judged = _judged_rows(run.scored, shape.unmeasured)
@@ -497,7 +497,7 @@ def _coverage_summary(run_id: int, run: _ScoredRun, cfg, shape: _RunShape, db_pa
         "skipped_max_bytes": run.corpus.skipped_max_bytes,
         "over_target": over, "grade": grade(over, len(judged)),
         "by_scope": _by_scope(run.scored, cfg),
-        "crap_load": round(sum(r.crap for r in run.scored), 2), "lanes": run.provenance,
+        "crap_load": round(crap_load(r.crap for r in run.scored), 2), "lanes": run.provenance,
         "lane_failures": run.lane_errors, "db": str(db_path),
         "kind": shape.kind, "unmeasured_scopes": shape.unmeasured, "ceilings": cfg.ceilings,
     }

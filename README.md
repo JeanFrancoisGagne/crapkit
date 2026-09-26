@@ -844,8 +844,10 @@ over-target count, the grade, `ratchet seed` and `verify`'s gate judge it the sa
 
 The grade is the share of functions over their ceiling: `A+` at exactly zero, `A` under
 2%, `B` under 5%, `C` under 10%, `D` under 20%, `F` at 20% or more. `crap_load` beside it
-is the plain sum of every function's CRAP score, so it moves when a function gets better
-even if the letter does not.
+is the sum of every function's CRAP score, so it moves when a function gets better even if
+the letter does not. It is added exactly (`math.fsum`) and rounded once to 2 dp, so the
+order the rows come in and the Python or SQLite version never move it, and `trend`,
+`coverage`, the digest and `brief`'s file totals print the same load for the same rows.
 
 ### Risk: what ranks the worklist
 

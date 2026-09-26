@@ -10,7 +10,8 @@ missing number is a testing gap, a tooling gap, or by design.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+import math
 from typing import NamedTuple
 
 from .coverage_istanbul import FnCoverage
@@ -42,6 +43,15 @@ AT_CEILING = 1 + 2 ** -48
 def over_ceiling(score: float, ceiling: int) -> bool:
     """README's `crap > ceiling`, decided for the exact CRAP rather than its double."""
     return score > ceiling * AT_CEILING
+
+
+def crap_load(scores: Iterable[float]) -> float:
+    """The CRAP load: the exact sum of the scores, rounded once (math.fsum).
+
+    The builtin sum() adds left to right on Python 3.11 and SQLite's SUM() in
+    scan order before 3.43, so a load a hair above a 2 dp tie printed one way
+    or the other by row order. Every surface that prints a load sums with this."""
+    return math.fsum(scores)
 
 
 _GRADES = ((0.02, "A"), (0.05, "B"), (0.10, "C"), (0.20, "D"))

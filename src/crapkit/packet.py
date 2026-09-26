@@ -21,7 +21,7 @@ import shlex
 from .invariants import check_budget, check_rejudged
 from .ratchet_report import DAY, mark_age_days
 from .keys import position
-from .score import over_ceiling, remedy, shares_its_def_line
+from .score import crap_load, over_ceiling, remedy, shares_its_def_line
 
 # What the gate actually enforces, said once. A session that reads a ceiling of
 # 6 beside a standing mark of 72 otherwise reads a contradiction and either
@@ -77,7 +77,7 @@ def file_totals(rows, scope_targets: dict, target: int) -> dict:
     """
     over = sum(1 for r in rows if over_ceiling(r.crap, scope_targets.get(r.scope, target)))
     return {"functions": len(rows), "over_target": over,
-            "crap_load": round(sum(r.crap for r in rows), 2)}
+            "crap_load": round(crap_load(r.crap for r in rows), 2)}
 
 
 def gate_rule(*, ceiling: int, mark: float | None, mark_age_days: int | None,

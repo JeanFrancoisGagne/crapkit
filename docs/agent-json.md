@@ -919,7 +919,7 @@ $ crapkit coverage --json
 | `skipped_max_bytes` | Files dropped by `[exclude] max_file_bytes`. |
 | `measured`, `untested`, `no_lane`, `cc_only` | The four flags, counted. They sum to `functions`. |
 | `over_target` | Functions whose `crap` exceeds their scope ceiling, counted over the measured scopes: on a `partial` run the scopes in `unmeasured_scopes` are left out, since a skipped lane's functions score at cov 0 and would read as this run's debt. On a full run that is every function. The key keeps its name; the ceiling is what the config's `target` sets. |
-| `crap_load` | Sum of every function's CRAP, rounded to 2dp. |
+| `crap_load` | Sum of every function's CRAP, added exactly (`math.fsum`) and rounded to 2 dp. `trend` prints the same number for this run. |
 | `grade` | The letter for over-ceiling density over the same functions `over_target` counts. `A+` only at exactly zero. |
 | `by_scope` | Per scope: `{functions, over_target, crap_load, grade}`. |
 | `lanes` | Provenance per lane that succeeded: `artifact_sha256`, the command's `exit_code` (`null` when the artifact was reused), `parser`, `scopes`, plus `results_artifact_sha256`, `failures`, `tests_total` and `tests_skipped` when the lane declares a `results_artifact`. The digests bind coverage and JUnit to the bytes read for this run. Under `--reuse-unchanged` each lane also carries `rerun_reason`: `""` when its artifact was reused, else the sentence its `rerunning:` stderr line gave, such as `the working tree has 1 uncommitted change(s): src/app.ts`. |
@@ -1187,7 +1187,9 @@ the store. Both used to re-derive per-run totals from every scored row of every 
 on every invocation: 4.3 M rows on the corpus the 0.4.5 work was measured against, 4.58 s per
 `trend`. A run is immutable once written, so its totals are now summed once into a
 `run_rollup` table and read back from there: `trend` 4.58 s to 0.04 s warm, `report` down
-76%. A prune takes a run's rollup rows with it.
+76%. A prune takes a run's rollup rows with it. The table holds each scope's totals and the
+whole run's, each load added exactly from the run's scores, so a run's `trend` row prints
+the `crap_load` its `coverage` summary printed.
 
 Two consequences for a caller.
 

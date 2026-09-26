@@ -152,6 +152,10 @@ concurrency and cleanup rules. [Command cleanup](lanes.md#the-kill-takes-the-who
 describes Windows Jobs and POSIX process groups. These are process-lifetime controls,
 not a sandbox for configured test commands.
 
+The first `trend` or `report` after upgrading from 0.8.0 sums every stored run again,
+once: the stored totals now count a CRAP exactly at its ceiling as at it, and add each
+load exactly. On a store of about a million scored rows that takes a few seconds.
+
 Git filenames retain their literal identity through scoring and output. Coverage
 paths still have to name the measured tree. Use the documented
 [CLI path rules](configuration.md#file-paths-and-root-discovery) and

@@ -19,6 +19,7 @@ reports empty once nothing it ranks has work left. Each entry carries the run's
 from __future__ import annotations
 
 from collections.abc import Mapping
+import math
 from types import MappingProxyType
 from typing import NamedTuple
 
@@ -340,7 +341,10 @@ def _units(active: list[WorklistEntry], rep: dict[str, str]) -> list[list[Workli
 
 
 def _risk(entries: list[WorklistEntry]) -> float:
-    return sum(e.risk for e in entries)
+    """A batch's risk, summed exactly (math.fsum). Python 3.11's sum() adds left
+    to right, so two batches whose risks tie could read unequal there, and the
+    worklist split and ordered differently than on 3.12."""
+    return math.fsum(e.risk for e in entries)
 
 
 def _bin_key(entries: list[WorklistEntry]) -> tuple:
