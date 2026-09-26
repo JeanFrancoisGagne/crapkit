@@ -249,6 +249,26 @@ def test_a_deleted_scored_file_counts_as_changed(tmp_path):
     assert _json(repo, "worklist", "--json")["scored_changes"] == 1
 
 
+def _corrupt_index(repo: Path) -> None:
+    """An index git cannot read: every `git diff` against the tree fails."""
+    (repo / ".git" / "index").write_bytes(b"not an index\n")
+
+
+def test_a_corrupt_index_reads_null_and_names_git_s_error(tmp_path):
+    """shape-21: git fails while crapkit reads the tree. The count is null,
+    neither changed nor unchanged, and the text warning carries git's error."""
+    repo = _py_repo(tmp_path)
+    _measure(repo)
+    _corrupt_index(repo)
+
+    out = _json(repo, "worklist", "--json")
+    res = run_cli(repo, "worklist")
+
+    assert (out["stale"], out["scored_changes"]) == (False, None), out
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "because git failed" in res.stderr and "index" in res.stderr, res.stderr
+
+
 def test_the_worklist_warning_names_up_to_three_changed_files(tmp_path):
     names = ["a", "b", "c", "d"]
     repo = _py_repo(tmp_path, {f"src/{n}.py": f"def {n}(x):\n    return x\n" for n in names})
