@@ -408,7 +408,20 @@ class History(RuleBasedStateMachine):
         result = self.sc.run("runs", "prune", "--keep", "1")
         assert result.code == 0, result.stdout + result.stderr
         self.history = [m for m in self.history if m.id in keep]
-        assert self._reads() == before
+        after = self._reads()
+        assert after == before, f"{_moved(before, after)}\n{self._tree_state(after)}"
+
+    def _tree_state(self, after: dict) -> str:
+        """What a staleness note reads, for the failure report: HEAD, each lane
+        stamp's commit, git's view of the tree, the free disk, and whether a
+        third read of the same state agrees with the second."""
+        stamps = json.loads((self.sc.root / ".crapkit" / "artifacts.json").read_text(encoding="utf-8"))
+        commits = {path: entry.get("commit") for path, entry in stamps.items()}
+        third = self._reads()
+        return (f"HEAD {self.sc.head()} stamps {commits} status "
+                f"{repos.git(self.sc.top, 'status', '--porcelain')!r} free_bytes "
+                f"{shutil.disk_usage(self.sc.root).free} third read against the second:\n"
+                f"{_moved(after, third) or 'the same'}")
 
     def _reads(self) -> dict:
         answers = {args: self.sc.run(*args).stdout for args in READS}
@@ -517,6 +530,21 @@ def test_every_step_in_one_scripted_history(repo_templates, tmp_path):
     for change, command in SCRIPT:
         machine.step(change, command)
         machine.agrees_with_the_model()
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_the_prune_report_names_each_moved_field_and_the_tree(repo_templates, tmp_path):
+    """The runs_prune failure report: one line per moved field with both
+    values, then HEAD, the stamps, git status and a third read of the state."""
+    before = {("r",): json.dumps({"a": 1, "b": [1, 2]}), ("same",): "x"}
+    after = {("r",): json.dumps({"a": 1, "b": [1, 3], "c": 0}), ("same",): "x"}
+    assert _moved(before, after) == ("('r',) .b[1]: before=2 after=3\n"
+                                      "('r',) .c: before=None after=0")
+    machine = History(tmp_path, repo_templates)
+    machine.measured()
+    report = machine._tree_state(machine._reads())
+    assert (f"HEAD {machine.sc.head()}" in report, report.endswith("the same")) == (True, True), report
 
 
 # --- one history per past defect -------------------------------------------------------------
@@ -925,3 +953,39 @@ def test_history_leaves_out_only_runs_that_cannot_place_twins(make_repo, path, n
     assert result.code == 0, result.stdout + result.stderr
     (function,) = result.json()["functions"]
     assert [row["run_id"] for row in function["history"]] == runs
+
+
+def _moved(before: dict, after: dict) -> str:
+    """One line per field whose answer moved, both values in full: a str, so
+    the failure report prints it whole instead of an abbreviated repr."""
+    return "\n".join(f"{key} {field}: before={pair[0]!r} after={pair[1]!r}"
+                     for key in before if before[key] != after[key]
+                     for field, pair in _changed(before[key], after[key]).items())
+
+
+def _changed(old_text: str, new_text: str) -> dict:
+    old, new = _leaves(_parsed(old_text)), _leaves(_parsed(new_text))
+    return {k: (old.get(k), new.get(k)) for k in sorted(old.keys() | new.keys()) if old.get(k) != new.get(k)}
+
+
+def _parsed(text: str):
+    try:
+        return json.loads(text)
+    except ValueError:
+        return text
+
+
+def _leaves(value, where: str = "") -> dict:
+    """A JSON value as {path: scalar}."""
+    items = _children(value, where)
+    if items is None:
+        return {where: value}
+    return dict(pair for key, child in items for pair in _leaves(child, key).items())
+
+
+def _children(value, where: str):
+    if isinstance(value, dict):
+        return [(f"{where}.{key}", child) for key, child in value.items()]
+    if isinstance(value, list):
+        return [(f"{where}[{number}]", child) for number, child in enumerate(value)]
+    return None
