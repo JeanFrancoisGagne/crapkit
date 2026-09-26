@@ -182,6 +182,31 @@ def test_a_left_shift_inside_arithmetic_is_not_a_heredoc():
     assert [f.name for f in _functions(code)] == ["shift_bits", "later"]
 
 
+# Characters `str.splitlines` ends a line at and bash does not: bash ends a heredoc
+# line at LF only.
+NOT_LINE_ENDS = ["\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", " ", " "]
+
+
+@pytest.mark.parametrize("mark", NOT_LINE_ENDS, ids=[f"U+{ord(c):04X}" for c in NOT_LINE_ENDS])
+def test_a_delimiter_after_a_form_feed_does_not_end_the_heredoc(mark):
+    """bash prints `note<FF>EOF` and the `if` line below it as text, and ends the
+    body at the bare `EOF`. Split at the form feed, the body closed one line early
+    and the `if` and `&&` counted as code."""
+    code = f"emit() {{\n  cat <<EOF\nnote{mark}EOF\nif a && b; then c; fi\nEOF\n}}\n"
+    fn = _only(code)
+    assert (fn.name, fn.cyclomatic_complexity, fn.end_line) == ("emit", 1, 6)
+
+
+@pytest.mark.parametrize("mark", NOT_LINE_ENDS, ids=[f"U+{ord(c):04X}" for c in NOT_LINE_ENDS])
+def test_code_after_a_form_feed_on_the_opener_line_stays_code(mark):
+    """bash runs the `if` on the line that opens the heredoc; the body starts on
+    the next line. Split at the form feed, the `if` read as the body's first line."""
+    code = (f'emit() {{\n  cat <<EOF; echo "page{mark}"; if x; then y; fi\n'
+            f"body\nEOF\n}}\n")
+    fn = _only(code)
+    assert (fn.name, fn.cyclomatic_complexity, fn.end_line) == ("emit", 2, 5)
+
+
 # --- hazard: quotes and comments -----------------------------------------------
 
 def test_keywords_inside_quotes_are_not_conditions():

@@ -37,6 +37,19 @@
   and is built again once, the first time `brief` or `duplication` reads a run. No score
   moves.
 
+### A form feed on a heredoc line no longer ends the heredoc in the shell reader
+
+- The shell reader blanks every heredoc body before it counts, and it found the body's
+  lines with `str.splitlines`. bash ends a heredoc line at LF only. A body line such as
+  `note<FF>EOF` closed the body one line early, so the lines up to the real `EOF`
+  counted as code: an `if a && b` there added 2 to `ccn`. Code after a form feed on the
+  line that opens a heredoc read as body and did not count.
+- The reader now ends a heredoc line where bash does. `ccn`, cognitive, nesting and
+  NLOC move for a `.sh` or `.bash` function with a vertical tab, form feed,
+  `\x1c`-`\x1e`, NEL, U+2028 or U+2029 on a heredoc line or on the line that opens one.
+  This needs the next analysis version, so marks re-seed once with it; see
+  [docs/upgrading.md](docs/upgrading.md#next-analysis-version-shell-heredoc-lines).
+
 Go and Zig functions are read to where their signature ends, and no Go type switch,
 comment or Zig multiline string ends one early. A `//` comment ends at its line in every
 language but C, C++ and Objective-C. A Zig switch and a Go `select` count as

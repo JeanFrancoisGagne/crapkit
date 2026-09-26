@@ -171,6 +171,20 @@ version for it. Here is what moves:
 Re-seed once: `crapkit coverage`, `crapkit ratchet prune`, then `crapkit ratchet seed`.
 Prune drops the marks of the rows that go away or change key.
 
+### Next analysis version: shell heredoc lines
+
+The release after 0.8.0 moves some shell numbers, so it raises the analysis version and
+every marks file re-seeds once, with the same three commands as version 11 below.
+
+- The shell reader ends a heredoc line at LF only, as bash does. It used to end one at
+  a vertical tab, form feed, `\x1c`-`\x1e`, NEL, U+2028 and U+2029 too. A body line
+  such as `note<FF>EOF` closed the body early and the lines up to the real `EOF`
+  counted as code; code after one of those characters on the line that opens a heredoc
+  read as body. `ccn`, cognitive, nesting and NLOC move for the function that holds
+  such a line, up where body text had counted and down where code had been blanked. A
+  function the change puts over its ceiling fails the gate the next time its file
+  changes.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or

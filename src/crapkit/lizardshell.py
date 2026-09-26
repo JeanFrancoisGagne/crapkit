@@ -53,6 +53,11 @@ HEREDOCS
     opener whose terminator never appears is ignored, so a misread `<<` costs
     nothing instead of blanking the rest of the file.
 
+    A line ends where bash ends it, at LF (the source arrives with CRLF and a lone
+    CR already read as LF), never at a form feed or another character
+    `str.splitlines` also splits at. `note<FF>EOF` is one body line that does not
+    end the body, and code after a form feed on the opener line is still code.
+
 TOKENIZER REPAIRS
     lizard's shared token pattern is the C family's, and three of its rules read
     ordinary shell as something else. Each repair below was found by running this
@@ -107,6 +112,8 @@ import re
 import lizard_languages
 from lizard_languages.code_reader import CodeReader, CodeStateMachine
 from lizard_languages.script_language import ScriptLanguageMixIn
+
+from crapkit.sourcelines import source_lines
 
 # A double-quoted run can hold a command substitution, and that substitution can
 # hold quotes of its own: `v="$(node -e 'require("fs")' "$f")"`. lizard's shared
@@ -203,7 +210,7 @@ class _HeredocStripper:
         self.active = None        # the delimiter whose body we are inside
 
     def strip(self, source: str) -> str:
-        lines = source.splitlines(keepends=True)
+        lines = source_lines(source, keepends=True)
         return "".join(self._line(line, lines, index)
                        for index, line in enumerate(lines))
 
