@@ -26,7 +26,7 @@ def test_an_enum_constant_body_holds_methods_and_is_no_method():
     source = ("enum C {\n    ONE() {\n        @Override\n        int value(int n)" + BODY
               + "    };\n\n    abstract int value(int n);\n}\n")
 
-    assert _rows(source) == [("value( int n)", 4, 9, 2)]
+    assert _rows(source) == [("C::value( int n)", 4, 9, 2)]
 
 
 def test_every_constant_of_an_enum_is_read_whatever_it_holds():
@@ -40,8 +40,8 @@ def test_every_constant_of_an_enum_is_read_whatever_it_holds():
               "  int after() { return 1; }\n}\n")
 
     assert [(name, start, ccn) for name, start, _, ccn in _rows(source)] == [
-        ("Outer::apply( int a , int b)", 4, 1), ("Outer::apply( int a , int b)", 7, 2),
-        ("Outer::Op( String s)", 11, 1), ("Outer::twice( int a)", 12, 1),
+        ("Outer::Op::apply( int a , int b)", 4, 1), ("Outer::Op::apply( int a , int b)", 7, 2),
+        ("Outer::Op::Op( String s)", 11, 1), ("Outer::Op::twice( int a)", 12, 1),
         ("Outer::after()", 14, 1)]
 
 
@@ -60,7 +60,7 @@ ANNOTATED = {  # label: (source, the one row, worked by hand)
         ("B::get( int n)", 2, 7, 2)),
     "annotated record": (
         "@Deprecated\nrecord P(int x) {\n    int get(int n)" + BODY + "}\n",
-        ("get( int n)", 3, 8, 2)),
+        ("P::get( int n)", 3, 8, 2)),
 }
 
 
@@ -92,7 +92,7 @@ def test_an_anonymous_class_in_an_interface_field_holds_methods_and_is_no_method
               "            @Override\n            public int check(int n)" + BODY
               + "        };\n\n    int check(int n);\n}\n")
 
-    assert _rows(source) == [("check( int n)", 5, 10, 2)]
+    assert _rows(source) == [("FieldAnon::check( int n)", 5, 10, 2)]
 
 
 ELEMENT_DEFAULTS = ["{}", "{\"a\", \"b\"}", "\"x\"", "@Other(v = {1})"]
@@ -153,6 +153,69 @@ def test_a_method_nested_in_a_method_is_named_once_after_its_class(label):
     names = [r.long_name for r in analyze_source("A.java", source, note=False)]
 
     assert names[0] == name
+
+
+@pytest.mark.parametrize("head", ["class A {", "interface A {", "class A { static {}"])
+def test_a_record_declared_first_in_a_body_is_no_method(head):
+    """sec. 8.10: lizard took the `{` before `record` for the start of a name,
+    so a record declared first in a class or interface body read as a method
+    named after the record, and the record's methods had no row."""
+    source = head + "\n    record S(int y) {\n        int h(int n)" + BODY + "    }\n}\n"
+
+    rows = [(r.start, r.end, r.ccn_std) for r in analyze_source("A.java", source, note=False)]
+
+    assert rows[-1] == (3, 8, 2)
+
+
+TYPE_NAMES = {  # label: (source, the method's long name)
+    "enum": ("class A {\n    enum F {\n        Z;\n        int g() { return 3; }\n    }\n}\n",
+             "A::F::g()"),
+    "interface": ("class A {\n    interface J {\n        default int f() { return 1; }\n    }\n}\n",
+                  "A::J::f()"),
+    "record": ("class A {\n    record S(int y) implements Comparable<S> {\n"
+               "        int h() { return y; }\n    }\n}\n", "A::S::h()"),
+    "generic record with an annotated component": (
+        "class A {\n    record P<T>(@Size(max = {1}) T a) {\n        int h() { return 1; }\n"
+        "    }\n}\n", "A::P::h()"),
+    "top-level enum": ("enum E {\n    X;\n    int d() { return 2; }\n}\n", "E::d()"),
+    "top-level interface": ("interface I {\n    static int s() { return 2; }\n}\n", "I::s()"),
+    "enum in a method": ("class A {\n    void f() {\n        enum E { X; int d() { return 2; } }\n"
+                         "    }\n}\n", "A::f.E::d()"),
+    "anonymous class in a nested class": (
+        "class A {\n    class G {\n        void e() {\n"
+        "            Runnable r = new Runnable() { public void run() { } };\n        }\n    }\n}\n",
+        "A::G::e.run()"),
+    "sealed class": ("sealed class Shape permits Circle, Square {\n    int area() { return 0; }\n}\n",
+                     "Shape::area()"),
+    "anonymous class after a nested class": (
+        "class A {\n    class B {\n    }\n    void go() {\n"
+        "        Runnable r = new Runnable() { public void run() { } };\n    }\n}\n",
+        "A::go.run()"),
+}
+
+
+@pytest.mark.parametrize("label", TYPE_NAMES)
+def test_a_method_is_named_after_every_type_around_it(label):
+    """sec. 8.9, 8.10 and 9.1: an enum, a record and an interface name their
+    methods as a class does. lizard named a method after classes only, so the
+    methods of two enums in one class shared one name, told apart only by an
+    ordinal. A method of an anonymous class took the name of the last class
+    declared before its method, `B::go.run`, and one in a nested class lost
+    the outer class, `G::e.run`."""
+    source, name = TYPE_NAMES[label]
+
+    names = [r.long_name for r in analyze_source("A.java", source, note=False)]
+
+    assert names[0] == name
+
+
+def test_a_method_or_a_field_named_record_opens_no_type():
+    source = ("class A {\n    Record record;\n    void record(int x) { }\n"
+              "    int after() { return 1; }\n}\n")
+
+    names = [r.long_name for r in analyze_source("A.java", source, note=False)]
+
+    assert names == ["A::record( int x)", "A::after()"]
 
 
 LOCAL_TYPES = {  # label: the head of a type declared in outer's body (sec. 14.3)

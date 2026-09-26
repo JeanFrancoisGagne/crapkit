@@ -842,6 +842,18 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   and hid what followed.
 - A method of an anonymous or local class inside a method is named with its class once:
   `A::go.run()`, where it read `A::A::go.run()`. The name is a new ratchet key.
+- A record declared first in a class or interface body, `class A { record S(int y)
+  {...} }`, is no method. lizard took the `{` before `record` for part of a name, read
+  the record as a method named `S` and gave the record's methods no row.
+- A method is named after every enum, interface and record around it, as it was after
+  every class: `A::F::g()` for a method of enum `F` in class `A`, where it read
+  `A::g()`, so the methods of two enums in one class no longer share a name told apart
+  by an ordinal. `sealed class Shape permits Circle, Square` names its methods
+  `Shape::area()`, where they read `ShapepermitsCircle,Square::area()`. A method of an
+  anonymous class is named after the classes that hold its method: it read
+  `B::go.run()` when a class `B` was declared before `go`, and `G::e.run()` inside a
+  nested class `G`, where it now reads `A::G::e.run()`. In 13 files of Guava, Gson and
+  JUnit and 8 of OpenJDK, 127 rows change name and nothing else.
 - A record or an interface declared inside a method, `record R(int x) {...}` or
   `interface I {...}` (JLS sec. 14.3), has rows for its methods. lizard read their
   methods as statements of the method around them, which paid their `ccn`. A local

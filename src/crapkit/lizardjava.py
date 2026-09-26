@@ -21,8 +21,16 @@ Methods lizard hid, invented or misnamed
   read as a method named X that hid its methods (sec. 15.9.5).
 * An annotation element's default, `String[] v() default {};`, read as a body,
   and any other default ran on to the next `{` in the file (sec. 9.6.1).
+* A record declared first in a body, `class A { record S(int y) {...} }`, read
+  as a method named S that hid the record's methods: lizard's test for a
+  record took the `{` before it for the start of a name.
+* A method was named after the classes around it but not after an enum, an
+  interface or a record (sec. 8.9, 8.10, 9.1), and `sealed class Shape permits
+  Circle` named its methods `ShapepermitsCircle::area`. JavaNestingStates opens
+  a level for each type, named by the word after its keyword.
 * A method of a class declared inside a method was named with its class twice,
-  `A::A::go.run`; it reads `A::go.run`.
+  `A::A::go.run`, or after the last class declared before the method,
+  `B::go.run`; it reads `A::go.run`.
 * A record or interface declared inside a method (sec. 14.3) was read as the
   method's statements, which hid its methods and charged the method their ccn.
 * A field or an abstract method ending a class declared inside a method took
@@ -53,6 +61,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     import lizard
     import lizard_languages
     from lizard_languages.clike import CLikeNestingStackStates
+    from lizard_languages.code_reader import CodeStateMachine
     from lizard_languages.java import JavaReader as _StockJavaReader
     from lizard_languages.java import JavaStates
     from lizard_languages.java_body_states import JavaClassBodyStates, JavaFunctionBodyStates
@@ -63,6 +72,9 @@ _BRACE_DEPTH = {"{": 1, "}": -1}
 # The tokens that end an enum's constant list: `;` before its other
 # declarations, or the enum's own `}` when it declares nothing else.
 _CONSTANTS_END = frozenset({";", "}"})
+
+# The keywords that declare a type beside `class`, which lizard reads itself.
+_TYPE_WORDS = frozenset({"enum", "interface"})
 
 
 class _JavaFixes(ParameterCount):
@@ -79,19 +91,33 @@ class _JavaFixes(ParameterCount):
         super().sub_state(_twin(state), callback, token)
 
     def try_new_function(self, name):
+        """A new function's name holds every level open around it, as its long
+        name does. lizard's held only the class it sits in, so a function
+        nested in it spelled that class's outer levels nowhere."""
         before = self.context.current_function
         super().try_new_function(name)
-        if self.context.current_function is not before:
+        fn = self.context.current_function
+        if fn is not before:
+            fn.name = fn.long_name
             name_levels_once(self.context)
 
     def _try_start_a_class(self, token, after_unqualified_annotation=False):
+        """lizard's test for a record reads the `{` that opens a body as the
+        start of a name, so a record declared first in a body was a method."""
         self.crapkit_enum = token == "enum"
-        if self.in_method_body and token == "record":
+        if self.in_method_body:
+            return self._try_start_a_local_type(token, after_unqualified_annotation)
+        return super()._try_start_a_class(
+            token, after_unqualified_annotation or self.last_token == "{")
+
+    def _try_start_a_local_type(self, token, after_unqualified_annotation):
+        """A method body may declare a class, enum, record or interface (sec.
+        14.3). lizard read neither a record nor an interface there."""
+        if token == "record":
             self._state = self._state_local_record
             return True
-        if self.in_method_body and token == "interface":
-            token = "class"
-        return super()._try_start_a_class(token, after_unqualified_annotation)
+        return super()._try_start_a_class("class" if token == "interface" else token,
+                                          after_unqualified_annotation)
 
     def _state_local_record(self, token):
         """`record` in a method body declares a local record when a name follows
@@ -184,6 +210,62 @@ class JavaMethodBodyStates(_JavaFixes, JavaFunctionBodyStates):
     """lizard's method-body states, with the readings above."""
 
 
+class JavaNestingStates(CLikeNestingStackStates):
+    """lizard's nesting stack, which names a method after every class open
+    around it, and now after every enum, interface and record as well (sec.
+    8.9, 8.10, 9.1). lizard opened a level for a class only, so the methods of
+    two enums in one class took one name."""
+
+    def __init__(self, context):
+        super().__init__(context)
+        self.crapkit_record = ""
+        self.crapkit_parens = 0
+
+    def _state_global(self, token):
+        if token in _TYPE_WORDS:
+            self._state = self._read_namespace
+        elif token == "record":
+            self._state = self._read_record_name
+        else:
+            super()._state_global(token)
+
+    @CodeStateMachine.read_until_then(")({;")
+    def _read_namespace_name(self, token, saved):
+        """A type's name is the word after its keyword. lizard read on to the
+        first `<`, `extends` or `implements`, and spelled `sealed class Shape
+        permits Circle, Square` as one name, `ShapepermitsCircle,Square`."""
+        self._state = self._state_global
+        if token == "{" and saved:
+            self.context.add_namespace(saved[0])
+
+    def _read_record_name(self, token):
+        """`record` declares a record when a name and then its type parameters
+        or its components follow; anywhere else it names a variable or a method."""
+        if token[0].isalpha() and token != "instanceof":
+            self.crapkit_record = token
+            self._state = self._read_record_head
+        else:
+            self.next(self._state_global, token)
+
+    def _read_record_head(self, token):
+        if token in ("<", "("):
+            self.crapkit_parens = 0
+            self.next(self._read_to_record_body, token)
+        else:
+            self.next(self._state_global, token)
+
+    def _read_to_record_body(self, token):
+        """A record's type parameters, components and interfaces, up to the `{`
+        that opens its body. A brace inside the components belongs to an
+        annotation's arguments."""
+        self.crapkit_parens += _PAREN_DEPTH.get(token, 0)
+        if self.crapkit_parens == 0 and token == "{":
+            self.context.add_namespace(self.crapkit_record)
+            self._state = self._state_global
+        elif self.crapkit_parens == 0 and token in (";", "}"):
+            self.next(self._state_global, token)
+
+
 def _twin(state):
     """crapkit's machine in place of one lizard's Java states started."""
     if isinstance(state, _JavaFixes):
@@ -195,12 +277,13 @@ def _twin(state):
 
 
 class JavaReader(_StockJavaReader):
-    """lizard's JavaReader with JavaFamilyStates in place of JavaStates."""
+    """lizard's JavaReader with JavaFamilyStates in place of JavaStates and
+    JavaNestingStates in place of CLikeNestingStackStates."""
 
     # pylint: disable=too-few-public-methods
     def __init__(self, context):
         super().__init__(context)
-        self.parallel_states = [JavaFamilyStates(context), CLikeNestingStackStates(context)]
+        self.parallel_states = [JavaFamilyStates(context), JavaNestingStates(context)]
 
 
 # Any filename picks the reader; the file is never opened.

@@ -222,7 +222,8 @@ same three commands as version 11 below.
   marks it.
 - Rows that were not functions go: a declaration whose trailing return type holds
   braces, an Objective-C instance-variable block, a Java enum constant, an annotation
-  element with a braced default, and a Java field's anonymous class.
+  element with a braced default, a Java field's anonymous class, and a Java record
+  declared first in a class or interface body, which read as a method named after it.
 - Rows named after an attribute take the function's name: `__attribute__((noinline))`,
   `API_AVAILABLE( ios(10))`, or `)` for an Objective-C method, and Java rows named
   after an annotation with arguments, `InlineMe( replacement = ...)`. A member of a
@@ -230,7 +231,10 @@ same three commands as version 11 below.
   or `class __declspec(dllexport) Foo`, reads `QString::size`, where it read
   `Q_CORE_EXPORTQString::size`, or had no class in its name. A Java method
   inside a method's anonymous or local class reads `A::go.run()`, where it read
-  `A::A::go.run()`. The name is a new ratchet key, and so is the long name of a
+  `A::A::go.run()` or took the name of a class declared before the method. A Java
+  method inside an enum, an interface or a record carries its name, `A::F::g()` where
+  it read `A::g()`, and a sealed class's methods read `Shape::area()`, where they read
+  `ShapepermitsCircle::area()`. The name is a new ratchet key, and so is the long name of a
   function after one whose default argument holds a parenthesized `<`:
   `g( int a , int c)` where it read `g(int a,int c)`.
   `ratchet prune` drops the old mark and `ratchet seed` marks the function under its
