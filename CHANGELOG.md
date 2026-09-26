@@ -2,7 +2,7 @@
 
 ## 0.8.1 — unreleased
 
-### Two refused files with the same bytes are counted and named as two
+### Every refused file is counted and named, once per run
 
 - A file no reader can tokenize is named on stderr under its own path, whatever another
   file holds. A cold run reads identical bytes once and hands the result to every copy,
@@ -11,6 +11,11 @@
   could not be tokenized` and named only the first path. Each copy of a refused file is
   now read under its own path, so the count and the names match the files. Scores do not
   change.
+- The pre-commit hook on a change of fewer than 16 files noted each staged file on its
+  own. Two refused files printed two `1 file(s) could not be tokenized` counts, and every
+  file that defines a name more than once took a line of its own. The hook now prints one
+  count, and names five such files before counting the rest, as its pooled arm and every
+  other run do.
 
 ### A lone CR no longer hides a changed function from the gates
 

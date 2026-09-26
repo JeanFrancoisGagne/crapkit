@@ -9,7 +9,7 @@ return records; the parent is the only process that says anything.
 """
 from pathlib import Path
 
-from crapkit import _analysis_pool
+from crapkit import _analysis_pool, hook
 from crapkit.analyze import analyze_files, analyze_jobs, analyze_one, analyze_source
 
 TWINS = "def f():\n    return 1\n\n\ndef f():\n    return 2\n"
@@ -105,6 +105,18 @@ def test_copies_of_one_analyzed_file_share_the_same_cap(tmp_path, capsys):
 
     notes = _twin_notes(capsys.readouterr().err)
     assert len(notes) == 6 and notes[-1].endswith("and 2 more file(s) define a name more than once"), notes
+
+
+def test_a_commit_sized_hook_shares_the_same_cap(capsys):
+    """Below the pool threshold the hook reads each staged blob in-process, and it
+    named every file with twins where the pooled arm names five."""
+    blobs = {f"twins{n}.py": TWINS.encode() for n in range(7)}
+
+    hook.staged_records(blobs)
+
+    notes = _twin_notes(capsys.readouterr().err)
+    assert [note.split()[1] for note in notes[:5]] == [f"twins{n}.py" for n in range(5)], notes
+    assert notes[5:] == ["crapkit: ... and 2 more file(s) define a name more than once"], notes
 
 
 def test_the_pages_quote_the_count_line_a_batch_prints(tmp_path, capsys):

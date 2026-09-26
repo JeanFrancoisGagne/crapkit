@@ -22,7 +22,7 @@ from itertools import chain
 from pathlib import Path
 from typing import NamedTuple
 
-from .analyze import analyze_jobs, analyze_source, decode_source
+from .analyze import analyze_jobs, analyze_sources, decode_source
 from .config import Config
 from .diffparse import changed_ranges, reader_ranges
 from .gitio import GitReads
@@ -96,8 +96,7 @@ def staged_records(blobs: dict[str, bytes], *, worker_budget: int = 0) -> dict[s
     materializes, because a worker process reads its own files.
     """
     if commit_sized(blobs):
-        return {rel: analyze_source(rel, decode_source(blob))
-                for rel, blob in sorted(blobs.items())}
+        return analyze_sources({rel: decode_source(blob) for rel, blob in sorted(blobs.items())})
     with tempfile.TemporaryDirectory() as tmp:
         jobs = _materialized(Path(tmp), blobs)
         return analyze_jobs(jobs, workers=min(len(jobs), _HOOK_MAX_WORKERS),

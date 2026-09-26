@@ -658,20 +658,39 @@ def analyze_source(rel_path: str, code: str, *, note: bool = True) -> list[Funct
     NOTE=False leaves an unreadable file unannounced, for a caller that reads a
     half-typed edit on purpose.
     """
-    try:
-        analyzer = _Analyzer(_extensions_for(rel_path))
-        analysis = analyzer.analyze_source_code(rel_path, code)
-        records = _trusted_records(rel_path, analysis.function_list)
-    except InternalCheckError:
-        raise
-    except Exception as exc:  # per-file, exactly as in analyze_one; the hook keeps going
-        records = UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
+    records = _source_records(rel_path, code)
     if isinstance(records, UnanalyzableFile):
         if note:
             _note_unanalyzable({rel_path: records})
         return records
     _note_twin_keys(rel_path, records)
     return records
+
+
+def analyze_sources(sources: dict[str, str]) -> dict[str, list[FunctionRecord]]:
+    """analyze_source over a batch of (rel_path -> code), noted once for the batch.
+
+    The hook reads a commit's staged blobs through this. Noted one file at a
+    time, two refused files printed two `1 file(s) could not be tokenized` counts
+    and every file with twins took a line, where the pooled arm prints one count
+    and names five files: the same commit read two ways either side of the pool
+    threshold.
+    """
+    fresh = {rel_path: _source_records(rel_path, code) for rel_path, code in sources.items()}
+    _note_batch(fresh)
+    return fresh
+
+
+def _source_records(rel_path: str, code: str) -> list[FunctionRecord]:
+    """The records for `code` read as `rel_path`, or its refusal; silent."""
+    try:
+        analyzer = _Analyzer(_extensions_for(rel_path))
+        analysis = analyzer.analyze_source_code(rel_path, code)
+        return _trusted_records(rel_path, analysis.function_list)
+    except InternalCheckError:
+        raise
+    except Exception as exc:  # per-file, exactly as in analyze_one; the hook keeps going
+        return UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
 
 
 def content_hash(path: Path) -> str:
@@ -965,9 +984,15 @@ def analyze_jobs(
     # never saw `_reconfigure_streams`, so a note printed from analyze_one
     # reached a UTF-8 reader in the legacy codepage on Windows (#31).
     if notes:
-        _note_twin_files(fresh)
-        _note_unanalyzable(fresh)
+        _note_batch(fresh)
     return fresh
+
+
+def _note_batch(fresh: dict[str, list[FunctionRecord]]) -> None:
+    """A batch's notes, printed once for the whole batch: the twin-key notes
+    for five files at most, then one count over every refusal."""
+    _note_twin_files(fresh)
+    _note_unanalyzable(fresh)
 
 
 _UNANALYZABLE_NAMED = 5
@@ -1065,8 +1090,7 @@ def _analyze_misses(root: Path, misses: list[str], identities: dict, hashes: dic
     parsed.update(parse(copies))
     origins.update(zip(copies, copies))
     records = {path: _rows_for(path, parsed[origin]) for path, origin in origins.items()}
-    _note_twin_files(records)
-    _note_unanalyzable(records)
+    _note_batch(records)
     return records
 
 
