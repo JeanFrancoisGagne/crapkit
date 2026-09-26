@@ -228,6 +228,72 @@ def test_a_swift_comparison_that_is_its_whole_run_still_mutates():
     assert mutated == ["let ok = xs |> count > n", "let ok = xs |> count < n"]
 
 
+# --- a connective that opens an operand, and an operator's own name ------------
+
+@pytest.mark.parametrize("line", [
+    "fn f() { let v = o.unwrap_or_else(|| 0); }\n",
+    "fn f() { spawn(move || { g(); }); }\n",
+    "fn f() { let y = &&x; }\n",
+    "fn f(x: &&str) {}\n",
+    "fn f() { let n = xs.iter().filter(|&&x| x.ok).count(); }\n",
+])
+def test_a_rust_closure_or_double_borrow_is_not_a_connective(line):
+    """With nothing on its left, Rust's `||` is a closure with no parameters and
+    its `&&` borrows twice. Flipped, `spawn(move && { g(); })` and `let y = ||x;`
+    do not compile, so the compiler killed them and the run counted the kills."""
+    assert file_mutants(line, None, "rust") == []
+
+
+@pytest.mark.parametrize("text, mutated", [
+    ("fn f() { let ok = a\n    && b; }\n", ["    || b; }"]),
+    ("fn f() { let ok = x as bool && y; }\n", ["fn f() { let ok = x as bool || y; }"]),
+    ("fn f() { let ok = xs.any(|x| x.ok) || fut.await && v?; }\n",
+     ["fn f() { let ok = xs.any(|x| x.ok) || fut.await || v?; }",
+      "fn f() { let ok = xs.any(|x| x.ok) && fut.await && v?; }"]),
+])
+def test_a_rust_connective_after_an_operand_still_mutates(text, mutated):
+    """rustfmt starts a continuation line with the operator, so the operand it
+    joins sits on the line above."""
+    assert [m.mutated for m in file_mutants(text, None, "rust")] == mutated
+
+
+@pytest.mark.parametrize("line", [
+    "void f() { for (auto&& x : xs) { g(x); } }\n",
+    "void f(int&& y) { g(y); }\n",
+    "auto f() -> int&&;\n",
+    "void *p = &&done;\n",
+])
+def test_a_cpp_reference_or_label_address_is_not_a_connective(line):
+    """`auto&& x` and `int&& y` declare rvalue references, and GNU C's `&&done`
+    takes a label's address. `auto|| x` does not compile."""
+    assert file_mutants(line, None, "cpp") == []
+
+
+@pytest.mark.parametrize("line, mutated", [
+    ("bool f() { return this && n-- && ok; }\n",
+     ["bool f() { return this || n-- && ok; }", "bool f() { return this && n-- || ok; }"]),
+    ("if constexpr (std::is_same_v<T, int> && N > 0) {}\n",
+     ["if constexpr (std::is_same_v<T, int> && N >= 0) {}",
+      "if constexpr (std::is_same_v<T, int> && N <= 0) {}",
+      "if constexpr (std::is_same_v<T, int> || N > 0) {}"]),
+])
+def test_a_cpp_connective_after_an_operand_still_mutates(line, mutated):
+    """`this`, a postfix `n--` and a template's closing `>` each end an operand."""
+    assert [m.mutated for m in file_mutants(line, None, "cpp")] == mutated
+
+
+@pytest.mark.parametrize("language, line", [
+    ("cpp", "struct A { bool operator<(const A& o) const; };\n"),
+    ("cpp", "struct A { bool operator==(const A& o) const; };\n"),
+    ("objectivec", "struct A { bool operator&&(const A& o) const; };\n"),
+    ("swift", "struct A { static func < (l: A, r: A) -> Bool { f() } }\n"),
+])
+def test_a_declared_operator_is_a_name_not_an_operation(language, line):
+    """`bool operator<=(...)` declares a different operator, so every caller of
+    `<` and the definition out of line stop compiling."""
+    assert file_mutants(line, None, language) == []
+
+
 # --- the language set a user actually reads -----------------------------------
 
 DISPLAY = {"typescript": "TypeScript", "tsx": "TSX", "javascript": "JavaScript",

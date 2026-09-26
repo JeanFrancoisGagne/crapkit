@@ -13,6 +13,18 @@
   These operators now make no mutant, and a comparison beside one still makes its own.
   Kill rates on such files can fall. No CRAP score changes.
 
+### `mutate` flips a `&&` or `||` only where it joins two operands
+
+- In Rust a `||` with nothing on its left is a closure with no parameters and a `&&`
+  there borrows twice, and in C++ `auto&& x` and `int&& y` declare references. `mutate`
+  flipped them all, so `spawn(move || ...)` grew `spawn(move && ...)` and `auto&& x`
+  grew `auto|| x`. It also flipped the name a declaration gives an operator: `bool
+  operator<(const A&) const;` grew `operator<=`, and Swift's `static func <` grew
+  `static func <=`. None of these compiles, so each counted as a kill no test made.
+  They now make no mutant. A connective after an operand, including one that starts
+  a rustfmt continuation line, still makes its own. Kill rates on Rust, C++ and Swift
+  files can fall. No CRAP score changes.
+
 ### Recovery recognizes an abandoned temporary mutation run of any size
 
 - Startup recovery and `crapkit clean` refused a temporary mutation receipt that recorded

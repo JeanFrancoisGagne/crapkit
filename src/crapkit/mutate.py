@@ -69,6 +69,18 @@ _WHOLE_TOKENS = {"go": r"<-", "cpp": r"<=>|<%|%>", "objectivec": r"<=>|<%|%>",
                  **dict.fromkeys(("javascript", "typescript", "tsx", "vue", "java"), r">>>=?")}
 _LEXEMES = {language: re.compile(f"{whole}|{_SHARED_LEXEMES.pattern}")
             for language, whole in _WHOLE_TOKENS.items()}
+# A connective opens an operand in two languages: Rust's `||` is a closure with
+# no parameters and its `&&` borrows twice (`&&x`, `x: &&str`), and C++'s `&&`
+# declares an rvalue reference (`auto&& x`, `int&& y`). A binary one follows an
+# operand, which ends in a name, a literal or one of these: `)`, `]`, `}`, a
+# template's `>` (`is_same_v<T, U> && ok`), Rust's `x?` and `.await`, C++'s
+# `this`, and a postfix `++` or `--` (`while (n-- && ok)`). Rust's `x as bool`
+# ends in a type; a C++ type keyword before `&&` declares a reference.
+_PREFIX_CONNECTIVES = frozenset({"rust", "cpp", "objectivec"})
+_OPERAND_ENDS = frozenset({")", "]", "}", ">", "?", "+", "-", "this", "await"})
+# The keyword before a declared operator's own name: `bool operator<(...)` and
+# Swift's `static func <` name the operator they define and compare nothing.
+_OPERATOR_NAMERS = {"cpp": "operator", "objectivec": "operator", "swift": "func"}
 _SYNTAX = re.compile(r"\w+|::|->|=>|<=|>=|==|!=|&&|\|\||<<|\.\.<|\.\.\.|[^\s]")
 _TYPE_ARGUMENTS = re.compile(r"(?:[\w\s:,.?*\[\]'<>]|&(?!&))+")
 _ANGLE_LANGUAGES = {"typescript", "tsx", "vue", "cpp", "rust", "java", "swift", "objectivec"}
@@ -172,10 +184,41 @@ def _code_tokens(text: str, language: str):
     lexed = list(get_lexer_by_name(aliases.get(language, language)).get_tokens_unprocessed(text))
     mask, syntax = _code_masks(text, lexed, language)
     protected, ambiguous = _type_angles(syntax, lexed, language)
+    protected |= _not_operations(lexed, language)
     lexemes = _LEXEMES.get(language, _SHARED_LEXEMES)
     tokens = ((match.start(), match.group()) for match in lexemes.finditer(mask)
               if match.start() not in protected)
     return tokens, ambiguous
+
+
+def _not_operations(lexed: list, language: str) -> set:
+    """Offsets where a table spelling names an operator or opens an operand."""
+    tokens = _significant_tokens(lexed)
+    namer = _OPERATOR_NAMERS.get(language)
+    return {at for (at, _, value), (_, kind, before) in zip(tokens, [(0, None, "")] + tokens)
+            if before == namer or _opens_an_operand(value, kind, before, language)}
+
+
+def _significant_tokens(lexed: list) -> list:
+    from pygments.token import Comment
+
+    return [(at, kind, value) for at, kind, value in lexed
+            if value.strip() and kind not in Comment]
+
+
+def _opens_an_operand(value: str, kind, before: str, language: str) -> bool:
+    """A `&&` or `||` with no operand on its left. `kind` and `before` are
+    the token ahead of `value`."""
+    if language not in _PREFIX_CONNECTIVES or value[:1] not in ("&", "|"):
+        return False
+    return not _ends_an_operand(kind, before, language)
+
+
+def _ends_an_operand(kind, value: str, language: str) -> bool:
+    from pygments.token import Keyword, Literal, Name
+
+    families = (Name, Literal, Keyword.Constant, *((Keyword.Type,) if language == "rust" else ()))
+    return value in _OPERAND_ENDS or any(kind in family for family in families)
 
 
 def _code_masks(text: str, lexed: list, language: str) -> tuple[str, str]:
