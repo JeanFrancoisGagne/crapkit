@@ -20,10 +20,17 @@ re-seeds its marks once; the [upgrading guide](docs/upgrading.md) lists what mov
   on its signature line at ccn 1.
 - A package-level Go literal with a result, `var f = func(a int) error {...}`, is an
   anonymous function like the literal without one. It had no row.
+- A composite literal whose element type is a function, `[]func(){f, g}` or
+  `map[string]func(int) int{...}`, is a literal, not a function. lizard listed it as
+  an anonymous row at ccn 1. A function literal inside a package-level one keeps its
+  row and reads like any package-level literal, `(i int)`, where it read ` i int` and
+  took the handle `i`.
+- A Zig function named by a string, `fn @"weird name"(x: i32) i32`, is listed under
+  that name, and its handle is the whole `@"weird name"`. It had no row.
 - `params` counts a parameter of function type once, where `f func(int, string)
   error` and Zig's `lessThan: fn (T, T) bool` read 2, and counts a parameter whose
-  type ends in a brace, where `v interface{}` read 0. Long names do not change, so
-  marks keep their keys.
+  type ends in a brace, where `v interface{}` read 0. Those long names do not
+  change, so their marks keep their keys.
 
 ### Switch prongs and select count as the switch they belong to
 

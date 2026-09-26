@@ -83,6 +83,25 @@ def test_the_parenthesised_forms_keep_the_name_they_had(long_name: str, expected
     assert bare_name(long_name) == expected
 
 
+@pytest.mark.parametrize("long_name,expected", [
+    ('@"weird name" x : i32', '@"weird name"'),   # a space inside the name
+    ('@"f(x)" a : u8', '@"f(x)"'),                 # a parenthesis inside it
+    ('@"say \\"hi\\""', '@"say \\"hi\\""'),        # an escaped quote inside it
+    ('@"type"', '@"type"'),
+])
+def test_a_zig_name_spelled_as_a_string_is_cut_whole(long_name: str, expected: str):
+    """Zig writes any string as an identifier with `@"..."`, and the reader
+    reads it as one token. Cut at its space or its `(`, the handle was half a
+    name no command could take back."""
+    assert bare_name(long_name) == expected
+
+
+def test_a_zig_string_names_handle_is_its_whole_name():
+    (record,) = analyze_source("app.zig", 'fn @"weird name"(x: i32) i32 {\n    return x;\n}\n')
+
+    assert handles([row(record.long_name)]) == {("app.rs", record.long_name, 1, 0): '@"weird name"'}
+
+
 def test_an_anonymous_function_still_has_no_bare_name():
     assert bare_name(ANONYMOUS) == ""
     assert bare_name(f"{ANONYMOUS} ( z )") == ""

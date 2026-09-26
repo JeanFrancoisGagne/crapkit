@@ -35,6 +35,7 @@ picked the worst twin in one and the first in the other.
 from __future__ import annotations
 
 from collections import Counter
+import re
 
 from .errors import CrapkitError, ToolError
 
@@ -206,6 +207,10 @@ def claim_holds(claim: dict, key: tuple[str, str]) -> bool:
 
 # --- the naming rules: what a NAME can say and which function it reaches -----
 
+# A Zig identifier spelled as a string (crapkit.lizardgolike reads it as one token).
+_QUOTED_NAME = re.compile(r'@"(?:\\.|[^"\\])*"')
+
+
 def bare_name(long_name: str) -> str:
     """The identifier a long_name opens with, before its parameter list.
 
@@ -223,7 +228,13 @@ def bare_name(long_name: str) -> str:
     Empty for a function lizard could not name: both `(anonymous)` and
     `(anonymous) ( z )` open with the parenthesis, so an empty prefix IS the
     test for anonymity, with no second string to keep in step.
+
+    A Zig name written as a string, `@"weird name" x : i32`, is one token whose
+    text holds a space and can hold a `(`, so it is cut whole.
     """
+    quoted = _QUOTED_NAME.match(long_name)
+    if quoted:
+        return quoted.group()
     head = long_name.split("(")[0].strip()
     return head.split()[0] if head else ""
 

@@ -1,7 +1,7 @@
 """Go and Zig readers that end a function's signature where the language ends it.
 
 lizard 1.24.0 reads both languages with one state machine, GoLikeStates, and it
-misread a signature four ways:
+misread a signature five ways:
 
   * after a parameter list it waited for the next `{` wherever that was. A
     function type has no body, so `var cb func(int) error` in a function, or
@@ -17,6 +17,8 @@ misread a signature four ways:
     parameter by the word its text ends with. So `f func(int, string) error`
     counted 2, `lessThan: fn (T, T) bool` counted 2, and `v interface{}`
     counted 0.
+  * a Zig name written as a string, `fn @"weird name"(x: i32)`, reached it as
+    `@` and a string, so the function had no row.
 
 The fix reads the signature the way the language does:
 
@@ -36,6 +38,12 @@ The fix reads the signature the way the language does:
   * At Go package level, `func (...)` followed by a name and `(` or `[` is a
     method. Anything else after the group is a result type or a body, so the
     group was a literal's parameter list or a function type.
+  * A `func` right after a `]` on the same line is an element type
+    (`[]func(){f, g}`, `map[string]func(int) int{...}`), and the `{` after its
+    signature opens the composite literal, not a body. lizard read such a
+    literal as a function at ccn 1.
+  * A Zig `@"..."` is one token, and it names the function it follows `fn`
+    in. keys.bare_name cuts it whole, spaces and all.
 
 A dropped function has to be dropped before any extension counts the token that
 ends it, or that token's condition, nesting and line go to a function that no
@@ -47,8 +55,6 @@ attribute read when none is.
 
 Accepted, documented, not solved
 --------------------------------
-* A composite literal whose element type is a function, `[]func(){f, g}`, reads
-  its `{` as a literal's body, as lizard did: one anonymous row at ccn 1.
 * A package-level Go literal's parameters were read as a receiver and still
   are, so `var f = func(a int) {...}` reports params 0, as it did.
 
@@ -90,6 +96,11 @@ _TAIL = frozenset({"_function_name", "_expect_function_dec", "_expect_function_i
 # `default`.
 _DEFAULT_PRONGS = frozenset({"else", "_"})
 
+# A Zig identifier can be any string, written `@"..."`. lizard's tokenizer reads
+# the `@` and the string as two tokens, and a name that is not one word named no
+# function: `fn @"weird name"(x: i32) i32 {` reported no row, or a row named ''.
+_ZIG_QUOTED_NAME = r'|@"(?:\\.|[^"\\\n])*"'
+
 # Go keywords that can end a line inside a type without a semicolon following:
 # the spec inserts one only after an identifier, a literal, a closing bracket and
 # four statement keywords, none of which is a type's.
@@ -99,6 +110,11 @@ _GO_TYPE_KEYWORDS = frozenset({"chan", "func", "interface", "map", "struct"})
 def counted_prong(previous) -> bool:
     """Whether a Zig prong's `=>` is a decision, from the token before it."""
     return previous not in _DEFAULT_PRONGS
+
+
+def _is_name(token: str) -> bool:
+    """A word, or a Zig identifier spelled as a string, `@"weird name"`."""
+    return token.isidentifier() or token.startswith('@"')
 
 
 def _is_line_break(token: str) -> bool:
@@ -122,18 +138,29 @@ class _SignatureStates(GoLikeStates):
         self._nested = 0              # brackets open inside a parameter list or a result
         self._awaits_type_body = False  # a container word waits for its `{`
         self._name = ""               # a word after `func` that may name a method
+        self._element = False         # `func` came right after `]`: an element type
+        self._line = 0                # the line of the last token read
+
+    def __call__(self, token, reader=None):
+        exits = super().__call__(token, reader)
+        self._line = self.context.current_line
+        return exits
 
     # --- the signature opens ------------------------------------------------------
 
     def _state_global(self, token):
+        # `[]func()` is a type. A `]` that ends the line before it is not part of
+        # it: Go ends the statement there (`x := a[i]`).
+        element = self.last_token == "]" and self._line == self.context.current_line
         super()._state_global(token)
         if token == self.FUNC_KEYWORD:
             self.context.crapkit_header = self
+            self._element = element
 
     def _function_name(self, token):
         if token in ("(", "{", "`"):
             return super()._function_name(token)
-        if token.isidentifier() and token not in _GO_TYPE_KEYWORDS:
+        if _is_name(token) and token not in _GO_TYPE_KEYWORDS:
             self._name = token
             self._state = self._expect_function_dec
             return None
@@ -195,7 +222,12 @@ class _SignatureStates(GoLikeStates):
             self._drop()
 
     def _ended_by(self, token) -> bool:
-        return self._in_tail() and token in _ENDERS
+        return self._in_tail() and (token in _ENDERS or self._opens_literal(token))
+
+    def _opens_literal(self, token) -> bool:
+        """A `{` after an element type's signature opens the composite literal
+        around it: `[]func() error{f, g}` is a slice, not a function."""
+        return token == "{" and self._element and not self._awaits_type_body
 
     def _in_tail(self) -> bool:
         return self._nested == 0 and getattr(self._state, "__name__", "") in _TAIL
@@ -306,6 +338,11 @@ class CorrectedZigReader(_Lookahead, _StockZigReader):
         super().__init__(context)
         context.crapkit_header = None
         self.parallel_states = [ZigSignatureStates(context), _ProngStates(context)]
+
+    @staticmethod
+    def generate_tokens(source_code, addition="", token_class=None):
+        """lizard's tokens, with a quoted identifier `@"..."` read as one."""
+        return _StockZigReader.generate_tokens(source_code, _ZIG_QUOTED_NAME + addition, token_class)
 
 
 # Any filename picks the reader; the file is never opened.

@@ -253,7 +253,10 @@ a signature where the language does: at its body's `{`, at a `,` `;` `=` or clos
 that belongs to the code around it, at a Go line break where the spec inserts a semicolon,
 and at a Zig `fn (`, which is always a type. A result type's braces (`struct{ a int }`,
 `error{Oops}!u8`) are not the body, and a parameter of function type, `f func(int, string)
-error`, counts once. The Zig reader also counts switch prongs, as the paragraph above says.
+error`, counts once. A `func` right after `]` is an element type, so `[]func(){f, g}` is a
+literal and lists no function. A Zig name written as a string, `fn @"weird name"(x: i32)`,
+names its function, and its handle is the whole `@"weird name"`. The Zig reader also counts
+switch prongs, as the paragraph above says.
 
 The cognitive column charges a Rust `match` like a `switch`: +1 plus the nesting it sits
 in, arms free. The two columns therefore say different things about one block on purpose.

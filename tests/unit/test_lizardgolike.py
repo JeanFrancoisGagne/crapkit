@@ -169,6 +169,64 @@ var handler = func(a int) {
     ]
 
 
+def test_a_go_composite_literal_of_functions_opens_no_function():
+    """A `func` right after `]` is an element type, and the `{` after its
+    signature opens the literal. lizard read `[]func(){f, g}` as a function
+    literal at ccn 1, and a result type (`[]func() error{f, g}`) made crapkit
+    read the whole literal as a function too."""
+    for literal in ('var handlers = map[string]func(int) int{"a": f}\n',
+                    "var checks = []func() error{f, g}\n",
+                    "var hooks = []func(){f, g}\n",
+                    "var pairs = [2]func() struct{ a int }{f, g}\n",
+                    'var makers = map[string]func() func() int{"a": f}\n',
+                    'var lists = map[string][]func(){"a": {f}}\n'):
+        source = "package b\n\n" + literal + "\nfunc Add(n int) int {\n\treturn n + 1\n}\n"
+
+        assert [r[0] for r in rows("b.go", source)] == ["Add n int"], literal
+
+
+def test_a_go_composite_literal_of_functions_in_a_function_leaves_it_its_if():
+    source = ("package b\n\nfunc Run(n int) int {\n\tchecks := []func() error{f, g}\n"
+              "\tif n > 0 {\n\t\treturn 1\n\t}\n\treturn len(checks)\n}\n")
+
+    assert rows("b.go", source) == [("Run n int", 3, 9, 2, 1, 1, 1)]
+
+
+def test_a_bracket_that_ends_its_line_leaves_the_func_below_it_a_function():
+    """Go ends a statement at a line break after `]`, so the `func` on the
+    next line starts a declaration or a literal, never an element type."""
+    source = """package b
+
+var first = names[0]
+func Add(n int) int {
+\tv := m[n]
+\tfunc() {
+\t\tif v > 0 {
+\t\t}
+\t}()
+\treturn v
+}
+"""
+    assert [r[:4] for r in rows("b.go", source)] == [("", 6, 9, 2), ("Add n int", 4, 11, 1)]
+
+
+def test_the_function_literals_inside_a_composite_literal_keep_their_rows():
+    """The literal inside is a function; the map around it is not. Named the
+    way any package-level literal is named, by its parameter group."""
+    source = """package b
+
+var handlers = map[string]func(int) int{
+\t"a": func(i int) int {
+\t\tif i > 0 {
+\t\t\treturn 1
+\t\t}
+\t\treturn 0
+\t},
+}
+"""
+    assert rows("b.go", source) == [("(i int)", 4, 9, 2, 0, 1, 1)]
+
+
 def test_a_package_level_go_literal_with_a_result_is_a_function():
     """lizard read `func(a int)` as a receiver and `error` as the method's name,
     then waited for a `(` that never came: the literal had no row and its `if`
@@ -277,6 +335,29 @@ const V = struct {
 };
 """
     assert rows("a.zig", source) == [("call self : V", 5, 9, 2, 1, 1, 1)]
+
+
+def test_a_zig_function_named_by_a_string_keeps_its_name():
+    """Zig spells any string as an identifier with `@"..."`. lizard read the
+    `@` and the string as two tokens: the function had no row, then a row
+    named '', which reads as anonymous."""
+    source = """fn @"weird name"(x: i32) i32 {
+    if (x > 0) {
+        return 1;
+    }
+    return @"weird name"(x - 1);
+}
+"""
+    (record,) = analyze_source("a.zig", source)
+
+    assert rows("a.zig", source) == [('@"weird name" x : i32', 1, 6, 2, 1, 1, 1)]
+    assert bare_name(record.long_name) == '@"weird name"'
+
+
+def test_a_zig_keyword_spelled_as_a_string_names_a_function_and_a_parameter():
+    source = 'pub fn @"type"(@"error": u8, b: u8) u8 {\n    return @"error" + b;\n}\n'
+
+    assert rows("a.zig", source) == [('@"type" @"error" : u8 , b : u8', 1, 3, 1, 2, 0, 0)]
 
 
 def test_a_zig_container_bound_to_a_type_keeps_its_functions():
