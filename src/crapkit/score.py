@@ -23,6 +23,11 @@ from .records import decode_record, encode_record, record_lines
 from .snapshot import InventoryRow
 
 
+# A ratchet mark holds a CRAP score at this many decimal places, and a
+# ranking compares scores and moves at them, so equal ones tie.
+CRAP_PLACES = 4
+
+
 def crap(ccn: int, cov: float) -> float:
     """ccn^2 * (1 - cov)^3 + ccn, cubed by two products. IEEE 754 rounds a
     product correctly on every platform and leaves pow() to each libm: through

@@ -567,6 +567,14 @@ lane commands the way the shell that runs them does:
   those tables, and pyproject.toml's `[tool.mutmut]` `paths_to_mutate`, from the
   `calcs.tsv` and `rulings.tsv` tables; the unit suite fails while one is out of date.
 
+### Digest lines that tie list by path
+
+- `digest` lists functions whose CRAP moved by the same amount, or new functions with the
+  same CRAP, in path order. It sorted each section by a float alone, where 10.4 - 9.0 is
+  1.3999999999999986 and 6.6 - 5.2 is 1.4000000000000004, so two functions that rose by
+  1.4 listed in that noise's order and the five-line cut kept whichever it put first.
+  Moves and scores now compare at 4 decimal places.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

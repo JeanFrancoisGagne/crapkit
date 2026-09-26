@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Callable, NamedTuple
 
 from .invariants import check_rollup, check_totals
-from .score import ScoredRow, crap_load, grade, over_ceiling
+from .score import CRAP_PLACES, ScoredRow, crap_load, grade, over_ceiling
 from .keys import key_names, key_of
 
 # scope -> the ceiling its rows are judged against
@@ -194,19 +194,35 @@ def _fn_line(prefix: str, row: ScoredRow) -> str:
     return f"{prefix}: {row.path} {row.long_name} (crap {row.crap:.1f})"
 
 
+def _by_move(delta: _Delta) -> tuple:
+    """Smallest move first, compared at 4 places so equal moves tie and list by
+    path. In binary floating point 10.4 - 9.0 is 1.3999999999999986 and
+    6.6 - 5.2 is 1.4000000000000004: two functions that rose by 1.4 listed in
+    that noise's order, and the five-line cut kept whichever it put first."""
+    move, row = delta
+    return round(move, CRAP_PLACES), row.path, row.start
+
+
+def _largest_rise_first(delta: _Delta) -> tuple:
+    move, row = delta
+    return _by_move((-move, row))
+
+
 def _regression_lines(regressions: list[_Delta], top: int) -> list[str]:
-    return [_fn_line(f"regressed +{delta:.1f}", row)
-            for delta, row in sorted(regressions, key=lambda x: -x[0])[:top]]
+    ranked = sorted(regressions, key=_largest_rise_first)
+    return [_fn_line(f"regressed +{delta:.1f}", row) for delta, row in ranked[:top]]
 
 
 def _appeared_lines(appeared: list[ScoredRow], top: int) -> list[str]:
-    return [_fn_line("new over ceiling", row)
-            for row in sorted(appeared, key=lambda r: -r.crap)[:top]]
+    """Highest CRAP first at 4 places: ccn 25 at 80% coverage and ccn 5 at none
+    both score 30, which the floats read as 29.999999999999996 and 30.0."""
+    ranked = sorted(appeared, key=lambda r: (-round(r.crap, CRAP_PLACES), r.path, r.start))
+    return [_fn_line("new over ceiling", row) for row in ranked[:top]]
 
 
 def _improvement_lines(improvements: list[_Delta], top: int) -> list[str]:
-    return [_fn_line(f"improved {delta:.1f}", row)
-            for delta, row in sorted(improvements, key=lambda x: x[0])[:top]]
+    ranked = sorted(improvements, key=_by_move)  # moves are negative: largest drop first
+    return [_fn_line(f"improved {delta:.1f}", row) for delta, row in ranked[:top]]
 
 
 def build_digest(prev: list[ScoredRow], cur: list[ScoredRow], *,

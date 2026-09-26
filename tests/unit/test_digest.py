@@ -178,3 +178,44 @@ def test_the_digest_reads_the_ceiling_through_the_config_accessor():
     assert d.lines[0].endswith("over ceiling 1 -> 1; functions 2 -> 3"), d.lines
     assert not any("r( )" in line for line in d.lines), \
         "a function under its own scope's ceiling is not new debt"
+
+
+# --- equal moves list by path ---------------------------------------------------
+#
+# The digest sorted each section by a float alone. In binary floating point
+# 10.4 - 9.0 is 1.3999999999999986 and 6.6 - 5.2 is 1.4000000000000004, so two
+# functions that rose by 1.4 listed in that noise's order, and the five-line cut
+# kept whichever it put first.
+
+ROSE_BY_1_4 = ([scored("src/a.ts", "f( )", 8, 0.75), scored("src/b.ts", "g( )", 5, 0.8)],
+               [scored("src/a.ts", "f( )", 5, 0.4), scored("src/b.ts", "g( )", 5, 0.6)])
+
+
+def _paths(lines: list[str], prefix: str) -> list[str]:
+    return [line.split(": ", 1)[1].split()[0] for line in lines if line.startswith(prefix)]
+
+
+def test_functions_that_rose_by_the_same_amount_list_in_path_order():
+    before, after = ROSE_BY_1_4
+
+    d = build_digest(before, after, ceiling_of=FLAT)
+
+    assert _paths(d.lines, "regressed +1.4") == ["src/a.ts", "src/b.ts"], d.lines
+
+
+def test_functions_that_dropped_by_the_same_amount_list_in_path_order():
+    after, before = ROSE_BY_1_4  # 10.4 -> 9.0 and 6.6 -> 5.2, both from over 6
+
+    d = build_digest(before, after, ceiling_of=FLAT)
+
+    assert _paths(d.lines, "improved -1.4") == ["src/a.ts", "src/b.ts"], d.lines
+
+
+def test_new_functions_with_the_same_crap_list_in_path_order():
+    """ccn 25 at 80% coverage and ccn 5 at none both score 30 exactly; the
+    floats read 29.999999999999996 and 30.0."""
+    grown = BASE + [scored("src/c.ts", "h( )", 25, 0.8), scored("src/d.ts", "k( )", 5, 0.0)]
+
+    d = build_digest(BASE, grown, ceiling_of=FLAT)
+
+    assert _paths(d.lines, "new over ceiling") == ["src/c.ts", "src/d.ts"], d.lines
