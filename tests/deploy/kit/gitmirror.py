@@ -18,9 +18,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 SLUG = "JeanFrancoisGagne/crapkit"
-UPSTREAM = (f"https://github.com/{SLUG}.git", f"https://github.com/{SLUG}",
-            f"git@github.com:{SLUG}.git", f"git@github.com:{SLUG}",
-            f"ssh://git@github.com/{SLUG}.git", f"ssh://git@github.com/{SLUG}")
+# The HTTPS spellings only. A user with no SSH key cannot clone the SSH
+# spellings, so rewriting them too would pass an SSH-only doc line here that
+# fails for that user.
+UPSTREAM = (f"https://github.com/{SLUG}.git", f"https://github.com/{SLUG}")
+SSH_SPELLINGS = (f"git@github.com:{SLUG}.git", f"ssh://git@github.com/{SLUG}.git")
 
 
 def rules(url: str) -> str:

@@ -116,7 +116,15 @@ def test_every_spelling_of_the_github_url_reaches_the_mirror(box):
              for url in gitmirror.UPSTREAM}
 
     assert heads == {url: [mirror.head("main")] for url in gitmirror.UPSTREAM}
-    assert "https://github.com/JeanFrancoisGagne/crapkit" in heads and "git@github.com:JeanFrancoisGagne/crapkit" in heads
+    assert "https://github.com/JeanFrancoisGagne/crapkit" in heads
+
+
+def test_an_ssh_spelling_is_left_to_ssh():
+    """A doc line that names the SSH URL has to fail here as it fails for a
+    user with no SSH key, not reach the mirror."""
+    rules = gitmirror.rules("file:///mirror.git")
+
+    assert [spelling for spelling in gitmirror.SSH_SPELLINGS if spelling in rules] == []
 
 
 def test_the_github_url_clones_the_mirror_and_a_release_moves_main(box, candidate):
@@ -128,7 +136,7 @@ def test_the_github_url_clones_the_mirror_and_a_release_moves_main(box, candidat
     assert mirror.head("main") == mirror.git("rev-parse", f"v{candidate.version}^{{commit}}")
     old = mirror.release_to("0.7.6")
     clone = box.root / "clone"
-    box.run(["git", "clone", "-q", "git@github.com:JeanFrancoisGagne/crapkit", str(clone)], expect=0)
+    box.run(["git", "clone", "-q", "https://github.com/JeanFrancoisGagne/crapkit", str(clone)], expect=0)
     assert box.run(["git", "rev-parse", "HEAD"], cwd=clone, expect=0).stdout.strip() == old
 
 
