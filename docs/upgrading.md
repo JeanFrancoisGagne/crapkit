@@ -616,6 +616,12 @@ forgives no failure, as before, and verify warns when it reports a new failure
 against it. [The portable baseline's first
 line](portable-records.md#the-portable-baselines-first-line) gives the format.
 
+Each run keeps the shingle index `duplication` and `brief` read. When an upgrade changes
+how functions are shingled, the stored index no longer matches and the first
+`duplication` or `brief` after upgrading rebuilds it for the newest run, which takes
+seconds on a large repo. The pairs and twins it lists can change; no score or mark does,
+so nothing needs re-seeding.
+
 Git filenames retain their literal identity through scoring and output. Coverage
 paths still have to name the measured tree. Use the documented
 [CLI path rules](configuration.md#file-paths-and-root-discovery) and

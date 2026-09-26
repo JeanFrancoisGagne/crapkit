@@ -1417,6 +1417,25 @@ each marks file re-seed once.
 - Rows are renamed, so upgrade in the same order as for PowerShell: `crapkit coverage`,
   `crapkit ratchet prune`, `crapkit ratchet seed`.
 
+## Unreleased
+
+### Near-duplicate functions
+
+`duplication` and brief's `duplication_twins` list different pairs. No score, mark or
+analysis version moves: duplication feeds no CRAP input. The run's stored shingle index
+is rebuilt at the first `duplication` or `brief` after upgrading.
+
+- A function is shingled from its own lines. The lines of a function nested in it, past
+  that function's first line, are the nested function's: the way `nloc` already counts
+  them. A factory was shingled with its closure's body, so every clone of a closure was
+  reported twice, once for the closure and once for the factory, even a factory with 3
+  lines of its own under `--min-lines 8`. An arrow that returns an arrow, `load = (id) =>
+  async (dispatch) => {`, is one span to lizard, and the outer one now keeps only its
+  first line, so a clone of the inner body pairs once there too.
+- A brief on a closure no longer lists its factory as a twin at 1.0: the factory's own
+  lines hold none of the closure's. `contained` still marks a twin that nests with the
+  target, now only where the enclosing function's own lines copy the nested one.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

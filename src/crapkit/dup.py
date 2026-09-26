@@ -6,6 +6,8 @@ Normalized line shingles with CONTAINMENT scoring (shared / smaller set), so a
 copy-paste that later grew a few lines still surfaces. An inverted shingle
 index keeps a 14k-function repo tractable: only pairs that actually share a
 shingle are ever compared. Tiny functions are structural noise and stay out.
+Each function is shingled from its own lines: a function nested in it owns its
+lines past its first, so a closure's clone pairs with the closure alone.
 
 A shingle is a stable 8-byte digest, so one run's index can be stored and read
 back by another process. Both readers take either kind of index: the
@@ -31,19 +33,72 @@ _COMMENT_PREFIXES = ("#", "//", "/*", "*", '"""', "'''")
 # target shingled the same way, so any change to the line split, _normalized_lines,
 # _shingles or _digest changes this string, and every stored index reads as absent
 # until the next build replaces it. v2: lines end where the reader ends them
-# (sourcelines), no longer at a form feed.
+# (sourcelines), no longer at a form feed, and a function is shingled from its own
+# lines, its nested functions' left out.
 SHINGLE_FORMAT = f"v2 blake2b-8 window {WINDOW}"
 # The one threshold a run's index is stored at: brief's, and duplication's
 # default. Any other min_lines builds its own index for that call.
 STORED_MIN_LINES = 8
 
 
-def _normalized_lines(file_lines: list[str], start: int, end: int) -> list[str]:
+class _Source(NamedTuple):
+    """One file as the shingler reads it: its lines, and the span of every
+    function in it as a `_span_key`, sorted."""
+
+    lines: list[str]
+    spans: list[tuple[int, int, int]]
+
+
+def _span_key(r) -> tuple[int, int, int]:
+    """Sorts a function before every function nested in it: by start line, the
+    longer span first, and on one span the earlier occurrence first."""
+    return r.start, -r.end, r.occurrence
+
+
+def _spans_by_path(rows) -> dict[str, list[tuple[int, int, int]]]:
+    spans: dict[str, set] = {}
+    for r in rows:
+        spans.setdefault(r.path, set()).add(_span_key(r))
+    return {path: sorted(keys) for path, keys in spans.items()}
+
+
+def _nested_in(r, spans: list[tuple[int, int, int]]):
+    """(start, end) of every function nested in r, by start line.
+
+    A later occurrence on r's own span is nested in it too: an arrow that
+    returns an arrow, `f = () => () => {`, is one span to lizard, the outer
+    arrow first. Two scopes scoring one file give one function two rows with
+    one key, and neither is nested in the other."""
+    for at in range(bisect_right(spans, _span_key(r)), len(spans)):
+        start, neg_end, _ = spans[at]
+        if start > r.end:
+            return
+        if -neg_end <= r.end:
+            yield start, -neg_end
+
+
+def _own_runs(r, spans: list[tuple[int, int, int]]):
+    """r's own lines as runs of (first, last) line numbers.
+
+    A nested function's lines past its first are its own, not r's: that first
+    line holds r's `def` or call around it, and lizard's nloc counts it for
+    both. Without the cut a factory carried its closure's body, and every clone
+    of the closure paired twice, once through the factory."""
+    at = r.start
+    for start, end in _nested_in(r, spans):
+        if start >= at:
+            yield at, start
+        at = max(at, end + 1)
+    yield at, r.end
+
+
+def _normalized_lines(source: _Source, r) -> list[str]:
     picked = []
-    for raw in file_lines[start - 1:end]:
-        line = "".join(raw.split())  # whitespace never distinguishes a clone
-        if line and not raw.strip().startswith(_COMMENT_PREFIXES):
-            picked.append(line)
+    for first, last in _own_runs(r, source.spans):
+        for raw in source.lines[first - 1:last]:
+            line = "".join(raw.split())  # whitespace never distinguishes a clone
+            if line and not raw.strip().startswith(_COMMENT_PREFIXES):
+                picked.append(line)
     return picked
 
 
@@ -65,13 +120,12 @@ def _shingles(lines: list[str]) -> set[int]:
             for window in zip(*(encoded[i:] for i in range(WINDOW)))}
 
 
-def _split_once(path: str, sources: dict[str, str]) -> list[str] | None:
-    text = sources.get(path)
-    return None if text is None else source_lines(text)
+def _source(text: str | None, spans: list[tuple[int, int, int]]) -> _Source | None:
+    return None if text is None else _Source(source_lines(text), spans)
 
 
-def _row_shingles(r: InventoryRow, file_lines: list[str], min_lines: int) -> set[int] | None:
-    lines = _normalized_lines(file_lines, r.start, r.end)
+def _row_shingles(r: InventoryRow, source: _Source, min_lines: int) -> set[int] | None:
+    lines = _normalized_lines(source, r)
     return _shingles(lines) if len(lines) >= min_lines else None
 
 
@@ -82,13 +136,14 @@ def _function_shingles(rows: list[InventoryRow], sources: dict[str, str],
     # function in it (measured 3 GB of re-split text on a 104 MB repo). A file
     # whose rows are NOT contiguous still scores identically, just re-split.
     out = []
-    cached_path, file_lines = None, None
+    spans = _spans_by_path(rows)
+    cached_path, source = None, None
     for r in rows:
         if r.path != cached_path:
-            cached_path, file_lines = r.path, _split_once(r.path, sources)
-        if file_lines is None:
+            cached_path, source = r.path, _source(sources.get(r.path), spans[r.path])
+        if source is None:
             continue
-        shingles = _row_shingles(r, file_lines, min_lines)
+        shingles = _row_shingles(r, source, min_lines)
         if shingles is not None:
             out.append((r, shingles))
     return out
@@ -223,13 +278,14 @@ def _encloses(outer, inner) -> bool:
 def _nested_spans(a, b) -> bool:
     """One span inside the other: nesting, not a clone.
 
-    A nested function's normalized lines are a subset of its enclosing
-    function's, so the pair scores 100% and reads as a perfect duplicate that
-    nobody can deduplicate. Only meaningful inside one file: the line numbers
-    of two different files never nest.
+    The two share shingles only where the enclosing function's own lines copy
+    the nested one's, and nobody can deduplicate a function from the closure
+    inside it. Only meaningful inside one file: the line numbers of two
+    different files never nest.
 
     find_twins keeps such a pair and labels it, because a brief about one
-    function wants its enclosing function named. find_duplicates drops it.
+    function wants to know its twin is the function around it or inside it.
+    find_duplicates drops it.
     """
     return a.path == b.path and (_encloses(a, b) or _encloses(b, a))
 
@@ -239,9 +295,12 @@ def _is_self(r: InventoryRow, target) -> bool:
     return lookup(r) == lookup(target)
 
 
-def _target_shingles(target, sources: dict[str, str], min_lines: int) -> set[int] | None:
-    lines = _split_once(target.path, sources)
-    return None if lines is None else _row_shingles(target, lines, min_lines)
+def _target_shingles(target, text: str | None, file_rows, min_lines: int) -> set[int] | None:
+    """`file_rows` hold the rows of the target's file. The functions nested in
+    the target own their lines, so the target's shingles leave them out."""
+    spans = _spans_by_path(r for r in file_rows if r.path == target.path)
+    source = _source(text, spans.get(target.path, []))
+    return None if source is None else _row_shingles(target, source, min_lines)
 
 
 def _qualified_twins(size: int, target, holders: dict[int, tuple], similarity: float):
@@ -269,15 +328,17 @@ def _built_at(indexed, min_lines: int) -> bool:
     return indexed is not None and indexed.min_lines == min_lines
 
 
-def twins_in(index, target, text: str | None, *, similarity: float = 0.8,
+def twins_in(index, target, text: str | None, file_rows, *, similarity: float = 0.8,
              top: int = 10) -> list[dict]:
     """ONE function's twins against a prebuilt index, the target shingled from `text`.
 
     `index` is a FunctionIndex or the store's index for a run. brief reads the
     stored one, so a packet shingles its own function and looks up the rest.
     `text` is the target's file as it reads now, or None when it is gone.
+    `file_rows` are the run's rows of that file, the target among them: the
+    functions nested in the target own their lines, here as in the index.
     """
-    mine = _target_shingles(target, {target.path: text}, index.min_lines)
+    mine = _target_shingles(target, text, file_rows, index.min_lines)
     return _ranked_twins(index, target, mine, similarity, top) if mine else []
 
 
@@ -296,7 +357,7 @@ def find_twins(target, rows: list[InventoryRow], sources: dict[str, str], *,
     across targets, or the store's index for the run. Passing it changes nothing
     about the answer; leaving it out builds the same thing for this call alone.
     """
-    mine = _target_shingles(target, sources, min_lines)
+    mine = _target_shingles(target, sources.get(target.path), rows, min_lines)
     if not mine:
         return []
     index = indexed if _built_at(indexed, min_lines) else function_index(rows, sources, min_lines)
@@ -353,10 +414,12 @@ def find_duplicates(rows: list[InventoryRow], load_sources, *,
                     top: int = 50, indexed=None) -> list[dict]:
     """Every near-duplicate pair in a snapshot, best containment first.
 
-    A pair whose two spans nest is skipped: a factory and the closure defined
-    inside it score a perfect 1.0 by construction, and no one can deduplicate
-    them. On the repo that reported this, 43 of 43 pairs were that shape, so
-    the report was 100% noise before the skip.
+    A pair whose two spans nest is skipped: no one can deduplicate a factory
+    from the closure defined inside it. On the repo that reported this, 43 of
+    43 pairs were that shape, so the report was 100% noise before the skip.
+    Those pairs scored 1.0 because the factory was shingled with its closure's
+    lines; since each function keeps only its own, the factory no longer pairs
+    through its closure with the closure's clones either.
 
     `load_sources` is a CALLABLE returning {path: text}, not the texts
     themselves. Shingles are ints: a file's text is dead the moment its rows are

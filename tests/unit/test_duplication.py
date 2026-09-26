@@ -90,7 +90,7 @@ class _ProbeRow:
 
     def __init__(self, path, start, end, on_payload):
         self.path, self.start, self.end = path, start, end
-        self.nloc = end - start + 1
+        self.nloc, self.occurrence = end - start + 1, 1
         self._on_payload = on_payload
 
     @property

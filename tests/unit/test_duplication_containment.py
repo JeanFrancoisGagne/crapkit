@@ -1,11 +1,13 @@
 """A function whose span holds another's, or sits inside it, is nesting rather
-than a clone. It still scores 100%, because a nested body's shingles are a
-subset of its enclosing body's, so only the spans tell the two apart.
+than a clone. Each is shingled from its own lines: the nested function's lines
+past its first are its own, not its encloser's, so the two share shingles only
+where the encloser's own lines copy the nested body.
 
-The two readers answer differently. `find_twins` keeps the pair and labels it,
-because a brief about one function wants to know its enclosing one exists.
-`find_duplicates` drops it: the standalone report ranks work nobody can do, and
-a factory paired with its own closure is not work.
+When they do, the two readers answer differently. `find_twins` keeps the pair
+and labels it, because a brief about one function wants to know that its twin
+is the function around it or inside it. `find_duplicates` drops it: a function
+and its nested closure never pair, and a factory paired with its own closure
+is not work.
 """
 from crapkit.dup import find_duplicates, find_twins
 from crapkit.snapshot import InventoryRow
@@ -20,8 +22,9 @@ BODY = "\n".join(f"    step_{i} = compute({i}) + offset" for i in range(10))
 DEEPER = "\n".join(f"        step_{i} = compute({i}) + offset" for i in range(10))
 
 # outer spans 1..22 and inner spans 12..22: one function, literally inside the
-# other. Whitespace never distinguishes a clone, so the two bodies normalize the
-# same and inner's shingles are all outer's too.
+# other. outer's own lines are 1..12, its body and the `def inner` line.
+# Whitespace never distinguishes a clone, so outer's body and inner's normalize
+# the same: 7 of inner's 8 shingles are outer's too.
 NESTED = "def outer():\n" + BODY + "\n    def inner():\n" + DEEPER + "\n"
 
 A = "def alpha():\n" + BODY + "\n"
@@ -35,7 +38,7 @@ def test_the_function_that_encloses_the_target_is_labelled_contained():
     (twin,) = find_twins(rows[1], rows, {"src/a.py": NESTED})
 
     assert twin["long_name"] == "outer"
-    assert twin["similarity"] == 1.0, "a nested body is a subset of its enclosing one"
+    assert twin["similarity"] == 0.875, "outer's own body copies inner's, not its lines"
     assert twin["contained"] is True
 
 
@@ -79,8 +82,9 @@ PAD = "\n".join(f"import mod_{i}" for i in range(1, 280))  # lines 1..279
 CLOSURE_BODY = "\n".join(f"        step_{i} = probe({i}) + deps.offset" for i in range(15))
 
 # _reach_tool opens at 280 and returns at 299; its closure `reach` opens at 281
-# and returns at 297. lizard scores both, and the closure's normalized lines are
-# a subset of the factory's, so containment reads 1.0.
+# and returns at 297. lizard scores both. Shingled whole, the factory held the
+# closure's lines and containment read 1.0; its own lines are 280, 281, 298 and
+# 299.
 FACTORY = (PAD + "\n"
            "def _reach_tool(deps: _Deps):\n"
            "    def reach(name: str, depth: int = 1) -> dict:\n"
@@ -97,13 +101,12 @@ def test_a_factory_paired_with_its_own_closure_is_not_reported():
     assert find_duplicates(FACTORY_ROWS, lambda: {MCP: FACTORY}) == []
 
 
-def test_the_closure_and_its_factory_do_score_a_perfect_match():
-    """What the filter removes, not what the scoring failed to see: drop the
-    span test and this pair is the 1.0 that topped the pilot's report."""
-    (twin,) = find_twins(FACTORY_ROWS[1], FACTORY_ROWS, {MCP: FACTORY})
-
-    assert twin["similarity"] == 1.0
-    assert twin["contained"] is True
+def test_the_factory_keeps_only_its_own_four_lines_and_is_no_twin_of_its_closure():
+    """The 1.0 that topped the pilot's report came from the factory carrying
+    its closure's lines. Its own four are under --min-lines, so neither one
+    names the other."""
+    assert find_twins(FACTORY_ROWS[1], FACTORY_ROWS, {MCP: FACTORY}) == []
+    assert find_twins(FACTORY_ROWS[0], FACTORY_ROWS, {MCP: FACTORY}) == []
 
 
 def test_a_cross_file_clone_survives_alongside_the_dropped_nesting():
