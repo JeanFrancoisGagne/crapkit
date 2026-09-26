@@ -277,7 +277,35 @@ def test_a_measurement_over_dirty_inputs_is_named_as_no_proof(repo: Path):
     _measure(repo)
     _commit(repo, "commit the wip")
 
-    assert lane_reuse_verdict(repo, _lane(repo)).reason.startswith("its stamp holds no proof: ")
+    assert lane_reuse_verdict(repo, _lane(repo)).reason == (
+        "its stamp holds no proof: it was measured with 1 uncommitted change(s) under its inputs: "
+        "src/app.ts")
+
+
+def test_a_git_failure_while_measuring_is_named_not_read_as_dirty_inputs(repo: Path, monkeypatch):
+    """git's status read under the inputs fails once as the lane starts, on a
+    clean tree. Nothing proved the lane, so it reruns, and the rerun names the
+    failed read: the stamp used to say the lane was measured with uncommitted
+    changes."""
+    from crapkit import lane_changes
+    from crapkit.errors import GitError
+
+    real, failed = lane_changes.ChangeReads.status_names, []
+
+    def status_names(self):
+        if failed:
+            return real(self)
+        failed.append(self)
+        raise GitError("git exited 128: forced")
+
+    monkeypatch.setattr(lane_changes.ChangeReads, "status_names", status_names)
+    _measure(repo)
+    monkeypatch.undo()
+
+    assert failed
+    assert lane_reuse_verdict(repo, _lane(repo)).reason == (
+        "its stamp holds no proof: git could not read its inputs when it was measured: "
+        "git exited 128: forced")
 
 
 def test_an_unignored_artifact_under_the_inputs_leaves_the_lane_reusable(repo: Path):

@@ -409,13 +409,15 @@ def read_stamps(root: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, provenance: dict) -> dict:
+def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: _Proof, provenance: dict) -> dict:
     """What produced this artifact: the commit reuse judges staleness against,
     plus the wall seconds the parallel scheduler starts the slowest lane on.
     `proof` is the measurement key when it held from start to finish, else "";
     it is named apart from `Lane.inputs`, which holds paths, not a hash.
     `proof_parts` keeps the digests a lane without `inputs` was proved by, so a
-    later rerun can say which of them moved.
+    later rerun can say which of them moved. `unproved` says why `proof` is "",
+    so that rerun names the cause: a stamp that recorded none once blamed
+    uncommitted changes for a git read that failed on a clean tree.
 
     Empty in a non-git sandbox (unit tests), which records nothing. Lanes hand
     their stamp back rather than writing it, so N of them running at once cannot
@@ -425,11 +427,24 @@ def _stamp_entry(git: GitFacts, lane: Lane, seconds: float, measured: str, prove
         commit = git.head_commit()
     except GitError:
         return {}
-    proof = _measurement_proof(git.root, lane)
-    clean = bool(measured) and measured == proof.key
     return {"commit": commit, "lane": lane.name, "seconds": round(seconds, 1),
-            "proof": measured if clean else "", "proof_parts": proof.parts if clean else {},
+            **_proof_fields(measured, _measurement_proof(git.root, lane)),
             "artifacts": _artifact_digests(lane, provenance)}
+
+
+def _proof_fields(measured: _Proof, proof: _Proof) -> dict:
+    """`proof` and its `proof_parts` when the key held from start to finish,
+    else empty ones and `unproved`, why not."""
+    if measured.key and measured.key == proof.key:
+        return {"proof": measured.key, "proof_parts": proof.parts}
+    return {"proof": "", "proof_parts": {}, "unproved": _unproved(measured, proof)}
+
+
+def _unproved(before: _Proof, after: _Proof) -> str:
+    """Why a stamp holds no proof, as the rerun that reads the stamp says it:
+    what stopped the proof as the lane started, else as it finished, else that
+    the key moved while it ran."""
+    return before.was or after.was or "what it reads changed while it ran"
 
 
 def _artifact_digests(lane: Lane, provenance: dict) -> dict:
@@ -441,27 +456,30 @@ def _artifact_digests(lane: Lane, provenance: dict) -> dict:
 
 class _Proof(NamedTuple):
     """The key a stamp records, the digests a lane without `inputs` takes it
-    over, and why there is no key: `why` is set exactly when `key` is ""."""
+    over, and why there is no key: `why` for a rerun decided now, `was` for a
+    stamp that holds no proof. Both are set exactly when `key` is ""."""
     key: str
     parts: dict
-    why: str
+    why: str = ""
+    was: str = ""
 
 
-def _measurement_key(root: Path, lane: Lane) -> str:
+def _measurement_proof(root: Path, lane: Lane) -> _Proof:
     """The proof a stamp records that nothing the lane reads moved while it ran.
 
     A lane that declares `inputs` is proved by those paths and its own config
     block, env included. Every other lane is proved by the whole clean checkout,
     crapkit.toml and the inherited environment.
     """
-    return _measurement_proof(root, lane).key
-
-
-def _measurement_proof(root: Path, lane: Lane) -> _Proof:
     if lane.inputs:
-        key = _declared_inputs_key(root, lane)
-        return _Proof(key, {}, "" if key else "its inputs have uncommitted changes")
+        return _declared_inputs_proof(root, lane)
     return _whole_tree_proof(root, lane)
+
+
+def _unread(exc: Exception, what: str) -> _Proof:
+    """No key, because git could not read `what`. A failed read is not a change."""
+    return _Proof("", {}, f"nothing proves its inputs unchanged: {exc}",
+                  f"git could not read {what} when it was measured: {exc}")
 
 
 def _inputs_key(commit: str, lane: Lane) -> str:
@@ -471,10 +489,10 @@ def _inputs_key(commit: str, lane: Lane) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _declared_inputs_key(root: Path, lane: Lane) -> str:
-    """HEAD bound to the lane's config, or "" while an uncommitted change touches
-    its inputs: the artifact would describe the edit, not the commit. A lane
-    output under the inputs is not such a change."""
+def _declared_inputs_proof(root: Path, lane: Lane) -> _Proof:
+    """HEAD bound to the lane's config, or no key while an uncommitted change
+    touches its inputs: the artifact would describe the edit, not the commit.
+    A lane output under the inputs is not such a change."""
     from .lane_changes import ChangeReads
 
     try:
@@ -482,9 +500,13 @@ def _declared_inputs_key(root: Path, lane: Lane) -> str:
         commit = GitFacts(root).head_commit()
         with ChangeReads(root, (), lane.inputs) as reads:
             dirty = _unless(reads.status_names(), outputs)
-    except (GitError, OSError):
-        return ""
-    return "" if dirty else _inputs_key(commit, lane)
+    except (GitError, OSError) as exc:
+        return _unread(exc, "its inputs")
+    if dirty:
+        changes, sample = f"{len(dirty)} uncommitted change(s)", _sample(dirty)
+        return _Proof("", {}, f"its inputs have {changes}: {sample}",
+                      f"it was measured with {changes} under its inputs: {sample}")
+    return _Proof(_inputs_key(commit, lane), {})
 
 
 # Variables a shell or terminal keeps for its own bookkeeping. A `cd` moves
@@ -512,12 +534,13 @@ def _whole_tree_proof(root: Path, lane: Lane) -> _Proof:
         config = _config_bytes(root)
         head, dirty = _worktree(root, _output_names(root, lane, config))
     except (GitError, OSError) as exc:
-        return _Proof("", {}, f"nothing proves its inputs unchanged: {exc}")
+        return _unread(exc, "the working tree")
     if dirty:
-        return _Proof("", {}, f"the working tree has {len(dirty)} uncommitted change(s): {_sample(dirty)}")
+        changes = f"{len(dirty)} uncommitted change(s): {_sample(dirty)}"
+        return _Proof("", {}, f"the working tree has {changes}", f"it was measured with {changes}")
     parts = {"commit": head, "config": _digest(config), "lane": _digest(_lane_bytes(lane)),
              "env": _environment_digests()}
-    return _Proof(_digest(json.dumps(parts, sort_keys=True).encode("utf-8")), parts, "")
+    return _Proof(_digest(json.dumps(parts, sort_keys=True).encode("utf-8")), parts)
 
 
 def _digest(data: bytes) -> str:
@@ -892,9 +915,17 @@ def _stamp_gap(root: Path, lane: Lane, stamp: dict, commit: str) -> str:
     if not commit:
         return _no_commit(root, lane, stamp)
     if not stamp.get("proof"):
-        return ("its stamp holds no proof: it was measured with uncommitted changes, or by "
-                "a crapkit that recorded none")
+        return f"its stamp holds no proof: {_unproved_reason(stamp)}"
     return ""
+
+
+def _unproved_reason(stamp: dict) -> str:
+    """The cause the stamp recorded, or what a stamp that records none can say:
+    an older crapkit wrote no `unproved`, and one older still no proof at all."""
+    recorded = stamp.get("unproved")
+    if isinstance(recorded, str) and recorded:
+        return recorded
+    return "it was measured with uncommitted changes, or by a crapkit that recorded none"
 
 
 def _no_commit(root: Path, lane: Lane, stamp: dict) -> str:
@@ -1378,7 +1409,7 @@ def run_lane(root: Path, lane: Lane, *, reuse_artifact: bool = False,
 
 def _run_owned_lane(root, lane, reuse_artifact, scope_paths, git, dead_lines, owner) -> LaneOutcome:
     facts = _facts(root, git)
-    measured = "" if reuse_artifact else _measurement_key(root, lane)
+    measured = _Proof("", {}) if reuse_artifact else _measurement_proof(root, lane)
     exit_code, seconds = _run_or_reuse(root, lane, facts, scope_paths, reuse_artifact, owner)
     coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane), dead_lines)
     _judge_artifact_scope(lane, coverage, scope_paths, root)

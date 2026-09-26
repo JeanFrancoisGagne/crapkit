@@ -158,7 +158,7 @@ def test_a_measurement_taken_over_an_edit_is_named_as_no_proof(repo: Path):
     res = _coverage(repo, "--reuse-unchanged", "--lane", "unit")
 
     assert _rerun_lines(res) == ["crapkit: lane 'unit': rerunning: its stamp holds no proof: it was "
-                                 "measured with uncommitted changes, or by a crapkit that recorded none"]
+                                 "measured with 1 uncommitted change(s): src/app.ts"]
 
 
 def test_a_lane_that_never_ran_names_its_missing_artifact(repo: Path):

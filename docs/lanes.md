@@ -314,7 +314,7 @@ py.json
 | `crap.sqlite` | The store: run history, every scored function, the override audit trail, and the per-run rollups `trend` and `report` read. Durable, not a cache. The ratchet marks are not here; they live in the committed `crapkit-ratchet.tsv`. | |
 | `cov/` | Where `init` points every lane's `artifact` and `results_artifact`. | |
 | `lane-<name>.log` | One lane's streamed output, an `--- attempt N ---` header per retry. Current and `.log.1` files each have a 16 MiB default bound; see [log policies](resources.md#logs-and-retained-evidence). | |
-| `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took, the reuse `proof` with the digests it was taken over (`proof_parts`), and, for an artifact the lane's last attempt failed to write, the modification time of the file it left (`refused_mtime_ns`). Drives `--reuse-unchanged`, `doctor --tune` and the [reuse refusal](#the-artifact-a-failed-attempt-left-behind-is-refused). | |
+| `artifacts.json` | Per artifact: the commit it was built at, the lane that built it, how long that took, the reuse `proof` with the digests it was taken over (`proof_parts`) or, when there is none, why not (`unproved`), and, for an artifact the lane's last attempt failed to write, the modification time of the file it left (`refused_mtime_ns`). Drives `--reuse-unchanged`, `doctor --tune` and the [reuse refusal](#the-artifact-a-failed-attempt-left-behind-is-refused). | |
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
 | `measurement.lock` | The lock a lane run holds on this checkout's lane logs and artifact stamps while its commands run, so two crapkit processes never measure one checkout at once. It stays behind between runs and holds nothing. | |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. A file enters it once it has held still for two seconds, so a run right after the files were written, like the listing above, leaves no `stat-stamps.json` yet. | |
@@ -1078,11 +1078,12 @@ crapkit: lane 'web': rerunning: the working tree has 1 uncommitted change(s): we
 ```
 
 A rerun names the first condition that failed: `no artifact at PATH`, a last attempt
-that wrote none, `its stamp holds no proof` (measured with uncommitted changes, or by a
-crapkit that recorded none), uncommitted changes, `HEAD is X and its artifact was built
-at Y`, `crapkit.toml changed`, `its lane table changed`, `N environment variable(s)
-changed: NAME`, changes under a lane's `inputs` since its commit, or artifact bytes that
-differ from the stamp. `coverage --json` carries the same sentence per lane as
+that wrote none, `its stamp holds no proof` and why (the uncommitted changes it was
+measured with, a git read that failed while it was measured, or a crapkit that recorded
+no cause), uncommitted changes, `HEAD is X and its artifact was built at Y`,
+`crapkit.toml changed`, `its lane table changed`, `N environment variable(s) changed:
+NAME`, changes under a lane's `inputs` since its commit, or artifact bytes that differ
+from the stamp. `coverage --json` carries the same sentence per lane as
 `rerun_reason`, `""` for a lane it reused.
 
 Ignored inputs other than `crapkit.toml`, files outside the repository, installed
