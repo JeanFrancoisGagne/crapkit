@@ -1199,21 +1199,12 @@ def _gate_hooks(root: Path, top: Path) -> tuple:
                      for path in _tracked_hooks(top)))
 
 
-# The CI files doctor reads for a pre-commit step, relative to the git top.
-_CI_FILES = (".github/workflows/*.yml", ".github/workflows/*.yaml", ".gitlab-ci.yml",
-             ".circleci/config.yml", "azure-pipelines.yml", "bitbucket-pipelines.yml")
-
-
-def _ci_files(top: Path) -> dict[str, str]:
-    return {path.relative_to(top).as_posix(): _text_at(path)
-            for pattern in _CI_FILES for path in sorted(top.glob(pattern))}
-
-
 def _doctor_silent_gates(root: Path) -> list[Finding]:
     """A gate that is set up and never judges anything (WARN): a crapkit hook
-    git is not sent to, a pre-commit config naming the gate that nothing
-    installed, and pre-commit run in CI on an empty index."""
-    from ..doctor import ci_precommit_passes, skipped_gates
+    git is not sent to, and a pre-commit config naming the gate that nothing
+    installed. pre-commit run in CI is a gate: outside a commit, with nothing
+    staged, the hook judges every tracked file."""
+    from ..doctor import skipped_gates
 
     try:
         top = _absolute(root, "--show-toplevel")
@@ -1221,8 +1212,7 @@ def _doctor_silent_gates(root: Path) -> list[Finding]:
     except GitError:
         return []
     precommit = _text_at(top / ".pre-commit-config.yaml")
-    return (list(skipped_gates(route, hooks, framework="crapkit-gate" in precommit))
-            + list(ci_precommit_passes(precommit, _ci_files(top))))
+    return list(skipped_gates(route, hooks, framework="crapkit-gate" in precommit))
 
 
 def _merge_attribute(root: Path, path: str) -> str:

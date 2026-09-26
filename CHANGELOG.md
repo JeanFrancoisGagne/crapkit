@@ -163,9 +163,7 @@ nothing. Each of these now gets a line naming the object and the next step:
   Route 2's committed hook in a clone that skipped its `git config core.hooksPath` line,
   either one after husky's `npm install` took `core.hooksPath` back to `.husky/_` (the
   WARN names `.husky/pre-commit` as the file to call crapkit from), and a
-  `.pre-commit-config.yaml` naming `crapkit-gate` before `pre-commit install`. A CI file
-  that runs pre-commit over that config WARNs too, since the hook judges an empty index
-  there.
+  `.pre-commit-config.yaml` naming `crapkit-gate` before `pre-commit install`.
 - A marks file whose merge attribute names a driver this clone never defined WARNs with
   the `git config merge.crapkit-ratchet.driver` line, since git otherwise merges it as
   text.

@@ -882,25 +882,6 @@ def _skipped_hooks(route: HookRoute, hooks: tuple[GateHook, ...],
                  for hook in hooks if _runs_gate(hook.text, framework))
 
 
-_RUNS_PRECOMMIT = re.compile(r"\b(?:pre-commit|prek) run\b|pre-commit/action@")
-_CI_PRECOMMIT = (
-    "{path} runs pre-commit, and the crapkit-gate hook judges the staged index, which a CI "
-    "checkout leaves empty: it passes every run whatever the branch holds; gate CI with "
-    "`crapkit verify` instead (README, Route 4: CI)"
-)
-
-
-def ci_precommit_passes(precommit_config: str, ci_files: dict[str, str]) -> tuple[Finding, ...]:
-    """CI files that run pre-commit over a config naming crapkit-gate, one WARN
-    each, in path order. `pre-commit run --all-files` on a fresh checkout
-    reported the gate Passed on a branch holding a function far over its
-    ceiling."""
-    if "crapkit-gate" not in precommit_config:
-        return ()
-    return tuple(Finding("WARN", _CI_PRECOMMIT.format(path=path))
-                 for path, text in sorted(ci_files.items()) if _RUNS_PRECOMMIT.search(text))
-
-
 # --- two installs on one PATH ------------------------------------------------------
 #
 # The shell, a git hook, the plugin's hooks and an MCP client each start the bare

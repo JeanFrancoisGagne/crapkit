@@ -166,10 +166,10 @@ jobs:
 
 
 @cell("lin-doctor-precommit-ci", channel="pre-commit (README Route 3 via the mirror)",
-      harness="pre-commit (wheelhouse)", scenario="fresh: `pre-commit run --all-files` passes a committed "
-      "breach on a clean index; doctor names the CI workflow that runs it",
+      harness="pre-commit (wheelhouse)", scenario="fresh: `pre-commit run --all-files` on a clean index refuses "
+      "a breach committed past the hook; doctor raises no WARN about the CI workflow that runs it",
       use_cases="commit gate, doctor", os="linux", image="core", cadence="nightly")
-def test_doctor_names_pre_commit_in_ci_over_an_empty_index(box, templates, candidate):
+def test_pre_commit_in_ci_refuses_a_committed_breach_and_doctor_says_nothing_of_it(box, templates, candidate):
     repo = adopted(box, templates)
     gitmirror.make(box).publish(candidate.staged, candidate.version)
     config = docsnip.fence("README.md", "Route 3: the pre-commit framework", index=0)
@@ -181,16 +181,14 @@ def test_doctor_names_pre_commit_in_ci_over_an_empty_index(box, templates, candi
     assert commit(box, repo, "a breach the hook sees", expect=1).exit == 1
     commit(box, repo, "the breach, committed past the hook", extra=("--no-verify",))
 
-    ci = box.run(["pre-commit", "run", "--all-files"], cwd=repo, expect=0)
-    assert "crapkit complexity gate" in ci.stdout and "Passed" in ci.stdout
+    ci = box.run(["pre-commit", "run", "--all-files"], cwd=repo, expect=1)
+    assert "every tracked file was judged" in ci.stdout and "calc/first.py" in ci.stdout, ci.stdout
 
     workflows = repo / ".github" / "workflows"
     workflows.mkdir(parents=True)
     (workflows / "lint.yml").write_text(CI_WORKFLOW, encoding="utf-8")
-    (warn,) = [line for line in output(crapkit(box, repo, "doctor")).splitlines()
-               if "runs pre-commit" in line]
-    assert warn.startswith("WARN .github/workflows/lint.yml runs pre-commit, and the crapkit-gate hook")
-    assert "gate CI with `crapkit verify`" in warn
+    doctor = output(crapkit(box, repo, "doctor"))
+    assert [line for line in doctor.splitlines() if "lint.yml" in line] == [], doctor
 
 
 # --- MCP tool names ---------------------------------------------------------------------
