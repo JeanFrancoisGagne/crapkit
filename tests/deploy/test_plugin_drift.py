@@ -5,9 +5,11 @@ what `crapkit doctor --plugin-root` tells them.
     lin-claude-plugin-ahead      the README update lines run before the CLI upgrade: the plugin
                                  is ahead, doctor names both repairs, the CLI one clears it
     lin-main-between-releases    main moves past a release with the version string unchanged:
-                                 Codex reinstalls the new files, Claude Code keeps the old ones
-    lin-marketplace-pinned-tag   a marketplace added at @v0.7.6 stays there through the update
-                                 lines; re-adding it at the new tag is what moves it
+                                 Codex's refresh lines, pinned to the release tag, keep the
+                                 release's files; Claude Code keeps the old ones or doctor says so
+    lin-marketplace-pinned-tag   a Claude Code marketplace added at @v0.7.6 stays there through the
+                                 update lines, and re-adding it at the new tag moves it; Codex's
+                                 refresh lines re-add it at the new tag themselves
     win-up-plugins-0.7.6         Claude Code and Codex upgrade their 0.7.6 copies on Windows while
                                  a file of the old copy is open: both land on the candidate, and
                                  Codex's second documented line fails with os error 5
@@ -79,15 +81,16 @@ def both_plugins_at_candidate(box, candidate, repo: Path):
 
 
 @cell("lin-main-between-releases", channel="marketplace at a main commit", harness="Codex",
-      scenario="drift: same version, different contents; Codex's refresh lines install main's files; doctor 0",
-      use_cases="plugin drift", os="linux", image="core", cadence="nightly")
-def test_codex_refresh_installs_main_between_releases(box, candidate):
+      scenario="drift: same version, different contents; Codex's refresh lines, pinned to the release tag, keep "
+      "the release's files and leave main's out; doctor 0", use_cases="plugin drift", os="linux", image="core",
+      cadence="nightly")
+def test_codex_refresh_keeps_the_release_between_releases(box, candidate):
     repo = plain_repo(box)
     tree = between_releases(box, both_plugins_at_candidate(box, candidate, repo), candidate)
     run_lines(box, page_lines("Codex", index=1), cwd=repo)
     root = codex_root(box, codex_version(box))
 
-    assert same_skill(tree, root)
+    assert same_skill(candidate.staged, root) and not same_skill(tree, root)
     assert doctor_plugin(box, str(root)).exit == 0
 
 
@@ -108,8 +111,17 @@ def test_claude_update_between_releases_is_seen(box, candidate):
 
 def pinned(line: str, version: str) -> str:
     """A README marketplace line with its source pinned to the release tag:
-    `owner/repo@vX` for Claude Code's shorthand, `--ref vX` after Codex's URL."""
-    return f"{line} --ref v{version}" if "://" in line else f"{line}@v{version}"
+    `owner/repo@vX` for Claude Code's shorthand, whatever flags follow it, and
+    `--ref vX` in place of any ref Codex's URL line already carries."""
+    if "://" in line:
+        return " ".join(part for part in _without_ref(line.split())) + f" --ref v{version}"
+    return line.replace("JeanFrancoisGagne/crapkit", f"JeanFrancoisGagne/crapkit@v{version}", 1)
+
+
+def _without_ref(parts: list[str]) -> list[str]:
+    """The words of a command line with `--ref VALUE` left out."""
+    dropped = {index + 1 for index, part in enumerate(parts) if part == "--ref"}
+    return [part for index, part in enumerate(parts) if part != "--ref" and index not in dropped]
 
 
 def claude_pinned_at(box, version: str, cwd: Path) -> None:
@@ -139,8 +151,8 @@ def test_claude_marketplace_pinned_to_a_tag(box, candidate):
 
 
 @cell("lin-marketplace-pinned-tag", channel="marketplace add @vX", harness="Codex",
-      scenario="upgrade: the docs refresh lines leave a marketplace pinned at @v0.7.6 there; re-adding it at the "
-      "new tag moves it", use_cases="plugin upgrade", os="linux", image="core", cadence="nightly")
+      scenario="upgrade: a marketplace pinned at v0.7.6; the docs refresh lines remove it, re-add it at the new "
+      "tag and install from it", use_cases="plugin upgrade", os="linux", image="core", cadence="nightly")
 def test_codex_marketplace_pinned_to_a_tag(box, candidate):
     repo = plain_repo(box)
     cli_venv(box, spec=f"crapkit=={OLD}")
@@ -148,15 +160,14 @@ def test_codex_marketplace_pinned_to_a_tag(box, candidate):
     harness_on_path(box)
     add, plugin_add = page_lines("Codex")
     run_lines(box, [pinned(add, OLD), plugin_add], cwd=repo)
+    pinned_version = codex_version(box)
     mirror.publish(candidate.staged, candidate.version)
     upgrade_cli(box)
-    run_guide(box, repo, expect=None)
-    stuck_version = codex_version(box)
-    box.script("codex plugin marketplace remove crapkit", cwd=repo, expect=0)
-    run_lines(box, [pinned(add, candidate.version), plugin_add], cwd=repo)
+    steps = run_guide(box, repo, expect=None)
     root = codex_root(box, codex_version(box))
 
-    assert stuck_version == OLD
+    assert pinned_version == OLD
+    assert [step.exit for step in steps] == [0] * len(steps)
     assert root.name == candidate.version
     assert doctor_plugin(box, str(root), cwd=repo).exit == 0
 

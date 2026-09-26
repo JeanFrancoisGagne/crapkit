@@ -118,4 +118,4 @@ def test_the_floors_the_readme_names_hold(box, candidate):
     assert "crapkit@crapkit" in claude_plugins(box, repo)
     add = box.script(readme_lines("Codex")[1], cwd=repo)
     assert add.exit != 0 and re.search(r"unrecognized subcommand '?add", add.stderr), add.stderr
-    assert "0.131.0 or later" in (docsnip.root() / "README.md").read_text(encoding="utf-8")
+    assert "Codex 0.131.0 or newer" in (docsnip.root() / "README.md").read_text(encoding="utf-8")

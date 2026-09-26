@@ -27,6 +27,7 @@ from kit.mcp_client import McpClient
 
 from fixes_support import (harness_package, harnesses_on_path, install_candidate, launcher,
                            measured_repo)
+from test_claude_plugin import old_page
 
 PACKET = "deploy-fixes"
 WINDOWS = os.name == "nt"
@@ -73,12 +74,17 @@ class CodexAppServer:
 
 
 def codex_marketplace(box, candidate, release: str | None = None) -> None:
-    """The README's Codex lines, verbatim, against the GitHub mirror."""
+    """The README's Codex lines, verbatim, against the GitHub mirror: the
+    candidate's, or with `release` the lines that release printed, main moved
+    to it. The candidate's lines pin its own tag, so they would install the
+    candidate whatever main holds."""
     mirror = gitmirror.make(box)
     mirror.publish(candidate.staged, candidate.version)
+    base = None
     if release:
         mirror.release_to(release)
-    for line in docsnip.commands(docsnip.fence("README.md", "Codex", index=0)):
+        base = old_page(box, mirror, release)
+    for line in docsnip.commands(docsnip.fence("README.md", "Codex", index=0, base=base)):
         box.script(line, shell="sh" if not WINDOWS else "cmd", expect=0)
 
 
