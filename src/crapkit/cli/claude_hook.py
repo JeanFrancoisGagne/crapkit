@@ -362,9 +362,9 @@ def _changed(root: Path, rel: str, diff_text: str):
     file is judged in full, exactly as `rescore --gate` judges one.
     """
     if diff_text.strip():
-        from ..diffparse import changed_ranges
+        from ..diffparse import worktree_ranges
 
-        return changed_ranges(diff_text).get(rel, [])
+        return worktree_ranges(diff_text, root).get(rel, [])
     return [] if _tracked(root, rel) else None
 
 

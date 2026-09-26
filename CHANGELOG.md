@@ -5,15 +5,17 @@
 ### A lone CR no longer hides a changed function from the gates
 
 - git's diff ends a line at LF only, and crapkit's reader, like Python and coverage.py,
-  also ends one at a lone CR. The commit gate and `rescore --gate` matched git's line
-  numbers against the reader's function spans unmapped, so each lone CR above a
-  function moved the diff one line up from it. A new file saved with CR-only line ends
-  is one line to git, and the gate judged only its first function. An edit to a def line
-  below one lone CR touched no function at all. Either way a function over the ceiling
-  passed.
-- Both gates now place each changed line by the bytes of the file it changed: the staged
-  blob for the commit gate, the working tree for `rescore --gate`. A file with no lone
-  CR reads as before. No score moves, and marks need no re-seed.
+  also ends one at a lone CR. The commit gate, `rescore --gate`, `verify`, `mutate` and
+  the advisory hook matched git's line numbers against the reader's lines unmapped, so
+  each lone CR above a function moved the diff one line up from it. A new file saved
+  with CR-only line ends is one line to git, and the gate judged only its first
+  function. An edit to a def line below one lone CR touched no function at all. Either
+  way a function over the ceiling passed the gates and `verify`, and `verify` checked
+  the wrong lines against coverage for `diff_uncovered_max`. `mutate` grew its mutants
+  on the line above the one the edit changed, and the advisory hook stayed silent.
+- Each of them now places a changed line by the bytes of the file it changed: the staged
+  blob for the commit gate, the working tree for the rest. A file with no lone CR reads
+  as before. No score moves, and marks need no re-seed.
 
 Go and Zig functions are read to where their signature ends, and no Go type switch,
 comment or Zig multiline string ends one early. A `//` comment ends at its line in every

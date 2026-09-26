@@ -65,9 +65,9 @@ marked binary by Git attributes receives a text fallback; ordinary binary files
 remain outside source decoding. Source text is read as UTF-8, then cp1252 as a
 fallback. UTF-16 source is outside that reader policy. A line ends at LF, CRLF or a
 lone CR, as Python and coverage.py read source. git's diff ends a line at LF only, so
-the commit gate and `rescore --gate` place each changed line by the bytes of the file
-it changed, and a new file saved with CR-only line ends has every function in it
-judged.
+the commit gate, `rescore --gate`, `verify`, `mutate` and the advisory hook place each
+changed line by the bytes of the file it changed, and a new file saved with CR-only
+line ends has every function in it judged.
 
 ## `[crapkit]`
 

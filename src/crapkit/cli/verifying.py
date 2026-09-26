@@ -700,7 +700,7 @@ def _refuse_lane_less_verify(cfg) -> None:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    from ..diffparse import changed_ranges
+    from ..diffparse import worktree_ranges
     from ..gitio import GitFacts, diff_since
     from ..uncovered import missing_by_path
     from ..verify import diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage
@@ -731,7 +731,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if run.lane_errors:
         raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
 
-    ranges = changed_ranges(diff_since(root, basis))
+    ranges = worktree_ranges(diff_since(root, basis), root)
     ratchet = saved.entries
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, scored, store,
                                           entries=ratchet)
