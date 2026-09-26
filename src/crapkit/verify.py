@@ -15,6 +15,7 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Iterator
 from typing import NamedTuple
+from urllib.parse import quote, unquote
 
 from .keys import key_names, key_of
 from .ratchet import RatchetEntry
@@ -62,18 +63,48 @@ class PortableBaseline(NamedTuple):
     commit: str
     kind: str
     rows: list[ScoredRow]
+    # The test ids the baseline run failed. None for a record written before
+    # the stamp carried them: such a record cannot say which tests failed.
+    failures: frozenset[str] | None = None
 
 
-def baseline_tsv_lines(commit: str, kind: str, rows: list[ScoredRow]) -> Iterator[str]:
+# A test id keeps these as written in the stamp. Every other character outside
+# the unreserved set, whitespace and the comma between ids included, is
+# percent-encoded as UTF-8, so the stamp stays one line of space-separated fields.
+_ID_SAFE = "/:[]()"
+
+
+def baseline_tsv_lines(commit: str, kind: str, rows: list[ScoredRow],
+                       failures: Iterable[str] | None = None) -> Iterator[str]:
     """A baseline run as a file the repo can carry: a commit stamp, then the
     run's scored export. The store lives in a gitignored .crapkit/, so a fresh
-    clone has nothing else to name what it is being measured against."""
-    yield f"# commit={commit} run_kind={kind}\n"
+    clone has nothing else to name what it is being measured against.
+
+    The stamp also names the tests the run failed, so a verify against the file
+    forgives them as a verify against the stored run does. `failures=None`
+    leaves the field out: re-emitting a record that never knew them keeps it
+    unknowing rather than claiming the run failed nothing."""
+    yield f"# commit={commit} run_kind={kind}{_failures_field(failures)}\n"
     yield from scored_tsv_lines(rows)
+
+
+def _failures_field(failures: Iterable[str] | None) -> str:
+    """` failures=a,b` with each id encoded, ` failures=` for none, or nothing."""
+    if failures is None:
+        return ""
+    return " failures=" + ",".join(quote(f, safe=_ID_SAFE) for f in sorted(failures))
 
 
 def _stamp_fields(stamp: str) -> dict[str, str]:
     return dict(part.split("=", 1) for part in stamp.removeprefix("# ").split() if "=" in part)
+
+
+def _parsed_failures(value: str | None) -> frozenset[str] | None:
+    """The stamp's failures field back to ids. An id that does not decode as
+    UTF-8 is a ValueError, which the caller reports as an unreadable file."""
+    if value is None:
+        return None
+    return frozenset(unquote(part, errors="strict") for part in value.split(",") if part)
 
 
 def parse_baseline_tsv(text: str) -> PortableBaseline:
@@ -82,7 +113,8 @@ def parse_baseline_tsv(text: str) -> PortableBaseline:
     if "commit" not in fields or "run_kind" not in fields:
         raise ValueError(
             f"a baseline file starts with `# commit=<sha> run_kind=<kind>`, got {stamp!r}")
-    return PortableBaseline(fields["commit"], fields["run_kind"], parse_scored_tsv(body))
+    return PortableBaseline(fields["commit"], fields["run_kind"], parse_scored_tsv(body),
+                            _parsed_failures(fields.get("failures")))
 
 
 class GateViolation(NamedTuple):

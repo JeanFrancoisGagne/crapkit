@@ -2,6 +2,20 @@
 
 ## 0.8.1 — unreleased
 
+### A portable baseline forgives the failures its run had
+
+- `verify --baseline-tsv` counted a test that already failed at the baseline run as a
+  new failure and exited 8, where a verify against the stored run forgives it and exits
+  0 (README, exit 8). A repo with one test failing on its default branch failed every
+  pull request job on the Route 4 recipe. `--emit-baseline` now writes the baseline
+  run's failing test ids on the file's first line, `# commit=<sha> run_kind=<kind>
+  failures=<ids>`, and `--baseline-tsv` forgives them. No score changes.
+- Re-emit a committed `crapkit-baseline.tsv` once. A file written by 0.8.0 or older has
+  no `failures` field, so it forgives no failure, as it did before, and verify now warns
+  when it reports a new failure against one. 0.8.0 reads a new file and ignores the
+  field. See [the portable baseline's first
+  line](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/portable-records.md#the-portable-baselines-first-line).
+
 ### Coverage lands on the function that owns it
 
 - The istanbul reader places each counter by line and column: a statement counts from a

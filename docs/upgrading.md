@@ -215,6 +215,13 @@ concurrency and cleanup rules. [Command cleanup](lanes.md#the-kill-takes-the-who
 describes Windows Jobs and POSIX process groups. These are process-lifetime controls,
 not a sandbox for configured test commands.
 
+A portable baseline from `verify --emit-baseline` names the tests its run failed,
+and `verify --baseline-tsv` forgives them as a verify against the store does.
+Re-emit a committed baseline file once on the default branch. Until then it
+forgives no failure, as before, and verify warns when it reports a new failure
+against it. [The portable baseline's first
+line](portable-records.md#the-portable-baselines-first-line) gives the format.
+
 Git filenames retain their literal identity through scoring and output. Coverage
 paths still have to name the measured tree. Use the documented
 [CLI path rules](configuration.md#file-paths-and-root-discovery) and

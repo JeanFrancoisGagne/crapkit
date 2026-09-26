@@ -131,8 +131,9 @@ def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
 
 def _tsv_baseline(root: Path, rel: str) -> dict:
     """A baseline read from a file the repo carries, for a clone whose .crapkit/
-    is gitignored. It holds no lane provenance, so it can neither report a
-    shrinking suite nor forgive a failure the baseline run already had."""
+    is gitignored. It holds no lane provenance, so it cannot report a shrinking
+    suite; the failures its run had travel in its stamp, and `failures` is None
+    for a record written before the stamp carried them."""
     from ..verify import parse_baseline_tsv
 
     path = root / rel
@@ -143,7 +144,7 @@ def _tsv_baseline(root: Path, rel: str) -> dict:
     except ValueError as exc:
         raise ConfigError(f"unreadable baseline file {rel}: {exc}") from exc
     return {"id": None, "commit": parsed.commit, "kind": parsed.kind,
-            "lanes": {}, "rows": parsed.rows}
+            "lanes": {}, "rows": parsed.rows, "failures": parsed.failures, "file": rel}
 
 
 def _pick_baseline(root: Path, store: SnapshotStore, args, basis: str | None, git) -> dict:
@@ -187,7 +188,9 @@ def _verify_basis(root: Path, store: SnapshotStore, args, git) -> tuple[dict, st
 
 def _emit_baseline(root: Path, store: SnapshotStore, baseline: dict, rel: str | None) -> None:
     """Write the baseline this run used as a portable file, before the verdict:
-    a run that ends in a failure still owes the operator its basis.
+    a run that ends in a failure still owes the operator its basis. The file
+    names the tests that run failed, so a verify against it forgives the same
+    failures a verify against the stored run does.
 
     Through `_repo_out_path`, so `--emit-baseline out/new/b.tsv` creates the
     directory the way `--export`, `--sarif` and `report --out` do."""
@@ -199,7 +202,8 @@ def _emit_baseline(root: Path, store: SnapshotStore, baseline: dict, rel: str | 
     if rows is None:
         rows = store.read_scored(baseline["id"])
     _write_tsv(_repo_out_path(root, rel),
-               baseline_tsv_lines(baseline["commit"], baseline["kind"], rows))
+               baseline_tsv_lines(baseline["commit"], baseline["kind"], rows,
+                                  _recorded_failures(baseline)))
 
 
 def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
@@ -504,12 +508,34 @@ def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
               f"over the ceiling {maximum}", file=sys.stderr)
 
 
+def _recorded_failures(baseline: dict) -> frozenset[str] | None:
+    """The failures a baseline carries, or None for a portable record written
+    before its stamp named them. One that passed its flake retry in a verify
+    run is also named under `retried_passes` and is not carried: that run
+    never counted it, so a later verify must not forgive it."""
+    if "failures" in baseline:
+        return baseline["failures"]
+    return frozenset(f for prov in baseline["lanes"].values() for f in prov.get("failures", ())
+                     if f not in prov.get("retried_passes", ()))
+
+
 def _baseline_failures(baseline: dict) -> set:
-    """The failures a baseline carries. One that passed its flake retry in a
-    verify run is also named under `retried_passes` and is not carried: that
-    run never counted it, so a later verify must not forgive it."""
-    return {f for prov in baseline["lanes"].values() for f in prov.get("failures", ())
-            if f not in prov.get("retried_passes", ())}
+    """The failures this verify forgives. A record that cannot say forgives none."""
+    return set(_recorded_failures(baseline) or ())
+
+
+def _warn_unrecorded_failures(baseline: dict, verdict) -> None:
+    """A portable record written before its stamp named the baseline's failing
+    tests forgives none of them, so a failure the default branch already had
+    reads as new. Said only when that can have happened: new failures under
+    such a record."""
+    if not verdict.new_failures or _recorded_failures(baseline) is not None:
+        return
+    rel = baseline["file"]
+    print(f"warning: {rel} does not name the tests its baseline run failed (crapkit 0.8.0 "
+          f"and older wrote no failures= field), so each of the {len(verdict.new_failures)} new "
+          f"failure(s) may be one that run already had; re-emit the file on the default branch "
+          f"with `{_self()} verify --emit-baseline {rel}`", file=sys.stderr)
 
 
 def _stored_lanes(provenance: dict, retried: tuple[str, ...]) -> dict:
@@ -714,6 +740,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
                        baseline_failures=_baseline_failures(baseline), fresh_failures=fresh_failures,
                        target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty)
     verdict = _maybe_flake_retry(root, cfg, provenance, verdict)
+    _warn_unrecorded_failures(baseline, verdict)
     _warn_suite_shrink(baseline, provenance)
     # diff_uncovered walks the changed ranges, so an empty diff is [] whatever
     # the artifacts say — and reading every lane's artifact to spell that [] is

@@ -484,6 +484,11 @@ crapkit verify --baseline-tsv crapkit-baseline.tsv --github
 writes SARIF 2.1.0 for code-scanning upload. Refresh the committed baseline whenever the
 default branch's verify passes.
 
+The file also names the tests its run failed, so a test that already fails on the default
+branch fails no PR job: the job fails on the failures the PR adds. A file written by
+crapkit 0.8.0 or older names none, so every failure reads as new against it, and verify
+says so on stderr when it reports one. Re-emit it once.
+
 Two things the job has to do before those lines run. **Install crapkit**, `pip install
 crapkit`, and pin the version the way Route 3 pins `rev`: an unpinned install moves your
 gate on whatever day a release lands. **Fetch the whole history.** `actions/checkout`
@@ -956,7 +961,7 @@ crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve a
 | 5 | Tool error: lizard not importable, a lane that produced no artifact, one that measured a different tree, one that measured this tree and reported it in absolute paths (the join is root-relative, so those match nothing either; the refusal names the runner's own switch, `relative_files = true` under `[tool.coverage.run]` for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one), a lane that timed out past its retries, an override alert command that failed. A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
 | 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. |
 | 7 | Ratchet regression the diff never touched. A marked function scores worse than its recorded high-water mark; a touched one past its mark reports 6. |
-| 8 | New test failures against the baseline run. Failures the baseline already had do not count. |
+| 8 | New test failures against the baseline run. Failures the baseline already had do not count, against a `--baseline-tsv` file too: its first line names the tests its run failed ([portable records](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/portable-records.md#the-portable-baselines-first-line)). |
 | 9 | Diff-coverage ceiling breached: `diff_uncovered_max` is set and more changed lines than that never ran. A changed file no lane artifact mentions counts every line of its functions. |
 
 ### Exit 1 means one of three things

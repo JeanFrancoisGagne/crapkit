@@ -56,7 +56,11 @@ in this version.
 | 9 | more uncovered changed lines than `diff_uncovered_max` | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit verify --json` |
 
 `verify` reports the first of 6, 7, 8, 9 that fires, so a fixed 6 can uncover a 7 underneath
-it. Exit 1 is three unrelated things at once:
+it. An exit 8 from `verify --baseline-tsv FILE` that comes with "warning: FILE does not name
+the tests its baseline run failed" can be a failure the default branch already had: crapkit
+0.8.0 or older wrote that file, and it forgives no failure. Re-emit it on the default branch
+with `crapkit verify --emit-baseline FILE` and commit it:
+[docs: the portable baseline's first line](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/portable-records.md#the-portable-baselines-first-line). Exit 1 is three unrelated things at once:
 [README: exit 1 means one of three things](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-1-means-one-of-three-things)
 splits them by command.
 

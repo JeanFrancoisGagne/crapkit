@@ -243,7 +243,7 @@ def test_a_baseline_file_stamps_the_commit_the_diff_is_taken_from(portable_repo:
     res = run_cli(portable_repo, "verify", "--baseline-tsv", "base.tsv", "--json")
 
     baseline_commit = json.loads(res.stdout)["baseline_commit"]
-    assert stamp == f"# commit={baseline_commit} run_kind=coverage"
+    assert stamp == f"# commit={baseline_commit} run_kind=coverage failures="
     assert baseline_commit == git(portable_repo, "rev-parse", "HEAD~1")
 
 
