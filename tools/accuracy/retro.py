@@ -9,8 +9,11 @@
 
 tests/accuracy/suite_strength/retro/bugs.tsv names each bug (an R id), its fix
 commits, the commit before them and the check that must catch it: a node id in
-the accuracy suite, or an API probe under retro/probes/. ledger.tsv records what
-the last replay saw.
+the accuracy suite (a parametrized one, `test_x[case]`, names the bug's own
+case), or an API probe under retro/probes/. Its env cell, NAME=value words, sets
+the switches an older crapkit needs to read the check's files (SWITCHES: the
+languages it read, the root scope named by the tree's top-level entries).
+ledger.tsv records what the last replay saw.
 
 A replay adds a worktree at each commit, builds a venv there with uv (the
 commit's crapkit, no dependencies, plus the lizard release it was built
@@ -23,7 +26,8 @@ the venv's interpreter directly, with the worktree as its argument.
 
 The verdict is strict. Before counts as red only when the check fails on an
 AssertionError (a pin_ruling mismatch is one): the check saw the wrong value.
-Any other failure (DriveUnsupported, a refused config, an ImportError, a
+An item pytest reports as a declared xfail (an open defect a rulings row pins)
+counts as neither a pass nor a failure. Any other failure (DriveUnsupported, a refused config, an ImportError, a
 KeyError on an older schema) is `not replayable`, and the row needs an API
 probe; its ledger note says so. A check that passes on its before commit
 catches nothing and is refused. The fix commit must pass. `run --record` keeps a
@@ -70,7 +74,7 @@ BUGS = RETRO / "bugs.tsv"
 LEDGER = RETRO / "ledger.tsv"
 WORK_ENV = "CRAPKIT_RETRO_WORK"
 WORK = Path(os.environ.get(WORK_ENV) or REPO / ".crapkit" / "accuracy" / "retro")
-BUG_COLUMNS = ("id", "fix_commits", "before_commit", "packet", "test", "probe", "method",
+BUG_COLUMNS = ("id", "fix_commits", "before_commit", "packet", "test", "probe", "env", "method",
                "platform", "replay", "calc", "symptom")
 LEDGER_COLUMNS = ("id", "test", "before_commit", "fix_commit", "lizard", "before",
                   "failure_class", "before_evidence", "fix", "fix_evidence", "digest",
@@ -83,6 +87,10 @@ OUTCOMES_ENV = "CRAPKIT_RETRO_OUTCOMES"
 BUNDLE_ENV = "CRAPKIT_RETRO_BUNDLE"
 PYTHON_ENV = "CRAPKIT_ACCURACY_PYTHON"
 COLLECT_ALL_ENV = "CRAPKIT_ACCURACY_COLLECT_ALL"
+# The switches a bugs.tsv env cell may set for its check: the analysis-oracles packet
+# cuts its file set to the languages an older crapkit read, and names the root scope
+# by the tree's top-level entries where an older crapkit refused "." (analysis_inventory).
+SWITCHES = ("CRAPKIT_ACCURACY_LANGUAGES", "CRAPKIT_ACCURACY_ROOT_PATHS")
 DATA_DIRS = ("fixtures", "probes", "recorded", "small", "goldens", "known_kill")
 PLATFORMS = {"any": "", "windows": "win32", "linux": "linux", "macos": "darwin"}
 WINDOWS = os.name == "nt"
@@ -227,15 +235,27 @@ def contradiction(recorded: dict, before: Outcome, fix: Outcome) -> str:
 
 # --- the pytest plugin that records each item's exception ------------------------------------------
 
+_RAISED: dict[tuple[str, str], dict] = {}  # (nodeid, phase): the record, until pytest reports it
+
+
 def pytest_runtest_makereport(item, call):
-    """Loaded with `-p retro`: append each failing or passing phase's outcome."""
-    target = os.environ.get(OUTCOMES_ENV)
-    if not target or (call.when != "call" and call.excinfo is None):
-        return None
-    record = _record(item.nodeid, call)
-    with open(target, "ab") as handle:
-        handle.write((json.dumps(record) + "\n").encode())
+    """Loaded with `-p retro`: keep each failing or passing phase's record. The
+    exception is raw here: pytest has not yet turned a declared xfail into one."""
+    if os.environ.get(OUTCOMES_ENV) and (call.when == "call" or call.excinfo is not None):
+        _RAISED[(item.nodeid, call.when)] = _record(item.nodeid, call)
     return None
+
+
+def pytest_runtest_logreport(report):
+    """Append the phase's record once pytest has judged it: a strict xfail that failed
+    as declared (an open defect a rulings row pins) is skipped, not failed."""
+    record = _RAISED.pop((report.nodeid, report.when), None)
+    if record is None:
+        return
+    if hasattr(report, "wasxfail"):
+        record = {**record, "outcome": "skipped"}
+    with open(os.environ[OUTCOMES_ENV], "ab") as handle:
+        handle.write((json.dumps(record) + "\n").encode())
 
 
 def _record(nodeid: str, call) -> dict:
@@ -308,10 +328,11 @@ def check_files(test: str, probe: str = "", repo: Path = REPO) -> list[Path]:
     return sorted(files)
 
 
-def digest(test: str, probe: str = "", repo: Path = REPO) -> str:
-    """16 hex of a sha256 over every check file's repo path and bytes."""
+def digest(test: str, probe: str = "", repo: Path = REPO, env: str = "") -> str:
+    """16 hex of a sha256 over every check file's repo path and bytes, and the row's
+    env when it has one."""
     root = repo.resolve()
-    hashed = hashlib.sha256()
+    hashed = hashlib.sha256(f"env\0{env}\0".encode() if env else b"")
     for path in check_files(test, probe, repo):
         hashed.update(path.relative_to(root).as_posix().encode() + b"\0")
         hashed.update(hashlib.sha256(path.read_bytes()).digest())
@@ -457,9 +478,22 @@ def crapkit_root(interpreter: Path) -> str:
     return done.stdout.strip()
 
 
-def _pytest_env(interpreter: Path, outcomes: Path, root: str = "") -> dict:
+def _switch(word: str) -> tuple[str, str]:
+    name, equals, value = word.partition("=")
+    if not equals or name not in SWITCHES:
+        raise RetroError(f"a bugs.tsv env names {name}; it may set only "
+                         f"{', '.join(SWITCHES)}, each as NAME=value")
+    return name, value
+
+
+def switches(env: str) -> dict[str, str]:
+    """A bugs.tsv env cell, `NAME=value` words, as the variables its replay sets."""
+    return dict(map(_switch, env.split()))
+
+
+def _pytest_env(interpreter: Path, outcomes: Path, root: str = "", env: str = "") -> dict:
     paths = [root, str(REPO / "tests"), str(REPO / "tools" / "accuracy"), *_inherited_paths()]
-    return {**os.environ, PYTHON_ENV: str(interpreter), OUTCOMES_ENV: str(outcomes),
+    return {**os.environ, **switches(env), PYTHON_ENV: str(interpreter), OUTCOMES_ENV: str(outcomes),
             COLLECT_ALL_ENV: "1", "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONPATH": os.pathsep.join(filter(None, paths))}
 
@@ -471,14 +505,15 @@ def _rootdir(test: str) -> Path:
     return REPO if path == REPO or REPO in path.parents else path.parent
 
 
-def replay_node(test: str, interpreter: Path) -> list[dict]:
-    """Run one node id of this tree against `interpreter`'s crapkit; one record per item."""
+def replay_node(test: str, interpreter: Path, env: str = "") -> list[dict]:
+    """Run one node id of this tree against `interpreter`'s crapkit, under the row's
+    env switches; one record per item."""
     with tempfile.TemporaryDirectory(prefix="crapkit-retro-") as scratch:
         outcomes = Path(scratch) / "outcomes.jsonl"
         outcomes.touch()
         argv = [sys.executable, "-m", "pytest", test, "-q", "-p", "no:cacheprovider",
                 "-p", "no:randomly", "-p", "retro", "--rootdir", _rootdir(test)]
-        _run(argv, env=_pytest_env(interpreter, outcomes, crapkit_root(interpreter)))
+        _run(argv, env=_pytest_env(interpreter, outcomes, crapkit_root(interpreter), env))
         return item_outcomes(_read(outcomes).splitlines())
 
 
@@ -512,12 +547,13 @@ class Bug:
     before: str
     fix: str
     probe: str = ""
+    env: str = ""
 
 
 def bug_of(row: dict) -> Bug:
     fixes = [sha.strip() for sha in row["fix_commits"].split(",") if sha.strip()]
     return Bug(row["id"], row["test"], row["before_commit"], fixes[-1] if fixes else "",
-               row["probe"])
+               row["probe"], row.get("env", ""))
 
 
 def _probe_records(probe: Path, tree: Path, python: str, site: Site) -> list[dict]:
@@ -530,7 +566,7 @@ def _records(bug: Bug, sha: str, python: str, site: Site) -> list[dict]:
     tree = worktree(sha, site)
     if bug.probe:
         return _probe_records(RETRO / "probes" / bug.probe, tree, python, site)
-    return replay_node(bug.test, build_venv(tree, python, site))
+    return replay_node(bug.test, build_venv(tree, python, site), bug.env)
 
 
 def replay(bug: Bug, python: str, site: Site = Site()) -> tuple[Outcome, Outcome]:
@@ -544,7 +580,7 @@ def ledger_row(bug: Bug, before: Outcome, fix: Outcome, note: str = "") -> dict:
     return {"id": bug.id, "test": bug.test, "before_commit": bug.before, "fix_commit": bug.fix,
             "lizard": LIZARD, "before": before.verdict, "failure_class": before.failure_class,
             "before_evidence": before.evidence, "fix": fix.verdict,
-            "fix_evidence": fix.evidence, "digest": digest(bug.test, bug.probe),
+            "fix_evidence": fix.evidence, "digest": digest(bug.test, bug.probe, env=bug.env),
             "replayed": today, "note": note}
 
 
@@ -566,7 +602,7 @@ def replayable_here(row: dict, platform: str = sys.platform) -> bool:
 def _is_stale(row: dict, ledger: dict) -> bool:
     recorded = ledger.get(row_key(row))
     bug = bug_of(row)
-    return recorded is None or recorded["digest"] != digest(bug.test, bug.probe)
+    return recorded is None or recorded["digest"] != digest(bug.test, bug.probe, env=bug.env)
 
 
 def stale(bugs: list[dict], ledger: dict) -> list[dict]:
@@ -624,10 +660,13 @@ def _platform(listed: dict) -> str:
 
 
 def _bug_for(bugs: list[dict], packet: str, listed: dict) -> dict:
+    """A packet's pair as a bugs.tsv row. The probe and env stay with the pair bugs.tsv
+    already held; an env column in the packet's retro.tsv names the env itself."""
     base = _template(bugs, packet, listed["id"])
     same = base["packet"] == packet and base["test"] == listed["test"]
-    return {**base, "packet": packet, "test": listed["test"], "probe": base["probe"] if same else "",
-            "platform": _platform(listed) or base["platform"]}
+    kept = {"probe": base["probe"], "env": base.get("env", "")} if same else {"probe": "", "env": ""}
+    return {**base, **kept, "packet": packet, "test": listed["test"],
+            "env": listed.get("env", kept["env"]), "platform": _platform(listed) or base["platform"]}
 
 
 def synced_bugs(bugs: list[dict], tables: dict[str, list[dict]]) -> list[dict]:

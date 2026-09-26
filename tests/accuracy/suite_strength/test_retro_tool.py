@@ -109,6 +109,81 @@ def test_a_skip_or_xfail_is_not_a_failure():
     assert retro._record("t::a", _call(skipped("x")))["outcome"] == "skipped"
 
 
+def _reported(tmp_path, monkeypatch, error: BaseException | None, **report) -> list[dict]:
+    """The records the plugin writes for one call phase that raised `error` and whose
+    final pytest report carries `report`'s fields."""
+    outcomes = tmp_path / "outcomes.jsonl"
+    monkeypatch.setenv(retro.OUTCOMES_ENV, str(outcomes))
+    retro.pytest_runtest_makereport(SimpleNamespace(nodeid="t::a"), _call(error))
+    retro.pytest_runtest_logreport(SimpleNamespace(nodeid="t::a", when="call", **report))
+    return retro.item_outcomes(outcomes.read_text(encoding="utf-8").splitlines())
+
+
+def test_an_open_defect_s_strict_xfail_is_not_a_failure(tmp_path, monkeypatch):
+    """A check pins an open defect with a strict xfail (rulings.applies). The defect's
+    RulingDefect reaches makereport before pytest turns it into an xfail, so the replay
+    reads pytest's own report: an item that failed as declared is no failure."""
+    defect = RulingDefect("D1c: crapkit still says 0")
+
+    assert _reported(tmp_path, monkeypatch, defect, wasxfail="D1c is an open defect") == []
+
+
+def test_a_failure_pytest_reports_as_a_failure_keeps_its_class(tmp_path, monkeypatch):
+    records = _reported(tmp_path, monkeypatch, RulingDefect("D1c: crapkit still says 0"))
+
+    assert [(row["outcome"], row["exc_type"], row["assertion"]) for row in records] == [
+        ("failed", "RulingDefect", True)]
+
+
+def test_a_phase_makereport_never_saw_writes_nothing(tmp_path, monkeypatch):
+    """xdist's controller logs the reports its workers made; the worker wrote them."""
+    outcomes = tmp_path / "outcomes.jsonl"
+    monkeypatch.setenv(retro.OUTCOMES_ENV, str(outcomes))
+
+    retro.pytest_runtest_logreport(SimpleNamespace(nodeid="t::b", when="call"))
+
+    assert not outcomes.exists()
+
+
+XFAIL_CHECK = """\
+import pytest
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="an open defect")
+def test_open_defect():
+    assert 1 == 2
+
+
+def test_right():
+    assert 1 == 1
+
+
+def test_wrong():
+    assert 1 == 3
+"""
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_real_pytest_records_a_declared_xfail_as_no_failure(tmp_path):
+    """The two hooks against pytest itself: the stand-ins above assume where pytest
+    reports an xfail."""
+    check = tmp_path / "test_xfail_check.py"
+    check.write_text(XFAIL_CHECK, encoding="utf-8")
+    outcomes = tmp_path / "outcomes.jsonl"
+    outcomes.touch()
+    env = {**retro.os.environ, retro.OUTCOMES_ENV: str(outcomes), "PYTHONDONTWRITEBYTECODE": "1",
+           "PYTHONPATH": str(REPO / "tools" / "accuracy")}
+    argv = [sys.executable, "-m", "pytest", str(check), "-q", "-p", "no:cacheprovider",
+            "-p", "no:randomly", "-p", "retro", "--rootdir", str(tmp_path)]
+
+    retro._run(argv, cwd=tmp_path, env=env)
+
+    records = retro.item_outcomes(outcomes.read_text(encoding="utf-8").splitlines())
+    assert sorted((row["nodeid"].rpartition("::")[2], row["outcome"]) for row in records) == [
+        ("test_right", "passed"), ("test_wrong", "failed")]
+
+
 def test_a_teardown_error_after_a_passing_call_fails_the_item():
     lines = ['{"nodeid": "t::a", "outcome": "passed", "exc_type": "", "assertion": false, '
              '"message": ""}',
@@ -257,6 +332,31 @@ def test_the_commit_s_crapkit_leads_the_check_s_pythonpath(tmp_path, monkeypatch
         str(tmp_path / "lib")]
 
 
+CUT = "CRAPKIT_ACCURACY_LANGUAGES=python,typescript CRAPKIT_ACCURACY_ROOT_PATHS=entries"
+
+
+def test_a_row_s_env_reaches_the_replayed_check(tmp_path):
+    """A packet replays an old commit with its set cut to the languages that commit
+    read, and the root scope named by the tree's top-level entries: the row says so."""
+    env = retro._pytest_env(Path("py"), tmp_path / "o", "/old/src", CUT)
+
+    assert (env["CRAPKIT_ACCURACY_LANGUAGES"], env["CRAPKIT_ACCURACY_ROOT_PATHS"]) == (
+        "python,typescript", "entries")
+    assert env[retro.PYTHON_ENV] == "py"
+
+
+@pytest.mark.parametrize("cell, says", [
+    ("CRAPKIT_ACCURACY_PYTHON=/usr/bin/python3", "CRAPKIT_ACCURACY_PYTHON"),
+    ("CRAPKIT_ACCURACY_LANGUAGES", "CRAPKIT_ACCURACY_LANGUAGES"),
+    ("PATH=/bin", "PATH"),
+])
+def test_a_row_s_env_names_only_a_replay_switch(tmp_path, cell, says):
+    """The replay's own variables and anything outside the accuracy switches stay the
+    replay's: a row cannot point the check at another crapkit."""
+    with pytest.raises(retro.RetroError, match=f"env names {says}"):
+        retro._pytest_env(Path("py"), tmp_path / "o", "", cell)
+
+
 def test_the_replayed_check_never_sees_this_tree_s_crapkit_on_pythonpath(tmp_path, monkeypatch):
     """A spawned old crapkit inherits the check's environment; a PYTHONPATH entry
     holding a crapkit package would shadow the commit's own and turn every before green."""
@@ -309,6 +409,15 @@ def test_editing_what_the_check_reads_changes_its_digest(small_tree, edited, mov
         handle.write("# edited\n")
 
     assert (retro.digest(TEST, repo=small_tree) != before) == moves
+
+
+def test_a_row_s_env_moves_its_digest_and_no_env_leaves_it_as_it_was(small_tree):
+    """A replay under another cut is another replay; a row with no env keeps the
+    digest every recorded row already carries."""
+    plain = retro.digest(TEST, repo=small_tree)
+
+    assert retro.digest(TEST, repo=small_tree, env="") == plain
+    assert retro.digest(TEST, repo=small_tree, env=CUT) != plain
 
 
 def test_the_digest_does_not_depend_on_where_the_tree_sits(small_tree, tmp_path_factory):
@@ -364,7 +473,7 @@ NODE = "tests/accuracy/suite_strength/test_retro_tool.py::test_double_doubles"
 
 def _bug_row(bug_id: str, replay: str = "public", platform: str = "any") -> dict:
     return {"id": bug_id, "fix_commits": "b" * 12, "before_commit": "a" * 12, "packet": "p",
-            "test": NODE, "probe": "", "method": "hand", "platform": platform,
+            "test": NODE, "probe": "", "env": "", "method": "hand", "platform": platform,
             "replay": replay, "calc": "c", "symptom": "s"}
 
 
@@ -505,6 +614,7 @@ def test_a_bug_s_replayed_fix_is_its_last_fix_commit():
     row = {**_bug_row("R1"), "fix_commits": "aaaaaaaaaaaa, bbbbbbbbbbbb", "probe": "R1.py"}
 
     assert retro.bug_of(row) == retro.Bug("R1", NODE, "a" * 12, "b" * 12, "R1.py")
+    assert retro.bug_of({**row, "env": CUT}).env == CUT
     assert retro.bug_of({**row, "fix_commits": ""}).fix == ""
     assert retro.bug_of({**row, "fix_commits": "aaaa,bbbb"}).fix == "bbbb"
 
@@ -520,7 +630,8 @@ def _sync_row(bug_id, packet, test, **fields):
 BUGS_BEFORE = [
     _sync_row("R1", "p1", "tests/accuracy/p1/test_a.py::test_proposed"),
     _sync_row("R1", "p2", "tests/accuracy/p2/test_b.py::test_kept", calc="calc R1 in p2"),
-    _sync_row("R2", "p1", "tests/accuracy/p1/test_a.py::test_probe", probe="R2.py", method="model"),
+    _sync_row("R2", "p1", "tests/accuracy/p1/test_a.py::test_probe", probe="R2.py", method="model",
+              env=CUT),
     _sync_row("R3", "p3", "tests/accuracy/p3/test_c.py::test_not_landed"),
     _sync_row("R4", "p1", "tests/accuracy/p1/test_a.py::test_open", replay="open"),
 ]
@@ -585,6 +696,18 @@ def test_a_pair_listed_once_per_fix_commit_syncs_as_one_row(tmp_path):
 
     both = [row for row in synced if row["test"].endswith("test_both")]
     assert [(row["id"], row["platform"]) for row in both] == [("R3", "windows")]
+
+
+def test_sync_carries_the_env_a_packet_lists(tmp_path):
+    """A packet's retro.tsv may carry an env column; a packet without one leaves the
+    env bugs.tsv holds for the pair (R2's above)."""
+    table = ("id\ttest\tenv\n"
+             "R3\ttests/accuracy/p1/test_a.py::test_cut\tCRAPKIT_ACCURACY_LANGUAGES=python\n")
+
+    synced = retro.synced_bugs(BUGS_BEFORE, retro.landed(_landed(tmp_path, table)))
+
+    cut = next(row for row in synced if row["test"].endswith("test_cut"))
+    assert cut["env"] == "CRAPKIT_ACCURACY_LANGUAGES=python"
 
 
 def test_sync_refuses_a_bug_bugs_tsv_does_not_know(tmp_path):
@@ -1126,9 +1249,10 @@ def test_the_plugin_appends_each_call_and_each_failing_phase(tmp_path, monkeypat
     out.write_bytes(b"kept\n")
     monkeypatch.setenv(retro.OUTCOMES_ENV, str(out))
 
-    assert retro.pytest_runtest_makereport(_Report("t::setup"), _call(None, "setup")) is None
-    assert retro.pytest_runtest_makereport(_Report("t::a"), _call(None)) is None
-    assert retro.pytest_runtest_makereport(_Report("t::é"), _call(OSError("lock"), "teardown")) is None
+    for nodeid, call in (("t::setup", _call(None, "setup")), ("t::a", _call(None)),
+                         ("t::é", _call(OSError("lock"), "teardown"))):
+        assert retro.pytest_runtest_makereport(_Report(nodeid), call) is None
+        retro.pytest_runtest_logreport(SimpleNamespace(nodeid=nodeid, when=call.when))
 
     kept, *lines = out.read_bytes().decode().split("\n")
     assert kept == "kept" and lines[-1] == ""
@@ -1141,6 +1265,7 @@ def test_the_plugin_writes_nothing_outside_a_replay(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     assert retro.pytest_runtest_makereport(_Report("t::a"), _call(None)) is None
+    retro.pytest_runtest_logreport(SimpleNamespace(nodeid="t::a", when="call"))
     assert list(tmp_path.iterdir()) == []
 
 
@@ -1235,15 +1360,15 @@ def test_a_probe_bug_replays_its_probe_file_in_the_commit_s_tree(tmp_path, monke
     assert got == [(retro.RETRO / "probes" / "R97.py", tmp_path / "abc", "3.12", site)]
 
 
-def test_a_node_bug_replays_its_check_against_the_commit_s_venv(tmp_path, monkeypatch):
+def test_a_node_bug_replays_its_check_against_the_commit_s_venv_under_its_env(tmp_path, monkeypatch):
     monkeypatch.setattr(retro, "worktree", lambda sha, site: tmp_path / sha)
     monkeypatch.setattr(retro, "build_venv", lambda tree, python, site, extra=(): (tree, python, site, extra))
-    monkeypatch.setattr(retro, "replay_node", lambda test, interpreter: [(test, interpreter)])
+    monkeypatch.setattr(retro, "replay_node", lambda test, interpreter, env: [(test, interpreter, env)])
     site = retro.Site(work=tmp_path)
 
-    got = retro._records(retro.Bug("R6", NODE, "a", "b"), "abc", "3.12", site)
+    got = retro._records(retro.Bug("R6", NODE, "a", "b", env=CUT), "abc", "3.12", site)
 
-    assert got == [(NODE, (tmp_path / "abc", "3.12", site, ()))]
+    assert got == [(NODE, (tmp_path / "abc", "3.12", site, ()), CUT)]
 
 
 # --- tables, rows and the ledger ----------------------------------------------------------------------

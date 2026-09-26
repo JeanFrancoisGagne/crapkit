@@ -31,7 +31,7 @@ REPO = HERE.parents[2]
 ACCURACY = HERE.parent
 TRIAGE_THROUGH = "8fb7b45c7248c2ff71a472b40e1111c4a93674ce"
 TRIAGED_PATHS = ("src/", "tools/action/comment.py", "action.yml")
-BUG_COLUMNS = ("id", "fix_commits", "before_commit", "packet", "test", "probe", "method",
+BUG_COLUMNS = ("id", "fix_commits", "before_commit", "packet", "test", "probe", "env", "method",
                "platform", "replay", "calc", "symptom")
 LEDGER_COLUMNS = ("id", "test", "before_commit", "fix_commit", "lizard", "before",
                   "failure_class", "before_evidence", "fix", "fix_evidence", "digest",
@@ -41,6 +41,7 @@ METHODS = {"hand", "oracle", "model", "metamorphic", "property", "cross_surface"
 PLATFORMS = {"any", "windows", "linux", "macos"}
 ASSERTIONS = {"AssertionError", "RulingDefect"}
 HEX12 = re.compile(r"^[0-9a-f]{12}$")
+SWITCH = re.compile(r"CRAPKIT_ACCURACY_[A-Z_]+=\S+")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -138,6 +139,8 @@ BUG_RULES = (
      lambda row: row["replay"] == _replay_kind(row["id"])),
     ("a calc and a symptom", lambda row: row["calc"].strip() and row["symptom"].strip()),
     ("a named probe exists", lambda row: not row["probe"] or (RETRO / "probes" / row["probe"]).is_file()),
+    ("env holds NAME=value accuracy switches",
+     lambda row: all(SWITCH.fullmatch(word) for word in row["env"].split())),
 )
 
 
@@ -182,13 +185,15 @@ def _replayed_problem(row: dict) -> str | None:
 
 
 def _function_exists(test: str) -> bool:
+    """Whether the node id's test function is in this tree; a parametrized id
+    (`test_x[case]`) names its function without the case."""
     path, _, name = test.partition("::")
     file = REPO / path
     if not file.is_file():
         return False
     names = {node.name for node in ast.walk(ast.parse(file.read_bytes()))
              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
-    return name.split("::")[-1] in names
+    return name.split("::")[-1].partition("[")[0] in names
 
 
 def _ledger_problem(row: dict) -> str | None:
@@ -218,6 +223,9 @@ def test_a_pending_row_whose_check_exists_says_what_it_waits_for():
     assert _ledger_problem(refused) == (f"R1 {here}: refused 2026-09-25: R1: the check fails on its "
                                         "fix commit: x; fix the check, then replay it")
     assert _ledger_problem({**row, "test": "tests/nowhere.py::test_t"}) is None
+    assert _ledger_problem({**row, "test": f"{here}[case]"}) == (
+        f"R1 {here}[case]: the check exists, replay it with "
+        "`python tools/accuracy/retro.py run R1 --record`")
 
 
 def test_every_ledger_row_follows_the_replay_rules():
