@@ -6,11 +6,23 @@ tools/deploy/toolchain.py provide, so a bare `pytest` on a contributor's
 machine skips the whole tree instead of failing on a missing Node or a
 harness that is not installed.
 """
+import importlib.util
 from pathlib import Path
 
-import conftest
+TESTS = Path(__file__).resolve().parents[1]
 
-TESTS = Path(conftest.__file__).resolve().parent
+
+def _root_conftest():
+    """tests/conftest.py by its path. `import conftest` takes whichever conftest
+    module sys.modules holds first, and a session that collects tests/e2e as
+    well hands it tests/e2e/conftest.py, which has no pytest_ignore_collect."""
+    spec = importlib.util.spec_from_file_location("crapkit_tests_root_conftest", TESTS / "conftest.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+conftest = _root_conftest()
 
 
 def test_a_bare_run_ignores_the_deploy_tree(monkeypatch):
