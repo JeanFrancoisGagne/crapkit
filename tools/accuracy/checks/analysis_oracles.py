@@ -67,4 +67,7 @@ CHECKS = [
      "pytest": [_PACKET + "test_swift_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
     {"name": "Objective-C against OCLint, clang-tidy and tree-sitter", "seconds": 60,
      "pytest": [_PACKET + "test_objc_oracles.py"], "tiers": ["nightly"]},
+    {"name": "JS, TS and Vue ccn, cognitive and nesting against ESLint and sonarjs",
+     "seconds": 30, "pytest": [_PACKET + "test_js_corpus_oracles.py"], "os": ["linux"],
+     "tiers": ["nightly"]},
 ]
