@@ -814,12 +814,16 @@ def _untracked_in_scope(root: Path, cfg) -> list[str]:
     verify's diff and its corpus hold git-tracked files only, so a new file
     nobody added was judged as nothing and read as `(0 changed files)`. Asked
     before any lane runs, like the dirty set: a file a lane writes is the
-    lane's output, not somebody's unjudged work."""
-    from ..gitio import untracked_files
-    from ..universe import assign_files
+    lane's output, not somebody's unjudged work.
 
-    by_scope = assign_files(untracked_files(root), cfg)
-    return sorted(path for paths in by_scope.values() for path in paths)
+    Each name is asked which scope takes it, not scanned: the scan refuses a
+    claimed name that is not UTF-8, and verify judges no untracked file, so
+    such a name is named here in its `\\xNN` spelling like any other."""
+    from ..gitio import untracked_files
+    from ..gitpaths import shown
+    from ..universe import claiming_scope
+
+    return sorted(shown(path) for path in untracked_files(root) if claiming_scope(path, cfg))
 
 
 def _warn_untracked_in_scope(untracked: list[str]) -> None:
