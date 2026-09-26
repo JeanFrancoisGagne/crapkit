@@ -107,8 +107,9 @@ REFUSED = [
     ("package-json-cp1252-only-byte", _package("Ren’", "cp1252"), "byte 92 at offset 36"),
     ("package-json-utf16", _package("Rene", "utf-16"),
      "first bytes ff fe = UTF-16, the PowerShell 5.1 Out-File default"),
+    # Out-File writes little-endian; a big-endian mark is not its default.
     ("package-json-utf16-be", codecs.BOM_UTF16_BE + _package("Rene", "utf-16-be"),
-     "first bytes fe ff = UTF-16, the PowerShell 5.1 Out-File default"),
+     "first bytes fe ff = UTF-16, big-endian"),
 ]
 
 
@@ -216,10 +217,14 @@ def test_init_appends_to_a_gitignore_and_keeps_every_byte_it_held(
     assert _numstat(root, ".gitignore")[1] == (not on_disk.endswith(b"\n"))
 
 
-@pytest.mark.parametrize("before", ["build/\n".encode("utf-16"),
-                                    codecs.BOM_UTF16_BE + "build/\n".encode("utf-16-be")],
-                         ids=["gitignore-utf16-le", "gitignore-utf16-be"])
-def test_init_names_a_utf16_gitignore_and_leaves_it_as_it_was(tmp_path, capsys, before):
+# The bytes of a UTF-16 .gitignore and the cause the line names: PowerShell 5.1's
+# Out-File writes the little-endian mark, never the big-endian one.
+UTF16_GITIGNORES = [("build/\n".encode("utf-16"), "the PowerShell 5.1 Out-File default"),
+                    (codecs.BOM_UTF16_BE + "build/\n".encode("utf-16-be"), "big-endian")]
+
+
+@pytest.mark.parametrize("before, cause", UTF16_GITIGNORES, ids=["gitignore-utf16-le", "gitignore-utf16-be"])
+def test_init_names_a_utf16_gitignore_and_leaves_it_as_it_was(tmp_path, capsys, before, cause):
     """git cannot read a UTF-16 .gitignore at all; appending to it would ignore
     nothing, and init used to die on it after writing crapkit.toml."""
     root = _repo(tmp_path, {b".gitignore": before})
@@ -231,8 +236,7 @@ def test_init_names_a_utf16_gitignore_and_leaves_it_as_it_was(tmp_path, capsys, 
     assert _numstat(root, ".gitignore") == (0, 0)
     assert (root / "crapkit.toml").is_file()
     assert (f"crapkit: left .gitignore as it was: it is UTF-16 (first bytes {before[:2].hex(' ')}, "
-            "the PowerShell 5.1 Out-File default), which git cannot read; save it as UTF-8 "
-            "and add .crapkit/") in out.err
+            f"{cause}), which git cannot read; save it as UTF-8 and add .crapkit/") in out.err
 
 
 # --- init order and a second init ---------------------------------------------
@@ -302,10 +306,9 @@ def test_a_second_init_with_nothing_left_to_do_still_refuses(tmp_path, capsys):
     assert (root / "crapkit.toml").read_bytes() == toml
 
 
-@pytest.mark.parametrize("before", ["build/\n".encode("utf-16"),
-                                    codecs.BOM_UTF16_BE + "build/\n".encode("utf-16-be")],
-                         ids=["gitignore-utf16-le", "gitignore-utf16-be"])
-def test_a_second_init_over_a_utf16_gitignore_names_the_gitignore_alone(tmp_path, capsys, before):
+@pytest.mark.parametrize("before, cause", UTF16_GITIGNORES, ids=["gitignore-utf16-le", "gitignore-utf16-be"])
+def test_a_second_init_over_a_utf16_gitignore_names_the_gitignore_alone(tmp_path, capsys, before,
+                                                                         cause):
     """The step left undone is .gitignore. The refusal named it and then said
     `crapkit.toml already exists ... edit it instead`, sending the reader to a
     file that needs nothing."""
@@ -318,8 +321,8 @@ def test_a_second_init_over_a_utf16_gitignore_names_the_gitignore_alone(tmp_path
 
     assert code == 3
     assert out.err == (f"crapkit: left .gitignore as it was: it is UTF-16 (first bytes "
-                       f"{before[:2].hex(' ')}, the PowerShell 5.1 Out-File default), which git "
-                       "cannot read; save it as UTF-8 and add .crapkit/\n")
+                       f"{before[:2].hex(' ')}, {cause}), which git cannot read; save it as "
+                       "UTF-8 and add .crapkit/\n")
     assert (root / "crapkit.toml").read_bytes() == toml
     assert (root / ".gitignore").read_bytes() == before
 

@@ -866,12 +866,13 @@ def _notes(stdout: str) -> list[str]:
 
 
 SOURCES = [
-    # id, the bytes of src/a.ps1, whether doctor notes it as UTF-16
-    ("utf16-le", _PS1.encode("utf-16"), True),
-    ("utf16-be", b"\xfe\xff" + _PS1.encode("utf-16-be"), True),
-    ("utf8", _PS1.encode(), False),
-    ("utf8-bom", b"\xef\xbb\xbf" + _PS1.encode(), False),
-    ("cp1252", _PS1.replace("Get-A", "Get-Caf\xe9").encode("cp1252"), False),
+    # id, the bytes of src/a.ps1, how doctor's UTF-16 note names the mark (None: no note).
+    # Out-File writes the little-endian mark, never the big-endian one.
+    ("utf16-le", _PS1.encode("utf-16"), "the PowerShell 5.1 Out-File default"),
+    ("utf16-be", b"\xfe\xff" + _PS1.encode("utf-16-be"), "big-endian"),
+    ("utf8", _PS1.encode(), None),
+    ("utf8-bom", b"\xef\xbb\xbf" + _PS1.encode(), None),
+    ("cp1252", _PS1.replace("Get-A", "Get-Caf\xe9").encode("cp1252"), None),
 ]
 
 
@@ -885,10 +886,10 @@ def test_doctor_notes_a_utf16_source_and_keeps_its_exit_code(tmp_path: Path, sou
 
     assert res.returncode == control.returncode == 0, res.stdout + res.stderr
     utf16 = [note for note in _notes(res.stdout) if "UTF-16" in note]
-    assert utf16 == (["note 1 source file(s) open with a UTF-16 byte-order mark, the "
-                      "PowerShell 5.1 Out-File default: src/a.ps1. crapkit scores them, but "
-                      "git diffs them as binary; save them as UTF-8 (PowerShell: Set-Content "
-                      "-Encoding utf8) to diff them as text"] if noted else [])
+    assert utf16 == ([f"note 1 source file(s) open with a UTF-16 byte-order mark, {noted}: "
+                      "src/a.ps1. crapkit scores them, but git diffs them as binary; save them "
+                      "as UTF-8 (PowerShell: Set-Content -Encoding utf8) to diff them as text"]
+                     if noted else [])
 
 
 ENCODINGS = [

@@ -66,8 +66,11 @@ def test_a_bom_is_dropped_so_the_file_reads_as_the_same_text(tmp_path):
     assert repo_text(path, "crapkit.toml") == TEXT
 
 
-@pytest.mark.parametrize("encoding, head", [("utf-16-le", "ff fe"), ("utf-16-be", "fe ff")])
-def test_utf16_is_a_configuration_error_naming_the_bytes_and_the_fix(tmp_path, encoding, head):
+@pytest.mark.parametrize("encoding, head, cause", [
+    ("utf-16-le", "ff fe", "the PowerShell 5.1 Out-File default"),
+    ("utf-16-be", "fe ff", "big-endian"),
+])
+def test_utf16_is_a_configuration_error_naming_the_bytes_and_the_fix(tmp_path, encoding, head, cause):
     """The mark spelled out, because Python's `utf-16` codec writes the host's
     byte order and `utf-16-be` writes no mark at all."""
     path = tmp_path / "crapkit-ratchet.tsv"
@@ -77,8 +80,7 @@ def test_utf16_is_a_configuration_error_naming_the_bytes_and_the_fix(tmp_path, e
         repo_text(path, "crapkit-ratchet.tsv")
 
     assert str(refused.value) == (
-        f"crapkit-ratchet.tsv is not UTF-8 (first bytes {head} = UTF-16, the PowerShell 5.1 "
-        "Out-File default); save it as UTF-8")
+        f"crapkit-ratchet.tsv is not UTF-8 (first bytes {head} = UTF-16, {cause}); save it as UTF-8")
     assert refused.value.exit_code == 3
 
 

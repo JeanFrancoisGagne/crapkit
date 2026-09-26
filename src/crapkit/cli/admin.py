@@ -594,10 +594,11 @@ def _extended_gitignore(raw: bytes, lanes: tuple) -> tuple[bytes, list[str]]:
 
 
 def _unreadable_gitignore(raw: bytes, lanes: tuple) -> str:
+    from ..repotext import utf16_cause
     from ..scaffold import gitignore_entries
 
     return (f"left .gitignore as it was: it is UTF-16 (first bytes {raw[:2].hex(' ')}, "
-            "the PowerShell 5.1 Out-File default), which git cannot read; save it as UTF-8 "
+            f"{utf16_cause(raw)}), which git cannot read; save it as UTF-8 "
             f"and add {', '.join(gitignore_entries(lanes))}")
 
 
@@ -763,27 +764,34 @@ def _doctor_oversized(oversized: tuple[tuple[str, int], ...]) -> list[Finding]:
             for path, size in oversized]
 
 
-def _opens_utf16(path: Path) -> bool:
+def _utf16_mark(path: Path) -> bytes:
+    """The UTF-16 byte-order mark `path` opens with, or b"" for none."""
     from ..repotext import utf16_marked
 
     try:
         with path.open("rb") as fh:
-            return utf16_marked(fh.read(2))
+            head = fh.read(2)
     except OSError:
-        return False
+        return b""
+    return head if utf16_marked(head) else b""
 
 
 def _doctor_utf16_sources(root: Path, by_scope: dict) -> list[Finding]:
     """A note, never a failure: crapkit scores a source that opens with a
     UTF-16 byte-order mark, and git diffs it as binary (`Binary files ...
-    differ`). One file read of two bytes per scoped source."""
-    marked = sorted(f for files in by_scope.values() for f in files if _opens_utf16(root / f))
-    if not marked:
-        return []
-    return [Finding("note", f"{len(marked)} source file(s) open with a UTF-16 byte-order mark, "
-                            f"the PowerShell 5.1 Out-File default: {', '.join(marked)}. crapkit "
+    differ`). One note per byte order, since only the little-endian one is
+    PowerShell 5.1's default. One file read of two bytes per scoped source."""
+    from ..repotext import utf16_cause
+
+    marked: dict[bytes, list[str]] = {}
+    for path in sorted(f for files in by_scope.values() for f in files):
+        marked.setdefault(_utf16_mark(root / path), []).append(path)
+    marked.pop(b"", None)
+    return [Finding("note", f"{len(paths)} source file(s) open with a UTF-16 byte-order mark, "
+                            f"{utf16_cause(mark)}: {', '.join(paths)}. crapkit "
                             "scores them, but git diffs them as binary; save them as UTF-8 "
-                            "(PowerShell: Set-Content -Encoding utf8) to diff them as text")]
+                            "(PowerShell: Set-Content -Encoding utf8) to diff them as text")
+            for mark, paths in sorted(marked.items(), reverse=True)]
 
 
 def _init_files(root: Path) -> list[str]:

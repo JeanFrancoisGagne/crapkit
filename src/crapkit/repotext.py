@@ -67,6 +67,11 @@ from typing import IO
 from .errors import ConfigError
 
 _UTF16 = ((codecs.BOM_UTF16_LE, "utf-16-le"), (codecs.BOM_UTF16_BE, "utf-16-be"))
+# How every message names the UTF-16 a mark announces. PowerShell 5.1's
+# `Out-File` and `>` write the little-endian mark; nothing it does by default
+# writes the big-endian one.
+_UTF16_CAUSES = {codecs.BOM_UTF16_LE: "the PowerShell 5.1 Out-File default",
+                 codecs.BOM_UTF16_BE: "big-endian"}
 _C1 = "crapkit-c1"
 _JSON_KINDS = {list: "an array", str: "a string", bool: "a boolean", type(None): "null"}
 
@@ -108,8 +113,8 @@ def _not_utf8(what: str, data: bytes, exc: UnicodeDecodeError) -> str:
 def _not_utf8_at(what: str, head: bytes, offset: int, byte: int) -> str:
     """The refusal, blaming UTF-16 when the first bytes are its mark and the
     offending byte otherwise."""
-    if head in (b"\xff\xfe", b"\xfe\xff"):
-        reason = f"first bytes {head.hex(' ')} = UTF-16, the PowerShell 5.1 Out-File default"
+    if utf16_marked(head):
+        reason = f"first bytes {head.hex(' ')} = UTF-16, {utf16_cause(head)}"
     else:
         reason = f"byte {byte:02x} at offset {offset}"
     return f"{what} is not UTF-8 ({reason}); save it as UTF-8"
@@ -177,9 +182,16 @@ def repo_json(path: Path, what: str) -> dict:
 
 
 def utf16_marked(data: bytes) -> bool:
-    """True when the bytes open with a UTF-16 byte-order mark: what Windows
-    PowerShell 5.1's `Out-File` and `>` write, and what no UTF-8 reader reads."""
+    """True when the bytes open with a UTF-16 byte-order mark, which no UTF-8
+    reader reads: ff fe is what Windows PowerShell 5.1's `Out-File` and `>`
+    write, and fe ff is big-endian."""
     return data.startswith(tuple(mark for mark, _ in _UTF16))
+
+
+def utf16_cause(data: bytes) -> str:
+    """The words a message names a UTF-16 mark with, for bytes `utf16_marked`
+    accepts: Out-File's default for ff fe, big-endian for fe ff."""
+    return _UTF16_CAUSES[data[:2]]
 
 
 def marks_codec(data: bytes) -> str:
