@@ -10,8 +10,11 @@ No score changes.
   brief's `coupling` partners and `worklist --batches` read that order. crapkit
   multiplied in binary floating point, where 3 x 0.1111 is 0.33330000000000004 and
   1 x 0.3333 is 0.3333, so two tied pairs ranked by that rounding noise and `--top` kept
-  whichever it put first. A coupling cache an older crapkit wrote keeps the old order
-  until the next commit or midnight UTC.
+  whichever it put first. The coupling cache ranks the pairs it reads the same way, so a
+  cache an older crapkit wrote serves the new order from the first run after the upgrade.
+- A coupling cache holding a count or confidence of `Infinity` or `NaN` reads as cold. An
+  `Infinity` count stopped `coupling`, `brief` and `worklist --batches` with
+  `OverflowError`, and a non-number confidence was served as a real pair.
 
 ### Marks that rose by the same amount list in path order
 

@@ -35,7 +35,7 @@ from hashlib import blake2b
 from pathlib import Path
 
 from .churn_log import log_lines
-from .coupling import change_coupling_lines
+from .coupling import change_coupling_lines, rank_key
 from .errors import GitError
 from .gitio import head_commit
 from .gitpaths import PATH_FORMAT
@@ -111,15 +111,19 @@ def _decode(pairs) -> list[dict] | None:
     """Rebuild the ranking from whatever JSON held under "pairs", hence the wide
     except.
 
-    List order is the ranking, kept as written. Confidences are round(_, 4)
-    floats, which JSON round-trips exactly, so a warm read is byte-identical to
-    the cold one it replaces.
+    The pairs are ranked again with the walk's own key. An older crapkit
+    ranked exact ties by float noise and wrote that order under the key this
+    version builds, so read as written it stood until HEAD or the UTC date
+    moved. A list already in order does not move, and confidences are
+    round(_, 4) floats, which JSON round-trips exactly, so a warm read is
+    byte-identical to the cold one it replaces. A count or confidence JSON
+    spelled Infinity or NaN neither counts nor ranks, and reads as cold.
     """
     try:
-        return [{"files": _files(a, b), "support": int(support),
-                 "confidence": float(confidence)}
-                for a, b, support, confidence in pairs]
-    except (TypeError, ValueError):
+        return sorted(({"files": _files(a, b), "support": int(support),
+                        "confidence": float(confidence)}
+                       for a, b, support, confidence in pairs), key=rank_key)
+    except (ArithmeticError, TypeError, ValueError):
         return None
 
 

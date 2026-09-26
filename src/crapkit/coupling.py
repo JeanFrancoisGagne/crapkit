@@ -77,12 +77,13 @@ def _rank_pairs(file_counts: dict, pair_counts: dict, min_support: int,
             continue
         out.append({"files": [a, b], "support": support,
                     "confidence": round(confidence, CONFIDENCE_PLACES)})
-    out.sort(key=_rank_key)
+    out.sort(key=rank_key)
     return out if top is None else out[:top]
 
 
-def _rank_key(pair: dict) -> tuple:
-    """Support x confidence, highest first, then the two paths.
+def rank_key(pair: dict) -> tuple:
+    """Support x confidence, highest first, then the two paths. coupling_cache
+    ranks what it reads with this key too.
 
     The product is taken over the confidence as printed, counted in whole
     ten-thousandths, so it is exact. In binary floating point 3 x 0.1111 is

@@ -1240,13 +1240,16 @@ run. Since 0.4.5 the ranked pairs live in `.crapkit/coupling-cache-v1.json`, bes
 What is stored is the ranking at the **default** thresholds, in full order, uncut. `--top`
 truncates that order, so it reads the cache. `--min-support` or `--min-confidence` off the
 defaults ask a wider question than the file answers and recompute, because serving them a
-filtered subset would drop the pairs those thresholds exist to surface.
+filtered subset would drop the pairs those thresholds exist to surface. A read ranks the
+stored pairs again with the same key the walk sorts by, so a file an older crapkit wrote,
+which ranked tied pairs by float noise, comes back in this version's order.
 
 The key is HEAD, the window, the UTC date, the path format and a digest of the tracked set,
 the churn map's key plus that digest. The tracked set is in the key
 because ranking drops any pair naming a file `git ls-files` no longer lists, and the index
 moves without HEAD: `git rm --cached src/util.py` leaves the sha alone and must still retire
-every pair naming that file. Unreadable or unkeyable content reads as cold, never as a crash.
+every pair naming that file. Unreadable or unkeyable content reads as cold, never as a crash,
+and so does a count or confidence the JSON spells `Infinity` or `NaN`.
 
 The paths are decoded. git spells a non-ASCII name in a log with C-style escapes, and since
 0.4.5 all three readers undo that before joining, so a pair names the file `git ls-files`
