@@ -41,8 +41,19 @@ Functions lizard hid, invented or misnamed
   _a; }`, read as a function named E, and in a `.m` file any word after a C
   function's parameter list, a prototype's `;` included, named a method.
 
+The `&&` of a reference
+-----------------------
+`for (auto&& x : r)`, `static_cast<Widget&&>(w)` and `[](auto&& x)` declare
+references, and lizard's cyclomatic and nesting counters and crapkit's
+cognitive pass read each `&&` as a logical and. A token pass respells the ones
+that can only declare before any counter sees them; the comment above
+`declarator_ands` gives the rules. A parameter list's own `&&` reads like
+`f(a && b)`, so the nesting it opened is forgotten at the list's `)`.
+
 Accepted, documented, not solved
 --------------------------------
+* A lambda parameter of a named type, `[](Widget&& w)`, still costs its `&&`,
+  because `(Widget&& w)` after `]` reads like a call's `(a && b)`.
 * A default argument holding an unparenthesized `<`, `f(bool b = x < y, int c)`,
   opens an angle bracket that never closes, so the rest of the list reads as one
   parameter. Parenthesized, `(x < y)`, it reads right.
@@ -157,6 +168,18 @@ class _TemplateBrackets:
         return self.angles <= 0
 
 
+def _forget_the_parameters(fn) -> None:
+    """Leave lizard's nesting counter where a list with nothing in it leaves it.
+
+    The counter read a parameter list as code: the `&&` of `void take(Widget&&
+    w)`, or a `?:` in a default argument, opened a level that nothing closed,
+    and a function with no structure read nesting 1. lizard's cyclomatic column
+    already starts over at the body. The fields are lizard_ext/lizardnd.py's.
+    """
+    fn.nesting_depth = fn.max_nesting_depth = fn.hidden_bracket = fn.condition_depth = 0
+    fn.in_condition = fn.logical_operator_added = fn.prev_was_else = fn.bracket_loop = False
+
+
 def _is_word(token: str) -> bool:
     return token[0].isalpha() or token[0] == "_"
 
@@ -195,7 +218,7 @@ class _CFixes:
 
         The count lands on the function current at the list's closing
         parenthesis as `crapkit_params`, which analyze._record reads ahead of
-        lizard's names. lizard's own `bracket_stack` is emptied at each list's
+        lizard's names, and the nesting the list opened is forgotten there. lizard's own `bracket_stack` is emptied at each list's
         opening parenthesis: a `<` that never closed in an earlier list left it
         one deep, and every later function in the file read its parameters as
         nested tokens.
@@ -206,8 +229,9 @@ class _CFixes:
             self.crapkit_list.append(token)
         super()._state_dec(token)
         if self.br_count == 0:
-            count = declared_parameters(self.crapkit_list[:-1])
-            self.context.current_function.crapkit_params = count
+            fn = self.context.current_function
+            fn.crapkit_params = declared_parameters(self.crapkit_list[:-1])
+            _forget_the_parameters(fn)
 
     def _state_template_in_name(self, token):
         """A template argument list in a name, read to its own closing `>`.
@@ -277,6 +301,7 @@ class _CFixes:
     @CodeStateMachine.read_inside_brackets_then("()", "_state_dec_to_imp")
     def _state_attribute_arguments(self, _):
         """An attribute's arguments, nested parentheses included."""
+
 
 
 class _ObjCFixes:
@@ -413,24 +438,166 @@ class CFamilyNestingStates(CLikeNestingStackStates):
             self._state = self._state_global
 
 
-class CLikeReader(_StockCLikeReader):
-    """lizard's CLikeReader with CFamilyStates in place of CLikeStates."""
+# --- the `&&` that declares a reference --------------------------------------------
+#
+# `T&& t` and `a && b` are the same three tokens, and lizard's cyclomatic
+# counter, its nesting counter and crapkit's cognitive pass all read every `&&`
+# as a logical and. lizard refunds one shape in the cyclomatic column (a `&&`
+# followed, before any `;{})`, by an `=`), and the cognitive pass frees every
+# `&&` before the body's brace; neither reaches `for (auto&& x : r)`,
+# `static_cast<Widget&&>(w)` or `[](auto&& x)`, and the nesting column refunded
+# nothing. ISO/IEC 14882:2020 [dcl.ref]: the `&&` of a declarator declares a
+# reference.
+#
+# The token pass below respells a `&&` that can only be a declarator as
+# DECLARATOR_AND, in the token stream lizard builds, so every counter downstream
+# skips it and none of them needs a rule of its own. The reader spells it `&&`
+# again for its own states, which build the long name from it. A `&&` is a
+# declarator when:
+#   * `auto`, `const`, `volatile` or `operator` stands before it;
+#   * `>`, `)`, `,`, `...`, `=`, `;` or `{` stands after it, where a logical and
+#     would need its right operand;
+#   * a name and then `=` follow it: `Widget&& r = make()`, where `a && b = c`
+#     assigns to the value of an and;
+#   * a name and then `:` follow it inside a `for (...)`: a range-for;
+#   * it sits in a `typedef`.
+# A `&&` in a parameter list followed by a name, `void take(Widget&& w)`, reads
+# like `f(a && b)` and is left alone: the list's closing parenthesis resets the
+# nesting it cost (`_forget_the_parameters`), lizard resets the cyclomatic
+# column at the body, and the cognitive pass frees every `&&` before the body.
+# A lambda taking a named type, `[](Widget&& w)`, is the one spelling missed.
+
+DECLARATOR_AND = "&&(declarator)"
+_AND = "&&"
+
+_DECLARES_AFTER = frozenset({"auto", "const", "volatile", "operator"})
+_DECLARED_BEFORE = frozenset({">", ")", ",", "...", "=", ";", "{"})
+
+
+def declarator_ands(tokens):
+    """lizard's token stream with each declarator `&&` spelled DECLARATOR_AND."""
+    ands = _DeclaratorAnds()
+    for token in tokens:
+        yield from ands.push(token)
+    yield from ands.finish()
+
+
+def _is_code(token: str) -> bool:
+    """Not whitespace, a comment, a preprocessor line or a line continuation."""
+    return not token.isspace() and not token.startswith(("//", "/*", "#", "\\"))
+
+
+class _DeclaratorAnds:
+    """Holds each `&&` and the tokens after it until two code tokens decide it."""
+
+    def __init__(self):
+        self.prev = None
+        self.typedef = False
+        self.parens = []  # per open `(`: whether a `for` opened it
+        self.held = []
+
+    def push(self, token: str) -> list:
+        if self.held:
+            self.held.append(token)
+            return self._decided(final=False)
+        if token == _AND:
+            self.held = [token]
+            return []
+        self._see(token)
+        return [token]
+
+    def finish(self) -> list:
+        return self._decided(final=True) if self.held else []
+
+    def _decided(self, final: bool) -> list:
+        after = [token for token in self.held[1:] if _is_code(token)]
+        declares = _declares(self.prev, after, self.typedef, self._in_for())
+        if declares is None and not final:
+            return []
+        return self._release(bool(declares), final)
+
+    def _release(self, declares: bool, final: bool) -> list:
+        """The held `&&`, spelled as decided, then the held tokens, read again:
+        one of them may be the next `&&`."""
+        rest, self.held = self.held[1:], []
+        self.prev = _AND
+        out = [DECLARATOR_AND if declares else _AND]
+        for token in rest:
+            out.extend(self.push(token))
+        return out + self.finish() if final else out
+
+    def _see(self, token: str) -> None:
+        if _is_code(token):
+            self._paren(token)
+            self.typedef = token == "typedef" or (self.typedef and token != ";")
+            self.prev = token
+
+    def _paren(self, token: str) -> None:
+        if token == "(":
+            self.parens.append(self.prev == "for")
+        elif token == ")" and self.parens:
+            self.parens.pop()
+
+    def _in_for(self) -> bool:
+        return bool(self.parens) and self.parens[-1]
+
+
+def _declares(prev, after: list, typedef: bool, in_for: bool):
+    """True for a declarator `&&`, False for a logical one, None while the
+    tokens after it cannot tell yet."""
+    if typedef or prev in _DECLARES_AFTER:
+        return True
+    if not after:
+        return None
+    if after[0] in _DECLARED_BEFORE:
+        return True
+    return _declares_a_name(after, in_for)
+
+
+def _declares_a_name(after: list, in_for: bool):
+    """`&& name =` binds a reference, and so does `&& name :` in a range-for."""
+    if not _is_word(after[0]):
+        return False
+    if len(after) < 2:
+        return None
+    return after[1] == "=" or (after[1] == ":" and in_for)
+
+
+class _ReferenceTokens:
+    """The reader half of the pass: DECLARATOR_AND into lizard's token stream,
+    `&&` back out of it for the reader's own states."""
+
+    @staticmethod
+    def generate_tokens(source_code, addition="", token_class=None):
+        return declarator_ands(_StockCLikeReader.generate_tokens(source_code, addition,
+                                                                 token_class))
+
+    def __call__(self, tokens, reader):
+        return super().__call__((_AND if token == DECLARATOR_AND else token
+                                 for token in tokens), reader)
+
+
+class CLikeReader(_ReferenceTokens, _StockCLikeReader):
+    """lizard's CLikeReader with CFamilyStates in place of CLikeStates.
+
+    lizard's CppRValueRefStates is dropped: the refund it made in the
+    cyclomatic column is the token pass's job now, and kept, it would refund a
+    `&&` the pass already kept from counting.
+    """
 
     # pylint: disable=too-few-public-methods
     def __init__(self, context):
         super().__init__(context)
-        self.parallel_states = (CFamilyStates(context), CFamilyNestingStates(context),
-                                *self.parallel_states[2:])
+        self.parallel_states = (CFamilyStates(context), CFamilyNestingStates(context))
 
 
-class ObjCReader(_StockObjCReader):
+class ObjCReader(_ReferenceTokens, _StockObjCReader):
     """lizard's ObjCReader with ObjCFamilyStates in place of ObjCStates."""
 
     # pylint: disable=too-few-public-methods
     def __init__(self, context):
         super().__init__(context)
-        self.parallel_states = [ObjCFamilyStates(context), CFamilyNestingStates(context),
-                                *self.parallel_states[2:]]
+        self.parallel_states = [ObjCFamilyStates(context), CFamilyNestingStates(context)]
 
 
 # Any filename picks the reader; the file is never opened.

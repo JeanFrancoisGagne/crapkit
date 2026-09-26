@@ -253,3 +253,113 @@ def test_a_prototype_in_objective_c_opens_no_function():
     rows = analyze_source("p.m", source, note=False)
 
     assert [r.long_name for r in rows] == ["g( int a)"]
+
+
+# --- the && of a reference declarator decides nothing ---------------------------------
+
+REFERENCES = [  # (label, source, hand (ccn_std, cognitive, nesting)): NIST SP 500-235
+    # sec. 4.1, the Sonar paper v1.7, ISO/IEC 14882:2020 [dcl.ref]
+    ("parameter", "void take(Widget&& w) {\n    use(w);\n}\n", (1, 0, 0)),
+    ("forwarding parameter", "template <typename T>\nvoid pass(T&& value) {\n    use(value);\n}\n",
+     (1, 0, 0)),
+    ("local auto&&", "void f() {\n    auto&& w = make();\n    use(w);\n}\n", (1, 0, 0)),
+    ("local Widget&&", "void f(Widget w) {\n    Widget&& r = static_cast<Widget&&>(w);\n"
+                       "    use(r);\n}\n", (1, 0, 0)),
+    ("range-for auto&&", "void f(Range& r) {\n    for (auto&& x : r) {\n        use(x);\n    }\n}\n",
+     (2, 1, 1)),
+    ("range-for Widget&&", "void f(Range& r) {\n    for (Widget&& x : r) {\n        use(x);\n"
+                           "    }\n}\n", (2, 1, 1)),
+    ("cast", "void f(Widget w) {\n    sink(static_cast<Widget&&>(w));\n}\n", (1, 0, 0)),
+    ("lambda auto&&", "void f() {\n    apply([](auto&& x) { use(x); });\n}\n", (1, 0, 0)),
+    ("trailing decltype", "template <typename T>\nauto end_of(T&& r) -> decltype(static_cast<T&&>(r)"
+                          ".end()) {\n    return r.end();\n}\n", (1, 0, 0)),
+    ("parameter pack", "template <typename... T>\nvoid all(T&&... args) {\n    use(args...);\n}\n",
+     (1, 0, 0)),
+    ("local typedef", "void f() {\n    typedef Widget&& Ref;\n    use(Ref());\n}\n", (1, 0, 0)),
+]
+
+
+@pytest.mark.parametrize("path", ["p.cpp", "p.mm"])
+@pytest.mark.parametrize("source,hand", [case[1:] for case in REFERENCES],
+                         ids=[case[0] for case in REFERENCES])
+def test_a_reference_declarator_costs_nothing(path, source, hand):
+    """lizard read each of these `&&` as a logical and: ccn 2 for a cast or a
+    lambda parameter, 3 for a range-for, cognitive 1 for `auto&& w = make()`,
+    and nesting 1 for an rvalue parameter. `.mm` is Objective-C++ and reads the
+    same."""
+    (record,) = analyze_source(path, source, note=False)
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == hand
+
+
+def test_a_parameter_list_opens_no_nesting_level():
+    """A default argument is evaluated where the function is called. lizard's
+    cyclomatic column starts over at the body; its nesting column read the `?`
+    as a level the function opened."""
+    source = "int f(int a = kWide ? 1 : 2) {\n    return a;\n}\n"
+
+    (record,) = analyze_source("p.cpp", source, note=False)
+
+    assert (record.ccn_std, record.nesting) == (1, 0)
+
+
+LOGICAL_ANDS = [  # (label, source, hand (ccn_std, cognitive))
+    ("if", "int f(int a, int b) {\n    if (a && b) {\n        return 1;\n    }\n    return 0;\n}\n",
+     (3, 2)),
+    ("return", "bool f(bool a, bool b) {\n    return a && b;\n}\n", (2, 1)),
+    ("assignment", "void f(bool a, bool b) {\n    bool c = a && b;\n    use(c);\n}\n", (2, 1)),
+    ("ternary", "int f(bool c, bool a, bool b) {\n    return c ? a && b : 0;\n}\n", (3, 2)),
+    ("assignment inside the condition",
+     "int f(int n, int *p) {\n    while (n > 0 && (p = next(p)) != 0) {\n        n--;\n    }\n"
+     "    return n;\n}\n", (3, 2)),
+    ("C", "int f(int a, int b) {\n    return a && b;\n}\n", (2, 1)),
+]
+
+
+@pytest.mark.parametrize("source,hand", [case[1:] for case in LOGICAL_ANDS],
+                         ids=[case[0] for case in LOGICAL_ANDS])
+def test_a_logical_and_still_counts(source, hand):
+    """The other direction. `while (n > 0 && (p = next(p)) != 0)` is also a
+    repair: lizard refunded any `&&` an `=` followed before the next `;{})`,
+    and took this one for a reference bound to `p`."""
+    (record,) = analyze_source("p.cpp", source, note=False)
+
+    assert (record.ccn_std, record.cognitive) == hand
+
+
+@pytest.mark.parametrize("source,respelled", [
+    ("auto&& x = f();", [True]),
+    ("a && b", [False]),
+    ("static_cast<T&&>(v)", [True]),
+    ("Widget&& r = w;", [True]),
+    ("x = a && b == c;", [False]),
+    ("for (auto&& x : r)", [True]),
+    ("for (W&& x : r)", [True]),
+    ("c ? a && b : d", [False]),
+    ("typedef T&& R;", [True]),
+    ("a && b && c", [False, False]),
+    ("T&&... args", [True]),
+    ("a &&", [False]),
+    ("a && // why\n  b", [False]),
+])
+def test_declarator_ands_respells_only_a_declarator(source, respelled):
+    tokens = _passed(source)
+
+    assert [token == lizardclike.DECLARATOR_AND for token in _ands(tokens)] == respelled
+    assert "".join(tokens).replace(lizardclike.DECLARATOR_AND, "&&") == source
+
+
+def _passed(source: str) -> list[str]:
+    from lizard_languages.clike import CLikeReader as StockReader
+
+    return list(lizardclike.declarator_ands(StockReader.generate_tokens(source)))
+
+
+def _ands(tokens: list[str]) -> list[str]:
+    return [token for token in tokens if token in ("&&", lizardclike.DECLARATOR_AND)]
+
+
+def test_the_long_name_spells_the_reference_as_written():
+    (record,) = analyze_source("p.cpp", "void take(Widget&& w, T&&... rest) {\n}\n", note=False)
+
+    assert record.long_name == "take( Widget && w , T && ... rest)"

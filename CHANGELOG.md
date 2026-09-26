@@ -789,9 +789,9 @@ version and every repo with those languages re-seeds its marks once (`crapkit co
 - A `<` comparison in a default template argument, `template <int N, bool E = (N < 19)>`,
   or in a member initializer, `static constexpr bool v = N < 19;`, no longer hides
   every function after it. lizard read the `<` as a template bracket and read on to the
-  next `>` in the file: fmt's chrono.h kept rows for its first 1,102 lines of 2,432 and
-  now lists all 285 functions. Each one is scored, gated and ratcheted for the first
-  time.
+  next `>` in the file: fmt 11.0.2's chrono.h kept rows for its first 1,102 lines of
+  2,432, 113 functions, and now lists 285. Each new row is scored, gated and ratcheted
+  for the first time.
 - A declaration whose trailing return type holds braces, `static auto check(int) ->
   decltype(all(Tag{}));`, has no row. The braces read as a body.
 - An attribute between the parameter list and the body keeps the function's name and
@@ -807,6 +807,25 @@ version and every repo with those languages re-seeds its marks once (`crapkit co
 - In a `.m` or `.mm` file, a C function's parameter list no longer names a method
   after the word that follows it. A prototype, `int f(int);`, followed by an array
   initializer's braces gave a function named after the array.
+
+### The `&&` of a C++ reference decides nothing
+
+- A `&&` that declares a reference costs nothing in `ccn`, `cognitive` or `nesting`:
+  `for (auto&& x : r)` read ccn 3 for one loop, `static_cast<Widget&&>(w)` and a lambda
+  taking `auto&&` read ccn 2 with no decision, `auto&& w = make();` cost 1 of
+  cognitive, and `void take(Widget&& w)` read nesting 1 with no structure. In eight
+  fmt 11.0.2 headers, 9 functions lose ccn (`range_begin`, `range_end` and
+  `range_mapper::map` among them), 19 lose cognitive and 54 lose nesting. `.mm` files
+  read the same.
+- `while (n > 0 && (p = next(p)) != 0)` counts its `&&` again. lizard refunded any `&&`
+  an `=` followed before the next `;`, `{`, `}` or `)`, taking this one for a reference
+  bound to `p`; lua's `lmemfind` reads ccn 6 where it read 5.
+- A parameter list opens no nesting level: a `?:` in a default argument read nesting 1.
+  A function whose parameter list held a `&&` can read one level deeper after this (6
+  of the fmt functions):
+  lizard's nesting column counts a braceless `if` followed by a later structure one
+  level too deep, and the `&&` had hidden that by flipping the counter's state. The
+  function now reads what the same body reads with `T` for `T&&`.
 
 ## 0.8.0 — 2026-09-23
 

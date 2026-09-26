@@ -13,7 +13,8 @@ same rules with no second parse and no new dependency:
 Four language-specific rules:
   * in C/C++ and Objective-C/C++ a `&&` before the function's opening brace
     declares an rvalue reference rather than deciding anything, and costs
-    nothing. See `_declarator_and`.
+    nothing. See `_declarator_and`. Past the brace, the C family's reader
+    respells a declarator `&&` before this pass sees it.
   * Rust keeps its own structures. `match` is a switch and `loop` a loop, each
     +1 and +nesting with the arms free, and `catch`, `switch`, `foreach`, `do`
     and `except` name nothing. `?` is no ternary: it returns early on an error
@@ -432,6 +433,11 @@ def _declarator_and(state: _FnState, token: str) -> bool:
     `||` is left alone. Only `&&` doubles as a type declarator, so the one
     spelling this misses is the NAME of an `operator||` overload, which still
     costs 1.
+
+    Past the brace this rule cannot tell, and it does not have to:
+    crapkit.lizardclike respells each `&&` that can only declare, such as
+    `auto&& x = f()`, `static_cast<T&&>(v)` or `for (auto&& x : r)`, before
+    this pass sees the stream, so none of them reaches `_BOOL_OPS`.
     """
     return state.c_family and token == "&&" and state.brace_depth == 0
 

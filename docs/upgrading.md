@@ -218,6 +218,14 @@ commands as version 11 below.
   holds a parenthesized `<`: `g( int a , int c)` where it read `g(int a,int c)`.
   `ratchet prune` drops the old mark and `ratchet seed` marks the function under its
   new name if it is over its ceiling.
+- A C++ `&&` that declares a reference costs nothing: `for (auto&& x : r)`,
+  `static_cast<T&&>(v)`, `auto&& w = f();` and a lambda taking `auto&&` lose the `ccn`,
+  `cognitive` or `nesting` point it cost, so marks can tighten on the next seed. A
+  logical `&&` followed by an assignment in the same condition, `while (n > 0 && (p =
+  next(p)) != 0)`, counts in `ccn` again, which can put a function over its ceiling
+  and fail the gate the next time its file changes. A function whose parameter list
+  held a `&&` can read one `nesting` level deeper, the depth the same body reads
+  without it; `nesting` is never gated.
 
 ### Analysis version 11
 
