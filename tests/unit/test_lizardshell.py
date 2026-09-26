@@ -440,6 +440,82 @@ def test_a_keyword_inside_a_longer_word_is_not_a_keyword(line):
     assert (record.ccn_std, record.cognitive) == (3, 3)
 
 
+LOOP_WITH = ("build() {{\n  for f in a; do\n    {line}\n    if [ -n \"$f\" ]; then\n"
+             "      echo 1\n    fi\n  done\n}}\n")
+BACKSLASH_NEWLINE = chr(92) + "\n"
+
+
+@pytest.mark.parametrize("line", [
+    "echo done", "echo if", "echo fi", "echo else", "echo while", "echo case",
+    "printf '%s' done", "grep -q done log", "echo break 2", "echo if if", "echo in if",
+    "state=done", "state+=done", "echo a " + BACKSLASH_NEWLINE + "      done",
+])
+def test_a_keyword_written_as_an_argument_or_a_value_counts_nothing(line):
+    """The shell reads a reserved word only where a command starts. After a
+    command word, a string or an `=` the same word is an argument or a value:
+    `echo done` inside a loop closed the loop early, and `echo if` counted a
+    condition and opened a block that never closed."""
+    (record,) = analyze_source("probe.sh", LOOP_WITH.format(line=line))
+
+    assert (record.ccn_std, record.cognitive) == (3, 3)
+
+
+@pytest.mark.parametrize("line", [
+    "echo x && echo done", '[ "$f" = done ] && echo y', "[[ $f == done ]] && echo y",
+    "[[ $f != done ]] && echo y", "[[ $f =~ done ]] && echo y",
+])
+def test_a_keyword_compared_as_an_operand_counts_nothing(line):
+    (record,) = analyze_source("probe.sh", LOOP_WITH.format(line=line))
+
+    assert (record.ccn_std, record.cognitive) == (4, 4)
+
+
+@pytest.mark.parametrize("line", [
+    "echo a\n    if true; then :; fi", "echo a; if true; then :; fi",
+    "echo a | if read l; then :; fi", "! if true; then :; fi", "time if true; then :; fi",
+    "echo a # done\n    if true; then :; fi", "x=$(if true; then echo 1; fi)",
+    "echo a & if true; then :; fi",
+])
+def test_a_keyword_that_starts_a_command_still_counts(line):
+    """A line start, `;`, `|`, `&`, `!`, `time`, `$(` and a comment's end all
+    put the next word where a command starts, so the `if` there counts."""
+    (record,) = analyze_source("probe.sh", LOOP_WITH.format(line=line))
+
+    assert (record.ccn_std, record.cognitive) == (4, 5)
+
+
+def test_a_keyword_after_a_line_the_backslash_continues_keeps_its_place():
+    """A backslash at the end of a line joins the next line to it, so what the
+    word before the break made of the next word still holds: after `&&` it
+    starts a command, after `echo` it is an argument."""
+    code = ("build() {\n  echo a && " + BACKSLASH_NEWLINE + "    if true; then :; fi\n"
+            "  echo b " + BACKSLASH_NEWLINE + "    if\n}\n")
+    (record,) = analyze_source("probe.sh", code)
+
+    assert (record.ccn_std, record.cognitive) == (3, 2)
+
+
+def test_a_keyword_in_a_case_pattern_or_a_for_list_counts_nothing():
+    """A case pattern and a for list are data. `done)` is how a dispatcher on a
+    status word reads, and it closed the enclosing block early; `fi|for)`
+    counted a loop. `esac` after `;;` still closes the case."""
+    code = ('f() {\n  case "$s" in\n    done) echo 1 ;;\n    fi|for) echo 2 ;;\n  esac\n'
+            '  for w in if done; do\n    echo "$w"\n  done\n  if true; then :; fi\n}\n')
+    (record,) = analyze_source("probe.sh", code)
+
+    assert (record.ccn_std, record.cognitive) == (5, 3)
+
+
+def test_the_keywords_of_a_case_and_a_for_header_keep_their_meaning():
+    """`in` after a case word and `do` right after a for's name are keywords,
+    not arguments of the word before them."""
+    code = ('f() {\n  case "$1" in\n    a) echo a ;;\n  esac\n  for x do\n'
+            '    if true; then :; fi\n  done\n}\n')
+    (record,) = analyze_source("probe.sh", code)
+
+    assert (record.ccn_std, record.cognitive) == (4, 4)
+
+
 # --- only functions, never top-level code --------------------------------------
 
 REAL_SHAPED = '''#!/usr/bin/env bash
