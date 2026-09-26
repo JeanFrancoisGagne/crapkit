@@ -449,7 +449,8 @@ const V = struct {
 def test_a_zig_function_named_by_a_string_keeps_its_name():
     """Zig spells any string as an identifier with `@"..."`. lizard read the
     `@` and the string as two tokens: the function had no row, then a row
-    named '', which reads as anonymous."""
+    named '', which reads as anonymous. Its call to itself is recursion, so cognitive
+    reads the if's 1 and recursion's 1 (Sonar Cognitive Complexity, B1)."""
     source = """fn @"weird name"(x: i32) i32 {
     if (x > 0) {
         return 1;
@@ -459,7 +460,7 @@ def test_a_zig_function_named_by_a_string_keeps_its_name():
 """
     (record,) = analyze_source("a.zig", source)
 
-    assert rows("a.zig", source) == [('@"weird name" x : i32', 1, 6, 2, 1, 1, 1)]
+    assert rows("a.zig", source) == [('@"weird name" x : i32', 1, 6, 2, 1, 1, 2)]
     assert bare_name(record.long_name) == '@"weird name"'
 
 
