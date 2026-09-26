@@ -384,3 +384,25 @@ def test_a_try_expression_opens_no_nesting_level(body, depth):
     source = f"func tryTwice(a: Bool) throws {{\n    {body}\n}}\n"
 
     assert _counts(source)[4] == depth
+
+
+@pytest.mark.parametrize("raw", ['##"a"#b"##', '#"""\n    { if\n    """#'])
+def test_a_raw_string_ends_at_as_many_hashes_as_opened_it(raw):
+    """Strings and Characters, Extended String Delimiters: `##"a"#b"##` is one string,
+    and a raw string over lines holds no code."""
+    source = f"func f(a: Bool) -> String {{\n    let s = {raw}; if a {{ return s }}\n    return \"\"\n}}\n"
+    lines = source.count("\n")
+
+    assert [(r.start, r.end, r.ccn) for r in analyze.analyze_source("case.swift", source)] == [(1, lines, 2)]
+
+
+def test_register_raises_when_lizard_resolves_something_else(monkeypatch):
+    """A lizard release that stops reading `languages()` out of module globals must
+    break loudly here, not measure Swift with the reader that hides functions."""
+    from lizard_languages.swift import SwiftReader as StockSwiftReader
+
+    from crapkit import lizardswift
+
+    monkeypatch.setattr(lizardswift.lizard, "get_reader_for", lambda _: StockSwiftReader)
+    with pytest.raises(RuntimeError, match="resolves '.swift' to SwiftReader, not CorrectedSwiftReader"):
+        lizardswift.register()

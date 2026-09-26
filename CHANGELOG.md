@@ -978,6 +978,19 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   179, and cognitive falls on 81 with the labels and optional marks.
 - The same analysis-version bump covers these.
 
+### A Rust `#` keeps the rest of its line
+
+- The Rust reader read `#` the way lizard's C reader does, as a preprocessor line that
+  runs to the end of the line. `#[inline] fn f() {` on one line lost its `fn` and `{`,
+  and the function had no row. A raw string (`r#"..."#`), a raw identifier (`r#type`) or
+  an attribute before code on the same line lost that code too, with any decision or
+  brace in it. An attribute's `#[` and the whole of a raw string or raw identifier are
+  now one token each, and the rest of the line reads as code. Swift's raw strings, and
+  both readers' raw strings opened with two to four hashes, end where their own hashes
+  close them. ripgrep's 13 files in the accuracy corpus hold no such line and read the
+  same; a repo that writes `#[test] fn t() {` gains a row per such function. The same
+  analysis-version bump covers this.
+
 ## 0.8.0 — 2026-09-23
 
 The Python reader moves to analysis version 11, so every repo re-seeds its marks once.

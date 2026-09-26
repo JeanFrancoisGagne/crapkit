@@ -276,6 +276,34 @@ same three commands as version 11 below.
   B(b)... {`, counts its body's decisions, where it read `ccn` 1, which can put it
   over its ceiling and fail the gate the next time its file changes.
 
+### Unreleased: the Swift and Rust readers
+
+The next release reads Swift and Rust in new ways and moves to the next analysis
+version, so every marks file re-seeds once, with the same three commands as
+[version 11](#analysis-version-11): `crapkit coverage`, `crapkit ratchet prune`,
+`crapkit ratchet seed`.
+
+Swift:
+
+- A function that `super.init(...)`, `.init(...)`, `r.get()`, `case .get`,
+  `Socket(protocol: p)`, `return type`, a `#fileID` default, `if #available(...) {` or a
+  closure after a comma hid is listed, and the function that held it reads only its own
+  lines. A failable `init?` or `init!` is listed as `init`. A newly listed function can
+  be over its ceiling and fails the gate the next time its file changes.
+- A function listed before keeps its long name, so its mark keeps its key. A row that
+  named no function is gone: `init id : id` for a `super.init(id: id)` call, `get` for
+  `r.get()`. `ratchet prune` drops its mark.
+- ccn falls where the `case` of `if case`, a keyword argument label (`for name:`) or a
+  `?` glued to what it follows (`(any Error)?`, `f()?.g`) counted, and rises by 1 for
+  each `??`. `params` and `nesting` fall where a comma inside one parameter or a `try`
+  counted; neither is in the score.
+
+Rust:
+
+- A function with an attribute on its own line, `#[inline] fn f() {`, is listed; it had
+  no row. A decision or a brace after a raw string (`r#"..."#`), a raw identifier
+  (`r#type`) or an attribute on the same line now counts.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or

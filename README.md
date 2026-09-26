@@ -344,7 +344,8 @@ PowerShell, so crapkit counts their functions itself. Its Rust reader scores a 7
 that is no loop the way Rust means them (see
 [per-language
 gotchas](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#per-language-gotchas)),
-and retires each correction the day upstream fixes it. The cognitive column charges a
+and retires each correction the day upstream fixes it. It lists `#[inline] fn f() {`
+written on one line, which lizard took for a C preprocessor line. The cognitive column charges a
 `match` once, the way Sonar charges a `switch`. The Rust and shell readers count each `match` or `case` arm in the modified column too, so both columns agree and the arms are gated: a seven-arm `match` gates at `ccn` 8, where lizard's modified count, and so the gated `ccn`, of a C `switch` with seven cases is 2.
 
 Go and Zig read through crapkit's subclasses of lizard's readers, which end a signature

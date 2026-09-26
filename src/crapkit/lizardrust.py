@@ -1,4 +1,4 @@
-"""A Rust reader that counts match arms. Upstream defect: lizard #494.
+"""A Rust reader that counts match arms and reads `#` as Rust does. Upstream defect: lizard #494.
 
 lizard 1.24.0 lists `match` in `RustReader._control_flow_keywords` and counts
 arms zero times, so the whole block costs 1 no matter how many ways it branches.
@@ -68,6 +68,19 @@ Accepted, documented, not solved
   `reader._keyword_match`, which upstream never sets for Rust; setting it here
   would add a point for the block and subtract nothing for the arms.
 
+`#`
+---
+lizard's tokenizer, shared with its C reader, reads `#` and the rest of its
+line as one preprocessor token. Rust has no preprocessor, and a line that
+carried `#[inline] fn f() {` lost its `fn` and `{`: the function had no row.
+A raw string (`r#"..."#`, `br##"..."##`) and a raw identifier (`r#type`) lost
+the rest of their line the same way, and with it any decision or brace there.
+`generate_tokens` reads a raw string or a raw identifier as one token and an
+attribute's `#[` or `#![` as one token, so the attribute's contents and the
+code after it read as code. A raw string ends at a quote followed by as many
+hashes as opened it, for one to four; one opened with more still ends at its
+first `"` and hash.
+
 Registration
 ------------
 lizard resolves a reader by extension in `lizard_languages.get_reader_for`,
@@ -102,9 +115,9 @@ Retirement
 ----------
 tests/unit/test_lizardrust.py pins the stock reader's wrong answers, one per
 correction, and each pin fails on the lizard release that fixes its defect. Drop
-a correction when its pin fails. Once every pin fails, and lizard ends a Rust
-`//` comment at its line, delete this module along with the `register()` call
-rather than repairing it.
+a correction when its pin fails. Once every pin fails, lizard ends a Rust `//`
+comment at its line and its Rust tokenizer reads `#` as Rust does, delete this
+module along with the `register()` call rather than repairing it.
 """
 from __future__ import annotations
 
@@ -126,6 +139,12 @@ _LIFETIME = r"|(?:'\w+\b)"
 
 _ARM = "=>"
 _WILDCARD = "_"
+
+# Tried before lizard's `#`, which takes the rest of the line: a raw string, over
+# lines too, closed by as many hashes as opened it; a raw identifier; an
+# attribute's `#[` or `#![`.
+_RAW_STRINGS = "".join(r'|b?r\#{%d}".*?"\#{%d}' % (n, n) for n in (4, 3, 2, 1))
+_HASH_TOKENS = _RAW_STRINGS + r"|r\#\w+|\#!?\["
 
 # Any filename picks the reader; the file is never opened.
 _PROBE = "crapkit_registration_probe.rs"
@@ -392,10 +411,11 @@ class CorrectedRustReader(_StockRustReader):
 
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):
-        """lizard's Rust tokens, with a `//` comment ended at its line's end and
+        """lizard's Rust tokens, with a `//` comment ended at its line's end, a raw
+        string, a raw identifier and an attribute's `#[` read as one token each, and
         each operator pair split (`split_operator_pairs`)."""
         return split_operator_pairs(CodeReader.generate_tokens(
-            source_code, LINE_COMMENT + _LIFETIME + addition, token_class))
+            source_code, LINE_COMMENT + _HASH_TOKENS + _LIFETIME + addition, token_class))
 
 
 def register() -> None:

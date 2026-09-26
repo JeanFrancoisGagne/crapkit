@@ -259,7 +259,9 @@ ends in `;`, such
 as a trait's required method or a foreign function, is no function, and neither is a `fn`
 pointer type, `Vec<fn(i32) -> bool>` included. A comma inside a parameter's type or
 pattern parts no parameters, and a parameter that binds a pattern, `[a, b]: [u8; 2]`,
-counts once. Each correction retires the day upstream
+counts once. crapkit also reads a Rust `#` as Rust does: lizard took `#[inline] fn f() {` on
+one line for a C preprocessor line and listed no function, and lost the code after a raw
+string (`r#"..."#`) or a raw identifier (`r#type`). Each correction retires the day upstream
 fixes its defect.
 
 **`go` and `zig` run on subclasses of lizard's readers.** lizard reads a function type as a
