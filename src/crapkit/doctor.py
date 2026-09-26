@@ -489,13 +489,18 @@ def unmeasured_directories(counts, tracked: list[str]) -> tuple[UnmeasuredDir, .
 # The commands that move an installed plugin to the marketplace's current copy,
 # and what makes a running client load it, per harness. `claude plugin install`
 # over an older install prints "already installed" and moves nothing. The
-# update runs once per scope that holds the install (see InstallScope).
+# update runs once per scope that holds the install (see InstallScope). A
+# Codex marketplace is added at a release tag, and `codex plugin marketplace
+# upgrade` keeps it at that tag, so Codex's refresh adds it again at the tag
+# of the CLI's release ({version}).
+CODEX_MARKETPLACE_ADD = ("codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git "
+                         "--ref v{version} --sparse .claude-plugin --sparse plugin")
 _PLUGIN_UPDATE = {
-    "claude": ("claude plugin marketplace update crapkit",
+    "claude": (("claude plugin marketplace update crapkit",),
                ("claude plugin update crapkit@crapkit --scope {scope}",),
                "restart Claude Code's sessions"),
-    "codex": ("codex plugin marketplace upgrade crapkit", ("codex plugin add crapkit@crapkit",),
-              "start a new Codex task"),
+    "codex": (("codex plugin marketplace remove crapkit", CODEX_MARKETPLACE_ADD),
+              ("codex plugin add crapkit@crapkit",), "start a new Codex task"),
 }
 _PLAIN_RELEASE = re.compile(r"\d+(?:\.\d+)*")
 
@@ -582,7 +587,8 @@ def _plugin_fix(install: _Install, cli_version: str) -> str:
     if install.in_place:
         return _in_place_fix(install.where, cli_version, install.in_place)
     fetch, update, _ = _PLUGIN_UPDATE[install.harness]
-    return f"with `{fetch}`, then {_for_each_scope(update, install.scopes)}"
+    fetched = ", then ".join(f"`{command.format(version=cli_version)}`" for command in fetch)
+    return f"with {fetched}, then {_for_each_scope(update, install.scopes)}"
 
 
 def _restore(install: _Install, cli_version: str, file: str) -> str:

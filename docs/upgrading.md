@@ -330,12 +330,13 @@ Use the three skills and MCP server in Codex. Codex loads no crapkit hook: the
 plugin's Codex manifest leaves hooks out. Start a new Codex task to load updated
 plugin skills and tools.
 
-Codex does the first two steps on its own. Each start upgrades the configured git
-marketplaces and refreshes the installed plugin from them: with Codex 0.156.1, one
-`codex app-server` start after a release replaced
-`~/.codex/plugins/cache/crapkit/crapkit/0.8.0` with the new version's directory. So
-upgrade the CLI before the next Codex start, or the plugin runs ahead of it, and run
-`crapkit doctor --plugin-root PATH` after that start to confirm the two agree.
+A marketplace added without `--ref`, the line 0.8.0 and earlier printed, refreshes on
+its own. Each Codex start upgrades it and reinstalls the plugin from it: with Codex
+0.156.1, one `codex app-server` start after a release replaced
+`~/.codex/plugins/cache/crapkit/crapkit/0.8.0` with the new version's directory. On
+such a marketplace, upgrade the CLI before the next Codex start, or the plugin runs
+ahead of it, then move the marketplace onto the tag with the lines above and run
+`crapkit doctor --plugin-root PATH` to confirm the two agree.
 
 Start fresh MCP sessions after upgrading so their server uses the installed code. Other
 MCP clients use the [stdio setup](agent-json.md#mcp-server); skill copies and custom

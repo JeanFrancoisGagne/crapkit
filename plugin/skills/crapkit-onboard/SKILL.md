@@ -21,7 +21,7 @@ claude plugin install crapkit@crapkit
 In Codex:
 
 ```
-codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 ```
 

@@ -651,8 +651,23 @@ def test_a_codex_plugin_behind_the_cli_names_codex_s_refresh_and_no_claude_comma
     line = _gap(tmp_path, capsys, version="0.0.1", under=str(CODEX_CACHE / "0.0.1"))
 
     assert line == (_head(tmp_path / CODEX_CACHE / "0.0.1", "0.0.1") + " The plugin is behind; "
-                    "update it with `codex plugin marketplace upgrade crapkit`, then `codex plugin "
-                    "add crapkit@crapkit`, and start a new Codex task.")
+                    "update it with `codex plugin marketplace remove crapkit`, then `codex plugin "
+                    "marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref "
+                    f"v{CLI} --sparse .claude-plugin --sparse plugin`, then `codex plugin add "
+                    "crapkit@crapkit`, and start a new Codex task.")
+
+
+def test_the_codex_refresh_adds_the_marketplace_the_way_the_readme_does(tmp_path, capsys):
+    """A Codex marketplace added at a release tag stays at it, so `codex plugin
+    marketplace upgrade` moves nothing; the refresh adds it again at the CLI's
+    tag with the README's own line."""
+    from test_plugin_install_lines import CODEX_ADD, _sparse
+
+    line = _gap(tmp_path, capsys, version="0.0.1", under=str(CODEX_CACHE / "0.0.1"))
+    readme_line = f"{CODEX_ADD} --ref v{CLI}" + "".join(f" --sparse {p}" for p in _sparse())
+
+    assert f"`{readme_line}`" in line, line
+    assert "marketplace upgrade" not in line, line
 
 
 def test_a_codex_plugin_ahead_of_the_cli_names_no_claude_command(tmp_path, capsys):
@@ -667,7 +682,7 @@ def test_a_plugin_under_codex_home_is_codex_s_wherever_that_is(tmp_path, capsys,
 
     line = _gap(tmp_path, capsys, version="0.0.1", under="agents/plugins/cache/crapkit/crapkit/0.0.1")
 
-    assert "`codex plugin marketplace upgrade crapkit`" in line and "claude" not in line
+    assert "`codex plugin marketplace remove crapkit`" in line and "`claude " not in line
 
 
 @pytest.mark.parametrize("version", ["0.9.0.dev3", "0.8.1+local", "1.0.0rc1"])

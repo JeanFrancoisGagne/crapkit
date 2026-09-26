@@ -1,8 +1,10 @@
 """Bump, publish and verify crapkit's version surfaces from one table.
 
-Ten strings in six files say which version this is (pyproject, the package,
-four README strings, the Claude Code and Codex plugin manifests, the registry
-manifest twice), and a release then has to reach six places (git tag, PyPI, GitHub release, plugin,
+Seventeen strings in ten files say which version this is (pyproject, the
+package, four README strings, the Claude Code and Codex plugin manifests, the
+registry manifest twice, and the release tag seven Codex marketplace lines pin
+across README, adoption, upgrading, the handbook and the onboarding skill), and
+a release then has to reach six places (git tag, PyPI, GitHub release, plugin,
 Pages, the MCP registry, plus Glama's sync). Eight releases re-scripted that
 chain by hand and the surfaces drifted once. The table below is the one place
 the surfaces are named; `check` refuses a tree whose surfaces disagree, `bump`
@@ -99,6 +101,7 @@ SURFACES = (
     Surface("docs/adoption.md", "--ref v{v}", 1),
     Surface("docs/upgrading.md", "--ref v{v}", 1),
     Surface("docs/handbook.html", "--ref v{v}", 2),
+    Surface("plugin/skills/crapkit-onboard/SKILL.md", "--ref v{v}", 1),
 )
 
 # The deploy suite (.github/workflows/deploy.yml) installs the candidate the way

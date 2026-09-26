@@ -1094,7 +1094,8 @@ crapkit doctor: the plugin at crapkit asks for hook protocol 0; this crapkit ans
 The version line names the side that is behind and the commands that move it. `claude
 plugin install` over an older install prints "already installed" and moves nothing, so the
 plugin's repair is Claude Code's update pair, or for a plugin under `~/.codex` (or
-`CODEX_HOME`) Codex's `codex plugin marketplace upgrade crapkit`, then `codex plugin add
+`CODEX_HOME`) Codex's `codex plugin marketplace remove crapkit`, then the README's
+`codex plugin marketplace add` line at the CLI's release tag, then `codex plugin add
 crapkit@crapkit`. The CLI's repair is the upgrade for the installer that owns the launcher:
 `uv tool upgrade crapkit`, `pipx upgrade crapkit`, `uv pip install --python <that python>
 --upgrade crapkit` in a venv uv made, else `<that python> -m pip install --upgrade crapkit`.

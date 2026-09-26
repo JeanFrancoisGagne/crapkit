@@ -182,8 +182,8 @@ nothing. Each of these now gets a line naming the object and the next step:
   update over a project install answered "not installed at scope user"). A plugin Claude
   Code loads in place from a local directory marketplace gets `git -C <dir> pull`, since
   `claude plugin update` only refreshes the cache copy beside it. A plugin Codex
-  installed gets `codex plugin marketplace upgrade crapkit` and `codex plugin add
-  crapkit@crapkit`. A CLI behind gets `uv tool upgrade crapkit`, `pipx upgrade crapkit`,
+  installed gets `codex plugin marketplace remove crapkit`, the marketplace added again
+  at the CLI's release tag, and `codex plugin add crapkit@crapkit`. A CLI behind gets `uv tool upgrade crapkit`, `pipx upgrade crapkit`,
   or pip for the python its launcher starts (`uv pip` in a venv uv made). A pre-release
   or local build names both repairs.
 - An install whose files differ from its marketplace's copy at one version is named, with
