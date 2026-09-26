@@ -366,9 +366,10 @@ The window ends at HEAD's commit date: its cutoff is `churn_window_months` calen
 before that date, in UTC, so one HEAD names one window on every day and every machine. The
 date in the churn key never moves the window. It is there for a shallow clone, where
 deepening adds history under an unchanged HEAD: the first run of the next UTC day walks the
-deeper history. The tracked set is in the coupling key because ranking drops any pair naming a file `git ls-files` no longer
-lists, and the index moves without HEAD: `git rm --cached src/util.py` leaves the sha alone
-and still has to retire every pair naming that file.
+deeper history. The tracked set is in the coupling key because ranking drops any pair
+naming a file `git ls-files` no longer lists, and the index moves without HEAD:
+`git rm --cached src/util.py` leaves the sha alone and still has to retire every pair
+naming that file.
 
 Two thresholds bypass the coupling cache. What is stored is the ranking at
 `--min-support 5` and `--min-confidence 0.5`, so `--top` reads it and either threshold off

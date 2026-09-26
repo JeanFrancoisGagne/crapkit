@@ -10,10 +10,11 @@ the pairing reads that log's per-commit structure line by line either way.
 
 The key is the churn map's key (HEAD sha, window months, UTC date, path format)
 plus a digest of the tracked set. The window ends at HEAD's commit date, so the
-date never moves it; see churn_cache for why the date stays. The tracked set is there because ranking
-drops any pair naming a file `git ls-files` no longer lists, and ls-files reads
-the INDEX, which moves without HEAD: `git rm --cached src/util.py` leaves the
-sha alone and must still retire every pair naming util.py. The digest costs
+date never moves it; churn_cache says why the date stays. The tracked set is
+there because ranking drops any pair naming a file `git ls-files` no longer
+lists, and ls-files reads the INDEX, which moves without HEAD: `git rm --cached
+src/util.py` leaves the sha alone and must still retire every pair naming
+util.py. The digest costs
 6 ms over that consumer's 31,684 tracked paths, and every reader already holds
 the list, so keying on it buys no spawn.
 

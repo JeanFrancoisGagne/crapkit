@@ -276,6 +276,14 @@ def test_the_page_no_longer_claims_the_score_is_absent():
     assert "not on this page" not in page
 
 
+def test_the_footer_says_the_churn_window_ends_at_head_s_commit_date():
+    """README "Risk": the window counts back from HEAD's commit date, so a page
+    rendered a year after the last commit still ranks that year's churn."""
+    footer = re.search(r"<footer>(.*?)</footer>", rendered(), re.S).group(1)
+
+    assert "over the 12 months before HEAD's commit date" in footer
+
+
 def test_a_row_no_run_scored_leaves_the_score_cells_empty():
     """An inventory-only run scored nothing: null, rendered as nothing rather
     than as a number the page invented."""

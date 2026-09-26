@@ -19,8 +19,8 @@
   wall clock, and the same key would have served it on the day of an upgrade; the
   first churn read deletes them and walks the window once.
 - The `churn_window_months` description in `crapkit.schema.json`, which editors show on
-  hover, and the MCP descriptions of `churn_window_months` and `window_months` say the
-  window counts back from HEAD's commit date.
+  hover, the MCP descriptions of `churn_window_months` and `window_months`, and the
+  `report` page's footer say the window counts back from HEAD's commit date.
 
 No score changes.
 
