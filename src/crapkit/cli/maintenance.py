@@ -17,7 +17,8 @@ def _temporary_results(root, dry_run: bool) -> list[dict]:
 
 def _print_cleanup(result: dict) -> None:
     for row in result["temporary_mutations"]:
-        print(f"temporary mutation {row['status']}: {row['path']} ({row['reason']})")
+        reason = f" ({row['reason']})" if row["reason"] else ""
+        print(f"temporary mutation {row['status']}: {row['path']}{reason}")
 
 
 def cmd_clean(args) -> int:

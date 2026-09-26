@@ -13,7 +13,14 @@
   These operators now make no mutant, and a comparison beside one still makes its own.
   Kill rates on such files can fall. No CRAP score changes.
 
-No score changes.
+### Recovery recognizes an abandoned temporary mutation run of any size
+
+- Startup recovery and `crapkit clean` refused a temporary mutation receipt that recorded
+  more than 100 workers. `mutation_workers` has no upper bound, and a concurrent run
+  records the smaller of `mutation_workers` and its mutant count, so an abandoned run of
+  101 or more workers read `unproven` and its worktrees stayed on disk. Any count of 1 or
+  more is now recognized. `crapkit clean` also stops printing `()` after a run it
+  recognized: only a refusal prints a reason.
 
 ### Batches are placed by the risk of all their rows
 
