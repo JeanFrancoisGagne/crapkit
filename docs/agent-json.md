@@ -1233,8 +1233,8 @@ it built.
 
 `coupling`, `brief` and `worklist --batches` rank the same co-change pairs out of the same
 window, and each one used to re-cut the churn log and re-count every combination on every
-run. Since 0.4.5 the ranked pairs live in `.crapkit/coupling-cache-v1.json`, beside
-`churn-cache-v2.json` and `churn-log-v2.z`. Warm `coupling` on the measured corpus went from
+run. Since 0.4.5 the ranked pairs live in `.crapkit/coupling-cache-v2.json` (v1 until
+0.8.0), beside `churn-cache-v3.json` and `churn-log-v3.z`. Warm `coupling` on the measured corpus went from
 1.05 s to 0.11 s, `worklist --batches` down 62%, a single `brief` down 25%.
 
 What is stored is the ranking at the **default** thresholds, in full order, uncut. `--top`
@@ -1245,7 +1245,9 @@ stored pairs again with the same key the walk sorts by, so a file an older crapk
 which ranked tied pairs by float noise, comes back in this version's order.
 
 The key is HEAD, the window, the UTC date, the path format and a digest of the tracked set,
-the churn map's key plus that digest. The tracked set is in the key
+the churn map's key plus that digest. The window ends at HEAD's commit date, so the date
+never changes the pairs; [what else lives in .crapkit](lanes.md#what-else-lives-in-crapkit)
+says why it stays in the key. The tracked set is in the key
 because ranking drops any pair naming a file `git ls-files` no longer lists, and the index
 moves without HEAD: `git rm --cached src/util.py` leaves the sha alone and must still retire
 every pair naming that file. Unreadable or unkeyable content reads as cold, never as a crash,

@@ -1,19 +1,21 @@
 """A laid-down churn log is re-dated only back to the cutoff it was cut at.
 
-git reads "N months ago" with month arithmetic, so the window cutoff can
-move back overnight: 6 months before Aug 31 is Mar 3, and before Sep 1 it is Mar 1.
-A log cut at the later cutoff lacks the commits between the two, and re-dating
-it cannot bring them back. So the log's key records the cutoff its walk was cut
-at, the walk is cut at exactly that cutoff (`--max-age`), and a refresh
-below it walks the window instead.
+The window ends at HEAD's commit date, and month arithmetic can move its
+cutoff back when HEAD moves: 6 months before a commit on Aug 31 is Mar 3, and
+before one on Sep 1 it is Mar 1. A log cut at the later cutoff lacks the
+commits between the two, and re-dating it cannot bring them back. So the log's
+key records the cutoff its walk was cut at, the walk is cut at exactly that
+cutoff (`--max-age`), and a refresh below it walks the window instead.
 
-Every git seam is monkeypatched; walks are counted, never timed.
+Every git seam is monkeypatched; walks are counted, never timed. The fake
+names each HEAD's cutoff as its commit date; months_before has tests of its own.
 """
 import json
 
 import pytest
 
 from crapkit import churn_log
+from crapkit.errors import GitError
 
 HEAD_A = "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111"
 HEAD_B = "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222"
@@ -49,9 +51,14 @@ class FakeGit:
         self.walked_at: list[int | None] = []  # the cutoff each window walk was cut at
         self.range_calls: list[tuple[str, str]] = []
 
-    def window(self, root, months, head, cutoff):
+    def window(self, root, head, cutoff):
         self.walked_at.append(cutoff)
-        return iter(since(self.log, self.cutoff if cutoff is None else cutoff))
+        return iter(since(self.log, cutoff))
+
+    def commit_date(self, root, commit):
+        if self.cutoff is None:
+            raise GitError(f"no commit date for {commit}")
+        return self.cutoff
 
     def range(self, root, base, head):
         self.range_calls.append((base, head))
@@ -63,14 +70,19 @@ def git(monkeypatch) -> FakeGit:
     fake = FakeGit()
     monkeypatch.setattr(churn_log, "_window_log", fake.window)
     monkeypatch.setattr(churn_log, "_range_log", fake.range)
-    monkeypatch.setattr(churn_log, "_window_cutoff", lambda root, months: fake.cutoff)
+    monkeypatch.setattr(churn_log, "commit_time", fake.commit_date)
+    monkeypatch.setattr(churn_log, "months_before", lambda stamp, months: stamp)
     monkeypatch.setattr(churn_log, "is_ancestor", lambda root, commit, other: True)
     monkeypatch.setattr(churn_log, "head_commit", lambda root: fake.head)
+    churn_log._commit_date.cache_clear()
     return fake
 
 
-def new_day(monkeypatch, day: str) -> None:
-    monkeypatch.setattr(churn_log, "_utc_date", lambda: day)
+def later_head(git: FakeGit, cutoff: int | None) -> None:
+    """HEAD moves to a commit that touched no path (a merge, say), whose date
+    names `cutoff`."""
+    git.head = HEAD_B
+    git.cutoff = cutoff
 
 
 def stamp(root) -> dict:
@@ -93,23 +105,19 @@ def test_the_walk_is_cut_at_the_cutoff_the_stamp_records(tmp_path, git):
     assert stamp(tmp_path)["cutoff"] == 1000000100
 
 
-def test_a_cutoff_moved_back_walks_the_window_again(tmp_path, git, monkeypatch):
-    new_day(monkeypatch, "2026-08-31")
+def test_a_cutoff_moved_back_walks_the_window_again(tmp_path, git):
     git.cutoff = 1000000100
     stored(tmp_path)
-    new_day(monkeypatch, "2026-09-01")
-    git.cutoff = 1000000000
+    later_head(git, 1000000000)
 
     assert stored(tmp_path) == LOG, "the cold walk at the earlier cutoff has alice's commit"
     assert git.walked_at == [1000000100, 1000000000]
     assert stamp(tmp_path)["cutoff"] == 1000000000
 
 
-def test_a_cutoff_moved_forward_re_dates_the_log_without_a_walk(tmp_path, git, monkeypatch):
-    new_day(monkeypatch, "2026-08-21")
+def test_a_cutoff_moved_forward_re_dates_the_log_without_a_walk(tmp_path, git):
     stored(tmp_path)
-    new_day(monkeypatch, "2026-08-22")
-    git.cutoff = 1000000100
+    later_head(git, 1000000100)
 
     window = churn_log.stored_window(tmp_path, 12, None)
 
@@ -149,16 +157,16 @@ def test_a_served_log_that_recorded_no_cutoff_names_none(tmp_path, git):
     assert len(git.walked_at) == 1
 
 
-def test_a_cutoff_git_will_not_name_walks_by_the_clock(tmp_path, git):
+def test_a_head_git_names_no_date_for_is_walked_not_refreshed(tmp_path, git):
+    """Nothing to anchor the window on, so nothing to re-date the log to.
+    test_churn_window_log_argv shows that walk asks git for nothing."""
     stored(tmp_path)
-    git.head = HEAD_B
     git.ranges[(HEAD_A, HEAD_B)] = list(NEW)
-    git.log = NEW + LOG
-    git.cutoff = None
+    later_head(git, None)
 
     window = churn_log.stored_window(tmp_path, 12, None)
 
-    assert list(window.lines) == NEW + LOG
+    list(window.lines)
     assert window.cutoff is None
-    assert git.walked_at[-1] is None, "no cutoff to cut at: git reads --since itself"
+    assert git.walked_at[-1] is None, "no cutoff to cut at, and none read off the clock"
     assert git.range_calls == []

@@ -22,11 +22,11 @@ from conftest import cli_runner, git, git_commit_all, git_init_repo
 from repo_templates import copy_of, template
 
 CRAPKIT = Path(".crapkit")
-CACHE = CRAPKIT / "coupling-cache-v1.json"
-LOG_Z = CRAPKIT / "churn-log-v2.z"
-LOG_KEY = CRAPKIT / "churn-log-v2.json"
-# A window walk is cut at the cutoff: --max-age when crapkit read it first,
-# --since when git named none.
+CACHE = CRAPKIT / "coupling-cache-v2.json"
+LOG_Z = CRAPKIT / "churn-log-v3.z"
+LOG_KEY = CRAPKIT / "churn-log-v3.json"
+# A window walk is cut with --max-age. One cut with --since, which reads git's
+# clock, counts as a walk too.
 WINDOW_CUTOFF = ("--since", "--max-age")
 
 APP_PY = """def plain(x):
@@ -289,7 +289,7 @@ def test_brief_and_batches_share_one_ranking(coupled_repo, tmp_path):
     assert batches.returncode == 0, batches.stdout + batches.stderr
     assert walks == [], "batches must read brief's ranking, not walk for a rival one"
     assert sorted(p.name for p in (coupled_repo / CRAPKIT).glob("coupling*")) == \
-        ["coupling-cache-v1.json"]
+        ["coupling-cache-v2.json"]
 
 
 def test_a_warm_brief_reads_the_ranking_off_disk(coupled_repo, tmp_path):

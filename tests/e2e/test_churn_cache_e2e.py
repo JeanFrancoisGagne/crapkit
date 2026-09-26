@@ -14,7 +14,7 @@ import pytest
 from conftest import cli_runner
 from repo_templates import copy_of, template
 
-CACHE = Path(".crapkit") / "churn-cache-v2.json"
+CACHE = Path(".crapkit") / "churn-cache-v3.json"
 
 APP_PY = """def plain(x):
     a = x + 1
@@ -152,7 +152,7 @@ def test_next_item_and_worklist_share_one_cache(churned_repo: Path):
     assert cache_doc(churned_repo) == written_by_next_item, \
         "worklist must read next-item's cache, not write a rival one"
     assert sorted(p.name for p in (churned_repo / ".crapkit").glob("churn*")) == \
-        ["churn-cache-v2.json", "churn-commits-v1.json"]
+        ["churn-cache-v3.json", "churn-commits-v1.json"]
 
 
 def test_coupling_is_byte_identical_across_runs(churned_repo: Path):

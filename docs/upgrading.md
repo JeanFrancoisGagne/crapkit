@@ -333,6 +333,24 @@ paths still have to name the measured tree. Use the documented
 [portable record reader](portable-records.md) when automating around exports.
 JSON stays at `schema: 1`; consumers must accept added fields.
 
+### Unreleased: the churn window ends at HEAD's commit date
+
+The churn window reaches `churn_window_months` back from HEAD's commit date, never
+from the day of the run. 0.8.0 and earlier cut it with `git log --since=12.months.ago`,
+which git reads against today's date, so a repo measured a year after its last commit
+had no churn and `worklist` listed every file as dormant.
+
+- Churn weights, `risk`, the order `worklist` and `next-item` hand out, and the pairs
+  `coupling`, `brief` and `worklist --batches` rank change for any repo whose HEAD
+  commit is older than the day it is measured. The longer the repo has sat still,
+  the more history enters the window. CRAP scores and ratchet marks do not change,
+  so nothing re-seeds.
+- The churn caches move to `churn-cache-v3.json`, `churn-log-v3.z` and
+  `coupling-cache-v2.json`. The first churn read deletes the files 0.8.0 and earlier
+  wrote, because each holds a window cut at the wall clock, and walks the window
+  once: seconds on a large history, then warm again. An older crapkit that shares
+  the working tree walks its own window again on its next run.
+
 ## Plugin and MCP clients
 
 After upgrading the intended CLI, refresh Claude Code's marketplace before updating

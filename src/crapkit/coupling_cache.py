@@ -9,7 +9,8 @@ The deflated churn log removed git's walk; it did not remove this one, because
 the pairing reads that log's per-commit structure line by line either way.
 
 The key is the churn map's key (HEAD sha, window months, UTC date, path format)
-plus a digest of the tracked set. The tracked set is there because ranking
+plus a digest of the tracked set. The window ends at HEAD's commit date, so the
+date never moves it; see churn_cache for why the date stays. The tracked set is there because ranking
 drops any pair naming a file `git ls-files` no longer lists, and ls-files reads
 the INDEX, which moves without HEAD: `git rm --cached src/util.py` leaves the
 sha alone and must still retire every pair naming util.py. The digest costs
@@ -43,7 +44,10 @@ from .gitpaths import PATH_FORMAT
 # The format lives in the file name, as it does for the churn map and log: a
 # version keying another shape writes another file, so two installs on one tree
 # both stay warm instead of rewriting each other's key on every run.
-CACHE_NAME = "coupling-cache-v1.json"
+CACHE_NAME = "coupling-cache-v2.json"
+# 0.4.5 to 0.8.0 ranked pairs out of a window that ended at the wall clock, not
+# at HEAD's commit date. Discarded on a miss: nothing reads that name again.
+LEGACY_NAME = "coupling-cache-v1.json"
 
 
 def load_coupling(root: Path, months: int, tracked: Iterable[str]) -> list[dict]:
@@ -58,9 +62,18 @@ def load_coupling(root: Path, months: int, tracked: Iterable[str]) -> list[dict]
     cached = _read_cache(path, key)
     if cached is not None:
         return cached
+    _drop(path.with_name(LEGACY_NAME))
     pairs = change_coupling_lines(log_lines(root, months), top=None, tracked=set(paths))
     _write_cache(path, key, pairs)
     return pairs
+
+
+def _drop(path: Path) -> None:
+    """Best effort: a read-only .crapkit keeps its litter, never loses a command."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        return
 
 
 def _tracked_digest(paths: list[str]) -> str:

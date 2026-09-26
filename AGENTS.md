@@ -762,7 +762,7 @@ Shared rules belong to these modules:
 | `sourcelines.py` | where a source's lines end: LF, CRLF and a lone CR, as the scores number them. Split source text with `source_lines`; `str.splitlines` also ends a line at a form feed and seven other characters. `line_starts` numbers a text by the reader's rule or by `LF_ONLY` and `ECMASCRIPT`, the rules git and the JavaScript coverage producers use |
 | `istanbul_lines.py` | which of the reader's lines an istanbul record's positions sit on. `on_reader_lines` runs on every record before attribution; a file with a lone CR, U+2028 or U+2029 is read and renumbered from the rule its producer used |
 | `diffparse.py` | which lines a diff changed, on the lines a function span or a coverage report numbers. git ends a line at LF only and the reader also ends one at a lone CR, so `worktree_ranges` (a diff against the working tree) and `reader_ranges` (any other new side, such as the staged blobs) place each range by the new side's bytes. `changed_ranges` alone answers in git's numbers, and `git_span` turns a function's span into git's numbers before it goes to git |
-| `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |
+| `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v2.json` beside the churn caches |
 
 `store.py` gained a `run_rollup` table: one row per run per scope, filled the first time
 something asks and pruned with its run. `trend` and `report` read it instead of
@@ -883,8 +883,10 @@ snapshot record, all three or nothing). Leave it alone.
 
 - Marks only fall. `ratchet seed` admits new debt, `prune` drops gone code, `merge` is
   the git driver. None of them raises a mark.
-- No wall clock in scoring paths. Churn weights and burn-down ages anchor on the newest
-  commit in the log, so a fixed tree reports byte-identically.
+- No wall clock in scoring paths. The churn window ends at HEAD's commit date, and churn
+  weights and burn-down ages anchor on the newest commit in the log, so a fixed tree
+  reports byte-identically. `git log --since=N.months.ago` reads today's date: cut a
+  window with `--max-age` at a cutoff computed from a commit's date.
 - JSON is sorted-keys and carries no timestamps in rows.
 
 ## The docs are pinned to the code

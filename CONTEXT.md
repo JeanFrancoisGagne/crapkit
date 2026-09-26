@@ -127,5 +127,5 @@ Admission under the floor because the file changes often.
 Active rows are ranked by risk; dormant rows have no recent churn.
 
 **Churn window**:
-The months of history churn reads (`churn_window_months`). A commit counts while its commit date is at or after the window's cutoff; its recency weight reads the author date.
+The months of history churn reads (`churn_window_months`), counted back from HEAD's commit date, never from today's. A commit counts while its commit date is at or after the window's cutoff; its recency weight reads the author date.
 _Avoid_: floor for the window's start (Floor is worklist admission); call it the cutoff

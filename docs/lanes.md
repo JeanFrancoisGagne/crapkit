@@ -324,11 +324,11 @@ $ ls .crapkit .crapkit/cov
 .crapkit:
 artifacts.json
 cache.json
-churn-cache-v2.json
+churn-cache-v3.json
 churn-commits-v1.json
-churn-log-v2.json
-churn-log-v2.z
-coupling-cache-v1.json
+churn-log-v3.json
+churn-log-v3.z
+coupling-cache-v2.json
 cov
 crap.sqlite
 lane-py.log
@@ -348,10 +348,10 @@ py.json
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
 | `measurement.lock` | The lock a lane run holds on this checkout's lane logs and artifact stamps while its commands run, so two crapkit processes never measure one checkout at once. It stays behind between runs and holds nothing. | |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. A file enters it once it has held still for two seconds, so a run right after the files were written, like the listing above, leaves no `stat-stamps.json` yet. | |
-| `churn-cache-v2.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
-| `churn-commits-v1.json` | The window's commits: each one's author, author date and commit date, and each path's commits. Read only when the churn map misses; a HEAD that grew from it walks only the new commits. Not kept in a shallow clone. | HEAD sha, window months, path format and the --since cutoff its commits were cut at, plus the body's size and CRC. |
-| `churn-log-v2.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v2.json` beside it. | Same four fields. The key also records the --since cutoff the log was cut at; a refresh below it walks the window again. |
-| `coupling-cache-v1.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
+| `churn-cache-v3.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
+| `churn-commits-v1.json` | The window's commits: each one's author, author date and commit date, and each path's commits. Read only when the churn map misses; a HEAD that grew from it walks only the new commits. Not kept in a shallow clone. | HEAD sha, window months, path format and the cutoff its commits were cut at, plus the body's size and CRC. |
+| `churn-log-v3.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v3.json` beside it. | Same four fields. The key also records the cutoff the log was cut at; a refresh below it walks the window again. |
+| `coupling-cache-v2.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
 | `mutate-pool/` | Kept worktrees for every mutation worker, including one. See [mutation worktrees](configuration.md#mutation-worktrees). | |
 | `mutate-tmp/` | Recognized concurrent mutation runs, removed after completion or recovered under an exclusive lease. | |
 | `test-runs/` | Marked default test evidence from crapkit's own development runner, `tools/testing/run.py`, which prunes it by age and count (`--retention-days`, `--retention-count`) before each default run. `clean` leaves it alone. Explicit output and active leases are preserved. | |
@@ -362,9 +362,11 @@ answers in 0.04 s warm on a corpus where it used to rescan 4.3 M rows. It means 
 `report` write to `crap.sqlite` on a cold rollup, best effort: they read as before on a
 checkout they cannot write to, just without the speedup.
 
-The date is in the churn key because `--since=12 months ago` is measured against the wall
-clock, so yesterday's map describes a window one day wider than today's. The tracked set is
-in the coupling key because ranking drops any pair naming a file `git ls-files` no longer
+The window ends at HEAD's commit date: its cutoff is `churn_window_months` calendar months
+before that date, in UTC, so one HEAD names one window on every day and every machine. The
+date in the churn key never moves the window. It is there for a shallow clone, where
+deepening adds history under an unchanged HEAD: the first run of the next UTC day walks the
+deeper history. The tracked set is in the coupling key because ranking drops any pair naming a file `git ls-files` no longer
 lists, and the index moves without HEAD: `git rm --cached src/util.py` leaves the sha alone
 and still has to retire every pair naming that file.
 
@@ -375,8 +377,11 @@ the wider thresholds exist to surface.
 
 The version marker is in the file name on purpose. 0.4.3 and 0.4.5 sharing one working tree
 each read the other's cache as cold and rewrote it, so every run of both rebuilt the map.
-Different formats, different files, both warm. A warm 0.4.4 cache is adopted once and its
-file removed rather than left behind.
+Different formats, different files, both warm. The files 0.8.0 and earlier wrote,
+`churn-cache-v2.json`, `churn-log-v2.z`, `coupling-cache-v1.json` and 0.4.4's unversioned
+names, are the exception: each holds a window that ended on the day it was written, not
+at HEAD's commit date, so the first churn read deletes them. An older crapkit sharing the
+tree then walks its window again on its next run.
 
 ---
 

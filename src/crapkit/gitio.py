@@ -392,6 +392,15 @@ def _holds_commit(root: Path, commit: str) -> bool:
     return res.returncode == 0
 
 
+def commit_time(root: Path, commit: str) -> int:
+    """`commit`'s commit date, in Unix seconds. rev-list, which no `log.*`
+    setting reaches, prints a `commit <sha>` line and then the date."""
+    stamp = _git(root, "rev-list", "-1", "--format=%ct", commit).strip().rpartition("\n")[2]
+    if not stamp.isdigit():
+        raise GitError(f"git rev-list named no commit date for {commit} in {root}")
+    return int(stamp)
+
+
 def is_shallow(root: Path) -> bool:
     """True when this checkout is a depth-limited clone: one that does not hold
     every commit its history names. The ancestor check reads it to blame the

@@ -145,12 +145,12 @@ def test_a_moved_head_rebuilds(tmp_path, log):
 def test_a_different_window_rebuilds(tmp_path, log):
     coupling_cache.load_coupling(tmp_path, 12, TRACKED)
     coupling_cache.load_coupling(tmp_path, 3, TRACKED)
-    assert log.reads == 2, "--since=3 months is a different question"
+    assert log.reads == 2, "a 3-month window is a different question"
 
 
 def test_a_new_utc_day_rebuilds(tmp_path, log, monkeypatch):
-    """`--since=N months ago` is wall-clock relative, exactly as the churn map's
-    key says: yesterday's ranking covers a window a day too wide."""
+    """The window ends at HEAD's commit date, so a new day never moves it. The
+    date stays in the key, as in the churn map's, for a deepened shallow clone."""
     monkeypatch.setattr(coupling_cache, "_utc_date", lambda: "2026-08-21")
     coupling_cache.load_coupling(tmp_path, 12, TRACKED)
     monkeypatch.setattr(coupling_cache, "_utc_date", lambda: "2026-08-22")
@@ -253,6 +253,21 @@ def test_a_read_only_crapkit_dir_costs_the_speedup_not_the_command(tmp_path, log
 
     monkeypatch.setattr("pathlib.Path.write_text", refuse)
     assert coupling_cache.load_coupling(tmp_path, 12, TRACKED) == _fresh()
+
+
+def test_a_retired_ranking_that_cannot_be_deleted_costs_nothing(tmp_path, log, monkeypatch):
+    """The v1 ranking is dropped on a miss, best effort: a file nothing can
+    delete stays behind and the command still answers."""
+    old = tmp_path / ".crapkit" / coupling_cache.LEGACY_NAME
+    old.parent.mkdir()
+    old.write_text("{}", encoding="utf-8")
+
+    def refuse(self, *args, **kwargs):
+        raise PermissionError("held open")
+
+    monkeypatch.setattr("pathlib.Path.unlink", refuse)
+    assert coupling_cache.load_coupling(tmp_path, 12, TRACKED) == _fresh()
+    assert old.exists()
 
 
 def test_the_batch_cut_asks_for_the_ranking_default(tmp_path):

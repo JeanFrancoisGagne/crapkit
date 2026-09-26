@@ -17,7 +17,7 @@ from conftest import cli_runner
 
 CRAPKIT = Path(".crapkit")
 TABLE = CRAPKIT / "churn-commits-v1.json"
-CHURN_FILES = ("churn-cache-v2.json", "churn-commits-v1.json")
+CHURN_FILES = ("churn-cache-v3.json", "churn-commits-v1.json")
 
 APP_PY = """def pick(kind):
     if kind == "a":
@@ -79,8 +79,8 @@ def traced(repo: Path, tmp_path: Path, tag: str, *args: str):
 
 
 def window_walks(walks):
-    """Walks cut at the window cutoff: --max-age when crapkit read the cutoff
-    first, --since when git named none."""
+    """Walks of the window. crapkit cuts one with --max-age; a walk cut with
+    --since, which reads git's clock, counts as a walk too."""
     return [argv for argv in walks if any(a.startswith(("--since", "--max-age")) for a in argv)]
 
 

@@ -74,11 +74,13 @@ def test_a_moved_head_without_a_commit_table_rebuilds(tmp_path, git):
 def test_a_different_window_rebuilds(tmp_path, git):
     churn_cache.load_churn(tmp_path, 12)
     churn_cache.load_churn(tmp_path, 3)
-    assert git.log_calls == 2, "--since=3 months is a different question"
+    assert git.log_calls == 2, "a 3-month window is a different question"
 
 
 def test_a_new_utc_day_rebuilds(tmp_path, git, monkeypatch):
-    """`--since=N months ago` is wall-clock relative: yesterday's map is a day too wide."""
+    """The window ends at HEAD's commit date, so a new day never moves it. The
+    date stays in the key for depth: deepening a shallow clone adds history
+    under an unmoved HEAD, and the next day's first read sees it."""
     monkeypatch.setattr(churn_cache, "_utc_date", lambda: "2026-08-21")
     churn_cache.load_churn(tmp_path, 12)
     monkeypatch.setattr(churn_cache, "_utc_date", lambda: "2026-08-22")
@@ -116,11 +118,12 @@ def test_a_cache_without_the_paths_marker_reads_as_cold(tmp_path, git):
     assert git.log_calls == 2
 
 
-def _old_cache(tmp_path, head: str):
-    old = tmp_path / ".crapkit" / churn_cache.LEGACY_NAME
+def _old_cache(tmp_path, head: str, name: str = "churn-cache.json",
+               paths: str = "root-relative"):
+    old = tmp_path / ".crapkit" / name
     old.parent.mkdir(parents=True, exist_ok=True)
     doc = {"key": {"head": head, "months": 12, "date": churn_cache._utc_date(),
-                   "paths": "root-relative"},
+                   "paths": paths},
            "files": {"src/old.ts": [9, 9, 9.0]}}
     old.write_text(json.dumps(doc), encoding="utf-8")
     return old
@@ -136,6 +139,19 @@ def test_a_legacy_map_rebuilds_before_reusing_its_path_keys(tmp_path, git):
     assert git.log_calls == 1
     assert not old.exists(), "the old decoded map cannot answer this path contract"
     assert (tmp_path / ".crapkit" / churn_cache.CACHE_NAME).is_file()
+
+
+def test_a_v2_map_under_this_very_key_is_never_served(tmp_path, git):
+    """0.4.5 to 0.8.0 cut the window at the wall clock and keyed the map exactly
+    as this version does. Read under its own name, a map written on the day of
+    an upgrade at the same HEAD would answer, and a tree a year past its last
+    commit would read every file dormant."""
+    old = _old_cache(tmp_path, HEAD, "churn-cache-v2.json", churn_cache.PATH_FORMAT)
+
+    assert churn_cache.load_churn(tmp_path, 12) == parse_git_log(LOG)
+    assert git.log_calls == 1
+    assert not old.exists(), "nothing reads the v2 name again"
+    assert churn_cache.CACHE_NAME not in churn_cache.LEGACY_NAMES
 
 
 def test_a_current_filename_with_the_old_path_contract_is_rebuilt(tmp_path, git):

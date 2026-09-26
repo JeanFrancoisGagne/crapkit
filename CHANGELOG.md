@@ -2,6 +2,23 @@
 
 ## 0.8.1 — unreleased
 
+### The churn window ends at HEAD's commit date
+
+- The churn window reaches `churn_window_months` back from HEAD's commit date. It was
+  cut with `git log --since=12.months.ago`, which git reads against today's date, so a
+  tree measured a year after its last commit ranked every file dormant: a four-commit
+  repo listed four active files one day after its newest commit and none 400 days
+  after it. README's promise that a fixed tree ranks identically forever now holds, on
+  any day and any machine: the month arithmetic runs in UTC.
+- Churn weights, `risk`, the `worklist` and `next-item` order and the ranked
+  co-change pairs change for any repo whose HEAD commit is older than the day it is
+  measured. CRAP scores and ratchet marks do not, so nothing re-seeds. See the
+  [upgrade guide](docs/upgrading.md#unreleased-the-churn-window-ends-at-heads-commit-date).
+- The churn caches move to `churn-cache-v3.json`, `churn-log-v3.z` and
+  `coupling-cache-v2.json`. Each file 0.8.0 and earlier wrote held a window cut at the
+  wall clock, and the same key would have served it on the day of an upgrade; the
+  first churn read deletes them and walks the window once.
+
 No score changes.
 
 ### Coupled pairs that tie rank by their paths

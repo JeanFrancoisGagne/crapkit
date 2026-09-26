@@ -118,6 +118,20 @@ def test_the_crapkit_directory_listing_names_the_measurement_lock():
     assert [row for row in rows if f"`{row}`" not in table] == [], "listed but never explained"
 
 
+def test_the_crapkit_directory_listing_names_the_cache_files_this_version_writes():
+    """The churn and coupling caches carry a version in their file names. A
+    rename that left the listing behind would teach a reader to look for files
+    crapkit no longer writes, and to keep ones it deletes."""
+    from crapkit import churn_cache, churn_commits, churn_log, coupling_cache
+
+    written = {churn_cache.CACHE_NAME, churn_commits.COMMITS_NAME, churn_log.LOG_NAME,
+               churn_log._key_path(Path(churn_log.LOG_NAME)).name, coupling_cache.CACHE_NAME}
+    listed = {name for name in _listing_names(_page("docs/lanes.md"))
+              if name.startswith(("churn-", "coupling-"))}
+
+    assert listed == written
+
+
 def _listing_names(text: str) -> list[str]:
     listing = text[text.index("$ ls .crapkit .crapkit/cov"):]
     listing = listing[:listing.index("```")]

@@ -28,7 +28,7 @@ class FileChurn(NamedTuple):
 class Commit(NamedTuple):
     author: int  # index into WindowCommits.authors
     at: int | None  # author date: what the recency weight reads
-    ct: int | None  # commit date: what --since, and so expiry, reads
+    ct: int | None  # commit date: what the window's cutoff, and so expiry, reads
 
 
 def _twr(ts: int, oldest: int, newest: int) -> float:
@@ -156,9 +156,9 @@ class WindowCommits:
         return [ids[name] for name in names]
 
     def expire(self, cutoff: int) -> None:
-        """Drop every commit a `--since` walk would no longer list: the ones
-        committed before `cutoff`. The commit date, not the author date:
-        --since reads the committer's clock, and a rebased commit has two."""
+        """Drop every commit a walk cut at `cutoff` would no longer list: the
+        ones committed before it. The commit date, not the author date: git's
+        --max-age reads the committer's clock, and a rebased commit has two."""
         gone = {seq for seq, commit in self.commits.items() if _aged(commit, cutoff)}
         if gone:
             self._drop(gone)

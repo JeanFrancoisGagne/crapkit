@@ -5,8 +5,8 @@ The other churn tests fake _window_log whole, so they pass whatever argv it
 builds. These fake one level down, at the _git_lines churn_log imports, and
 read the argv the walk hands git. A walk from whatever HEAD is when git starts
 counts a commit that lands during the walk twice: once in the copy keyed on
-its parent, again in the next range walk. A walk cut by a second reading of
-"N months ago" can reach past the recorded cutoff at a month end.
+its parent, again in the next range walk. A walk cut by `--since=N months ago`
+reads git's clock: a tree measured a year after its last commit walked nothing.
 """
 import pytest
 
@@ -18,29 +18,33 @@ CUTOFF = 1000000000
 
 
 class FakeGit:
+    """HEAD's commit date is named as the cutoff itself; months_before has
+    tests of its own."""
+
     def __init__(self):
         self.cutoff: int | None = CUTOFF
         self.logs: list[tuple[str, ...]] = []
 
     def lines(self, root, *args):
-        if args[0] == "rev-parse":
-            return self._rev_parse()
         self.logs.append(args)
         return iter(())
 
-    def _rev_parse(self):
+    def commit_date(self, root, commit):
         if self.cutoff is None:
-            raise GitError("git rev-parse failed")
-        return iter([f"--max-age={self.cutoff}\n"])
+            raise GitError(f"git rev-list named no commit date for {commit}")
+        return self.cutoff
 
 
 @pytest.fixture()
 def git(monkeypatch) -> FakeGit:
     fake = FakeGit()
-    churn_log._cutoff_at.cache_clear()
+    churn_log._commit_date.cache_clear()
     monkeypatch.setattr(churn_log, "_git_lines", fake.lines)
+    monkeypatch.setattr(churn_log, "commit_time", fake.commit_date)
+    monkeypatch.setattr(churn_log, "months_before", lambda stamp, months: stamp)
+    monkeypatch.setattr(churn_log, "head_commit", lambda root: HEAD)
     yield fake
-    churn_log._cutoff_at.cache_clear()
+    churn_log._commit_date.cache_clear()
 
 
 def walk(git: FakeGit, window: churn_log.Window) -> tuple[str, ...]:
@@ -49,7 +53,7 @@ def walk(git: FakeGit, window: churn_log.Window) -> tuple[str, ...]:
     return argv
 
 
-def test_a_walked_window_names_its_head_and_the_cutoff_git_named(tmp_path, git):
+def test_a_walked_window_names_its_head_and_the_cutoff_its_date_names(tmp_path, git):
     window = churn_log.walked_window(tmp_path, 12, HEAD)
 
     assert window.cutoff == CUTOFF
@@ -64,12 +68,21 @@ def test_a_stored_window_walks_from_the_head_its_key_names(tmp_path, git):
     assert f"--max-age={CUTOFF}" in argv
 
 
-def test_a_cutoff_git_will_not_name_is_read_off_the_clock(tmp_path, git):
+def test_no_walk_ever_reads_the_clock(tmp_path, git):
+    for head in (HEAD, None):
+        list(churn_log.walked_window(tmp_path, 12, head).lines)
+
+    assert [arg for argv in git.logs for arg in argv if arg.startswith("--since")] == []
+
+
+def test_a_head_with_no_commit_date_walks_nothing(tmp_path, git):
+    """No date, no window to cut: git is never asked for a log, where the walk
+    used to fall back on `--since=12 months ago` and git's clock."""
     git.cutoff = None
 
-    argv = walk(git, churn_log.walked_window(tmp_path, 12, HEAD))
+    window = churn_log.walked_window(tmp_path, 12, HEAD)
 
-    assert "--since=12 months ago" in argv and argv[-1] == HEAD
+    assert (list(window.lines), window.cutoff, git.logs) == ([], None, [])
 
 
 def test_a_caller_with_no_head_walks_head(tmp_path, git):

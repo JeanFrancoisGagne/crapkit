@@ -178,7 +178,7 @@ either way. Twins are the exception: the store keeps the run's shingle index, so
 brief that finds none stored shingles the repo.
 
 **The coupling cache is per checkout, and the first run in each pays for it.** Ranked
-co-change pairs live in `.crapkit/coupling-cache-v1.json`, which `init` already gitignores
+co-change pairs live in `.crapkit/coupling-cache-v2.json`, which `init` already gitignores
 along with the rest of `.crapkit/`. Warm, `coupling` costs 0.11 s instead of 1.05 s and
 `worklist --batches` 62% less. A fleet of ten worktrees is ten cold runs, once each. Passing
 `--min-support` or `--min-confidence` off their defaults bypasses the cache every time, so

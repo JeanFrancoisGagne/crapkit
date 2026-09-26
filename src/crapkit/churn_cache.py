@@ -3,14 +3,13 @@
 `git log --name-only` over a year of a large repo costs 6.5s, 5.8s of which is
 git diffing every commit's tree, and worklist, next-item and coupling each paid
 it in full on every invocation, at an unmoved HEAD. Every one of them reaches
-git through this module, so `.crapkit/churn-cache-v2.json` has one writer.
+git through this module, so `.crapkit/churn-cache-v3.json` has one writer.
 
 The key is (HEAD sha, window months, UTC date, path format). The sha pins the
-history; the window pins the command; the date is there because `--since=N
-months ago` is evaluated against the wall clock, so yesterday's cache describes
-a window one day wider than today's; the format marker retires maps whose
-paths predate exact path decoding. Anything else is a miss, and a miss
-rebuilds.
+history, and with it the window, which ends at HEAD's commit date; the months
+pin the command; the date is there for depth, below; the format marker retires
+maps whose paths predate exact path decoding. Anything else is a miss, and a
+miss rebuilds.
 
 A miss is not a full parse when it can be avoided: the map is computed from
 the window's commits, which `churn_commits` keeps, so a HEAD that grew from
@@ -19,8 +18,9 @@ the stored table walks only the new commits (see that module).
 A cache is disposable: unreadable, corrupt or unkeyable content reads as cold,
 never as a crash. Uncommitted work is invisible to churn either way. The one
 thing a sha does not pin is depth — deepening a shallow clone adds history
-under an unmoved HEAD — and that resolves itself at the next date rollover,
-because a shallow clone keeps no commit table to carry.
+under an unmoved HEAD — and the date in the key resolves that at the next date
+rollover, because a shallow clone keeps no commit table to carry. The date
+never moves the window: the same HEAD rebuilds the same map.
 """
 from __future__ import annotations
 
@@ -40,9 +40,11 @@ from .gitpaths import PATH_FORMAT
 # it — so every run of both rebuilt the map. Different formats, different files:
 # neither invalidates the other and both stay warm. The key's own marker stays,
 # for a format change that keeps the name.
-CACHE_NAME = "churn-cache-v2.json"
-# Older maps can contain altered path names. Discard the retired name on a miss.
-LEGACY_NAME = "churn-cache.json"
+CACHE_NAME = "churn-cache-v3.json"
+# Older maps can contain altered path names (churn-cache.json), and every older
+# map was cut at a window that ended at the wall clock, not at HEAD's commit
+# date (v2 too). Discard the retired names on a miss.
+LEGACY_NAMES = ("churn-cache.json", "churn-cache-v2.json")
 
 
 def _window_lines(root: Path, months: int, head: str | None) -> Window:
@@ -63,8 +65,8 @@ def _window_lines(root: Path, months: int, head: str | None) -> Window:
 def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
     """Per-file churn for the window — from disk when the key still matches, else rebuilt.
 
-    A miss discards old decoded maps. The raw log pair still keeps its original
-    path spelling, so `sweep_legacy` can adopt it for `_window_lines` to read.
+    A miss discards the maps and logs older versions left: each was cut at a
+    window that ended at the wall clock, so nothing here reads them again.
     """
     path = root / ".crapkit" / CACHE_NAME
     key = _cache_key(root, months)
@@ -72,7 +74,8 @@ def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
     if cached is not None:
         return cached
     sweep_legacy(root)
-    _drop(path.with_name(LEGACY_NAME))
+    for name in LEGACY_NAMES:
+        _drop(path.with_name(name))
     churn = _window_commits(root, months, key).churn()
     _write_cache(path, key, churn)
     return churn
