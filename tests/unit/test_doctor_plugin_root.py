@@ -369,13 +369,16 @@ def test_no_path_looks_under_the_user_home_without_home_variables(capsys, monkey
     where Claude Code keeps this user's plugins. The installs are stubbed away
     so the answer does not depend on what this machine has installed."""
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-    monkeypatch.setattr(admin, "_installed_crapkit_roots", lambda plugins: [])
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.setattr(admin, "_recorded_installs", lambda plugins: [])
+    monkeypatch.setattr(admin, "_manifest_roots", lambda under: [])
 
     code = main(["doctor", "--plugin-root"])
     lines = capsys.readouterr().out.splitlines()
 
     assert code == 1 and len(lines) == 1, lines
     assert str(without_home_variables / ".claude" / "plugins") in lines[0], lines[0]
+    assert str(without_home_variables / ".codex") in lines[0], lines[0]
 
 
 def test_a_cache_shared_with_other_plugins_yields_crapkit_not_the_highest_version(tmp_path,

@@ -369,6 +369,15 @@ def test_copilot_home_defaults_to_the_home_directory(monkeypatch, tmp_path):
     assert mcp_server.copilot_workspace() == tmp_path / "app"
 
 
+def test_a_copilot_session_started_without_home_variables_still_reads_its_home(
+        monkeypatch, without_home_variables):
+    """A client that builds the server's environment from an allowlist leaves
+    out USERPROFILE, and Path.home() then raises on Windows. The session record
+    is looked for under the home Windows reports instead."""
+    monkeypatch.delenv("COPILOT_HOME", raising=False)
+    monkeypatch.setenv("COPILOT_AGENT_SESSION_ID", "crapkit-test-no-such-session")
+
+    assert mcp_server.copilot_workspace() is None
 
 
 def test_no_copilot_session_names_no_folder(monkeypatch):

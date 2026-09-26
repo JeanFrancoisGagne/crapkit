@@ -1615,8 +1615,10 @@ def _newest(roots: list[Path]) -> list[Path]:
 
 def _codex_home() -> Path:
     """Where Codex keeps its state: CODEX_HOME, else ~/.codex."""
+    from ..userhome import user_home
+
     base = os.environ.get("CODEX_HOME")
-    return Path(base) if base else Path.home() / ".codex"
+    return Path(base) if base else user_home() / ".codex"
 
 
 class _Found(NamedTuple):

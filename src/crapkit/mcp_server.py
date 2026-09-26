@@ -1918,7 +1918,9 @@ def copilot_workspace() -> Path | None:
     session = os.environ.get("COPILOT_AGENT_SESSION_ID")
     if not session:
         return None
-    home = Path(os.path.expanduser(os.environ.get("COPILOT_HOME") or Path.home() / ".copilot"))
+    from .userhome import user_home
+
+    home = Path(os.path.expanduser(os.environ.get("COPILOT_HOME") or user_home() / ".copilot"))
     return _session_cwd(home / "session-state" / session / "workspace.yaml")
 
 
