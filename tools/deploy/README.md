@@ -262,7 +262,8 @@ cached layers, with `ci` and `full` reading `core`'s scope and `gui` reading
 | `core`, `ci`, `full` and `gui` | 10.04 GB | 4.67 GB |
 
 `tests/unit/test_deploy_workflows.py` holds the measured bytes and fails when
-a row of either table here no longer matches them.
+the stage table, the second column or the options row below gives a figure
+they do not.
 
 ### Why `full` and `gui` build cold
 
