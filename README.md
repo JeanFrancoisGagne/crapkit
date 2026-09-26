@@ -338,7 +338,9 @@ unchanged on a Go, Rust or shell repo: `crapkit coverage` scores it with no lane
 and that run is the baseline `worklist`, `next-item`, `ratchet seed` and `verify` read.
 
 Shell, PowerShell and Rust run on crapkit's own readers. lizard ships none for shell or
-PowerShell, so crapkit counts their functions itself. Its Rust reader scores a 7-arm
+PowerShell, so crapkit counts their functions itself. The shell reader reads the command
+inside `"$(...)"` as code, so its `&&` and `||` count as they do written bare. Its Rust
+reader scores a 7-arm
 `match` as ccn 2 (filed as lizard #494), so crapkit counts each non-wildcard arm like a C
 `case`. It also reads a Rust signature, a closure's empty `||`, a let-else and a `for`
 that is no loop the way Rust means them (see

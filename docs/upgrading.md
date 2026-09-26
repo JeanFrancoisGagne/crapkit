@@ -319,6 +319,13 @@ every marks file re-seeds once, with the same three commands as version 11 below
   `done` and `esac`, so every block leaked a level: seven ifs side by side read 6, four
   nested read 3, and a `case` read 0. They read 1, 4 and 1 now, and `&&` or `||` opens
   no level. `nesting` is reported and never gated, so no verdict moves with it.
+- A command inside a quoted substitution counts: `x="$(cmd || true)"` reads ccn 2
+  where it read 1, as `x=$(cmd || true)` always did. Backticks inside quotes, `$(( ))`
+  and a substitution inside `${v:-...}` count the same way. A heredoc opened inside a
+  quoted substitution, as in `v="$(node - "$f" <<'JS'`, is a body, so its program adds
+  no ccn and no NLOC. On a large consumer repo 131 of 1,263 shell functions rose by 1
+  to 7. A function the rise puts over its ceiling fails the gate the next time its
+  file changes.
 
 ### Analysis version 11
 

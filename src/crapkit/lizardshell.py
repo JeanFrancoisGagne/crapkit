@@ -49,9 +49,11 @@ HEREDOCS
     extension at index 0.
 
     `<<EOF`, `<<-EOF`, `<<'EOF'`, `<<"EOF"` and `<<\\EOF` open a body; `<<<`
-    (herestring) does not; a `<<` inside `$(( ))` reads as a bit shift; and an
-    opener whose terminator never appears is ignored, so a misread `<<` costs
-    nothing instead of blanking the rest of the file.
+    (herestring) does not; a `<<` inside `$(( ))` reads as a bit shift; a `<<`
+    inside a string is text, with the quotes counted from inside the last `$(`
+    still open, so `v="$(node - "$f" <<'JS'` opens a body; and an opener whose
+    terminator never appears is ignored, so a misread `<<` costs nothing instead
+    of blanking the rest of the file.
 
     A line ends where bash ends it, at LF (the source arrives with CRLF and a lone
     CR already read as LF), never at a form feed or another character
@@ -76,9 +78,20 @@ TOKENIZER REPAIRS
     `//` gets an added token for the same reason as `\\x`: it is the `//` of a URL,
     not a C++ line comment.
 
+SUBSTITUTIONS INSIDE STRINGS
+    `x="$(cmd || true)"` runs `cmd || true`: the quotes keep the output one word,
+    they do not make the command text. The string rule above matches the whole
+    run, so its inner quotes pair with each other, and then every `$( )`, `$(( ))`
+    and backtick substitution inside a double-quoted token or a `${...}` expansion
+    is tokenized again as code. Its `&&`, `||`, `if` and `;;` count the way they
+    count written bare, at any depth: `"$(a "$(b || c)")"` reaches the `||`. The
+    text around a substitution stays one string token, so the `}` that ends
+    `${v:-$(cmd)}` closes nothing. A `$(` after a backslash, or inside single
+    quotes, is text and stays in its string.
+
 KNOWN LIMITS
-    - Conditions inside `"$( ... )"` are invisible: the whole double-quoted run is
-      one string token. `x="$(cmd || true)"` counts 0.
+    - A substitution in a heredoc body runs when the delimiter is unquoted
+      (`<<EOF`, not `<<'EOF'`), and it counts nothing: the whole body is blanked.
     - A function defined inside another function's body is not reported; its braces
       are counted, so the outer function still closes on the right `}`.
     - A name containing `-` or `.` reaches the reader split into several tokens, so
@@ -153,10 +166,18 @@ _TOKEN_ADDITION = (
     r"|\\."
 )
 
+# A substitution inside a token lizard keeps as text: a double-quoted string or a
+# ${...} expansion. The escape comes first, so `\$(` and `\`` stay text, as the
+# string rule above spent them.
+_BACKTICK_SUB = r"`(?:\\.|[^`\\])*`"
+_HOLE = re.compile(r"\\.|(" + _COMMAND_SUB + "|" + _BACKTICK_SUB + ")", re.S)
+
 # `<<` or `<<-`, then an optionally quoted delimiter word. '<<<' is excluded from
 # both sides so a herestring never reads as a heredoc.
 _HEREDOC = re.compile(
     r"(?<!<)<<(?!<)(-?)\s*(?:(['\"])([A-Za-z_]\w*)\2|\\?([A-Za-z_]\w*))")
+
+_SUBSTITUTION_OPEN = re.compile(r"\$\(")
 
 _NAME = re.compile(r"[A-Za-z_]\w*")
 
@@ -176,9 +197,23 @@ def _is_name(token) -> bool:
 
 def _quoted(line: str, position: int) -> bool:
     """True when an odd number of quotes precedes this '<<' on its line, which
-    puts it inside a string: `echo "pipe it <<EOF"` opens nothing."""
-    head = line[:position]
+    puts it inside a string: `echo "pipe it <<EOF"` opens nothing.
+
+    The count starts inside the last `$(` still open, because the quote before a
+    substitution quotes its output: in `v="$(node - "$f" <<'JS'` the command's
+    own quotes pair among themselves and its `<<` opens a body.
+    """
+    head = _open_substitution(line[:position])
     return head.count('"') % 2 == 1 or head.count("'") % 2 == 1
+
+
+def _open_substitution(head: str) -> str:
+    """HEAD from just inside the last `$(` it leaves open, or all of HEAD."""
+    for opened in reversed(list(_SUBSTITUTION_OPEN.finditer(head))):
+        inside = head[opened.end():]
+        if inside.count(")") <= inside.count("("):
+            return inside
+    return head
 
 
 def _shifted(line: str, position: int) -> bool:
@@ -299,6 +334,42 @@ class _Arithmetic:
         self._conditions.discard(free)
 
 
+# --- substitutions inside strings, read as code --------------------------------
+
+def _tokens(source: str, addition: str, token_class):
+    """lizard's shared tokenizer with shell's tokens, every substitution opened."""
+    return _open_holes(ScriptLanguageMixIn.generate_common_tokens(
+        source, _TOKEN_ADDITION + addition, token_class), addition, token_class)
+
+
+def _open_holes(tokens, addition: str, token_class):
+    for token in tokens:
+        if _may_hold_code(token):
+            yield from _hole_tokens(token, addition, token_class)
+        else:
+            yield token
+
+
+def _may_hold_code(token: str) -> bool:
+    """A double-quoted string or a ${...} expansion with a `$(` or a backtick in it."""
+    return (token[:1] == '"' or token[:2] == "${") and ("$(" in token or "`" in token)
+
+
+def _hole_tokens(token: str, addition: str, token_class):
+    """TOKEN's substitutions as code, and the text around each as a string token.
+
+    The text is quoted again so none of it reads as a word, a brace or a comment,
+    and it keeps every newline it held, so lizard's line count sees each one.
+    """
+    start = 0
+    for hole in _HOLE.finditer(token):
+        if hole.group(1):
+            yield '"' + token[start:hole.start()].strip('"') + '"'
+            yield from _tokens(hole.group(1), addition, token_class)
+            start = hole.end()
+    yield '"' + token[start:].strip('"') + '"'
+
+
 # --- function detection --------------------------------------------------------
 
 class ShellStates(CodeStateMachine):
@@ -417,17 +488,17 @@ class ShellReader(CodeReader, ScriptLanguageMixIn):
 
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):
-        """lizard's shared tokenizer, minus heredoc bodies, plus shell's tokens.
+        """lizard's shared tokenizer, minus heredoc bodies, plus shell's tokens,
+        with the command inside a quoted substitution read as code.
 
         ScriptLanguageMixIn supplies the '#' comment rule (PythonReader uses the
         same one), so comment handling is not written here. Both repairs are made
-        to the source, so the token stage stays the single generator lizard built:
-        it yields as it reads, and nothing ahead of it in the extension chain is
-        starved.
+        to the source, and the substitutions are opened by a generator over
+        lizard's, so the token stage still yields as it reads and nothing ahead
+        of it in the extension chain is starved.
         """
         source = _defuse_block_comments(_HeredocStripper().strip(source_code))
-        return ScriptLanguageMixIn.generate_common_tokens(
-            source, _TOKEN_ADDITION + addition, token_class)
+        return _tokens(source, addition, token_class)
 
 
 # Captured before register() wraps it, so a test can ask what lizard shipped.

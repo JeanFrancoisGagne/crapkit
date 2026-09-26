@@ -207,6 +207,26 @@ def test_code_after_a_form_feed_on_the_opener_line_stays_code(mark):
     assert (fn.name, fn.cyclomatic_complexity, fn.end_line) == ("emit", 2, 5)
 
 
+def test_a_heredoc_inside_a_quoted_substitution_is_a_body():
+    """`v="$(node - "$f" <<'JS'` opens a body. The `"` before `$(` quotes the
+    substitution's output, and the command's own quotes pair among themselves.
+    Read as a string instead, the program's `if` and `||` counted as shell once
+    the substitution was read as code. The body counts 0 NLOC: lines 1, 2, 5, 6
+    and 7 do."""
+    code = ('emit() {\n  v="$(node - "$f" <<\'JS\'\nif (a || b) { run(); }\nJS\n  )"\n'
+            '  echo "$v"\n}\n')
+    fn = _only(code)
+    assert (fn.name, fn.cyclomatic_complexity, fn.end_line, fn.nloc) == ("emit", 1, 7, 5)
+
+
+@pytest.mark.parametrize("line", ['echo "pipe it <<EOF"', 'echo "$(date) <<EOF"'])
+def test_a_heredoc_opener_inside_a_string_opens_no_body(line):
+    """The `<<` sits in the string, after any substitution in it has closed, so
+    the `EOF` line below ends nothing and the `if` between them counts."""
+    code = 'emit() {\n  ' + line + '\n  if x; then y; fi\n}\nEOF\n'
+    assert _only(code).cyclomatic_complexity == 2
+
+
 # --- hazard: quotes and comments -----------------------------------------------
 
 def test_keywords_inside_quotes_are_not_conditions():
@@ -389,20 +409,70 @@ def test_an_escaped_quote_outside_a_string_does_not_open_one():
 NESTED_QUOTES = ('v="$(node -e \'const p = JSON.parse(read("pkg", "utf8"));\' "$f")"\n')
 
 
-def test_a_command_substitution_inside_double_quotes_is_one_token():
+def test_a_command_substitution_inside_double_quotes_keeps_its_quotes_paired():
     """lizard's shared string rule ends at the first inner quote, and every quote
     after it pairs off by one until a brace lands inside a string; on the consumer
-    repo's install.sh that hid 18 of 153 functions. The whole run has to arrive as
-    one token instead."""
-    tokens = list(ShellReader.generate_tokens(NESTED_QUOTES))
+    repo's install.sh that hid 18 of 153 functions. The run is matched whole, so
+    its inner quotes pair with each other, and only then is its command read as
+    code: the single-quoted program and `"$f"` arrive whole, beside `node`."""
+    tokens = set(ShellReader.generate_tokens(NESTED_QUOTES))
 
-    assert NESTED_QUOTES.split("=", 1)[1].rstrip("\n") in tokens
+    assert {"node", "'const p = JSON.parse(read(\"pkg\", \"utf8\"));'", '"$f"'} <= tokens
 
 
 def test_a_plain_double_quoted_string_is_still_one_token():
     """The same alternative handles the ordinary case, or it would be a regression
     dressed as a fix."""
     assert '"hello world"' in list(ShellReader.generate_tokens('echo "hello world"\n'))
+
+
+# --- code inside a string: a substitution in "..." or in ${...} ----------------
+#
+# `"$(a && b)"` runs `a && b`. The quotes keep its output one word; they do not
+# make the command text. Each line below holds one decision, the `&&`, `||` or
+# `if` inside the hole, and reads what the same command reads written bare.
+
+HOLES = {
+    "double quotes": ('x="$(a && b)"', "x=$(a && b)"),
+    "text around it": ('x="v: $(a || b) end"', "x=$(a || b)"),
+    "one inside another": ('x="$(c "$(a && b)")"', "x=$(c $(a && b))"),
+    "backticks": ('x="`a && b`"', "x=`a && b`"),
+    "arithmetic": ('x="$(( a && b ))"', "x=$(( a && b ))"),
+    "a default": ("x=${y:-$(a && b)}", "x=$(a && b)"),
+    "a quoted default": ('x="${y:-$(a && b)}"', "x=$(a && b)"),
+    "an if": ('x="$(if a; then b; fi)"', "x=$(if a; then b; fi)"),
+}
+
+
+def _columns(line):
+    (record,) = analyze_source("hole.sh", "f() {\n  " + line + "\n}\n")
+    return record.ccn_std, record.ccn, record.cognitive, record.nesting
+
+
+@pytest.mark.parametrize("quoted, bare", HOLES.values(), ids=HOLES.keys())
+def test_a_command_inside_a_string_counts_what_it_counts_bare(quoted, bare):
+    """NIST SP 500-235 sec. 4.1: the decision counts wherever its command sits,
+    so ccn_std is 2 in both spellings."""
+    assert (_columns(quoted), _columns(quoted)[0]) == (_columns(bare), 2)
+
+
+def test_an_escaped_dollar_in_double_quotes_is_text():
+    """`"\\$(a && b)"` prints `$(a && b)` and runs nothing."""
+    assert _columns('x="\\$(a && b)"')[:2] == (1, 1)
+
+
+def test_a_substitution_in_single_quotes_is_text():
+    assert _columns("x='$(a && b)'")[:2] == (1, 1)
+
+
+def test_a_substitution_over_two_lines_keeps_every_later_line_number():
+    """The hole's newline arrives as its own token instead of inside a string's,
+    so a function below it still starts and ends where it does."""
+    code = ('first() {\n  x="$(a &&\n    b)"\n}\n\n'
+            'second() {\n  echo "$x"\n}\n')
+    spans = [(r.start, r.end, r.ccn) for r in analyze_source("two.sh", code)]
+
+    assert spans == [(1, 4, 2), (6, 8, 1)]
 
 
 # --- through crapkit's own analysis path ---------------------------------------
@@ -541,7 +611,7 @@ def test_a_glob_question_mark_decides_nothing():
 
 # --- arithmetic: bash reads C inside (( )) and $(( )) ---------------------------
 
-def _columns(source):
+def _calc_columns(source):
     (record,) = analyze_source("calc.sh", source)
     return record.ccn_std, record.cognitive
 
@@ -554,7 +624,7 @@ def test_a_conditional_operator_in_arithmetic_is_one_decision(line):
     """Inside `(( ))` and `$(( ))` bash reads C, and `a ? b : c` is C's
     conditional operator: ccn 2 and cognitive 1, as the same line reads in C.
     ccn read 1 here, and cognitive 0 once the glob `?` stopped counting."""
-    assert _columns("f() {\n  " + line + "\n}\n") == (2, 1)
+    assert _calc_columns("f() {\n  " + line + "\n}\n") == (2, 1)
 
 
 def test_the_shell_reader_counts_it_in_lizards_own_pipeline_too():
@@ -562,26 +632,26 @@ def test_the_shell_reader_counts_it_in_lizards_own_pipeline_too():
 
 
 def test_a_question_mark_between_two_arithmetic_expressions_is_a_glob():
-    assert _columns("f() {\n  echo $(( a ? 1 : 0 )) a?b $(( b ? 2 : 3 ))\n}\n") == (3, 2)
+    assert _calc_columns("f() {\n  echo $(( a ? 1 : 0 )) a?b $(( b ? 2 : 3 ))\n}\n") == (3, 2)
 
 
 def test_two_subshells_are_no_arithmetic():
     """`( (cmd) )` has a space between its parentheses: two subshells, and the
     `?` inside a glob."""
-    assert _columns("f() {\n  ( (ls a?b) )\n}\n") == (1, 0)
+    assert _calc_columns("f() {\n  ( (ls a?b) )\n}\n") == (1, 0)
 
 
 def test_an_endless_c_style_for_counts_its_loop_once():
     """`for ((;;))` writes a loop's three empty clauses. Its `;;` read as a
     case arm's end, so the loop counted 2."""
-    assert _columns("f() {\n  for ((;;)); do\n    step\n  done\n}\n") == (2, 1)
+    assert _calc_columns("f() {\n  for ((;;)); do\n    step\n  done\n}\n") == (2, 1)
 
 
 def test_a_case_arm_after_arithmetic_still_counts():
     """case +1, the conditional inside it +1 and its nesting +1."""
     source = "f() {\n  case $1 in\n    a) (( n = n > 0 ? 1 : 0 )) ;;\n    b) ls x? ;;\n  esac\n}\n"
 
-    assert _columns(source) == (4, 3)
+    assert _calc_columns(source) == (4, 3)
 
 
 def test_analysis_version_invalidates_the_cached_shell_cognitive_column():
@@ -651,13 +721,14 @@ def test_create_dmg_reports_seven_functions_around_a_heredoc():
 def test_ci_hydrate_live_auth_counts_around_its_herestrings():
     """Three functions. append_profile_env: base 1 + if + two `||` = 4.
     write_secret_file: base 1 + if = 2. activate_claude_oauth_access_token: base 1
-    + if(33) + if(43) + if(49) + ||(49) + if(56) = 6, and the `|| true` at 39-40
-    is inside `"$( ... )"`, which counts nothing. Lines 39-40 also carry `<<<`
-    herestrings: read as heredocs they would swallow the rest of the file."""
+    + if(33) + ||(39) + ||(40) + if(43) + if(49) + ||(49) + if(56) = 8: the
+    `|| true` at 39 and 40 sits inside `"$( ... )"` and runs all the same. Lines
+    39-40 also carry `<<<` herestrings: read as heredocs they would swallow the
+    rest of the file."""
     assert [(f.name, f.cyclomatic_complexity)
             for f in _real("ci-hydrate-live-auth.sh")] == [
         ("append_profile_env", 4), ("write_secret_file", 2),
-        ("activate_claude_oauth_access_token", 6)]
+        ("activate_claude_oauth_access_token", 8)]
 
 
 @needs_consumer_repo

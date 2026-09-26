@@ -1012,16 +1012,26 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
 
 ## Unreleased
 
-### Shell reads the depth of its blocks
+### Shell reads the depth of its blocks and the commands inside its strings
+
+The shell changes below need an analysis-version bump, which makes each marks file
+re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-shell-rows)).
 
 - A shell function's `nesting` is how deep its blocks go. lizard's ND column closed a
   level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
   `done` and `esac`, so every block leaked a level: seven ifs side by side read 6, four
   nested read 3, and a `case` read 0. They read 1, 4 and 1 now, the depth crapkit's
   cognitive pass measures, and `&&` or `||` opens no level. `nesting` is reported and
-  never gated, so no gate verdict moves with it. The change needs an analysis-version
-  bump, which makes each marks file re-seed once
-  ([upgrading](docs/upgrading.md#next-analysis-version-shell-rows)).
+  never gated, so no gate verdict moves with it.
+- A command inside a quoted substitution counts. `x="$(cmd || true)"` read ccn 1,
+  because the whole double-quoted run was one string token; it reads 2 now, as
+  `x=$(cmd || true)` does, and its cognitive score rises by the same `||`. The same
+  holds for backticks inside quotes, `$(( ))`, a substitution inside `${v:-...}` and
+  one substitution inside another. A heredoc opened inside a quoted substitution, as
+  in `v="$(node - "$f" <<'JS'`, is now a body, so the program in it adds no ccn and no
+  NLOC. Measured on a large consumer repo's 1,263 shell functions: 131 rise in ccn, by
+  1 to 7, and 4 lose 4 to 29 NLOC of heredoc body. A function the rise puts over its
+  ceiling fails the gate the next time its file changes.
 
 ## 0.8.0 — 2026-09-23
 
