@@ -348,7 +348,7 @@ py.json
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
 | `measurement.lock` | The lock a lane run holds on this checkout's lane logs and artifact stamps while its commands run, so two crapkit processes never measure one checkout at once. It stays behind between runs and holds nothing. | |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. A file enters it once it has held still for two seconds, so a run right after the files were written, like the listing above, leaves no `stat-stamps.json` yet. | |
-| `churn-cache-v3.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. |
+| `churn-cache-v3.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format. The date never moves the window; it is there for a shallow clone, whose deepened history the first run of the next UTC day walks. |
 | `churn-commits-v1.json` | The window's commits: each one's author, author date and commit date, and each path's commits. Read only when the churn map misses; a HEAD that grew from it walks only the new commits. Not kept in a shallow clone. | HEAD sha, window months, path format and the cutoff its commits were cut at, plus the body's size and CRC. |
 | `churn-log-v3.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v3.json` beside it. | Same four fields. The key also records the cutoff the log was cut at; a refresh below it walks the window again. |
 | `coupling-cache-v2.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
@@ -363,13 +363,10 @@ answers in 0.04 s warm on a corpus where it used to rescan 4.3 M rows. It means 
 checkout they cannot write to, just without the speedup.
 
 The window ends at HEAD's commit date: its cutoff is `churn_window_months` calendar months
-before that date, in UTC, so one HEAD names one window on every day and every machine. The
-date in the churn key never moves the window. It is there for a shallow clone, where
-deepening adds history under an unchanged HEAD: the first run of the next UTC day walks the
-deeper history. The tracked set is in the coupling key because ranking drops any pair
-naming a file `git ls-files` no longer lists, and the index moves without HEAD:
-`git rm --cached src/util.py` leaves the sha alone and still has to retire every pair
-naming that file.
+earlier, in UTC, so one HEAD names one window on any day and any machine. The tracked set is
+in the coupling key because ranking drops any pair naming a file `git ls-files` no longer
+lists, and the index moves without HEAD: `git rm --cached src/util.py` leaves the sha alone
+and still has to retire every pair naming that file.
 
 Two thresholds bypass the coupling cache. What is stored is the ranking at
 `--min-support 5` and `--min-confidence 0.5`, so `--top` reads it and either threshold off
@@ -378,13 +375,8 @@ the wider thresholds exist to surface.
 
 The version marker is in the file name on purpose. 0.4.3 and 0.4.5 sharing one working tree
 each read the other's cache as cold and rewrote it, so every run of both rebuilt the map.
-Different formats, different files, both warm. An upgrade past 0.8.0 leaves
-`churn-cache-v2.json`, `churn-log-v2.z` with its key `churn-log-v2.json`, and
-`coupling-cache-v1.json` where they are: each holds a window that ended on the day it was
-written, not at HEAD's commit date, so this version never reads them, and an older crapkit
-sharing the tree keeps reading its own. Delete them once no older crapkit runs on the tree.
-0.4.4's unversioned `churn-log.z` and `churn-cache.json` go on the first churn read, as
-they have since 0.4.5.
+Different formats, different files, both warm. This version never reads the files 0.4.5 to
+0.8.0 wrote and leaves them to an older crapkit on the tree; 0.4.4's are deleted.
 
 ---
 

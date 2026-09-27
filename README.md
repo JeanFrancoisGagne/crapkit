@@ -870,10 +870,8 @@ order the rows come in and the Python or SQLite version never move it, and `tren
 `risk = ccn * churn weight`. The weight is a time-weighted sum over the file's commits in
 the churn window: each commit contributes a logistic weight rising to 0.5 for the newest
 commit in the log and falling to near zero for the oldest, so five edits last month
-outrank fifty from two years ago. The window anchors on the newest commit, never on the
-wall clock, so a fixed tree ranks identically forever: it reaches `churn_window_months`
-back from HEAD's commit date, so a repo nobody has committed to in a year still ranks the
-year of work before its last commit, and ranks it the same way on any day and any machine.
+outrank fifty from two years ago. The window reaches `churn_window_months` back from
+HEAD's commit date, never from the wall clock, so a fixed tree ranks identically forever.
 
 Age is not the input, position in the log is. A log whose commits all share one timestamp
 has no range to weight against, so each commit counts once: a one-commit repo weighs every
