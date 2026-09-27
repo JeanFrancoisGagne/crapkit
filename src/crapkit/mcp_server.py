@@ -1891,6 +1891,26 @@ def _wrong_type(tool: dict, arguments: dict) -> str | None:
     return None
 
 
+def _nul_character(tool: dict, arguments: dict) -> str | None:
+    """A string argument, or a string in an array one, that holds U+0000.
+
+    JSON carries the character and no path, name or argv word can: the OS
+    refuses it in a file name and in a process argument, and the call answered
+    JSON-RPC -32603 carrying Python's ValueError. Asked after the types, so
+    every value here is the type its schema declares."""
+    for key in _accepted(tool):
+        if any("\0" in text for text in _texts(arguments.get(key))):
+            return f"{key} must not hold a NUL character (U+0000)"
+    return None
+
+
+def _texts(value) -> list[str]:
+    """The strings a checked value carries: itself, or an array's items."""
+    if isinstance(value, str):
+        return [value]
+    return value if isinstance(value, list) else []
+
+
 def _argument_error(tool: dict, arguments) -> str | None:
     """The first refusal the tool's own table finds, or None when the call can run.
 
@@ -1905,7 +1925,7 @@ def _argument_error(tool: dict, arguments) -> str | None:
     if not isinstance(arguments, dict):
         return f"arguments must be an object (got {json_kind(arguments)})"
     return (_missing_positional(tool, arguments) or _unknown_key(tool, arguments)
-            or _wrong_type(tool, arguments))
+            or _wrong_type(tool, arguments) or _nul_character(tool, arguments))
 
 
 def _tool_named(name: str) -> dict | None:

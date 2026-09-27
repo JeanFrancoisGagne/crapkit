@@ -159,6 +159,25 @@ def test_a_wrong_type_is_named_in_the_tools_words(monkeypatch, tmp_path, tool, a
     assert call["content"][0]["text"] == sentence
 
 
+@pytest.mark.parametrize("tool, arguments, key", [
+    ("check_gate", {"path": "pylib/mod\u0000.py"}, "path"),
+    ("get_function_brief", {"path": "pylib/mod.py", "name": "gua\u0000rded"}, "name"),
+    ("get_next_item", {"exclude": ["tests", "pylib\u0000"]}, "exclude"),
+    ("list_runs", {"repo": "some\u0000where"}, "repo"),
+], ids=["path", "name", "array-item", "repo"])
+def test_a_string_holding_a_nul_character_is_refused_in_the_tools_words(monkeypatch, tmp_path,
+                                                                        tool, arguments, key):
+    """JSON carries U+0000 and no path, name or argv word can: the OS refuses it,
+    and the call answered JSON-RPC -32603 carrying Python's ValueError."""
+    _no_cli(monkeypatch)
+    replies = _serve(monkeypatch, tmp_path, [_call(1, tool, arguments), _rpc(2, "ping")])
+
+    call = replies[1]["result"]
+    assert call["isError"] is True, call
+    assert call["content"][0]["text"] == f"{key} must not hold a NUL character (U+0000)"
+    assert replies[2]["result"] == {}
+
+
 def test_ping_answers_an_empty_result(monkeypatch, tmp_path):
     replies = _serve(monkeypatch, tmp_path, [_rpc(1, "ping")])
 
