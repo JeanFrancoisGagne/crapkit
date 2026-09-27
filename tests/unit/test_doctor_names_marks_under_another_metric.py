@@ -1,10 +1,16 @@
-"""doctor fails a marks file that verify refuses for its metric stamp.
+"""doctor names a marks file that verify refuses for its metric stamp.
 
 Right after an upgrade that moves the analysis version, every mark carries the
 older stamp and `crapkit verify` refuses them at exit 3 before any lane runs.
 doctor said `doctor: no problems found` in that state, so the one command meant
 to say what is wrong with a setup cleared the repo that verify refused. It now
 prints the refusal verify would print, with the same remedy.
+
+Marks an older metric stamped WARN, exit 0: the upgrade guide runs doctor
+first, resolves its failures, then measures, reviews and re-seeds, so a FAIL
+there stopped the guide at its first step and sent the user to re-seed before
+the review. Marks a newer crapkit stamped FAIL: only an upgrade of this
+install clears them.
 """
 import json
 
@@ -32,24 +38,42 @@ def _marks(root, stamp: str, *more: RatchetEntry) -> None:
     (root / MARKS).write_text(dump_ratchet([entry, *more], stamp=stamp), encoding="utf-8")
 
 
-def _doctor(root, capsys) -> tuple[int, list[str]]:
+def _doctor(root, capsys, kind: str = "problems") -> tuple[int, list[str]]:
+    """doctor's exit and its `kind` lines ("problems" are FAILs, "warnings"
+    WARNs) that name the marks file."""
     code = main(["doctor", "--json", "--repo", str(root)])
     payload = json.loads(capsys.readouterr().out)
-    return code, [text for text in payload["problems"] if MARKS in text]
+    return code, [text for text in payload[kind] if MARKS in text]
 
 
-def test_marks_an_older_analysis_stamped_fail_doctor_with_verifys_remedy(repo, capsys):
+def test_marks_an_older_analysis_stamped_warn_with_verifys_remedy_at_exit_0(repo, capsys):
     older = stamp_text(ANALYSIS_VERSION - 1, lizard.version)
     _marks(repo, older)
 
-    code, problems = _doctor(repo, capsys)
+    code, warnings = _doctor(repo, capsys, "warnings")
 
-    assert code == 1
-    assert problems == [
+    assert code == 0, "the upgrade guide's first step is doctor, and it must pass"
+    assert warnings == [
         f"`crapkit verify` refuses {MARKS} at exit 3: ratchet marks were recorded under "
         f"[{older}] but this run measures [{metric_version()}] - CRAP scores are not comparable "
         "across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then "
         "re-baseline with `crapkit ratchet seed`"]
+    assert _doctor(repo, capsys)[1] == []
+
+
+def test_the_guide_order_doctor_then_the_export_runs_on_marks_an_older_analysis_stamped(
+        repo, capsys):
+    """docs/upgrading.md, Measure before changing marks: `crapkit doctor`, then
+    `crapkit coverage --export`, both before any mark changes."""
+    _marks(repo, stamp_text(ANALYSIS_VERSION - 1, lizard.version))
+    commit_all(repo, "marks an older crapkit stamped")
+    seed_artifacts(repo)
+    before = (repo / MARKS).read_bytes()
+
+    assert main(["doctor", "--repo", str(repo)]) == 0
+    assert main(["coverage", "--reuse-artifacts", "--export", ".crapkit/current-functions.tsv",
+                 "--repo", str(repo)]) == 0
+    assert (repo / MARKS).read_bytes() == before
 
 
 def test_marks_a_newer_crapkit_stamped_fail_doctor_with_the_upgrade(repo, capsys):
@@ -66,6 +90,7 @@ def test_marks_this_metric_stamped_or_unstamped_raise_no_problem(repo, capsys, s
     _marks(repo, metric_version() if stamp == "current" else "")
 
     assert _doctor(repo, capsys)[1] == []
+    assert _doctor(repo, capsys, "warnings")[1] == []
 
 
 def test_no_marks_file_raises_no_problem(repo, capsys):
@@ -98,4 +123,5 @@ def test_the_remedy_doctor_names_clears_it_and_prune_drops_the_moved_key(repo, c
 
     assert metric_version() in marks and moved.long_name not in marks, marks
     assert _doctor(repo, capsys) == (0, [])
+    assert _doctor(repo, capsys, "warnings") == (0, [])
     assert main(["verify", "--reuse-artifacts", "--repo", str(repo)]) == 0

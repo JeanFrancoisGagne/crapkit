@@ -1483,20 +1483,28 @@ def _doctor_merge_driver(root: Path, cfg) -> list[Finding]:
 
 
 def _doctor_marks_stamp(root: Path, cfg) -> list[Finding]:
-    """The marks file verify refuses for its metric stamp (FAIL). Right after
-    an upgrade that moves the analysis version, verify exits 3 before any lane
-    runs, and doctor said `no problems found`. A marks file crapkit cannot read
-    stops verify too, so doctor names that as well."""
-    from ..ratchet import metric_version
+    """The marks file verify refuses for its metric stamp. Right after an
+    upgrade that moves the analysis version, verify exits 3 before any lane
+    runs, and doctor said `no problems found`.
+
+    Marks an older metric stamped WARN: the upgrade guide runs doctor first
+    and resolves its failures before it measures, reviews and re-seeds, so a
+    FAIL stopped the guide at its first step and sent the user to re-seed
+    before the review. Marks a newer crapkit or lizard stamped FAIL, since
+    only an upgrade of this install clears them, and so does a marks file
+    crapkit cannot read, which stops verify too."""
+    from ..ratchet import metric_version, newer_tools
     from ..ratchetfile import RatchetFile
 
     try:
-        conflict = RatchetFile.read(root / cfg.ratchet_file).stamp_conflict(metric_version())
+        marks = RatchetFile.read(root / cfg.ratchet_file)
     except ToolError as exc:
         return [Finding("FAIL", str(exc))]
+    conflict = marks.stamp_conflict(metric_version())
     if not conflict:
         return []
-    return [Finding("FAIL", f"`{_self()} verify` refuses {cfg.ratchet_file} at exit 3: {conflict}")]
+    level = "FAIL" if newer_tools(marks.metric_stamp, metric_version()) else "WARN"
+    return [Finding(level, f"`{_self()} verify` refuses {cfg.ratchet_file} at exit 3: {conflict}")]
 
 
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
