@@ -183,7 +183,19 @@ def _scored_arguments(files, root: Path, cfg, cwd: Path | None = None) -> list[s
     placed = sorted({_placed(raw, root, cwd) for raw in files})
     left_out = _left_out_arguments(placed, root, cfg)
     _say_left_out_arguments(left_out)
-    return sorted({_readable_argument(rel, root) for rel in placed if rel not in left_out})
+    return sorted({_not_a_directory(_readable_argument(rel, root), root)
+                   for rel in placed if rel not in left_out})
+
+
+def _not_a_directory(rel: str, root: Path) -> str:
+    """A file argument, refused when it names a directory. A directory has no
+    functions of its own and no scope takes it, so `rescore --gate src`, `.`
+    and `""` judged 0 functions and passed while a file inside failed the gate
+    when named, and `check_gate` answered `ok: true`. One named like a source
+    file reached the analyzer and ended in a PermissionError traceback."""
+    if (root / rel).is_dir():
+        raise ConfigError(f"{shown(rel)} is a directory; name the source files in it")
+    return rel
 
 
 def _left_out_arguments(names: list[str], root: Path, cfg) -> list[str]:

@@ -14,8 +14,9 @@ from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..invocation import _self
 from ..store import SnapshotStore
 from ..uncovered import MissingLines, load_uncovered
-from ._shared import (_command_root, _load_repo_config, _open_store, _print_json, _stand,
-                      _ratchet_entries, _repo_out_path, _repo_relative, behind_head)
+from ._shared import (_command_root, _load_repo_config, _not_a_directory, _open_store,
+                      _print_json, _stand, _ratchet_entries, _repo_out_path, _repo_relative,
+                      behind_head)
 
 
 def _digest_pair(store):
@@ -338,7 +339,8 @@ def cmd_explain(args: argparse.Namespace) -> int:
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     store = _open_store(root)
-    args.path = _repo_relative(args.path, root, _stand(args.repo))  # from where the user stands
+    # from where the user stands; a directory holds no function to explain
+    args.path = _not_a_directory(_repo_relative(args.path, root, _stand(args.repo)), root)
     runs = store.list_runs()
     selector = _selector_run(store, runs, args.path)
     matches = _explain_selection(store, selector, args.path, args.name)
