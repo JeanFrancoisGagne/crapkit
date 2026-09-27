@@ -854,6 +854,12 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   would with a try statement around its body: it ends at its last handler, and each
   `catch` adds 1 to its `ccn` and 1 to its `cognitive`, which can put it over its
   ceiling.
+- A constructor whose member initializer list ends in a pack expansion, `S(B... b) :
+  B(b)... {`, keeps its body. lizard read the `...` as the next initializer and the
+  body as that initializer's braced value: the constructor read `ccn` 1 whatever its
+  body held, and the next function's body closed it, so that function had no row. The
+  constructor's `ccn` and `cognitive` now count its body, which can put it over its
+  ceiling, and the function after it is scored for the first time.
 
 ### Java methods that were hidden, invented or misnamed
 

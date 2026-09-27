@@ -783,3 +783,41 @@ def test_a_try_statement_passes_through_unchanged(path, source):
     tokens = list(StockCLikeReader.generate_tokens(source))
 
     assert list(lizardclike.function_try_blocks(tokens)) == tokens
+
+
+# --- a pack expansion in a member initializer list ----------------------------------------
+
+PACK_BODY = " {\n  if (x) {\n    go();\n  }\n}\n"
+
+PACK_EXPANSIONS = {  # label: (source, rows as (long name, start, end, ccn_std, cognitive))
+    "parenthesized": ("S::S(B... b) : B(b)..." + PACK_BODY + G_AFTER,
+                      [("S::S( B ... b)", 1, 5, 2, 1), ("g( int b)", 6, 8, 1, 0)]),
+    "braced": ("S::S(B... b) : B{b}..." + PACK_BODY + G_AFTER,
+               [("S::S( B ... b)", 1, 5, 2, 1), ("g( int b)", 6, 8, 1, 0)]),
+    "after a template head": (
+        "template <class... B>\nS<B...>::S(B... b) : B(b)..." + PACK_BODY + G_AFTER,
+        [("S<B...>::S( B ... b)", 2, 6, 2, 1), ("g( int b)", 7, 9, 1, 0)]),
+    "before another initializer": (
+        "S::S(B... b) : B(b)..., n(0)" + PACK_BODY + G_AFTER,
+        [("S::S( B ... b)", 1, 5, 2, 1), ("g( int b)", 6, 8, 1, 0)]),
+    "in a function-try-block": (
+        "S::S(B... b) try : B(b)..." + PACK_BODY.rstrip("\n") + " catch (...) {\n}\n" + G_AFTER,
+        [("S::S( B ... b)", 1, 6, 3, 2), ("g( int b)", 7, 9, 1, 0)]),
+    "a member": ("struct S : B... {\n  S(B... b) : B(b)... {\n    if (x) {\n    }\n  }\n"
+                 "  int f() {\n    return 1;\n  }\n};\n",
+                 [("S::S( B ... b)", 2, 5, 2, 1), ("S::f()", 6, 8, 1, 0)]),
+}
+
+
+@pytest.mark.parametrize("path", ["p.cpp", "p.mm"])
+@pytest.mark.parametrize("source,rows", PACK_EXPANSIONS.values(), ids=PACK_EXPANSIONS)
+def test_a_pack_expansion_ends_its_member_initializer(source, rows, path):
+    """ISO/IEC 14882:2020 [class.base.init]: a mem-initializer followed by `...`
+    is a pack expansion, and the `{` after it opens the constructor's body.
+    lizard read `...` as the first token of the next initializer and the body as
+    that initializer's braced value, so the constructor's decisions went
+    uncounted and the next function's body closed it. The counts are 1 plus one
+    per if (NIST SP 500-235), and cognitive +1 per if and catch."""
+    got = analyze_source(path, source, note=False)
+
+    assert [(r.long_name, r.start, r.end, r.ccn_std, r.cognitive) for r in got] == rows

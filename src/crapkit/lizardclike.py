@@ -80,6 +80,11 @@ Functions lizard hid, invented or misnamed
   constructor's, `S::S(int a) try : x(a) {`, was named after its first member
   initializer. The token pass `function_try_blocks` puts the handlers inside
   the body, the way a try statement holds them (ISO/IEC 14882:2020 [except.pre]).
+* A constructor whose member initializer list ends in a pack expansion, `S(B...
+  b) : B(b)... {` (ISO/IEC 14882:2020 [class.base.init]), lost its body: lizard
+  read `...` as the next initializer and the body as its braced value, so the
+  body's decisions went uncounted and the next function's body closed the
+  constructor. That function had no row.
 
 The `&&` of a reference
 -----------------------
@@ -672,6 +677,14 @@ class _CFixes(ParameterCount):
         super()._state_global(tokens[0])  # the keyword, as lizard reads it
         for token in tokens[1:]:
             self(token)
+
+    def _state_initialization_list(self, token):
+        """A member initializer's `...` is its pack expansion, `: B(b)... {`
+        (ISO/IEC 14882:2020 [class.base.init]), and the list goes on after it.
+        lizard read `...` as the next initializer's first token and the body's
+        `{` as that initializer's braced value."""
+        if token != "...":
+            super()._state_initialization_list(token)
 
     def _state_imp(self, token):
         """A function's body, where a class may be defined.

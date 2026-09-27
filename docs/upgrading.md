@@ -214,8 +214,10 @@ same three commands as version 11 below.
   `&`, `char *(*get(void))(void)`, a C++20 function with a trailing requires-clause,
   `void f(T t) requires C<T>`, the functions of a namespace whose head holds a macro
   or an attribute, `namespace std _GLIBCXX_VISIBILITY(default)` in every libstdc++
-  header, a constructor with a function-try-block, `S::S(int a) try : x(a) {`, and
-  the member functions of a class defined inside a function. The function around such
+  header, a constructor with a function-try-block, `S::S(int a) try : x(a) {`, the
+  function after a constructor whose member initializer list ends in a pack
+  expansion, `S(B... b) : B(b)... {`, and the member functions of a class defined
+  inside a function. The function around such
   a class no longer pays for its members' decisions, so its `ccn` and `cognitive`
   fall. In Java, methods get rows after an
   annotated local variable, an enum constant with a body or an annotation element
@@ -269,6 +271,9 @@ same three commands as version 11 below.
   counts its handlers: each `catch` adds 1 to `ccn` and 1 to `cognitive`, as it does
   in a try statement, which can put the function over its ceiling and fail the gate
   the next time its file changes.
+- A constructor whose member initializer list ends in a pack expansion, `S(B... b) :
+  B(b)... {`, counts its body's decisions, where it read `ccn` 1, which can put it
+  over its ceiling and fail the gate the next time its file changes.
 
 ### Analysis version 11
 
