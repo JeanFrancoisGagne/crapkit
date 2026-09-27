@@ -794,7 +794,9 @@ pre-commit install
 ```
 
 `pre-commit install` is the line every clone needs, the way Route 2 needs its
-`git config core.hooksPath` line. `crapkit doctor` WARNs on a config naming `crapkit-gate`
+`git config core.hooksPath` line. [prek](https://github.com/j178/prek) reads the same
+`.pre-commit-config.yaml`: `prek install` arms the hook in its place, and the gate
+refuses and accepts the same commits. `crapkit doctor` WARNs on a config naming `crapkit-gate`
 while the hook git runs is not the one the framework writes.
 
 `pre-commit run --all-files`, the form pre-commit.ci and pre-commit/action run, starts no

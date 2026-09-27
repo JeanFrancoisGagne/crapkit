@@ -1935,10 +1935,13 @@ unknown too, and its answer names the tool 0.6.0 renamed it to:
 result; call list_worklist`. The last case is an upgrade under a running server. Each
 call first reads the version in the package directory the server was imported from, and
 when `pip install -U` has replaced it, every call answers the restart instead of loading
-the new release's files into the old process:
-`crapkit was upgraded from 0.8.0 to 0.8.1 while this MCP server ran, and the server still
-runs 0.8.0's code, which cannot load the new files. Restart the crapkit MCP server
+the new release's files into the old process. The check lives in the running server, so
+it starts with a 0.8.1 server; on an upgrade from 0.8.1 to 0.8.2 it reads
+`crapkit was upgraded from 0.8.1 to 0.8.2 while this MCP server ran, and the server still
+runs 0.8.1's code, which cannot load the new files. Restart the crapkit MCP server
 (reconnect it in your client, or start a new session), then call list_runs again.`
+A 0.8.0 server does not check, and its first call after the upgrade can fail with a
+JSON-RPC `-32603` error instead; the restart fixes that too.
 
 Tool text is plain whatever colour variables the client sets. The CLI runs with the
 server's environment, so under `FORCE_COLOR` or `PYTHON_COLORS=1` a Python 3.13 or later
