@@ -1252,6 +1252,19 @@ analysis-version bump, so each marks file re-seeds once
   level, and a Rust match guard's `if` from taking the next arm's block. For the
   `[switch]` parameter only `cognitive` moves (3 to 2 for one `if` in the body):
   lizard's ND never read the word, so `nesting` was already 1.
+- A word spelled like a structure keyword is no structure where it is a name. Go
+  and Zig have no do-while, so `do(n)`, a Go method or closure named `do` and a Zig
+  `fn do` are names, and so is a `do` after a `.` in any language but Python
+  (`obs.do(fn)`). No structure keyword is followed by a `:`, so an object's key
+  `{if: 1, do: 2}`, a type's member `{ for: string }` and a Swift argument label
+  `g(for: x)` are names too. Each one cost `cognitive` +1 plus its nesting. In Go a
+  `do` also took the next `{`, a method's body or a literal, for its block, so the
+  structures inside paid a level too many: a Go method named `do` holding one `if`
+  read `cognitive` 3 and reads 1, and a recursive Go closure named `do` in
+  `go/types` read 45 and reads 9. lizard's ND never read `do`, so `nesting` does not
+  move for it; a keyword key opened a level per key, so a function holding `{if: 1,
+  for: 2, while: 3, do: 4, switch: 5, catch: 6}` read `nesting` 4 and `cognitive` 6,
+  and reads 0 and 0.
 - Measured over 21,099 functions in 20 open-source projects: 1,486 of the 6,465
   functions outside Python move `nesting`, 1,290 down and 196 up, and 39 move
   `cognitive`, 33 down and 6 up. No Python row and no `ccn` value moves. Against an
@@ -1260,7 +1273,7 @@ analysis-version bump, so each marks file re-seeds once
   before and 2,956 now. Most of the rest are closures, which open no level in
   crapkit's reading and one in that oracle's. Over 24,540 functions in the Go
   standard library and actionlint, 4,137 move `nesting`, 3,387 down and 750 up, and
-  264 move `cognitive`, all up: the header literals above.
+  270 move `cognitive`: 264 up from the header literals above and 6 down from `do`.
 - `nesting` and `cognitive` are reported and never gated, so no gate verdict moves
   with them. The change needs an analysis-version bump, which makes each marks file
   re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-nesting-in-every-language)).

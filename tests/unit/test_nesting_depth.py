@@ -291,6 +291,57 @@ HEADER_BRACES = {
                     "            go();\n        }\n    }\n}\n"),
 }
 
+# A `do` that names something is no loop: Go and Zig have no do-while, and a
+# word after a `.` names a member (`obs.do(fn)`). Read as a do-while, each paid
+# +1 and reached a level, and in Go it waited for a `{` and took the method's
+# body or a literal after the call. ND read nesting 0 for the first five.
+# file: (source, (nesting, cognitive))
+DO_WORDS = {
+    "method.go": ("package p\n\nfunc (kv *KV) do(ctx int) error {\n\terr := kv.get(ctx)\n"
+                  "\treturn err\n}\n", (0, 0)),
+    "call.go": ("package p\n\nfunc F(n int) {\n\tdo(n)\n\tx := T{a: 1}\n\tuse(x)\n}\n", (0, 0)),
+    # ND 1, and right; the `if` paid +2 inside the level the method's body took.
+    "method-if.go": ("package p\n\nfunc (kv *KV) do(ctx int) error {\n\tif ctx > 0 {\n"
+                     "\t\treturn nil\n\t}\n\treturn nil\n}\n", (1, 1)),
+    "fn.zig": ("fn do(x: u8) u8 {\n    const y = x + 1;\n    return y;\n}\n", (0, 0)),
+    "call.zig": ("fn f(x: u8) void {\n    do(x);\n    const s = S{ .a = 1 };\n    use(s);\n}\n",
+                 (0, 0)),
+    "member.js": ("function f(x) {\n  x.do(1);\n  const o = {a: 1};\n  use(o);\n}\n", (0, 0)),
+    # ND 1, and right: the `if` is the only level.
+    "member-then-if.ts": ("function f(x: X) {\n  x?.do(1)\n  if (x.y) {\n    go()\n  }\n}\n",
+                          (1, 1)),
+    # A do-while stays one, its `{` on the next line or not.
+    "loop.ps1": ("function F($a) {\n    do\n    {\n        go\n    } while ($a)\n}\n", (1, 1)),
+    "loop.js": ("function f(a) {\n  do {\n    a--\n  } while (a)\n  return {a: 1}\n}\n", (1, 1)),
+}
+
+# No structure keyword is followed by a `:`; an object's key, a type's member and
+# a Swift argument label spelled like one are. Each such word paid +1 and opened
+# a body that the `,` after it never closed, so a keyword table stacked a level
+# per key. Each comment says what 0.8.0 read. file: (source, (nesting, cognitive))
+KEYWORD_KEYS = {
+    # (4, 6)
+    "table.js": ("function f() {\n  const kw = {if: 1, for: 2, while: 3, do: 4, switch: 5, catch: 6};\n"
+                 "  return kw;\n}\n", (0, 0)),
+    # (2, 4)
+    "table.ts": ("function f() {\n  return {\n    if: 1,\n    for: 2,\n    do: 4,\n    switch: 5,\n"
+                 "  };\n}\n", (0, 0)),
+    # (2, 6)
+    "type.ts": ("function f(x: number) {\n  const o: { if: number; for: string } = { if: x, for: \"a\" };\n"
+                "  return o;\n}\n", (0, 0)),
+    # (2, 4): the arms are one level, and cost the conditional operator's +1.
+    "ternary.ts": ("function f(a: boolean) {\n  const o = a ? {if: 1} : {for: 2};\n  return o;\n}\n",
+                   (1, 1)),
+    # (0, 1)
+    "label.swift": ("func f(x: Int) {\n    g(for: x, in: 2)\n    let y = S(do: x)\n    use(y)\n}\n",
+                    (0, 0)),
+    # A `:` before the keyword is a label's or a case's, and the keyword counts.
+    "label-loop.js": ("function f(xs) {\n  outer: for (const x of xs) {\n    if (x) continue outer;\n"
+                      "  }\n}\n", (2, 4)),
+    "case-if.c": ("int f(int k, int a) {\n    switch (k) {\n    case 1: if (a) { go(); }\n    }\n"
+                  "    return 0;\n}\n", (2, 3)),
+}
+
 # Shell and PowerShell rows read ND through their readers' own keyword lists,
 # which held the logical operators. Each comment says what ND read.
 SCRIPT_DEPTHS = {
@@ -462,6 +513,22 @@ def test_a_brace_in_a_structures_header_is_not_its_body(name):
     (record,) = analyze_source(name, HEADER_BRACES[name])
 
     assert (record.nesting, record.cognitive) == (2, 3)
+
+
+@pytest.mark.parametrize("name", sorted(DO_WORDS))
+def test_a_do_that_names_something_is_no_loop(name):
+    source, (nesting, cognitive) = DO_WORDS[name]
+    (record,) = analyze_source(name, source)
+
+    assert (record.nesting, record.cognitive) == (nesting, cognitive)
+
+
+@pytest.mark.parametrize("name", sorted(KEYWORD_KEYS))
+def test_a_keyword_before_a_colon_is_a_key_or_a_label(name):
+    source, (nesting, cognitive) = KEYWORD_KEYS[name]
+    (record,) = analyze_source(name, source)
+
+    assert (record.nesting, record.cognitive) == (nesting, cognitive)
 
 
 @pytest.mark.parametrize("name", sorted(SCRIPT_DEPTHS))

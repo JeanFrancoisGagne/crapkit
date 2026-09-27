@@ -83,6 +83,10 @@ arrives (see `_arms_token`).
 A structure's body is the first `{` at its keyword's own bracket depth, so a
 literal or a lambda inside its header is not; see `_open_brace`,
 `_brace_body` and, for headers without parentheses, `_resolve_reopen`.
+A word spelled like a keyword is a name where the language or the tokens
+around it say so: a structure keyword followed by a `:` (see
+`_resolve_structure`), a word the language's `counting` set leaves out
+(`do` in Go and Zig) and a word after a member access (`_names_a_member`).
 
 Where this extension sits in lizard's chain is load-bearing and differs by
 reader: the python rules read whitespace tokens that lizard's own
@@ -617,7 +621,7 @@ class _FnState:
                  "prev", "prev2", "label_check", "dialect", "call_pending", "call",
                  "messages", "runs", "run_break", "word_op", "braces", "closed_do",
                  "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies", "do_tail",
-                 "ended", "questions", "arms", "reopen", "brace_base", "scopes", "home", "bare_call",
+                 "ended", "questions", "arms", "next_rule", "brace_base", "scopes", "home", "bare_call",
                  "shadowed", "importing",
                  "after_group", "own_calls", "closed_call", "signature")
 
@@ -638,7 +642,7 @@ class _FnState:
         self.line_indent = 0
         self.at_line_start = True
         self.pending = []        # bracket depths of the structures awaiting their '{'
-        self.reopen = False      # a structure's block just closed: see _resolve_reopen
+        self.next_rule = None    # what the next token settles: _resolve_reopen, _resolve_structure
         self.bracket_depth = 0   # brackets of every kind open; see _body_token
         self.questions = []      # bracket depths of `?`s whose `:` has not come
         self.arms = []           # bracket depths of conditional operators past their `:`
@@ -982,8 +986,8 @@ def _close_comprehensions(state: _FnState) -> None:
 
 def _resolve_lookbehinds(state: _FnState, token: str, is_python: bool) -> bool:
     """Signals needing one token of hindsight. True = this token is consumed."""
-    if state.reopen:
-        _resolve_reopen(state, token)
+    if state.next_rule is not None:
+        state.next_rule(state, token)
     if state.for_pending:
         _resolve_for(state, token, is_python)
     _resolve_words(state, token)
@@ -1052,7 +1056,7 @@ def _resolve_reopen(state: _FnState, token: str) -> None:
     (`if match x { ... } {`). A block that was a body ends its line, or goes on
     with `else` or `catch`.
     """
-    state.reopen = False
+    state.next_rule = None
     depth = state.bracket_depth
     if token in ("{", "(") and not state.at_line_start and depth not in state.pending[-1:]:
         state.pending.append(depth)
@@ -1113,7 +1117,7 @@ def _resolve_for(state: _FnState, token: str, is_python: bool) -> None:
     `for<'a>` binder, which names a lifetime and loops over nothing."""
     state.for_pending = False
     if token != "<":
-        _structure(state, "for", is_python)
+        _charge_structure(state, "for", is_python)
 
 
 def _resolve_label(state: _FnState, token: str) -> None:
@@ -1644,7 +1648,8 @@ def _close_brace(state: _FnState) -> None:
     state.closed_do = state.braces.pop() if state.braces else False
     if state.stack and state.stack[-1] == state.brace_depth:
         state.stack.pop()
-        state.reopen = state.dialect.bare_headers
+        if state.dialect.bare_headers:
+            state.next_rule = _resolve_reopen
 
 
 def _declarator_and(state: _FnState, token: str) -> bool:
@@ -2123,8 +2128,7 @@ def _if_token(state: _FnState, is_python: bool) -> None:
         state.total += 1 + _nesting(state, is_python)  # ternary expression form
         _conditional_run(state)
         return
-    state.total += 1 + _nesting(state, is_python)
-    _push_structure(state, is_python, "if")
+    _structure(state, "if", is_python)
 
 
 def _else_token(state: _FnState, token: str, is_python: bool) -> None:
@@ -2151,11 +2155,38 @@ def _else_link(state: _FnState, token: str, is_python: bool) -> None:
 
 
 def _structure(state: _FnState, token: str, is_python: bool) -> None:
+    """A structure keyword: `if`, a loop, `switch`, `catch`. A brace language's
+    is charged at the token after it, which says whether it is one."""
+    if is_python:
+        _charge_structure(state, token, is_python)
+    else:
+        state.next_rule = _resolve_structure
+
+
+def _resolve_structure(state: _FnState, token: str) -> None:
+    """The token after a brace language's structure keyword. No structure is
+    followed by a `:`, while an object's key, a type's member and a Swift
+    argument label spelled like one are (`{if: 1, do: 2}`, `g(for: x)`). Each
+    such word paid +1 and opened a body that the `,` after it never closed, so a
+    table of keywords stacked a level per key. Any other token charges the
+    structure where its keyword stood: that keyword moved no depth."""
+    state.next_rule = None
+    if token != ":":
+        _charge_structure(state, state.prev, False)
+
+
+def _charge_structure(state: _FnState, keyword: str, is_python: bool) -> None:
     state.total += 1 + _nesting(state, is_python)
-    _push_structure(state, is_python, token)
+    _push_structure(state, is_python, keyword)
 
 
 def _push_structure(state: _FnState, is_python: bool, token: str = "") -> None:
+    """Open the structure's block, or wait for its `{`.
+
+    A body without braces (`if (a) return 0;`) never pushes, so `_open_body`
+    tracks it and reaches its level here. Where every body has braces the `{`
+    reaches the level.
+    """
     if is_python:
         _push(state, state.line_indent)
     elif state.dialect.braceless:

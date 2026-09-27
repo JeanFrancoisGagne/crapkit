@@ -431,6 +431,14 @@ below.
   body no longer reads as a level. In a PowerShell function with a `[switch]`
   parameter only `cognitive` goes down: lizard's ND never read the word, so its
   `nesting` stays.
+- `cognitive` goes down where a word spelled like a structure keyword is a name: a
+  `do` in Go and Zig, which have no do-while (`do(n)`, a method or closure named
+  `do`), a `do` after a `.` in any language but Python (`obs.do(fn)`), and an `if`,
+  loop, `switch` or `catch` followed by a `:`, such as an object's key `{if: 1}` or a
+  Swift argument label `g(for: x)`. The word no longer costs +1, and in Go the
+  structures inside a method named `do` no longer pay a level of nesting for it. 6
+  of the 24,540 Go functions moved, one of them from 45 to 9. A keyword key inside a
+  function also stops opening a `nesting` level per key.
 - `nesting` and `cognitive` are reported and never gated, so no verdict moves with
   them. Expect both columns to change in `next-item --json`, exports and `brief` on
   the first run after upgrading; the [`nesting` row](agent-json.md#item-fields) says
