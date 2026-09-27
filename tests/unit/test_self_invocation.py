@@ -196,6 +196,25 @@ def test_a_spaced_interpreter_with_no_other_spelling_keeps_its_quoted_segments(t
     assert os.path.samefile(_named_file(word), python)
 
 
+SPACED = r"C:\with space\venv\Scripts\python.exe"
+SHORT = r"C:\WITHSP~1\venv\Scripts\python.exe"
+
+
+@pytest.mark.parametrize(("linked", "short", "spelled"), [
+    (r"C:\real\venv\Scripts\python.exe", SHORT, "C:/real/venv/Scripts/python.exe"),
+    (SPACED, SHORT, "C:/WITHSP~1/venv/Scripts/python.exe"),
+    (SPACED, SPACED, 'C:/"with space"/venv/Scripts/python.exe')])
+def test_a_spaced_interpreter_takes_the_first_spelling_without_a_space(windows, monkeypatch,
+                                                                       linked, short, spelled):
+    """The link's target first, then the 8.3 short name, then the path with its
+    spaced segment quoted. The two lookups are faked so every OS runs the
+    choice; the Windows-only tests above run the real ones."""
+    monkeypatch.setattr(invocation, "_unlinked", lambda path: linked)
+    monkeypatch.setattr(invocation, "_short_name", lambda path: short)
+
+    assert invocation.interpreter_word(SPACED) == spelled
+
+
 def test_an_empty_argv_falls_back_to_the_module_form(monkeypatch):
     """An embedded interpreter leaves argv empty. Nothing put a console script
     on PATH there either, so the module form is the honest answer."""

@@ -133,16 +133,20 @@ def test_the_command_a_path_refusal_prints_keeps_the_path_one_argument(arg, caps
     assert [Path(word) for word in shlex.split(printed.group(1))] == [Path(arg)]
 
 
+# Only Windows reads a backslash as a separator, so only there does a backslash
+# path reach the refusal; elsewhere argparse answers it with its own dump.
+WINDOWS_REFUSALS = ([(r"C:\my repos\app", '"C:/my repos/app"'), (r"C:\work\app", "C:/work/app")]
+                    if os.name == "nt" else [])
+
+
 @pytest.mark.parametrize(("arg", "word"), [("my repos/app", '"my repos/app"'),
-                                           ("a b/c d/e", '"a b/c d/e"'),
-                                           (r"C:\my repos\app", '"C:/my repos/app"'),
-                                           (r"C:\work\app", "C:/work/app")])
+                                           ("a b/c d/e", '"a b/c d/e"'), *WINDOWS_REFUSALS])
 def test_a_refused_windows_path_that_needs_quotes_goes_in_one_pair(arg, word, capsys,
                                                                   monkeypatch):
     """PowerShell ends an argument that opens with a quote at the closing quote,
     so `--repo "my repos"/app` reached crapkit as `my repos` and `/app`. One pair
     of quotes around the whole path is one argument in cmd.exe, PowerShell and
-    Git Bash."""
+    Git Bash. `test_self_invocation` spells the backslash cases on every OS."""
     from types import SimpleNamespace
 
     from crapkit import invocation
