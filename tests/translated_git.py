@@ -7,7 +7,7 @@ Linux distributions ship git's catalogs and git-for-windows does not, so the
 test writes its own: a two-entry catalog that git loads through
 GIT_TEXTDOMAINDIR.
 
-A git built without gettext, or a machine where the locale does not load,
+A git built without gettext, or a machine with no locale that loads it,
 prints English anyway. speak_french then skips the test instead of passing it
 on a git that was never asked in French.
 """
@@ -35,6 +35,11 @@ def _catalog(pairs: dict[str, str]) -> bytes:
     return header + table + blob
 
 
+# glibc reads LANGUAGE only under a locale other than C, and a Linux machine may
+# have no French locale built. Any other UTF-8 locale it has will do.
+_LOCALES = ("fr_FR.UTF-8", "en_US.UTF-8", "C.UTF-8")
+
+
 def speak_french(catalog_dir: Path, monkeypatch) -> None:
     """Every git this test starts from now on prints its prefixes in French."""
     messages = catalog_dir / "fr" / "LC_MESSAGES"
@@ -42,8 +47,14 @@ def speak_french(catalog_dir: Path, monkeypatch) -> None:
     (messages / "git.mo").write_bytes(_catalog(_TRANSLATIONS))
     monkeypatch.setenv("GIT_TEXTDOMAINDIR", str(catalog_dir))
     monkeypatch.setenv("LANGUAGE", "fr")
-    monkeypatch.setenv("LC_ALL", "fr_FR.UTF-8")
-    said = subprocess.run(["git", "rev-parse", "--verify", "refs/no/such/ref"], cwd=catalog_dir,
+    for locale in _LOCALES:
+        monkeypatch.setenv("LC_ALL", locale)
+        said = _what_git_says(catalog_dir)
+        if said.startswith("fatal : "):
+            return
+    pytest.skip(f"this git does not load a translation catalog: it said {said.strip()!r}")
+
+
+def _what_git_says(cwd: Path) -> str:
+    return subprocess.run(["git", "rev-parse", "--verify", "refs/no/such/ref"], cwd=cwd,
                           capture_output=True, text=True, encoding="utf-8").stderr
-    if not said.startswith("fatal : "):
-        pytest.skip(f"this git does not load a translation catalog: it said {said.strip()!r}")
