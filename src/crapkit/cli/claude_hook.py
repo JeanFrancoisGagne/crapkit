@@ -212,16 +212,21 @@ def _measured(payload: dict, edited: list[str]) -> list[Path]:
     """The edited files a scope could hold, absolute, each once: on disk, with a
     suffix crapkit measures. The plugin's per-file-type `if` rules used to screen
     the suffix before the spawn; one handler now serves every edit, so the screen
-    runs here, before any config is read."""
+    runs here, before any config is read.
+
+    The screen lets through what the ladder must answer for. A suffix matches in
+    any letter case, because a case-folding disk opens `calc\\MOD.PY` as the
+    tracked `calc/mod.py`; the scope rung still decides on the tracked spelling.
+    A directory spelled like a source file stays, so its read names the OS error."""
     suffixes = _suffixes()
     paths = dict.fromkeys(_edited_path(payload, p) for p in edited)
-    return [path for path in paths if path.suffix in suffixes and path.is_file()]
+    return [path for path in paths if path.suffix.lower() in suffixes and path.exists()]
 
 
 def _suffixes() -> frozenset[str]:
     from ..languages import LANGUAGE_EXTENSIONS
 
-    return frozenset(e for extensions in LANGUAGE_EXTENSIONS.values() for e in extensions)
+    return frozenset(e.lower() for extensions in LANGUAGE_EXTENSIONS.values() for e in extensions)
 
 
 def _edited_path(payload: dict, edited: str) -> Path:
