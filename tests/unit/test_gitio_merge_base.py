@@ -12,6 +12,7 @@ import pytest
 from crapkit.cli.verifying import _require_ancestor
 from crapkit.errors import GitError
 from crapkit.gitio import GitFacts, is_ancestor, merge_base
+from translated_git import speak_french
 
 
 def git(repo: Path, *args: str) -> str:
@@ -115,13 +116,61 @@ def test_verify_names_the_failed_read_not_a_rewritten_history(forked):
     assert "rewrote history" not in str(refused.value)
 
 
-def test_an_unrelated_history_has_no_merge_base(tmp_path: Path):
+@pytest.mark.parametrize("language", ["git's own", "French"])
+def test_an_unreadable_commit_is_no_answer_in_any_language(forked, language, tmp_path_factory,
+                                                           monkeypatch):
+    """git translates the `error:` prefix that marks the failed read (`erreur
+    :` in French). crapkit asks git for its untranslated words, so an
+    unreadable commit stays a failed read on a git that speaks the user's
+    language, and no read of it says "no"."""
+    repo, base, mid, _ = forked
+    if language == "French":
+        speak_french(tmp_path_factory.mktemp("catalog"), monkeypatch)
+    _lose(repo, mid)
+
+    with pytest.raises(GitError, match=mid):
+        is_ancestor(repo, base)
+    with pytest.raises(GitError, match=mid):
+        merge_base(repo, "main")
+
+
+def test_trace_output_on_a_plain_no_is_still_no(forked, monkeypatch):
+    """GIT_TRACE=1 makes git print trace lines on stderr for every command, a
+    plain "no" included. Only an `error:` or `fatal:` line marks a failed
+    read: taken as one, verify answered an amended history with git's trace
+    text instead of naming the rewrite."""
+    repo, base, mid, head = forked
+    git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--amend", "-m", "amended")
+    monkeypatch.setenv("GIT_TRACE", "1")
+
+    assert is_ancestor(repo, mid, base) is False
+    with pytest.raises(GitError, match="rebase or amend rewrote history"):
+        _require_ancestor(GitFacts(repo), head)
+
+
+@pytest.fixture()
+def unrelated(tmp_path: Path) -> Path:
+    """HEAD on an orphan branch that shares no commit with main."""
     git(tmp_path, "init", "-q", "-b", "main")
     commit(tmp_path, "one")
     git(tmp_path, "checkout", "-q", "--orphan", "other")
     commit(tmp_path, "two")
+    return tmp_path
+
+
+def test_an_unrelated_history_has_no_merge_base(unrelated):
+    with pytest.raises(GitError) as refused:
+        merge_base(unrelated, "main")
+
+    assert str(refused.value) == f"no merge base between main and HEAD in {unrelated}"
+
+
+def test_trace_output_on_no_merge_base_is_still_no_merge_base(unrelated, monkeypatch):
+    """merge-base exits 1 both for two histories that share no commit and for
+    an unreadable one; only the second prints an `error:` line."""
+    monkeypatch.setenv("GIT_TRACE", "1")
 
     with pytest.raises(GitError) as refused:
-        merge_base(tmp_path, "main")
+        merge_base(unrelated, "main")
 
-    assert str(refused.value) == f"no merge base between main and HEAD in {tmp_path}"
+    assert str(refused.value) == f"no merge base between main and HEAD in {unrelated}"

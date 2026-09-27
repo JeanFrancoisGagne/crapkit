@@ -188,6 +188,21 @@ def test_a_stamp_commit_outside_history_reads_stale_and_kills_no_git_read(repo, 
     assert not (root / ".git" / "index.lock").exists()
 
 
+def test_trace_output_leaves_a_rewritten_history_named_as_such(repo, monkeypatch):
+    """GIT_TRACE=1 prints trace lines on stderr beside the ancestry read's plain
+    "no". The note used to call that a failed read and say git could not tell
+    which files changed, where the stamp commit had left history."""
+    root, cfg = repo
+    stamped = _git(root, "rev-parse", "HEAD").strip()
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--amend", "-m", "amended")
+    monkeypatch.setenv("GIT_TRACE", "1")
+
+    states = dict(lane_states(root, cfg))
+
+    assert states["src"].startswith(f"lane 'src': cov-src.json was built at {stamped[:11]}, "
+                                    "which is not behind HEAD"), states
+
+
 def test_without_git_every_stamped_lane_reads_stale(repo, monkeypatch):
     """No git executable at all: nothing can prove an artifact current, and
     the note says git could not tell rather than naming a change."""

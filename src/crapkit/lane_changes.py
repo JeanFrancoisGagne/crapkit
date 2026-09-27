@@ -20,7 +20,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from .errors import GitError
-from .gitio import SHOW_PREFIX, STATUS, ancestry_answer, status_records
+from .gitio import SHOW_PREFIX, STATUS, UNTRANSLATED, ancestry_answer, status_records
 
 _NAMES = ("--name-only", "--no-renames", "-z")
 
@@ -30,10 +30,15 @@ def _start(root: Path, *args: str):
 
     gitio owns how crapkit spawns git: the diff.relative and core.quotePath
     flags and the display state it strips. `--literal-pathspecs` makes every
-    path a path, so a scope named `src/[id]` is not read as a glob."""
+    path a path, so a scope named `src/[id]` is not read as a glob.
+
+    The ancestry read runs with git's messages untranslated: ancestry_answer
+    tells a failed read from a plain "no" by git's `error:` prefix. The other
+    reads keep the user's locale, which the filters `git status` runs inherit."""
     from .gitio import start_read
 
-    return start_read(root, "--literal-pathspecs", *args)
+    pinned = UNTRANSLATED if args[0] == "merge-base" else ()
+    return start_read(root, "--literal-pathspecs", *args, pinned=pinned)
 
 
 def _names(out: bytes) -> tuple[str, ...]:

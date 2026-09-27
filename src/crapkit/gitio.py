@@ -41,10 +41,18 @@ _PATCH = ("-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=
           "--output-indicator-new=+", "--output-indicator-old=-", "--output-indicator-context= ")
 
 
-def _environment() -> dict[str, str]:
-    """GIT_DIFF_OPTS overrides even explicit -U0; it is display state."""
+# git translates the prefix that marks a failed step: under a French locale
+# `error:` prints as `erreur :`. The merge-base reads tell a failed read from a
+# plain "no" by that prefix, so they run with git's messages untranslated.
+UNTRANSLATED = (("LC_ALL", "C"), ("LANGUAGE", "C"))
+
+
+def _environment(*pinned: tuple[str, str]) -> dict[str, str]:
+    """GIT_DIFF_OPTS overrides even explicit -U0; it is display state.
+    `pinned` holds variables one read sets, such as UNTRANSLATED."""
     environment = dict(os.environ)
     environment.pop("GIT_DIFF_OPTS", None)
+    environment.update(pinned)
     return environment
 
 
@@ -62,10 +70,11 @@ def _git_unflagged(root: Path, *args: str) -> str:
     return _run(root, args, args)
 
 
-def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subprocess.CompletedProcess:
+def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False,
+           pinned: tuple[tuple[str, str], ...] = ()) -> subprocess.CompletedProcess:
     """One git process run to completion, whatever it exits with."""
     try:
-        return subprocess.run(["git", *argv], cwd=root, env=_environment(),
+        return subprocess.run(["git", *argv], cwd=root, env=_environment(*pinned),
                               capture_output=True, text=not binary, encoding=None if binary else "utf-8")
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
@@ -268,12 +277,14 @@ def merge_base(root: Path, ref: str) -> str:
     """The commit REF and HEAD forked from — a branch's real diff basis, which
     is what a mid-branch run's own commit is not.
 
-    A refusal says why. git exits 1 with nothing on stderr when the two share no
-    commit it holds: unrelated histories, or a shallow clone whose boundary cuts
-    the fork off. A shallow clone is the default CI checkout, so there every
-    refusal also names the fetch that brings the missing history in.
+    A refusal says why. git exits 1 with no error line (_reports_failure) when
+    the two share no commit it holds: unrelated histories, or a shallow clone
+    whose boundary cuts the fork off. It also exits 1, printing `error: Could
+    not read <sha>`, when a commit on the way cannot be read. A shallow clone is
+    the default CI checkout, so there every refusal also names the fetch that
+    brings the missing history in.
     """
-    res = _spawn(root, (*_RELATIVE, "merge-base", ref, "HEAD"))
+    res = _spawn(root, (*_RELATIVE, "merge-base", ref, "HEAD"), pinned=UNTRANSLATED)
     if res.returncode != 0:
         raise GitError(_merge_base_refusal(root, ref, res) + _shallow_fix(root))
     return res.stdout.strip()
@@ -281,7 +292,7 @@ def merge_base(root: Path, ref: str) -> str:
 
 def _merge_base_refusal(root: Path, ref: str, res: subprocess.CompletedProcess) -> str:
     reason = res.stderr.strip()
-    if res.returncode == 1 and not reason:
+    if res.returncode == 1 and not _reports_failure(reason):
         return f"no merge base between {ref} and HEAD in {root}"
     return f"git merge-base {ref} HEAD failed in {root}: {reason}"
 
@@ -300,7 +311,7 @@ def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
     """True when `commit` is at or behind `other`; git counts a commit as its own
     ancestor, which is what "at or behind" needs."""
     argv = ("merge-base", "--is-ancestor", commit, other)
-    res = _spawn(root, argv, binary=True)
+    res = _spawn(root, argv, binary=True, pinned=UNTRANSLATED)
     said = res.stderr.decode("utf-8", "replace")
     failure = f"git {' '.join(argv)} failed in {root}: {said.strip()}"
     return ancestry_answer(root, commit, res.returncode, said, failure)
@@ -308,9 +319,10 @@ def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
 
 def ancestry_answer(root: Path, commit: str, code: int, said: str, failure: str) -> bool:
     """`merge-base --is-ancestor`'s answer, from its exit code and `said`, its
-    stderr. Exit 0 is yes. Exit 1 is no only when git said nothing, the rule
-    merge_base reads its exit 1 by: git also exits 1, printing `error: Could
-    not read <sha>`, when a commit on its walk back from HEAD cannot be read.
+    stderr. Exit 0 is yes. Exit 1 is no unless git printed an `error:` or
+    `fatal:` line, the rule merge_base reads its exit 1 by: git also exits 1,
+    printing `error: Could not read <sha>`, when a commit on its walk back from
+    HEAD cannot be read. Trace output and warnings print beside a plain no.
     Exit 128 comes both from a commit this clone does not hold, which is not
     behind HEAD, and from a read that failed; `rev-parse --verify --quiet`
     tells the two apart.
@@ -327,8 +339,17 @@ def ancestry_answer(root: Path, commit: str, code: int, said: str, failure: str)
 
 def _answered_no(root: Path, commit: str, code: int, said: str) -> bool:
     if code == 1:
-        return not said.strip()
+        return not _reports_failure(said)
     return not _holds_commit(root, commit)
+
+
+def _reports_failure(said: str) -> bool:
+    """Whether git's stderr holds a line that starts with `error:` or `fatal:`.
+    Trace output (GIT_TRACE) and warnings print beside a plain answer too, and
+    taken as a failure they turned an amended history's "no" into a failed
+    read. The reads that ask run with UNTRANSLATED, so the prefix is git's own
+    word whatever the user's locale."""
+    return any(line.startswith(("error:", "fatal:")) for line in said.splitlines())
 
 
 def _holds_commit(root: Path, commit: str) -> bool:
@@ -426,12 +447,13 @@ class _Started:
     diff line.
     """
 
-    def __init__(self, root: Path, args: tuple[str, ...], *, text: bool, stdin: bool) -> None:
+    def __init__(self, root: Path, args: tuple[str, ...], *, text: bool, stdin: bool,
+                 pinned: tuple[tuple[str, str], ...] = ()) -> None:
         self._args, self._root, self._text = args, root, text
         self.stderr = ""
         try:
             self._proc = subprocess.Popen(
-                ["git", *_RELATIVE, *args], cwd=root, env=_environment(),
+                ["git", *_RELATIVE, *args], cwd=root, env=_environment(*pinned),
                 stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=text, encoding="utf-8" if text else None)
@@ -460,10 +482,11 @@ class _Started:
             self._proc.communicate()
 
 
-def start_read(root: Path, *args: str) -> _Started:
+def start_read(root: Path, *args: str, pinned: tuple[tuple[str, str], ...] = ()) -> _Started:
     """One git read with no stdin, started now and collected later with
-    `.result()`, which answers bytes or raises GitError."""
-    return _Started(root, args, text=False, stdin=False)
+    `.result()`, which answers bytes or raises GitError. `pinned` as for
+    _environment."""
+    return _Started(root, args, text=False, stdin=False, pinned=pinned)
 
 
 # Only a patch carries line numbers, so verify, rescore, mutate and the advisory

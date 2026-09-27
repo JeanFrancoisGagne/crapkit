@@ -8,6 +8,7 @@ from crapkit import lane_changes
 from crapkit.errors import GitError
 from crapkit.lane_changes import ChangeReads
 from hang_guard import HANG_SECONDS
+from translated_git import speak_french
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -75,10 +76,15 @@ def test_a_commit_it_was_not_built_for_is_read_when_asked(repo):
         assert reads.diff_names_since(second) == ()
 
 
-def test_an_unreadable_commit_since_the_stamp_is_no_answer(repo):
+@pytest.mark.parametrize("language", ["git's own", "French"])
+def test_an_unreadable_commit_since_the_stamp_is_no_answer(repo, language, tmp_path_factory,
+                                                           monkeypatch):
     """`merge-base --is-ancestor` exits 1, its "no", and prints `error: Could
-    not read <sha>` when a commit between the stamp and HEAD is unreadable."""
+    not read <sha>` when a commit between the stamp and HEAD is unreadable. A
+    French git prints `erreur :`, so the read asks for git's own words."""
     root, first = repo
+    if language == "French":
+        speak_french(tmp_path_factory.mktemp("catalog"), monkeypatch)
     _write(root, "docs/n.md", "two\n")
     lost = _commit(root, "two")
     _write(root, "docs/n.md", "three\n")
@@ -89,6 +95,18 @@ def test_an_unreadable_commit_since_the_stamp_is_no_answer(repo):
 
     with ChangeReads(root, (first,), ("src",)) as reads, pytest.raises(GitError, match=lost):
         reads.is_ancestor(first)
+
+
+def test_trace_output_on_a_plain_no_is_still_no(repo, monkeypatch):
+    """GIT_TRACE=1 puts trace lines on stderr beside a plain "no". Read as a
+    failed read, next-item said git could not tell which files changed where
+    the stamp commit had left history."""
+    root, first = repo
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--amend", "-m", "amended")
+    monkeypatch.setenv("GIT_TRACE", "1")
+
+    with ChangeReads(root, (first,), ("src",)) as reads:
+        assert reads.is_ancestor(first) is False
 
 
 def test_a_commit_this_clone_does_not_hold_is_not_behind_head(repo):
