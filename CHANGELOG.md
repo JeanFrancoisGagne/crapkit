@@ -24,11 +24,13 @@ guide](docs/upgrading.md) lists what moves.
   one. It had no row. One whose result is a function type, `func(a int) func(b int)
   int {...}`, reads `(a int)` where lizard read a method named `func`, `(a int)func b
   int`.
-- A composite literal whose element type is a function, `[]func(){f, g}` or
-  `map[string]func(int) int{...}`, is a literal, not a function. lizard listed it as
-  an anonymous row at ccn 1. A function literal inside a package-level one keeps its
-  row and reads like any package-level literal, `(i int)`, where it read ` i int` and
+- A composite literal of functions, `[]func(){f, g}` or `map[string]func() func()
+  int{...}`, is a literal, not a function. lizard listed it as an anonymous row at
+  ccn 1. A function literal inside a package-level composite literal keeps its row
+  and reads like any package-level literal, `(i int)`, where it read ` i int` and
   took the handle `i`.
+- A `}` that closes nothing at file level, which lizard leaves where it misreads the
+  code before it, no longer costs each Go method after it its row.
 - A Zig function named by a string, `fn @"weird name"(x: i32) i32`, is listed under
   that name, and its handle is the whole `@"weird name"`. It had no row.
 - `params` counts a parameter of function type once, where `f func(int, string)
@@ -48,7 +50,7 @@ guide](docs/upgrading.md) lists what moves.
 - `ccn_mod` reads a Zig switch once, where it added the switch without taking its
   prongs back and read above `ccn_std`, and a Go `select` once, where each `case`
   took a point off and the `select` added none. `ccn` is the smaller column, so a
-  Zig function with a switch of three prongs and an `else` reads 2 where it read 4,
+  Zig function with a switch of three prongs and an `else` reads 2 where it read 5,
   and a Go function with a `select` of two cases and a default reads 2 where it read
   1 and can now be over its ceiling.
 

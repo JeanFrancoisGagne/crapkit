@@ -154,6 +154,25 @@ class _SignatureStates(GoLikeStates):
         self._line = self.context.current_line
         return exits
 
+    # --- a `}` that closes nothing ------------------------------------------------
+
+    # The machine the reader holds reads the file; each `{` hands a block to a
+    # clone, whose `}` returns to the machine that made it.
+    _reads_the_file = True
+
+    def statemachine_clone(self):
+        clone = super().statemachine_clone()
+        clone._reads_the_file = False
+        return clone
+
+    def statemachine_return(self):
+        """Return from the block a clone reads. A `}` that reaches the machine
+        reading the file closes nothing: lizard set its `to_exit` for good, and
+        from there each state that returned what its next state returned, such as
+        the wait for a body, ended its function at that body's `{`."""
+        if not self._reads_the_file:
+            super().statemachine_return()
+
     # --- the signature opens ------------------------------------------------------
 
     def _state_global(self, token):

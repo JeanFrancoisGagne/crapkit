@@ -404,6 +404,66 @@ def test_a_zig_parameter_of_function_type_counts_once():
                                 "comptime lessThan : fn T , T bool")
 
 
+# --- Go and Zig: a `}` that closes nothing ------------------------------------------
+
+# lizard's tokenizer and its reading of Go's `type` can each leave a `}` that
+# closes nothing at file level. The machine that reads the file kept lizard's
+# return flag set from there to the end of the file, and each later signature
+# that asked it for its body ended the function at the body's `{`: B read lines
+# 5-5 at ccn 1, and the method had no row.
+GO_AFTER_A_STRAY_BRACE = """package b
+
+}
+
+func B(n int) int {
+\tif n > 0 {
+\t\treturn 1
+\t}
+\treturn 0
+}
+
+func (s *S) M(n int) int {
+\tfor n > 0 {
+\t\tn--
+\t}
+\treturn n
+}
+"""
+
+ZIG_AFTER_A_STRAY_BRACE = """}
+
+fn b(n: u8) u8 {
+    if (n > 0) {
+        return 1;
+    }
+    return 0;
+}
+"""
+
+
+def test_a_brace_that_closes_nothing_leaves_the_go_functions_after_it_whole():
+    assert rows("b.go", GO_AFTER_A_STRAY_BRACE) == [
+        ("B n int", 5, 10, 2, 1, 1, 1), ("(s*S)M n int", 12, 17, 2, 1, 1, 1)]
+
+
+def test_a_brace_that_closes_nothing_leaves_the_zig_functions_after_it_whole():
+    assert rows("a.zig", ZIG_AFTER_A_STRAY_BRACE) == [("b n : u8", 3, 8, 2, 1, 1, 1)]
+
+
+@pytest.mark.parametrize(("path", "source", "stray"), [
+    ("b.go", GO_VAR_FUNC_TYPE, GO_VAR_FUNC_TYPE.replace("package b\n", "package b\n\n}", 1)),
+    ("b.go", GO_LOCAL_FUNC_TYPE, GO_LOCAL_FUNC_TYPE.replace("package b\n", "package b\n\n}", 1)),
+    ("b.go", GO_STRUCT_RESULT, GO_STRUCT_RESULT.replace("package b\n", "package b\n\n}", 1)),
+    ("a.zig", ZIG_STRUCT_RESULT, "}\n" + ZIG_STRUCT_RESULT)],
+    ids=["go-function-type", "go-local-function-type", "go-struct-result", "zig-struct-result"])
+def test_a_brace_that_closes_nothing_moves_the_functions_after_it_one_line(path, source, stray):
+    """Each file with a stray `}` on a line of its own above its first
+    declaration reads as it does without it, one line lower."""
+    moved = [(r[0], r[1] + 1, r[2] + 1) + r[3:] for r in rows(path, source)]
+
+    assert rows(path, stray) == moved
+
+
 # --- registration ----------------------------------------------------------------
 
 def test_lizard_resolves_go_and_zig_to_the_corrected_readers():

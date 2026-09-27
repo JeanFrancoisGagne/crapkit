@@ -139,25 +139,26 @@ The next release reads Go and Zig signatures to where the language ends them, an
 the analysis version for it. A function type such as `var cb func(int) error` no longer
 opens a function, so the function around it gets back the block the type took and its
 `ccn` can rise; the anonymous row that held the block goes away. A function that had no
-row, one after a package-level function type, a Zig `extern fn` prototype or a Zig name
-written `@"..."`, is listed, and one whose result type holds braces reads its whole body.
-A composite literal of functions, `[]func(){f, g}`, is no longer an anonymous row, a
-function literal inside a package-level one reads `(i int)` where it read ` i int`, and
-a package-level literal whose result is a function type reads `(a int)` where it read
-`(a int)func b int`. Any of them can be over its ceiling and fails the gate the next
-time its file changes. `params` moves for parameters of function type or with a braced
-type, and for a package-level literal's parameters, which read 0. A Zig switch reads as
-one decision in `ccn`, the smaller of the two columns, where it read one per prong and
-one more for `else =>`, so a Zig function with a switch reads lower. A Go `select` with a case reads one decision
-where it read none, so its function reads one higher and can go over its ceiling. A Zig
-`try`, an optional's `?` and an error-set `||` stop adding to `cognitive`, `try` and `?`
-stop adding to `nesting`, and a shell glob's `?` stops adding to `cognitive`, so those
-columns can fall in Zig and shell repos. A shell `a ? b : c` inside `(( ))` or `$(( ))`
-now counts one in `ccn`, so a shell function holding one reads higher and can go over
-its ceiling, and a `for ((;;))` reads one lower. No named function's long name changes,
-so only those literal rows change key. Re-seed once: `crapkit coverage`, `crapkit ratchet
-prune`, then `crapkit ratchet seed`. Prune drops the marks of the rows that go away or
-change key.
+row is listed: one after a package-level function type or a Zig `extern fn` prototype, a
+Zig name written `@"..."`, and a Go method after a `}` that closes nothing. One whose
+result type holds braces reads its whole body. A composite literal of functions,
+`[]func(){f, g}`, is no longer an anonymous row, a function literal inside a
+package-level one reads `(i int)` where it read ` i int`, and a package-level literal
+whose result is a function type reads `(a int)` where it read `(a int)func b int`. Any
+of them can be over its ceiling and fails the gate the next time its file changes.
+`params` moves for parameters of function type or with a braced type, and for a
+package-level literal's parameters, which read 0. A Zig switch reads as one decision in
+`ccn`, the smaller of the two columns, where it read one per prong and one more for
+`else =>`, so a Zig function with a switch reads lower. A Go `select` with a case reads
+one decision where it read none, so its function reads one higher and can go over its
+ceiling. A Zig `try`, an optional's `?` and an error-set `||` stop adding to
+`cognitive`, `try` and `?` stop adding to `nesting`, and a shell glob's `?` stops adding
+to `cognitive`, so those columns can fall in Zig and shell repos. A shell `a ? b : c`
+inside `(( ))` or `$(( ))` now counts one in `ccn`, so a shell function holding one
+reads higher and can go over its ceiling, and a `for ((;;))` reads one lower. No named
+function's long name changes, so only those literal rows change key. Re-seed once:
+`crapkit coverage`, `crapkit ratchet prune`, then `crapkit ratchet seed`. Prune drops
+the marks of the rows that go away or change key.
 
 ### Analysis version 11
 
