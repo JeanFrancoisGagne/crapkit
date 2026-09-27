@@ -1249,7 +1249,9 @@ analysis-version bump, so each marks file re-seeds once
   `if` inside such a loop read `nesting` 1 and cost 1 in `cognitive`, where it is 2
   and costs 2. The same rule stops a Swift argument label spelled `for` and a
   PowerShell `[switch]` parameter from turning the function's own body into a
-  level, and a Rust match guard's `if` from taking the next arm's block.
+  level, and a Rust match guard's `if` from taking the next arm's block. For the
+  `[switch]` parameter only `cognitive` moves (3 to 2 for one `if` in the body):
+  lizard's ND never read the word, so `nesting` was already 1.
 - Measured over 21,099 functions in 20 open-source projects: 1,486 of the 6,465
   functions outside Python move `nesting`, 1,290 down and 196 up, and 39 move
   `cognitive`, 33 down and 6 up. No Python row and no `ccn` value moves. Against an
@@ -1257,8 +1259,8 @@ analysis-version bump, so each marks file re-seeds once
   C++, Objective-C, Java, Go, Rust, Swift, Zig and shell, crapkit agreed on 2,295
   before and 2,956 now. Most of the rest are closures, which open no level in
   crapkit's reading and one in that oracle's. Over 24,540 functions in the Go
-  standard library and actionlint, 254 move `nesting` and 264 move `cognitive`, all
-  but one up: the header literals above.
+  standard library and actionlint, 4,137 move `nesting`, 3,387 down and 750 up, and
+  264 move `cognitive`, all up: the header literals above.
 - `nesting` and `cognitive` are reported and never gated, so no gate verdict moves
   with them. The change needs an analysis-version bump, which makes each marks file
   re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-nesting-in-every-language)).

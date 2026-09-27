@@ -426,9 +426,11 @@ below.
   C++ initializer lists, Java array initializers, destructuring in a `for`. The body
   after that header now counts as the structure's, so the structures inside it read
   one level deeper and cost one more. In Go code expect about 1 function in 100 to
-  move; 254 of 24,540 did in the Go standard library and actionlint. Both columns go
-  down in a Swift function with an argument label spelled `for` and in a PowerShell
-  function with a `[switch]` parameter, whose body no longer reads as a level.
+  cost more; 264 of 24,540 did in the Go standard library and actionlint. Both
+  columns go down in a Swift function with an argument label spelled `for`, whose
+  body no longer reads as a level. In a PowerShell function with a `[switch]`
+  parameter only `cognitive` goes down: lizard's ND never read the word, so its
+  `nesting` stays.
 - `nesting` and `cognitive` are reported and never gated, so no verdict moves with
   them. Expect both columns to change in `next-item --json`, exports and `brief` on
   the first run after upgrading; the [`nesting` row](agent-json.md#item-fields) says

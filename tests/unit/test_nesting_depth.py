@@ -150,9 +150,16 @@ BRACE_DEPTHS = {
     # ND 3: each case label opened a level the next one did not close.
     "pick.go": ("package p\n\nfunc Pick(k int) int {\n\tswitch k {\n\tcase 1:\n\t\treturn 10\n"
                 "\tcase 2:\n\t\treturn 20\n\tdefault:\n\t\treturn 0\n\t}\n}\n", 1),
-    # ND 2: the case label opened a level.
+    # ND 1, and right, where each case ends in `return`.
     "pick.c": ("int pick(int k) {\n    switch (k) {\n    case 1:\n        return 10;\n"
                "    case 2:\n        return 20;\n    default:\n        return 0;\n    }\n}\n", 1),
+    # ND 2 for the next two, where each of three cases ends in `break;`.
+    "cases.c": ("int pick(int k) {\n    int r = 0;\n    switch (k) {\n    case 1:\n        r = 1;\n"
+                "        break;\n    case 2:\n        r = 2;\n        break;\n    case 3:\n"
+                "        r = 3;\n        break;\n    }\n    return r;\n}\n", 1),
+    "cases.ts": ("function pick(k: number) {\n  let r = 0;\n  switch (k) {\n    case 1:\n      r = 1;\n"
+                 "      break;\n    case 2:\n      r = 2;\n      break;\n    case 3:\n      r = 3;\n"
+                 "      break;\n  }\n  return r;\n}\n", 1),
     # ND 2 for both: ND's token set holds Python's `def`.
     "def.go": ("package p\n\nfunc Default(def int) int {\n\treturn def\n}\n", 0),
     "def.js": ("export function wire(inst, def) {\n  init(inst, def);\n}\n", 0),
@@ -462,6 +469,21 @@ def test_a_shell_or_powershell_function_reads_the_depth_of_its_blocks(name):
     source, depth = SCRIPT_DEPTHS[name]
 
     assert _nesting(name, source) == depth
+
+
+def test_a_powershell_switch_parameter_type_waits_for_no_body():
+    """`[switch]$Force` is a parameter type, but the pass reads the word `switch`.
+    Its wait for a `{` used to outlast the parameter list, so the function's body
+    read as the switch's block and the `if` in it paid +2 (cognitive 3 against 1
+    beside a `[bool]` parameter). The wait now ends at the `]` around it: the `if`
+    pays +1 and sits one level deep. The word's own +1 is a separate reader
+    defect, so the test allows it and no more."""
+    body = "    if ($Force) { go }\n}\n"
+    (typed,) = analyze_source("switch.ps1", "function F([string]$a, [switch]$Force) {\n" + body)
+    (plain,) = analyze_source("bool.ps1", "function F([string]$a, [bool]$Force) {\n" + body)
+
+    assert (typed.nesting, plain.nesting, plain.cognitive) == (1, 1, 1)
+    assert typed.cognitive - plain.cognitive <= 1
 
 
 def test_a_structure_in_another_structures_header_leaves_its_body_waiting():
