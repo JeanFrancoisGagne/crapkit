@@ -1,6 +1,7 @@
 """`crapkit doctor` checks: does crapkit.toml still describe THIS repo? Pure."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 import os
 import re
@@ -141,7 +142,23 @@ def unreadable_payloads(lanes) -> tuple[Finding, ...]:
                  for lane in lanes for step in command_steps(lane.command).unreadable)
 
 
-_DATA_FILE_FLAG = re.compile(r"""--data-file[=\s]+["']?([^\s"']+)""")
+def _flag_values(words: tuple[str, ...], flag: str) -> Iterator[str]:
+    """Every value `flag` takes in one argv: `--flag=value` or `--flag value`."""
+    for at, word in enumerate(words):
+        if word.startswith(flag + "="):
+            yield word[len(flag) + 1:]
+        elif word == flag and at + 1 < len(words):
+            yield words[at + 1]
+
+
+def _data_file_flag(command: str) -> str:
+    """The first `--data-file` a step of the command hands coverage, "" when
+    none does. Read as the shell reads the line, a `bash -c` payload included: a
+    regex stopped at the first space or quote, so `"cov a/.coverage"` and
+    `"cov b/.coverage"` both read as `cov`."""
+    values = (value for step in command_steps(command).steps
+              for value in _flag_values(step.words, "--data-file"))
+    return next(values, "")
 
 
 def _coverage_data_file(lane) -> str:
@@ -149,8 +166,8 @@ def _coverage_data_file(lane) -> str:
 
     The command's own `--data-file`, else COVERAGE_FILE from the lane's env,
     else coverage.py's default, in the directory the lane starts in."""
-    flag = _DATA_FILE_FLAG.search(lane.command)
-    name = flag.group(1) if flag else dict(lane.env).get("COVERAGE_FILE") or ".coverage"
+    name = (_data_file_flag(lane.command) or dict(lane.env).get("COVERAGE_FILE")
+            or ".coverage")
     return os.path.normcase(os.path.normpath(os.path.join(lane.cwd or ".", name)))
 
 

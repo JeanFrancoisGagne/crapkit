@@ -88,3 +88,25 @@ def test_tune_holds_the_slots_for_a_lane_left_on_the_default_file(repo, capsys):
     out = capsys.readouterr().out.splitlines()
 
     assert out[2] == "max_parallel_lanes = 1", out
+
+
+def test_tune_reads_a_quoted_data_file_with_a_space_whole(repo, capsys):
+    """PT2: `--data-file="cov a/.coverage"` and `"cov b/.coverage"` read as one
+    file `cov`, and `doctor --tune` held the slots at 1 for two lanes that never
+    share one. The shell hands coverage the whole quoted path."""
+    _coveragepy_lanes(repo, 2)
+    toml = repo / "crapkit.toml"
+    text = toml.read_text(encoding="utf-8")
+    for name, folder in (("unit", "cov a"), ("ui", "cov b")):
+        spelled = f'--data-file=\\"{folder}/.coverage\\"'
+        text = text.replace('command = "python -c pass"\nartifact = "coverage/' + name,
+                            f'command = "coverage run {spelled} -m pytest -q && coverage json '
+                            f'{spelled} -o coverage/{name}.json"\nartifact = "coverage/{name}', 1)
+    toml.write_text(text, encoding="utf-8")
+
+    assert main(["doctor", "--tune", "--repo", str(repo)]) == 0
+    out = capsys.readouterr().out
+
+    assert "cov a/.coverage" in toml.read_text(encoding="utf-8")
+    assert "# held at 1" not in out, out
+    assert _shared_warns(repo, capsys) == []
