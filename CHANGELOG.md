@@ -1340,9 +1340,8 @@ each marks file re-seed once.
   cognitive complexity outside parentheses; a keyword in braces counted as that keyword;
   and the braces of `${env:ProgramFiles(x86)}` in a loop's condition read as the loop's
   block, so every structure inside the loop scored one nesting level too shallow.
-- `-and` and `-or` nest the way `&&` and `||` do in the C family: the first one in a
-  condition adds a level. Each used to add its own, so `if ($a -and $b -or $c)` read
-  nesting 3 where TypeScript's `if (a && b || c)` reads 2.
+- `-and` and `-or` open no nesting level, since an operator is no structure. Each used
+  to add a level of its own, so one `if ($a -and $b -or $c)` read nesting 3; it reads 1.
 - `ccn_mod` counts a switch's arms the way `ccn_std` does. It read one higher for every
   `switch`, and for every `[switch]` parameter type as well. `ccn` is the smaller of
   the two columns, so it does not move.

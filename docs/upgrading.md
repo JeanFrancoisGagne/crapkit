@@ -365,9 +365,10 @@ go, and their marks are left under names the run no longer has.
   is free. A keyword word that is a command, an argument or a member costs nothing in
   any case (`$xs | foreach { }`, `git switch main`), and neither does the `?` in `$?`.
   PowerShell 7's `&&`, `||`, `??`, `?.` and `?[` count once each. Gated `ccn` can rise
-  or fall.
+  or fall. `-and` and `-or` stop adding a nesting level.
 - A PowerShell switch arm costs one point whatever its pattern or subject holds, and
-  `ccn_mod` no longer reads one above `ccn_std` for each switch.
+  `ccn_mod` no longer reads one above `ccn_std` for each switch. The arms still cost
+  their points in both columns, so the gate reads a twelve-arm switch as 13, as before.
 - PowerShell rows appear for `Function Name`, `function script:Name`, `function
   Get.Name` and a function that followed a stray `configuration` or `filter` word, and
   the phantom rows those words opened go. A class method's decisions leave the function

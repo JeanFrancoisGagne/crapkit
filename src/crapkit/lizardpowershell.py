@@ -51,13 +51,13 @@ CCN CONVENTION
 
     so an arm is a pattern and the block that opens directly inside the switch
     body after it, one point per arm whatever the pattern is, a script block
-    included, and the `default` arm is free. That mirrors lizard's own C `switch`/`case` handling
-    and both readers already in this package: the shell reader counts a `case`
-    arm at its `;;` and the Rust reader counts a `match` arm at its `=>`, each
-    for the same reason. Counting the keyword once instead would score a
-    twelve-arm dispatcher the same 2 as a one-arm one. Measured on the
-    hand-counted probe, a six-arm switch with a default scores 7, the same as
-    the six-branch if/elseif chain doing the same work.
+    included, and the `default` arm is free. That mirrors lizard's own C
+    `switch`/`case` handling and both readers already in this package: the
+    shell reader counts a `case` arm at its `;;` and the Rust reader counts a
+    `match` arm at its `=>`, each for the same reason. Counting the keyword
+    once instead would score a twelve-arm dispatcher the same 2 as a one-arm
+    one. Measured on the hand-counted probe, a six-arm switch with a default
+    scores 7, the same as the six-branch if/elseif chain doing the same work.
 
     The arms cost the same in `ccn_mod`. lizard's modified rule adds a point
     for a `switch` and takes one back per `case`, and a PowerShell arm has no
@@ -93,11 +93,12 @@ KEYWORDS IN ANY CASE
     a member (`$xs.foreach({ })`). Written in lower case, each of those cost
     a loop or a cognitive switch the capitalized spelling did not.
 
-    `-and` and `-or` come out as `&&` and `||`. lizard's ND column knows those
-    two by spelling and adds one nesting level for the first of them in a
-    condition. Read as loop words, each `-and` and `-or` added a level of its
-    own, so `if ($a -and $b -or $c)` read nesting 3 where the same condition
-    in TypeScript reads 2.
+    `-and`, `-or` and `-xor` come out in lower case wherever they stand, since
+    an operator is never a command or an argument. They are no nesting
+    structure: an operator opens no level (Sonar Cognitive Complexity, App.
+    B2), so `if ($a -and $b -or $c)` reads nesting 1. As loop words to
+    lizard's ND column, each `-and` and `-or` added a level, and the condition
+    read 3.
 
 TOKENIZER
     The added alternatives are tried ahead of lizard's shared C-family rules,
@@ -237,13 +238,9 @@ _KEYWORDS = frozenset({
     "default", "catch", "trap", "try", "finally",
     "function", "filter", "workflow", "configuration", "class", "enum"})
 
-# The logical operators, as the rules read them. lizard's ND column knows `&&`
-# and `||` by spelling and adds one level for the first of them in a
-# condition; under their own spelling each `-and` and `-or` added a level, so
-# `if ($a -and $b -or $c)` read nesting 3 where `if (a && b || c)` reads 2.
-# Both short-circuit, as PowerShell 7's pipeline chains `&&` and `||` do, so
-# the cognitive and cyclomatic rules read the two spellings alike too.
-_OPERATORS = {"-and": "&&", "-or": "||", "-xor": "-xor"}
+# The logical operators spelled as words, as the rules read them: in lower case
+# wherever they stand, because an operator is never a command or an argument.
+_OPERATORS = frozenset({"-and", "-or", "-xor"})
 
 # What a statement can follow on the same line: `(` opens `$(...)` and
 # `@(...)`, an assignment takes a statement on its right (`$x = switch ...`),
@@ -326,7 +323,7 @@ class _Spelling:
     def _spell(self, token: str, statement: bool) -> str:
         lower = token.lower()
         if lower in _OPERATORS:
-            return _OPERATORS[lower]
+            return lower
         if lower not in _KEYWORDS:
             return token
         if statement:
@@ -654,11 +651,10 @@ class PowerShellReader(CodeReader, ScriptLanguageMixIn):
 
     _control_flow_keywords = {"if", "elseif", "for", "foreach", "while",
                               "until", "catch", "trap"}
-    # `&&` and `||` are PowerShell 7's pipeline chains and, as the tokenizer
-    # spells them, `-and` and `-or`. `??` and `??=` evaluate their right side
-    # only for a null left one, and `?.` and `?[` read the member only for a
-    # left one that is not null.
-    _logical_operators = {"&&", "||", "-xor", "??", "??=", "?.", "?["}
+    # `&&` and `||` are PowerShell 7's pipeline chains. `??` and `??=` evaluate
+    # their right side only for a null left one, and `?.` and `?[` read the
+    # member only for a left one that is not null.
+    _logical_operators = {"-and", "-or", "-xor", "&&", "||", "??", "??=", "?.", "?["}
     _case_keywords = set()      # arms are counted by position, see the docstring
     _ternary_operators = {"?"}
 

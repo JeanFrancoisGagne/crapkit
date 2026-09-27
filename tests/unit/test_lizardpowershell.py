@@ -958,19 +958,23 @@ def test_a_variable_name_with_a_question_mark_or_braces_is_one_token(body, numbe
     assert (record.ccn_std, record.cognitive, record.nesting) == numbers
 
 
-def test_logical_operators_nest_as_their_c_family_spelling_does():
-    """lizard's ND column adds one level for the first `&&` or `||` in a
-    condition, not one per operator. `-and` and `-or` each added a level of
-    their own, so this one condition read nesting 3 where the TypeScript
-    spelling of it reads 2."""
-    ps = ("function Test-Logic($a, $b, $c) {\n    if ($a -and $b -or $c) {\n"
-          "        return 1\n    }\n    return 0\n}\n")
-    ts = ("export function testLogic(a: boolean, b: boolean, c: boolean): number {\n"
-          "  if (a && b || c) {\n    return 1;\n  }\n  return 0;\n}\n")
-    (powershell,) = analyze_source("probe.ps1", ps)
-    (typescript,) = analyze_source("probe.ts", ts)
+@pytest.mark.parametrize("condition, ccn", [
+    ("$a -and $b -or $c", 4),
+    ("$a -AND $b -Or $c", 4),
+    ("$a -and $b -and $c -or $d", 5),
+    ("$a -xor $b", 3),
+])
+def test_a_logical_operator_opens_no_nesting_level(condition, ccn):
+    """An operator is no structure, so one `if` reads nesting 1 whatever its
+    condition holds (Sonar Cognitive Complexity v1.7, App. B2), and each
+    operator is one decision. `-and` and `-or` were loop words to lizard's
+    ND column, so `$a -and $b -or $c` read nesting 3; spelled `&&` and `||`
+    it read 2, the first operator in a condition adding a level."""
+    code = (f"function Test-Logic($a, $b, $c, $d) {{\n    if ({condition}) {{\n"
+            "        return 1\n    }\n    return 0\n}\n")
+    (record,) = analyze_source("probe.ps1", code)
 
-    assert (powershell.nesting, powershell.ccn_std) == (typescript.nesting, 4)
+    assert (record.nesting, record.ccn_std) == (1, ccn)
 
 
 def test_a_six_branch_elseif_chain_gets_the_sonar_cognitive_score():
