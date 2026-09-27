@@ -121,7 +121,7 @@ def test_the_crapkit_directory_listing_names_the_measurement_lock():
 def test_the_crapkit_directory_listing_names_the_cache_files_this_version_writes():
     """The churn and coupling caches carry a version in their file names. A
     rename that left the listing behind would teach a reader to look for files
-    crapkit no longer writes, and to keep ones it deletes."""
+    crapkit no longer writes."""
     from crapkit import churn_cache, churn_commits, churn_log, coupling_cache
 
     written = {churn_cache.CACHE_NAME, churn_commits.COMMITS_NAME, churn_log.LOG_NAME,

@@ -40,11 +40,12 @@ from .gitpaths import PATH_FORMAT
 # it — so every run of both rebuilt the map. Different formats, different files:
 # neither invalidates the other and both stay warm. The key's own marker stays,
 # for a format change that keeps the name.
+# v3 is the first map of a window that ends at HEAD's commit date. The v2 map
+# 0.4.5 to 0.8.0 write keys the same fields over a wall-clock window, so this
+# version never reads it, and never deletes it either: it is theirs to keep warm.
 CACHE_NAME = "churn-cache-v3.json"
-# Older maps can contain altered path names (churn-cache.json), and every older
-# map was cut at a window that ended at the wall clock, not at HEAD's commit
-# date (v2 too). Discard the retired names on a miss.
-LEGACY_NAMES = ("churn-cache.json", "churn-cache-v2.json")
+# Older maps can contain altered path names. Discard the retired name on a miss.
+LEGACY_NAME = "churn-cache.json"
 
 
 def _window_lines(root: Path, months: int, head: str | None) -> Window:
@@ -65,8 +66,7 @@ def _window_lines(root: Path, months: int, head: str | None) -> Window:
 def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
     """Per-file churn for the window — from disk when the key still matches, else rebuilt.
 
-    A miss discards the maps and logs older versions left: each was cut at a
-    window that ended at the wall clock, so nothing here reads them again.
+    A miss discards the map and log 0.4.4 left, as every release since 0.4.5 does.
     """
     path = root / ".crapkit" / CACHE_NAME
     key = _cache_key(root, months)
@@ -74,8 +74,7 @@ def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
     if cached is not None:
         return cached
     sweep_legacy(root)
-    for name in LEGACY_NAMES:
-        _drop(path.with_name(name))
+    _drop(path.with_name(LEGACY_NAME))
     churn = _window_commits(root, months, key).churn()
     _write_cache(path, key, churn)
     return churn

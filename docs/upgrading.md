@@ -346,10 +346,14 @@ had no churn and `worklist` listed every file as dormant.
   the more history enters the window. CRAP scores and ratchet marks do not change,
   so nothing re-seeds.
 - The churn caches move to `churn-cache-v3.json`, `churn-log-v3.z` and
-  `coupling-cache-v2.json`. The first churn read deletes the files 0.8.0 and earlier
-  wrote, because each holds a window cut at the wall clock, and walks the window
-  once: seconds on a large history, then warm again. An older crapkit that shares
-  the working tree walks its own window again on its next run.
+  `coupling-cache-v2.json`. The files 0.4.5 to 0.8.0 wrote hold a window cut at the
+  wall clock, so this version never reads them: its first churn read walks the
+  window once, seconds on a large history, then stays warm. It leaves those files
+  alone, so an older crapkit that shares the working tree, a pinned CI install say,
+  keeps its caches warm. Once no older crapkit runs there, delete
+  `.crapkit/churn-cache-v2.json`, `.crapkit/churn-log-v2.z`,
+  `.crapkit/churn-log-v2.json` and `.crapkit/coupling-cache-v1.json`; the log alone
+  can hold several megabytes.
 
 ## Plugin and MCP clients
 

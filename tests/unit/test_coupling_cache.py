@@ -255,21 +255,6 @@ def test_a_read_only_crapkit_dir_costs_the_speedup_not_the_command(tmp_path, log
     assert coupling_cache.load_coupling(tmp_path, 12, TRACKED) == _fresh()
 
 
-def test_a_retired_ranking_that_cannot_be_deleted_costs_nothing(tmp_path, log, monkeypatch):
-    """The v1 ranking is dropped on a miss, best effort: a file nothing can
-    delete stays behind and the command still answers."""
-    old = tmp_path / ".crapkit" / coupling_cache.LEGACY_NAME
-    old.parent.mkdir()
-    old.write_text("{}", encoding="utf-8")
-
-    def refuse(self, *args, **kwargs):
-        raise PermissionError("held open")
-
-    monkeypatch.setattr("pathlib.Path.unlink", refuse)
-    assert coupling_cache.load_coupling(tmp_path, 12, TRACKED) == _fresh()
-    assert old.exists()
-
-
 def test_the_batch_cut_asks_for_the_ranking_default(tmp_path):
     """`worklist --batches` reads the cache and truncates it. That is only sound
     while its containment threshold IS the ranking's default confidence: retune

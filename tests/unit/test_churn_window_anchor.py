@@ -13,12 +13,13 @@ purpose.
 import json
 import os
 import subprocess
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-from crapkit import churn_log, coupling_cache
+from crapkit import churn_cache, churn_log, coupling_cache
 from crapkit.churn_cache import load_churn
 from crapkit.errors import GitError
 from crapkit.gitio import commit_time, head_commit, ls_files
@@ -135,20 +136,41 @@ def test_coupling_ranks_the_same_pairs_a_year_after_the_newest_commit(tmp_path, 
     assert (tmp_path / "later" / ".crapkit" / churn_log.LOG_NAME).is_file()
 
 
-def test_a_v1_coupling_ranking_under_this_very_key_is_never_served(tmp_path, monkeypatch):
-    """0.4.5 to 0.8.0 ranked pairs out of a window cut at the wall clock and
-    keyed them exactly as this version does: read under its own name, an empty
-    ranking written a year after the last commit would stand."""
-    repo = coupled_repo(tmp_path / "repo")
-    tracked = ls_files(repo)
-    old = repo / ".crapkit" / coupling_cache.LEGACY_NAME
-    old.parent.mkdir()
-    key = coupling_cache._cache_key(repo, 12, sorted(tracked))
-    old.write_text(json.dumps({"key": key, "pairs": []}), encoding="utf-8")
+def older_install_caches(repo: Path) -> dict[str, bytes]:
+    """The files 0.4.5 to 0.8.0 lay down, named as they name them and keyed as
+    this version keys its own, each holding what a wall-clock window gave a
+    year after the last commit: no churn, an empty log, no pairs."""
+    empty = zlib.compress(b"", 1)
+    log_key = {**churn_log._cache_key(repo, 12), "cutoff": EPOCH + 60 * DAY,
+               "size": len(empty), "crc": zlib.crc32(empty)}
+    coupling_key = coupling_cache._cache_key(repo, 12, sorted(ls_files(repo)))
+    laid = {"churn-cache-v2.json": json.dumps({"key": churn_cache._cache_key(repo, 12),
+                                               "files": {}}).encode(),
+            "churn-log-v2.z": empty,
+            "churn-log-v2.json": json.dumps(log_key).encode(),
+            "coupling-cache-v1.json": json.dumps({"key": coupling_key, "pairs": []}).encode()}
+    (repo / ".crapkit").mkdir()
+    for name, blob in laid.items():
+        (repo / ".crapkit" / name).write_bytes(blob)
+    return laid
 
-    assert [pair["support"] for pair in pairs_at(repo, monkeypatch, EPOCH + 425 * DAY)] == [6]
-    assert not old.exists(), "nothing reads the v1 name again"
-    assert coupling_cache.CACHE_NAME != coupling_cache.LEGACY_NAME
+
+def test_an_older_install_s_caches_are_never_read_and_never_touched(tmp_path, monkeypatch):
+    """Two installs on one tree each keep their own files warm (README: the
+    version is in the file name). Read under this version's names, 0.8.0's
+    files would answer this very key with a wall-clock window; deleted, the
+    older install walks its whole window again on every run after this one."""
+    repo = coupled_repo(tmp_path / "repo")
+    laid = older_install_caches(repo)
+
+    pairs = pairs_at(repo, monkeypatch, EPOCH + 425 * DAY)
+    churn = load_churn(repo, 12)
+
+    assert [(pair["files"], pair["support"]) for pair in pairs] == [(["a.py", "b.py"], 6)]
+    assert {path: row.commits for path, row in churn.items()} == {"a.py": 6, "b.py": 6}
+    kept = {path.name: path.read_bytes() for path in (repo / ".crapkit").iterdir()
+            if path.name in laid}
+    assert kept == laid
 
 
 def utc(text: str) -> int:

@@ -15,9 +15,10 @@
   measured. CRAP scores and ratchet marks do not, so nothing re-seeds. See the
   [upgrade guide](docs/upgrading.md#unreleased-the-churn-window-ends-at-heads-commit-date).
 - The churn caches move to `churn-cache-v3.json`, `churn-log-v3.z` and
-  `coupling-cache-v2.json`. Each file 0.8.0 and earlier wrote held a window cut at the
-  wall clock, and the same key would have served it on the day of an upgrade; the
-  first churn read deletes them and walks the window once.
+  `coupling-cache-v2.json`. Each file 0.4.5 to 0.8.0 wrote holds a window cut at the
+  wall clock, and the same key would have served it on the day of an upgrade, so the
+  first churn read walks the window once. Those files stay on disk, untouched, so an
+  older crapkit sharing the working tree keeps its own caches warm.
 - The `churn_window_months` description in `crapkit.schema.json`, which editors show on
   hover, the MCP descriptions of `churn_window_months` and `window_months`, and the
   `report` page's footer say the window counts back from HEAD's commit date.

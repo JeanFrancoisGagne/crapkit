@@ -378,11 +378,13 @@ the wider thresholds exist to surface.
 
 The version marker is in the file name on purpose. 0.4.3 and 0.4.5 sharing one working tree
 each read the other's cache as cold and rewrote it, so every run of both rebuilt the map.
-Different formats, different files, both warm. The files 0.8.0 and earlier wrote,
-`churn-cache-v2.json`, `churn-log-v2.z`, `coupling-cache-v1.json` and 0.4.4's unversioned
-names, are the exception: each holds a window that ended on the day it was written, not
-at HEAD's commit date, so the first churn read deletes them. An older crapkit sharing the
-tree then walks its window again on its next run.
+Different formats, different files, both warm. An upgrade past 0.8.0 leaves
+`churn-cache-v2.json`, `churn-log-v2.z` with its key `churn-log-v2.json`, and
+`coupling-cache-v1.json` where they are: each holds a window that ended on the day it was
+written, not at HEAD's commit date, so this version never reads them, and an older crapkit
+sharing the tree keeps reading its own. Delete them once no older crapkit runs on the tree.
+0.4.4's unversioned `churn-log.z` and `churn-cache.json` go on the first churn read, as
+they have since 0.4.5.
 
 ---
 

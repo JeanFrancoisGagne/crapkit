@@ -141,17 +141,19 @@ def test_a_legacy_map_rebuilds_before_reusing_its_path_keys(tmp_path, git):
     assert (tmp_path / ".crapkit" / churn_cache.CACHE_NAME).is_file()
 
 
-def test_a_v2_map_under_this_very_key_is_never_served(tmp_path, git):
+def test_a_v2_map_under_this_very_key_is_never_served_nor_deleted(tmp_path, git):
     """0.4.5 to 0.8.0 cut the window at the wall clock and keyed the map exactly
     as this version does. Read under its own name, a map written on the day of
     an upgrade at the same HEAD would answer, and a tree a year past its last
-    commit would read every file dormant."""
+    commit would read every file dormant. The file is an older install's, which
+    reads it on its next run."""
     old = _old_cache(tmp_path, HEAD, "churn-cache-v2.json", churn_cache.PATH_FORMAT)
+    written = old.read_bytes()
 
     assert churn_cache.load_churn(tmp_path, 12) == parse_git_log(LOG)
     assert git.log_calls == 1
-    assert not old.exists(), "nothing reads the v2 name again"
-    assert churn_cache.CACHE_NAME not in churn_cache.LEGACY_NAMES
+    assert old.read_bytes() == written
+    assert churn_cache.CACHE_NAME != old.name
 
 
 def test_a_current_filename_with_the_old_path_contract_is_rebuilt(tmp_path, git):

@@ -56,13 +56,13 @@ from .gitio import _git_lines, commit_time, head_commit, is_ancestor
 # Versioned like churn_cache's map, and for the same reason: a version that
 # writes another key shape writes another file, so two installs on one tree
 # both stay warm instead of rewriting each other's key on every run. v3 is the
-# first log cut at a window that ends at HEAD's commit date.
+# first log cut at a window that ends at HEAD's commit date. The v2 log 0.4.5
+# to 0.8.0 write stays theirs: this version never reads it and never deletes it.
 LOG_NAME = "churn-log-v3.z"
-# The names 0.4.4 (churn-log.z) and 0.4.5 to 0.8.0 (v2) wrote. Both logs were
-# cut at a window that ended at the wall clock, so no key of this version can
-# answer them, and a 4.4 MB file nothing will read again is not something to
-# leave in every upgraded repo: they are deleted.
-LEGACY_NAMES = ("churn-log.z", "churn-log-v2.z")
+# The name 0.4.4 wrote. Every release since 0.4.5 deletes it: 0.4.5 to 0.8.0
+# adopted the log under their own name first, and this one cannot adopt a log
+# whose window ended at the wall clock. A 4.4 MB file is not litter to leave.
+LEGACY_NAME = "churn-log.z"
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 _SECOND = timedelta(seconds=1)
 # The Gregorian calendar repeats every 400 years: 146,097 days, 4,800 months.
@@ -203,12 +203,10 @@ def has_cache(root: Path) -> bool:
 
 
 def sweep_legacy(root: Path) -> None:
-    """The log pairs older versions laid down, deleted: nothing reads those
-    names again, and each log was cut at a window that ended at the wall clock."""
-    for name in LEGACY_NAMES:
-        old = root / ".crapkit" / name
-        _drop(old)
-        _drop(_key_path(old))
+    """0.4.4's log pair, deleted, as every release since 0.4.5 deletes it."""
+    old = root / ".crapkit" / LEGACY_NAME
+    _drop(old)
+    _drop(_key_path(old))
 
 
 def _drop(path: Path) -> None:

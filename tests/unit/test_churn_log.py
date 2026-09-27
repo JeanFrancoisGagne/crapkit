@@ -242,26 +242,45 @@ def _old_log(tmp_path, name: str):
     return old
 
 
-@pytest.mark.parametrize("name", churn_log.LEGACY_NAMES)
-def test_an_older_version_s_log_is_deleted_never_served(tmp_path, git, name):
-    """0.4.4 and 0.4.5 to 0.8.0 cut the window at the wall clock, under a key
-    this version would answer: served, a tree a year past its last commit
-    reads no churn. The pair goes, 4.4 MB nothing reads again."""
-    old = _old_log(tmp_path, name)
+# 0.4.4's unversioned log, and the v2 log 0.4.5 to 0.8.0 write. Both cut the
+# window at the wall clock under a key this version would answer: served, a
+# tree a year past its last commit reads no churn.
+V044, V080 = "churn-log.z", "churn-log-v2.z"
+
+
+def _pair(old) -> dict:
+    return {path.name: path.read_bytes() for path in (old, churn_log._key_path(old))
+            if path.exists()}
+
+
+def test_0_4_4_s_log_is_deleted_never_served(tmp_path, git):
+    """No version reads that name again: 0.4.5 adopted it and deleted it."""
+    old = _old_log(tmp_path, V044)
 
     assert list(churn_log.log_lines(tmp_path, 12)) == LOG
     assert git.window_calls == 1, "the old log is never read, so the window is walked"
-    assert not old.exists() and not churn_log._key_path(old).exists()
+    assert _pair(old) == {}
     assert cache(tmp_path).is_file()
 
 
-def test_an_older_version_s_log_is_swept_beside_a_v3_log(tmp_path, git):
+def test_the_v2_log_is_never_served_and_stays_as_its_install_wrote_it(tmp_path, git):
+    """An older crapkit on the same tree reads it on its next run."""
+    old = _old_log(tmp_path, V080)
+    written = _pair(old)
+
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
+    assert git.window_calls == 1, "the old log is never read, so the window is walked"
+    assert _pair(old) == written
+    assert churn_log.LOG_NAME != V080
+
+
+def test_0_4_4_s_log_is_swept_beside_a_v3_log(tmp_path, git):
     list(churn_log.log_lines(tmp_path, 12))
-    olds = [_old_log(tmp_path, name) for name in churn_log.LEGACY_NAMES]
+    old = _old_log(tmp_path, V044)
 
     assert list(churn_log.log_lines(tmp_path, 12)) == LOG
     assert git.window_calls == 1, "the v3 log still answers; only the litter goes"
-    assert [old.name for old in olds if old.exists()] == []
+    assert _pair(old) == {}
 
 
 def test_the_key_file_records_what_it_keys_on(tmp_path, git):
