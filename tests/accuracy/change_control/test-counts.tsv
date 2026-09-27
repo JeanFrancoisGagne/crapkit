@@ -3,7 +3,7 @@ analysis_oracles	257
 change_control	150
 corpus_goldens	126
 coverage_oracles	93
-definitions	38
+definitions	39
 history_oracles	74
 kit	248
 runtime_guards	19

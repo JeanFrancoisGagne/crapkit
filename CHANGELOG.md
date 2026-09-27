@@ -27,6 +27,12 @@
   Python `and` or `or` adds to `ccn` with no branch arc for coverage to record. They
   also give `crap`'s formula, when `flag` reads `untested` for a measured function, the
   half-even rounding of `est_uncovered_paths` and what `target` bounds.
+- The README's Languages section states that the Rust and shell readers count each
+  `match` or `case` arm in the modified column too, so the arms are gated: a seven-arm
+  `match` gates at `ccn` 8, where a C `switch` with seven cases gates at 2.
+  `docs/agent-json.md` states that `scored.params` counts a Python signature up to its
+  first `)`, as lizard reads it, which keeps each def's ratchet key. Neither number
+  moves.
 
 ### For contributors
 
@@ -48,7 +54,12 @@
   says what a replay proves and when a bug needs a probe.
 - `tools/accuracy/run.py` fails a check whose test file is missing and names the file and
   the checks row to fix; under `-n N` it had passed that check as `empty`. The four lane
-  unit tests that assumed a host now pass inside the accuracy image. (accuracy change C2)
+  unit tests that assumed a host now pass inside the accuracy image.
+- [docs/accuracy.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md)
+  says how to run each tier locally and what the change-control rules ask of a golden,
+  and lists every calculation and every ruling. `python tools/docs/generate.py` writes
+  those tables, and pyproject.toml's `[tool.mutmut]` `paths_to_mutate`, from the
+  `calcs.tsv` and `rulings.tsv` tables; the unit suite fails while one is out of date.
 
 ## 0.8.0 — 2026-09-23
 

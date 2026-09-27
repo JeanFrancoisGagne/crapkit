@@ -44,6 +44,15 @@ projects, users and dashboards. If your organization runs one, crapkit is not a
 replacement and does not try to be; it is the small sharp version of one gate, close to
 the repo, with nothing to host.
 
+## Checked against them
+
+crapkit's own numbers are checked against several of these tools on every push: its
+`ccn` against radon's and mccabe's, its cognitive column against complexipy's, and its
+coverage join against coverage.py's own line and branch data. Where crapkit reads a
+construct differently on purpose, such as a Rust `match` gated per arm, a rulings row
+says so and cites the line of the docs that states it. The
+[accuracy suite](accuracy.md) lists every calculation, every check and every ruling.
+
 ## Using them together
 
 Nothing here conflicts. radon and wily read the same tree crapkit reads; pytest-cov's

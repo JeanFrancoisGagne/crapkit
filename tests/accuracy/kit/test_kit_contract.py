@@ -304,7 +304,9 @@ def test_the_mutmut_list_is_the_union_of_calc_modules():
 
     assert [path for path in paths if not (REPO / path).exists()] == []
     if KIT_CLOSED:
-        assert sorted(paths) == calcs.modules(calcs.load())
+        assert sorted(paths) == calcs.modules(calcs.load()), (
+            "pyproject.toml's paths_to_mutate is not the union of the calcs.tsv modules; "
+            "`python tools/docs/generate.py` rewrites it")
 
 
 # --- the small corpus, bugs and models -------------------------------------------------------

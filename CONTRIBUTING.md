@@ -40,6 +40,14 @@ shared runner to reproduce a unit failure serially, and `--suite unit` or
 has its own Python process and test directories. Both suites disable a globally
 installed pytest-randomly plugin.
 
+A change to anything crapkit computes, a score, a label, a ranking or a pass/fail,
+also runs the calculation-accuracy suite: `python tools/accuracy/run.py --tier push -n 4`
+([docs/accuracy.md](docs/accuracy.md) has every tier). The pre-push hook runs the
+accuracy checks of each calculation whose module your branch touches. A fix to a
+calculation adds a row to `tests/accuracy/suite_strength/retro/bugs.tsv` whose check
+fails at the commit before the fix, and a change that moves a golden declares itself
+with `python tools/accuracy/change_control.py declare`.
+
 Add `--coverage` to the shared runner to combine branch coverage, subprocess
 measurements, configured test contexts and JUnit results. Every direct run retains its
 evidence in a unique `.crapkit/test-runs/run-*` directory and prints the absolute path

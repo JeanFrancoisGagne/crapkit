@@ -671,6 +671,14 @@ Use `--coverage` to combine both suites' branch coverage, test contexts and JUni
 results. Either suite failing makes the runner fail. Use `--suite unit` or
 `--suite e2e` to run one session, the way each Windows CI job does.
 
+A change to anything crapkit computes, a score, a label, a ranking or a pass/fail,
+also runs the calculation-accuracy suite: `python tools/accuracy/run.py --tier push -n 4`
+(docs/accuracy.md has every tier). A fix to a calculation adds a row to
+`tests/accuracy/suite_strength/retro/bugs.tsv` whose check fails at the commit before the
+fix; a change that moves a golden declares itself with
+`python tools/accuracy/change_control.py declare`, and the pre-push hook refuses the push
+until it does, printing the command.
+
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
 `cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives
 the CLI against real git repos in tmp dirs and asserts through the CLI only. Every call

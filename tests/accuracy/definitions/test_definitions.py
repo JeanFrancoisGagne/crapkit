@@ -232,8 +232,14 @@ READER_PAGES = ("README.md", "AGENTS.md", "CONTEXT.md", "docs/*.md", "docs/*.htm
                 "plugin/skills/*/SKILL.md")
 
 
+# docs/accuracy.md's generated rulings table quotes each recorded construct as
+# written, the wrong forms included: data about the docs, not what a page says.
+RULINGS_BLOCK = re.compile(r"<!-- generated:rulings -->.*?<!-- /generated:rulings -->", re.S)
+
+
 def _says_bare_round(text: str) -> bool:
-    return any("est_uncovered_paths" in line and "round(" in line for line in text.splitlines())
+    prose = RULINGS_BLOCK.sub("", text)
+    return any("est_uncovered_paths" in line and "round(" in line for line in prose.splitlines())
 
 
 def bare_round_pages(repo: Path = doc_places.REPO) -> list[str]:
@@ -261,6 +267,14 @@ def test_the_bare_round_reader_names_each_page_once(tmp_path):
                                         "est_uncovered_paths\n", encoding="utf-8")
 
     assert bare_round_pages(tmp_path) == ["AGENTS.md", "README.md"]
+
+
+def test_a_rulings_table_quoting_a_bare_round_is_not_the_page_saying_it():
+    quoted = ("<!-- generated:rulings -->\n| D | a page gives est_uncovered_paths as round(x) |\n"
+              "<!-- /generated:rulings -->\n")
+
+    assert _says_bare_round(quoted) is False
+    assert _says_bare_round(quoted + "est_uncovered_paths is round(x)\n") is True
 
 
 def test_d10_the_worked_example_is_half_to_even():

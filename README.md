@@ -341,7 +341,7 @@ Three readers are crapkit's own. lizard ships none for shell or PowerShell, so c
 counts their functions itself. Its Rust reader scores a 7-arm `match` as ccn 2 (filed as
 lizard #494), so crapkit counts each non-wildcard arm like a C `case` and retires the
 override the day upstream fixes it. The cognitive column charges that same block once,
-the way Sonar charges a `switch`.
+the way Sonar charges a `switch`. The Rust and shell readers count each `match` or `case` arm in the modified column too, so both columns agree and the arms are gated: a seven-arm `match` gates at `ccn` 8, where lizard's modified count, and so the gated `ccn`, of a C `switch` with seven cases is 2.
 
 Expression arrows in arrays and argument lists are measured separately. In TypeScript,
 wrap an arrow body in parentheses when it contains `<` before a comma, such as
@@ -1366,6 +1366,7 @@ with no debt.
 | [docs/portable-records.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/portable-records.md) | Lossless exports, portable baselines and ratchets, including filenames with delimiters. |
 | [docs/agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md) | The machine surface: `schema`, every payload field, real captured examples. |
 | [docs/comparison.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/comparison.md) | Where crapkit sits next to radon, xenon, wily, coverage.py and SonarQube, and how they run together. |
+| [docs/accuracy.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md) | How crapkit checks its own numbers: each calculation against outside tools, hand tables and models, the tiers that run the checks, and every place crapkit reads a construct differently from an oracle on purpose. |
 | [AGENTS.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md) | The burn-down loop an agent runs, and the rules for changing crapkit itself. |
 | [plugin/](https://github.com/JeanFrancoisGagne/crapkit/tree/main/plugin) | Three skills and the MCP server for Claude Code and Codex, with advisory PostToolUse hook instructions for Claude Code. |
 
