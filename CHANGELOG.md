@@ -216,13 +216,15 @@ the report gone or unreadable. Every reader of those fields took that absence fo
 
 ### A value nobody measured is named, not printed as a fact
 
-Eleven changes in this release can move an exit code: the gates' refusal of an unread
+Thirteen changes in this release can move an exit code: the gates' refusal of an unread
 file and the advisory hook's exit 2, the `verify --reuse-artifacts` refusal of an
 unreadable junit, the shallow-clone refusal below, the refusal of a coverage artifact
-missing a count, the `--reuse-artifacts` refusal while `.crapkit/artifacts.json` cannot be
-read, the marks verify judges when the marks file is deleted or emptied, the history
-`ratchet report --enforce` reads for a marks file renamed with `git mv`, and the failure
-lists verify reads from an older run, those last two in both directions. The [upgrade
+missing a count, the refusals of an istanbul `fnMap` entry without `loc.end.line` and of
+a `branchMap` entry with no line, the `--reuse-artifacts` refusal while
+`.crapkit/artifacts.json` cannot be read, the marks verify judges when the marks file is
+deleted or emptied, the history `ratchet report --enforce` reads for a marks file renamed
+with `git mv`, and the failure lists verify reads from an older run, those last two in
+both directions. The [upgrade
 guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#missing-values-that-081-names)
 lists each with its old and new exit and what to change. A repo upgrading from 0.4.15 or older runs `crapkit coverage` once
 without `--reuse-artifacts` first: those stamps hold no refusal, so the first reuse scores

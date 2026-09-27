@@ -156,3 +156,24 @@ def test_the_upgrade_note_quotes_the_shape_refusal_a_report_that_read_at_exit_0_
     quoted = str(refusal.value).split("; ", 1)[0]
 
     assert f"`{quoted}`" in _flat(UPGRADING)
+
+
+@pytest.mark.parametrize("entry, read", [
+    ("fnMap", lambda istanbul: istanbul._fn_end("0", {"decl": {"start": {"line": 1}}})),
+    ("branchMap", lambda istanbul: istanbul._branch_line("1", {"locations": []})),
+], ids=["fnmap-no-end-line", "branchmap-no-line"])
+def test_the_upgrade_note_names_the_exit_each_istanbul_span_refusal_moves(entry, read):
+    """0.8.0 read an fnMap entry with no loc.end.line as a one-line function and
+    left out a branchMap entry with neither loc.start.line nor line, both at exit
+    0. 0.8.1 fails the lane at exit 5: the table gives each its row, and the note
+    quotes the refusal the reader raises."""
+    from crapkit import coverage_istanbul
+
+    with pytest.raises(ValueError) as refusal:
+        read(coverage_istanbul)
+    quoted = str(refusal.value).split(" (", 1)[0]
+    rows = [ln for ln in (ROOT / UPGRADING).read_text(encoding="utf-8").splitlines()
+            if ln.startswith(f"| an istanbul `{entry}` entry ")]
+
+    assert f"`src/app.ts: {quoted}`" in _flat(UPGRADING)
+    assert len(rows) == 1 and rows[0].endswith("| `coverage`, `verify` | 0 | 5 |"), rows

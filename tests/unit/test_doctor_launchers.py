@@ -144,6 +144,23 @@ def test_under_uvx_plugin_root_fails_naming_uvx_and_the_install_that_stays(tmp_p
         "if you ran doctor through `pipx run`), then run this check again.")
 
 
+def test_the_upgrade_guide_quotes_the_fail_a_one_command_runner_now_draws(tmp_path, monkeypatch,
+                                                                          capsys):
+    """0.8.0 counted the launcher uvx put on PATH and exited 0; this FAIL exits
+    1, so the guide's plugin section quotes its opening and names both exits."""
+    cached = _under_uvx(tmp_path, monkeypatch)
+    monkeypatch.setenv("PATH", joined(cached / BIN))
+
+    main(["doctor", "--plugin-root", str(PLUGIN)])
+    opening = capsys.readouterr().out.split("crapkit doctor: ", 1)[1].split(" (", 1)[0]
+    guide = (PLUGIN.parent / "docs" / "upgrading.md").read_text(encoding="utf-8")
+    section = " ".join(guide.split("\n## Plugin and MCP clients\n", 1)[1].split("\n## ", 1)[0].split())
+
+    assert opening.startswith("FAIL no `crapkit` on PATH outside"), opening
+    assert f"``{opening}``" in section
+    assert "exited 0" in section and "exits 1" in section
+
+
 def test_under_pipx_run_on_its_pip_backend_the_fail_names_pipx(tmp_path, monkeypatch, capsys):
     cached = tmp_path / ".cache" / "pipx" / "7200333e4116883"
     shim(cached / BIN, admin.__version__)

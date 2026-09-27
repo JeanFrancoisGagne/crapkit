@@ -178,3 +178,14 @@ def test_a_cached_version_no_record_names_is_not_checked(tmp_path, monkeypatch, 
     plugin(root.parent / "0.0.1", version="0.0.1")
 
     assert run(capsys) == (0, [f"crapkit doctor: checking {root}"])
+
+
+def test_the_upgrade_guide_names_the_exit_the_every_install_check_moves():
+    """0.8.0 checked only the newest install, so the two installs above passed at
+    exit 0 while every session outside the project ran the older plugin. The
+    check exits 1 there now, and the guide's plugin section says so."""
+    guide = (Path(__file__).resolve().parents[2] / "docs" / "upgrading.md").read_text(encoding="utf-8")
+    section = " ".join(guide.split("\n## Plugin and MCP clients\n", 1)[1].split("\n## ", 1)[0].split())
+
+    assert "it checks every install `installed_plugins.json` records" in section
+    assert "exited 0" in section and "exits 1" in section

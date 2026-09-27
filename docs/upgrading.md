@@ -348,6 +348,8 @@ paragraph below with what to change:
 | a marks file renamed with `git mv`, a mark past `debt_max_age_months` | `ratchet report --enforce` | 0 | 1 |
 | a marks file renamed with `git mv`, `repayment_min_per_30d` met before the rename | `ratchet report --enforce` | 1 | 0 |
 | a coverage artifact missing a count | `coverage`, `verify` | 0 | 5 |
+| an istanbul `fnMap` entry without `loc.end.line` | `coverage`, `verify` | 0 | 5 |
+| an istanbul `branchMap` entry with neither `loc.start.line` nor `line` | `coverage`, `verify` | 0 | 5 |
 | a `.crapkit/artifacts.json` that cannot be read | `coverage --reuse-artifacts`, `verify --reuse-artifacts` | 0 | 5 |
 | a deleted or emptied marks file, and a marked function that rose | `verify` | 0 | 7, or 4 when the clone lacks the history |
 | a failure the baseline's own commit had, where the baseline recorded no failure list | `verify` | 8 | 0 |
@@ -425,6 +427,18 @@ line that matched no line, both at exit 0. From 0.8.1 the lane fails, so `covera
 `src/a.py: functions holds an array, not an object` or
 `src/a.py: missing_lines[0] holds a string, not a line number`, then
 `` regenerate the report with `coverage json` ``. A report coverage.py wrote holds neither.
+
+**Istanbul entries without a line.** 0.8.0 read an istanbul `fnMap` entry with no
+`loc.end.line` as a function one line long, so the body's branches attached to nothing
+and a function that was called scored as covered. It left out a `branchMap` entry with
+neither `loc.start.line` nor the `line` beside it, so the function that branch sat in
+scored without its arms. Both ran at exit 0. From 0.8.1 the lane fails, so `coverage`
+and `verify` exit 5, naming the file and the entry, such as
+`src/app.ts: fnMap['0'] has no loc.end.line` or
+`src/app.ts: branchMap['1'] has no loc.start.line and no line`, and ending
+`regenerate the artifact with the runner's reporter`. Every istanbul reporter writes
+both lines, so look at what rewrote the artifact (a converter or a hand merge) and
+regenerate it with the test runner's own reporter.
 
 **An unreadable `.crapkit/artifacts.json`.** The record that a lane's last attempt failed
 lives in that file. A file that did not parse, or whose lane entry was not an object, read
@@ -658,6 +672,17 @@ the release's version string and `claude plugin update` answers "already at the 
 version"; doctor then compares the installed files with the marketplace's copy and, when
 they differ, prints the `claude plugin uninstall` and `claude plugin install` lines that
 replace them.
+
+`crapkit doctor --plugin-root` exits 1 in two setups where 0.8.0 exited 0, so a script
+that runs it can fail after the upgrade. With no PATH, it checks every install
+`installed_plugins.json` records. 0.8.0 checked only the newest, so a user install
+behind the CLI beside a project install at the CLI's version passed while every session
+outside that project ran the older plugin; update the install the line names. Run
+through `uvx`, `uv run --with` or `pipx run`, it no longer counts the launcher that
+runner put on its own PATH, which the plugin's hooks never inherit, and prints
+``FAIL no `crapkit` on PATH outside the environment uv built for this one command``
+(pipx under `pipx run`). Install crapkit where the hooks' PATH sees it, with
+`uv tool install crapkit` or `pipx install crapkit`.
 
 `crapkit doctor` in a repo names every `crapkit` launcher on PATH, with its version, once
 there are two or more: a WARN when their versions differ, a note while they agree. The

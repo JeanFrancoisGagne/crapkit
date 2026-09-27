@@ -107,6 +107,10 @@ EXIT_MOVES = {
     "shallow-enforce": ("a debt policy key in a shallow clone", "`ratchet report --enforce`",
                         "0 or 1", "4"),
     "artifact-count": ("a coverage artifact missing a count", "`coverage`, `verify`", "0", "5"),
+    "istanbul-fn-end": ("an istanbul `fnMap` entry without `loc.end.line`",
+                        "`coverage`, `verify`", "0", "5"),
+    "istanbul-branch-line": ("an istanbul `branchMap` entry with neither `loc.start.line` nor",
+                             "`coverage`, `verify`", "0", "5"),
     "unreadable-stamps": ("a `.crapkit/artifacts.json` that cannot be read",
                           "`coverage --reuse-artifacts`, `verify --reuse-artifacts`", "0", "5"),
     "marks-deleted": ("a deleted or emptied marks file", "`verify`", "0",
@@ -148,7 +152,7 @@ def test_the_upgrade_table_holds_no_row_the_tests_do_not_know():
 
 
 def test_the_changelog_counts_the_same_changes_the_upgrade_table_lists():
-    words = {9: "Nine", 10: "Ten", 11: "Eleven", 12: "Twelve"}
+    words = {9: "Nine", 10: "Ten", 11: "Eleven", 12: "Twelve", 13: "Thirteen"}
 
     assert (f"{words[len(EXIT_MOVES)]} changes in this release can move an exit code"
             in " ".join(_doc("CHANGELOG.md").split()))
