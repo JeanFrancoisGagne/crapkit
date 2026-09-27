@@ -129,7 +129,12 @@ nothing, and one that fails at the fix proves nothing; both are refused, the row
 stays `pending`, and its ledger note says why. Each night accuracy.yml replays the
 rows whose check changed and a seventh of the rest: the `retro` job in the Linux
 image, and the Windows cell the rows whose `platform` is `windows`
-(`retro.py nightly --platform-only`).
+(`retro.py nightly --platform-only`). The nightly job judges and never records,
+so a row whose check changed replays every night until someone records it:
+after changing a check, or anything it imports, list those rows with
+`python tools/accuracy/retro.py stale`, replay them with `run <id> --record`
+and commit `ledger.tsv`. A row whose test is not written yet never replays and
+stays `pending`.
 
 When the check cannot ask its question of the old commit (it reads a field the fix
 added, or a later bug fails it too), write a probe: a script in `retro/probes/`

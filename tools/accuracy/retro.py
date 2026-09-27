@@ -57,6 +57,7 @@ them.
 from __future__ import annotations
 
 import argparse
+import ast
 from dataclasses import dataclass, replace
 import datetime
 import hashlib
@@ -626,9 +627,20 @@ def ledger_row(bug: Bug, before: Outcome, fix: Outcome, note: str = "") -> dict:
 
 # --- choosing rows -------------------------------------------------------------------------------------
 
+def _defines(path: Path, name: str) -> bool:
+    functions = (ast.FunctionDef, ast.AsyncFunctionDef)
+    return any(isinstance(node, functions) and node.name == name
+               for node in ast.walk(ast.parse(path.read_bytes())))
+
+
 def check_exists(row: dict, repo: Path = REPO) -> bool:
-    """Whether this tree holds the row's check yet: its packet may not have landed."""
-    return (repo / row["test"].split("::")[0]).is_file()
+    """Whether this tree holds the row's check yet: its packet may not have landed,
+    or landed without this test. A parametrized id (`test_x[case]`) names its
+    function without the case. A check that is not there yet never replays: its
+    node id would fail at the fix commit, and every nightly would report it."""
+    path, _, node = row["test"].partition("::")
+    file = repo / path
+    return file.is_file() and _defines(file, node.split("::")[-1].partition("[")[0])
 
 
 def replayable_here(row: dict, platform: str = sys.platform) -> bool:

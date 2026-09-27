@@ -473,8 +473,12 @@ def test_the_digest_does_not_depend_on_where_the_tree_sits(small_tree, tmp_path_
 
 # --- choosing rows -----------------------------------------------------------------------------------
 
+# A check this file holds: a row replays only when its test function exists.
+NODE = "tests/accuracy/suite_strength/test_retro_tool.py::test_digest_prints_the_check_s_digest"
+
+
 def _row(number: int, platform: str = "any", replay: str = "public") -> dict:
-    return {"id": f"R{number}", "test": "tests/accuracy/suite_strength/test_retro_tool.py::t",
+    return {"id": f"R{number}", "test": NODE,
             "platform": platform, "replay": replay}
 
 
@@ -493,6 +497,9 @@ def test_the_nightly_slices_replay_every_row_once_in_a_cycle(count, of, start):
     (_row(1, "windows"), "win32", True),
     (_row(98, replay="open"), "linux", False),
     ({**_row(2), "test": "tests/accuracy/no_packet/test_none.py::t"}, "linux", False),
+    ({**_row(3), "test": "tests/accuracy/suite_strength/test_retro_tool.py::test_not_written_yet"},
+     "linux", False),
+    ({**_row(4), "test": f"{NODE}[case]"}, "linux", True),
 ])
 def test_a_row_replays_on_its_platform_once_its_check_exists(row, platform, here):
     assert retro.replayable_here(row, platform) == here
@@ -512,7 +519,6 @@ def test_all_names_every_replayable_row():
 # here it is a stand-in that returns the outcomes a test names, so the row
 # choice, the ledger rewrite and the exit codes are checked on every push.
 
-NODE = "tests/accuracy/suite_strength/test_retro_tool.py::test_double_doubles"
 
 
 def _bug_row(bug_id: str, replay: str = "public", platform: str = "any") -> dict:

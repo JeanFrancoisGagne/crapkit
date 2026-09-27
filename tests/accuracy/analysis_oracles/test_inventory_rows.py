@@ -101,13 +101,15 @@ def _span(name: str) -> list[str]:
     return [str(start), str(start + 1)]
 
 
+def _needs_a_mark(fields: list[str]) -> bool:
+    """A scope starting with # or a field holding a character a line split cuts at."""
+    return fields[0].startswith("#") or any(c in field for field in fields for c in ENCODED)
+
+
 def test_every_row_is_marked_exactly_when_the_document_says(lines):
-    for line in lines[1:]:
-        if not line:
-            continue
+    for line in filter(None, lines[1:]):
         fields = ai.fields(line)
-        wanted = fields[0].startswith("#") or any(c in field for field in fields for c in ENCODED)
-        assert line.startswith(ai.MARKER + "\t") == wanted, line
+        assert line.startswith(ai.MARKER + "\t") == _needs_a_mark(fields), line
         assert len(fields) == len(HEADER.split("\t"))
 
 
