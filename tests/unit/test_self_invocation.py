@@ -110,6 +110,40 @@ def test_a_linked_console_script_counts_where_it_points(tmp_path, monkeypatch):
     assert _self() == "crapkit"
 
 
+def _shelf_launcher(tmp_path, monkeypatch, content: bytes) -> None:
+    """This interpreter's console script in its Scripts dir, and a launcher
+    holding `content` in the ~/.local/bin a tool installer puts on PATH."""
+    installed = _launcher_in(tmp_path / "tool-venv" / "Scripts")
+    installed.write_bytes(b"launcher naming this interpreter\n")
+    shelf = tmp_path / "local-bin"
+    shelf.mkdir()
+    (shelf / LAUNCHER).write_bytes(content)
+    (shelf / LAUNCHER).chmod(0o755)
+    monkeypatch.setattr(invocation, "_scripts_dirs", lambda: {installed.parent.resolve()})
+    monkeypatch.setenv("PATH", str(shelf))
+    monkeypatch.chdir(tmp_path)
+
+
+def test_a_copied_console_script_counts_as_the_one_it_copies(tmp_path, monkeypatch):
+    """pipx and uv tool on Windows put a byte-for-byte copy of the venv's
+    crapkit.exe in ~/.local/bin, since a symlink there needs Developer Mode.
+    The copy starts the interpreter the original names. Named by the
+    interpreter, every uv tool and pipx install on Windows printed
+    `.../uv/tools/crapkit/Scripts/python.exe -m crapkit coverage` where README
+    prints `crapkit coverage`."""
+    _shelf_launcher(tmp_path, monkeypatch, b"launcher naming this interpreter\n")
+
+    assert _self() == "crapkit"
+
+
+def test_a_launcher_of_the_same_name_with_other_bytes_is_not_named(tmp_path, monkeypatch):
+    """A launcher is its bytes: one that differs from this interpreter's names
+    another interpreter, and so runs another crapkit."""
+    _shelf_launcher(tmp_path, monkeypatch, b"launcher naming another interpreter\n")
+
+    assert _self().endswith(" -m crapkit")
+
+
 def test_the_scripts_dirs_hold_this_interpreters_own_environment():
     import sysconfig
 

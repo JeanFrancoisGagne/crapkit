@@ -48,6 +48,7 @@ answered about `'.\\\\mini'`, a token nobody typed.
 """
 from __future__ import annotations
 
+import filecmp
 import os
 import shutil
 import sys
@@ -82,8 +83,18 @@ def _module_form() -> str:
 
 def _runs_here(found: str | None) -> bool:
     """PATH's `crapkit` is a console script this interpreter installed. A
-    symlink (pipx, uv tool) counts where it points."""
-    return found is not None and Path(found).resolve().parent in _scripts_dirs()
+    symlink (pipx and uv tool on POSIX) counts where it points, and a copy
+    (pipx and uv tool on Windows, where a symlink needs Developer Mode) counts
+    when its bytes are the installed launcher's, which names this
+    interpreter."""
+    if found is None:
+        return False
+    launcher = Path(found).resolve()
+    return any(_same_launcher(launcher, scripts / launcher.name) for scripts in _scripts_dirs())
+
+
+def _same_launcher(launcher: Path, installed: Path) -> bool:
+    return launcher == installed or (installed.is_file() and filecmp.cmp(launcher, installed, shallow=False))
 
 
 def _scripts_dirs() -> set[Path]:
