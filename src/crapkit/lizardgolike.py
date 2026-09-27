@@ -9,7 +9,8 @@ misread a signature five ways:
     next `if` block as its own, and the enclosing function lost that `if`.
   * at package level it read every `func (` as a method receiver, so after
     `var hooks []func()` the next line's `func` became the method's name and
-    the function declared there had no row.
+    the function declared there had no row, and a package-level literal,
+    `var f = func(a, b int) {...}`, counted no parameters.
   * a result type with braces (`struct{ a int }`, Zig's `struct { usize, usize
     }`, `error{Oops}!u8`, `union(enum) {...}`) handed its own `{` to that wait,
     and the function ended on its signature line.
@@ -35,9 +36,11 @@ The fix reads the signature the way the language does:
     back to the function around it. So does a Go signature at a line break
     after a word or a closing bracket, where the Go spec inserts a semicolon,
     and a Zig `fn` followed by `(`, since a Zig function always has a name.
-  * At Go package level, `func (...)` followed by a name and `(` or `[` is a
-    method. Anything else after the group is a result type or a body, so the
-    group was a literal's parameter list or a function type.
+  * At Go package level, `func (...)` followed by a name and `(` is a method.
+    Anything else after the group is a result type or a body, so the group was
+    a literal's parameter list or a function type, and a literal's parameters
+    are counted from it. The long name keeps the group as lizard writes it,
+    `(a,b int)`, the key a package-level literal already had.
   * A `func` right after a `]` on the same line is an element type
     (`[]func(){f, g}`, `map[string]func(int) int{...}`), and the `{` after its
     signature opens the composite literal, not a body. lizard read such a
@@ -52,11 +55,6 @@ reader decides on RAW tokens, newlines included, through `peek`, which
 analyze._ReaderLookahead calls ahead of every counter. The signature that is
 open registers itself on the context (`crapkit_header`), so a token costs one
 attribute read when none is.
-
-Accepted, documented, not solved
---------------------------------
-* A package-level Go literal's parameters were read as a receiver and still
-  are, so `var f = func(a int) {...}` reports params 0, as it did.
 
 Registration
 ------------
@@ -88,7 +86,8 @@ _ENDERS = frozenset({",", ";", "=", ":=", ")", "]", "}"})
 
 # The states a signature is in once its parameter list has closed, or before it
 # opened: the only ones a token can end it in.
-_TAIL = frozenset({"_function_name", "_expect_function_dec", "_expect_function_impl"})
+_TAIL = frozenset({"_function_name", "_after_group", "_expect_function_dec",
+                   "_expect_function_impl"})
 
 # The prongs a Zig switch takes when no other prong matches: `else =>`, and
 # `_ =>` over a non-exhaustive enum. NIST SP 500-235 sec. 4.1 counts a switch's
@@ -117,6 +116,12 @@ def _is_name(token: str) -> bool:
     return token.isidentifier() or token.startswith('@"')
 
 
+def _may_name_a_method(token: str) -> bool:
+    """Whether a token after `func` or a receiver can name a function: a word
+    that is no type keyword."""
+    return _is_name(token) and token not in _GO_TYPE_KEYWORDS
+
+
 def _is_line_break(token: str) -> bool:
     """A raw newline, or a block comment spanning lines, which Go reads as one."""
     return token == "\n" or (token.startswith("/*") and "\n" in token)
@@ -140,6 +145,9 @@ class _SignatureStates(GoLikeStates):
         self._name = ""               # a word after `func` that may name a method
         self._element = False         # `func` came right after `]`: an element type
         self._line = 0                # the line of the last token read
+        # The first group after a package-level `func`, as (token, depth) pairs,
+        # while it may still be a literal's parameters; None once decided.
+        self._group = None
 
     def __call__(self, token, reader=None):
         exits = super().__call__(token, reader)
@@ -156,11 +164,12 @@ class _SignatureStates(GoLikeStates):
         if token == self.FUNC_KEYWORD:
             self.context.crapkit_header = self
             self._element = element
+            self._group = []
 
     def _function_name(self, token):
         if token in ("(", "{", "`"):
             return super()._function_name(token)
-        if _is_name(token) and token not in _GO_TYPE_KEYWORDS:
+        if _may_name_a_method(token):
             self._name = token
             self._state = self._expect_function_dec
             return None
@@ -170,13 +179,50 @@ class _SignatureStates(GoLikeStates):
 
     def _expect_function_dec(self, token):
         """A name followed by its parameter list or type parameters is a
-        function's name. Anything else makes it the first word of a result."""
+        function's name, and the group before it, if any, was its receiver. A Go
+        method has no type parameters, so after a group `[` opens a generic
+        result (`func(a int) List[int]`). Anything else makes the name the first
+        word of a result."""
         name, self._name = self._name, ""
-        if token in ("(", "["):
+        if token == "(" or (token == "[" and not self._group):
+            self._group = None
             self.context.add_to_function_name(name)
             return super()._expect_function_dec(token)
+        self._count_group()
         self._result(name)
         return self._expect_function_impl(token)
+
+    # --- a package-level group: a receiver or a literal's parameters -----------------
+
+    @CodeStateMachine.read_inside_brackets_then("()", "_after_group")
+    def _member_function(self, token):
+        """lizard reads the group after a package-level `func` as a method's
+        receiver, into the long name. The first one is also kept, to be counted
+        if the token after it shows it was a literal's parameter list."""
+        self.context.add_to_long_function_name(token)
+        if self._group is not None:
+            self._group.append((token, self.br_count))
+
+    def _after_group(self, token):
+        """Only a method's name can follow a receiver. Anything else, a result
+        or the body, shows the group was a literal's parameter list."""
+        if not _may_name_a_method(token):
+            self._count_group()
+        return self._function_name(token)
+
+    def _count_group(self):
+        """Count the group kept as a receiver as the parameter list it was,
+        through the test `_parameter` applies. The long name keeps the group as
+        the receiver reading wrote it: `(a int)`, the key such a literal has."""
+        group, self._group = self._group, None
+        if not group:
+            return
+        function = self.context.current_function
+        long_name = function.long_name
+        for token, depth in group:
+            if token not in ("(", ")") and self._at_top(token, depth):
+                function.add_parameter(token)
+        function.long_name = long_name
 
     # --- the parameter list ---------------------------------------------------------
 
@@ -186,13 +232,19 @@ class _SignatureStates(GoLikeStates):
             self._parameter(token)
 
     def _parameter(self, token):
-        """One token of the list. Only a token outside every nested bracket can
-        start a parameter or name one; the rest go to the long name alone."""
-        self._nested += _TYPE_BRACKETS.get(token, 0)
-        if self.br_count > 1 or self._nested or token in _TYPE_BRACKETS:
-            self.context.current_function.add_to_long_name(" " + token)
-        else:
+        """One token of the list. A token at the top of it starts a parameter
+        or names one; the rest go to the long name alone."""
+        if self._at_top(token, self.br_count):
             self.context.parameter(token)
+        else:
+            self.context.current_function.add_to_long_name(" " + token)
+
+    def _at_top(self, token, depth) -> bool:
+        """Whether a token of a parameter list, `depth` parentheses deep, sits
+        outside every bracket nested in the list: only such a token can start
+        or name a parameter."""
+        self._nested += _TYPE_BRACKETS.get(token, 0)
+        return not (depth > 1 or self._nested or token in _TYPE_BRACKETS)
 
     # --- the result and the body ------------------------------------------------------
 
@@ -249,6 +301,7 @@ class _SignatureStates(GoLikeStates):
         self._nested = 0
         self._awaits_type_body = False
         self._name = ""
+        self._group = None
 
 
 class GoSignatureStates(_SignatureStates):

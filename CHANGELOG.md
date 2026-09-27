@@ -19,8 +19,11 @@ guide](docs/upgrading.md) lists what moves.
 - A function whose result type holds braces spans its body: Go's `struct{ a int }`,
   Zig's `struct { usize, usize }`, `error{Oops}!u8` and `union(enum) {...}`. It ended
   on its signature line at ccn 1.
-- A package-level Go literal with a result, `var f = func(a int) error {...}`, is an
-  anonymous function like the literal without one. It had no row.
+- A package-level Go literal with a result, `var f = func(a int) error {...}` or
+  `func(a int) List[int] {...}`, is an anonymous function like the literal without
+  one. It had no row. One whose result is a function type, `func(a int) func(b int)
+  int {...}`, reads `(a int)` where lizard read a method named `func`, `(a int)func b
+  int`.
 - A composite literal whose element type is a function, `[]func(){f, g}` or
   `map[string]func(int) int{...}`, is a literal, not a function. lizard listed it as
   an anonymous row at ccn 1. A function literal inside a package-level one keeps its
@@ -32,6 +35,9 @@ guide](docs/upgrading.md) lists what moves.
   error` and Zig's `lessThan: fn (T, T) bool` read 2, and counts a parameter whose
   type ends in a brace, where `v interface{}` read 0. Those long names do not
   change, so their marks keep their keys.
+- `params` counts a package-level Go literal's parameters. lizard read its list as a
+  method's receiver, so `var f = func(a, b int) {...}` read 0 and now reads 2. Its
+  long name stays `(a,b int)`.
 
 ### Switch prongs and select count as the switch they belong to
 

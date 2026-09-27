@@ -165,7 +165,7 @@ var handler = func(a int) {
         ("(s*Server)Handle a int", 3, 8, 2, 1, 1, 1),
         ("", 11, 13, 1, 0, 0, 0),
         ("Map xs [ ] T , f func T T", 10, 15, 1, 2, 0, 0),
-        ("(a int)", 17, 20, 2, 0, 1, 1),
+        ("(a int)", 17, 20, 2, 1, 1, 1),
     ]
 
 
@@ -224,7 +224,7 @@ var handlers = map[string]func(int) int{
 \t},
 }
 """
-    assert rows("b.go", source) == [("(i int)", 4, 9, 2, 0, 1, 1)]
+    assert rows("b.go", source) == [("(i int)", 4, 9, 2, 1, 1, 1)]
 
 
 def test_a_package_level_go_literal_with_a_result_is_a_function():
@@ -235,8 +235,8 @@ def test_a_package_level_go_literal_with_a_result_is_a_function():
     source = "package b\n\nvar f = func(a int) error {\n\tif a > 0 {\n\t}\n\treturn nil\n}\n"
     struct_result = source.replace("error {", "struct{ a int } {")
 
-    assert rows("b.go", source) == [("(a int)", 3, 7, 2, 0, 1, 1)]
-    assert rows("b.go", struct_result) == [("(a int)", 3, 7, 2, 0, 1, 1)]
+    assert rows("b.go", source) == [("(a int)", 3, 7, 2, 1, 1, 1)]
+    assert rows("b.go", struct_result) == [("(a int)", 3, 7, 2, 1, 1, 1)]
 
 
 # --- Go: the parameter list ------------------------------------------------------
@@ -265,6 +265,30 @@ def test_go_parameters_in_brackets_and_grouped_names_count_as_written():
               "fs ...func(a, b int)) int {\n\treturn a\n}\n")
 
     assert the_one("d.go", source, "Mix").params == 5
+
+
+@pytest.mark.parametrize(("declaration", "long_name", "params"), [
+    ("var f = func(a int, b int) {\n}\n", "(a int,b int)", 2),
+    ("var t = T{\n\tF: func(a, b int) int {\n\t\treturn a\n\t},\n}\n", "(a,b int)", 2),
+    ("var f = func(a int) (int, error) {\n\treturn a, nil\n}\n", "(a int)(int,error)", 1),
+    ("var f = func(g func(int, string) error) {\n}\n", "(g func(int,string)error)", 1),
+    ("var f = func(a int) List[int] {\n\treturn nil\n}\n", "(a int)", 1),
+    ("var f = func() List[int] {\n\treturn nil\n}\n", "()", 0),
+    ("var f = func(a int) func(b int) int {\n\treturn nil\n}\n", "(a int)", 1),
+    ("var f = func(a ...int) {\n}\n", "(a...int)", 1),
+    ("var f = func() {\n}\n", "()", 0),
+    ("func (s *Server) Close() {\n}\n", "(s*Server)Close", 0),
+])
+def test_a_package_level_go_literal_counts_its_parameters(declaration, long_name, params):
+    """At package level lizard reads the group after `func` as a method's
+    receiver, so a literal there counted no parameters: `var f = func(a int, b
+    int) {...}` read 0. Once no method name follows it, the group was the
+    literal's parameter list and counts as one. The long name stays the group
+    as written, the key such a literal already had; a receiver still counts
+    nothing."""
+    (record,) = analyze_source("d.go", "package d\n\n" + declaration)
+
+    assert (record.long_name, record.params) == (long_name, params)
 
 
 # --- Zig: a result type with braces ----------------------------------------------
