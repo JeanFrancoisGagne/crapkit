@@ -18,6 +18,12 @@ run-name: accuracy ${{ inputs.mode || (github.event_name == 'pull_request' && 'l
 # package must be public (a private one counts against the account's 500 MB
 # package quota): push one bootstrap tag by hand, set the package's visibility
 # to public once, and every later push stays public.
+#
+# Every cell that reads the full corpus fetches it first with
+# `tools/accuracy/corpus.py fetch`: one prerelease asset per corpus.toml
+# digest, cached per OS. A digest nobody has published yet fails that step
+# without stopping the cell, and each check that reads the corpus then ends as
+# an infra miss naming the publish steps.
 
 on:
   schedule:
@@ -182,6 +188,18 @@ jobs:
           path: .hypothesis
           key: hypothesis-${{ matrix.shard }}-${{ matrix.python }}-${{ github.run_id }}
           restore-keys: hypothesis-${{ matrix.shard }}-${{ matrix.python }}-
+      - uses: actions/cache@v4
+        with:
+          path: .crapkit/corpus
+          key: corpus-${{ runner.os }}-${{ hashFiles('tests/accuracy/corpus_goldens/corpus.toml') }}
+      - name: The full corpus
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          folder=$(python3 tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
+          echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
+      # The fetched corpus goes where the image looks for it, /corpus.
       - name: run.py in the image
         env:
           REF: ${{ needs.image.outputs.ref }}
@@ -190,6 +208,7 @@ jobs:
         run: |
           docker pull --quiet "$REF"
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src \
+            ${CRAPKIT_ACCURACY_CORPUS:+-v "$CRAPKIT_ACCURACY_CORPUS:/corpus:ro"} \
             -e CRAPKIT_ACCURACY_PY=${{ matrix.python }} -e CRAPKIT_ACCURACY_IMAGE="$REF" \
             -e CRAPKIT_ACCURACY_IMAGE_DIGEST="$DIGEST" -e CRAPKIT_HYPOTHESIS_DB=/src/.hypothesis/examples \
             "$REF" python tools/accuracy/run.py --tier "$TIER" --shard ${{ matrix.shard }} -n 4 \
@@ -217,6 +236,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt && pip install --no-deps -e .
+      - uses: actions/cache@v4
+        with:
+          path: .crapkit/corpus
+          key: corpus-${{ runner.os }}-${{ hashFiles('tests/accuracy/corpus_goldens/corpus.toml') }}
+      - name: The full corpus
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          folder=$(python tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
+          echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
       - run: python tools/accuracy/run.py --tier nightly --shard corpus --receipt edge/floor.json
       - run: pip install --no-deps --upgrade lizard && python -m lizard --version
       - run: python tools/accuracy/run.py --tier nightly --shard corpus --receipt edge/newest.json
@@ -249,6 +279,18 @@ jobs:
       - run: pip install --require-hashes --no-deps -r tools/accuracy/requirements-nightly.txt
       - run: pip install --no-deps -e .
       - run: npm ci --prefix tools/accuracy/node/push --ignore-scripts --no-audit --no-fund
+      - uses: actions/cache@v4
+        with:
+          path: .crapkit/corpus
+          key: corpus-${{ runner.os }}-${{ hashFiles('tests/accuracy/corpus_goldens/corpus.toml') }}
+      - name: The full corpus
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          folder=$(python tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
+          echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
       # The checks whose os list names win32, plus every check with no os list.
       - run: python tools/accuracy/run.py --tier ${{ needs.plan.outputs.tier }} -n 4 --receipt .crapkit/accuracy/receipts/windows-${{ matrix.python }}.json
       # The past bugs that replay on Windows only (bugs.tsv platform windows), a
@@ -280,6 +322,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt && pip install --no-deps -e .
+      - uses: actions/cache@v4
+        with:
+          path: .crapkit/corpus
+          key: corpus-${{ runner.os }}-${{ hashFiles('tests/accuracy/corpus_goldens/corpus.toml') }}
+      - name: The full corpus
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          folder=$(python tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
+          echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
       - run: python tools/accuracy/run.py --tier ${{ needs.plan.outputs.tier }} --shard corpus -n 3 --receipt .crapkit/accuracy/receipts/macos-3.12-corpus.json
       - uses: actions/upload-artifact@v4
         if: always()

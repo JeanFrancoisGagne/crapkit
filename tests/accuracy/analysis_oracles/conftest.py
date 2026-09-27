@@ -27,7 +27,7 @@ import pytest
 from accuracy.analysis_oracles import (analysis_corpora, analysis_inventory, analysis_js,
                                        analysis_shapes, analysis_tables, analysis_tstests)
 from accuracy.analysis_oracles.oracles import node_oracles
-from accuracy.kit import oracles, runlog
+from accuracy.kit import corpus_dir, oracles
 
 
 def _shared_base(tmp_path_factory):
@@ -126,11 +126,7 @@ def eslint_push(js_push, oracle):
 
 @pytest.fixture(scope="session")
 def full_corpus():
-    try:
-        return analysis_corpora.full_corpus_root()
-    except analysis_corpora.CorpusMissing as missing:
-        runlog.note("infra", message=str(missing))
-        pytest.fail(str(missing), pytrace=False)
+    return corpus_dir.require()
 
 
 @pytest.fixture(scope="session")

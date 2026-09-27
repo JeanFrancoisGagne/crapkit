@@ -1,7 +1,7 @@
 """Churn, coupling and renames on whole histories: this repository, the synthetic
 60-commit history (repos/history_specs.py SYNTHETIC), and every git bundle the
-corpus holds (under tests/accuracy/corpus_goldens, and the full corpus under
-CRAPKIT_ACCURACY_CORPUS or /corpus when it is there).
+corpus holds (under tests/accuracy/corpus_goldens, and the full corpus
+kit.corpus_dir finds, when there is one).
 
 A history is cloned without a checkout and crapkit's churn, coupling and
 rename readers run on it in-process, because a corpus history has no
@@ -16,12 +16,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
-import os
 from pathlib import Path
 
 import pytest
 
-from accuracy.kit import repos
+from accuracy.kit import corpus_dir, repos
 from accuracy.history_oracles.oracles import (bugspots_runner, code_maat, git_walk,
                                               mlxtend_adapter, pair_count, pydriller_adapter,
                                               pygit2_renames)
@@ -31,12 +30,11 @@ from crapkit import churn_cache, churn_log, coupling, gitio
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-CORPUS_ENV = "CRAPKIT_ACCURACY_CORPUS"
 pytestmark = pytest.mark.process
 
 
 def _corpus_dirs() -> list[Path]:
-    return [HERE.parent / "corpus_goldens", Path(os.environ.get(CORPUS_ENV, "/corpus"))]
+    return [HERE.parent / "corpus_goldens", *filter(None, [corpus_dir.locate()])]
 
 
 def bundles() -> list[Path]:

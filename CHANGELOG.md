@@ -41,6 +41,8 @@
   `python tools/accuracy/change_control.py declare <id> --kind fix --calcs "<calc>" --reason "<why>"`.
   A change to a module a calc lives in takes one too, and change control's refusal
   prints the command it needs.
+- The nightly tier reads the full corpus from the cache `python tools/accuracy/corpus.py fetch`
+  fills, with no setting; `CRAPKIT_ACCURACY_CORPUS` points it at another copy.
 - Each past calculation bug replays its check at the commit before its fix and at the
   fix (`tools/accuracy/retro.py`); [Past bugs](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md#past-bugs)
   says what a replay proves and when a bug needs a probe.

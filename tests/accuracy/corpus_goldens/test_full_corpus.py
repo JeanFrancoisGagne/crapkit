@@ -6,9 +6,9 @@ and change control asks for its CHANGES row. Each export is also noted in the
 run log with its text, so the xplat job compares the full corpus across 3.11
 to 3.14, Windows and macOS (ints and labels exact, floats within 2 ulp).
 
-The corpus is CRAPKIT_ACCURACY_CORPUS, /corpus in the accuracy image, or the
-cache `python tools/accuracy/corpus.py fetch` fills; a missing one is an infra
-miss. Rewrite the digests with `python tools/accuracy/regenerate.py goldens
+The corpus is the one kit.corpus_dir finds: CRAPKIT_ACCURACY_CORPUS, /corpus in
+the accuracy image, or the cache `python tools/accuracy/corpus.py fetch` fills;
+a missing one is an infra miss. Rewrite the digests with `python tools/accuracy/regenerate.py goldens
 --corpus DIR`, then declare the change.
 """
 import hashlib
@@ -16,21 +16,14 @@ import hashlib
 import pytest
 
 from accuracy.corpus_goldens import full_runs
-from accuracy.kit import runlog
+from accuracy.kit import corpus_dir, runlog
 
 pytestmark = [pytest.mark.nightly, pytest.mark.release, pytest.mark.process, pytest.mark.golden]
 
 
 @pytest.fixture(scope="module")
 def corpus():
-    found = full_runs.locate()
-    if found is None:
-        message = ("no full corpus: set CRAPKIT_ACCURACY_CORPUS, run in the accuracy image, or "
-                   "run `python tools/accuracy/corpus.py fetch`; looked in "
-                   + ", ".join(map(str, full_runs.candidates())))
-        runlog.note("infra", message=message)
-        pytest.fail(message, pytrace=False)
-    return found
+    return corpus_dir.require()
 
 
 def test_the_corpus_is_the_one_corpus_toml_pins(corpus):

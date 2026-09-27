@@ -329,6 +329,11 @@ def publish(tarball: Path, table: dict, repo: str, dry_run: bool) -> str:
     return f"published {name} on {repo}"
 
 
+PUBLISH_HINT = ("when corpus.toml's digest has no release yet, a maintainer publishes it once: "
+                "`python tools/accuracy/corpus.py build --out DIR`, then `pack DIR --out "
+                "corpus.tar.gz`, then `publish corpus.tar.gz`")
+
+
 def default_dest() -> Path:
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.cache")
     return Path(base) / "crapkit-accuracy" / "corpus"
@@ -344,7 +349,7 @@ def fetch(dest: Path, table: dict, repo: str) -> Path:
     done = gh("release", "download", name, "--repo", repo, "--dir", str(target), "--clobber")
     if done.returncode != 0:
         raise ToolFailed(f"gh release download {name} exited {done.returncode}: "
-                         f"{done.stderr.strip()}")
+                         f"{done.stderr.strip()}; {PUBLISH_HINT}")
     for tarball in target.glob("*.tar.gz"):
         with tarfile.open(tarball) as archive:
             archive.extractall(target, filter="data")
@@ -386,7 +391,7 @@ def _run(args, table: dict) -> list[str]:
         "digest": lambda: [digest(table)],
         "pack": lambda: [f"{args.out} sha256 {pack(args.root, args.out)}"],
         "publish": lambda: [publish(args.tarball, table, args.repo, args.dry_run)],
-        "fetch": lambda: [str(fetch(args.dest or default_dest(), table, args.repo))],
+        "fetch": lambda: [str(fetch(args.dest or default_dest(), table, args.repo).resolve())],
     }
     return commands[args.command]()
 

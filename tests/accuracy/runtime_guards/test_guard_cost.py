@@ -134,8 +134,9 @@ def _member_cost(member, work) -> tuple[int, int]:
 @pytest.mark.process
 def test_the_checks_cost_at_most_one_percent_of_each_full_corpus_run(tmp_path,
                                                                      record_testsuite_property):
-    members = corpora.members(corpora.full_corpus())
-    assert members, f"no full corpus: set {corpora.CORPUS_ENV}"
+    root = corpora.full_corpus()
+    members = corpora.members(root)
+    assert members, f"the full corpus at {root} holds no member directory"
     costs = {member.name: _member_cost(member, tmp_path / member.name) for member in members}
     ratios = {name: spent / alive for name, (spent, alive) in costs.items()}
     record_testsuite_property("invariant_cost_ratios", json.dumps(ratios, sort_keys=True))

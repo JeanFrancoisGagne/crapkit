@@ -74,7 +74,10 @@ python tools/accuracy/run.py --tier push -n 4
 `--os-sensitive` runs only the checks whose answer can change with the OS. The
 nightly tier needs the `accuracy` extra, `npm ci --prefix tools/accuracy/node/nightly`
 and the full corpus (`python tools/accuracy/corpus.py fetch`); the outside tools
-that are not Python or Node packages come with the accuracy image.
+that are not Python or Node packages come with the accuracy image. Every check
+finds the fetched corpus on its own, looking at `CRAPKIT_ACCURACY_CORPUS` first,
+then the image's `/corpus`, then the fetch cache. A check that finds none ends
+as an infra miss naming each place it looked.
 
 Exit codes: 0 every check passed, 1 a check failed, 3 only infra misses (an
 oracle not installed, a fetch that failed) after one retry. Each run writes a

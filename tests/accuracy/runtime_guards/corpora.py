@@ -1,9 +1,8 @@
 """The corpora the runtime-guards checks measure: the kit's seed corpus and the full corpus.
 
-The full corpus is a directory of member directories: CRAPKIT_ACCURACY_CORPUS
-when set, else %LOCALAPPDATA%/crapkit-accuracy/corpus when it exists, else
-/corpus, where the accuracy image bakes it. A member is a directory holding the
-crapkit.toml tools/accuracy/corpus.py generates. Each member is copied into a
+The full corpus is the directory kit.corpus_dir finds: CRAPKIT_ACCURACY_CORPUS,
+the accuracy image's /corpus, or the cache `corpus.py fetch` fills. A member is
+a directory in it holding the crapkit.toml tools/accuracy/corpus.py generates. Each member is copied into a
 fresh one-commit repo and scored with one root scope that asks for no coverage,
 so every function it holds reaches the store, the worklist, the queue, the
 digest, the marks and verify without a suite to run.
@@ -15,14 +14,12 @@ history/<member>.bundle is cloned and scored the same way over its own log.
 from __future__ import annotations
 
 import importlib
-import os
 from pathlib import Path
 import shutil
 
-from accuracy.kit import repos
+from accuracy.kit import corpus_dir, repos
 
 STOP = "internal check failed"
-CORPUS_ENV = "CRAPKIT_ACCURACY_CORPUS"
 # Every command that reaches a check, in an order where each one has what it
 # reads: a second scored run for the digest, marks before verify and prune.
 # A repo that holds no scored run yet takes FIRST_RUN before these.
@@ -38,11 +35,8 @@ def stops(done) -> list[str]:
 
 
 def full_corpus() -> Path:
-    named = os.environ.get(CORPUS_ENV)
-    if named:
-        return Path(named)
-    local = Path(os.environ.get("LOCALAPPDATA", "~")).expanduser() / "crapkit-accuracy" / "corpus"
-    return local if local.is_dir() else Path("/corpus")
+    """The full corpus; without one the calling check ends as an infra miss."""
+    return corpus_dir.require()
 
 
 def members(root: Path) -> list[Path]:

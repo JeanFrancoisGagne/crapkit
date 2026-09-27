@@ -210,10 +210,11 @@ class FakeGh:
 
     def __call__(self, *args):
         self.calls.append(args)
-        if args[:2] == ("release", "download"):
+        if args[:2] == ("release", "download") and self.published:
             target = Path(args[args.index("--dir") + 1])
             (target / "corpus.tar.gz").write_bytes(self.tarball.read_bytes())
-        code = {"view": 0 if self.published else 1, "create": self.create_code}.get(args[1], 0)
+        code = {"view": 0 if self.published else 1, "create": self.create_code,
+                "download": 0 if self.published else 1}.get(args[1], 0)
         return type("Done", (), {"returncode": code, "stderr": "gh said no"})()
 
 
@@ -276,3 +277,33 @@ def test_fetch_downloads_and_unpacks_once(tmp_path, monkeypatch):
     assert first == second == tmp_path / "cache" / corpus.tag(TABLE)
     assert (first / "b" / "1.txt").read_text(encoding="utf-8") == "uno"
     assert [call[:2] for call in gh.calls] == [("release", "download")]
+
+
+def _fetch_main(tmp_path, monkeypatch, gh) -> int:
+    monkeypatch.setattr(corpus, "gh", gh)
+    monkeypatch.chdir(tmp_path)
+    table = tmp_path / "corpus.toml"
+    table.write_text(_toml(_member()), encoding="utf-8")
+    return corpus.main(["fetch", "--dest", "cache"], table)
+
+
+def test_fetch_prints_the_folder_it_filled_as_an_absolute_path(tmp_path, monkeypatch, capsys):
+    """CI writes the printed folder to CRAPKIT_ACCURACY_CORPUS and mounts it,
+    both of which need a path that holds from any working directory."""
+    built = _tree(tmp_path / "built", 1)
+    corpus.pack(built, tmp_path / "c.tar.gz")
+
+    code = _fetch_main(tmp_path, monkeypatch, FakeGh(published=True, tarball=tmp_path / "c.tar.gz"))
+
+    printed = Path(capsys.readouterr().out.strip())
+    assert code == 0 and printed.is_absolute()
+    assert (printed / "b" / "1.txt").read_text(encoding="utf-8") == "uno"
+
+
+def test_a_digest_with_no_release_is_infra_and_says_how_to_publish_it(tmp_path, monkeypatch,
+                                                                     capsys):
+    code = _fetch_main(tmp_path, monkeypatch, FakeGh(published=False))
+
+    err = capsys.readouterr().err
+    assert code == 3
+    assert "exited 1: gh said no" in err and "corpus.py build --out DIR" in err

@@ -124,8 +124,7 @@ def test_rg5_a_fixed_tree_ranks_identically_a_year_later(make_repo):
 def test_zero_stops_on_every_full_corpus_member(tmp_path):
     root = corpora.full_corpus()
     members = corpora.members(root)
-    assert members, (f"no full corpus at {root}: set {corpora.CORPUS_ENV}, or restore the "
-                     "corpus-<digest> asset tools/accuracy/corpus.py publishes")
+    assert members, f"the full corpus at {root} holds no member directory"
     found = []
     for member in members:
         root = corpora.member_repo(member, tmp_path / member.name)
@@ -136,8 +135,9 @@ def test_zero_stops_on_every_full_corpus_member(tmp_path):
 @pytest.mark.nightly
 @pytest.mark.process
 def test_zero_stops_on_every_member_history(tmp_path):
-    bundles = corpora.histories(corpora.full_corpus())
-    assert bundles, f"no history bundles under {corpora.full_corpus()}: set {corpora.CORPUS_ENV}"
+    root = corpora.full_corpus()
+    bundles = corpora.histories(root)
+    assert bundles, f"the full corpus at {root} holds no history/*.bundle"
     found = []
     for bundle in bundles:
         root = corpora.history_repo(bundle, tmp_path / bundle.stem)

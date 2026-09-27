@@ -131,6 +131,42 @@ def test_the_oracle_cells_reach_pypi_and_the_mutation_cells_do_not():
     assert mutation and all("--network none" in run for run in mutation)
 
 
+CORPUS_CELLS = ("oracles", "lizard-edge", "windows", "macos")
+
+
+def _tier_index(job: dict) -> int:
+    return next(index for index, item in enumerate(job["steps"])
+                if "tools/accuracy/run.py --tier" in str(item.get("run", "")))
+
+
+def _corpus_steps(job: dict) -> tuple[int, int]:
+    """(index of the corpus cache restore, index of the fetch) in one job."""
+    cached = [index for index, item in enumerate(job["steps"])
+              if item.get("with", {}).get("path") == ".crapkit/corpus"]
+    assert len(cached) == 1
+    return cached[0], job["steps"].index(step(job, "name", "The full corpus"))
+
+
+def test_every_cell_that_reads_the_full_corpus_fetches_it_before_its_tier():
+    """Without the fetch every full-corpus check in the cell ends as an infra
+    miss. A fetch that fails (a digest nobody published yet) must not stop the
+    cell: the checks that need no corpus still run and report."""
+    jobs = _jobs("accuracy.yml")
+    for name in CORPUS_CELLS:
+        cache, fetch = _corpus_steps(jobs[name])
+        found = jobs[name]["steps"][fetch]
+
+        assert cache < fetch < _tier_index(jobs[name]), name
+        assert "corpus.py fetch --dest .crapkit/corpus" in found["run"], name
+        assert (found["continue-on-error"], found["env"]["GH_TOKEN"]) == (True, "${{ github.token }}")
+
+
+def test_the_image_cells_mount_the_fetched_corpus_where_the_image_looks():
+    run = step(_jobs("accuracy.yml")["oracles"], "name", "run.py in the image")["run"]
+
+    assert '${CRAPKIT_ACCURACY_CORPUS:+-v "$CRAPKIT_ACCURACY_CORPUS:/corpus:ro"}' in run
+
+
 def _verdict_steps() -> tuple[list, int]:
     steps = _jobs()["verdict"]["steps"]
     join = steps.index(step(_jobs()["verdict"], "run", "python tools/testing/ci.py"))
