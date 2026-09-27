@@ -36,6 +36,8 @@ def pytest_addoption(parser):
     group = parser.getgroup("deploy")
     group.addoption("--deploy-cell", action="append", default=[], help="run only this cell id (repeatable)")
     group.addoption("--deploy-packet", default=None, help="run only the cells of this packet")
+    group.addoption("--deploy-shard", type=cells.shard, default=None, metavar="PART/PARTS",
+                    help="run part PART of PARTS of the selected tests (run.py --shard)")
 
 
 def pytest_configure(config):
@@ -66,14 +68,24 @@ def pytest_sessionfinish(session, exitstatus):
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
-@pytest.hookimpl(tryfirst=True)
+@pytest.hookimpl(wrapper=True)
 def pytest_collection_modifyitems(config, items):
-    """Runs before -m deselects anything, so the loose-test record sees every
-    collected deploy test."""
+    """Wraps -m. Before it deselects anything, the loose-test record sees every
+    collected deploy test and --deploy-cell / --deploy-packet narrow the run.
+    After it, --deploy-shard takes its part of what -m left, so the parts split
+    the selected tests evenly."""
     config.stash[cells.LOOSE] = cells.loose(items, Path(__file__).resolve().parent)
     wanted, packet = config.getoption("--deploy-cell"), config.getoption("--deploy-packet")
-    keep, dropped = cells.partition(items, lambda item: cells.selected(cells.cell_meta(item), wanted, packet,
-                                                                        cells.module_packet(item)))
+    _narrow(config, items, cells.partition(items, lambda item: cells.selected(cells.cell_meta(item), wanted, packet,
+                                                                               cells.module_packet(item))))
+    yield
+    part = config.getoption("--deploy-shard")
+    if part:
+        _narrow(config, items, cells.in_shard(items, *part))
+
+
+def _narrow(config, items, split) -> None:
+    keep, dropped = split
     if dropped:
         config.hook.pytest_deselected(items=dropped)
         items[:] = keep

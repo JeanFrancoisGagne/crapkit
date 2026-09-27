@@ -43,6 +43,7 @@ The other flags:
 | `--no-cache` | builds cold |
 | `--cache local` or `gha` | where BuildKit keeps its layer cache; `gha` reads and writes the GitHub Actions cache on a docker-container builder |
 | `--builder NAME` | the buildx builder; the default is the daemon's own when it runs the pinned BuildKit, else `crapkit-deploy` running the pinned BuildKit image |
+| `--shard PART/PARTS` | runs one part of the selection, kit tests included, so PARTS machines split it: in test-id order, every PARTS-th test from the PART-th. ci.yml's `deploy-linux` runs `--shard 1/2` and `--shard 2/2` on two runners at once, because one runner took 6 to 9 minutes for the push set's tests and the push budget is 10 minutes a job |
 | `--out DIR` | where the output below lands |
 
 `--harness core` (the default) or `--harness full` adds the harnesses that
@@ -233,7 +234,7 @@ re-runs of that pull request can read them.
 
 | Job | Image | Cache | Why |
 |---|---|---|---|
-| `deploy-linux` | `core` | `gha` | ci.yml, every push and pull request; keeps the `core` scope warm |
+| `deploy-linux` | `core` | `gha` | ci.yml, every push and pull request, in two parts that each read the scope; keeps the `core` scope warm |
 | `nightly-linux-core` | `core` | `gha` | the scope `deploy-linux` keeps warm |
 | `nightly-act` | `ci` | `gha` | 0.56 GB |
 | `nightly-linux-full` | `full` | `local` | cold every night, see below |

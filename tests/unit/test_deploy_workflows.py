@@ -351,11 +351,33 @@ def test_the_summary_says_so_when_no_junit_was_written(tmp_path):
 
 # --- every run.py call, and what it selects -------------------------------------------
 
-def ci_invocations():
-    """The run.py argument lists ci.yml's deploy jobs pass."""
-    lines = [step["run"] for name in PUSH_JOBS for step in CI["jobs"][name]["steps"]
-             if "tools/deploy/run.py" in step.get("run", "")]
-    return [shlex.split(line)[2:] for line in lines]
+def ci_invocations(names=PUSH_JOBS):
+    """The run.py argument lists ci.yml's deploy jobs pass, one per matrix part."""
+    return [shlex.split(line)[2:] for name in names for line in run_lines(CI["jobs"][name])]
+
+
+def run_lines(job):
+    """Each run.py line of a job's steps, once for each value of its matrix
+    `part`, as the runner substitutes it."""
+    parts = job.get("strategy", {}).get("matrix", {}).get("part", [None])
+    return [step["run"].replace("${{ matrix.part }}", str(part)) for step in job["steps"]
+            if "tools/deploy/run.py" in step.get("run", "") for part in parts]
+
+
+def upload_names(job):
+    return [step["with"]["name"] for step in job["steps"] if _uses(step, "actions/upload-artifact")]
+
+
+def test_deploy_linux_splits_the_push_set_between_parts_that_run_side_by_side():
+    """One runner ran the Linux push set's tests in 363 to 525 s, and restoring and
+    loading the core image adds 3 to 4 minutes: past the push budget of 10 minutes."""
+    job = CI["jobs"]["deploy-linux"]
+    parts = [vars(run.parse(argv)) for argv in ci_invocations(["deploy-linux"])]
+
+    assert [args.pop("shard") for args in parts] == ["1/2", "2/2"]
+    assert parts[0] == parts[1]
+    assert job["strategy"]["fail-fast"] is False
+    assert upload_names(job) == ["deploy-linux-${{ matrix.part }}"]
 
 
 def _job_invocations(job):
@@ -797,8 +819,7 @@ def _cache_word(args):
 
 
 def _push_calls():
-    return [(name, shlex.split(step["run"])[2:]) for name in PUSH_JOBS for step in CI["jobs"][name]["steps"]
-            if "tools/deploy/run.py" in step.get("run", "")]
+    return [(name, argv) for name in PUSH_JOBS for argv in ci_invocations([name])]
 
 
 def _linux_entry_calls(jobs):

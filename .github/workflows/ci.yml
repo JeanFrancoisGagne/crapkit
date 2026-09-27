@@ -228,9 +228,17 @@ jobs:
   # Actions cache, and runs every Linux push cell in it with no network. The
   # timeout covers a cold build on this 4-core runner: a job that times out
   # mid-build writes no cache, and every later run would start cold again.
+  # Two parts run side by side, each half of the push set (run.py --shard):
+  # on one machine the whole set's tests took 6 to 9 minutes at -n 4, and
+  # restoring and loading the image adds 3 to 4, past the 10 minutes a push
+  # may take. Each part restores the image on its own runner.
   deploy-linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
     permissions:
       contents: read
     steps:
@@ -257,7 +265,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: run the Linux push cells in crapkit-deploy:core
-        run: python tools/deploy/run.py --cadence push --os linux --image core --cache gha -n 4
+        run: python tools/deploy/run.py --cadence push --os linux --image core --cache gha -n 4 --shard ${{ matrix.part }}/2
       - name: per-cell durations
         if: always()
         shell: python
@@ -285,7 +293,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: always()
         with:
-          name: deploy-linux
+          name: deploy-linux-${{ matrix.part }}
           path: |
             .crapkit/deploy-out
             !.crapkit/deploy-out/**/in

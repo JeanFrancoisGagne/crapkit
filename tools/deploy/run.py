@@ -5,7 +5,7 @@ laptop and in CI.
         [--cell ID ...] [--packet KEY] [--os linux|windows|macos]
         [--image cells|cells-arm64|core|full|full-latest|ci|gui] [--native] [--build-only]
         [--bake] [--online] [--repeat N] [--no-cache] [--cache local|gha] [--builder NAME]
-        [--faketime HH:MM:SS|+400d] [-n N] [--out DIR]
+        [--faketime HH:MM:SS|+400d] [-n N] [--shard PART/PARTS] [--out DIR]
 
 Linux runs build the image, export the tree under test with export.py into
 <out>/in, and run tests/deploy inside the image as uid 1000 with no network.
@@ -29,7 +29,9 @@ a crapkit source change rebuilds nothing:
 toolchain.py installed (Windows and macOS always run native, and so does
 lin-native-start on a bare Linux runner). `--repeat N` runs the selection
 N times from fresh containers and fails when any cell's verdict differs
-between runs. `--faketime` runs the container under libfaketime (lin-clock):
+between runs. `--shard 1/2` runs half of the selection and `--shard 2/2`
+the other half, so two machines split one set; their counts differ by at
+most one test. `--faketime` runs the container under libfaketime (lin-clock):
 HH:MM:SS starts the clock at that UTC time today, +400d runs 400 days ahead.
 A program that names no dynamic loader keeps the real clock: uv, Crush, act,
 the Codex CLI, and the rg and sandbox helpers Codex, the Cursor agent and VS
@@ -122,9 +124,25 @@ JUNIT = ["-o", "junit_family=xunit1"]
 def pytest_args(args) -> list[str]:
     selected = JUNIT + ["-m", marker_expression(args.cadence, args.os, None if args.native else args.image,
                                                 args.online)]
-    selected += [f"--deploy-cell={cell}" for cell in args.cell]
-    selected += [f"--deploy-packet={args.packet}"] if args.packet else []
-    return selected + (["-n", str(args.n)] if args.n else [])
+    return selected + narrowing(args) + (["-n", str(args.n)] if args.n else [])
+
+
+def narrowing(args) -> list[str]:
+    """--deploy-cell, --deploy-packet and --deploy-shard: what narrows the -m selection."""
+    given = [("cell", cell) for cell in args.cell] + [("packet", args.packet), ("shard", args.shard)]
+    return [f"--deploy-{name}={value}" for name, value in given if value]
+
+
+SHARD = re.compile(r"(\d+)/(\d+)")
+
+
+def shard(text: str) -> str:
+    """--shard's value, checked before anything builds: PART/PARTS with
+    1 <= PART <= PARTS."""
+    found = SHARD.fullmatch(text)
+    if not found or not 1 <= int(found[1]) <= int(found[2]):
+        raise argparse.ArgumentTypeError(f"{text!r} is not PART/PARTS, 1 <= PART <= PARTS, such as 1/2")
+    return text
 
 
 # --- building -----------------------------------------------------------------
@@ -585,6 +603,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "(tests/deploy/kit/clock.py)")
     parser.add_argument("-n", type=int, default=0, metavar="N",
                         help="pytest-xdist workers (default 0: one process)")
+    parser.add_argument("--shard", type=shard, metavar="PART/PARTS",
+                        help="run one part of the selection, so PARTS machines split it: in test-id order, "
+                             "every PARTS-th test starting at the PART-th (ci.yml's deploy-linux runs 1/2 and 2/2 "
+                             "side by side)")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, metavar="DIR",
                         help="where the JUnit files, transcripts and build records land (default "
                              ".crapkit/deploy-out)")

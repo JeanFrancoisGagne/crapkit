@@ -11,15 +11,18 @@ gives both), each OS, image_<image>, and real_cli, nonblocking, docker_host
 and online when set. run.py builds its -m expression from these, so a cell
 reaches exactly the jobs its markers name. The kit's own tests carry `kit`
 and run in every job; `--cell` or `--packet` narrows a run to the cells it
-names, and `--packet deploy-kit` runs the kit's tests alone.
+names, and `--packet deploy-kit` runs the kit's tests alone. `--shard K/N`
+then keeps part K of N of what is left, kit tests included.
 
 JUnit properties: every field above plus packet, the image digest and the
 toolchain hash, written by the autouse fixture in tests/deploy/conftest.py.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -135,6 +138,23 @@ def partition(items: list, keep_item) -> tuple[list, list]:
     for item in items:
         (keep if keep_item(item) else dropped).append(item)
     return keep, dropped
+
+
+def shard(text: str) -> tuple[int, int]:
+    """--deploy-shard PART/PARTS as (PART, PARTS), 1 <= PART <= PARTS."""
+    found = re.fullmatch(r"(\d+)/(\d+)", text)
+    if not found or not 1 <= int(found[1]) <= int(found[2]):
+        raise argparse.ArgumentTypeError(f"{text!r} is not PART/PARTS, 1 <= PART <= PARTS, such as 1/2")
+    return int(found[1]), int(found[2])
+
+
+def in_shard(items: list, part: int, parts: int) -> tuple[list, list]:
+    """(kept, dropped) for part PART of PARTS: in test-id order, every PARTS-th
+    test from the PART-th. Neighbours in that order are tests of one module
+    and cost about the same, so the parts take about the same time, and the
+    order is the same in every xdist worker and every part's container."""
+    rank = {item.nodeid: index for index, item in enumerate(sorted(items, key=lambda item: item.nodeid))}
+    return partition(items, lambda item: rank[item.nodeid] % parts == part - 1)
 
 
 KIT_PACKET = "deploy-kit"

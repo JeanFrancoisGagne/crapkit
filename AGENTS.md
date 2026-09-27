@@ -706,7 +706,7 @@ tree into them and runs the cells with no network:
 ```sh
 python tools/deploy/run.py --packet deploy-kit          # the kit's own tests, in crapkit-deploy:core
 python tools/deploy/run.py --cell lin-pip-start-py311   # one cell
-python tools/deploy/run.py --cadence push               # what ci.yml's deploy-linux job runs
+python tools/deploy/run.py --cadence push               # what ci.yml's two deploy-linux parts run between them
 python tools/deploy/run.py --native --os windows        # Windows or macOS, after tools/deploy/toolchain.py
 ```
 

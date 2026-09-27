@@ -6,10 +6,13 @@ build arg for linux/amd64, a container with no network and a non-root uid, a
 marker expression that always keeps the kit's own tests, and a repeat check
 that fails when a cell's verdict moves between two fresh runs.
 """
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+import hang_guard
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT / "tools" / "deploy"))
@@ -118,6 +121,44 @@ def test_a_native_run_selects_by_os_alone():
 
     assert run.pytest_args(args) == ["-o", "junit_family=xunit1", "-m", "kit or (push and windows and not online)",
                                      "--deploy-cell=win-pip-start", "-n", "2"]
+
+
+def test_a_shard_run_passes_its_part_to_pytest():
+    args = run.parse(["--cadence", "push", "--shard", "2/3", "-n", "4"])
+
+    assert run.pytest_args(args)[-3:] == ["--deploy-shard=2/3", "-n", "4"]
+    assert "--deploy-shard" not in " ".join(run.pytest_args(run.parse([])))
+
+
+@pytest.mark.parametrize("given", ["0/2", "3/2", "1/0", "2", "1/2/3", "a/b", " 1/2"])
+def test_a_shard_that_is_not_part_over_parts_is_refused_before_any_build(given, capsys):
+    with pytest.raises(SystemExit):
+        run.parse(["--shard", given])
+
+    assert "PART/PARTS, 1 <= PART <= PARTS, such as 1/2" in capsys.readouterr().err
+
+
+def collected(*options):
+    """The test ids pytest collects from tests/deploy for ci.yml's Linux push
+    set in core, the way the container's pytest collects them."""
+    expression = run.marker_expression("push", "linux", "core", online=False)
+    env = {**os.environ, "CRAPKIT_DEPLOY": "1", "PYTHONDONTWRITEBYTECODE": "1"}
+    done = hang_guard.run([sys.executable, "-m", "pytest", "--collect-only", "-p", "no:randomly", "-m",
+                           expression, *options, "tests/deploy"], cwd=ROOT, env=env)
+
+    assert done.returncode == 0, done.stdout.decode(errors="replace")[-2000:]
+    return [line for line in done.stdout.decode().splitlines() if "::" in line]
+
+
+def test_the_shards_of_the_push_set_hold_each_selected_test_once_and_split_it_evenly():
+    """The split comes after -m, so each part is every other test of what -m
+    selected. Split before -m, the parts would also count the tests of other
+    cadences and OSes that -m then drops, and drift apart as those grow."""
+    whole = sorted(collected())
+    parts = [sorted(collected(f"--deploy-shard={part}/2")) for part in (1, 2)]
+
+    assert len(whole) > 200
+    assert parts == [whole[0::2], whole[1::2]]
 
 
 def test_the_junit_family_is_one_that_carries_each_cells_properties():

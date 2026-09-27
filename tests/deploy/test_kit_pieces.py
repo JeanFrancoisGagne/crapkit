@@ -7,6 +7,7 @@ model stubs answer a harness-shaped request, and every repo template builds.
 """
 from __future__ import annotations
 
+import argparse
 import ast
 import json
 import os
@@ -14,6 +15,7 @@ import re
 import threading
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -77,6 +79,17 @@ def test_a_cell_or_packet_filter_runs_only_what_it_names():
     assert not cells.selected(None, ["lin-x"], None) and not cells.selected(None, [], "deploy-channels")
     assert cells.selected(meta, ["lin-x"], None) and not cells.selected(meta, ["lin-y"], None)
     assert cells.selected(meta, [], "deploy-channels") and not cells.selected(meta, [], "deploy-git")
+
+
+def test_a_shard_keeps_every_nth_test_in_id_order_and_the_run_s_order_within_it():
+    items = [SimpleNamespace(nodeid=f"t.py::test_{name}") for name in "dbcae"]
+    ids = [[item.nodeid[-1] for item in part] for part in cells.in_shard(items, 1, 2)]
+
+    assert ids == [["c", "a", "e"], ["d", "b"]]
+    assert [item.nodeid[-1] for item in cells.in_shard(items, 3, 3)[0]] == ["c"]
+    assert cells.shard("2/3") == (2, 3)
+    with pytest.raises(argparse.ArgumentTypeError, match=r"'3/2' is not PART/PARTS, .* such as 1/2"):
+        cells.shard("3/2")
 
 
 def test_a_cells_junit_properties_name_the_image_and_the_toolchain(monkeypatch):
