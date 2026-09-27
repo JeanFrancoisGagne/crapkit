@@ -73,7 +73,7 @@ def build_args(pins: dict) -> dict[str, str]:
     """Every ARG the Dockerfile declares, and nothing else."""
     images, python = pins["images"], pins["python"]
     return {"DEBIAN_IMAGE": images["debian"], "UV_IMAGE": images["uv"], "NODE_IMAGE": images["node"],
-            "SNAPSHOT": images["snapshot"], "PYTHONS": " ".join(python["versions"]),
+            "SNAPSHOT": images["snapshot"], "NPM_BEFORE": images["npm_before"], "PYTHONS": " ".join(python["versions"]),
             "PYTHON_OLD": python["old"], "PYTHON_RUNNER": python["runner"],
             "PYTHON_PRERELEASE": python["prerelease"], **_binary_args(pins)}
 

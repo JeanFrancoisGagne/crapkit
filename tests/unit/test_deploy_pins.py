@@ -1023,17 +1023,41 @@ def test_an_archive_whose_sha256_moved_is_unpacked_again(tmp_path, monkeypatch):
     assert [path.name for path in (tmp_path / "root" / "tool-windows").iterdir()] == ["tool-b"]
 
 
-def test_the_npm_fixtures_and_the_readme_installs_are_made_again_when_the_fixtures_change(tmp_path, monkeypatch):
+def test_the_npm_fixtures_and_the_readme_installs_are_made_again_when_the_fixtures_or_the_instant_change(
+        tmp_path, monkeypatch):
     ran = []
     monkeypatch.setattr(toolchain, "run_step", lambda argv, **kwargs: ran.append(argv[1]))
-    monkeypatch.setattr(toolchain, "npm_fixture_pin", lambda: "one")
-    toolchain.npm_fixtures("npm", tmp_path, {})
-    toolchain.npm_fixtures("npm", tmp_path, {})
+    monkeypatch.setattr(toolchain, "npm_pin", lambda source: "one")
+    toolchain.npm_fixtures("npm", tmp_path, {}, "2026-09-27T00:00:00Z")
+    toolchain.npm_fixtures("npm", tmp_path, {}, "2026-09-27T00:00:00Z")
     first = list(ran)
-    monkeypatch.setattr(toolchain, "npm_fixture_pin", lambda: "two")
-    toolchain.npm_fixtures("npm", tmp_path, {})
+    toolchain.npm_fixtures("npm", tmp_path, {}, "2026-09-28T00:00:00Z")
+    monkeypatch.setattr(toolchain, "npm_pin", lambda source: "two")
+    toolchain.npm_fixtures("npm", tmp_path, {}, "2026-09-28T00:00:00Z")
 
-    assert first == ["i", "i", "i", "i", "ci"] and ran == first * 2
+    assert first == ["i", "i", "i", "i", "ci"] and ran == first * 3
+
+
+def test_the_native_npm_fixtures_resolve_at_the_pinned_registry_instant(tmp_path, monkeypatch):
+    """toolchain.py's README lines are the Dockerfile's, so they read the
+    registry as it stood at the same npm_before."""
+    ran = []
+    monkeypatch.setattr(toolchain, "run_step",
+                        lambda argv, **kwargs: ran.append((argv[1], kwargs["env"].get("npm_config_before"))))
+    toolchain.npm_fixtures("npm", tmp_path, {}, "2026-09-27T00:00:00Z")
+
+    assert ran == [("i", "2026-09-27T00:00:00Z")] * 4 + [("ci", "2026-09-27T00:00:00Z")]
+
+
+def test_the_npm_fixtures_stage_resolves_the_readme_lines_at_the_pinned_registry_instant():
+    """The README's `npm i -D` lines name no version, so without `before` a cold
+    build caches that day's newest releases and image-manifest.lock drifts."""
+    before = PINS["images"]["npm_before"]
+    stage = DOCKERFILE.split(" AS npm-fixtures\n")[1].split("\nFROM ")[0]
+
+    assert datetime.datetime.fromisoformat(before).tzinfo == datetime.timezone.utc
+    assert run.build_args(PINS, "core")["NPM_BEFORE"] == before
+    assert stage.index('npm_config_before="$NPM_BEFORE"') < stage.index("npm i -D")
 
 
 def test_the_runner_venv_is_made_again_when_its_requirements_change(tmp_path, monkeypatch):

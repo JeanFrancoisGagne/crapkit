@@ -121,11 +121,16 @@ RUN uv venv -q --python "$PYTHON_RUNNER" /opt/runner; \
 # That repo gets its vitest with --legacy-peer-deps: once a newer vitest is out,
 # npm 10.9.9 crashes resolving the optional peers of an older pinned one ("Cannot
 # read properties of null (reading 'edgesOut')"), as it did for 5.0.1 when 5.0.2
-# shipped. The README lines themselves run as a user runs them.
+# shipped. The README lines themselves run as a user runs them, with npm's
+# `before` at pins.toml's npm_before: they name no version, and without it each
+# cold build cached that day's newest releases (@types/node 26.6.3 one day,
+# 26.6.2 the day before), so image-manifest.lock drifted.
 FROM base AS npm-fixtures
 COPY tests/deploy/docker/npm-fixtures/ /opt/npm-fixtures/
+ARG NPM_BEFORE
 RUN export npm_config_cache=/opt/npm-cache npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false; \
     cd /opt/npm-fixtures; npm ci --ignore-scripts; rm -rf node_modules; \
+    export npm_config_before="$NPM_BEFORE"; \
     vitest=$(node -p "require('./package.json').devDependencies.vitest"); \
     jest=$(node -p "require('./package.json').devDependencies.jest"); \
     mkdir /tmp/vitest-only; cd /tmp/vitest-only; npm init -y >/dev/null; \

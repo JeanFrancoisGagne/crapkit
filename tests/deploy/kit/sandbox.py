@@ -273,8 +273,10 @@ def _toolchain_env(toolchain: Toolchain) -> dict[str, str]:
 
 
 def _offline_env(root: Path, find_links: list[str]) -> dict[str, str]:
+    """pip and uv read the wheelhouse only; npm resolves as the registry stood
+    when the image or toolchain.py filled its cache (pins.toml's npm_before)."""
     return {"PIP_CONFIG_FILE": str(root / "pip.conf"), "UV_OFFLINE": "1", "UV_NO_INDEX": "1",
-            "UV_FIND_LINKS": ",".join(find_links)}
+            "UV_FIND_LINKS": ",".join(find_links), "npm_config_before": _pins()["images"]["npm_before"]}
 
 
 def build_env(root: Path, toolchain: Toolchain, find_links: list[str]) -> dict[str, str]:
@@ -340,10 +342,13 @@ def runner_dirs() -> set[str]:
 
 # --- the harness binaries ------------------------------------------------------------
 
-def _pinned_npm_packages() -> list[str]:
+def _pins() -> dict:
     from kit.wheels import SRC
-    pins = tomllib.loads((SRC / "tools" / "deploy" / "pins.toml").read_text(encoding="utf-8"))
-    return [harness["npm"] for harness in pins["harness"].values() if "npm" in harness]
+    return tomllib.loads((SRC / "tools" / "deploy" / "pins.toml").read_text(encoding="utf-8"))
+
+
+def _pinned_npm_packages() -> list[str]:
+    return [harness["npm"] for harness in _pins()["harness"].values() if "npm" in harness]
 
 
 def _node_modules(bin_dir: Path) -> Path:

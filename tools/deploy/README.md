@@ -191,9 +191,17 @@ every `@latest` layer over a cached `full`, with other builds running on the
 machine.
 
 About 6 minutes of each cold `full` and `gui` build is the export of their
-layers into the daemon. The cold rebuilds reproduced `image-manifest.lock` for
-all five amd64 images: every tool version, Debian package, npm package
-integrity, runner package, wheel sha256 and downloaded-binary tree hash.
+layers into the daemon. `image-manifest.lock` records, for each of the five
+amd64 images, every tool version, Debian package, npm package integrity,
+cached npm tarball, runner package, wheel sha256 and downloaded-binary tree
+hash, and two pins hold the parts a registry moves under a cold build: apt
+reads snapshot.debian.org at `snapshot`, and npm resolves the README's
+unversioned `npm i -D` lines as the registry stood at `npm_before`. Before
+`npm_before`, a cold build cached that day's newest releases: `core` rebuilt on
+2026-09-26 held `@types/node` 26.6.3 while `cells`, `ci`, `full` and `gui`
+still held 26.6.2, and `lock.py manifest --check` failed for those four. The
+nightly `lin-repeat` job rebuilds `core` cold and checks its block; the other
+four images copy the same npm cache from the `npm-fixtures` stage.
 
 The kit's own tests (`--packet deploy-kit -n 4`) pass in every image, twice
 from fresh containers with the same verdicts: 48 pass and 1 skips (a
@@ -303,6 +311,9 @@ whether the cold builds stay. The other ways to cache the two images:
 ## Changing a pin
 
 1. Edit `pins.toml` (and `tests/deploy/docker/harness-*/package.json` for an npm harness).
+   A vitest or jest pin in `tests/deploy/docker/npm-fixtures` published after
+   `npm_before` fails the `npm-fixtures` stage with npm's "No matching version
+   found ... with a date before" error; move `npm_before` past its release.
 2. `python tools/deploy/lock.py` refreshes `wheelhouse.lock` when a wheel set changed.
 3. `python tools/deploy/run.py --build-only --image <image>` for each image that holds it.
 4. `python tools/deploy/lock.py manifest --image crapkit-deploy:<image>` refreshes that image's block of `image-manifest.lock`.

@@ -19,6 +19,13 @@ buildx = "v0.37.1"
 # apt reads snapshot.debian.org at this instant, so a rebuild months later
 # installs the same packages.
 snapshot = "20260923T000000Z"
+# npm's `before`: the README's `npm i -D` lines name no version, so the image's
+# npm-fixtures stage and toolchain.py resolve them as the registry stood at this
+# instant, and a sandbox's offline npm resolves them the same way. Without it a
+# cold build cached that day's newest releases. A fixture pin in
+# tests/deploy/docker/npm-fixtures published after it fails the build with
+# npm's "with a date before" ETARGET; move this forward with it.
+npm_before = "2026-09-27T00:00:00Z"
 platform = "linux/amd64"
 # The root Dockerfile's documented base floats on purpose: the product image
 # is built as a user builds it. run.py records the digest it resolved.

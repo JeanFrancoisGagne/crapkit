@@ -325,19 +325,21 @@ def npm_ci(npm: str, source: Path, dest: Path, cache: Path, env: dict) -> Path:
     return _once(dest, lambda: _npm_ci_into(npm, source, dest, cache, env), npm_pin(source))
 
 
-def npm_fixture_pin() -> str:
-    return npm_pin(DOCKER / "npm-fixtures")
+def npm_fixture_pin(before: str) -> str:
+    return f"{npm_pin(DOCKER / 'npm-fixtures')} before {before}"
 
 
-def npm_fixtures(npm: str, root: Path, env: dict) -> Path:
+def npm_fixtures(npm: str, root: Path, env: dict, before: str) -> Path:
     """The README's `npm i -D` lines into the cache, then the fixture lock into
-    <root>/npm-fixtures, both again whenever the fixture files change."""
+    <root>/npm-fixtures, both as the registry stood at `before` (pins.toml's
+    npm_before), and again whenever the fixture files or that instant change."""
     source, dest, cache = DOCKER / "npm-fixtures", root / "npm-fixtures", root / "npm-cache"
+    env = {**env, "npm_config_before": before}
 
     def make():
         cache_readme_installs(npm, root, cache, env)
         _npm_ci_into(npm, source, dest, cache, env)
-    return _once(dest, make, npm_fixture_pin())
+    return _once(dest, make, npm_fixture_pin(before))
 
 
 def native_less_commands(pins: dict) -> set[str]:
@@ -481,7 +483,7 @@ def install(pins: dict, root: Path, harness: list[str]) -> dict:
     tools["harness_dirs"] = install_harness_binaries(pins, os_name, root, harness, arch)
     lock.fetch(lock.read(), lock.row_names(pins, os_name, arch), root / "wheelhouse")
     env = dict(os.environ, PATH=os.pathsep.join([str(Path(tools["node"]).parent), os.environ["PATH"]]))
-    npm_fixtures(tools["npm"], root, env)
+    npm_fixtures(tools["npm"], root, env, pins["images"]["npm_before"])
     for name in harness:
         npm_ci(tools["npm"], DOCKER / f"harness-{name}", root / f"harness-{name}", root / "npm-cache", env)
         drop_native_less_launchers(pins, root / f"harness-{name}")

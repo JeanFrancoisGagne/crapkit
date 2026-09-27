@@ -161,8 +161,8 @@ def test_the_runner_venv_never_reaches_the_sandbox_path(box):
 
 ALLOWED = (set(sandbox.OS_MINIMUM[os.name]) | set(sandbox.REDIRECTED) | set(sandbox.QUIET)
            | {"PATH", "UV_PYTHON_INSTALL_DIR", "UV_PYTHON_DOWNLOADS", "npm_config_cache", "LANG", "LC_ALL", "TZ",
-              "PIP_CONFIG_FILE", "UV_OFFLINE", "UV_NO_INDEX", "UV_FIND_LINKS", "HOMEDRIVE", "HOMEPATH",
-              "CLAUDE_CODE_GIT_BASH_PATH"})
+              "PIP_CONFIG_FILE", "UV_OFFLINE", "UV_NO_INDEX", "UV_FIND_LINKS", "npm_config_before", "HOMEDRIVE",
+              "HOMEPATH", "CLAUDE_CODE_GIT_BASH_PATH"})
 # What a runner or a developer's shell may export that a user's shell does not.
 LEAKS = {"PYTHONHASHSEED": "0", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "leak", "VIRTUAL_ENV": "leak",
          "PIP_INDEX_URL": "http://leak.invalid/simple", "UV_INDEX_URL": "http://leak.invalid/simple",
@@ -176,6 +176,21 @@ def test_the_sandbox_env_comes_from_the_allowlist_and_leaves_the_runner_switches
     assert set(box.env) <= ALLOWED
     for name in ("PYTHONHASHSEED", "PYTHONDONTWRITEBYTECODE", "PYTHONPATH", "VIRTUAL_ENV"):
         assert name not in box.env
+
+
+def test_npm_reads_the_registry_at_the_instant_the_npm_cache_was_filled(box):
+    """The image and toolchain.py cache the README's unversioned `npm i -D` lines
+    under pins.toml's npm_before; an offline install that resolved past it would
+    pick a release whose tarball the cache never got."""
+    assert box.env["npm_config_before"] == profiles.pins()["images"]["npm_before"]
+
+
+def test_a_newest_release_install_reads_the_registry_as_it_is_now(box, monkeypatch):
+    seen = []
+    monkeypatch.setattr(profiles, "bounded", lambda box, argv, env, note: seen.append({**box.env, **env}))
+    profiles._install(box, "gemini-cli")
+
+    assert "npm_config_before" not in seen[0] and seen[0]["UV_OFFLINE"] == "0"
 
 
 def _names(names) -> set[str]:

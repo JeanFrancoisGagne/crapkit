@@ -884,9 +884,11 @@ def bounded(box, argv: list[str], env: dict, note: str) -> Step:
 
 
 def _install(box, key: str) -> Step:
-    """Run the install line and record it in the transcript."""
+    """Run the install line and record it in the transcript. npm resolves
+    @latest as the registry stands now, not at the cache's npm_before."""
     script = box.tmp / f"install-{key}.sh"
     script.write_text(latest_script(key, pins()) + "\n", encoding="utf-8")
+    box.env.pop("npm_config_before", None)
     return bounded(box, [*box.shell("sh"), str(script)], ONLINE_ENV, f"{key} at its newest release")
 
 
