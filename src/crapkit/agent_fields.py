@@ -66,6 +66,8 @@ _REFUSED_NAMES = ("every file the command refused because its name is not UTF-8 
                   "where the message names the first and counts the rest")
 # The object any --json command prints on stdout when it dies before its own payload.
 ERROR_OBJECT = "--json error object"
+# `crapkit --version --json`: the build a crapkit runs from.
+VERSION = "--version --json"
 
 
 def _unread_fields(payload: str, key: str, dirty: str,
@@ -130,6 +132,18 @@ ADDED = (
                "mutants whose suite ran past mutation_timeout_seconds, a count inside killed"),
     AddedField("mutate --json", "no_verdict", ("integer",),
                "mutants whose suite ran no test (exit 5), a count inside killed"),
+    AddedField(VERSION, "version", ("string",),
+               "the installed distribution's version, the number the text line prints"),
+    AddedField(VERSION, "commit", ("string", "null"),
+               "the commit, full sha, of the git checkout crapkit runs from (a source checkout "
+               "or an editable install); null for an installed build, which carries no commit, "
+               "and for a checkout git cannot read"),
+    AddedField(VERSION, "dirty", ("boolean", "null"),
+               "true when that checkout holds changes the commit does not: staged or unstaged "
+               "edits, or a file git neither tracks nor ignores; null when commit is null"),
+    AddedField(VERSION, "analysis_version", ("integer",),
+               "the analysis semantics version, the number doctor --json reports and the "
+               "ratchet's metric stamp carries"),
 )
 
 

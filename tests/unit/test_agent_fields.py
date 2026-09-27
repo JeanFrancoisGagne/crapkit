@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from cli_inproc_repo import (add_knotty, commit_all, repo, seed_artifacts,  # noqa: F401
+from cli_inproc_repo import (add_knotty, commit_all, git, repo, seed_artifacts,  # noqa: F401
                              template_repo)
 
 from crapkit import mcp_server
-from crapkit.agent_fields import ADDED, ERROR_OBJECT, MCP_TOOLS, AddedField
+from crapkit.agent_fields import ADDED, ERROR_OBJECT, MCP_TOOLS, VERSION, AddedField
 from crapkit.cli import main
 from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
 
@@ -84,8 +84,28 @@ def _forget_content(repo: Path) -> None:
         db.execute("DELETE FROM run_sources")
 
 
+def _version_payloads(capsys, monkeypatch, where: Path) -> list[dict]:
+    """`--version --json` run from a checkout, then from an installed build, so
+    `commit` and `dirty` print their value once and their null once."""
+    from crapkit.cli import parser
+
+    checkout = where / "checkout"
+    (checkout / "src" / "crapkit").mkdir(parents=True)
+    (checkout / "src" / "crapkit" / "__init__.py").write_text("", encoding="utf-8")
+    git(checkout, "init", "-q")
+    commit_all(checkout, "a build")
+    installed = where / "site-packages" / "crapkit"
+    installed.mkdir(parents=True)
+    printed = []
+    for package in (checkout / "src" / "crapkit", installed):
+        monkeypatch.setattr(parser, "_package_dir", lambda package=package: package)
+        main(["--version", "--json"])
+        printed.append(json.loads(capsys.readouterr().out))
+    return printed
+
+
 @pytest.fixture()
-def payloads(repo, capsys) -> dict[str, list]:
+def payloads(repo, capsys, monkeypatch, tmp_path_factory) -> dict[str, list]:
     """One real payload per declared payload name, from one measured repo.
     The ranked payloads run twice, the second time over a run whose content
     record is gone, as on a run crapkit 0.8.0 wrote. verify runs three times:
@@ -123,6 +143,7 @@ def payloads(repo, capsys) -> dict[str, list]:
     out["verify --json"] = verify
     mutant = Mutant(path="a.py", line=1, op="> -> >=", original="x > 1", mutated="x >= 1")
     out["mutate --json"] = [_mutation_payload([mutant], [MutantVerdict.NO_VERDICT], [])]
+    out[VERSION] = _version_payloads(capsys, monkeypatch, tmp_path_factory.mktemp("version"))
     return out
 
 
