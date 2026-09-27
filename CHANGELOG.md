@@ -974,9 +974,11 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   no decision on purpose.
 - `params` no longer counts a comma inside one parameter (`pair: (Int, Int)`,
   `(A, B) -> Void`, `[1, 2]`, `Dictionary<String, Int>()`), and `nesting` no longer
-  rises at each `try`. A comparison in a default value (`a: Bool = x > 0`,
-  `{ $0 < $1 }`, `1 << 2`) is no bracket, so the comma after it still ends a
-  parameter. Neither column is in the score. On Alamofire 5, params falls on 28
+  rises at each `try`. A comparison in a default value, spaced or not
+  (`a: Bool = x > 0`, `x<0`, `{ $0 < $1 }`, `1<<2`, `0..<n`), is no bracket, so the
+  comma after it still ends a parameter: a `<` opens a generic clause only when its
+  `>` comes before a `:`, an `=`, a brace or the end of the bracket around it. Neither
+  column is in the score. On Alamofire 5, params falls on 28
   functions and nesting on 179, and cognitive falls on 81 with the labels and optional
   marks.
 - The same analysis-version bump covers these.

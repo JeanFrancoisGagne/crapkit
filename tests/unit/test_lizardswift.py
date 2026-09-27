@@ -387,18 +387,40 @@ def test_a_comma_inside_one_parameter_counts_no_parameter(parameters, count):
                                         "a: [String: Int] = Dictionary<String, Int>(), b: Int",
                                         "a: Result<Int, Error >, b: Int",
                                         "a: () -> Result<\n        Int,\n        Error,\n    > = { .success(1) },"
-                                        "\n    b: (Int, Int)"])
+                                        "\n    b: (Int, Int)",
+                                        "a: Bool = x<0, b: Int",
+                                        "a: Bool = count<10, b: (Int, Int)",
+                                        "a: Int = 1<<2, b: Int",
+                                        "r: Range<Int> = 0..<10, b: Int",
+                                        "r: Range<Int> = 0 ..< 10, b: Int",
+                                        "a: Bool = x<y, b: Set<Int>",
+                                        "a: Bool = x<y ? p : q, b: Int",
+                                        "d: Dictionary<String, [Int: String]>, n: Int",
+                                        "r: Result<(a: Int, b: Int), Error>, n: Int"])
 def test_a_comparison_in_a_default_value_opens_no_bracket(parameters):
-    """Lexical Structure, Operators: `1 < 2` has whitespace on both sides of `<`, so it
-    compares, while `Set<Int>` opens a generic argument clause. Every `<` and `>` in the
-    list counted as a bracket, so `1 < 2, b` read as one parameter and `x > 0` closed a
-    bracket no `<` had opened. A `>` closes a clause only when a `<` is open, spaced or
-    on its own line, and a `}` closes the `<` of `{ $0<$1 }` that no `>` did."""
+    """Lexical Structure, Operators: an operator with whitespace on both sides, or on
+    neither, is binary, so `1 < 2` and `x<0` both compare. `Set<Int>` opens a generic
+    argument clause, a comma-separated list of types that its `>` closes (Generic
+    Parameters and Arguments); `x<0, b: Int)` reaches a `:` and the list's `)` first,
+    and a list of types holds neither outside its own brackets. Every `<` and `>` in
+    the list counted as a bracket, so `1 < 2, b` read as one parameter and `x > 0`
+    closed a bracket no `<` had opened. A `>` closes a clause only when a `<` is open,
+    spaced or on its own line, and a `}` closes the `<` of `{ $0<$1 }` that no `>` did."""
     source = f"func f({parameters}) {{\n    show(1)\n}}\n"
     row = analyze.analyze_source("case.swift", source)[0]
 
     assert row.params == 2
     assert row.long_name.count("<") == parameters.count("<")
+
+
+def test_a_closer_with_no_opener_leaves_the_parameters_after_it_read():
+    """Each branch of this `#if` closes the struct's brace, so the file holds one `}`
+    more than it opens. The closer with nothing open to close is skipped, and the `<`
+    after it is still read."""
+    source = ("struct S {\n#if DEBUG\n    let a = [1] }\n#else\n    let a = [2] }\n#endif\n"
+              "func f(a: Bool = x<0, b: Int) {\n    show(1)\n}\n")
+
+    assert [(r.start, r.end, r.params) for r in analyze.analyze_source("case.swift", source)] == [(7, 9, 2)]
 
 
 @pytest.mark.parametrize("body,depth",[("try first()\n    try second()", 0),

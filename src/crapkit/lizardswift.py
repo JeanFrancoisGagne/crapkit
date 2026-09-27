@@ -55,10 +55,12 @@ does:
 A comma inside one parameter's type or default, as in `pair: (Int, Int)`,
 `(A, B) -> Void` or `[1, 2]`, no longer counts as another parameter, and `try`
 opens no nesting level: it marks an expression that can throw, not a block. A
-`<` spaced on both sides (`1 < 2`, `1 << 2`) compares; only one glued to the
-type before it opens a generic clause (`Set<Int>`). A `>` closes a clause only
-while a `<` is open, so `x > 0` and `x>0` close nothing, and a `)`, `]` or `}`
-closes any `<` left open inside it (`{ $0<$1 }`).
+`<` opens a generic clause (`Set<Int>`, `Result<Int, Error>`) only when its own
+`>` comes first, before a `:`, `=`, `;` or brace beside it and before the
+bracket around it closes, since a clause is a list of types and holds none of
+these outside its own brackets. Every other `<` compares, spaced or not:
+`1 < 2`, `x<0, b: Int`, `1<<2`, `0..<n`, `{ $0<$1 }`. A `>` closes a clause
+only while a `<` is open, so `x > 0` and `x>0` close nothing.
 
 What it keeps
 -------------
@@ -82,7 +84,6 @@ drains the token stream, so `.swift` keeps analyze.py's second extension chain.
 from __future__ import annotations
 
 import re
-from itertools import groupby
 
 from ._pygdefer import deferred_pygments
 
@@ -116,6 +117,10 @@ _CASE_CONDITIONS = frozenset({"if", "guard", "while", "for", ","})
 # Each bracket a parameter list opens, and the token that closes it. A comma with more
 # than the list's own `(` open is inside one parameter.
 _CLOSERS = {"(": ")", "[": "]", "{": "}", "<": ">"}
+_BRACKET_CLOSERS = frozenset({")", "]", "}"})
+# The tokens a generic argument clause, a comma-separated list of types, never holds
+# outside its own ( ) or [ ]: read beside an open `<`, one shows that `<` compared.
+_CLAUSE_ENDS = frozenset({":", "=", ";", "{"}) | _BRACKET_CLOSERS
 
 
 class _Name(str):
@@ -124,9 +129,9 @@ class _Name(str):
 
 
 class _Operator(str):
-    """A `<` the source uses as an operator (`a < b`, `1 << 2`), not to open a generic
-    clause. Same value, so it counts and names as before; the parameter list opens
-    nothing for it."""
+    """A `<` the source uses as an operator (`a < b`, `x<0`, `1 << 2`, `0..<n`), not to
+    open a generic clause. Same value, so it counts and names as before; the parameter
+    list opens nothing for it."""
 
 
 class _Plain(str):
@@ -230,23 +235,54 @@ def _optional_marks(tokens):
         previous = token
 
 
-def _is_infix(before: list[str], run: list[str], after: list[str]) -> bool:
-    """A run of `<` with whitespace on both sides, the way Swift writes `a < b` and
-    `1 << 2`. A generic clause's `<` is glued to the type before it. A `>` gets no
-    such test, and could not: the `>` that ends a clause written over several lines
-    stands on its own line, and `_nest` closes nothing for a `>` with no `<` open."""
-    return run[0] == "<" and before[-1].isspace() and after[0].isspace()
+class _Clauses:
+    """One pass over the tokens that finds each `<` opening a generic clause. A `<` waits
+    on a stack with the brackets around it. Its own `>`, read while it is the innermost
+    open bracket, makes it a clause. A token in `_CLAUSE_ENDS` read while it is
+    innermost makes it a comparison, and so does the closer of a bracket around it
+    (`{ $0<$1 }`)."""
+
+    def __init__(self):
+        self.opened: list[tuple[str, int]] = []  # (the closer awaited, the opener's index)
+        self.found: set[int] = set()
+
+    def read(self, index: int, token: str) -> None:
+        if token in _CLAUSE_ENDS:
+            self._compare()
+        if token in _CLOSERS:
+            self.opened.append((_CLOSERS[token], index))
+        elif token == ">":
+            self._close_clause()
+        elif token in _BRACKET_CLOSERS:
+            self._close_to(token)
+
+    def _innermost_is_less_than(self) -> bool:
+        return bool(self.opened) and self.opened[-1][0] == ">"
+
+    def _compare(self) -> None:
+        while self._innermost_is_less_than():
+            self.opened.pop()
+
+    def _close_clause(self) -> None:
+        if self._innermost_is_less_than():
+            self.found.add(self.opened.pop()[1])
+
+    def _close_to(self, token: str) -> None:
+        awaited = [closer for closer, _ in self.opened]
+        if token in awaited:
+            del self.opened[len(awaited) - 1 - awaited[::-1].index(token):]
 
 
-def _infix_less_thans(tokens) -> list[str]:
-    """The raw tokens, each `<` of an infix operator an `_Operator`. The tokenizer
-    splits `<<` into two tokens, so a run of `<` is one operator."""
-    runs = [list(run) for _, run in groupby(tokens, key=lambda token: token == "<")]
-    edges = [[""]] + runs + [[""]]
-    read = []
-    for before, run, after in zip(edges, runs, edges[2:]):
-        read.extend([_Operator(token) for token in run] if _is_infix(before, run, after) else run)
-    return read
+def _comparing_less_thans(tokens) -> list[str]:
+    """The raw tokens, each `<` that opens no generic clause an `_Operator`: `x<0`,
+    `1 << 2`, `0..<n`. Swift reads a `<` as a clause only when a list of types parses
+    up to its `>`, whatever the spacing around it."""
+    tokens = list(tokens)
+    clauses = _Clauses()
+    for index, token in enumerate(tokens):
+        clauses.read(index, token)
+    return [_Operator(token) if token == "<" and index not in clauses.found else token
+            for index, token in enumerate(tokens)]
 
 
 def _nest(opened: list[str], token: str) -> None:
@@ -320,7 +356,7 @@ class CorrectedSwiftReader(_StockSwiftReader):
         return _StockSwiftReader.generate_tokens(source_code, _HASH_TOKENS + addition, token_class)
 
     def preprocess(self, tokens):
-        return _read_all(super().preprocess(_infix_less_thans(_optional_marks(tokens))))
+        return _read_all(super().preprocess(_comparing_less_thans(_optional_marks(tokens))))
 
 
 def register() -> None:
