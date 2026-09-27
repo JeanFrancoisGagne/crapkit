@@ -220,10 +220,16 @@ def _ratchet_merge(files: list) -> int:
 
 
 def _mergeable_texts(saved: list) -> list[str]:
-    """The three sides' texts, once they share one metric stamp and one key format."""
+    """The three sides' texts, once they share one metric stamp and one key format.
+
+    A blank BASE is no common ancestor. Two branches that each created the file
+    (two first seeds) meet in an add/add merge, and git hands the driver an empty
+    %O. Read as a file, it had key version 0 and refused the merge as a legacy
+    mapping. Out of the checks, it merges OURS and THEIRS as a union, each shared
+    key at the lower mark."""
     texts = [side.text or "" for side in saved]
     _merge_stamp(texts)
-    _merge_key_version(texts)
+    _merge_key_version(texts[1:] if saved[0].blank else texts)
     return texts
 
 
