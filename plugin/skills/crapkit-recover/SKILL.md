@@ -29,12 +29,19 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 Six more lines come out of `crapkit doctor --plugin-root`, same exit 1.
 "crapkit doctor: the plugin at PATH asks for hook protocol N" means the plugin is ahead of
 the CLI, so the advisory hook exits 0 in silence on every edit.
-"crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json" means the path is not
-a plugin root and holds no crapkit install below it: pass the plugin root or a directory
-above it. "has a .claude-plugin/plugin.json that is not a JSON object" and "has a
-.claude-plugin/plugin.json with no version string" mean the file is there but damaged:
-reinstall the plugin with your agent's install line (`claude plugin install crapkit@crapkit`
-in Claude Code, `codex plugin add crapkit@crapkit` in Codex), or repair that file.
+"crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json, so it is no plugin
+root" means the path holds no crapkit install at or below it, and the line ends with what to
+do instead: "name the plugin root or a directory above it, or run `crapkit doctor
+--plugin-root` with no PATH to check the installs Claude Code and Codex recorded". "has a
+.claude-plugin/plugin.json that is not a JSON object" and "has a .claude-plugin/plugin.json
+with no version string" mean the file is there but damaged, and each line ends with the
+reinstall, once per scope that holds the install. In Claude Code that is "reinstall it with
+`claude plugin uninstall crapkit@crapkit --scope user`, then `claude plugin install
+crapkit@crapkit --scope user`, and restart Claude Code's sessions", in Codex "reinstall it
+with `codex plugin remove crapkit@crapkit`, then `codex plugin add crapkit@crapkit`, and
+start a new Codex task". A `claude plugin install` alone only answers that the plugin is
+already installed. For a plugin Claude Code loads in place from a local directory, the line
+names the `git checkout` or the copy that puts the file back instead.
 "crapkit doctor: no installed crapkit plugin under DIR or CODEX_DIR" means the
 bare flag found nothing in Claude Code's plugin directory or in Codex's: install the plugin
 with the commands the line names, Claude Code's or Codex's.
