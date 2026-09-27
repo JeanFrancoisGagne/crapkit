@@ -8,9 +8,9 @@ absence and not from run.py.
 
 Without xdist pytest refuses a missing target as a usage error (exit 4), and
 run.py fails the session's checks. Under `-n N`, the way CI runs the push tier,
-pytest exits 5 with no message: run.py reads that as a session with no tests,
-reports every check `empty` and passes the tier. Rulings row SS1 holds that
-defect until run.py refuses a missing target.
+pytest exits 5 with no message: run.py read that as a session with no tests,
+reported every check `empty` and passed the tier. Rulings row SS1 records that
+defect as fixed: run.py now checks every target before the session starts.
 """
 from __future__ import annotations
 

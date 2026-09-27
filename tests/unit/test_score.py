@@ -16,6 +16,14 @@ def test_crap_formula_exact_values():
     assert got == {(5, 1.0): 5, (5, 0.0): 30, (1, 0.0): 2, (6, 1.0): 6, (7, 1.0): 7}
 
 
+def test_crap_formula_cubes_the_uncovered_share():
+    """At cov 0 and 1 every power of (1 - cov) agrees, so only a partial
+    coverage tells the cube from a square or a fourth power."""
+    got = {case: crap(*case) for case in ((4, 0.5), (7, 0.75))}
+    # README.md#crapkit worked by hand: 16 * 0.5^3 + 4 = 6; 49 * 0.25^3 + 7 = 49/64 + 7
+    assert got == {(4, 0.5): 6.0, (7, 0.75): 7.765625}
+
+
 def test_join_by_span_overlap_flags_measured():
     cov = {"src/a.ts": [FnCoverage("f", 1, 13, True, 4, 3)]}
     (scored,) = score_rows([row()], cov, lane_scopes={"src"})

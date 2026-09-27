@@ -36,7 +36,11 @@ pytest check names test files or directories, and the tier's markers pick what
 runs inside them (tests/accuracy/kit/tiers.py). One pytest session runs every
 selected pytest check, at -n WORKERS when given, and a check's measured time is
 the sum of its tests' times in the session's JUnit file, so it compares with
-the declared serial seconds. An argv check runs by itself in the tiers it
+the declared serial seconds. A check whose target is not there fails without
+running and its target stays out of the session: under -n N pytest reports a
+missing target only as exit 5, the code of a session that found no tests,
+while a tier that deselects every test of a check reads `empty` and passes.
+An argv check runs by itself in the tiers it
 names: exit 0 is a pass, 3 an infra miss, anything else a failure.
 
 Exit codes: 0 when every check passed, 1 when any check failed, 3 when the only
@@ -337,21 +341,57 @@ def _record(check: Check, seconds: float, outcome: str, tests: int | None) -> di
             "tests": tests}
 
 
+def missing_targets(check: Check) -> list[str]:
+    """The pytest targets of `check` whose path (the part before any ::) is not there."""
+    return [target for target in check.pytest if not (REPO / target.split("::")[0]).exists()]
+
+
+def _say_missing(check: Check, target: str) -> None:
+    print(f"run.py: {check.key}: {check.name} names {target}, which is not there, so the check "
+          f"fails without running; restore the file or fix the check's row in "
+          f"tools/accuracy/checks/{check.key}.py", file=sys.stderr)
+
+
+def _own_cases(check: Check, cases: list[Case]) -> list[Case]:
+    return [case for case in cases if _owns(check, case)]
+
+
 def _pytest_record(check: Check, cases: list[Case], infra: set, code: int) -> dict:
-    mine = [case for case in cases if _owns(check, case)]
-    outcome = _broken(code, _pytest_outcome(mine, infra))
-    return _record(check, sum(case.seconds for case in mine), outcome, len(mine))
+    """A check whose target is missing fails: it ran no test, and pytest under -n N
+    reports a missing target only as exit 5, the code of a session with no tests."""
+    mine = _own_cases(check, cases)
+    gone = missing_targets(check)
+    outcome = "fail" if gone else _broken(code, _pytest_outcome(mine, infra))
+    record = _record(check, sum(case.seconds for case in mine), outcome, len(mine))
+    return {**record, "missing": gone} if gone else record
 
 
-def _pytest_records(checks: list[Check], env: dict, scratch: Path, workers: int, seed) -> list:
-    if not checks:
-        return []
-    junit = scratch / "junit.xml"
-    targets = sorted({target for check in checks for target in check.pytest})
+def _session(targets: list[str], env: dict, junit: Path, workers: int, seed) -> tuple:
+    """(exit code, cases, root) of one pytest session; no target, no session, since
+    pytest handed no target collects the whole repository."""
+    if not targets:
+        return 0, [], REPO
     root = session_root(targets)
     code = subprocess.run(_pytest_argv(targets, root, workers, junit, seed), cwd=REPO,
                           env=env).returncode
-    cases = _cases(junit, root)
+    return code, _cases(junit, root), root
+
+
+def _missing(checks: list[Check]) -> set[str]:
+    """The targets of `checks` that are not there, each named on stderr with its check."""
+    gone = [(check, target) for check in checks for target in missing_targets(check)]
+    for check, target in gone:
+        _say_missing(check, target)
+    return {target for _, target in gone}
+
+
+def _present(checks: list[Check], missing: set[str]) -> list[str]:
+    return sorted({target for check in checks for target in check.pytest} - missing)
+
+
+def _pytest_records(checks: list[Check], env: dict, scratch: Path, workers: int, seed) -> list:
+    targets = _present(checks, _missing(checks))
+    code, cases, root = _session(targets, env, scratch / "junit.xml", workers, seed)
     infra = _infra_keys(runlog.read(Path(env[runlog.LOG_ENV])), root)
     return [_pytest_record(check, cases, infra, code) for check in checks]
 

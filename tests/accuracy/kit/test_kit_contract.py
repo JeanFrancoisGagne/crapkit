@@ -451,3 +451,14 @@ def test_every_accuracy_test_module_is_named_by_a_check():
     unnamed = [path for path in _test_modules() if not _named_by(path, targets)]
 
     assert list(map(_rel, unnamed)) == []
+
+
+def test_every_check_names_targets_that_exist():
+    """A check over a file that is gone runs no test: run.py fails it at run time
+    (rulings SS1), and this names it before any tier starts."""
+    run = _run_tool()
+
+    missing = [f"{check.key}: {check.name}: {target}" for check in run.load_checks()
+               for target in run.missing_targets(check)]
+
+    assert missing == []

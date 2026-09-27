@@ -123,6 +123,25 @@ def test_a_real_failure_outranks_an_infra_miss(tmp_path):
 
 @pytest.mark.nightly
 @pytest.mark.process
+def test_a_check_naming_a_missing_file_fails_under_xdist(tmp_path):
+    """Under -n N pytest exits 5 with no message when one target is missing, so
+    run.py checks each target before the session starts."""
+    checks = _plant(tmp_path, {"alpha": ("one", [("passes", "test_pass.py", 1),
+                                                 ("gone", "test_gone.py", 1)])})
+
+    done, receipt = _run(checks, tmp_path / "r.json", "-n", "2")
+
+    gone = (tmp_path / "planted" / "test_gone.py").as_posix()
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert _outcomes(receipt) == {("alpha", "passes"): "pass", ("alpha", "gone"): "fail"}
+    assert [check.get("missing") for check in receipt["checks"]] == [[gone], None]
+    assert (f"run.py: alpha: gone names {gone}, which is not there, so the check fails "
+            "without running; restore the file or fix the check's row in "
+            "tools/accuracy/checks/alpha.py") in done.stderr
+
+
+@pytest.mark.nightly
+@pytest.mark.process
 def test_notes_reach_the_receipt(tmp_path):
     checks = _plant(tmp_path, {"alpha": ("one", [("notes", "test_notes.py", 1)])})
 
@@ -253,6 +272,48 @@ def test_the_os_sensitive_selection_keeps_only_the_marked_checks():
     assert run_tool.selected(checks, "push", None, "win32") == [plain, marked, windows_only]
     assert run_tool._run_parser().parse_args(["--os-sensitive"]).os_sensitive is True
     assert run_tool._run_parser().parse_args([]).os_sensitive is False
+
+
+def _session_argv(monkeypatch) -> list:
+    """Every argv run.py hands subprocess.run, which runs nothing here."""
+    started: list = []
+
+    def run(argv, **_):
+        started.append(argv)
+        return run_tool.subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(run_tool.subprocess, "run", run)
+    return started
+
+
+def _records(tmp_path, checks: list) -> dict:
+    env = {run_tool.runlog.LOG_ENV: str(tmp_path / "notes.jsonl")}
+    records = run_tool._pytest_records(checks, env, tmp_path, 2, "derandomized")
+    return {record["name"]: (record["outcome"], record.get("missing")) for record in records}
+
+
+def test_a_missing_target_fails_its_check_and_stays_out_of_the_session(tmp_path, monkeypatch):
+    here, gone = tmp_path / "test_here.py", tmp_path / "test_gone.py::test_x"
+    here.write_text("def test_ok():\n    pass\n", encoding="utf-8")
+    started = _session_argv(monkeypatch)
+    checks = [run_tool.Check("k", "here", "s", 1, pytest=(here.as_posix(),)),
+              run_tool.Check("k", "gone", "s", 1, pytest=(gone.as_posix(),))]
+
+    records = _records(tmp_path, checks)
+
+    assert records == {"here": ("empty", None), "gone": ("fail", [gone.as_posix()])}
+    [argv] = started
+    assert here.as_posix() in argv and gone.as_posix() not in argv
+
+
+def test_no_session_starts_when_every_target_is_missing(tmp_path, monkeypatch):
+    """pytest handed no target would collect the whole repository."""
+    started = _session_argv(monkeypatch)
+    gone = (tmp_path / "tests_gone").as_posix()
+
+    records = _records(tmp_path, [run_tool.Check("k", "gone", "s", 1, pytest=(gone,))])
+
+    assert (records, started) == ({"gone": ("fail", [gone])}, [])
 
 
 def test_an_argv_check_reads_its_exit_code():

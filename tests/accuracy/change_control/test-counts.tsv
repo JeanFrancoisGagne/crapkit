@@ -5,7 +5,7 @@ corpus_goldens	126
 coverage_oracles	93
 definitions	38
 history_oracles	74
-kit	244
+kit	248
 runtime_guards	19
 score_model	139
 suite_strength	363

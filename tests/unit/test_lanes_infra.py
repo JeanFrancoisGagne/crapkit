@@ -46,7 +46,7 @@ def test_lane_log_streams_the_command_header_even_on_failure(tmp_path):
     assert log.startswith("$ "), "the log opens with the command that ran"
 
 
-def test_a_lane_that_left_coverage_shards_is_told_they_are_there(tmp_path):
+def test_a_lane_that_left_coverage_shards_is_told_they_are_there(tmp_path, on_a_host):
     """coverage.py in parallel mode writes one `.coverage.<host>.<pid>.<rand>`
     per process and merges them only at the end, so a run that was killed leaves
     every measurement on disk and no JSON. One reporter combined them by hand
@@ -66,7 +66,7 @@ def test_a_lane_that_left_coverage_shards_is_told_they_are_there(tmp_path):
     assert "--reuse-artifacts" in message
 
 
-def test_the_shard_hint_looks_in_the_directory_the_lane_ran_in(tmp_path):
+def test_the_shard_hint_looks_in_the_directory_the_lane_ran_in(tmp_path, on_a_host):
     """A lane with a `cwd` writes its shards there, not at the repo root.
 
     `artifact` is repo-relative and the hint is run from the shard directory, so

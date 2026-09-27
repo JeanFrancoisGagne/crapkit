@@ -42,3 +42,13 @@ def _dependency_venv(root: Path) -> tuple[Path, Path]:
 def dependency_venv():
     """Create a private venv without installing the suite's dependencies again."""
     return _dependency_venv
+
+
+@pytest.fixture
+def on_a_host(monkeypatch):
+    """crapkit refuses a coveragepy lane inside a container unless the lane sets
+    container_ok (docs/configuration.md#lane). A test about what such a lane does
+    on a host stubs the container check, so it passes in the accuracy image and
+    under CRAPKIT_INSIDE_CONTAINER=1 too."""
+    from crapkit import lanes
+    monkeypatch.setattr(lanes, "_in_container", lambda: False)

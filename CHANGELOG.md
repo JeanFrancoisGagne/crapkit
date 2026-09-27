@@ -46,6 +46,9 @@
 - Each past calculation bug replays its check at the commit before its fix and at the
   fix (`tools/accuracy/retro.py`); [Past bugs](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md#past-bugs)
   says what a replay proves and when a bug needs a probe.
+- `tools/accuracy/run.py` fails a check whose test file is missing and names the file and
+  the checks row to fix; under `-n N` it had passed that check as `empty`. The four lane
+  unit tests that assumed a host now pass inside the accuracy image. (accuracy change C2)
 
 ## 0.8.0 — 2026-09-23
 

@@ -364,7 +364,7 @@ def test_an_uncommitted_test_kills_at_any_worker_count(repo_templates, tmp_path,
 # PYTEST_ADDOPTS adds a JUnit file, which counts what ran whatever verbosity the
 # repo's addopts set; the tests the run names FAILED or ERROR come from its
 # short summary, which pytest prints at any -q. A failing test no open ruling
-# records (SS4; SS3 is fixed) fails the check.
+# records fails the check; both clean-run rulings, SS3 and SS4, are fixed.
 
 REPO = Path(__file__).resolve().parents[3]
 _COLLECTED = re.compile(r"(\d+) tests? collected")
@@ -444,9 +444,8 @@ def _pytest_in(tree: Path, targets: list[str], extra: dict | None = None):
 def test_mutation_command_is_sound(clean_tree, tmp_path):
     """Linux only: the jobs that run this command (accuracy.yml's mutation jobs
     and the `accuracy` label's crapkit mutate) run in the accuracy image. The run
-    fails only on tests an open clean-run ruling records; SS3 (fixed) and SS4
-    are the strict xfails that turn when those tests pass, and with no ruling
-    open the run must pass outright."""
+    fails only on tests an open clean-run ruling records. SS3 and SS4 are both
+    fixed, so no ruling is open and the run must pass outright."""
     config = tomllib.loads((REPO / "crapkit.toml").read_text(encoding="utf-8"))["crapkit"]
     deadline, junit = config["mutation_timeout_seconds"], tmp_path / "killer.xml"
     started = time.monotonic()

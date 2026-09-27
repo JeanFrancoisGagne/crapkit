@@ -1,2 +1,3 @@
 id	date	kind	calcs	analysis_version	lizard_version	changelog	reason
 C1	2026-09-27	none		11	1.24.0		the first lock over every golden and expected-value file
+C2	2026-09-27	fix	Accuracy tier runner and receipts; Mutation results	11	1.24.0	#unreleased	The accuracy tier runner fails a check whose test file is missing instead of passing it as empty (rulings SS1), and the four lane unit tests that assumed a host pass inside the accuracy image (SS4)
