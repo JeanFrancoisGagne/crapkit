@@ -1846,8 +1846,8 @@ verify FAILED @ 0296156ff21 vs baseline 0e646697946 (1 changed files)
 
 ```
 $ crapkit verify
-verify OK @ 2af3433d979 vs baseline 8bfbe613fcd (3 changed files) ratchet: 1 dropped, 0 tightened -> git add crapkit-ratchet.tsv
-  changed files: crapkit-ratchet.tsv, src/grade.ts, test/grade.test.ts
+verify OK @ 2af3433d979 vs baseline 8bfbe613fcd (7 changed files) ratchet: 1 dropped, 0 tightened -> git add crapkit-ratchet.tsv
+  changed files: .gitignore, crapkit-ratchet.tsv, crapkit.toml and 4 more
 
 $ crapkit coverage
 run 3 @ 2af3433d979: 5 functions scored: 5 measured, 0 over ceiling 6, CRAP load 22.0, grade A+
@@ -1857,6 +1857,10 @@ run 3 @ 2af3433d979: 5 functions scored: 5 measured, 0 over ceiling 6, CRAP load
 CRAP load 56.68 to 22.0, grade F to A+, and the mark seeded in step 4 is gone: `verify`
 dropped it once `classify` scored under the ceiling, rewriting the tracked
 `crapkit-ratchet.tsv` in place. Commit it with your change. Marks only ever fall.
+
+The seven changed files are everything since run 1's commit: the three files step 4
+committed, the `package.json` and `package-lock.json` that step 2's install changed, and
+the two files steps 5 and 6 edited.
 
 A verify may also print `warning: N changed line(s) have no coverage` above its verdict;
 that block is advisory unless `diff_uncovered_max` is set
