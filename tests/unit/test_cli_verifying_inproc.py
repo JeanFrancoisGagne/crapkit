@@ -1021,7 +1021,10 @@ def stage(repo, *paths: str) -> None:
     git(repo, "add", *paths)
 
 
-def test_a_commit_that_stages_nothing_passes_the_gate(repo, capsys):
+def test_a_commit_that_stages_nothing_passes_the_gate(repo, capsys, monkeypatch):
+    """git sets GIT_INDEX_FILE for the hooks a commit runs; outside one, nothing
+    staged makes the hook judge every tracked file instead."""
+    monkeypatch.setenv("GIT_INDEX_FILE", ".git/index")
     code, out, err = run(["hook-precommit"], repo, capsys)
 
     assert (code, out, err) == (0, "", "")

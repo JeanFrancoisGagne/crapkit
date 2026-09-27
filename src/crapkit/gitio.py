@@ -129,7 +129,7 @@ def _run(root: Path, argv: tuple[str, ...], named: tuple[str, ...], *, binary: b
     res = _spawn(root, argv, binary=binary)
     if res.returncode != 0:
         error = lenient(res.stderr) if binary else res.stderr
-        raise GitError(f"git {' '.join(named)} failed in {root}: {error.strip()}")
+        raise _failure(root, named, res.returncode, error)
     return res.stdout
 
 
@@ -144,6 +144,53 @@ def _git_text(root: Path, *args: str) -> str:
 
 def _git_bytes(root: Path, *args: str) -> bytes:
     return _run(root, (*_RELATIVE, *args), args, binary=True)
+
+
+_NOT_A_REPOSITORY = ("{root} is not a git repository, and no directory above it is one: crapkit "
+                     "reads the files it scores and the commit it measures from git, so run it "
+                     "inside a checkout, or run git init, git add and git commit here first")
+_NO_COMMIT = ("the git repository at {root} has no commit yet: crapkit measures a commit, so "
+              "make the first one (git add, then git commit) and run it again")
+
+
+def _failure(root: Path, named: tuple[str, ...], returncode: int, reason: str) -> GitError:
+    """What a failed git command tells the user: what the repository lacks when
+    that is why it failed, else the command and git's own reason."""
+    return GitError(_gap_behind(root, returncode)
+                    or f"git {' '.join(named)} failed in {root}: {reason.strip()}")
+
+
+def _gap_behind(root: Path, returncode: int) -> str | None:
+    """The repository state behind a git exit, asked only when git died.
+
+    128 is git's fatal exit and 129 its usage error, and a repository git cannot
+    use ends every command in one of them: outside a repository `git diff`
+    falls back to `--no-index` and prints 129 lines of usage for `--cached`.
+    Exit 1 is an answer, such as `config --get` on an unset key or
+    `--is-ancestor` saying no, so it costs no probe.
+    """
+    return _repository_gap(root) if returncode >= 128 else None
+
+
+def _repository_gap(root: Path) -> str | None:
+    """What stops git from answering anything in `root`, or None when nothing does.
+
+    One `rev-parse --verify --quiet HEAD` tells the states apart: 0 is a
+    repository with a commit, 1 a repository with no commit yet, and 128 a
+    directory git opens no repository in. There a `.git` on the walk up means
+    git found one and refused it, the `safe.directory` ownership check among
+    others, and git's own message names the fix. Read as bytes: that message
+    is in git's locale, and a failure path must not fail on its decoding.
+    """
+    probe = _spawn(root, ("rev-parse", "--verify", "--quiet", "HEAD"), binary=True)
+    if probe.returncode == 0:
+        return None
+    if probe.returncode == 1:
+        return _NO_COMMIT.format(root=root)
+    if _git_dir(root) is None:
+        return _NOT_A_REPOSITORY.format(root=root)
+    reason = probe.stderr.decode("utf-8", "replace").strip()
+    return f"git cannot open the repository at {root}: {reason}"
 
 
 def _git_paths(root: Path, *args: str) -> list[str]:
@@ -176,7 +223,7 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
         yield from lenient_lines(proc.stdout)
         stderr = lenient(proc.stderr.read())
     if proc.returncode != 0:
-        raise GitError(f"git {' '.join(args)} failed in {root}: {stderr.strip()}")
+        raise _failure(root, args, proc.returncode, stderr)
 
 
 def stage_path(root: Path, rel_path: str) -> None:
@@ -186,6 +233,30 @@ def stage_path(root: Path, rel_path: str) -> None:
 
 def ls_files(root: Path) -> list[str]:
     return _git_paths(root, "ls-files", "-z")
+
+
+def staged_names(root: Path) -> list[str]:
+    """The paths the index changes against HEAD, relative to `root`."""
+    return _diff_names(root, "--cached")
+
+
+def tracked_configs(root: Path) -> list[str]:
+    """Every crapkit.toml the checkout around `root` tracks or has staged, spelled
+    from `root` (`../api/crapkit.toml`); [] outside a repository."""
+    if not root.is_dir():
+        return []
+    res = _spawn(root, ("ls-files", "-z", "--", ":(top,glob)**/crapkit.toml"))
+    return _nul_records(res.stdout) if res.returncode == 0 else []
+
+
+def _nul_records(out: str) -> list[str]:
+    return [record for record in out.split("\0") if record]
+
+
+def tracked_named(root: Path, name: str) -> list[str]:
+    """Every tracked file called `name` at or below root, root-relative. It
+    reads the index alone, so it costs no walk of the working tree."""
+    return _git_paths(root, "ls-files", "-z", "--", f":(glob)**/{name}")
 
 
 def untracked_files(root: Path) -> list[str]:
@@ -463,7 +534,8 @@ def merge_base(root: Path, ref: str) -> str:
     """
     res = _spawn(root, (*_RELATIVE, "merge-base", ref, "HEAD"))
     if res.returncode != 0:
-        raise GitError(_merge_base_refusal(root, ref, res) + shallow_fix(root))
+        raise GitError(_gap_behind(root, res.returncode)
+                       or _merge_base_refusal(root, ref, res) + shallow_fix(root))
     return res.stdout.strip()
 
 
@@ -484,15 +556,39 @@ def shallow_fix(root: Path) -> str:
     return f"; {_SHALLOW_FIX}" if shallow else ""
 
 
+def ancestry(root: Path, commit: str, other: str = "HEAD") -> bool | None:
+    """True when `commit` is at or behind `other`, False when git says it is
+    not, None when git cannot tell: a commit this clone does not hold, or a
+    repository git cannot read (`is_ancestor` names which). git counts a commit
+    as its own ancestor, which is what "at or behind" needs; it exits 1 for no
+    and 128 when it cannot read a commit."""
+    res = _spawn(root, ("merge-base", "--is-ancestor", commit, other), binary=True)
+    return {0: True, 1: False}.get(res.returncode)
+
+
 def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
-    """True when `commit` is at or behind `other`; git counts a commit as its own
-    ancestor, which is what "at or behind" needs."""
-    try:
-        res = subprocess.run(["git", "merge-base", "--is-ancestor", commit, other],
-                             cwd=root, env=_environment(), capture_output=True)
-    except FileNotFoundError as exc:
-        raise GitError("git executable not found") from exc
-    return res.returncode == 0
+    """True only when git proves `commit` is at or behind `other`."""
+    return proven_ancestor(root, ancestry(root, commit, other))
+
+
+def proven_ancestor(root: Path, answer: bool | None) -> bool:
+    """`answer` as a yes or no. A commit this clone does not hold is a no,
+    which verify then blames on a shallow clone or a rebase. A repository with
+    no commit at all, or one git cannot open, is not a no: it raises what the
+    repository lacks, where verify used to blame a rebase for it."""
+    if answer is None:
+        gap = _repository_gap(root)
+        if gap:
+            raise GitError(gap)
+    return answer is True
+
+
+def branches_containing(root: Path, commit: str) -> list[str]:
+    """The local branches whose history holds `commit`, by short name; [] when
+    none does or git does not know the commit. Tells a run made on another
+    branch from one whose commit a rebase or an amend left on no branch."""
+    res = _spawn(root, ("branch", "--contains", commit, "--format=%(refname:short)"))
+    return res.stdout.split() if res.returncode == 0 else []
 
 
 def is_shallow(root: Path) -> bool:
@@ -543,8 +639,7 @@ def _batch_stream(root: Path, requests: bytes) -> bytes:
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     if res.returncode != 0:
-        raise GitError(f"git cat-file --batch failed in {root}: "
-                       f"{lenient(res.stderr).strip()}")
+        raise _failure(root, ("cat-file", "--batch"), res.returncode, lenient(res.stderr))
     return res.stdout
 
 
@@ -626,7 +721,7 @@ class _Started:
     def result(self, payload=None) -> bytes:
         out, err = self._proc.communicate(payload)
         if self._proc.returncode != 0:
-            raise GitError(f"git {' '.join(self._args)} failed in {self._root}: {lenient(err).strip()}")
+            raise _failure(self._root, self._args, self._proc.returncode, lenient(err))
         return out
 
     def close(self) -> None:
@@ -749,6 +844,9 @@ class GitReads:
     def staged_blobs(self, rel_paths: list[str]) -> dict[str, bytes]:
         return staged_blobs(self.root, rel_paths)
 
+    def tracked(self) -> list[str]:
+        return ls_files(self.root)
+
 
 class _StartedReads:
     """The same two answers, from processes that are already running.
@@ -773,6 +871,10 @@ class _StartedReads:
             return _individual_blobs(self._root, rel_paths)
         stream = self._batch.result(_batch_requests(rel_paths))
         return _framed_blobs(stream, rel_paths)
+
+    def tracked(self) -> list[str]:
+        """Only asked when nothing is staged outside a commit, so not started early."""
+        return ls_files(self._root)
 
     def close(self) -> None:
         self._diff.close()
@@ -920,7 +1022,7 @@ def _worktree_git(root: Path, *args: str, owner=None) -> str:
     except FileNotFoundError as error:
         raise GitError("git executable not found") from error
     if result.returncode != 0:
-        raise GitError(f"git {' '.join(args)} failed in {root}: {result.stderr.strip()}")
+        raise _failure(root, args, result.returncode, result.stderr)
     return result.stdout
 
 
@@ -1136,7 +1238,7 @@ class GitFacts:
         self._head: str | None = None
         self._status: tuple[str, ...] | None = None
         self._diffs: dict[str, tuple[str, ...]] = {}
-        self._ancestry: dict[tuple[str, str], bool] = {}
+        self._ancestry: dict[tuple[str, str], bool | None] = {}
         self._shallow: bool | None = None
 
     def head_commit(self) -> str:
@@ -1158,14 +1260,23 @@ class GitFacts:
             return self._diffs[commit]
 
     def is_ancestor(self, commit: str, other: str = "HEAD") -> bool:
-        """Memoized per (commit, other) the way the diffs are: verify asks about
-        the same commit once per lane, once per open claim and once for the
-        baseline, and history does not move under a running command."""
+        """True only when git proves `commit` is at or behind `other`; raises
+        what the repository lacks as the module's `is_ancestor` does."""
+        return proven_ancestor(self.root, self.ancestry(commit, other))
+
+    def ancestry(self, commit: str, other: str = "HEAD") -> bool | None:
+        """`ancestry`, memoized per (commit, other) the way the diffs are: verify
+        asks about the same commit once per lane, once per open claim and once
+        for the baseline, and history does not move under a running command."""
         with self._lock:
             key = (commit, other)
             if key not in self._ancestry:
-                self._ancestry[key] = is_ancestor(self.root, commit, other)
+                self._ancestry[key] = ancestry(self.root, commit, other)
             return self._ancestry[key]
+
+    def branches_containing(self, commit: str) -> list[str]:
+        """Not memoized: only a refusal asks, once."""
+        return branches_containing(self.root, commit)
 
     def is_shallow(self) -> bool:
         """Asked once: a clone does not deepen under a running command."""

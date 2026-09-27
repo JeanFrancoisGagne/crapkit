@@ -74,10 +74,12 @@ def test_hook_precommit_base_in_a_depth_one_clone_exits_4_naming_the_fix(full, s
     assert err.rstrip().endswith(SHALLOW), err
 
 
-def test_outside_any_repository_the_refusal_keeps_the_merge_base_reason(tmp_path, monkeypatch):
-    """The shallow probe fails there too; its error must not replace this one."""
+def test_outside_any_repository_the_refusal_names_the_missing_repository(tmp_path, monkeypatch):
+    """The shallow probe fails there too; its error must not replace this one,
+    and no fetch can fix a directory that holds no repository."""
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
 
     message = _refusal(tmp_path, "main")
 
-    assert message.startswith(f"git merge-base main HEAD failed in {tmp_path}: fatal: ")
+    assert message.startswith(f"{tmp_path} is not a git repository")
+    assert "shallow" not in message

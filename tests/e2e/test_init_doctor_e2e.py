@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import cli_runner
+from conftest import cli_runner, install_for_pytest_cov, repo_warns
 
 # PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
 run_cli = cli_runner(spawn=True)
@@ -137,7 +137,8 @@ def test_init_warns_when_the_lanes_python_lacks_pytest_cov(pytest_repo: Path, tm
     dependency on crapkit itself could never guarantee."""
     res = run_cli(pytest_repo, "init", env_extra=_without_pytest_cov(tmp_path))
     assert res.returncode == 0, res.stderr
-    assert "pytest_cov" in res.stderr and "pip install pytest-cov" in res.stderr
+    (note,) = [line for line in res.stderr.splitlines() if "pytest_cov" in line]
+    assert install_for_pytest_cov(note) in note, note
     assert '"crapkit[py]"' in res.stderr, (
         "the extra is the same-venv shortcut, and double quotes are the one form "
         "cmd.exe, PowerShell, bash and zsh all read the same way")
@@ -345,7 +346,7 @@ def test_init_on_a_vitest_repo_writes_a_lane_doctor_does_not_warn_about(vitest_r
 
     assert res.returncode == 0, res.stdout + res.stderr
     assert "results_artifact" not in res.stdout, res.stdout
-    assert [line for line in res.stdout.splitlines() if line.startswith("WARN")] == [
+    assert repo_warns(res.stdout) == [
         line for line in res.stdout.splitlines() if "scoped_tests" in line]
 
 

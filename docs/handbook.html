@@ -532,7 +532,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   <tr><td class="mono">1</td><td>Overloaded: no data yet, a <code>doctor</code> FAIL, or a debt-policy breach</td><td>Read the message. It names the command that creates the missing run, or the FAIL line.</td></tr>
   <tr><td class="mono">2</td><td>Usage error</td><td>argparse refused. Check the flag spelling and order.</td></tr>
   <tr><td class="mono">3</td><td>Config gap</td><td>A scope without a template, a metric-stamp mismatch. Fix <code>crapkit.toml</code> or restamp.</td></tr>
-  <tr><td class="mono">4</td><td>Git error</td><td>Not a repository, or a baseline commit rewritten out of history by a force-push.</td></tr>
+  <tr><td class="mono">4</td><td>Git error: not a repository, no commit yet, a repository git refuses to open, or a baseline commit a force-push rewrote out of history</td><td>The refusal names the fix. Run inside a checkout, make the first commit, run the <code>safe.directory</code> line git printed, or take a fresh baseline with <code>crapkit coverage</code>.</td></tr>
   <tr><td class="mono">5</td><td>Tool error: lizard missing, a lane produced no artifact (or one measuring a different tree, or one measuring this tree in absolute paths) or timed out past retries, an alert command failed</td><td>For the artifact cases: fix the lane, not the code. The refusal names the lane log in full. Seven root causes, triaged in <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">docs/lanes.md</a>.</td></tr>
   <tr><td class="mono">6</td><td>Gate: touched function over its ceiling</td><td>Decompose until every piece fits.</td></tr>
   <tr><td class="mono">7</td><td>Ratchet regression</td><td>A standing mark got worse. On a function you never edited, suspect test rot first.</td></tr>
@@ -849,7 +849,8 @@ cd your-repo
 crapkit init        # sniffs tracked source into scopes, writes live lanes it can prove
 crapkit doctor      # config against reality: unknown keys, unclaimed files, lane runners that will not start
 crapkit coverage    # runs the lanes, joins coverage, writes the first scored run and its grade</code></pre>
-<p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). <code>pip install crapkit</code> installs the latest release from PyPI. <code>python -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
+<p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). On an older Python pip stops with <code>No matching distribution found for crapkit</code>, and <code>uvx crapkit</code> runs crapkit on a Python 3.11 or newer that uv finds or downloads. <code>pip install crapkit</code> installs the latest release from PyPI. <code>python -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
+<p>Debian 12, Ubuntu 23.04 and later, Homebrew and uv's own Pythons refuse the base line with <code>error: externally-managed-environment</code>. Give crapkit an environment of its own with <code>pipx install crapkit</code> or <code>uv tool install crapkit</code>, or install it into the repo's venv; <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#when-pip-refuses">README: When pip refuses</a> has each route. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md">upgrade table</a> gives the upgrade line for every route, pipx, uvx and the git URL included.</p>
 <p>Read the <code>doctor</code> line narrowly. It resolves the first word of every command segment on PATH (the pieces <code>&amp;&amp;</code>, <code>||</code>, <code>&amp;</code> and <code>|</code> cut the line into) and starts the command's own first word. That is the whole of what it knows about a lane. A lane spelled <code>npm run test</code> is checked as far as <code>npm</code>, never the script behind it. So <code>doctor</code> can print <code>doctor: no problems found</code> and the next line of the block, <code>crapkit coverage</code>, can still exit 5 on that same lane. The reading rules in full are in <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">docs/lanes.md</a>.</p>
 
 <h3>The one dependency crapkit cannot install for you</h3>
@@ -858,44 +859,55 @@ crapkit coverage    # runs the lanes, joins coverage, writes the first scored ru
 <p>Two Windows cases get their own notes since 0.4.5. On a PATH carrying only the <code>py</code> launcher, the lane is written <code>py -m pytest</code>: the chain is <code>python</code>, then <code>python3</code>, then <code>py</code>, and <code>py</code> is last because it exists on no other operating system. And when cmd.exe cannot start the interpreter at all, which is what the Windows Store <code>python.exe</code> alias does with no Store app behind it (exit 9009, "Python was not found"), <code>init</code> says that instead of talking about pytest-cov, and <code>doctor</code> FAILs the lane rather than calling the repo clean. Nothing ran, so nothing about pytest-cov was learned.</p>
 
 <h3>Upgrading on Windows</h3>
-<p>Windows can refuse to replace <code>crapkit.exe</code> while an MCP session uses it, reporting <code>os error 32</code>. Close the agent sessions using crapkit, then rerun the upgrade with the installer you used:</p>
+<p>A running MCP session holds <code>crapkit.exe</code>, and each installer meets that lock its own way. pip exits 0: it moves the busy launcher aside and installs the new release, and the session keeps serving the old code until you restart the agent. <code>uv tool upgrade crapkit</code> fails with <code>os error 32</code>. <code>uv tool install crapkit@latest</code> fails with <code>Access is denied. (os error 5)</code> and leaves a <code>crapkit</code> that raises <code>ModuleNotFoundError</code> until it runs again. After either failure, close the agent sessions using crapkit, then rerun the upgrade with the installer you used:</p>
 <pre><code>uv tool upgrade crapkit                 # for a uv tool install
 python -m pip install --upgrade crapkit   # in the environment holding a pip install</code></pre>
-<p>Use one of these commands, then restart the agent so its MCP server runs the updated package. A partially completed upgrade can already report the new package version while its launcher remains locked; the successful installer run is the check that the upgrade finished.</p>
+<p>Then restart the agent so its MCP server runs the updated package. A partially completed upgrade can already report the new package version while its launcher remains locked; the successful installer run is the check that the upgrade finished. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#windows-launcher-locks">launcher-lock table</a> lists what each installer printed, pipx included.</p>
 
 <h3>Claude Code: two commands, once per user, zero files per repo</h3>
-<pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit
+<pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin
 claude plugin install crapkit@crapkit</code></pre>
-<p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a user-scope install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit.</p>
+<p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a user-scope install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit. <code>--sparse</code> checks out the two directories the plugin ships from, 0.8 MB, where a clone of the whole repository is 61 MB and one measured add ran out of Claude Code's 120-second clone timeout.</p>
 <p>A CLI installed from a clone wants its plugin from that same clone. <code>claude plugin marketplace add</code> takes a path as well as a GitHub slug, and the clone root already carries the <code>.claude-plugin/marketplace.json</code> that names <code>./plugin</code> as its source, so the same pair of commands installs the plugin sitting beside the CLI:</p>
 <pre><code>claude plugin marketplace add /path/to/your/crapkit-clone
 claude plugin install crapkit@crapkit</code></pre>
 <p>Take that route whenever the CLI came from <code>pip install .</code> or from the git tip. A CLI from the tip and a plugin from the marketplace are the pair that drift, and the next paragraph is how you find out. Both marketplaces answer to the name <code>crapkit</code>, since it is the same file either way, so drop the GitHub one with <code>claude plugin marketplace remove crapkit</code> before adding the clone.</p>
-<p>A runtime with no plugin marketplace copies <code>plugin/skills/*</code> into its own skills directory and gets the skills alone. <code>crapkit doctor --plugin-root PATH</code> compares an installed plugin against the <code>crapkit</code> on PATH on two things, its version and the hook protocol it asks for, and prints one line per disagreement at exit 1. Agreement prints nothing at all, at exit 0.</p>
-<p>Since 0.4.5 you do not have to know the path. Pass the plugin root, or any directory above it, <code>~/.claude</code> included, and the newest crapkit install under it wins; pass no path at all and it reads Claude Code's own plugin cache. A root it picked for you is named first, as <code>crapkit doctor: checking PATH</code>, so a wrong guess is visible rather than silent. A root you typed exactly is checked in silence.</p>
+<p>A runtime with no plugin marketplace copies <code>plugin/skills/*</code> into its own skills directory and gets the skills alone: <code>~/.claude/skills</code> for Claude Code, <code>$CODEX_HOME/skills</code> (<code>~/.codex/skills</code> by default) for Codex, <code>~/.gemini/skills</code> for Gemini CLI. Gemini CLI lists <code>crapkit-onboard</code> to its model with the other two; <code>gemini skills disable crapkit-onboard --scope user</code> takes it out once the repo is adopted. <code>crapkit doctor --plugin-root PATH</code> compares an installed plugin against the <code>crapkit</code> on PATH: its version, the hook protocol it asks for, and, at one version, whether its files match its marketplace's copy. It prints one line per disagreement at exit 1, each naming the command that closes it: the plugin update for each scope that holds the install, the CLI's upgrade, or <code>git -C /path/to/your/crapkit-clone pull</code> for a plugin installed from a clone, since Claude Code loads that one in place and <code>claude plugin update</code> does not change it. Agreement prints nothing at all, at exit 0.</p>
+<p>Since 0.4.5 you do not have to know the path. Pass the plugin root, or any directory above it, <code>~/.claude</code> included, and the newest crapkit install under it wins; pass no path at all and it checks every install Claude Code recorded, one per scope and version, checks a clone added as a marketplace in the clone itself, where Claude Code loads it, and falls back to Codex's plugin cache. A root it picked for you is named first, as <code>crapkit doctor: checking PATH</code>, so a wrong guess is visible rather than silent. A root you typed exactly is checked in silence.</p>
 
 <h3>Codex: install the three skills and MCP server</h3>
-<pre><code>codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
+<pre><code>codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit</code></pre>
-<p>Codex uses its own plugin manager with the same repository marketplace. Use its three skills and MCP server in Codex. The advisory hook instructions here configure Claude Code's PostToolUse event.</p>
+<p>Codex uses its own plugin manager with the same repository marketplace, and the two lines need Codex 0.131.0 or newer. Use its three skills and MCP server in Codex. The advisory hook instructions here configure Claude Code's PostToolUse event. <code>--ref</code> pins the marketplace to the release's tag, and the release step rewrites it. Without it the marketplace follows main: Codex 0.156.1 checks it at every start and reinstalls the plugin once main moved, which takes the plugin past the CLI with no command from you.</p>
 
 <h3>Update installed plugins after the CLI</h3>
 <pre><code>claude plugin marketplace update crapkit
 claude plugin update crapkit@crapkit --scope user
 
-codex plugin marketplace upgrade crapkit
+codex plugin marketplace remove crapkit
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 codex plugin list --marketplace crapkit --json</code></pre>
-<p>Refresh the marketplace before updating the installed copy. Restart existing Claude Code sessions to apply its plugin update, and start fresh MCP sessions after a CLI upgrade. <code>crapkit doctor --plugin-root PATH</code> checks installed files against the CLI on PATH; it does not reload a running session. Pass the installed Codex plugin directory explicitly because doctor's default cache is Claude Code's. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#plugin-and-mcp-clients">plugin upgrade guide</a> explains the installed path and Windows launcher locks.</p>
+<p>The installed plugin moves only at a release. Refresh Claude Code's marketplace before updating the installed copy; between releases <code>claude plugin update</code> reports it up to date, because main keeps the last release's version. A Codex marketplace added at a tag stays there, so remove it, add it at the new tag, and install the plugin again; the listing's <code>--json</code> needs Codex 0.137.0. Restart existing Claude Code sessions to apply its plugin update, and start fresh MCP sessions after a CLI upgrade. <code>crapkit doctor --plugin-root PATH</code> checks installed files against the CLI on PATH; it does not reload a running session. With no PATH it checks the installs Claude Code recorded and looks in Codex's cache only when Claude Code has none, so pass the installed Codex plugin directory to check that one. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#plugin-and-mcp-clients">plugin upgrade guide</a> explains the installed path and Windows launcher locks.</p>
 
 <h3>Enforcement: seed the ratchet, then arm the hook</h3>
 <pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv
-git add crapkit-ratchet.tsv &amp;&amp; git commit -m "seed the crapkit ratchet"
+git add crapkit.toml .gitignore crapkit-ratchet.tsv &amp;&amp; git commit -m "adopt crapkit"
 
-printf '#!/bin/sh\nexec python -m crapkit hook-precommit\n' &gt; .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit</code></pre>
-<p>From here every commit is judged, new debt only. Seed <em>before</em> arming, or the first commit on a brownfield repo refuses everything. The plugin is optional and the hook is not: the advisory annotates, this blocks.</p>
-<div class="callout info"><p>Two things bite here. Git runs hooks outside your shell's activated venv, so bare <code>python</code> must resolve to an interpreter that has crapkit installed, or write the absolute path. And a hook in <code>.git/hooks/</code> is not committed, so teammates get nothing. The README's gate section has the committed-hooks-directory route, the pre-commit-framework route, and CI.</p></div>
+printf '#!/bin/sh\ncommand -v crapkit &gt;/dev/null 2&gt;&amp;1 &amp;&amp; exec crapkit hook-precommit\ncommand -v uvx &gt;/dev/null 2&gt;&amp;1 &amp;&amp; exec uvx crapkit hook-precommit\nexec python -m crapkit hook-precommit\n' &gt; "$(git rev-parse --git-common-dir)/hooks/pre-commit"
+chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-commit"</code></pre>
+<p>From PowerShell, which has no <code>printf</code> or <code>chmod</code>, and whose 5.1 edition cannot parse <code>&amp;&amp;</code> and writes a byte-order mark git cannot spawn from <code>&gt;</code>:</p>
+<pre><code>crapkit ratchet seed
+git add crapkit.toml .gitignore crapkit-ratchet.tsv
+git commit -m "adopt crapkit"
+
+$crapkit = (Get-Command crapkit -ErrorAction Stop).Source -replace '\\', '/'
+Set-Content -Path "$(git rev-parse --git-common-dir)/hooks/pre-commit" -Encoding ascii -NoNewline -Value "#!/bin/sh`nexec '$crapkit' hook-precommit`n"</code></pre>
+<p>From here every commit is judged, new debt only. Seed <em>before</em> arming, or the first commit on a brownfield repo refuses everything. Commit the config and the ignore rules with the marks: CI runs on a fresh clone (<a href="#uses">workflow 4</a>), and a clone with no <code>crapkit.toml</code> stops at <code>no crapkit.toml</code> before any verdict. The plugin is optional and the hook is not: the advisory annotates, this blocks.</p>
+<div class="callout info"><p>Two things bite here. The hook runs the <code>crapkit</code> on the PATH git hands it, then <code>uvx crapkit</code> where uv is installed, then <code>python -m crapkit</code>, so a pipx, uv tool or uvx install works on a machine with only <code>python3</code>. A commit from an IDE or GUI client you did not start from your venv's terminal runs the hook without that venv on its PATH. When nothing else there runs crapkit, git refuses the commit, with <code>exec: python: not found</code> where there is no python and <code>No module named crapkit</code> from a python that lacks it. Write the absolute path there (<code>exec /path/to/venv/bin/crapkit hook-precommit</code>). The uvx line also keeps the gate running after <code>pip uninstall crapkit</code> wherever uv is installed, so take the hook out before the package. And a hook in <code>.git/hooks/</code> is not committed, so teammates get nothing. The README's gate section has the committed-hooks-directory route, the PowerShell forms, what to do when <code>core.hooksPath</code> is already set, the pre-commit-framework route, and CI.</p></div>
+
+<h3>Removing crapkit</h3>
+<p>Take the commit hook and the merge driver out before the package: both call crapkit. After <code>pip uninstall crapkit</code> alone, the sh hook above keeps judging every commit through <code>uvx crapkit</code> on a machine with uv, with whichever crapkit release uv has cached or can download, and stops every commit on <code>No module named crapkit</code> on a machine without uv. The PowerShell hook above names the launcher that <code>pip uninstall crapkit</code> deletes, so it stops every commit on <code>No such file or directory</code>, with uv or without it. Every merge that touches <code>crapkit-ratchet.tsv</code> conflicts after the driver's <code>crapkit: not found</code>. <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit">Removing crapkit</a> lists each piece, in a repo and on the machine.</p>
 
 <h3>Then, whenever</h3>
 <pre><code>crapkit worklist            # the risk map: what is worst, and how hot it runs
@@ -932,17 +944,19 @@ $ crapkit verify                       # the full verdict; green releases the cl
 <p>Stop when <code>next-item</code> reports <code>empty: true</code> <em>and</em> nothing is skipped as claimed <em>and</em> no <code>no_lane_over_target</code> count appears <em>and</em> <code>scored_changes</code> is <code>0</code> (<a href="#queue">§11</a>). An empty-looking worklist is not the stop signal.</p>
 
 <h3>3 · Day one on a polyglot repo</h3>
-<p>A repo with Python, TypeScript, Rust and shell in it. <code>init</code> sniffs all four; the two with coverage tooling get live lanes, the other two get scored anyway.</p>
+<p>A repo with Python, TypeScript, Rust and shell in it. <code>init</code> sniffs all four; the two with coverage tooling get live lanes, and the other two are written cc-only, scored on complexity alone.</p>
 <pre><code>$ crapkit init
 wrote crapkit.toml with 4 scope(s): api, infra, ops, ui
 detected 2 lane(s) from this repo's own files: py, js - next: run `crapkit coverage`
 added to .gitignore: .crapkit/, .coverage, __pycache__/
 
 $ crapkit doctor
-ok   every tracked source file belongs to a scope
-FAIL scope 'infra' is in no lane's scopes list - its functions can only score no-lane (declare a lane, or coverage_optional = true)
-FAIL scope 'ops' is in no lane's scopes list - its functions can only score no-lane (declare a lane, or coverage_optional = true)
-doctor: 2 problem(s)
+…
+ok   scope 'infra': 1 file
+ok   scope 'ops': 1 file
+…
+WARN scope 'ui' has a lane but no [crapkit.scoped_tests] template - `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add ui = "&lt;test command&gt;" under [crapkit.scoped_tests]
+doctor: no problems found, 1 warning above
 
 $ crapkit inventory                    # complexity alone, no lanes needed
 run 1 @ 8da79a04d51: 4 functions in 4 files (0 cached)
@@ -952,8 +966,12 @@ worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) - 4 of 4 active (wor
   risk      7.0  ccn   7  crap       -  cov    -    1c/1a  api/grade.py:1  grade( n , total )
   risk      6.0  ccn   6  crap       -  cov    -    1c/1a  ui/panel.ts:1  label ( kind , hot )
   risk      5.0  ccn   5  crap       -  cov    -    1c/1a  infra/main.rs:1  route kind : u8
-  risk      5.0  ccn   5  crap       -  cov    -    1c/1a  ops/deploy.sh:1  release()</code></pre>
-<p>Read those two FAILs as a fork, not an error: declare a lane for the scope, or set <code>coverage_optional = true</code> and accept cc-only. Both are correct answers; leaving it undecided is not, because <code>no-lane</code> debt is unreachable debt.</p>
+  risk      5.0  ccn   5  crap       -  cov    -    1c/1a  ops/deploy.sh:1  release()
+run 1 is an inventory run (no coverage was measured) and cannot serve as a baseline for next-item, ratchet seed or verify
+-&gt; next: crapkit coverage</code></pre>
+<p>Neither scope FAILs. <code>infra</code> and <code>ops</code> hold Rust and shell, which no coverage parser reads, so <code>init</code> writes <code>coverage_optional = true</code> on both, and they score cc-only: <code>crap = ccn</code>, the ceiling still binds, and the gate still refuses a function over it. A scope you add later with no lane and no such key is the one <code>doctor</code> FAILs (<code>scope 'infra' is in no lane's scopes list</code>). Read that FAIL as a fork, not an error: declare a lane for the scope, or set <code>coverage_optional = true</code> and accept cc-only. Both are correct answers; leaving it undecided is not, because <code>no-lane</code> debt is unreachable debt.</p>
+<p>The one <code>WARN</code> is <code>ui</code>'s. <code>init</code> writes its vitest line under <code>[crapkit.scoped_tests]</code> commented out, as <code># ui = "npx vitest related --run {files}"</code>, so <code>crapkit test-scoped</code> has no command for <code>ui</code> until you uncomment it. <code>doctor</code> still exits 0, and its closing line counts the warning.</p>
+<p>The worklist's last two lines are the handoff. An inventory run ranks by complexity alone, so <code>next-item</code>, <code>ratchet seed</code> and <code>verify</code> will not measure against it, and worklist names <code>coverage</code> as the next step. After a coverage run the same line names <code>ratchet seed</code>, and once <code>crapkit-ratchet.tsv</code> exists, <code>next-item</code>.</p>
 <p class="xanno">Note the Rust row. Stock lizard scores that five-arm <code>match</code> ccn 2, which is under the ceiling and invisible. crapkit's corrected reader scores it 5 (<a href="#languages">§03</a>).</p>
 
 <h3>4 · CI on a pull request</h3>
@@ -982,11 +1000,11 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
 <p>Nothing above assumes <code>crapkit.toml</code> sits at the git root. A package one or more directories down is the ordinary monorepo shape, and it needs no mode and no flag beyond <code>--repo</code>. 0.4.4 fixed the scoring half of it; the commit gate was still reading <code>git diff --cached</code> from the git top, so under a nested root the staged paths matched no scope, and a function at twice the ceiling committed with a warning. 0.4.5 fixed that, and the nine siblings that joined the same two path shapes. The gate now judges what you staged, named the way the rest of the run names it:</p>
 <pre><code>$ git add packages/api/app/route.py
 $ cd packages/api
-$ python -m crapkit hook-precommit          # what the git hook runs
+$ crapkit hook-precommit                    # what the git hook runs
 crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
   ccn  10  app/route.py:1  route( kind , hot , live , admin )
 decompose before committing (coverage cannot save a function above the target).</code></pre>
-<p>A file staged <em>above</em> the crapkit root is outside that diff by design, and the gate no longer names it.</p>
+<p>A file staged <em>above</em> the crapkit root is outside that diff by design, and the gate no longer names it. The hook git runs does the <code>cd</code> for you: git starts it at the top, and with no <code>crapkit.toml</code> there the gate runs in each crapkit root below that owns a staged file and prints paths from the top, <code>packages/api/app/route.py:1</code>. The Enforcement block above arms it from <code>packages/api</code> as written, and a docs-only commit at the top passes with one note.</p>
 
 <h3>Everyday lookups</h3>
 <div class="tw" role="region" aria-label="Commands by task" tabindex="0"><table>

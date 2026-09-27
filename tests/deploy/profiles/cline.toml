@@ -1,0 +1,97 @@
+# Cline: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Cline"
+kind = "app"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Cline"
+format = "mcpservers-json"
+scope = "user"
+path = ".cline/data/settings/cline_mcp_settings.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ],
+      "timeout": 60
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "root"
+env = "sdk-default"
+resolve = "execvp"
+windows = "shell"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "ts-sdk"
+sdk = "sdk-1-25"
+protocol = "2024-11-05"
+discover_first = false
+client_name = "@cline/core"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+# 8,000 characters of the whole CallToolResult JSON (text and structuredContent), the middle cut out.
+output_tokens = 2000
+tool_prefix = "crapkit__"
+# The CLI waits 3 s for initialize unless the server sets "timeout" (seconds).
+startup_seconds = 3
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+# The CLI starts crapkit in the task directory with its own environment; [spawn]
+# above describes the VS Code extension, so calibrate.py leaves those two alone.
+calibrate_skip = ["spawn.cwd", "spawn.env"]
+pins_key = "cline"
+version = "3.0.65"
+command = "cline"
+image = "full"
+floor = ""
+headless = "cline mcp install --yes --json; cline config mcp --json"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "the MCP Servers view's restart button"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "inferred"
+"spawn.env" = "inferred"
+"spawn.resolve" = "observed"
+"spawn.windows" = "inferred"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "source"
+"limits.tool_prefix" = "observed"
+"limits.startup_seconds" = "observed"
+"hooks.loads" = "docs"
+"hooks.manifest" = "docs"
+"hooks.fields" = "docs"
+"hooks.events" = "docs"
+"hooks.matcher" = "docs"
+"hooks.exit2" = "docs"
+sources = ["calibrate.py: shim record of a `cline` task on the OpenAI stub (2024-11-05, @cline/core)", "the VS Code extension spawns from the extension host with the SDK's default environment; the CLI starts in the task cwd", "Cline hooks live in ~/.cline/hooks, not in a Claude plugin", "@cline/core session/services/message-builder: DEFAULT_MAX_TOOL_RESULT_CHARS = 8000, raised by CLINE_MESSAGE_BUILDER_MAX_TOOL_RESULT_CHARS in the Cline process; lin-call-cline saw a 27 KB get_function_brief arrive as '...[truncated 21226 chars]...'", "cline 3.0.65 stdio MCP client: a connect attempt waits 3000 ms unless the server's timeout (seconds) is set, then Cline respawns the server with Content-Length framing and tries once more; win-real-cli on a loaded Windows host logged 'MCP request to \"crapkit\" (initialize) timed out after 3s' in ~/.cline/data/logs/cline.log, and the model was never offered crapkit's tools"]

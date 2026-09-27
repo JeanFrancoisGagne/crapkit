@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from crapkit.cli import main
 from crapkit.cli.parser import build_parser
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -25,7 +26,9 @@ AUTO_SKILLS = (CRAPKIT_SKILL, RECOVER_SKILL)
 # A command mention is a code span or a command line, never prose: "a repo
 # crapkit measures" is English, `crapkit worklist --top 5` is a call.
 _SPAN = re.compile(r"`([^`\n]+)`")
-_CALL = re.compile(r"^\$?\s*(?:python -m )?crapkit\s+([a-z][a-z0-9-]*)(.*)$")
+# A subcommand followed by a colon is the start of a line crapkit printed
+# (`crapkit doctor: ...`), not a call.
+_CALL = re.compile(r"^\$?\s*(?:python -m )?crapkit\s+([a-z][a-z0-9-]*)(?![a-z0-9:-])(.*)$")
 _FLAG = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]*)")
 # Path shapes: anything with a slash in it, and bare source filenames.
 _SLASHED = re.compile(r"(?<![\w./-])(?:[\w.-]+/)+[\w.*-]+")
@@ -102,6 +105,7 @@ def test_the_pages_print_calls_at_all():
 
 def test_prose_that_merely_names_crapkit_is_not_read_as_a_call():
     assert _CALL.match("a repo crapkit measures") is None
+    assert _CALL.match("crapkit doctor: no installed crapkit plugin under DIR") is None
     assert _CALL.match("$ crapkit verify --base main").groups() == ("verify", " --base main")
 
 
@@ -127,10 +131,36 @@ def test_the_merge_driver_both_pages_configure_is_the_console_script():
         assert "python -m crapkit ratchet merge" not in _doc(page), page
 
 
-def test_the_crapkit_description_quotes_the_gate_refusal_the_hook_prints():
-    from crapkit.cli import verifying
+UVX_MERGE_DRIVER = 'git config merge.crapkit-ratchet.driver "uvx crapkit ratchet merge %O %A %B"'
 
-    emitted = Path(verifying.__file__).read_text(encoding="utf-8")
+
+def test_both_pages_give_a_uvx_clone_a_driver_git_can_start():
+    """uvx puts no `crapkit` on PATH, so the console-script driver fails every
+    marks-file merge with `crapkit: not found` and leaves ours in the file with
+    no conflict markers. Both pages name the uvx form and that symptom."""
+    for page in (RECOVER_SKILL, "docs/ratchet.md"):
+        assert UVX_MERGE_DRIVER in _doc(page), page
+        assert "crapkit: not found" in _doc(page), page
+        assert "git merge --abort" in _doc(page), page
+
+
+def test_ratchet_help_names_the_driver_the_pages_give_a_uvx_clone(capsys):
+    from crapkit.cli import main
+
+    with pytest.raises(SystemExit):
+        main(["ratchet", "--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+
+    assert UVX_MERGE_DRIVER.split('"')[1] in help_text
+
+
+def test_the_crapkit_description_quotes_the_gate_refusal_the_hook_prints(capsys):
+    from crapkit.cli import verifying
+    from crapkit.hook import Violation
+
+    verifying._print_breaches([Violation("app/m.py", "route( a )", 1, 9)], 6, "", "staged")
+
+    emitted = capsys.readouterr().out
     assert f"staged function(s) {GATE_REFUSAL} of " in emitted, "the hook reworded its refusal"
     assert GATE_REFUSAL in _frontmatter(CRAPKIT_SKILL), "the description quotes something else"
 
@@ -172,6 +202,21 @@ def test_the_onboarding_skill_costs_no_context():
 
 
 @pytest.mark.parametrize("page", (CRAPKIT_SKILL, RECOVER_SKILL, ONBOARD_SKILL))
+def test_codex_offers_the_model_the_skills_claude_code_does(page: str):
+    """Codex installs these same skills from the plugin or from a copied
+    directory, and it ignores `disable-model-invocation`, which is Claude
+    Code's key. It reads agents/openai.yaml beside SKILL.md instead. With no
+    such file, Codex 0.156.1 listed crapkit-onboard in every model request,
+    so the model could start an adoption nobody asked for."""
+    yaml = pytest.importorskip("yaml")
+    policy_file = (ROOT / page).parent / "agents" / "openai.yaml"
+
+    explicit_only = yaml.safe_load(_frontmatter(page)).get("disable-model-invocation", False)
+    codex = yaml.safe_load(policy_file.read_text(encoding="utf-8")) if policy_file.is_file() else {}
+    assert codex.get("policy", {}).get("allow_implicit_invocation", True) is not explicit_only
+
+
+@pytest.mark.parametrize("page", (CRAPKIT_SKILL, RECOVER_SKILL, ONBOARD_SKILL))
 def test_each_frontmatter_block_parses_as_yaml(page: str):
     """The descriptions carry colons and quoted machine strings; unquoted, the
     loader that reads them stops at the colon."""
@@ -179,6 +224,29 @@ def test_each_frontmatter_block_parses_as_yaml(page: str):
 
     parsed = yaml.safe_load(_frontmatter(page))
     assert set(parsed) <= {"name", "description", "disable-model-invocation"}
+
+
+# --- the plugin lines an agent runs ------------------------------------------
+
+_PLUGIN_LINE = re.compile(r"`((?:claude|codex) plugin [^`]+)`")
+
+
+def _drift_row() -> str:
+    (row,) = [ln for ln in _doc(RECOVER_SKILL).splitlines() if "its hooks spawn (CLI_PATH)" in ln]
+    return row
+
+
+def test_the_drift_row_updates_the_installed_plugin_the_way_the_readme_does():
+    """A plugin behind the CLI is already installed. `claude plugin install` on
+    it answers that it is already installed and leaves the old version in the
+    cache (Claude Code 2.1.281), so the row names each agent's refresh lines,
+    the ones the README runs after a CLI upgrade."""
+    named = _PLUGIN_LINE.findall(_drift_row())
+    readme = _doc("README.md")
+
+    assert {cmd.split()[0] for cmd in named} == {"claude", "codex"}, named
+    assert [cmd for cmd in named if cmd not in readme] == [], "the README runs other lines"
+    assert "claude plugin update crapkit@crapkit --scope user" in named
 
 
 # --- the catalogue stays language-shaped -------------------------------------
@@ -322,3 +390,62 @@ def test_the_plugin_root_transcript_pins_no_release():
                if "crapkit doctor: checking" in ln]
 
     assert _RELEASE.search(line) is None, line
+
+
+def _onboard_line(start: str) -> str:
+    """The onboarding skill's one indented output line that starts with `start`."""
+    (line,) = [ln.strip() for ln in _doc(ONBOARD_SKILL).splitlines() if ln.startswith("    " + start)]
+    return line
+
+
+def _printed_as_the_page_spells_it(argv: list[str], capsys, places: dict[str, Path]) -> str:
+    """What `crapkit ARGV` prints, each concrete path put back as the page's placeholder."""
+    main(argv)
+    out = capsys.readouterr().out.strip()
+    for placeholder, path in places.items():
+        out = out.replace(str(path), placeholder)
+    return out
+
+
+def _no_plugin_lines(tmp_path, monkeypatch, capsys) -> tuple[str, str]:
+    """What `doctor --plugin-root` prints with empty Claude Code and Codex homes,
+    then with a PATH that is no plugin root, in the pages' placeholders."""
+    places = {"CODEX_DIR": tmp_path / "codex", "DIR": tmp_path / "claude" / "plugins",
+              "PATH": tmp_path / "not-a-plugin"}
+    places["PATH"].mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(places["CODEX_DIR"]))
+    return (_printed_as_the_page_spells_it(["doctor", "--plugin-root"], capsys, places),
+            _printed_as_the_page_spells_it(["doctor", "--plugin-root", str(places["PATH"])], capsys, places))
+
+
+def test_the_onboard_skill_prints_the_lines_doctor_prints_when_it_finds_no_plugin(tmp_path, monkeypatch,
+                                                                                    capsys):
+    """An agent onboarding matches what doctor printed against these two lines to
+    tell a missing install from a mistyped path. A line doctor rewrote and the
+    page did not matches nothing, and the page's advice goes with it."""
+    no_install, no_root = _no_plugin_lines(tmp_path, monkeypatch, capsys)
+
+    assert no_install == _onboard_line("crapkit doctor: no installed crapkit plugin under")
+    assert no_root == _onboard_line("crapkit doctor: the plugin at PATH has no")
+
+
+def _recover_quote(start: str) -> str:
+    """The recover skill's one quoted line that starts with `start`, rewrapped onto one line."""
+    (quote,) = re.findall(rf'"({re.escape(start)}[^"]*)"', " ".join(_doc(RECOVER_SKILL).split()))
+    return quote
+
+
+@pytest.mark.parametrize("which, start", [(0, "crapkit doctor: no installed crapkit plugin under"),
+                                          (1, "crapkit doctor: the plugin at PATH has no")])
+def test_the_recover_skill_quotes_the_lines_doctor_prints_when_it_finds_no_plugin(which, start, tmp_path,
+                                                                                    monkeypatch, capsys):
+    """The recover skill tells the same two lines apart by their opening clause.
+    A quote that stops inside a clause doctor has since grown, as "under DIR"
+    against "under DIR or CODEX_DIR", reads as if doctor looked in Claude Code's
+    directory alone, and its advice sends a Codex user to pass a path by hand."""
+    printed = _no_plugin_lines(tmp_path, monkeypatch, capsys)[which]
+    quote = _recover_quote(start)
+
+    assert printed.startswith(quote), (quote, printed)
+    assert printed[len(quote):][:1] in {"", ".", ",", ";", ":"}, f"the quote stops mid-clause: {printed}"

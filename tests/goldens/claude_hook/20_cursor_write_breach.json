@@ -1,0 +1,40 @@
+{
+  "case": "cursor_write_breach",
+  "why": "Cursor imports Claude Code plugins, spells the event postToolUse and maps Edit and Write onto its Write tool. It reads a postToolUse exit 2 as a deny and shows the model nothing, so the advisory goes out as additionalContext on exit 0, which Cursor adds to the conversation as additional_context.",
+  "fixture": "measured_breach",
+  "argv": [
+    "claude-hook",
+    "--protocol",
+    "1"
+  ],
+  "payload": {
+    "conversation_id": "5b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0",
+    "generation_id": "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+    "model": "auto",
+    "hook_event_name": "postToolUse",
+    "cursor_version": "2026.09.23-86fc751",
+    "workspace_roots": [
+      "{REPO}"
+    ],
+    "tool_name": "Write",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "content": "def sprawl(n):"
+    },
+    "tool_output": "{}",
+    "duration": 12,
+    "tool_use_id": "tool_1",
+    "cwd": "{REPO}"
+  },
+  "expect": {
+    "exit": 0,
+    "stderr": [],
+    "stdout": {
+      "additionalContext": "crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)\n  ccn 8  calc/grade.py:1  sprawl( n )\nthe commit gate enforces this; decompose there or mark the debt",
+      "hookSpecificOutput": {
+        "hookEventName": "PostToolUse",
+        "additionalContext": "crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)\n  ccn 8  calc/grade.py:1  sprawl( n )\nthe commit gate enforces this; decompose there or mark the debt"
+      }
+    }
+  }
+}

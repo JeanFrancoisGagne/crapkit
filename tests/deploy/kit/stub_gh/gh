@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""A `gh` for the act cells: the GitHub API calls crapkit's Action and the
+deploy checks make, answered from a state directory with no network.
+
+The directory is $STUB_GH_STATE:
+
+  mode          "write" (the default) or "readonly": a read-only token lists
+                comments and gets gh's own 403 on every POST or PATCH, the
+                way a fork pull request's GITHUB_TOKEN does
+  comments.json the pull request's comments, [{"id", "body"}]
+  calls.jsonl   one line per call: argv, method, path, the --input body, exit
+  jobs.json     what `repos/R/actions/runs/N/jobs` answers
+  logs/<id>.txt what `repos/R/actions/jobs/<id>/logs` answers
+
+Only `gh api` is answered. Like gh it refuses to start without GH_TOKEN or
+GITHUB_TOKEN, prints the error JSON's message as `gh: <message> (HTTP <n>)`
+on stderr and exits 1 on an HTTP error, prints nothing under --silent, and
+writes UTF-8 whatever the console's code page is.
+"""
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+STATE = Path(os.environ.get("STUB_GH_STATE", "."))
+MARKER = "<!-- crapkit-action -->"
+FLAGS = {"--method": "method", "-X": "method", "--jq": "jq", "-q": "jq", "--input": "input"}
+SWITCHES = {"--silent": "silent", "--paginate": "paginate"}
+FORBIDDEN = (403, "Resource not accessible by integration")
+NOT_FOUND = (404, "Not Found")
+
+
+class HttpError(Exception):
+    pass
+
+
+def parse(argv):
+    """gh api's flags as a dict; the one positional is the path."""
+    call, rest = {"method": "GET", "path": None}, list(argv)
+    while rest:
+        word = rest.pop(0)
+        if word in FLAGS:
+            call[FLAGS[word]] = rest.pop(0)
+        elif word in SWITCHES:
+            call[SWITCHES[word]] = True
+        else:
+            call["path"] = word
+    return call
+
+
+def read_json(name, default):
+    path = STATE / name
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
+
+
+def write_json(name, data):
+    (STATE / name).write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def readonly():
+    path = STATE / "mode"
+    return path.exists() and path.read_text(encoding="utf-8").strip() == "readonly"
+
+
+def body_of(call):
+    return json.loads(Path(call["input"]).read_text(encoding="utf-8"))["body"]
+
+
+def list_comments(call, match):
+    """The action's lookup: the first comment carrying the marker, as its --jq prints it."""
+    comments = read_json("comments.json", [])
+    if not call.get("jq"):
+        return json.dumps(comments)
+    found = [comment["id"] for comment in comments if MARKER in comment["body"]]
+    return f"{found[0]}\n" if found else ""
+
+
+def post_comment(call, match):
+    if readonly():
+        raise HttpError(*FORBIDDEN)
+    comments = read_json("comments.json", [])
+    comment = {"id": 1000 + len(comments), "body": body_of(call)}
+    write_json("comments.json", comments + [comment])
+    return json.dumps(comment)
+
+
+def patch_comment(call, match):
+    if readonly():
+        raise HttpError(*FORBIDDEN)
+    comments, wanted = read_json("comments.json", []), int(match.group(1))
+    if wanted not in [comment["id"] for comment in comments]:
+        raise HttpError(*NOT_FOUND)
+    write_json("comments.json", [edited(comment, wanted, call) for comment in comments])
+    return json.dumps({"id": wanted})
+
+
+def edited(comment, wanted, call):
+    return dict(comment, body=body_of(call)) if comment["id"] == wanted else comment
+
+
+def run_jobs(call, match):
+    return json.dumps(read_json("jobs.json", {"total_count": 0, "jobs": []}))
+
+
+def job_log(call, match):
+    path = STATE / "logs" / f"{match.group(1)}.txt"
+    if not path.exists():
+        raise HttpError(*NOT_FOUND)
+    return path.read_text(encoding="utf-8")
+
+
+ROUTES = [
+    ("GET", re.compile(r"repos/[^/]+/[^/]+/issues/\d+/comments"), list_comments),
+    ("POST", re.compile(r"repos/[^/]+/[^/]+/issues/\d+/comments"), post_comment),
+    ("PATCH", re.compile(r"repos/[^/]+/[^/]+/issues/comments/(\d+)"), patch_comment),
+    ("GET", re.compile(r"repos/[^/]+/[^/]+/actions/runs/\d+/jobs(\?.*)?"), run_jobs),
+    ("GET", re.compile(r"repos/[^/]+/[^/]+/actions/jobs/(\d+)/logs"), job_log),
+]
+
+
+def answer(call):
+    for method, pattern, handler in ROUTES:
+        match = pattern.fullmatch(call["path"] or "")
+        if match and method == call["method"]:
+            return handler(call, match)
+    raise HttpError(*NOT_FOUND)
+
+
+def record(argv, call, code):
+    entry = {"argv": argv, "method": call["method"], "path": call["path"], "exit": code}
+    if call.get("input"):
+        entry["body"] = body_of(call)
+    with (STATE / "calls.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(entry) + "\n")
+
+
+def api(argv):
+    call = parse(argv)
+    try:
+        printed, code = answer(call), 0
+    except HttpError as error:
+        status, message = error.args
+        print(f"gh: {message} (HTTP {status})", file=sys.stderr)
+        printed, code = "", 1
+    record(argv, call, code)
+    if printed and not call.get("silent"):
+        sys.stdout.buffer.write(printed.encode("utf-8"))
+    return code
+
+
+def main(argv):
+    if not (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")):
+        print("gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable.",
+              file=sys.stderr)
+        return 4
+    if argv[:1] != ["api"]:
+        print(f"stub gh: only `gh api` is answered, not {argv!r}", file=sys.stderr)
+        return 1
+    return api(argv[1:])
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

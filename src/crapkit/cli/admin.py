@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import posixpath
 import re
 import sys
 from functools import lru_cache
@@ -14,9 +15,10 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .. import __version__, config
+from .._package import upgraded_to
 from ..config import load_config_text
 from ..doctor import Finding
-from ..errors import ConfigError, GitError, ToolError
+from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self, quoted_path
 from ..lane_command import (LaunchSpec, expand_launchers, first_word, launch_spec,
@@ -425,12 +427,15 @@ def _missing_pytest_cov_note(name: str, word: str, spec: LaunchSpec) -> str:
     `python` a stock PATH answers with, and then installing a package is the
     wrong move: the reader has to be able to tell which of the two was asked.
     The install command carries the same word, so it lands in that interpreter's
-    environment rather than whichever one the reader's shell has active. Where
+    environment rather than whichever one the reader's shell has active; in a
+    venv uv made, which holds no pip, it is `uv pip install --python WORD`. Where
     the word lands is read the way the lane's shell reads it, so a relative
     launcher names the same file from any directory doctor runs in."""
+    from ..launchers import pip_install
+
     resolved = spec.resolve(word) or word
     return (f"note: lane {name!r} names `{word}`, which resolves here to {resolved} and "
-            f"cannot import pytest_cov - run `{word} -m pip install pytest-cov` in the "
+            f"cannot import pytest_cov - run `{pip_install(resolved, 'pytest-cov', word)}` in the "
             "environment the suite runs in "
             # Double quotes, not single: cmd.exe passes ' through as an
             # ordinary character and pip rejects the requirement. Double
@@ -908,26 +913,27 @@ def _doctor_lanes(root: Path, cfg) -> list[Finding]:
 # doctor, because `no problems found` on a lane running the system python
 # while the repo's own venv held the plugin is the report this came from.
 _RUNNER_MARKER = "CRAPKIT_RUNNER_REPORT "
-_VERSION_PROBE = ('-c "import sys, pytest, pytest_cov; '
+_VERSION_PROBE = ('-c "import sys, pytest, pytest_cov, coverage; '
                   f"print('{_RUNNER_MARKER}' + sys.executable, "
-                  'pytest.__version__, pytest_cov.__version__)"')
+                  'pytest.__version__, pytest_cov.__version__, coverage.__version__)"')
 
 
-def _runner_versions(report: str) -> tuple[str, str, str] | None:
+def _runner_versions(report: str) -> tuple[str, str, str, str] | None:
     line = next((line[len(_RUNNER_MARKER):] for line in report.splitlines()
                  if line.startswith(_RUNNER_MARKER)), "")
-    parts = line.rsplit(None, 2)
-    return (parts[0], parts[1], parts[2]) if len(parts) == 3 else None
+    parts = line.rsplit(None, 3)
+    return (parts[0], parts[1], parts[2], parts[3]) if len(parts) == 4 else None
 
 
 @lru_cache(maxsize=None)
-def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str] | None:
-    """(executable, pytest version, pytest-cov version) the interpreter word
-    answers through the lane's shell, from the lane's directory and with its
-    environment, or None when it cannot say. Memoized on the word and the
+def _runner_report(word: str, spec: LaunchSpec) -> tuple[str, str, str, str] | None:
+    """(executable, pytest, pytest-cov and coverage.py versions) the interpreter
+    word answers through the lane's shell, from the lane's directory and with
+    its environment, or None when it cannot say. Memoized on the word and the
     launch spec for the reason `_start_probe` is: one fact per child, however
-    many lanes start it the same way. The path may hold spaces, so the two
-    versions are split off the right."""
+    many lanes start it the same way. The path may hold spaces, so the three
+    versions are split off the right. pytest-cov imports coverage, so asking
+    for it costs no import the probe did not already pay."""
     from tempfile import TemporaryFile
     from ..procs import run_bounded
     from ..repotext import lenient
@@ -988,7 +994,8 @@ def _first_run_failure(spec: LaunchSpec, lane) -> list[Finding]:
 
 def _lane_probe_findings(root: Path, lane) -> list[Finding]:
     """The interpreter and plugin versions a healthy lane resolves to, plus a
-    WARN when that interpreter is foreign; init's first-run note as a FAIL when
+    FAIL when its coverage.py predates function regions and a WARN when that
+    interpreter is foreign; init's first-run note as a FAIL when
     the interpreter cannot say; a note when no python heads the lane. The
     version report goes first: it imports pytest_cov on its way, so it answers
     the first-run question too, and a healthy lane costs one interpreter start
@@ -1000,10 +1007,22 @@ def _lane_probe_findings(root: Path, lane) -> list[Finding]:
     report = _runner_report(word, spec)
     if report is None:
         return _first_run_failure(spec, lane)
-    executable, pytest_version, cov_version = report
-    resolved = Finding("ok", f"lane {lane.name!r}: {word} -> {executable} "
-                             f"(pytest {pytest_version}, pytest-cov {cov_version})")
-    return [resolved, *_foreign_interpreter(lane.name, executable)]
+    executable, pytest_version, plugin_version, coverage_version = report
+    resolved = Finding("ok", f"lane {lane.name!r}: {word} -> {executable} (pytest {pytest_version}, "
+                             f"pytest-cov {plugin_version}, coverage {coverage_version})")
+    return [resolved, *_coverage_floor(lane.name, executable, coverage_version),
+            *_foreign_interpreter(lane.name, executable)]
+
+
+def _coverage_floor(name: str, executable: str, version: str) -> tuple[Finding, ...]:
+    """The FAIL for a lane whose coverage.py writes no function regions, with
+    the install line spelled for the interpreter that lane runs."""
+    from ..coverage_py import REGIONS_FLOOR
+    from ..doctor import coverage_floor_gap
+    from ..launchers import pip_install
+
+    upgrade = pip_install(executable, f'"coverage>={REGIONS_FLOOR}"', _shell_quote(executable))
+    return coverage_floor_gap(name, executable, version, upgrade)
 
 
 def _doctor_lane_probes(root: Path, lanes) -> list[Finding]:
@@ -1071,9 +1090,17 @@ def _lizard_version() -> str | None:
 
 
 def _doctor_tools() -> list[Finding]:
+    """lizard's version, or a FAIL naming the install for the python running
+    crapkit. `pip install lizard` landed in whatever environment the shell's pip
+    belongs to, and a `uv tool install` of crapkit runs in a venv uv made, which
+    holds no pip of its own."""
+    from ..launchers import pip_install
+
     version = _lizard_version()
     if version is None:
-        return [Finding("FAIL", "lizard is not importable - pip install lizard")]
+        install = pip_install(sys.executable, "lizard", _shell_quote(sys.executable))
+        return [Finding("FAIL", f"lizard is not importable by the python running crapkit "
+                                f"({sys.executable}) - run `{install}`, or reinstall crapkit")]
     return [Finding("ok", f"lizard {version}")]
 
 
@@ -1329,6 +1356,117 @@ def _doctor_commit_encoding(root: Path) -> list[Finding]:
                             f"i18n.commitEncoding) unless this repo's clients write {value}")]
 
 
+def _doctor_container(cfg) -> list[Finding]:
+    """A coverage.py lane `crapkit coverage` refuses in this container (WARN)."""
+    from ..doctor import container_lane_findings, container_marker
+
+    marker = container_marker(os.environ, Path("/.dockerenv").exists())
+    return list(container_lane_findings(cfg.lanes, marker))
+
+
+def _text_at(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _hooks_path_setting(root: Path) -> tuple[str, str]:
+    """(scope, value) of core.hooksPath, or ("", "") when unset."""
+    try:
+        answer = _git(root, "config", "--show-scope", "--get", "core.hooksPath")
+    except GitError:
+        return "", ""
+    scope, _, value = answer.strip().partition("\t")
+    return scope, value
+
+
+def _absolute(root: Path, *rev_parse: str) -> Path:
+    return Path(_git(root, "rev-parse", "--path-format=absolute", *rev_parse).strip()).resolve()
+
+
+def _shown(top: Path, path: Path) -> str:
+    """A path as a reader types it at the git top: relative when it sits under
+    the top, which is also how git reads a relative core.hooksPath."""
+    try:
+        return path.relative_to(top).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _husky_delegate(effective: Path) -> Path:
+    """husky 9 points core.hooksPath at .husky/_, and its stub there runs
+    .husky/pre-commit, the file a user edits. Any other hook is its own."""
+    return effective.parent.parent / effective.name if effective.parent.name == "_" else effective
+
+
+def _hook_route(root: Path, top: Path):
+    """The pre-commit file git spawns here, what it and husky's delegate say,
+    and the core.hooksPath setting behind it. Raises GitError outside a
+    repository."""
+    from ..doctor import HookRoute
+
+    effective = _absolute(root, "--git-path", "hooks/pre-commit")
+    edit = _husky_delegate(effective)
+    text = _text_at(effective) + (_text_at(edit) if edit != effective else "")
+    return HookRoute(_shown(top, effective), text, _shown(top, edit), *_hooks_path_setting(root))
+
+
+def _tracked_hooks(top: Path) -> list[str]:
+    """Every committed file named pre-commit, as paths from the top."""
+    listed = _git(top, "ls-files", "-z", "--", ":(glob)**/pre-commit")
+    return [path for path in listed.split("\0") if path]
+
+
+def _gate_hooks(root: Path, top: Path) -> tuple:
+    """The repo's own .git/hooks/pre-commit and every committed pre-commit,
+    each with the git config line that points git at its directory."""
+    from ..doctor import GateHook
+
+    default = _absolute(root, "--git-common-dir") / "hooks" / "pre-commit"
+    local = GateHook(_shown(top, default), _text_at(default),
+                     f"git config --local core.hooksPath {_shell_quote(_shown(top, default.parent))}")
+    return (local, *(GateHook(path, _text_at(top / path),
+                              f"git config core.hooksPath {_shell_quote(posixpath.dirname(path) or '.')}")
+                     for path in _tracked_hooks(top)))
+
+
+def _doctor_silent_gates(root: Path) -> list[Finding]:
+    """A gate that is set up and never judges anything (WARN): a crapkit hook
+    git is not sent to, and a pre-commit config naming the gate that nothing
+    installed. pre-commit run in CI is a gate: outside a commit, with nothing
+    staged, the hook judges every tracked file."""
+    from ..doctor import skipped_gates
+
+    try:
+        top = _absolute(root, "--show-toplevel")
+        route, hooks = _hook_route(root, top), _gate_hooks(root, top)
+    except GitError:
+        return []
+    precommit = _text_at(top / ".pre-commit-config.yaml")
+    return list(skipped_gates(route, hooks, framework="crapkit-gate" in precommit))
+
+
+def _merge_attribute(root: Path, path: str) -> str:
+    """The value of the merge attribute git gives `path`, "unspecified" when
+    none. Raises GitError outside a repository."""
+    answer = _git(root, "check-attr", "merge", "--", path)
+    return answer.strip().rpartition(": ")[2] or "unspecified"
+
+
+def _doctor_merge_driver(root: Path, cfg) -> list[Finding]:
+    """The marks file routed to a merge driver this clone never defined (WARN)."""
+    from ..doctor import undefined_merge_driver
+    from ..gitio import config_value
+
+    try:
+        driver = _merge_attribute(root, cfg.ratchet_file)
+    except GitError:
+        return []
+    return list(undefined_merge_driver(cfg.ratchet_file, driver,
+                                       config_value(root, f"merge.{driver}.driver")))
+
+
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
                      show_files: bool) -> list[Finding]:
     named = [f for f in files if readable(f)]
@@ -1344,6 +1482,10 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_hook_encoding(root)
             + _doctor_commit_graph(root)
             + _doctor_commit_encoding(root)
+            + _doctor_container(cfg)
+            + _doctor_silent_gates(root)
+            + _doctor_merge_driver(root, cfg)
+            + _doctor_launchers()
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, named)
             + _doctor_unmeasured(root, cfg, named)
@@ -1514,11 +1656,20 @@ def _resource_policy(cfg) -> dict:
             "test_retention_count": 0}
 
 
+def _doctor_verdict(findings: list[Finding]) -> str:
+    """The closing line, with the WARN count: a container's lane WARN closed
+    on a bare "no problems found", the one line a skimming reader reads."""
+    problems, warnings = len(_at_level(findings, "FAIL")), len(_at_level(findings, "WARN"))
+    verdict = f"doctor: {problems} problem(s)" if problems else "doctor: no problems found"
+    if not warnings:
+        return verdict
+    return f"{verdict}, {warnings} warning{'s' if warnings > 1 else ''} above"
+
+
 def _print_findings(findings: list[Finding]) -> None:
     for f in findings:
         print(f"{f.level:<4} {f.text}" if f.level else f.text)
-    problems = _at_level(findings, "FAIL")
-    print("doctor: no problems found" if not problems else f"doctor: {len(problems)} problem(s)")
+    print(_doctor_verdict(findings))
 
 
 def _emit_doctor(root: Path, cfg, findings: list[Finding], as_json: bool) -> None:
@@ -1618,16 +1769,39 @@ def _hook_handlers(hooks: dict) -> list[dict]:
             for matcher in event for handler in matcher.get("hooks", [])]
 
 
+def _handler_words(handler: dict) -> list[str]:
+    """The words one handler starts: its `args` in exec form, else its
+    `command` split the way the shell that runs a shell-form hook splits it.
+    Raises ValueError on a shape no harness could run."""
+    import shlex
+
+    words = handler["args"] if "args" in handler else shlex.split(handler.get("command", ""))
+    if not isinstance(words, list) or any(not isinstance(word, str) for word in words):
+        raise ValueError("hook args must be a list of strings")
+    return words
+
+
 def _named_protocol(handler: dict) -> str | None:
     """The `--protocol` value one handler spawns crapkit with, or None.
 
-    Paired off the arg list rather than indexed past the flag: a handler whose
-    args end at `--protocol` is malformed, and reading it must not raise.
+    Read off `args` in exec form and off the command string in shell form,
+    spelled `--protocol N` or `--protocol=N` as argparse takes either. Paired
+    off the word list rather than indexed past the flag: a handler whose words
+    end at `--protocol` is malformed, and reading it must not raise.
     """
-    args = handler.get("args", [])
-    if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
-        raise ValueError("hook args must be a list of strings")
-    return dict(zip(args, args[1:])).get("--protocol")
+    words = _handler_words(handler)
+    inline = next((word.partition("=")[2] for word in words if word.startswith("--protocol=")), None)
+    return inline or dict(zip(words, words[1:])).get("--protocol")
+
+
+def _exec_form(root: Path) -> bool:
+    """Does any of the plugin's hooks pass `args`? Only those reach crapkit
+    through a field Claude Code below 2.1.139 drops."""
+    hooks = _plugin_json(root / "hooks" / "hooks.json")
+    try:
+        return any("args" in handler for handler in _hook_handlers(hooks))
+    except (AttributeError, TypeError):
+        return False
 
 
 def _hook_protocols(root: Path) -> tuple[str, ...] | None:
@@ -1711,8 +1885,10 @@ def _newest_root(roots: list[Path]) -> Path | None:
 
 def _plugins_dir() -> Path:
     """Where Claude Code keeps plugins: under CLAUDE_CONFIG_DIR, else ~/.claude."""
+    from ..userhome import user_home
+
     base = os.environ.get("CLAUDE_CONFIG_DIR")
-    return (typed_path(base) if base else Path.home() / ".claude") / "plugins"
+    return (typed_path(base) if base else user_home() / ".claude") / "plugins"
 
 
 def _plugin_entries(recorded) -> dict:
@@ -1726,12 +1902,23 @@ def _install_path(entry) -> str:
     return path if isinstance(path, str) else ""
 
 
-def _install_paths(installs) -> list[Path]:
-    """The install directories one plugin id records. Claude Code writes V2, a
-    list of installs; an older one wrote V1, one object, and a newer one
-    converts it only when it loads the file."""
-    listed = installs if isinstance(installs, list) else [installs]
-    return [Path(path) for path in map(_install_path, listed) if path]
+def _listed_installs(installs) -> list:
+    """The installs one plugin id records. Claude Code writes V2, a list of
+    installs; an older one wrote V1, one object, and a newer one converts it
+    only when it loads the file."""
+    return installs if isinstance(installs, list) else [installs]
+
+
+def _crapkit_install_lists(recorded) -> list:
+    return [installs for key, installs in _plugin_entries(recorded).items()
+            if key.startswith("crapkit@")]
+
+
+def _crapkit_records(recorded) -> list[dict]:
+    """Every install installed_plugins.json records for crapkit, V1 or V2; an
+    entry that is not an object records nothing."""
+    return [e for installs in _crapkit_install_lists(recorded) for e in _listed_installs(installs)
+            if isinstance(e, dict)]
 
 
 def _recorded_roots(recorded) -> list[Path]:
@@ -1740,31 +1927,159 @@ def _recorded_roots(recorded) -> list[Path]:
     An entry of any shape but a string installPath records nothing, and the
     cache scan beside this still finds the install: V1 and hand-edited files
     ended the command meant to diagnose the plugin in a traceback."""
-    return [path for key, installs in _plugin_entries(recorded).items()
-            if key.startswith("crapkit@") for path in _install_paths(installs)]
+    return [Path(path) for path in map(_install_path, _crapkit_records(recorded)) if path]
+
+def _newest_first(root: Path) -> tuple:
+    return _version_key(_manifest_version(root)), str(root)
 
 
-def _installed_crapkit_roots(plugins: Path) -> list[Path]:
-    """Every crapkit install under Claude Code's plugin directory: what the
-    installer recorded plus what the cache holds, so a stale record and a
-    missing record alone cannot hide the plugin."""
+def _recorded_installs(plugins: Path) -> list[Path]:
+    """Every install installed_plugins.json records that is still on disk,
+    newest version first. Each is a plugin some session runs: a user install
+    made at one version and a project install made at a later one are two
+    cache directories, and both run."""
     recorded = _recorded_roots(_plugin_json(plugins / "installed_plugins.json"))
-    cached = _manifest_roots(plugins)
-    return [r for r in dict.fromkeys(recorded + cached)
-            if (r / ".claude-plugin" / "plugin.json").is_file()]
+    live = [r for r in dict.fromkeys(recorded) if (r / ".claude-plugin" / "plugin.json").is_file()]
+    return sorted(live, key=_newest_first, reverse=True)
 
 
-def _resolve_plugin_root(arg: str) -> tuple[Path | None, str]:
-    """The plugin root to check, and where it was looked for.
+def _newest(roots: list[Path]) -> list[Path]:
+    newest = _newest_root(roots)
+    return [newest] if newest else []
 
-    An explicit PATH with no manifest at or under it resolves to itself, so
-    the handshake names the missing file at the path the operator typed.
+
+def _codex_home() -> Path:
+    """Where Codex keeps its state: CODEX_HOME, else ~/.codex."""
+    from ..userhome import user_home
+
+    base = os.environ.get("CODEX_HOME")
+    return Path(base) if base else user_home() / ".codex"
+
+
+class _Found(NamedTuple):
+    """A plugin root to check, and why a root the search found is that one."""
+    root: Path
+    why: str = ""
+
+
+class _PluginRoots(NamedTuple):
+    """The plugin roots to check, none when none was found, and where they
+    were looked for."""
+    roots: tuple[_Found, ...]
+    looked_in: str
+
+
+_IN_PLACE = " (Claude Code loads a plugin from a local directory marketplace in place)"
+
+
+def _resolve_plugin_root(arg: str) -> _PluginRoots:
+    """The plugin roots to check, and where they were looked for.
+
+    An explicit PATH resolves to the newest install at or under it, or to
+    itself when it holds no manifest, so the handshake names the missing file
+    at the path the operator typed. With none, every install Claude Code
+    recorded, else the newest in its cache, else the newest in Codex's.
     """
-    if arg:
-        under = typed_path(arg)
-        return _newest_root(_manifest_roots(under)) or under, str(under)
-    plugins = _plugins_dir()
-    return _newest_root(_installed_crapkit_roots(plugins)), str(plugins)
+    if not arg:
+        return _default_plugin_root()
+    under = typed_path(arg)
+    return _PluginRoots((_Found(_newest_root(_manifest_roots(under)) or under),), str(under))
+
+
+def _where_it_loads(root: Path) -> _Found:
+    """The copy Claude Code runs for the install at `root`. It runs a plugin
+    from a marketplace added as a local directory in place, so for that one it
+    is the directory, not its cache copy."""
+    listed = _marketplace_copy(root)
+    return _Found(listed[1], _IN_PLACE) if listed and listed[0] == "directory" else _Found(root)
+
+
+def _default_plugin_root() -> _PluginRoots:
+    """Every install Claude Code recorded; the newest in its cache when no
+    record names one on disk; else the newest in Codex's cache. A cached
+    version no record names is one `claude plugin update` left behind, and no
+    session runs it."""
+    plugins, codex = _plugins_dir(), _codex_home()
+    found = (_recorded_installs(plugins) or _newest(_manifest_roots(plugins))
+             or _newest(_manifest_roots(codex)))
+    return _PluginRoots(tuple(dict.fromkeys(map(_where_it_loads, found))), f"{plugins} or {codex}")
+
+
+def _claude_plugins_of(root: Path) -> Path | None:
+    """The plugins directory an install at <plugins>/cache/<marketplace>/
+    <plugin>/<version> sits in, else None."""
+    parents = root.parents
+    if len(parents) < 4 or parents[2].name != "cache" or parents[3].name != "plugins":
+        return None
+    return parents[3]
+
+
+def _listed_plugins(clone: Path) -> list[dict]:
+    listing = _plugin_json(clone / ".claude-plugin" / "marketplace.json")
+    listed = listing.get("plugins", []) if isinstance(listing, dict) else []
+    return [entry for entry in listed if isinstance(entry, dict)] if isinstance(listed, list) else []
+
+
+def _listed_source(clone: Path, name: str) -> str | None:
+    """The relative source the marketplace at `clone` lists for plugin `name`."""
+    source = next((p.get("source") for p in _listed_plugins(clone) if p.get("name") == name), None)
+    return source if isinstance(source, str) else None
+
+
+def _marketplace_entry(root: Path) -> dict:
+    """known_marketplaces.json's record of the marketplace an install came from."""
+    plugins = _claude_plugins_of(root)
+    known = _plugin_json(plugins / "known_marketplaces.json") if plugins else None
+    entry = known.get(root.parents[1].name) if isinstance(known, dict) else None
+    return entry if isinstance(entry, dict) else {}
+
+
+def _marketplace_copy(root: Path) -> tuple[str, Path] | None:
+    """(the marketplace's source kind, its own copy of this plugin) for an
+    install in Claude Code's cache, else None."""
+    entry = _marketplace_entry(root)
+    clone = entry.get("installLocation")
+    source = _listed_source(Path(clone), root.parent.name) if isinstance(clone, str) and clone else None
+    kind = entry.get("source", {}).get("source", "") if isinstance(entry.get("source"), dict) else ""
+    return (kind, Path(clone) / source) if source else None
+
+
+def _directory_entry(entry) -> bool:
+    source = entry.get("source") if isinstance(entry, dict) else None
+    return isinstance(source, dict) and source.get("source") == "directory"         and isinstance(entry.get("installLocation"), str)
+
+
+def _directory_marketplaces() -> list[Path]:
+    """Every marketplace known_marketplaces.json records as a local directory."""
+    known = _plugin_json(_plugins_dir() / "known_marketplaces.json")
+    entries = known.values() if isinstance(known, dict) else ()
+    return [Path(entry["installLocation"]) for entry in entries if _directory_entry(entry)]
+
+
+def _same_directory(a: Path, b: Path) -> bool:
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def _git_commands(marketplace: Path, root: Path) -> tuple[str | None, str | None]:
+    """The commands that update a marketplace directory that is a git checkout
+    and restore a file of the plugin at `root` inside it; none for a directory
+    that is no checkout."""
+    if not (marketplace / ".git").exists():
+        return None, None
+    return (f"git -C {_shell_quote(str(marketplace))} pull",
+            f"git -C {_shell_quote(str(root))} checkout --")
+
+
+def _in_place(root: Path):
+    """The local directory marketplace whose crapkit plugin is `root`, which
+    Claude Code loads in place, or None."""
+    from ..doctor import InPlace
+
+    for marketplace in _directory_marketplaces():
+        source = _listed_source(marketplace, "crapkit")
+        if source and _same_directory(marketplace / source, root):
+            return InPlace(str(marketplace), *_git_commands(marketplace, root))
+    return None
 
 
 def _probed_cli_version(executable: str) -> str | None:
@@ -1793,6 +2108,32 @@ def _declared_version(answer: str) -> str | None:
     return words[1] if readable else None
 
 
+def _path_launchers() -> list[str]:
+    """Every crapkit launcher on this PATH, in order, less any environment a
+    one-command runner (uvx, `uv run --with`, `pipx run`) built, which that
+    runner put on doctor's PATH and nothing else on the machine inherits."""
+    from ..launchers import path_launchers
+
+    return path_launchers(os.environ.get("PATH", ""))
+
+
+@lru_cache(maxsize=None)
+def _launcher_report(path: str) -> tuple[tuple[str, str | None], ...]:
+    """(launcher, version) for every launcher when PATH holds more than one,
+    else (). Memoized on PATH: one machine fact, and a version costs a spawn."""
+    found = _path_launchers()
+    return tuple((launcher, _probed_cli_version(launcher)) for launcher in found) \
+        if len(found) > 1 else ()
+
+
+def _doctor_launchers() -> list[Finding]:
+    """Two or more crapkit launchers on PATH: a WARN naming each with its
+    version, or a note while they agree."""
+    from ..doctor import launcher_skew
+
+    return list(launcher_skew(_launcher_report(os.environ.get("PATH", ""))))
+
+
 @lru_cache(maxsize=None)
 def _spawned_cli() -> tuple[str, str | None] | None:
     """The console script the plugin actually starts and the version it answers,
@@ -1805,53 +2146,130 @@ def _spawned_cli() -> tuple[str, str | None] | None:
     over: inside a project `.venv` with no `crapkit` on PATH it printed nothing
     and exited 0 while every edit fired a command that cannot start, and beside
     an older pipx copy it called the two versions equal while the hook spawned
-    the older one.
+    the older one. Under uvx it found the launcher uvx had put on its own PATH
+    and on no other, and passed a plugin whose hooks could not start: PATH is
+    read without this process's own cached environment.
+
+    Under uvx, `uv run --with` or `pipx run` the PATH doctor inherits starts with
+    the environments that runner built for this one command. The plugin's hooks
+    never see them, so they are left out: `uvx crapkit doctor --plugin-root`
+    found crapkit there and passed while `claude mcp list` failed with ENOENT,
+    and `uv run --with crapkit` did the same from uv's builds-v0 bucket.
 
     Memoized because the answer is one machine fact and `doctor --plugin-root`
     would otherwise spawn it once per call.
     """
-    import shutil
+    found = _path_launchers()
+    return (found[0], _probed_cli_version(found[0])) if found else None
 
-    executable = shutil.which("crapkit")
-    return (executable, _probed_cli_version(executable)) if executable else None
+
+def _launcher_dirs() -> list[Path]:
+    """Where this interpreter puts a console script: its own scheme's scripts
+    directory (a venv's bin or Scripts), then the user scheme's, which is where
+    `pip install --user` writes (~/.local/bin, %APPDATA%\\Python\\PythonXY\\Scripts)."""
+    import sysconfig
+
+    user = sysconfig.get_preferred_scheme("user")
+    return [Path(sysconfig.get_path("scripts")), Path(sysconfig.get_path("scripts", user))]
+
+
+def _unlisted_launcher() -> Path | None:
+    """The directory holding this crapkit's own launcher. Asked only once PATH
+    answered no `crapkit`, so PATH does not list it."""
+    name = "crapkit.exe" if os.name == "nt" else "crapkit"
+    return next((directory for directory in _launcher_dirs() if (directory / name).is_file()), None)
 
 
 def _no_crapkit_on_path() -> str:
     """The FAIL for a machine where nothing the plugin declares can start. It
     names both files that spawn the bare name, because the reader is about to
-    look for a plugin problem and the problem is an install location."""
+    look for a plugin problem and the problem is an install location. Under a
+    one-command runner it names the environment that runner's tool built, the
+    one crapkit this process did find, and the install that stays. Otherwise it
+    names the directory this crapkit's launcher sits in when there is one; under
+    a runner that directory is the runner's own environment, which the tool
+    deletes or rebuilds, so it is never named there."""
+    from ..launchers import ephemeral_runner, install_line
+
+    builder = ephemeral_runner(sys.prefix)
+    if builder:
+        return (f"crapkit doctor: FAIL no `crapkit` on PATH outside the environment {builder} "
+                f"built for this one command ({sys.prefix}), and the plugin's hooks never "
+                "inherit that one: its hooks/hooks.json and .mcp.json both spawn the bare name, "
+                "so every PostToolUse edit fires a command that cannot start and the MCP server "
+                "never comes up. Install crapkit where the hook's PATH can see it "
+                f"({install_line(builder)}), then run this check again.")
+    found = _unlisted_launcher()
+    where = (f" This crapkit's launcher is in {found}, which PATH does not list: add that "
+             "directory to PATH, then restart the agent.") if found else ""
     return ("crapkit doctor: FAIL no `crapkit` on PATH - the plugin's hooks/hooks.json and "
             ".mcp.json both spawn that bare name, so every PostToolUse edit fires a command "
             "that cannot start and the MCP server never comes up. Install it where the "
             "PATH the hook inherits can see it (`pipx install crapkit`), or point the "
-            "plugin at the environment holding it.")
+            "plugin at the environment holding it." + where)
 
 
-def _answering_cli() -> tuple[str, str] | None:
-    """The launcher the plugin spawns and the version it declares, or None
-    after the FAIL line that says why there is none. A launcher that exits
-    nonzero and one that answers in bytes that are not UTF-8 get the same
-    line. The second one did answer, so `did not answer` sent the reader after
-    the wrong fault."""
-    spawned = _spawned_cli()
-    if spawned is None:
-        print(_no_crapkit_on_path())
-        return None
-    executable, cli_version = spawned
-    if cli_version is None:
-        print(f"crapkit doctor: FAIL {executable} gave no readable answer to `crapkit --version`. "
-              "Repair this launcher or install crapkit on the PATH the plugin inherits.")
-        return None
-    return executable, cli_version
+# The README's install lines: Claude Code's sparse, Codex's also pinned to the
+# tag of this CLI's release, since an unpinned Codex marketplace follows main
+# and moves the plugin past the CLI at the next Codex start.
+_INSTALL_PLUGIN = (
+    "Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit "
+    "--sparse .claude-plugin plugin`, then `claude plugin install crapkit@crapkit`; Codex with "
+    "`{codex_add}`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, "
+    "pass --plugin-root PATH."
+)
 
 
-def _name_found_root(root: Path, looked_in: str) -> None:
+def _install_plugin() -> str:
+    from ..doctor import CODEX_MARKETPLACE_ADD
+
+    return _INSTALL_PLUGIN.format(codex_add=CODEX_MARKETPLACE_ADD.format(version=__version__))
+
+
+def _name_found_root(found: _Found, looked_in: str) -> None:
     """A root the search found, not one the operator typed: the glob reaches
     three levels under the named directory, so a source checkout can win over an
     install. Naming it is how the reader knows which tree the verdict is about.
     """
-    if str(root) != looked_in:
-        print(f"crapkit doctor: checking {root}")
+    if str(found.root) != looked_in:
+        print(f"crapkit doctor: checking {found.root}{found.why}")
+
+
+@lru_cache(maxsize=None)
+def _claude_code_version() -> tuple[str, str] | None:
+    """The `claude` on PATH and what its `--version` printed, or None when
+    PATH holds none or it cannot answer. Memoized: one machine fact."""
+    import shutil
+    import subprocess
+
+    executable = shutil.which("claude")
+    if executable is None:
+        return None
+    try:
+        done = subprocess.run([executable, "--version"], capture_output=True, encoding="utf-8",
+                              errors="replace", timeout=_PROBE_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return executable, done.stdout.strip()
+
+
+def _claude_code_drops_args(root: Path) -> bool:
+    """Would a Claude Code below the floor drop this install's hook args? Only
+    for an install Claude Code runs (Codex runs none of its hooks) whose hooks
+    pass any: a shell-form hook runs as written."""
+    from ..doctor import plugin_harness
+
+    return plugin_harness(str(root), os.environ.get("CODEX_HOME")) == "claude" and _exec_form(root)
+
+
+def _claude_code_floor(root: Path) -> list[str]:
+    """The line for a Claude Code on PATH too old to pass the plugin's hook
+    args, when this install's hooks depend on them."""
+    from ..doctor import claude_code_floor_gap
+
+    found = _claude_code_version() if _claude_code_drops_args(root) else None
+    line = claude_code_floor_gap(*found) if found else None
+    return [line] if line else []
 
 
 def _doctor_plugin(plugin_root: str) -> int:
@@ -1867,30 +2285,115 @@ def _doctor_plugin(plugin_root: str) -> int:
     from the `crapkit` on PATH, because that bare name is what the plugin's
     hooks and its MCP server spawn — see `_spawned_cli`.
     """
-    from ..doctor import plugin_handshake
-    from .claude_hook import PROTOCOL
-
-    root, looked_in = _resolve_plugin_root(plugin_root)
-    if root is None:
-        print(f"crapkit doctor: no installed crapkit plugin under {looked_in} (install with "
-              "`claude plugin install crapkit@crapkit`, or pass --plugin-root PATH)")
+    found = _resolve_plugin_root(plugin_root)
+    if not found.roots:
+        print(f"crapkit doctor: no installed crapkit plugin under {found.looked_in}. {_install_plugin()}")
         return 1
-    _name_found_root(root, looked_in)
-    spawned = _answering_cli()
-    if spawned is None:
-        return 1
-    executable, cli_version = spawned
-    return _report_lines(plugin_handshake(
-        where=str(root), version=_manifest_version(root), cli_version=cli_version,
-        cli_where=executable, protocols=_hook_protocols(root), supported=PROTOCOL,
-        manifest_fault=_manifest_fault(root)))
+    for each in found.roots:
+        _name_found_root(each, found.looked_in)
+    return _print_problems(_spawn_failure() or _roots_lines(found.roots))
 
 
-def _report_lines(lines: list[str]) -> int:
-    """Print the handshake's lines; exit 1 when there was anything to say."""
+def _roots_lines(roots: tuple[_Found, ...]) -> list[str]:
+    """Every root's disagreements, each once: the Claude Code floor is one
+    machine fact, whichever install it came up under."""
+    return list(dict.fromkeys(line for each in roots for line in _plugin_lines(each.root)))
+
+
+def _print_problems(lines: list[str]) -> int:
     for line in lines:
         print(line)
     return 1 if lines else 0
+
+
+def _spawn_failure() -> list[str]:
+    """The FAIL for a `crapkit` the plugin cannot start or that answers no
+    version, else nothing: there is no CLI to compare the plugin with."""
+    spawned = _spawned_cli()
+    if spawned is None:
+        return [_no_crapkit_on_path()]
+    executable, cli_version = spawned
+    if cli_version is None:
+        from ..launchers import reinstall_command
+
+        return [f"crapkit doctor: FAIL {executable} gave no readable answer to `crapkit --version`. "
+                f"Reinstall the crapkit it belongs to with "
+                f"`{reinstall_command(executable, _shell_quote)}`, then run this check again."]
+    return []
+
+
+def _plugin_lines(root: Path) -> list[str]:
+    """Every disagreement between the plugin at `root` and the crapkit its
+    hooks spawn, each repair spelled for the harness that installed the plugin,
+    each scope that holds it, and the installer that owns the launcher; then an
+    install whose files the marketplace has moved past at one version, and the
+    Claude Code floor."""
+    from ..doctor import plugin_handshake, plugin_harness
+    from ..launchers import upgrade_command
+    from .claude_hook import PROTOCOL
+
+    executable, cli_version = _spawned_cli()
+    handshake = plugin_handshake(where=str(root), version=_manifest_version(root),
+                                 cli_version=cli_version, cli_where=executable,
+                                 protocols=_hook_protocols(root), supported=PROTOCOL,
+                                 harness=plugin_harness(str(root), os.environ.get("CODEX_HOME")),
+                                 cli_upgrade=upgrade_command(executable, _shell_quote),
+                                 scopes=_install_scopes(root), in_place=_in_place(root),
+                                 manifest_fault=_manifest_fault(root))
+    return handshake + _stale_copy(root) + _claude_code_floor(root)
+
+
+def _same_bytes(a: Path, b: Path) -> bool:
+    try:
+        return a.read_bytes() == b.read_bytes()
+    except OSError:
+        return False
+
+
+def _differing_files(source: Path, install: Path) -> tuple[str, ...]:
+    """The marketplace copy's files the install lacks or holds other bytes
+    for, sorted. Files only the install holds are Claude Code's own (.in_use)."""
+    files = (path.relative_to(source) for path in source.rglob("*") if path.is_file())
+    return tuple(sorted(rel.as_posix() for rel in files if not _same_bytes(source / rel, install / rel)))
+
+
+def _scope_of(record: dict):
+    """The scope one installed_plugins.json record names, with its project
+    directory when it has one, or None for a record naming no scope."""
+    from ..doctor import InstallScope
+
+    scope, project = record.get("scope"), record.get("projectPath")
+    if not isinstance(scope, str):
+        return None
+    return InstallScope(scope, project if isinstance(project, str) and project else None)
+
+
+def _install_scopes(root: Path) -> tuple:
+    """Every scope installed_plugins.json records this install under, in its
+    order. Claude Code keeps one cache directory per version, so a user install
+    and project installs of one version share it. Empty for an install no
+    record names, or one outside Claude Code's cache."""
+    plugins = _claude_plugins_of(root)
+    recorded = _plugin_json(plugins / "installed_plugins.json") if plugins else None
+    same = (e for e in _crapkit_records(recorded)
+            if os.path.normcase(str(e.get("installPath", ""))) == os.path.normcase(str(root)))
+    return tuple(filter(None, map(_scope_of, same)))
+
+
+def _stale_copy(root: Path) -> list[str]:
+    """The line for a Claude Code install whose files differ from its
+    marketplace's copy at one version. A local directory marketplace loads in
+    place, so its cache copy is never the one that runs."""
+    from ..doctor import stale_copy
+
+    listed = _marketplace_copy(root)
+    if listed is None or listed[0] == "directory":
+        return []
+    source = listed[1]
+    line = stale_copy(where=str(root), version=_manifest_version(root), source=str(source),
+                      source_version=_manifest_version(source), scopes=_install_scopes(root),
+                      differing=_differing_files(source, root))
+    return [line] if line else []
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -1908,7 +2411,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 1 if _at_level(findings, "FAIL") else 0
 
 
+def _refuse_upgraded() -> None:
+    """A rescore after `pip install -U` would import the new release's modules
+    into this process, and the watcher died with a traceback from inside them:
+    stop and name the restart instead."""
+    installed = upgraded_to()
+    if installed:
+        raise CrapkitError(f"crapkit was upgraded from {__version__} to {installed} while "
+                           f"`crapkit watch` ran, and this process still runs {__version__}'s "
+                           "code, which cannot load the new files; restart `crapkit watch`")
+
+
 def _watch_rescore(root: Path, moved: list[str]) -> None:
+    _refuse_upgraded()
     from ..procs import run_owned
 
     present = [f for f in moved if (root / f).is_file()]

@@ -15,7 +15,7 @@ from ..invocation import _self
 from ..store import SnapshotStore
 from ..uncovered import MissingLines, load_uncovered
 from ._shared import (_command_root, _load_repo_config, _open_store, _print_json, _stand,
-                      _ratchet_entries, _repo_out_path, _repo_relative)
+                      _ratchet_entries, _repo_out_path, _repo_relative, behind_head)
 
 
 def _digest_pair(store):
@@ -53,8 +53,11 @@ def _send_digest_alert(root: Path, cfg, prev: dict, cur: dict, lines: list[str])
     """Hand the digest body to the configured alert command; a nonzero exit is fatal."""
     from ..override import ALERT_FIX, alert_failed, send_alert
 
+    from ..override import alert_example
+
     if not cfg.alert_command.strip():
-        raise ConfigError("digest --alert needs [crapkit] alert_command")
+        raise ConfigError("digest --alert needs [crapkit] alert_command in crapkit.toml, "
+                          f"for example {alert_example()}")
     body = f"crapkit digest (runs {prev['id']} -> {cur['id']}):\n" + "\n".join(lines) + "\n"
     code, printed = send_alert(cfg.alert_command, root, body)
     if code != 0:
@@ -213,22 +216,26 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 def cmd_runs(args: argparse.Namespace) -> int:
     """History without SQL: every run with kind, verdict, commit, lane set."""
-    store = _open_store(_command_root(args.repo))
+    root = _command_root(args.repo)
+    store = _open_store(root)
     if args.action == "prune":
         return _runs_prune(store, keep=args.keep, as_json=args.json)
-    return _runs_list(store, as_json=args.json)
+    return _runs_list(store, root, as_json=args.json)
 
 
-def _runs_list(store: SnapshotStore, *, as_json: bool) -> int:
+def _runs_list(store: SnapshotStore, root: Path, *, as_json: bool) -> int:
     """Every run, with the one `verify` compares against today marked.
 
     "Which run is my baseline" is the question the taint rule turns on, and this
-    is the command a reader reaches for to answer it.
+    is the command a reader reaches for to answer it. Asked with verify's own
+    rule, runs behind HEAD included: after a branch switch the newest run can
+    sit on the other branch, and marking it named a baseline verify never reads.
     """
+    from ..gitio import GitFacts
     from ..store import pick_baseline
 
     history = store.list_runs()
-    picked = pick_baseline(history).run
+    picked = pick_baseline(history, behind_head(GitFacts(root))).run
     baseline_id = picked["id"] if picked else None
     runs = [{"id": r["id"], "kind": r["kind"], "verdict_ok": r["verdict_ok"],
              "findings": r["findings"], "baseline": r["id"] == baseline_id,

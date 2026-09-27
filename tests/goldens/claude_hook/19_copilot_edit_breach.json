@@ -1,0 +1,37 @@
+{
+  "case": "copilot_edit_breach",
+  "why": "GitHub Copilot CLI runs the plugin's hook with Claude's tool names and its own argument names: the edited file is tool_input.path. Reading file_path alone made every Copilot edit exit 0 in silence. Copilot shows exit 2's stderr to the user and not the model, so the advisory goes out as additionalContext on exit 0.",
+  "fixture": "measured_breach",
+  "argv": [
+    "claude-hook",
+    "--protocol",
+    "1"
+  ],
+  "payload": {
+    "hook_event_name": "PostToolUse",
+    "session_id": "1edf5e1e-614e-468d-a99d-cec22214e153",
+    "timestamp": "2026-09-25T17:00:51.656Z",
+    "cwd": "{REPO}",
+    "tool_name": "Edit",
+    "tool_input": {
+      "path": "{REPO}/calc/grade.py",
+      "old_str": "def grade(n):",
+      "new_str": "def sprawl(n):"
+    },
+    "tool_result": {
+      "result_type": "success",
+      "text_result_for_llm": "File {REPO}/calc/grade.py updated with changes."
+    }
+  },
+  "expect": {
+    "exit": 0,
+    "stderr": [],
+    "stdout": {
+      "additionalContext": "crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)\n  ccn 8  calc/grade.py:1  sprawl( n )\nthe commit gate enforces this; decompose there or mark the debt",
+      "hookSpecificOutput": {
+        "hookEventName": "PostToolUse",
+        "additionalContext": "crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)\n  ccn 8  calc/grade.py:1  sprawl( n )\nthe commit gate enforces this; decompose there or mark the debt"
+      }
+    }
+  }
+}

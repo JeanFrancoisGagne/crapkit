@@ -35,6 +35,15 @@ inputs:
     description: the python actions/setup-python installs crapkit into.
     required: false
     default: "3.12"
+  working-directory:
+    description: >-
+      The directory that holds crapkit.toml, relative to the checkout. Every
+      step that runs crapkit or lists the changed files runs there. Set it when
+      crapkit.toml sits below the repository top, as a package of a monorepo
+      does (packages/api): at the top, coverage finds no crapkit.toml and
+      exits 3.
+    required: false
+    default: "."
 
 runs:
   using: composite
@@ -84,6 +93,11 @@ runs:
     # line: a lane that passed can warn before another lane fails, and the
     # reason then named the lane that passed. A crapkit that died printing
     # nothing gets its exit code quoted instead of an empty reason.
+    #
+    # The fork point's worktree holds the whole repository. `below` is the
+    # working directory's path under the repository top (`packages/api/`, or
+    # empty at the top), so the base run scores the same crapkit root in the
+    # fork point's tree and its store is read from there.
     - name: isolate this invocation's state
       id: state
       shell: bash
@@ -94,6 +108,7 @@ runs:
     - name: score the base commit
       if: ${{ github.event_name == 'pull_request' && inputs.delta == 'true' }}
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
       env:
         CRAPKIT_STATE: ${{ steps.state.outputs.directory }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -101,6 +116,7 @@ runs:
         code=0
         base="$CRAPKIT_STATE/crapkit-base"
         log="$CRAPKIT_STATE/crapkit-base.log"
+        below="$(git rev-parse --show-prefix)"
         refuse() { echo "$1" > "$CRAPKIT_STATE/crapkit-base.reason"; echo "no base run: $1"; }
         fork="$(git merge-base "$BASE_SHA" HEAD)" || code=$?
         if [ "$code" != 0 ] && [ "$(git rev-parse --is-shallow-repository)" = true ]; then
@@ -113,7 +129,7 @@ runs:
           [ "$code" = 0 ] || refuse "git worktree add at the fork point $fork exited $code"
         fi
         if [ "$code" = 0 ]; then
-          crapkit coverage --repo "$base" --json > "$CRAPKIT_STATE/crapkit-base.json" 2> "$log" || code=$?
+          crapkit coverage --repo "$base/$below" --json > "$CRAPKIT_STATE/crapkit-base.json" 2> "$log" || code=$?
           cat "$log"
           why="$(grep -m 1 -F ' FAILED: ' "$log" || head -n 1 "$log")"
           [ -n "$why" ] || why="crapkit coverage exited $code and printed nothing"
@@ -125,7 +141,7 @@ runs:
         fi
         if [ "$code" = 0 ]; then
           mkdir -p .crapkit
-          cp "$base/.crapkit/crap.sqlite" .crapkit/crap.sqlite || code=$?
+          cp "$base/$below.crapkit/crap.sqlite" .crapkit/crap.sqlite || code=$?
           [ "$code" = 0 ] || refuse "copying the base run's store exited $code"
         fi
         if [ "$code" = 0 ]; then
@@ -138,6 +154,7 @@ runs:
 
     - name: score the checkout
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
       env:
         CRAPKIT_STATE: ${{ steps.state.outputs.directory }}
       run: |
@@ -164,6 +181,7 @@ runs:
     # is empty, which reports the tree's own health and judges no function.
     - name: the verdict
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
       env:
         CRAPKIT_STATE: ${{ steps.state.outputs.directory }}
       run: |
@@ -189,6 +207,7 @@ runs:
 
     - name: the ranked worklist
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
       env:
         CRAPKIT_STATE: ${{ steps.state.outputs.directory }}
       run: |
@@ -202,13 +221,17 @@ runs:
     # otherwise put its own commits in the pull request's table. base.sha is
     # empty on a push, and a shallow clone does not hold the commit it names;
     # either way the list is empty and the comment ranks the whole repository
-    # instead of a slice of it. git's refusal goes to the log and to
-    # crapkit-changed.error, so a list the diff never produced does not read as
-    # "the pull request changed nothing" and the comment can say why it ranks
-    # everything. The count's line comes from the comment builder, which names
-    # the first three files by crapkit's one rule for such lists.
+    # instead of a slice of it. `--relative` keeps the files under the working
+    # directory and names them from there, the way the worklist names them: a
+    # top-relative packages/api/calc/grade.py matches no row it ranks. git's
+    # refusal goes to the log and to crapkit-changed.error, so a list the diff
+    # never produced does not read as "the pull request changed nothing" and the
+    # comment can say why it ranks everything. The count's line comes from the
+    # comment builder, which names the first three files by crapkit's one rule
+    # for such lists.
     - name: the changed files
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
       env:
         CRAPKIT_STATE: ${{ steps.state.outputs.directory }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -221,7 +244,7 @@ runs:
         if [ -z "$BASE_SHA" ]; then
           echo "no base commit on this event: the comment ranks the whole repository"
         else
-          git diff --name-only "$BASE_SHA...HEAD" -z > "$changed" 2> "$failed" || code=$?
+          git diff --name-only "$BASE_SHA...HEAD" -z --relative > "$changed" 2> "$failed" || code=$?
         fi
         if [ "$code" != 0 ]; then
           : > "$changed"

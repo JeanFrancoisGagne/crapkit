@@ -1,0 +1,90 @@
+# Goose: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Goose"
+kind = "cli"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Goose"
+format = "goose-yaml"
+scope = "user"
+path = ".config/goose/config.yaml"
+# GOOSE_PATH_ROOT, when set, moves the file to <root>/config/config.yaml.
+env_root = "GOOSE_PATH_ROOT"
+env_path = "config/config.yaml"
+config = '''
+extensions:
+  crapkit:
+    name: crapkit
+    type: stdio
+    cmd: crapkit
+    args: [mcp, --repo, /absolute/path/to/your/repo]
+    enabled: true
+    timeout: 300
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "execvp"
+windows = "createprocess"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-11-25"
+discover_first = true
+client_name = "goose-cli"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = "crapkit__"
+startup_seconds = 300
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "goose"
+version = "1.52.0"
+command = "goose"
+image = "full"
+floor = ""
+headless = "goose run --with-extension against the OpenAI stub"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "start a new session"
+autoupgrade = false
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
+"spawn.resolve" = "observed"
+"spawn.windows" = "inferred"
+"initialize.client" = "source"
+"initialize.sdk" = "source"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "observed"
+"limits.startup_seconds" = "docs"
+"hooks.loads" = "docs"
+"hooks.manifest" = "docs"
+"hooks.fields" = "docs"
+"hooks.events" = "docs"
+"hooks.matcher" = "docs"
+"hooks.exit2" = "docs"
+sources = ["calibrate.py: shim record of `goose run` on the OpenAI stub (server/discover 2026-07-28, then initialize 2025-11-25)", "https://block.github.io/goose/docs/getting-started/using-extensions (extensions in config.yaml)", "live calibration 2026-09-25: server/discover (_meta protocolVersion 2026-07-28) first; after -32601, initialize 2025-11-25 on the same connection; client goose-cli 1.52.0", "live calibration 2026-09-25: `goose acp`, then session/new {cwd}, starts crapkit and completes the handshake with no model call, even with an unreachable provider; tools/list waits for a prompt; `goose doctor` refuses without a provider and sends prompts with one", "live calibration 2026-09-25: ~/.local/bin and /usr/local/bin are put first on the server's PATH, so a stale pipx or uv tool crapkit beats an activated venv's", "live calibration 2026-09-25: provider secrets (OPENAI_API_KEY, GOOSE_*) reach every stdio server", "live calibration 2026-09-25: tools/list and tools/call carry _meta agent-session-id, agent-working-dir and progressToken; the model sees the text content only, and isError arrives as plain text", "live calibration 2026-09-25: `goose plugin install` on the GitHub URL, a file:// mirror and a local path prints 'Error: No supported plugin format found'; `goose plugin` has install and update only", "live calibration 2026-09-25: Goose ends the server by killing its process group, so the shim writes no exit event", "live calibration 2026-09-25: the goose release URLs moved to github.com/aaif-goose/goose (block/goose answers 301)"]

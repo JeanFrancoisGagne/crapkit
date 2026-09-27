@@ -1,0 +1,93 @@
+# Crush: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Crush"
+kind = "cli"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Crush"
+format = "crush-json"
+scope = "project"
+path = "crush.json"
+config = '''
+{
+  "$schema": "https://charm.land/crush.json",
+  "mcp": {
+    "crapkit": {
+      "type": "stdio",
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "execvp"
+windows = "createprocess"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-11-25"
+discover_first = true
+client_name = "crush"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = "mcp_crapkit_"
+startup_seconds = 0
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "crush"
+version = "0.96.1"
+command = "crush"
+image = "full"
+floor = ""
+headless = "crush run against the OpenAI stub"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "restart crush"
+autoupgrade = false
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
+"spawn.resolve" = "observed"
+"spawn.windows" = "inferred"
+"initialize.client" = "source"
+"initialize.sdk" = "source"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "observed"
+"limits.startup_seconds" = "inferred"
+"hooks.loads" = "inferred"
+"hooks.manifest" = "inferred"
+"hooks.fields" = "inferred"
+"hooks.events" = "inferred"
+"hooks.matcher" = "inferred"
+"hooks.exit2" = "inferred"
+sources = ["calibrate.py: shim record of `crush run` on the OpenAI stub (server/discover 2026-07-28, then initialize 2025-11-25)"]

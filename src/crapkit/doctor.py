@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import os
 import re
+from pathlib import PurePath
 from typing import NamedTuple
 
 from .universe import LANGUAGE_EXTENSIONS, exclude_matcher, scopes_with_tests
@@ -543,69 +544,539 @@ def unmeasured_directories(counts, tracked: list[str]) -> tuple[UnmeasuredDir, .
 # hook the CLI would answer and nobody asked. Neither side notices on its own,
 # so `doctor --plugin-root` asks. Pure: the caller reads the two files.
 
-def _version_gap(where: str, version: str, cli_version: str, cli_where: str) -> str | None:
-    """One line naming both numbers, the executable the second one came from,
-    and both repairs.
+# The commands that move an installed plugin to the marketplace's current copy,
+# and what makes a running client load it, per harness. `claude plugin install`
+# over an older install prints "already installed" and moves nothing. The
+# update runs once per scope that holds the install (see InstallScope). A
+# Codex marketplace is added at a release tag, and `codex plugin marketplace
+# upgrade` keeps it at that tag, so Codex's refresh adds it again at the tag
+# of the CLI's release ({version}).
+CODEX_MARKETPLACE_ADD = ("codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git "
+                         "--ref v{version} --sparse .claude-plugin --sparse plugin")
+_PLUGIN_UPDATE = {
+    "claude": (("claude plugin marketplace update crapkit",),
+               ("claude plugin update crapkit@crapkit --scope {scope}",),
+               "restart Claude Code's sessions"),
+    "codex": (("codex plugin marketplace remove crapkit", CODEX_MARKETPLACE_ADD),
+              ("codex plugin add crapkit@crapkit",), "start a new Codex task"),
+}
+_PLAIN_RELEASE = re.compile(r"\d+(?:\.\d+)*")
 
-    Which side is behind is not decided here. Version ordering across a
-    pre-release, a local build and a published wheel is a guess, and a guess
-    that names the wrong repair costs more than naming two.
+
+class InstallScope(NamedTuple):
+    """One scope Claude Code's installed_plugins.json records an install under,
+    and the project directory a project or local install belongs to.
+
+    Claude Code picks which project a `--scope project` or `--scope local`
+    command acts on from the directory it runs in: outside it, `claude plugin
+    update` moved the first project install on the list, and `claude plugin
+    install` writes to whatever project the shell stands in. So a repair names
+    that directory.
+    """
+    scope: str
+    project: str | None = None
+
+
+USER_SCOPE = (InstallScope("user"),)
+
+
+def _for_scope(commands: tuple[str, ...], at: InstallScope) -> str:
+    spelled = ", then ".join(f"`{command.format(scope=at.scope)}`" for command in commands)
+    return f"{spelled} (run in {at.project})" if at.project else spelled
+
+
+def _for_each_scope(commands: tuple[str, ...], scopes: tuple[InstallScope, ...]) -> str:
+    """`commands` spelled once per scope that holds the install, in the order
+    installed_plugins.json lists them; the user scope when none is known."""
+    return "; ".join(_for_scope(commands, at) for at in scopes or USER_SCOPE)
+
+
+class InPlace(NamedTuple):
+    """A local directory marketplace Claude Code loads the plugin from in
+    place, and the commands that update it and restore one of its files:
+    `git -C DIR pull` and `git -C ROOT checkout --` for a git checkout, None
+    for a directory that is no checkout. `claude plugin update` only refreshes
+    the cache copy, which is not the one that runs."""
+    marketplace: str
+    pull: str | None = None
+    checkout: str | None = None
+
+
+_LOADS_IN_PLACE = ("(Claude Code loads it in place from the local directory marketplace at {at}, "
+                   "and `claude plugin update` does not change it)")
+
+# The commands that put an install's files back, per harness. `claude plugin
+# update` keeps an install whose version did not move, so a file it holds wrong
+# comes back only through a reinstall, run once per scope that holds it.
+_REINSTALL = {"claude": ("claude plugin uninstall crapkit@crapkit --scope {scope}",
+                         "claude plugin install crapkit@crapkit --scope {scope}"),
+              "codex": ("codex plugin remove crapkit@crapkit", "codex plugin add crapkit@crapkit")}
+
+
+class _Install(NamedTuple):
+    """The install a line is about: where it is, the harness that installed
+    it, the scopes that hold it, and the directory Claude Code loads it from
+    in place, if any."""
+    where: str
+    harness: str
+    scopes: tuple[InstallScope, ...]
+    in_place: InPlace | None
+
+
+class _Repairs(NamedTuple):
+    """How each side moves: the plugin's commands after "update it", what
+    makes a running client load it, the CLI's upgrade, and the clause that
+    brings back a hooks file doctor cannot read."""
+    plugin: str
+    reload: str
+    cli: str
+    hooks: str
+
+
+def _in_place_fix(where: str, cli_version: str, in_place: InPlace) -> str:
+    how = (f"with `{in_place.pull}`" if in_place.pull
+           else f"by copying crapkit {cli_version}'s plugin/ directory over {where}")
+    return f"{how} " + _LOADS_IN_PLACE.format(at=in_place.marketplace)
+
+
+def _plugin_fix(install: _Install, cli_version: str) -> str:
+    """How the plugin moves: its local directory, when Claude Code loads it
+    in place, else its harness's update, once per scope that holds it."""
+    if install.in_place:
+        return _in_place_fix(install.where, cli_version, install.in_place)
+    fetch, update, _ = _PLUGIN_UPDATE[install.harness]
+    fetched = ", then ".join(f"`{command.format(version=cli_version)}`" for command in fetch)
+    return f"with {fetched}, then {_for_each_scope(update, install.scopes)}"
+
+
+def _restore(install: _Install, cli_version: str, file: str) -> str:
+    """The clause that brings back one of the plugin's files: from git or
+    crapkit's own copy in the directory Claude Code loads in place, else the
+    harness's reinstall, once per scope that holds the install."""
+    in_place = install.in_place
+    if in_place is None:
+        return f"reinstall it with {_for_each_scope(_REINSTALL[install.harness], install.scopes)}"
+    how = (f"with `{in_place.checkout} {file}`" if in_place.checkout
+           else f"by copying crapkit {cli_version}'s plugin/{file} to {file} under {install.where}")
+    return f"restore it {how} " + _LOADS_IN_PLACE.format(at=in_place.marketplace)
+
+
+def plugin_harness(where: str, codex_home: str | None) -> str:
+    """"codex" for a plugin Codex installed (under CODEX_HOME, or a .codex
+    directory), else "claude"."""
+    parts = PurePath(where).parts
+    under_home = bool(codex_home) and PurePath(where).is_relative_to(codex_home)
+    return "codex" if under_home or ".codex" in parts else "claude"
+
+
+def _plain(version: str) -> tuple[int, ...] | None:
+    return tuple(int(n) for n in version.split(".")) if _PLAIN_RELEASE.fullmatch(version) else None
+
+
+def _behind(version: str, cli_version: str) -> str | None:
+    """"plugin" or "cli" when both are plain releases, else None: a
+    pre-release or a local build does not order against a release plainly
+    enough to send someone to one repair."""
+    plugin, cli = _plain(version), _plain(cli_version)
+    if plugin is None or cli is None:
+        return None
+    return "plugin" if plugin < cli else "cli"
+
+
+def _repair(behind: str | None, repairs: _Repairs) -> str:
+    if behind == "plugin":
+        return f"The plugin is behind; update it {repairs.plugin}, and {repairs.reload}."
+    if behind == "cli":
+        return f"The CLI is behind; upgrade it with `{repairs.cli}`."
+    return (f"Update whichever is behind: the plugin {repairs.plugin}; the CLI "
+            f"with `{repairs.cli}`.")
+
+
+def _version_gap(where: str, version: str, cli_version: str, cli_where: str,
+                 repairs: _Repairs) -> str | None:
+    """One line naming both numbers, the executable the second one came from,
+    which side is behind, and the commands that move it.
+
+    The plugin's repair (`repairs.plugin`) is its harness's: Claude Code's
+    update lines, one per scope that holds the install, Codex's refresh for a
+    plugin Codex installed, or an update of the local directory Claude Code
+    loads it from in place. The CLI's is the upgrade of the installer that owns
+    the launcher. Both are named when the versions do not order plainly.
 
     `cli_where` is the console script the plugin will spawn, which on a machine
     with a venv crapkit and a pipx crapkit is not the module answering this
     question. The path rides this line rather than a line of its own: agreement
     is silence here, and a line printed on success is a line people stop
     reading.
+
+    The plugin repair is the README's refresh pair. The plugin is already
+    installed, so `claude plugin install` only answers that it is and leaves
+    the old version where the hooks run it.
     """
     if version == cli_version:
         return None
     return (f"crapkit doctor: the plugin at {where} is version {version}, and the crapkit "
-            f"its hooks spawn ({cli_where}) is {cli_version}. Reinstall whichever is "
-            f"behind: `claude plugin install crapkit@crapkit`, or `pip install -U crapkit`.")
+            f"its hooks spawn ({cli_where}) is {cli_version}. "
+            + _repair(_behind(version, cli_version), repairs))
 
 
-def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str) -> str | None:
-    """One line when the hook asks for a protocol this CLI does not answer.
+def _protocol_behind(odd: list[str], supported: str) -> str | None:
+    """"plugin" when every protocol the hooks ask for is older than the one
+    this CLI answers, "cli" when every one is newer, else None."""
+    sides = {_behind(protocol, supported) for protocol in odd}
+    return sides.pop() if len(sides) == 1 else None
+
+
+def _protocol_gap(where: str, protocols: tuple[str, ...] | None, supported: str,
+                  repairs: _Repairs) -> str | None:
+    """One line when the hook asks for a protocol this CLI does not answer,
+    naming the side that is behind and the commands that move it.
 
     A handler naming no `--protocol` at all is not a gap: argparse defaults it,
     and the default is the supported one. `None` is the other thing entirely, a
-    plugin whose hooks file is missing or unreadable.
+    plugin whose hooks file is missing or unreadable, and its line names how
+    the file comes back.
     """
     if protocols is None:
         return (f"crapkit doctor: the plugin at {where} has no readable hooks/hooks.json; "
-                f"reinstall the plugin or repair that file before relying on its advisory hook.")
+                f"{repairs.hooks}, and {repairs.reload} before relying on its advisory hook.")
     odd = sorted(set(protocols) - {supported})
     if not odd:
         return None
     return (f"crapkit doctor: the plugin at {where} asks for hook protocol {', '.join(odd)}; "
-            f"this crapkit answers {supported}, so `claude-hook` exits 0 silent on every edit.")
+            f"this crapkit answers {supported}, so `claude-hook` exits 0 silent on every edit. "
+            + _repair(_protocol_behind(odd, supported), repairs))
 
 
+_NOT_A_ROOT = ("crapkit doctor: the plugin at {where} has no .claude-plugin/plugin.json, so it is "
+               "no plugin root; name the plugin root or a directory above it, or run `crapkit "
+               "doctor --plugin-root` with no PATH to check the installs Claude Code and Codex "
+               "recorded.")
+
+
+# What a manifest on disk that gives no version is. A file that does not parse
+# is not a JSON object either.
 _MANIFEST_FAULTS = {
-    "missing": "has no .claude-plugin/plugin.json",
-    "not-an-object": ("has a .claude-plugin/plugin.json that is not a JSON object; reinstall the "
-                      "plugin or repair that file"),
-    "unversioned": ("has a .claude-plugin/plugin.json with no version string; reinstall the "
-                    "plugin or repair that file"),
+    "not-an-object": "has a .claude-plugin/plugin.json that is not a JSON object",
+    "unversioned": "has a .claude-plugin/plugin.json with no version string",
 }
 
 
+def _no_manifest(install: _Install, cli_version: str, fault: str) -> str:
+    """The line for a root with no version to read: no manifest at all, which
+    is a directory that is no plugin root, or one that is there and names no
+    version, which is an install to put back."""
+    if fault == "missing":
+        return _NOT_A_ROOT.format(where=install.where)
+    return (f"crapkit doctor: the plugin at {install.where} {_MANIFEST_FAULTS[fault]}, so it has "
+            f"no version to compare; "
+            f"{_restore(install, cli_version, '.claude-plugin/plugin.json')}, and "
+            f"{_PLUGIN_UPDATE[install.harness][2]}.")
+
+
+_STALE_COPY = (
+    "crapkit doctor: the plugin at {where} is version {version}, and so is the marketplace's copy "
+    "at {source}, but {count} between them ({named}); `claude plugin update` keeps an install "
+    "whose version did not move, so reinstall it with {reinstall}, and restart Claude Code's "
+    "sessions."
+)
+_NAMED_FILES = 2
+
+
+def _files_differ(count: int) -> str:
+    return "1 file differs" if count == 1 else f"{count} files differ"
+
+
+def _first_files(differing: tuple[str, ...]) -> str:
+    shown, rest = ", ".join(differing[:_NAMED_FILES]), len(differing) - _NAMED_FILES
+    return f"{shown} and {rest} more" if rest > 0 else shown
+
+
+def stale_copy(*, where: str, version: str | None, source: str, source_version: str | None,
+               differing: tuple[str, ...], scopes: tuple[InstallScope, ...]) -> str | None:
+    """One line when an install and the marketplace's copy carry one version
+    and different files. Main between releases keeps the release's version
+    string, so `claude plugin update` answers "already at the latest version"
+    and the install keeps the release's files. A different version is the
+    update's business, and says nothing here. The reinstall is named once per
+    scope that holds the install."""
+    if not differing or version != source_version:
+        return None
+    return _STALE_COPY.format(where=where, version=version, source=source,
+                              reinstall=_for_each_scope(_REINSTALL["claude"], scopes),
+                              count=_files_differ(len(differing)), named=_first_files(differing))
+
+
 def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,
-                     protocols: tuple[str, ...] | None, supported: str,
+                     protocols: tuple[str, ...] | None, supported: str, harness: str = "claude",
+                     cli_upgrade: str = "python -m pip install --upgrade crapkit",
+                     scopes: tuple[InstallScope, ...] = USER_SCOPE,
+                     in_place: InPlace | None = None,
                      manifest_fault: str = "missing") -> list[str]:
-    """Every disagreement between an installed plugin and this CLI, one per line.
+    """Every disagreement between an installed plugin and this CLI, one per
+    line, each naming the command that closes it.
 
     Empty is the answer that matters: the two agree, and a check that prints on
     success is a check people stop reading.
 
     A manifest with no version ends it. There is no version to compare, and a
     protocol line printed underneath would bury the one fact that explains
-    both. `manifest_fault` says why there is none: the file is `missing`, is
-    `not-an-object`, or is `unversioned`. A file that parsed and named no
+    both. `manifest_fault` says why there is none: the file is `missing`, a
+    directory that is no plugin root, or it is there and `not-an-object` or
+    `unversioned`, an install to put back. A file that parsed and named no
     version string read as a missing file, which sent the reader looking for a
     file that was there.
     """
+    install = _Install(where, harness, scopes, in_place)
     if version is None:
-        return [f"crapkit doctor: the plugin at {where} {_MANIFEST_FAULTS[manifest_fault]}"]
-    return [line for line in (_version_gap(where, version, cli_version, cli_where),
-                              _protocol_gap(where, protocols, supported)) if line]
+        return [_no_manifest(install, cli_version, manifest_fault)]
+    repairs = _Repairs(_plugin_fix(install, cli_version), _PLUGIN_UPDATE[harness][2], cli_upgrade,
+                       _restore(install, cli_version, "hooks/hooks.json"))
+    return [line for line in (_version_gap(where, version, cli_version, cli_where, repairs),
+                              _protocol_gap(where, protocols, supported, repairs)) if line]
+
+
+# --- where a check passes without judging anything ------------------------------
+#
+# Each finding below is a place the gate or a lane is set up and does not run,
+# and nothing else says so: the coverage guard refuses only when `coverage`
+# starts, git skips a hook it was sent away from, and pre-commit in CI judges
+# an index nobody staged. Pure: the caller reads the environment and the files.
+
+_CONTAINER_LANE = (
+    "lane {name!r} runs a coverage.py suite and this is a container ({marker}): "
+    "`crapkit coverage` refuses it with exit 5; if the container is sized for the suite, "
+    "set container_ok = true on the lane (docs/lanes.md#containers)"
+)
+
+
+def container_marker(environ, dockerenv: bool) -> str | None:
+    """What makes this machine a container for the lane runner, in the words a
+    user can check, or None. lanes.py's guard reads this same function, so
+    doctor cannot pass a lane `crapkit coverage` then refuses."""
+    if environ.get("CRAPKIT_INSIDE_CONTAINER") == "1":
+        return "CRAPKIT_INSIDE_CONTAINER=1"
+    return "/.dockerenv exists" if dockerenv else None
+
+
+def refused_in_container(lane) -> bool:
+    """A lane the runner refuses inside a container: a coverage.py suite that
+    does not say container_ok = true."""
+    return lane.parser == "coveragepy" and not lane.container_ok
+
+
+def container_lane_findings(lanes, marker: str | None) -> tuple[Finding, ...]:
+    """The coverage.py lanes `crapkit coverage` will refuse here, one WARN each.
+
+    A devcontainer, Codespaces, Codex cloud or a CI job in a container passed
+    doctor and then refused its first coverage run; the refusal is right, and
+    doctor is where a user asks whether the setup will run."""
+    if marker is None:
+        return ()
+    return tuple(Finding("WARN", _CONTAINER_LANE.format(name=lane.name, marker=marker))
+                 for lane in lanes if refused_in_container(lane))
+
+
+_SENT_UNSET = "core.hooksPath is unset and git runs {effective}"
+_SENT_SET = "core.hooksPath ({scope} config: {value}) sends git to {effective}"
+_UNGATED = "so every commit here skips the gate without a word"
+_SKIPPED_HOOK = ("{path} runs crapkit's gate, but {sent}, " + _UNGATED + "; run `{arm}` in this "
+                 "repo, or call crapkit hook-precommit from {edit}")
+_UNINSTALLED = (".pre-commit-config.yaml names crapkit-gate, but {sent}, which pre-commit did not "
+                "write, " + _UNGATED + "; {fix}")
+_INSTALL = "run `pre-commit install` in this repo"
+_INSTALL_REFUSED = ("`pre-commit install` refuses while core.hooksPath is set, so call crapkit "
+                    "hook-precommit from {edit}")
+# What a hook that hands the commit to the pre-commit framework says: the file
+# `pre-commit install` (or prek's) writes, or a hand-written `pre-commit run`.
+_RUNS_FRAMEWORK = re.compile(r"hook-impl|\b(?:pre-commit|prek) run\b")
+
+
+class HookRoute(NamedTuple):
+    """The pre-commit file git spawns in this checkout, what it runs (husky's
+    stub followed by the file it hands the commit to), the file a gate line
+    belongs in, and the core.hooksPath setting that sent git there ("" and ""
+    when unset)."""
+    effective: str
+    effective_text: str
+    edit: str
+    scope: str
+    value: str
+
+
+class GateHook(NamedTuple):
+    """A pre-commit file the repo holds (its own hooks directory, or one it
+    commits), what it says, and the git config line that makes git run it."""
+    path: str
+    text: str
+    arm: str
+
+
+def _runs_gate(text: str, framework: bool) -> bool:
+    """Does this hook text run crapkit's gate? Directly, or through the
+    pre-commit framework when the repo's config names crapkit-gate."""
+    return "crapkit" in text or (framework and bool(_RUNS_FRAMEWORK.search(text)))
+
+
+def _sent(route: HookRoute) -> str:
+    return (_SENT_SET if route.scope else _SENT_UNSET).format(**route._asdict())
+
+
+def _framework_fix(route: HookRoute) -> str:
+    return _INSTALL_REFUSED.format(edit=route.edit) if route.scope else _INSTALL
+
+
+def skipped_gates(route: HookRoute, hooks: tuple[GateHook, ...],
+                  framework: bool) -> tuple[Finding, ...]:
+    """Every gate the repo sets up that git never runs, one WARN each.
+
+    A hook that runs crapkit and is not the file git spawns: Route 1's hook
+    under a global core.hooksPath, Route 2's committed hook in a clone that
+    skipped its `git config` line, either one after husky took core.hooksPath
+    back. With none of those, a .pre-commit-config.yaml naming crapkit-gate
+    whose framework hook git does not run: Route 3 before `pre-commit
+    install`. WARN: the commit still succeeds, it is just not gated."""
+    if _runs_gate(route.effective_text, framework):
+        return ()
+    found = _skipped_hooks(route, hooks, framework)
+    if found or not framework:
+        return found
+    return (Finding("WARN", _UNINSTALLED.format(sent=_sent(route), fix=_framework_fix(route))),)
+
+
+def _skipped_hooks(route: HookRoute, hooks: tuple[GateHook, ...],
+                   framework: bool) -> tuple[Finding, ...]:
+    return tuple(Finding("WARN", _SKIPPED_HOOK.format(path=hook.path, sent=_sent(route),
+                                                      arm=hook.arm, edit=route.edit))
+                 for hook in hooks if _runs_gate(hook.text, framework))
+
+
+# --- two installs on one PATH ------------------------------------------------------
+#
+# The shell, a git hook, the plugin's hooks and an MCP client each start the bare
+# name `crapkit` from the PATH they inherit. A user who upgraded into a new
+# environment and kept the old one has two launchers, and which one a program
+# runs depends on the order its PATH lists them.
+
+_LAUNCHER_SKEW = (
+    "PATH holds {count} crapkit launchers: {listed}. The shell, a git hook, the plugin's "
+    "hooks and an MCP client each run the first one their own PATH lists, so they can run "
+    "different versions; uninstall the copies you do not use, or upgrade them to one version"
+)
+_LAUNCHERS_AGREE = (
+    "PATH holds {count} crapkit launchers, all {version}: {listed}; an upgrade has to reach "
+    "each of them, or they drift apart"
+)
+
+
+def _one_version(launchers: tuple[tuple[str, str | None], ...]) -> str | None:
+    """The version every launcher answered, or None when they differ or one
+    answered nothing."""
+    versions = {version for _, version in launchers}
+    return versions.pop() if len(versions) == 1 else None
+
+
+def _skew_line(launchers: tuple[tuple[str, str | None], ...]) -> Finding:
+    listed = ", ".join(f"{path} ({version or 'no version answered'})" for path, version in launchers)
+    return Finding("WARN", _LAUNCHER_SKEW.format(count=len(launchers), listed=listed))
+
+
+def launcher_skew(launchers: tuple[tuple[str, str | None], ...]) -> tuple[Finding, ...]:
+    """One finding when PATH holds more than one launcher: a WARN naming each
+    with its version once they disagree or one answers none, a note while they
+    agree. Disagreeing launchers are this repo's problem as much as the
+    machine's: the git hook can judge a commit with one version while the shell
+    records marks with another, and the plugin and MCP client run whichever
+    their PATH lists first. `launchers` is (path, version) in PATH order, None
+    for no answer."""
+    if len(launchers) < 2:
+        return ()
+    version = _one_version(launchers)
+    if version is None:
+        return (_skew_line(launchers),)
+    return (Finding("note", _LAUNCHERS_AGREE.format(
+        count=len(launchers), version=version, listed=", ".join(path for path, _ in launchers))),)
+
+
+# --- the marks file's merge driver ------------------------------------------------
+#
+# docs/ratchet.md installs the driver in two steps: a committed attribute and a
+# `git config` line every clone runs, because git takes no driver command from a
+# committed file. A clone that skipped the config line merges the marks file as
+# text: git falls back when no driver by that name is defined, and says nothing.
+
+# `git check-attr merge` answers these for a path no custom driver claims:
+# no attribute, -merge, merge, and git's three built-in drivers.
+_NO_CUSTOM_DRIVER = frozenset({"unspecified", "unset", "set", "text", "binary", "union"})
+_UNDEFINED_DRIVER = (
+    "{path} has merge={driver} in its git attributes, but merge.{driver}.driver is not set in "
+    "this clone, so git merges the marks file as text and leaves its conflicts to be resolved "
+    "by hand; run `git config merge.{driver}.driver \"crapkit ratchet merge %O %A %B\"` "
+    "(docs/ratchet.md#the-git-merge-driver)"
+)
+
+
+def undefined_merge_driver(path: str, driver: str, command: str) -> tuple[Finding, ...]:
+    """One WARN when the marks file's merge attribute names a driver this
+    clone's git config does not define. `command` is that driver's
+    configured command, "" when unset."""
+    if driver in _NO_CUSTOM_DRIVER or command:
+        return ()
+    return (Finding("WARN", _UNDEFINED_DRIVER.format(path=path, driver=driver)),)
+
+
+# --- the harness floor ------------------------------------------------------------
+#
+# Claude Code passes a hook handler's `args` from 2.1.139 on. An older release
+# runs the handler's bare `command`, so each of the plugin's PostToolUse hooks
+# starts `crapkit` with no subcommand: argparse exits 2 with its usage on every
+# edit, and asyncRewake hands that usage to the model.
+
+CLAUDE_CODE_ARGS_FLOOR = "2.1.139"
+_LEADING_RELEASE = re.compile(r"\s*(\d+)\.(\d+)\.(\d+)")
+
+
+def _release(text: str) -> tuple[int, ...] | None:
+    match = _LEADING_RELEASE.match(text)
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
+# --- the coverage.py floor ---------------------------------------------------------
+#
+# coverage.py writes the per-function regions crapkit scores from since 7.6. A
+# lane whose interpreter carries an older one runs its suite, writes a report,
+# and `crapkit coverage` refuses that report with exit 5. The lane probe starts
+# that interpreter anyway, so it asks coverage's version on the same start.
+
+_COVERAGE_FLOOR = (
+    "lane {name!r} runs coverage {version} ({executable}), which writes no function "
+    "regions, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= {floor}); "
+    "install {floor} or later there with `{upgrade}` and raise any pin that holds it lower"
+)
+
+
+def coverage_floor_gap(name: str, executable: str, version: str,
+                       upgrade: str) -> tuple[Finding, ...]:
+    """One FAIL when the lane's coverage.py predates function regions. A
+    version this cannot read says nothing: the lane's own run will."""
+    from .coverage_py import REGIONS_FLOOR
+
+    found = _release(version)
+    floor = tuple(int(part) for part in REGIONS_FLOOR.split("."))
+    if found is None or found >= floor:
+        return ()
+    return (Finding("FAIL", _COVERAGE_FLOOR.format(name=name, version=version, executable=executable,
+                                                   floor=REGIONS_FLOOR, upgrade=upgrade)),)
+
+
+def claude_code_floor_gap(where: str, answer: str) -> str | None:
+    """One line when the Claude Code at `where` answered `--version` with a
+    release below the floor; None at or past it, or for an answer that names
+    no version."""
+    found = _release(answer)
+    if found is None or found >= _release(CLAUDE_CODE_ARGS_FLOOR):
+        return None
+    return (f"crapkit doctor: Claude Code {'.'.join(map(str, found))} ({where}) predates "
+            f"{CLAUDE_CODE_ARGS_FLOOR}, the first release that passes a hook's args, so each of "
+            "the plugin's hooks starts a bare `crapkit`, which exits 2 with its usage on every "
+            "edit. Update Claude Code (`claude update`), then restart its sessions.")

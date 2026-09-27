@@ -1,0 +1,93 @@
+# Windsurf: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Windsurf"
+kind = "app"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Windsurf"
+format = "mcpservers-json"
+scope = "user"
+path = ".codeium/windsurf/mcp_config.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "home"
+env = "inherit"
+resolve = "execvp"
+windows = "cross-spawn"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-06-18"
+discover_first = false
+client_name = "windsurf"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = ""
+startup_seconds = 0
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = ""
+version = "latest"
+command = "devin"
+image = ""
+floor = ""
+headless = "devin mcp list"
+login = true
+latest = "weekly calibrate-all"
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "refresh the MCP list in Cascade"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "inferred"
+"spawn.env" = "inferred"
+"spawn.resolve" = "inferred"
+"spawn.windows" = "inferred"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "inferred"
+"initialize.discover_first" = "inferred"
+"initialize.client_name" = "inferred"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "inferred"
+"hooks.loads" = "docs"
+"hooks.manifest" = "docs"
+"hooks.fields" = "docs"
+"hooks.events" = "docs"
+"hooks.matcher" = "docs"
+"hooks.exit2" = "docs"
+sources = ["https://docs.windsurf.com/windsurf/cascade/mcp (mcp_config.json)", "Cascade hooks use their own file, not a Claude plugin's hooks.json"]
+manual = ["calibrate-all runs `devin mcp list` at latest weekly and records the version"]

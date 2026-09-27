@@ -27,6 +27,14 @@ The default coordination directory is under the user's cache, separated by host.
 `CRAPKIT_RESOURCE_DIR` selects another directory. Processes must use the same
 directory to share a budget; separate directories create independent budgets.
 
+The user's home comes from `USERPROFILE` on Windows and `HOME` on POSIX. A process
+started without it, such as an MCP server whose client builds the environment from
+an allowlist, a service or a scheduled task, reads the profile folder Windows reports
+for its user, or on POSIX the password database entry. Both name the home the user's
+other processes use, so the budget and the measurement locks below stay shared.
+`HOME` alone does not count on Windows. When nothing names a home, commands that need
+it exit 5 with `no home directory` and name the variable to set.
+
 `CRAPKIT_ANALYSIS_WORKERS` can lower the inherited per-call worker limit.
 `CRAPKIT_ANALYSIS_MEMORY_MB` also reduces the pool using an estimate of 35 MB per
 worker. It is a sizing hint, not a hard operating-system memory limit. Invalid
@@ -52,7 +60,8 @@ cannot start another mutant suite.
 Measurement locks coordinate commands for the same user and host, including
 different repositories that target one absolute artifact. Stable files under
 `~/.cache/crapkit/measurements/<host-id>` stay outside report directories that
-test runners delete and recreate. `TEMP`, `TMP` and `CRAPKIT_RESOURCE_DIR` do not
+test runners delete and recreate. `~` is the home described under
+[Analysis workers](#analysis-workers), found the same way without `USERPROFILE` or `HOME`. `TEMP`, `TMP` and `CRAPKIT_RESOURCE_DIR` do not
 change this domain. Keep these small lease files as coordination state, not idle
 test evidence.
 

@@ -149,6 +149,13 @@ def test_path_reads_report_a_missing_git_executable(tmp_path, monkeypatch):
         gitio.ls_files(tmp_path)
 
 
-def test_path_reads_preserve_git_command_errors(tmp_path):
-    with pytest.raises(GitError, match="git ls-files.*failed"):
-        gitio.ls_files(tmp_path)
+def test_path_reads_preserve_git_command_errors(repository):
+    """A read that fails in a repository git can use keeps its command and git's
+    reason; outside one the refusal names the missing repository instead
+    (test_gitio_repository_state.py)."""
+    (repository / "a.py").write_text("x = 1\n", encoding="utf-8")
+    git(repository, "add", "-A")
+    git(repository, "commit", "-q", "-m", "a")
+
+    with pytest.raises(GitError, match=r"git ls-files -s -z -- \.\./outside failed.*outside repository"):
+        gitio.index_modes(repository, "../outside")

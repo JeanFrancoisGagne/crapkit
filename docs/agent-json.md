@@ -318,6 +318,12 @@ A claim is released three ways: `verify` releases it once the function sits at i
 or its commit leaves the history, `runs prune` drops claims older than the oldest kept run,
 and `crapkit claims release` closes one by hand.
 
+A claim keeps the name it was handed out under. One taken before analysis version 11 on
+a Python def nested three or more deep saved `a.a.b.c( x )`, which version 11 names
+`a.b.c( x )`. `next-item`, `brief --batch`, `verify` and `brief`'s `attempts` match it
+against the run's own names, so it keeps holding that def
+([upgrading](upgrading.md#analysis-version-11)).
+
 ---
 
 ## `claims`
@@ -354,7 +360,9 @@ every anonymous function in a file carries the same `(anonymous)` long name, and
 handle stays valid after the session's own edit moves the lines. `null` on a claim taken
 before handles existed, or by a caller that had none.
 
-Release takes any name form:
+Release takes any name form. A claim taken before analysis version 11 on a nested def
+also answers to the name version 11 gives the def, when no claim answers to the name as
+saved:
 
 ```
 $ crapkit claims release calc/grade.py classify --json
@@ -553,6 +561,9 @@ With a scoped template and without one:
 
 All four commands resolve the `crapkit` console script on PATH, including the
 Windows encoded form. Activate the intended environment before executing them.
+A packet that `uvx crapkit brief` built spells all four `uvx crapkit ...`, and its
+encoded form starts `uvx`: uvx puts no `crapkit` on PATH, and the uvx line resolves
+in any shell on a machine that has uv.
 `test-scoped` then runs the owning scope's configured template; a template with
 no `{files}` still runs its declared arguments unchanged.
 
@@ -1197,12 +1208,76 @@ neither notices when they drift. This is the check, and it reads no repo at all.
 
 It compares the plugin's `.claude-plugin/plugin.json` version against **the `crapkit` on
 PATH**, and every `--protocol` in its `hooks/hooks.json` against the protocol `claude-hook`
-answers. One line per disagreement, silence when they agree, exit 1 when it printed anything:
+answers, read off a handler's `args` or off its shell-form command string. One line per
+disagreement, each naming the command that closes it, and exit 1 when there is one. When
+they agree it exits 0 with no such line (a root it found rather than one you typed is still
+named first, as `crapkit doctor: checking ROOT`). Two disagreements:
 
 ```
 $ crapkit doctor --plugin-root crapkit
-crapkit doctor: the plugin at crapkit is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or `pip install -U crapkit`.
-crapkit doctor: the plugin at crapkit asks for hook protocol 2; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit.
+crapkit doctor: the plugin at crapkit is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. The plugin is behind; update it with `claude plugin marketplace update crapkit`, then `claude plugin update crapkit@crapkit --scope user`, and restart Claude Code's sessions.
+crapkit doctor: the plugin at crapkit asks for hook protocol 0; this crapkit answers 1, so `claude-hook` exits 0 silent on every edit. The plugin is behind; update it with `claude plugin marketplace update crapkit`, then `claude plugin update crapkit@crapkit --scope user`, and restart Claude Code's sessions.
+```
+
+The version line names the side that is behind and the commands that move it. `claude
+plugin install` over an older install prints "already installed" and moves nothing, so the
+plugin's repair is Claude Code's update pair, or for a plugin under `~/.codex` (or
+`CODEX_HOME`) Codex's `codex plugin marketplace remove crapkit`, then the README's
+`codex plugin marketplace add` line at the CLI's release tag, then `codex plugin add
+crapkit@crapkit`. The CLI's repair is the upgrade for the installer that owns the launcher:
+`uv tool upgrade crapkit`, `pipx upgrade crapkit`, `uv pip install --python <that python>
+--upgrade crapkit` in a venv uv made, else `<that python> -m pip install --upgrade crapkit`.
+Two plain releases order; a pre-release or a local build names both repairs:
+
+```
+crapkit doctor: the plugin at <root> is version 0.9.0, and the crapkit its hooks spawn (/home/you/.local/bin/crapkit) is <version>. The CLI is behind; upgrade it with `uv tool upgrade crapkit`.
+```
+
+Claude Code's update runs once per scope `installed_plugins.json` records for the install.
+Claude Code keeps one cache directory per version, so a user install and project installs
+of one version share it. A project or local install belongs to one project, and
+`claude plugin update --scope project` run outside it moves the first project install on
+the list, so the line names the directory to run it in:
+
+```
+crapkit doctor: the plugin at <root> is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. The plugin is behind; update it with `claude plugin marketplace update crapkit`, then `claude plugin update crapkit@crapkit --scope project` (run in /home/you/app); `claude plugin update crapkit@crapkit --scope user`, and restart Claude Code's sessions.
+```
+
+Claude Code loads a plugin from a marketplace added as a local directory in place, and
+`claude plugin update` only refreshes the cache copy beside it. For that plugin the repair
+is an update of the directory: `git -C <dir> pull` when it is a git checkout, else a copy
+of the CLI version's `plugin/` directory over it:
+
+```
+crapkit doctor: the plugin at /home/you/crapkit/plugin is version 0.3.0, and the crapkit its hooks spawn (/usr/local/bin/crapkit) is <version>. The plugin is behind; update it with `git -C /home/you/crapkit pull` (Claude Code loads it in place from the local directory marketplace at /home/you/crapkit, and `claude plugin update` does not change it), and restart Claude Code's sessions.
+```
+
+Between releases main keeps the release's version string, `claude plugin update` answers
+"already at the latest version", and the install keeps the release's files. When the
+install and its marketplace's copy (the clone `known_marketplaces.json` names) carry one
+version and different files, doctor names the reinstall for each scope that holds the
+install, with the project directory for a project or local one, since `claude plugin
+install --scope project` writes to the project it runs in:
+
+```
+crapkit doctor: the plugin at <root> is version <version>, and so is the marketplace's copy at <clone>/plugin, but 1 file differs between them (skills/crapkit/SKILL.md); `claude plugin update` keeps an install whose version did not move, so reinstall it with `claude plugin uninstall crapkit@crapkit --scope user`, then `claude plugin install crapkit@crapkit --scope user`, and restart Claude Code's sessions.
+```
+
+A plugin whose hooks pass `args` also gets a line when the `claude` on PATH is older than
+2.1.139, the first release that passes them; a shell-form hook runs as written on any release.
+
+The protocol line orders the protocols the way the version line orders versions: a hook
+asking for an older protocol than this CLI answers means the plugin is behind, a newer one
+means the CLI is, and the line names the same repair. A hooks file or manifest doctor
+cannot read names how the file comes back: the harness's reinstall once per scope that
+holds the install (`codex plugin remove crapkit@crapkit`, then `codex plugin add
+crapkit@crapkit` for Codex), or for a plugin Claude Code loads in place from a checkout,
+`git -C <root> checkout -- <file>`. A directory with no manifest at all is no plugin root,
+and its line names the search that finds the installs:
+
+```
+crapkit doctor: the plugin at <root> has no readable hooks/hooks.json; reinstall it with `claude plugin uninstall crapkit@crapkit --scope user`, then `claude plugin install crapkit@crapkit --scope user`, and restart Claude Code's sessions before relying on its advisory hook.
+crapkit doctor: the plugin at /tmp has no .claude-plugin/plugin.json, so it is no plugin root; name the plugin root or a directory above it, or run `crapkit doctor --plugin-root` with no PATH to check the installs Claude Code and Codex recorded.
 ```
 
 PATH's `crapkit`, not the module answering the question: `hooks/hooks.json` and `.mcp.json`
@@ -1218,6 +1293,35 @@ crapkit doctor: FAIL no `crapkit` on PATH - the plugin's hooks/hooks.json and .m
 
 Exit 1. A `pip install` into a project `.venv` is the usual way to land here: the console
 script goes into that venv's `Scripts` and nothing else on the machine sees it.
+`pip install --user` is the other: the script goes into `~/.local/bin` or
+`%APPDATA%\Python\Python312\Scripts`, which most PATHs lack. When the crapkit running
+doctor has its own launcher in such a directory, run by that launcher's full path or as
+`python -m crapkit`, the line ends by naming it:
+
+```
+This crapkit's launcher is in /home/dev/.local/bin, which PATH does not list: add that directory to PATH, then restart the agent.
+```
+
+Under `uvx crapkit doctor --plugin-root`, `uv run --with crapkit crapkit doctor
+--plugin-root` or `pipx run` the PATH doctor inherits starts with the environments built
+for that one command, which the plugin's hooks never inherit, so the lookup leaves out
+every environment in uv's cache (any bucket under the root uv tags with `CACHEDIR.TAG`) or
+in pipx's, and the FAIL names the one doctor runs in. An environment in uv's cache gets
+`uv tool install crapkit`, or `pipx install crapkit` for a `pipx run`: pipx 1.17 on its uv
+backend hands the command to `uv tool run`, so nothing in that environment says pipx
+started it. One in pipx's own cache (its pip backend) gets `pipx install crapkit`. That
+FAIL names no launcher directory to add to PATH, since the tool deletes or rebuilds the
+environment that holds it.
+
+A `crapkit` that answers no `--version` is a launcher the plugin starts and cannot use,
+most often one whose environment lost its python. Each installer's upgrade leaves it
+broken, so the FAIL names the reinstall for the install that owns it: `uv tool install
+--force crapkit`, `pipx reinstall crapkit`, or pip's `--force-reinstall` for the python
+it starts:
+
+```
+crapkit doctor: FAIL /home/you/.local/bin/crapkit did not answer `crapkit --version`. Reinstall the crapkit it belongs to with `uv tool install --force crapkit`, then run this check again.
+```
 
 A root doctor found rather than one you typed gets a `crapkit doctor: checking <that root>`
 line first, naming the install the verdict is about: the search reaches three levels under
@@ -1233,12 +1337,18 @@ crapkit doctor: checking plugin
 ```
 
 With no `PATH` at all it reads Claude Code's own plugin directory (`CLAUDE_CONFIG_DIR`, else
-`~/.claude`), and when nothing is installed there it names the directory it looked in and
-exits 1:
+`~/.claude`) and checks every install `installed_plugins.json` records, newest first, each
+under its own `checking` line: a user install made at one version and a project install
+made at a later one are two cache directories, and sessions run both. With no record on
+disk it checks the newest install in Claude Code's cache, then in Codex's plugin cache
+(`CODEX_HOME`, else `~/.codex`). A marketplace added
+from a local directory is checked in that directory, because Claude Code loads its plugin in
+place; the `checking` line says so. When nothing is installed in either, it names both
+directories and both harnesses' install lines and exits 1:
 
 ```
 $ crapkit doctor --plugin-root
-crapkit doctor: no installed crapkit plugin under ...\.claude\plugins (install with `claude plugin install crapkit@crapkit`, or pass --plugin-root PATH)
+crapkit doctor: no installed crapkit plugin under ...\.claude\plugins or ...\.codex. Claude Code installs it with `claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin`, then `claude plugin install crapkit@crapkit`; Codex with `codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin`, then `codex plugin add crapkit@crapkit`. For a plugin kept anywhere else, pass --plugin-root PATH.
 ```
 
 (The absolute path is elided; the line prints it in full.)
@@ -1263,12 +1373,13 @@ the cache root `~/.claude/plugins/cache`, or a marketplace or plugin directory i
 Code keeps an install at `cache/<marketplace>/<plugin>/<version>/` and leaves the old version
 beside the new one after an update, so among the manifests named `crapkit` under `PATH` the
 newest install is the one checked; the other plugins sharing that cache are never read. With no `PATH` at
-all, doctor looks in Claude Code's plugin directory (`CLAUDE_CONFIG_DIR`, else `~/.claude`),
-through `installed_plugins.json` and the cache, and names that directory when nothing is
-installed there. It reads `installed_plugins.json` as Claude Code writes it today, a list of
-installs per plugin id, and as an older Claude Code wrote it, one object per id. An entry of
-any other shape, or one with no string `installPath`, records nothing, and the cache scan
-still finds the install.
+all, doctor checks every install `installed_plugins.json` records in Claude Code's plugin
+directory (`CLAUDE_CONFIG_DIR`, else `~/.claude`), else the newest in that cache, then in
+Codex's cache, and names both directories when nothing is installed there. It reads
+`installed_plugins.json` as Claude Code writes it today, a list of installs per plugin id,
+and as an older Claude Code wrote it, one object per id. An entry of any other shape, or one
+with no string `installPath`, records nothing, and the cache scan still finds the install.
+A cached version no record names is one an update left behind, and no session runs it.
 
 ---
 
@@ -1400,8 +1511,8 @@ the sentence that names the fix instead of an empty stream:
 |---|---|---|
 | 1 | `state` | The store or the tree lacks what the command needs: no run, no scored run, no function matching the name, no open claim. |
 | 3 | `config` | `crapkit.toml` is missing, does not parse, or refuses a value; an unknown `--lane` or `--scope` is this too, and so is a file whose name is not UTF-8. |
-| 4 | `git` | A git command failed or a commit is missing: a baseline that is not an ancestor, a shallow clone, or `ratchet report --enforce` with a debt key set in a shallow clone, whose history cannot age a mark. |
-| 5 | `tool` | A lane or an external tool failed: every lane failed, an artifact the last attempt never wrote, lizard missing. |
+| 4 | `git` | A git command failed or a commit is missing: no repository, a repository with no commit yet or one git refuses to open, a baseline that is not an ancestor (a rewrite, or a run made on another branch with none behind HEAD), a shallow clone, or `ratchet report --enforce` with a debt key set in a shallow clone, whose history cannot age a mark. |
+| 5 | `tool` | A lane or an external tool failed: every lane failed, an artifact the last attempt never wrote, lizard missing. Also a process with no home directory, whose message names the variable to set. |
 
 `message` is the stderr line without its `crapkit: ` prefix; that line and the exit code
 are unchanged. A refusal of a file whose name is not UTF-8 adds `unread_files`, one
@@ -1436,23 +1547,27 @@ or `i18n.logOutputEncoding` says. Churn's author count reads names the same way.
 
 ## `claude-hook`
 
-The one command on this page Claude Code runs for you, after every Edit or Write of a source
-file, and after every Bash command wherever you register that matcher. It names functions that edit pushed over their ceiling, while the session can still act
-on it.
+The one command on this page your agent runs for you: Claude Code runs it after every Edit
+or Write, and so do Cursor, GitHub Copilot CLI and VS Code wherever they load the plugin,
+plus after every Bash command wherever you register that matcher. It names functions that
+edit pushed over their ceiling, while the session can still act on it.
 
 ```
 crapkit claude-hook --protocol 1
 ```
 
-**In:** one Claude Code PostToolUse event, as JSON on stdin. **Out:** nothing on stdout,
-ever. Protocol 1 reserves stdout for a future JSON channel, and Claude Code parses stdout
-JSON on exit 0. There is no `--repo`: the root is the first `crapkit.toml` above the edited
-file. The plugin registers it async with a 20-second timeout, so no edit waits on it.
+**In:** one PostToolUse event, as JSON on stdin, in the shape the harness sends it.
+**Out:** for Claude Code, the advisory on stderr and nothing on stdout, ever, because Claude
+Code parses stdout JSON on exit 0. For Cursor, Copilot CLI and VS Code, the same lines as one
+JSON object on stdout ([Other harnesses](#other-harnesses)). There is no `--repo`: the root
+is the first `crapkit.toml` above the edited file. The plugin registers it async with a
+20-second timeout, so no Claude Code edit waits on it.
 
 | Exit | Means | Output |
 |---|---|---|
 | `0` | nothing to say | stdout and stderr both empty |
-| `2` | a changed function is over its ceiling, or a changed file went unjudged | three or more lines on stderr, which reach the model |
+| `2` | a changed function is over its ceiling, or a changed file went unjudged, in Claude Code | three or more lines on stderr, which reach the model |
+| `0` | the same, in Cursor, Copilot CLI or VS Code | one line of JSON on stdout carrying those lines; stderr empty |
 
 Captured from a real run, on a file whose `route` reached ccn 7 under a ceiling of 6:
 
@@ -1479,6 +1594,36 @@ the commit gate refuses this file once staged; change what the reason names so a
 
 A tracked file the edit left unchanged against `HEAD` stays silent, as the commit gate
 passes an unread file nobody staged.
+
+### Other harnesses
+
+The plugin's hook is one shell command, the one handler field every harness that loads Claude
+Code plugins keeps, so Cursor (which imports them), GitHub Copilot CLI and VS Code run it as
+written. Each names the edited file its own way and reads exit 2 its own way:
+
+| Harness | The event, and where it names the file | The advisory |
+|---|---|---|
+| Claude Code | `PostToolUse`, `tool_input.file_path` | stderr and exit 2; `asyncRewake` wakes the model with it |
+| GitHub Copilot CLI | `PostToolUse`, `tool_input.path` | JSON on exit 0: Copilot shows exit 2's stderr to the user and never to the model |
+| Cursor | `postToolUse`, `tool_input.file_path` | JSON on exit 0: Cursor reads exit 2 as a deny |
+| VS Code | `PostToolUse`, `tool_input.filePath`, each `replacements[].filePath`, or the file lines of an `apply_patch` | JSON on exit 0: VS Code reads exit 2 as a blocking error |
+| Codex | none: the plugin's Codex manifest registers no hook, since Codex reports an edit as `apply_patch` patch text | none |
+
+The JSON carries the advisory under both keys those three read, top-level `additionalContext`
+for Copilot CLI and Cursor, and the nested one for VS Code:
+
+```json
+{"additionalContext": "crapkit advisory: 1 function(s) over ceiling 6 in app/m.py (the edit landed; nothing was blocked)\n  ccn 7  app/m.py:1  route( a , b , c , d )\nthe commit gate enforces this; decompose there or mark the debt", "hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": "..."}}
+```
+
+VS Code runs a plugin's hooks on every tool call and ignores the `Edit|Write` matcher, so the
+hook applies it there: only VS Code's tools that write a file are judged (`create_file`,
+`replace_string_in_file`, `insert_edit_into_file`, `multi_replace_string_in_file`,
+`apply_patch`), and a read or a terminal call beside a breaching file stays silent.
+
+Every harness starts it on every edit, whatever the file type. An edit to a file whose suffix
+crapkit does not measure (see [Languages](https://github.com/JeanFrancoisGagne/crapkit#languages))
+stops at that check, before any config is read.
 
 It judges the functions the edit touched, not the whole file. Judging the file would fire on
 every edit in a repo with seeded debt and say nothing new. An untracked file is one
@@ -1529,7 +1674,9 @@ which is what keeps the fallback cheap enough to pay per shell call. The status 
 arrives as its files rather than as one collapsed `?? newdir/` row.
 
 The shipped plugin registers `Edit|Write` only. A `Bash` matcher is the consumer's choice: a
-second entry in your own settings hooks, same command, matcher `Bash`.
+second entry in your own settings hooks, same command, matcher `Bash`. The fallback answers
+the shell tool by name, `Bash` (Cursor maps that matcher onto its `Shell`), so a VS Code
+terminal call, which reaches the hook whatever the matcher says, never scans the tree.
 
 ```json
 {
@@ -1557,7 +1704,7 @@ Five rungs, each exiting 0 with both streams empty. Any uncaught exception does 
 | Rung | Silent when |
 |---|---|
 | protocol | `--protocol` is anything but `1` |
-| event | stdin is not one JSON object, or not a `PostToolUse` carrying `tool_input.file_path` or a `tool_input.command` |
+| event | stdin is not one JSON object, or not a `PostToolUse` (`postToolUse` from Cursor) naming the file it wrote or a shell tool's `tool_input.command`, or the file it names has a suffix crapkit does not measure |
 | repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config. On a `Bash` event: no git repo above the command's `cwd`, or no changed `*.py` fresh enough to judge |
 | git state | mid-rebase, mid-merge or mid-cherry-pick |
 | verdict | no scope claims the file, a reader read it and found no functions, no changed function is over the ceiling, or every one that is carries a ratchet mark |
@@ -1611,8 +1758,8 @@ A dependency-free stdio MCP server: JSON-RPC 2.0, one message per line. The hand
 negotiates the protocol revision: a client's offer of `2025-06-18`, `2025-03-26` or
 `2024-11-05` is spoken verbatim, and anything else gets `2025-06-18`, the newest this
 server implements. Read-only, and declared so: every tool carries `readOnlyHint`,
-`idempotentHint` and `destructiveHint: false` annotations, a `title` and an `outputSchema`
-whose fields are described one by one, `initialize` returns `instructions` naming the
+`idempotentHint` and `destructiveHint: false` annotations, a `title` and, for a
+`2025-06-18` client, an `outputSchema` whose fields are described one by one, `initialize` returns `instructions` naming the
 two-command prerequisite and the four tools a session starts with, and a tool whose text
 is a JSON object also carries it parsed as `structuredContent`. Every tool shells to the CLI's own surface, so the MCP
 view cannot drift from what the CLI reports, and nothing here writes a baseline, a
@@ -1631,15 +1778,57 @@ rejected. A kept process serves a `source` the session has already edited, and a
 
 With no `--repo`, the server serves the nearest `crapkit.toml` at or above the directory the
 client started it in ([ADR 0002](adr/0002-configuration-is-found-upward-nearest-wins.md)),
-so a globally registered server started in a monorepo workspace serves the root
-configuration that claims the workspace; a tool's `repo` argument is walked the same way,
-and a `.git` entry without a configuration stops the walk. A given `--repo` names an exact
-root, as on every subcommand, and each tool's command runs at the root the server found, so
-`path` stays repo-relative wherever the server was started. In a directory with no
-`crapkit.toml` at or above it the server still starts and answers `initialize` and
-`tools/list`. Each `tools/call` there comes
+so a server started in a monorepo workspace serves the root configuration that claims the
+workspace; a tool's `repo` argument is walked the same way, and a `.git` entry without a
+configuration stops the walk. A given `--repo` names an exact root, as on every
+subcommand: the server serves that directory or refuses it with `no crapkit.toml in
+<dir>`, and none of the rules below replaces it. Each tool's command runs at the root the
+server found, so `path` stays repo-relative wherever the server was started.
+
+Not every client starts the server in the workspace. VS Code starts a server from the
+user profile's `mcp.json` in the home directory and a plugin's server in the plugin's
+directory, and GitHub Copilot CLI starts a plugin's server in
+`~/.copilot/installed-plugins/<marketplace>/<plugin>`. Three rules cover them:
+
+- A start directory at or below the plugin directory the client names in `PLUGIN_ROOT`,
+  `COPILOT_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT` serves nothing, and the server does not
+  walk up from it. A plugin loaded from a crapkit checkout would otherwise find crapkit's
+  own `crapkit.toml` above it and serve crapkit's repo.
+- When the start directory serves nothing and the client declares the `roots`
+  capability, the server asks it for `roots/list` once the client sends
+  `notifications/initialized`, and again after `notifications/roots/list_changed`. It
+  serves the first workspace folder a `crapkit.toml` at or above it claims. A call that
+  arrives before the answer waits for it, up to 10 seconds. VS Code answers with the open
+  folders.
+- After the client's folders, the server serves the folder its GitHub Copilot CLI session
+  works in. Copilot CLI declares no roots, and it moves a plugin server's `cwd` back into
+  the plugin's install directory when the plugin's config names one outside it, so nothing
+  the client sends names the workspace. It gives every MCP server
+  `COPILOT_AGENT_SESSION_ID`, and the session keeps its working directory as `cwd:` in
+  `session-state/<id>/workspace.yaml` under `COPILOT_HOME` (`~/.copilot` by default). The
+  server reads it at each call and walks up from it, so a session moved with `/cwd` is
+  followed.
+
+When no session record names a folder either (a Copilot CLI older than the
+`COPILOT_AGENT_SESSION_ID` variable, or a config directory set with the deprecated
+`--config-dir` instead of `COPILOT_HOME`), the `initialize` instructions and each tool
+result ask the model to pass the workspace's absolute path as the tool's `repo` argument.
+Copilot CLI 1.0.88 leaves a server's instructions out of the model's prompt in a
+`copilot -p` session, so there the tool result is the text the model reads:
+
+```
+this crapkit MCP server started in /home/me/.copilot/installed-plugins/crapkit/crapkit, the plugin's install directory, not in your workspace, and the client names no workspace folders. Pass this tool a `repo` argument with the absolute path of the repo you want scored.
+```
+
+Where nothing claims the start directory or any folder, the server still starts and
+answers `initialize` and `tools/list`. Each `tools/call` there comes
 back as a tool result, not a JSON-RPC error, and that result carries `isError: true` with
-text naming the missing config and `crapkit init`:
+text naming the missing config and `crapkit init`. When the client named folders, the
+text names them after the start directory
+(`no crapkit.toml in /home/me or in the workspace folders the client named (/home/me/notes) - nothing measured here. ...`),
+and a Copilot CLI plugin's server names the session's folder in place of its install
+directory
+(`no crapkit.toml in the folder the GitHub Copilot CLI session works in (/home/me/notes) - nothing measured here. ...`):
 
 ```json
 {"jsonrpc": "2.0", "id": 3, "result": {"content": [{"type": "text", "text": "no crapkit.toml in .../noconfig - nothing measured here. Run `crapkit init` in the repo you want scored, or pass this tool a `repo` argument (or start the server with --repo) pointing at one."}], "isError": true}}
@@ -1649,7 +1838,9 @@ Both halves are deliberate. The result keeps the client's session alive, so a gl
 registration never turns into a dead server in unmeasured repos. `isError` stays true so
 nothing reads an unmeasured directory as a repo with nothing to report.
 
-Client wiring:
+Client wiring: each agent reads its own file, key and fields, and
+[Wiring crapkit into your agent](harnesses.md) gives the block for each of 27, with where it
+starts the server and what environment it passes. This is the `mcpServers` form:
 
 ```json
 {
@@ -1661,6 +1852,19 @@ Client wiring:
   }
 }
 ```
+
+It pastes as it is into Claude Code's `.mcp.json`, Cursor, Kiro, Junie and oh-my-pi; Cline
+takes it with `"timeout": 60` added, and Gemini CLI and Qwen Code with `"trust": true`,
+without which a headless `gemini -p` or `qwen -p` cannot call the tools. OpenCode, Amp and VS Code's
+`.vscode/mcp.json` read other keys and ignore this block without an error, so take theirs
+from the page above.
+
+A client that expands variables in this file can pass one, such as Cursor's
+`${workspaceFolder}`. A client that does not passes the variable itself: the Cursor agent
+CLI expands only `${NAME}` and `${env:NAME}`. A `--repo` that still holds `${...}` is
+ignored, the server serves as if none was given, and it says so on stderr:
+
+    crapkit mcp: --repo '${workspaceFolder}' holds a variable the MCP client did not expand; serving the crapkit.toml at or above the directory the client started this server in (/home/me/repo) instead. Give --repo an absolute path, or drop it from the client's config.
 
 Every tool also accepts a `repo` argument that overrides the server's default, so one server
 can serve several checkouts.
@@ -1682,7 +1886,32 @@ can serve several checkouts.
 
 Results arrive as MCP text content, and every tool's text is the payload of the CLI's
 `--json` form: parse it, or read `structuredContent`, which carries the same object parsed
-whenever the call exited 0. `isError` is true whenever the underlying CLI call exited
+whenever the call exited 0 and the client negotiated `2025-06-18`, the revision that defines
+the field. A client on `2024-11-05` or `2025-03-26` gets the text alone, and `tools/list`
+lists no `outputSchema` to it: a client that holds a result to a listed schema, such as one
+on the TypeScript SDK 1.12, would find no `structuredContent` to check.
+
+One answer is 7,500 characters or shorter, counted as the text takes them inside a client's
+JSON of the result. Cline keeps 8,000 characters of that JSON and cuts the middle out, and a
+brief on a 300-line function ran to 15 KB and more. A longer answer loses the end of its
+list fields, largest first, then of its string fields, such as a brief's `source`, then
+of its objects, the deepest first; a field inside an object counts as much as one at the
+top, so `check_gate` cuts `gate.breaches` and keeps `gate.ok`. Each cut field keeps its
+start, a list's elements are kept or dropped whole, and the text and `structuredContent`
+stay the same object. It then carries `truncated`: `fields` names each cut field by its
+keys joined with dots and gives what it `kept` and what it had (`of`), elements for a
+list, entries for an object and characters for a string, and `full` is the CLI command
+that prints the whole answer:
+
+```json
+"truncated": {"fields": {"active": {"kept": 19, "of": 50}}, "full": "crapkit worklist --top 50 --json --repo /home/me/app"}
+"truncated": {"fields": {"functions": {"kept": 0, "of": 61}, "gate.breaches": {"kept": 34, "of": 60}}, "full": "crapkit rescore --gate calc/big.py --json --repo /home/me/app"}
+```
+
+A field shorter than 500 characters, such as a path or a commit, is never cut. A failing
+`check_config`'s report is cut the same way and stays a tool error with no
+`structuredContent`.
+`isError` is true whenever the underlying CLI call exited
 non-zero, and then the text is what the CLI printed: for `doctor` that is still the JSON
 report (it exits 1 on any FAIL, so a failing `doctor` answers JSON text with `isError: true`
 and no `structuredContent`); for the other `--json` tools it is the [error object](#errors)
@@ -1699,7 +1928,16 @@ hand the CLI U+FFFD in place of each byte that is not UTF-8. `get_function_brief
 do, with the exit-3 error object and its `unread_files` (`isError: true`), which the server
 also builds without starting the CLI. `isError` is also
 true in the cases where no CLI call runs at all: the missing-config result above, an
-unknown tool name, and an argument the tool's own table refuses.
+unknown tool name, and an argument the tool's own table refuses. A 0.5.x tool name is
+unknown too, and its answer names the tool 0.6.0 renamed it to:
+`unknown tool 'worklist': renamed list_worklist in 0.6.0, with the same arguments and
+result; call list_worklist`. The last case is an upgrade under a running server. Each
+call first reads the version in the package directory the server was imported from, and
+when `pip install -U` has replaced it, every call answers the restart instead of loading
+the new release's files into the old process:
+`crapkit was upgraded from 0.8.0 to 0.8.1 while this MCP server ran, and the server still
+runs 0.8.0's code, which cannot load the new files. Restart the crapkit MCP server
+(reconnect it in your client, or start a new session), then call list_runs again.`
 
 Tool text is plain whatever colour variables the client sets. The CLI runs with the
 server's environment, so under `FORCE_COLOR` or `PYTHON_COLORS=1` a Python 3.13 or later
@@ -1716,13 +1954,17 @@ included, answer with the JSON type they came as,
 `arguments must be an object (got a number)`: MCP takes them by name. Only null or absent
 `arguments` read as none given; an empty string, `0`, `false` and `[]` get the same
 refusal, such as `arguments must be an object (got a boolean)`. The refusal names the
-MCP tool and the argument as the schema spells them, never the CLI command behind the tool. Each is a tool result with
+MCP tool and the argument as the schema spells them, never the CLI command behind the tool.
+One undeclared key is not refused: `wait_for_previous`, which Gemini CLI adds to every
+tool's schema for its own scheduler and forwards with the call. The server drops it and
+runs the call as it would without it. Each is a tool result with
 `isError: true` in the tool's own vocabulary, not the protocol's `-32602` error, following
 the precedent the missing-config answer set; the reason is recorded in
 [ADR 0001](adr/0001-mcp-invalid-arguments-are-tool-results.md). Protocol errors stay
 reserved for the protocol: an unknown method, or a `method` that is not a string, answers
-`-32601`, and an exception escaping the server answers `-32603` and the loop reads on, so no
-single call ends the session. `params` that are not an object name no tool to answer for, so
+`-32601`, a message with an `id` and no `method`, `result` or `error` answers `-32600`, and
+an exception escaping the server answers `-32603` and the loop reads on, so no single call
+ends the session. `params` that are not an object name no tool to answer for, so
 on `tools/call` and `initialize` they answer `-32602` with no result:
 `params must be an object naming the tool and its arguments (got an array)` and
 `params must be an object carrying protocolVersion (got a string)`; the session reads on.
@@ -1755,4 +1997,13 @@ before `initialize`. The mount is the checkout being scored. The image serves `/
 repo mounted anywhere else needs `--repo` on the command line, and an unmounted container
 answers each `tools/call` with the missing-config result above. The image carries git,
 because every tool shells to the CLI and the CLI reads git, and it serves as an
-unprivileged account.
+unprivileged account, uid 1000.
+
+A bind mount keeps the host's ownership. On a Linux host where your uid is not 1000, the
+tools still answer, but the churn and coupling caches they write under `.crapkit/` cannot
+be saved, so every call walks the git history again. Run the server as the checkout's
+owner instead:
+
+```
+docker run -i --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo crapkit
+```

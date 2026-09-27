@@ -24,8 +24,8 @@ import zlib
 from pathlib import Path
 from typing import NamedTuple
 
-from .keys import (claim_holds, claim_key, expression_group, expression_reader_current,
-                   key_names, position,
+from .keys import (claim_holds, claim_in_run, claim_key, expression_group,
+                   expression_reader_current, key_names, position,
                    refuse_ambiguous, split_ordinal)
 from .dup import SHINGLE_FORMAT
 from .snapshot import InventoryRow
@@ -327,6 +327,11 @@ def _code(ids: dict, name):
 def _name(names: dict, code):
     """The verdict string a stored code stands for."""
     return None if code is None else names[code]
+
+
+def _no_names(_path: str) -> frozenset:
+    """No run to spell claims against: each claim pairs by the name it saved."""
+    return frozenset()
 
 
 def _deflate(text: str) -> bytes:
@@ -1375,13 +1380,18 @@ class SnapshotStore:
                  "created_at": ts, "handle": handle, "key_name": name, "key_version": version}
                 for cid, p, n, sha, ts, handle, name, version in cur]
 
-    def attempts_for(self, keys) -> dict[tuple[str, str], list[dict]]:
+    def attempts_for(self, keys, names_in=_no_names) -> dict[tuple[str, str], list[dict]]:
         """Every claim ever taken on each named function, oldest first.
 
         One query for the whole batch, filtered on the indexed path and paired
         up here: a packet run asks about N functions, and a query apiece is N
         round trips for what one path filter already returns. Every requested
         key is in the answer, so a function nobody ever claimed reads as [].
+
+        `names_in(path)` is every long_name the run the keys come from holds
+        there, so a claim taken before analysis version 11 on a nested def
+        pairs with that def under the name the run gives it
+        (keys.claim_in_run). Without it, claims pair by the name they saved.
         """
         wanted = list(dict.fromkeys(keys))
         found: dict[tuple[str, str], list[dict]] = {key: [] for key in wanted}
@@ -1391,18 +1401,18 @@ class SnapshotStore:
         cur = self._conn.execute(
             "SELECT path, long_name, handle, key_name, key_version, created_at, closed_at FROM attempts "
             f"WHERE path IN ({','.join('?' * len(paths))}) ORDER BY id", paths)
-        self._pair_attempts(cur, found)
+        self._pair_attempts(cur, found, names_in)
         return found
 
     @staticmethod
-    def _pair_attempts(rows, found: dict) -> None:
+    def _pair_attempts(rows, found: dict, names_in) -> None:
         grouped: dict[tuple, list] = {}
         for key in found:
             grouped.setdefault((key[0], split_ordinal(key[1])[0]), []).append(key)
         for path, name, handle, precise, version, opened, closed in rows:
-            claim = {"path": path, "long_name": name, "handle": handle, "key_name": precise,
-                     "key_version": version}
-            for key in grouped.get((path, name), ()):
+            claim = claim_in_run({"path": path, "long_name": name, "handle": handle,
+                                  "key_name": precise, "key_version": version}, names_in)
+            for key in grouped.get((path, claim["long_name"]), ()):
                 if claim_holds(claim, key):
                     found[key].append({"opened": opened, "closed": closed})
 
@@ -1688,21 +1698,44 @@ def _verify_blocker(run: dict, previous: dict | None) -> dict | None:
     return None if run["verdict_ok"] else run
 
 
-def pick_baseline(runs: list[dict]) -> BaselinePick:
-    """The newest trusted run no unanswered failed verify stands in front of.
+def anywhere(run: dict) -> bool:
+    """The `pick_baseline` predicate for a caller with no git to ask: every run counts."""
+    return True
 
-    One chronological walk remembers the newest clean candidate and the newest
-    refused one. A crashed verify changes neither trust nor the outstanding
-    failure. An explicit `verify --baseline ID` still skips this decision.
-    """
-    picked = BaselinePick(None, None, None)
-    blocker = None
+
+def _trusted_states(runs: list[dict]) -> list[tuple[dict, dict | None]]:
+    """Each trusted run, oldest first, with the failed verify that stood
+    unanswered in front of it when it was made (None when nothing did)."""
+    states, blocker = [], None
     for run in runs:
         blocker = _verify_blocker(run, blocker)
         if is_trusted(run):
-            picked = (BaselinePick(picked.run, run, blocker) if blocker
-                      else BaselinePick(run, None, None))
-    return picked
+            states.append((run, blocker))
+    return states
+
+
+def pick_baseline(runs: list[dict], behind=anywhere) -> BaselinePick:
+    """The newest trusted run behind HEAD that no unanswered failed verify stands in front of.
+
+    A crashed verify changes neither trust nor the outstanding failure. An
+    explicit `verify --baseline ID` still skips this decision.
+
+    `behind(run)` says whether the run's commit is at or behind HEAD. A store
+    keeps every branch's runs, and the newest trusted one can sit on a branch
+    HEAD does not contain: verify measured against it, then refused with exit 4
+    and blamed a rebase that never happened. The walk goes newest first and asks
+    only until the pick is made, because each answer can cost a git spawn.
+    Callers with no git to ask keep the default, which counts every run.
+    """
+    pick = BaselinePick(None, None, None)
+    for run, blocker in reversed(_trusted_states(runs)):
+        if not behind(run):
+            continue
+        if blocker is None:
+            return pick._replace(run=run)
+        if pick.skipped is None:
+            pick = BaselinePick(None, run, blocker)
+    return pick
 
 
 def outstanding_failure(runs: list[dict]) -> dict | None:

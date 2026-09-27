@@ -1,0 +1,96 @@
+# Zed: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Zed"
+kind = "app"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Zed"
+format = "zed-json"
+scope = "user"
+path = ".config/zed/settings.json"
+path_windows = "AppData/Roaming/Zed/settings.json"
+config = '''
+{
+  "context_servers": {
+    "crapkit": {
+      "source": "custom",
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "shell"
+# PATH comes from the login shell in the project directory, wherever Zed was launched from.
+path = "login-shell"
+windows = "powershell-c"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-11-25"
+discover_first = false
+client_name = "Zed"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = ""
+startup_seconds = 60
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "zed"
+version = "1.21.0"
+command = "zed"
+image = "gui"
+floor = ""
+headless = "Zed.log under xvfb"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "toggle the server off and on in the Agent panel's settings"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "inferred"
+"spawn.resolve" = "observed"
+"spawn.path" = "observed"
+"spawn.windows" = "inferred"
+"initialize.client" = "source"
+"initialize.sdk" = "source"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "observed"
+"hooks.loads" = "docs"
+"hooks.manifest" = "docs"
+"hooks.fields" = "docs"
+"hooks.events" = "docs"
+"hooks.matcher" = "docs"
+"hooks.exit2" = "docs"
+sources = ["https://zed.dev/docs/ai/mcp (context_servers, source custom)", "on Windows a context server starts through `powershell -C` without -NoProfile, so a profile that prints reaches the server's stdout", "lin-zed-xvfb (Zed 1.21.0, Zed.log at RUST_LOG=context_server=trace): the server starts in the project directory through `sh -c` with the login shell's PATH, so a crapkit on the launching PATH only fails with '/bin/sh: 1: crapkit: not found' and 'crapkit context server failed to start: Context server request timeout' after 60 s; with crapkit in ~/.local/bin and the Debian ~/.profile it offers 2025-11-25 as 'Zed' and lists 12 tools"]

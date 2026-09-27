@@ -6,6 +6,7 @@ gained the ratchet tail those exact steps write, `rescore --gate` a closing
 verdict line, and none of the pages followed. Each check here takes the line
 from the code that prints it, then looks for it on the page.
 """
+import html
 import json
 import re
 from pathlib import Path
@@ -65,6 +66,26 @@ def test_each_doctor_report_opens_with_the_resources_line(page, repo, capsys):
     assert reports, f"{page} prints no doctor report"
     for report in reports:
         assert re.fullmatch(shape, report[0]), (page, report[:2])
+
+
+def _verdict_of(report: list[str]) -> str:
+    from crapkit.cli.admin import _doctor_verdict
+    from crapkit.doctor import Finding
+
+    return _doctor_verdict([Finding(line[:4].strip(), line[5:]) for line in report
+                            if line.startswith(FINDINGS)])
+
+
+@pytest.mark.parametrize("page", DOCTOR_PAGES)
+def test_each_doctor_report_closes_on_the_verdict_its_findings_print(page):
+    """The closing line counts the WARNs above it since a container's lane
+    WARN closed on a bare "no problems found"; a report still showing the bare
+    line under a WARN is one the reader's terminal no longer prints."""
+    reports = [b for b in _blocks(_page(page), "crapkit doctor") if b and b[-1].startswith("doctor:")]
+
+    assert reports, f"{page} prints no doctor verdict"
+    for report in reports:
+        assert report[-1] == _verdict_of(report), (page, report[-2:])
 
 
 def test_the_quickstarts_verify_ok_lines_carry_the_ratchet_tail_their_steps_write():
@@ -175,3 +196,90 @@ def test_the_lanes_page_quotes_the_held_line_tune_prints_for_its_testpath_lanes(
 
     assert held.startswith("# held at 1: "), held
     assert f"\n{held}\n" in _page("docs/lanes.md"), held
+
+
+# --- the next step worklist and seed end with -----------------------------------
+
+HANDBOOK = "docs/handbook.html"
+TRANSCRIPT_PAGES = ("README.md", HANDBOOK,
+                    *sorted(str(p.relative_to(ROOT)).replace("\\", "/")
+                            for p in (ROOT / "docs").glob("*.md")))
+
+
+def _as_typed(lines: list[str]) -> list[str]:
+    """The lines as the pages spell crapkit: the console script a reader types."""
+    from crapkit.invocation import _self
+
+    return [line.replace(_self(), "crapkit") for line in lines]
+
+
+def _page_text(rel: str) -> str:
+    """The page as a reader sees it. The handbook is HTML: each <pre> block
+    becomes a fence, tags go, and `&gt;` reads as `>` again."""
+    text = _page(rel)
+    if rel.endswith(".html"):
+        text = re.sub(r"</?pre\b[^>]*>", "\n```\n", text)
+        text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return text
+
+
+def _outputs(page: str, prefix: str) -> list[tuple[str, list[str]]]:
+    lines = _page_text(page).splitlines()
+    return [(page, _output_under(lines[i + 1:])) for i, line in enumerate(lines)
+            if line.startswith(f"$ {prefix}")]
+
+
+def _printed_blocks(prefix: str, opening: str) -> list[tuple[str, list[str]]]:
+    """(page, output) for every `$ <prefix>...` whose output opens with `opening`."""
+    found = [block for page in TRANSCRIPT_PAGES for block in _outputs(page, prefix)]
+    return [(page, block) for page, block in found if _opens_with(block, opening)]
+
+
+def _opens_with(block: list[str], opening: str) -> bool:
+    return bool(block) and block[0].startswith(opening)
+
+
+def _worklist_endings(root: Path, header: str) -> list[list[str]]:
+    """What worklist prints last for the run its header names: over an
+    inventory run, and over a trusted run before and after the seed."""
+    from types import SimpleNamespace
+
+    from crapkit.cli.queue import _worklist_next
+
+    run_id = int(re.search(r"\(run (\d+),", header).group(1))
+    cfg, marks = SimpleNamespace(ratchet_file=MARKS), root / MARKS
+    marks.unlink(missing_ok=True)
+    endings = [_worklist_next(root, cfg, {"id": run_id, "kind": kind})
+               for kind in ("inventory", "coverage")]
+    marks.write_text("", encoding="utf-8")
+    endings.append(_worklist_next(root, cfg, {"id": run_id, "kind": "coverage"}))
+    return [_as_typed(end) for end in endings]
+
+
+def _ends_as_printed(root: Path, block: list[str]) -> bool:
+    return any(block[-len(end):] == end for end in _worklist_endings(root, block[0]))
+
+
+def test_every_worklist_transcript_ends_with_the_step_worklist_prints(tmp_path):
+    """worklist printed no next step, and the pages showed it that way; a page
+    that stops at the rows now shows a run the CLI no longer prints. The
+    handbook is one of those pages: its day-one story runs worklist after
+    `inventory`, where the step is `coverage`."""
+    blocks = _printed_blocks("crapkit worklist", "worklist @")
+
+    assert len(blocks) >= 6, blocks
+    assert HANDBOOK in {page for page, _ in blocks}, "the handbook's worklist was not read"
+    assert [(page, block[-2:]) for page, block in blocks
+            if not _ends_as_printed(tmp_path, block)] == []
+
+
+def test_every_seed_transcript_under_the_running_metric_ends_with_commit_then_verify(capsys):
+    from crapkit.cli.ratchet_cmds import _print_seed_next
+
+    _print_seed_next("seed", MARKS, "")
+    [after] = _as_typed(capsys.readouterr().out.splitlines())
+    seeds = [(page, block) for page, block in _printed_blocks("crapkit ratchet seed", f"{MARKS}: added")
+             if "was measured under" not in block[0]]
+
+    assert len(seeds) >= 6, seeds
+    assert [(page, block[-1]) for page, block in seeds if block[-1] != after] == []

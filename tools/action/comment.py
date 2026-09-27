@@ -149,15 +149,23 @@ def _first_line(text) -> str:
 
 
 _ALL_FAILED = "every lane failed"
+# The refusal crapkit prints where the directory it runs in holds no
+# crapkit.toml. In a workflow the step that moves it is this action's input.
+_NO_CONFIG = "no crapkit.toml at "
 
 
 def _error_line(error: dict) -> str:
-    """The error object's first line. When every lane failed, the CLI's `the
+    """The error object's first line, with the CLI's own next step swapped for
+    the one a workflow author can take. When every lane failed, the CLI's `the
     errors are above` means its stderr, which lands in the job log; nothing sits
-    above the line in a pull request comment."""
+    above the line in a pull request comment. With no crapkit.toml where
+    coverage ran, a monorepo job left out `working-directory`."""
     line = _first_line(error.get("message"))
     if line.startswith(_ALL_FAILED):
         return f"{line.split(';')[0]}; the lane errors are in the job log"
+    if line.startswith(_NO_CONFIG):
+        return (f"{line.split(';')[0]}; set the action's `working-directory` input to the "
+                "directory that holds crapkit.toml")
     return line
 
 

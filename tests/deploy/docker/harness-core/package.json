@@ -1,0 +1,13 @@
+{
+  "name": "crapkit-deploy-harness-core",
+  "private": true,
+  "description": "Harness CLIs in the :core deploy image. Versions come from tools/deploy/pins.toml; floors install under an alias named <pins key>-<version>.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.281",
+    "@openai/codex": "0.156.1",
+    "claude-code-2.1.139": "npm:@anthropic-ai/claude-code@2.1.139",
+    "claude-code-2.1.138": "npm:@anthropic-ai/claude-code@2.1.138",
+    "codex-0.131.0": "npm:@openai/codex@0.131.0",
+    "codex-0.121.0": "npm:@openai/codex@0.121.0"
+  }
+}

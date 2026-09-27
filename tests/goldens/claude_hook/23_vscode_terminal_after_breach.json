@@ -1,0 +1,28 @@
+{
+  "case": "vscode_terminal_after_breach",
+  "why": "VS Code's terminal tool reaches the hook whatever the matcher says, right after the edit that wrote the breach. The working-tree scan is the Bash half a user registers; a terminal call in VS Code did not ask for it, and its exit 2 would block the tool result.",
+  "fixture": "measured_breach",
+  "argv": [
+    "claude-hook",
+    "--protocol",
+    "1"
+  ],
+  "payload": {
+    "timestamp": "2026-09-25T17:00:51.656Z",
+    "hook_event_name": "PostToolUse",
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "cwd": "{REPO}",
+    "tool_name": "run_in_terminal",
+    "tool_input": {
+      "command": "python -m pytest",
+      "explanation": "Run the tests",
+      "isBackground": false
+    },
+    "tool_response": "",
+    "tool_use_id": "call_3"
+  },
+  "expect": {
+    "exit": 0,
+    "stderr": []
+  }
+}

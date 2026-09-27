@@ -1,0 +1,91 @@
+# oh-my-pi: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "oh-my-pi"
+kind = "cli"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "oh-my-pi"
+format = "mcpservers-json"
+scope = "project"
+path = ".omp/mcp.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "execvp"
+windows = "cwd-first"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-11-25"
+discover_first = false
+client_name = "omp-coding-agent"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = ""
+startup_seconds = 0
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "omp"
+version = "18.3.0"
+command = "omp"
+image = "full"
+floor = ""
+headless = "omp --mode rpc: /mcp test crapkit"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "`/mcp reload`"
+autoupgrade = false
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
+"spawn.resolve" = "source"
+"spawn.windows" = "source"
+"initialize.client" = "source"
+"initialize.sdk" = "source"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "inferred"
+"hooks.loads" = "source"
+"hooks.manifest" = "source"
+"hooks.fields" = "source"
+"hooks.events" = "source"
+"hooks.matcher" = "source"
+"hooks.exit2" = "source"
+sources = ["@oh-my-pi/pi-coding-agent 18.3.0 src/mcp/types.ts: MCP_PROTOCOL_VERSION 2025-11-25", "src/mcp/transports/stdio.ts: on Windows the command is searched in cwd before PATH", "src/discovery/claude-plugins.ts loads a Claude plugin's .mcp.json; nothing reads hooks.json", "src/mcp/config-writer.ts: omp's own servers live in .omp/mcp.json at project or user level; `/mcp test` sees only those", "calibrate.py: `/mcp test crapkit` in rpc mode answers 'connected (12 tools)' in crapkit-deploy:full", "calibrate.py 2026-09-25 against omp/18.3.0: spawn.cwd, spawn.env, initialize.protocol, initialize.discover_first, initialize.client_name observed as the profile says"]

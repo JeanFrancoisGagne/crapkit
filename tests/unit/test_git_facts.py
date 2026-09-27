@@ -33,7 +33,7 @@ def counted(monkeypatch) -> dict:
     monkeypatch.setattr(gitio, "head_commit", bump("head", "c0ffee1234567890"))
     monkeypatch.setattr(gitio, "status_names", bump("status", []))
     monkeypatch.setattr(gitio, "diff_names_since", bump("diff", []))
-    monkeypatch.setattr(gitio, "is_ancestor", bump("ancestor", True))
+    monkeypatch.setattr(gitio, "ancestry", bump("ancestor", True))
     return calls
 
 
@@ -115,7 +115,7 @@ def test_line_display_withholds_unproved_artifact_locations(tmp_path, counted, m
         write_stamps(tmp_path, {lane.artifact: {"commit": "beef" * 10,
                      "refused_mtime_ns": (tmp_path / lane.artifact).stat().st_mtime_ns}})
     elif reason == "lost-history":
-        monkeypatch.setattr(gitio, "is_ancestor", lambda *_args: False)
+        monkeypatch.setattr(gitio, "ancestry", lambda *_args: False)
     else:
         def unavailable(*_args):
             raise GitError("git unavailable")

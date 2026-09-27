@@ -15,7 +15,8 @@ Every command below runs as `crapkit <sub>` (console script) or
 `python -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
 nearest `crapkit.toml` at or above the working directory
 (docs/adr/0002-configuration-is-found-upward-nearest-wins.md), except `claude-hook`, which
-reads its root from the hook payload on stdin.
+reads its root from the hook payload on stdin. A leading `~` in PATH is your home directory
+even where no shell expands it: cmd.exe, or an MCP client's `args`.
 
 ---
 
@@ -35,7 +36,8 @@ and `commands.verify` come back filled in for this file and this scope; run them
 given rather than retyping them, which is how a lane flag or a scope's own test template
 gets dropped. They are spelled as the console script (`crapkit rescore PATH --gate`),
 which is the spelling that resolves from an activated venv on Windows: bare `python`
-there can reach the WindowsApps stub or the base interpreter the venv wraps.
+there can reach the WindowsApps stub or the base interpreter the venv wraps. A packet
+built under uvx spells them `uvx crapkit ...`, because uvx puts no `crapkit` on PATH.
 
 `commands.refresh` is the fourth string: it creates a `coverage` run.
 Automatic reuse requires the same clean HEAD and unchanged configuration,
@@ -312,7 +314,9 @@ summary line splits them. In a shared checkout, dirty findings may not be yours.
 ## The advisory hook
 
 With the Claude Code plugin installed, `crapkit claude-hook` runs after every edit you
-make and writes three lines to stderr when that edit pushed a function over its ceiling:
+make and writes three lines to stderr when that edit pushed a function over its ceiling.
+In Cursor, Copilot CLI and VS Code, which load the same plugin, the same three lines
+arrive as added context instead, and the hook exits 0:
 
     crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)
       ccn 9  calc/grade.py:67  curve( scores , mode , floor , ceiling , skip_none )
@@ -412,7 +416,8 @@ not.
 
 A staged file above the crapkit root is outside the diff by design, and the gate does not
 name it. `.git` is found by walking up from the root, so the HEAD fast path fires down
-here too.
+here too. The commit hook needs no `--repo`: git runs it at the top, and with no
+`crapkit.toml` there the gate runs in each root below that owns a staged file.
 
 ## Which scope owns a file
 
@@ -598,7 +603,8 @@ marks instead of hand-resolving them, which is how a mark silently rises.
 
     crapkit mcp --repo /abs/path/to/repo
 
-Stdio JSON-RPC, newline-delimited, no SDK dependency. Client config:
+Stdio JSON-RPC, newline-delimited, no SDK dependency. Client config, in the `mcpServers`
+form Claude Code and Cursor read:
 
     {
       "mcpServers": {
@@ -609,11 +615,25 @@ Stdio JSON-RPC, newline-delimited, no SDK dependency. Client config:
       }
     }
 
+Other agents take other keys and fields: OpenCode, Amp and VS Code ignore this block
+without an error, and a headless Gemini CLI or Qwen Code calls none of the tools without
+`"trust": true`.
+[docs/harnesses.md](docs/harnesses.md) gives the block for each agent.
+
 `--repo` names an exact root, as on every subcommand; without it the server walks up from
 where it started, and a tool's optional `repo` argument overrides the root per call and is
-walked the same way (ADR 0002). `initialize` negotiates the protocol revision (a client's
-`2025-06-18`, `2025-03-26` or `2024-11-05` is echoed back; anything else is answered with
-`2025-06-18`) and reports server name `crapkit`.
+walked the same way (ADR 0002). A server started in its plugin's install directory (the
+client's `PLUGIN_ROOT`, `COPILOT_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT`) never walks up from
+there, and one whose start serves nothing asks a client that declares `roots` for its
+workspace folders and serves the first one a `crapkit.toml` claims: VS Code starts
+user-level servers in the home directory and plugin servers in the plugin directory.
+After those folders comes the `cwd` GitHub Copilot CLI records for the session in
+`$COPILOT_HOME/session-state/$COPILOT_AGENT_SESSION_ID/workspace.yaml`, since Copilot
+starts plugin servers in the install directory and declares no roots. A `--repo` start
+never asks and never falls back.
+`initialize` negotiates the protocol revision (a client's `2025-06-18`, `2025-03-26` or
+`2024-11-05` is echoed back; anything else is answered with `2025-06-18`) and reports
+server name `crapkit`.
 
 Twelve tools, every one the CLI command's `--json` form:
 
@@ -642,10 +662,19 @@ list, a string or a number get the same kind of answer, naming the JSON type the
 or absent `arguments` read as `{}`. `params` that
 are not an object on `tools/call` or `initialize` name no tool, so they answer `-32602` with
 no result (`params must be an object naming the tool and its arguments (got an array)`) and
-the session reads on; null or absent `params` read as `{}`. `ping` answers `{}`.
+the session reads on; null or absent `params` read as `{}`. `wait_for_previous`,
+which Gemini CLI adds to every call for its own scheduler, is dropped rather than refused.
+`ping` answers `{}`.
 An exception escaping the server answers `-32603` and the loop continues. A frame that is
-not one JSON object gets no reply, and the server reads the next line.
-`structuredContent` rides beside the text whenever the CLI exited 0; a `doctor` that finds
+not one JSON object gets no reply, and the server reads the next line. After a
+`pip install -U` under a running server, every call answers a tool result that names both
+versions and says to restart the server, instead of loading the new files into the old
+process.
+`structuredContent` rides beside the text whenever the CLI exited 0 and the client
+negotiated `2025-06-18`; a client on an older revision gets the text alone. An answer over
+7,500 characters loses the end of its largest lists, then of its strings, then of its
+objects, at any depth (`gate.breaches` counts as a field), and carries `truncated` with
+what each kept and the CLI command that prints it whole. A `doctor` that finds
 a FAIL exits 1 and answers its JSON text with `isError: true` and no `structuredContent`.
 `check_gate` is the one tool whose non-zero exit is an answer: exit 6 (a breach) comes
 back with `isError: false`, `structuredContent` and `gate.ok` false; exits 3, 4 and 5 stay
@@ -713,6 +742,30 @@ Use `--coverage` to combine both suites' branch coverage, test contexts and JUni
 results. Either suite failing makes the runner fail. Use `--suite unit` or
 `--suite e2e` to run one session, the way each Windows CI job does.
 
+The deploy suite under `tests/deploy` installs crapkit the way a user does, through each
+channel and harness, fresh and upgraded. A bare `pytest` leaves it uncollected. It runs
+through one entry point, which builds the pinned images (or reuses them), exports this
+tree into them and runs the cells with no network:
+
+```sh
+python tools/deploy/run.py --packet deploy-kit          # the kit's own tests, in crapkit-deploy:core
+python tools/deploy/run.py --cell lin-pip-start-py311   # one cell
+python tools/deploy/run.py --cadence push               # what ci.yml's two deploy-linux parts run between them
+python tools/deploy/run.py --native --os windows        # Windows or macOS, after tools/deploy/toolchain.py
+```
+
+ci.yml runs the push set in `deploy-linux`, `deploy-linux-native`, `deploy-windows` and
+`deploy-action`. deploy.yml runs the nightly, weekly, release and published sets, and runs
+on a pull request only when it changes an install surface or carries the `deploy-full`
+label. Before a release, push the release commit, dispatch the release set with
+`gh workflow run deploy.yml --ref main -f cadence=release` and wait for it to pass:
+`python tools/release/release.py check` refuses until a release-cadence run at HEAD is green. `tests/deploy/MAP.toml` maps every documented install command, channel, harness and
+upgrade source to its cells, and `tests/unit/test_deploy_map.py` fails on a doc fence the
+map does not cover. A new `@cell` goes into the map with its packet, cadence, os and image,
+and into a run that selects it; `tests/unit/test_deploy_map.py` and
+`tests/unit/test_deploy_workflows.py` name each cell missing from either.
+`tools/deploy/README.md` is the full guide.
+
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
 `cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives
 the CLI against real git repos in tmp dirs and asserts through the CLI only. Every call
@@ -735,7 +788,7 @@ clears tempfile's cached directory for the call. These files do:
 | File | What needs the process |
 |---|---|
 | `test_encoding_e2e.py` | the child's stdio encoding under a legacy code page |
-| `test_mcp_e2e.py`, `test_mcp_no_config.py` | the MCP server as a stdio process; any `mcp` call spawns, since the server reads a real stdin descriptor |
+| `test_mcp_e2e.py`, `test_mcp_no_config.py`, `test_mcp_without_home_e2e.py` | the MCP server as a stdio process; any `mcp` call spawns, since the server reads a real stdin descriptor |
 | `test_claude_hook_e2e.py` | the hook as Claude Code starts it: stdin payload, start time, PYTHONPATH shims |
 | `test_inventory_e2e.py`, `test_hook_prefetch_e2e.py`, `test_init_doctor_e2e.py`, `test_init_scoped_tests_e2e.py`, `test_ratchet_stamp_e2e.py`, `test_advisory_gate_coherence_e2e.py`, `test_absent_state_fixed_by_other_classes_e2e.py` | PYTHONPATH set through `env_extra` |
 | `test_claim_competition_e2e.py` | sessions racing for claims, three at once |
@@ -784,11 +837,14 @@ Shared rules belong to these modules:
 | Module | What it answers |
 |---|---|
 | `universe.py` | which scope owns a path. `owning_scope` is the only predicate, and the deepest declared `paths` entry wins. `scan_files` judges an unreadable name: refused when a scope takes it, else listed in `Universe.unreadable` for the command to name once (`left_out_lines`) |
+| `languages.py` | which file types crapkit measures, as suffixes per language. It imports nothing, so `claude-hook` screens an edited file against it before reading any config |
 | `config.py` | what words a lane command holds. `shell_words` and `shell_segments` read it the way the shell that runs it reads it |
 | `config_contract.py` | which configuration shapes, keys and enum values are valid. Runtime admission, doctor and the generated editor schema share this vocabulary |
 | `procs.py` | how an owned command starts, is waited on and is bounded. `run_owned` and `run_bounded` stop descendants before returning or releasing leases |
 | `_process_owner.py` | who holds registered command trees. `own_processes` yields the in-process or guardian owner; `prepare` names a command's registration before spawn and `register_then` takes it back unread; the owner's stderr goes to the `owner.log` `_log_path` names; `helper_flags` starts crapkit's own helper interpreters (the owner, the POSIX start gate) in this process's UTF-8 mode, and a lane's command never gets it |
+| `_package.py` | whether the package on disk is still the one this process imported. `upgraded_to` names the version an upgrade left there; the MCP server and `watch` import it at start and ask before loading anything else |
 | `resources.py` | how cold analysis pools share a nonblocking worker budget; cached and small calls skip pool coordination |
+| `userhome.py` | where the user's home is. `user_home` reads the environment, then the profile folder Windows reports; every cache, lock or plugin path under the home starts from it |
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
 | `lane_command.py` | how a lane starts and how its command reads. `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike; `child_environment` builds every lane, flake-retest and mutation child's environment; `expand_launchers` reads the launcher token (`{python}`, `{python:DIR}`) for this OS, and config calls it once as it builds the Lane |

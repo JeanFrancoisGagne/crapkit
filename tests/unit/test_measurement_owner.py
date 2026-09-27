@@ -87,3 +87,15 @@ def test_two_lane_outputs_sharing_a_filename_get_distinct_locks(tmp_path):
         return _output_lock(tmp_path / f".crapkit/cov/{lane_name}/coverage-final.json")
 
     assert lock_for("unit-fast") != lock_for("gateway-core")
+
+
+def test_output_locks_find_the_user_home_without_home_variables(tmp_path, without_home_variables):
+    """`crapkit coverage` died in _output_lock with `RuntimeError: Could not
+    determine home directory.` before any lane ran when the environment held no
+    USERPROFILE. The lock has to land where this user's other processes put
+    theirs, or two commands could own one artifact."""
+    from crapkit.lanes import _output_lock
+
+    lock = _output_lock(tmp_path / "coverage.json")
+    expected = without_home_variables / ".cache" / "crapkit" / "measurements"
+    assert os.path.normcase(lock.parent.parent) == os.path.normcase(expected)

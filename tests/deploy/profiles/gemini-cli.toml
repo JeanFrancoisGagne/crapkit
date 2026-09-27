@@ -1,0 +1,91 @@
+# Gemini CLI: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Gemini CLI"
+kind = "cli"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Gemini CLI"
+format = "mcpservers-json"
+scope = "user"
+path = ".gemini/settings.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "execvp"
+windows = "cross-spawn"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "ts-sdk"
+sdk = "sdk-1-29"
+protocol = "2025-06-18"
+discover_first = false
+client_name = "mcp-test-client"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = ""
+startup_seconds = 600
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = ["AfterTool"]
+matcher = "dropped"
+exit2 = "block"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "gemini-cli"
+version = "0.61.0"
+command = "gemini"
+image = "full"
+floor = ""
+headless = "gemini mcp list (trusted folder)"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "`/mcp refresh`, or a new session"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
+"spawn.resolve" = "observed"
+"spawn.windows" = "inferred"
+"initialize.client" = "observed"
+"initialize.sdk" = "observed"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "docs"
+"hooks.loads" = "inferred"
+"hooks.manifest" = "inferred"
+"hooks.fields" = "inferred"
+"hooks.events" = "docs"
+"hooks.matcher" = "inferred"
+"hooks.exit2" = "docs"
+sources = ["calibrate.py: shim record of `gemini mcp list` in crapkit-deploy:full; @modelcontextprotocol/sdk 1.30.1 in its node_modules", "`gemini mcp list` in an untrusted folder prints 'MCP servers are configured but disabled because this folder is untrusted' and suppresses user servers too", "https://geminicli.com/docs/hooks (AfterTool, exit 2)", "@google/gemini-cli 0.61.0 commands/mcp/list.ts: `gemini mcp list` gives each server 5 s (MCP_LIST_DEFAULT_TIMEOUT_MSEC) to connect unless its timeout (ms) is set; win-real-cli on a Windows host at full load saw crapkit behind the shim miss it once", "live calibration 2026-09-25: `gemini mcp list` in an untrusted folder shows 'Disabled' with a warning, and user-level servers are suppressed too", "live calibration 2026-09-25: .gemini/settings.json is read only when gemini starts in that directory: from repo/calc, `mcp list` and -p saw no server", "live calibration 2026-09-25: in an untrusted folder `mcp add` starts from an empty project map (a second add erased the first) and `mcp remove` prints 'not found', exits 0 and removes nothing; both work in a trusted folder", "live calibration 2026-09-25: headless -p in the default approval mode sends the model no tool that needs a confirmation (0 of 12) whatever readOnlyHint says; trust: true or --approval-mode yolo sends all 12, plan mode none; -p in an untrusted folder exits 55", "live calibration 2026-09-25: every MCP tool schema gains a wait_for_previous boolean, forwarded in the call's arguments", "live calibration 2026-09-25: 0.61.0 has no `gemini trust` subcommand (it runs as a prompt): --skip-trust, GEMINI_CLI_TRUST_WORKSPACE=true or the trust dialog; folder trust is on by default", "live calibration 2026-09-25: a call works offline with GOOGLE_GEMINI_BASE_URL, a placeholder GEMINI_API_KEY and security.auth.selectedType=gemini-api-key (the base URL alone selects gateway auth and -p exits 41); `mcp list` never calls tools/list, so a list-only cell sees no schema, trust or argument problem", "live calibration 2026-09-25: 0.61.0 rewrites general.disableAutoUpdate and disableUpdateNag into general.enableAutoUpdate and enableAutoUpdateNotification on first run (kit/sandbox.py QUIET_FILES writes the new keys)"]

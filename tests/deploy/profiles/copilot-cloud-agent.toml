@@ -1,0 +1,95 @@
+# Copilot cloud agent: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Copilot cloud agent"
+kind = "cloud"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Copilot cloud agent"
+format = "mcpservers-json"
+scope = "sdk"
+path = "repository-settings-mcp.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ],
+      "type": "local",
+      "tools": [
+        "*"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "execvp"
+windows = "none"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-11-25"
+discover_first = true
+client_name = "copilot-cli"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = "crapkit-"
+startup_seconds = 0
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "copilot-cli"
+version = "1.0.88"
+command = "copilot"
+image = "full"
+floor = ""
+headless = "lin-copilot-cloud-sim: setup steps, then the config under Copilot CLI"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "each task starts a fresh runner"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "inferred"
+"spawn.env" = "inferred"
+"spawn.resolve" = "inferred"
+"spawn.windows" = "docs"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "inferred"
+"initialize.discover_first" = "inferred"
+"initialize.client_name" = "inferred"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "inferred"
+"hooks.loads" = "inferred"
+"hooks.manifest" = "inferred"
+"hooks.fields" = "inferred"
+"hooks.events" = "inferred"
+"hooks.matcher" = "inferred"
+"hooks.exit2" = "inferred"
+sources = ["https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/extend-coding-agent-with-mcp (type local, tools, Linux runner)", "copilot-setup-steps.yml installs crapkit before the agent starts; the runner is a container, so crapkit's guard applies"]

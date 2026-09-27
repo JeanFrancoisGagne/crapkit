@@ -98,7 +98,7 @@ def test_a_python_the_lanes_own_path_supplies_is_the_one_probed(tmp_path, monkey
     """doctor's PATH leads to a python without pytest-cov; the lane's leads to one
     that reports it. The lane runs on its own PATH, so that is the python to ask."""
     good, bad = tmp_path / "lane-bin", tmp_path / "doctor-bin"
-    line = f"{_REPORT} {sys.executable} 9.9.1 9.9.2"
+    line = f"{_REPORT} {sys.executable} 9.9.1 9.9.2 9.9.3"
     _shim(good, "python", f"echo {line}", f"echo '{line}'")
     _shim(bad, "python", "exit /b 1", "exit 1")
     monkeypatch.setenv("PATH", os.pathsep.join([str(bad), os.environ.get("PATH", "")]))
@@ -109,7 +109,7 @@ def test_a_python_the_lanes_own_path_supplies_is_the_one_probed(tmp_path, monkey
 
     assert code == 0, out
     assert "cannot import pytest_cov" not in out
-    assert "lane 'py': python -> " in out and "(pytest 9.9.1, pytest-cov 9.9.2)" in out, out
+    assert "lane 'py': python -> " in out and "(pytest 9.9.1, pytest-cov 9.9.2, coverage 9.9.3)" in out, out
 
 
 def _record_launches(monkeypatch) -> list[tuple[str, dict]]:

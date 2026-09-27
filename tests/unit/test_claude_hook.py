@@ -7,6 +7,7 @@ these a broken rung and a working one look identical from outside.
 """
 import argparse
 import io
+import itertools
 import json
 import os
 import time
@@ -18,9 +19,9 @@ from crapkit.cli.parser import build_parser
 from crapkit.cli import main
 from crapkit.cli import claude_hook
 from crapkit.cli.claude_hook import (_advise, _advisory_lines, _breaches, _command_event,
-                                     _edited_file, _edited_path, _fresh, _fresh_python,
-                                     _judgeable, _marks_for, _repo_root, _sequencing,
-                                     _status_records, cmd_claude_hook)
+                                     _edited_files, _edited_path, _fresh, _fresh_python,
+                                     _judgeable, _marks_for, _measured, _repo_root,
+                                     _sequencing, _status_records, cmd_claude_hook)
 from crapkit.merge import FunctionRecord
 
 EVENT = {"hook_event_name": "PostToolUse", "tool_name": "Edit",
@@ -34,7 +35,7 @@ def record(name: str, ccn: int, start: int = 1, end: int = 16) -> FunctionRecord
 # --- rung 1: the payload -----------------------------------------------------
 
 def test_a_post_tool_use_edit_names_the_file_it_touched():
-    assert _edited_file(EVENT) == "/repo/calc/grade.py"
+    assert _edited_files(EVENT) == ["/repo/calc/grade.py"]
 
 
 @pytest.mark.parametrize("payload", [
@@ -45,9 +46,123 @@ def test_a_post_tool_use_edit_names_the_file_it_touched():
     {"hook_event_name": "PostToolUse", "tool_input": None},
     {"hook_event_name": "PostToolUse"},
     {"hook_event_name": "PostToolUse", "tool_input": {"file_path": 17}},
+    {"hook_event_name": "preToolUse", "tool_input": {"file_path": "/repo/a.py"}},
 ])
 def test_an_event_protocol_one_does_not_judge_names_no_file(payload: dict):
-    assert _edited_file(payload) == ""
+    assert _edited_files(payload) == []
+
+
+# --- rung 1, as the other harnesses that run the plugin's hook send it ---------
+#
+# The plugin's one handler also runs under GitHub Copilot CLI, Cursor (which
+# imports Claude Code plugins) and VS Code. Each names the edited file in its
+# own vocabulary, captured from the harness at the version named.
+
+# Copilot CLI 1.0.88: Claude's tool names, its own argument names.
+COPILOT_EDIT = {"hook_event_name": "PostToolUse", "session_id": "s", "timestamp": "t",
+                "cwd": "/repo", "tool_name": "Edit",
+                "tool_input": {"path": "/repo/calc/grade.py", "old_str": "a", "new_str": "b"},
+                "tool_result": {"result_type": "success"}}
+# Cursor 2026.09.23: the event name in camelCase, Edit and Write both as Write.
+CURSOR_WRITE = {"hook_event_name": "postToolUse", "conversation_id": "c", "cwd": "/repo",
+                "tool_name": "Write",
+                "tool_input": {"file_path": "/repo/calc/grade.py", "content": "b"}}
+# VS Code 1.139.0: its own tool names, `filePath`, every tool call whatever the matcher.
+VSCODE_REPLACE = {"hook_event_name": "PostToolUse", "session_id": "s", "timestamp": "t",
+                  "tool_name": "replace_string_in_file",
+                  "tool_input": {"filePath": "/repo/calc/grade.py", "oldString": "a",
+                                 "newString": "b"}}
+PATCH = ("*** Begin Patch\n*** Update File: /repo/calc/grade.py\n@@\n-a\n+b\n"
+         "*** Add File: /repo/calc/new.py\n+x = 1\n*** Delete File: /repo/calc/old.py\n"
+         "*** Update File: /repo/calc/moved.py\n*** Move to: /repo/calc/renamed.py\n"
+         "*** End Patch\n")
+
+
+@pytest.mark.parametrize("payload", [COPILOT_EDIT, CURSOR_WRITE, VSCODE_REPLACE],
+                         ids=["copilot-path", "cursor-postToolUse", "vscode-filePath"])
+def test_every_harness_names_the_edited_file_where_the_hook_finds_it(payload):
+    """Copilot's `path` and Cursor's camelCase event each read as no event at
+    all, so the hook exited 0 on every edit a Copilot or Cursor agent made."""
+    assert _edited_files(payload) == ["/repo/calc/grade.py"]
+
+
+def test_a_vscode_multi_replace_names_each_file_once():
+    replacements = [{"filePath": "/repo/calc/grade.py"}, {"filePath": "/repo/calc/grade.py"},
+                    {"filePath": "/repo/calc/other.py"}, "not an object"]
+    payload = dict(VSCODE_REPLACE, tool_name="multi_replace_string_in_file",
+                   tool_input={"explanation": "e", "replacements": replacements})
+
+    assert _edited_files(payload) == ["/repo/calc/grade.py", "/repo/calc/other.py"]
+
+
+def test_a_vscode_apply_patch_names_every_file_it_leaves_written():
+    """A deleted file has nothing left to judge. A moved one names both paths;
+    the old one is gone from disk by then and `_measured` drops it."""
+    payload = dict(VSCODE_REPLACE, tool_name="apply_patch",
+                   tool_input={"input": PATCH, "explanation": "e"})
+
+    assert _edited_files(payload) == ["/repo/calc/grade.py", "/repo/calc/new.py",
+                                      "/repo/calc/moved.py", "/repo/calc/renamed.py"]
+
+
+@pytest.mark.parametrize("tool,tool_input", [
+    ("read_file", {"filePath": "{FILE}", "startLine": 1, "endLine": 9}),
+    ("list_dir", {"path": "{DIR}"}),
+    ("run_in_terminal", {"command": "pytest", "explanation": "e", "isBackground": False}),
+    ("apply_patch", {"input": 17}),
+    ("multi_replace_string_in_file", {"replacements": "none"}),
+])
+def test_a_vscode_tool_that_writes_nothing_is_never_judged(tool, tool_input, tmp_path):
+    """VS Code runs the plugin's hook on every tool call and ignores its
+    `Edit|Write` matcher, so the hook applies it: a read, a listing or a terminal
+    command beside a breaching file is neither an edit nor the `Bash` event the
+    fallback answers."""
+    edited = _breaching_repo(tmp_path)
+    pointed = {key: str(value).replace("{FILE}", str(edited)).replace("{DIR}", str(edited.parent))
+               if isinstance(value, str) else value for key, value in tool_input.items()}
+    payload = dict(VSCODE_REPLACE, tool_name=tool, cwd=str(tmp_path), tool_input=pointed)
+
+    assert (claude_hook._advisory(payload), _command_event(payload)) == ([], False)
+
+
+def test_the_same_file_under_a_vscode_write_is_judged(tmp_path):
+    """Guards the case above: the breaching repo it reads does draw an advisory."""
+    edited = _breaching_repo(tmp_path)
+    payload = dict(VSCODE_REPLACE, cwd=str(tmp_path), tool_input={"filePath": str(edited)})
+
+    assert claude_hook._advisory(payload)[0].startswith("crapkit advisory: 1 function(s)")
+
+
+def test_a_file_of_a_type_crapkit_does_not_measure_is_never_judged(tmp_path):
+    """The plugin's per-file-type `if` rules skipped these before the spawn;
+    with one handler for every edit the hook screens them itself."""
+    for name in ("grade.py", "notes.md", "data.json"):
+        (tmp_path / name).write_text("x = 1\n", encoding="utf-8")
+    edited = [str(tmp_path / name) for name in ("grade.py", "notes.md", "data.json")]
+
+    assert _measured({}, edited) == [tmp_path / "grade.py"]
+
+
+def _touched(path: Path) -> str:
+    path.write_text("", encoding="utf-8")
+    return str(path)
+
+
+def test_every_type_the_language_map_names_is_judged(tmp_path):
+    """The screen and the map are one table, so a language added to the map is
+    advised on its first edit."""
+    from crapkit.universe import LANGUAGE_EXTENSIONS
+
+    extensions = list(itertools.chain.from_iterable(LANGUAGE_EXTENSIONS.values()))
+    edited = [_touched(tmp_path / f"x{extension}") for extension in extensions]
+
+    assert [path.suffix for path in _measured({}, edited)] == extensions
+
+
+def test_an_edited_file_gone_from_disk_is_not_judged(tmp_path):
+    """A patch that moved a file names its old path too; judging a path that
+    no longer exists would raise and silence the files beside it."""
+    assert _measured({}, [str(tmp_path / "gone.py")]) == []
 
 
 def test_a_relative_file_path_is_read_against_the_events_own_cwd():
@@ -167,7 +282,7 @@ def test_a_command_run_outside_any_git_repo_is_silent(tmp_path):
     the module's silence contract is built around."""
     payload = dict(BASH_EVENT, cwd=str(tmp_path))
 
-    assert claude_hook._advise_command(payload, claude_hook._Memory(None)) == 0
+    assert claude_hook._advise_command(payload, claude_hook._Memory(None)) == []
 
 
 def test_a_cwd_that_is_not_a_directory_names_no_top(tmp_path):
@@ -178,7 +293,20 @@ def test_a_cwd_that_is_not_a_directory_names_no_top(tmp_path):
 
 def test_a_non_command_event_takes_no_fallback_judgement():
     assert claude_hook._advise_command({"hook_event_name": "PostToolUse",
-                                        "tool_input": {}}, claude_hook._Memory(None)) == 0
+                                        "tool_input": {}}, claude_hook._Memory(None)) == []
+
+
+@pytest.mark.parametrize("tool", ["Bash", "Shell"])
+def test_the_shell_tool_under_each_name_a_harness_sends_is_a_command_event(tool):
+    """Claude Code and Copilot CLI send Bash; Cursor maps a Bash matcher onto its Shell tool."""
+    assert _command_event(dict(BASH_EVENT, tool_name=tool)) is True
+
+
+def test_a_command_string_under_another_tool_takes_no_fallback():
+    """Codex's apply_patch carries its patch in `command`, and VS Code's terminal
+    tool reaches the hook whatever the matcher says. Neither asked for the
+    working-tree scan the Bash half is registered for."""
+    assert _command_event(dict(BASH_EVENT, tool_name="apply_patch")) is False
 
 
 def test_the_fallback_caps_the_files_it_judges(monkeypatch, tmp_path):
@@ -647,3 +775,83 @@ def test_a_bash_written_file_is_judged_by_the_name_git_gives_it(tmp_path, capsys
     assert (line in err) if line else err == "", err
     assert (RENAME in err) is (line == UNREAD), err
     assert "gate:" not in err and "crapkit gate" not in err, err
+
+
+# --- where the advisory goes, per harness ---------------------------------------
+#
+# Exit 2's stderr is text for the model in Claude Code alone. Cursor reads it as
+# a deny, VS Code as a blocking error, and Copilot CLI shows it to the user and
+# not the model (1.0.88, a stub-model session: of stderr on exit 2, a nested
+# hookSpecificOutput, a systemMessage and a top-level additionalContext, only
+# the last reached the model request). So those three get exit 0 and one JSON
+# object carrying the text under both keys they read.
+
+def _run(payload: dict, capsys, monkeypatch) -> tuple[int, str, str]:
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    code = main(["claude-hook", "--protocol", "1"])
+    out, err = capsys.readouterr()
+    return code, out, err
+
+
+def _aimed(payload: dict, edited: Path, root: Path) -> dict:
+    """One of the recorded payloads, pointed at a breaching file on disk."""
+    tool_input = {key: str(edited) if key in ("file_path", "path", "filePath") else value
+                  for key, value in payload["tool_input"].items()}
+    return dict(payload, tool_input=tool_input, cwd=str(root))
+
+
+def test_claude_code_hears_the_advisory_through_exit_2_and_stdout_stays_empty(
+        tmp_path, capsys, monkeypatch):
+    edited = _breaching_repo(tmp_path)
+
+    code, out, err = _run(_aimed(EVENT, edited, tmp_path), capsys, monkeypatch)
+
+    assert (code, out) == (2, "")
+    assert err.startswith("crapkit advisory: 1 function(s) over ceiling 6 in calc/café.py"), err
+
+
+@pytest.mark.parametrize("payload", [COPILOT_EDIT, CURSOR_WRITE, VSCODE_REPLACE],
+                         ids=["copilot", "cursor", "vscode"])
+def test_every_other_harness_hears_it_as_context_on_exit_0(payload, tmp_path, capsys,
+                                                          monkeypatch):
+    """Nothing is denied, blocked or left on a terminal the model never reads."""
+    edited = _breaching_repo(tmp_path)
+
+    code, out, err = _run(_aimed(payload, edited, tmp_path), capsys, monkeypatch)
+
+    assert (code, err) == (0, "")
+    answer = json.loads(out)
+    context = answer["additionalContext"]
+    assert answer["hookSpecificOutput"] == {"hookEventName": "PostToolUse",
+                                            "additionalContext": context}
+    assert context.startswith("crapkit advisory: 1 function(s) over ceiling 6"), context
+    assert context.endswith("decompose there or mark the debt"), context
+
+
+def test_copilots_bash_half_hears_it_as_context_too(tmp_path, capsys, monkeypatch):
+    """The Bash entry a Copilot user adds to .claude/settings.json sends the
+    same `tool_result` key, so its fallback verdict takes the same channel."""
+    payload = dict(COPILOT_EDIT, tool_name="Bash", tool_input={"command": "python gen.py"})
+
+    assert claude_hook._reads_context(payload) is True
+    assert claude_hook._reads_context(BASH_EVENT) is False
+
+
+def test_the_json_channel_stays_ascii_whatever_the_console_code_page(tmp_path, capsys,
+                                                                    monkeypatch):
+    """stdout is the harness's pipe in the console's code page; an escaped
+    non-ASCII path survives any of them."""
+    edited = _breaching_repo(tmp_path)
+
+    _, out, _ = _run(_aimed(CURSOR_WRITE, edited, tmp_path), capsys, monkeypatch)
+
+    assert out.isascii() and json.dumps("calc/café.py")[1:-1] in out
+
+
+@pytest.mark.parametrize("payload", [EVENT, COPILOT_EDIT, CURSOR_WRITE, VSCODE_REPLACE],
+                         ids=["claude", "copilot", "cursor", "vscode"])
+def test_a_clean_edit_prints_nothing_on_either_channel(payload, tmp_path, capsys, monkeypatch):
+    edited = _breaching_repo(tmp_path)
+    edited.write_text("def calm(n):\n    return n\n", encoding="utf-8")
+
+    assert _run(_aimed(payload, edited, tmp_path), capsys, monkeypatch) == (0, "", "")

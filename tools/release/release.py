@@ -1,8 +1,11 @@
 """Bump, publish and verify crapkit's version surfaces from one table.
 
-Seven strings in five files say which version this is (pyproject, the package,
-three README lines, the plugin manifest, the registry manifest twice), and a
-release then has to reach six places (git tag, PyPI, GitHub release, plugin,
+Nineteen strings in eleven files say which version this is (pyproject, the
+package, four README strings, the Claude Code and Codex plugin manifests, the
+registry manifest twice, and the release tag nine Codex marketplace lines pin
+across README, adoption, upgrading, the handbook, the onboarding skill and
+agent-json.md, two of them inside doctor's quoted no-install line), and
+a release then has to reach six places (git tag, PyPI, GitHub release, plugin,
 Pages, the MCP registry, plus Glama's sync). Eight releases re-scripted that
 chain by hand and the surfaces drifted once. The table below is the one place
 the surfaces are named; `check` refuses a tree whose surfaces disagree, `bump`
@@ -91,8 +94,27 @@ SURFACES = (
     Surface("README.md", "rev: v{v}", 1),
     Surface("README.md", REPO_SLUG + "@v{v}", 2),
     Surface("plugin/.claude-plugin/plugin.json", '"version": "{v}"', 1),
+    Surface("plugin/.codex-plugin/plugin.json", '"version": "{v}"', 1),
     Surface("server.json", '"version": "{v}"', 2),
+    # The Codex marketplace lines pin the release tag: Codex reinstalls an
+    # unpinned marketplace's plugins from main at every start.
+    Surface("README.md", "--ref v{v}", 2),
+    Surface("docs/adoption.md", "--ref v{v}", 1),
+    Surface("docs/upgrading.md", "--ref v{v}", 1),
+    Surface("docs/handbook.html", "--ref v{v}", 2),
+    # The onboarding skill and agent-json.md also quote doctor's no-install
+    # line, which names the Codex line at this release's tag.
+    Surface("plugin/skills/crapkit-onboard/SKILL.md", "--ref v{v}", 2),
+    Surface("docs/agent-json.md", "--ref v{v}", 1),
 )
+
+# The deploy suite (.github/workflows/deploy.yml) installs the candidate the way
+# users do, through every channel and harness it models. A release waits for a
+# green run of its release cadence at the commit being released; the published
+# cadence then repeats the install from the real surfaces once they hold it.
+DEPLOY_WORKFLOW = "deploy.yml"
+DEPLOY_RELEASE_CADENCE = "release"
+DEPLOY_PUBLISHED_CADENCE = "published"
 
 # The contract files stage 2a runs on the tagged tree. Two of them read the
 # newest tag (the README rev contracts), which is why the tag comes first.
@@ -104,7 +126,7 @@ CONTRACT_FILES = (
     "tests/unit/test_precommit_contract.py", "tests/unit/test_schema_contract.py",
     "tests/unit/test_json_schema_version.py", "tests/unit/test_action_contract.py",
     "tests/unit/test_demo_docs_contract.py", "tests/unit/test_registry_manifest.py",
-    "tests/unit/test_generated_guidance.py",
+    "tests/unit/test_generated_guidance.py", "tests/unit/test_plugin_install_lines.py",
 )
 
 
@@ -228,6 +250,70 @@ def preflight(*, locate: Callable | None = None,
     catches it before stage 1."""
     return (_tooling_problems(locate or _module_origin)
             + _credential_problems(credential or _twine_credential))
+
+
+# --- the deploy gate ---------------------------------------------------------------
+
+def _gh() -> str:
+    """gh's path. A bare "gh" that is missing fails on Windows with a WinError
+    that names no program, so the gate names it first."""
+    found = shutil.which("gh")
+    if found is None:
+        raise ReleaseError("gh is not on PATH, so no run of deploy.yml can be read; install the "
+                           "GitHub CLI and run gh auth login")
+    return found
+
+
+def _deploy_runs(root: Path, head: str) -> list:
+    """deploy.yml's runs at `head`, as gh lists them."""
+    done = subprocess.run([_gh(), "run", "list", "--repo", GITHUB_REPO, "--workflow", DEPLOY_WORKFLOW,
+                           "--commit", head, "--json", "conclusion,displayTitle,event,url",
+                           "--limit", "100"], cwd=root, capture_output=True, text=True,
+                          timeout=READ_TIMEOUT)
+    if done.returncode:
+        raise ReleaseError(f"gh run list failed: {_first_line(done)}")
+    return json.loads(done.stdout or "[]")
+
+
+def _release_cadence(run: dict) -> bool:
+    """A run of deploy.yml that workflow_dispatch started with the release
+    cadence. The workflow's run-name puts the cadence in the title gh lists."""
+    return (run.get("event") == "workflow_dispatch"
+            and DEPLOY_RELEASE_CADENCE in str(run.get("displayTitle", "")).split())
+
+
+def _release_runs(root: Path, runs: Callable) -> tuple[str, list]:
+    head = _git(root, "rev-parse", "HEAD")
+    return head, [run for run in runs(root, head) if _release_cadence(run)]
+
+
+def _green(found: list) -> bool:
+    return any(run.get("conclusion") == "success" for run in found)
+
+
+def _run_label(run: dict) -> str:
+    return f"{run.get('conclusion') or 'not finished'} {run.get('url', '')}".rstrip()
+
+
+def _deploy_refusal(head: str, found: list) -> str:
+    seen = f" (release runs at this commit: {', '.join(map(_run_label, found))})" if found else ""
+    return (f"deploy gate: no green {DEPLOY_RELEASE_CADENCE}-cadence run of {DEPLOY_WORKFLOW} at "
+            f"{head[:12]}{seen}; push HEAD, run `gh workflow run {DEPLOY_WORKFLOW} --ref main "
+            f"-f cadence={DEPLOY_RELEASE_CADENCE}`, wait for it to pass, then rerun check")
+
+
+def deploy_gate(root: Path, *, runs: Callable | None = None) -> list[str]:
+    """One problem unless deploy.yml ran its release cadence green at HEAD.
+
+    `check` is stage 1's first command, so a candidate the deploy suite never
+    installed through pip, uv, the plugin marketplaces and the hook routes stops
+    here, before anything is bumped. A gh that is missing, logged out or
+    offline is a problem too: the gate cannot say the run passed."""
+    try:
+        head, found = _release_runs(root, runs or _deploy_runs)
+    except (ReleaseError, OSError, ValueError, subprocess.SubprocessError) as exc:
+        return [f"deploy gate: {exc}"]
+    return [] if _green(found) else [_deploy_refusal(head, found)]
 
 
 # --- bump ------------------------------------------------------------------------
@@ -435,11 +521,11 @@ def _registry_rows(version: str, fetch: Callable) -> list:
 def _file_rows(root: Path, version: str) -> list:
     plugin = json.loads(_read(root, "plugin/.claude-plugin/plugin.json"))["version"]
     manifest = _read(root, "server.json").count(f'"version": "{version}"')
-    readme = sum(_read(root, "README.md").count(s.pattern.format(v=version)) == s.count
-                 for s in SURFACES if s.path == "README.md")
+    readme = [s for s in SURFACES if s.path == "README.md"]
+    held = sum(_read(root, "README.md").count(s.pattern.format(v=version)) == s.count for s in readme)
     return [_row("plugin.json", version, plugin),
             _row("server.json", "2 version fields", f"{manifest} version fields"),
-            _row("README", "3 of 3 mentions", f"{readme} of 3 mentions")]
+            _row("README", f"{len(readme)} of {len(readme)} mentions", f"{held} of {len(readme)} mentions")]
 
 
 def _tag_commit(root: Path, version: str) -> str:
@@ -587,6 +673,11 @@ def plan(version: str) -> list:
              note="Sync Server on the Repository admin tab; the sync builds and publishes the "
                   "release with the GitHub notes on its own"),
         Step("surfaces", "surfaces", ((*tool, "verify", version),)),
+        Step("published", "surfaces", (("gh", "workflow", "run", DEPLOY_WORKFLOW, "--repo", GITHUB_REPO,
+                                        "--ref", "main", "-f", f"cadence={DEPLOY_PUBLISHED_CADENCE}",
+                                        "-f", f"ref=v{version}"),),
+             note=f"the deploy suite installs v{version} from PyPI, the tag, pre-commit and the MCP "
+                  "registry the way a user does; a red run there fails the release"),
     ]
 
 
@@ -1304,7 +1395,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def _cmd_check(root: Path, version: str, args: argparse.Namespace) -> int:
     report = check(root, version)
-    problems = report.problems + preflight()
+    problems = report.problems + preflight() + deploy_gate(root)
     print(NL.join(problems) or f"ok: every surface at {report.current}, {version} next")
     return 1 if problems else 0
 

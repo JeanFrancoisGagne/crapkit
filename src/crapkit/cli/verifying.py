@@ -20,7 +20,7 @@ from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
                       _ratchet_key_version, _repo_out_path, _repo_relative, _say_left_out, _stand,
-                      _unreadable_json, _write_tsv, repo_text)
+                      _unreadable_json, _write_tsv, behind_head, no_config, repo_text)
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -82,52 +82,73 @@ def _named_baseline(store: SnapshotStore, root: Path, requested: int) -> dict:
     return admit_baseline(store.list_runs(), requested, none_trusted=_no_baseline(root))
 
 
-def _verify_baseline(root: Path, store: SnapshotStore, requested: int | None) -> dict:
-    """The trusted run this verify measures against."""
+def _verify_baseline(root: Path, store: SnapshotStore, requested: int | None, git) -> dict:
+    """The trusted run this verify measures against: the newest one behind HEAD
+    that the taint rule admits."""
     from ..store import pick_baseline
 
     if requested is not None:
         return _named_baseline(store, root, requested)
     runs = store.list_runs()
-    pick = pick_baseline(runs)
+    pick = pick_baseline(runs, behind_head(git))
     if pick.run is None:
-        raise CrapkitError(_taint_note(pick) if pick.blocker else _no_baseline(root, runs))
+        raise _unpicked(root, runs, pick, git)
     if pick.blocker:
         print(f"warning: {_taint_note(pick)}", file=sys.stderr)
     return pick.run
 
 
+def _unpicked(root: Path, runs: list[dict], pick, git) -> CrapkitError:
+    """Why no run behind HEAD can serve: a failure stands in front of every one,
+    the store holds no trusted run at all, or every trusted run sits on history
+    HEAD does not contain (exit 4, as the ancestor check always gave)."""
+    from ..errors import GitError
+    from ..store import is_trusted
+
+    if pick.blocker:
+        return CrapkitError(_taint_note(pick))
+    trusted = [r for r in runs if is_trusted(r)]
+    if not trusted:
+        return CrapkitError(_no_baseline(root, runs))
+    commit = trusted[-1]["commit"]
+    newest = f"the newest, run {trusted[-1]['id']} @ {commit[:11]},"
+    return GitError(f"no trusted run in {root} is at or behind HEAD; "
+                    f"{_not_behind(git, commit, newest)}")
+
+
 def _require_ancestor(git, commit: str, held=None) -> None:
-    """Exit 4 when the baseline's commit is not behind HEAD.
+    """Exit 4 when a named or portable baseline's commit is not behind HEAD.
 
     `held(commit)` says whether this clone holds the commit at all. `git
     merge-base --is-ancestor` exits 128 on a commit it does not hold, which read
     as "not an ancestor" and was blamed on a rewrite."""
     from ..errors import GitError
 
-    if git.is_ancestor(commit):
-        return
-    raise GitError(_not_behind(git, commit, held))
+    if not git.is_ancestor(commit):
+        raise GitError(_not_behind(git, commit, f"baseline commit {commit[:11]}", held))
 
 
-def _not_behind(git, commit: str, held) -> str:
-    """Why the baseline's commit is not behind HEAD, blaming the right thing.
-
-    A shallow clone never fetched the commit, and a store copied from another
-    clone (a CI cache keyed on a branch) can name one this checkout never
-    fetched. The fix for both is a fetch, not the fresh baseline the rewrite
-    sentence asks for. An amend keeps the old commit in the object store, so
-    that one still reads as a rewrite."""
+def _not_behind(git, commit: str, subject: str, held=None) -> str:
+    """`SUBJECT is not an ancestor of HEAD` and the thing to blame, in order of
+    what git can prove: a shallow clone that never fetched it (fetch deeper), a
+    commit this clone does not hold, which a store copied from another clone (a
+    CI cache keyed on a branch) can name (fetch it), a branch that holds it and
+    HEAD does not (a branch switch: measure this branch), or no branch at all (a
+    rebase or an amend rewrote it; an amend keeps the old commit in the object
+    store, so that one still reads as a rewrite)."""
+    head = f"{subject} is not an ancestor of HEAD"
     if git.is_shallow():
-        return (f"baseline commit {commit[:11]} is not an ancestor of HEAD in this shallow clone, "
-                "which does not hold it; set fetch-depth: 0 on the checkout or run "
-                "git fetch --unshallow")
+        return (f"{head} in this shallow clone, which does not hold it; set fetch-depth: 0 "
+                "on the checkout or run git fetch --unshallow")
     if held is not None and not held(commit):
-        return (f"baseline commit {commit[:11]} is not in this clone, so git cannot say whether "
-                f"it is behind HEAD; fetch it with `git fetch origin {commit}`, or run "
-                f"`{_self()} coverage` here for a baseline this clone holds")
-    return (f"baseline commit {commit[:11]} is not an ancestor of HEAD "
-            f"(rebase or amend rewrote history) - run `{_self()} coverage` for a fresh baseline")
+        return (f"{subject} is not in this clone, so git cannot say whether it is behind HEAD; "
+                f"fetch it with `git fetch origin {commit}`, or run `{_self()} coverage` here "
+                "for a baseline this clone holds")
+    branches = git.branches_containing(commit)
+    if branches:
+        return (f"{head}: it was made on branch {', '.join(branches[:3])} - run "
+                f"`{_self()} coverage` on this branch for a baseline here")
+    return f"{head} (rebase or amend rewrote history) - run `{_self()} coverage` for a fresh baseline"
 
 
 def _baseline_behind(git, store: SnapshotStore, basis: str) -> dict:
@@ -171,24 +192,27 @@ def _pick_baseline(root: Path, store: SnapshotStore, args, basis: str | None, gi
         return _tsv_baseline(root, args.baseline_tsv)
     if basis:
         return _baseline_behind(git, store, basis)
-    return _verify_baseline(root, store, args.baseline)
+    return _verify_baseline(root, store, args.baseline, git)
 
 
-def _seed_source(store: SnapshotStore, args, baseline: dict) -> dict | None:
-    """The run a stamp refusal says to seed from; None keeps coverage-then-seed.
+def _seed_hint(store: SnapshotStore, args, baseline: dict, git) -> tuple[dict | None, bool]:
+    """What a stamp refusal may say about the seed that clears it: the run
+    `--baseline ID` named (None without one), and whether a failed verify pins
+    a plain `ratchet seed` to an older run (#75).
 
-    `--baseline ID` names it. Otherwise the refusal is about the run a plain
-    `ratchet seed` reads, which is verify's rule's pick whatever this verify
-    measures against. Behind a failed verify that pick is pinned: the seed signs
-    its old stamp again, a fresh coverage run lands behind the failure too, and
-    the stock remedy led back to this refusal (#75). The newer run the rule
-    passed over, which the taint warning names, is the one to seed from.
+    Only a run the caller named goes into the refusal. The newer run the taint
+    rule passed over lives in this store alone: the Action quotes the refusal in
+    a pull request comment, where its id names nothing, and on a runner that
+    keeps its workspace it was the pull request head's own run, whose seed would
+    sign the breach the failed verify found as the new ceiling. The refusal says
+    the seed is pinned; the taint warning and seed's own line name the run on
+    the machine that holds it.
     """
     from ..store import pick_baseline
 
     if args.baseline is not None:
-        return baseline
-    return pick_baseline(store.list_runs()).skipped
+        return baseline, False
+    return None, pick_baseline(store.list_runs(), behind_head(git)).skipped is not None
 
 
 def _verify_basis(root: Path, store: SnapshotStore, args, git) -> tuple[dict, str]:
@@ -234,14 +258,14 @@ def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
     return SnapshotStore(db_path)
 
 
-def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
+def _guard_ratchet_stamp(saved, name: str, named: dict | None = None, pinned: bool = False) -> None:
     """Refuse to weigh fresh scores against marks another metric produced.
 
     Runs before the lanes do: a metric bump that silently kept 40k old marks is
     what this exists to stop, and finding out after a 40-minute run is too late.
     It runs after the baseline is read, so `named`, the run `--baseline ID`
-    names or the one a failed verify kept verify's rule from, can be the run
-    the refusal says to seed from.
+    names, can be the run the refusal says to seed from, and `pinned` can say
+    a failed verify holds a plain seed on an older run.
     """
     from ..ratchet import coverage_then_seed, metric_version
 
@@ -253,8 +277,12 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None) -> None:
         return
     conflict = saved.stamp_conflict(metric_version())
     if conflict:
-        raise ConfigError(_stamp_refusal(conflict, named))
+        raise ConfigError(_stamp_refusal(conflict, named, pinned))
 
+
+# Why the stock remedy alone would loop on a store a failed verify pins.
+_PINNED_SEED = ("; a failed verify in this store pins a plain seed to an older run, and "
+                "seed's line then names the newer run to read instead")
 
 class _JudgedMarks(NamedTuple):
     """The marks verify judges against, and the commit that held them: None when
@@ -293,20 +321,26 @@ def _warn_marks_stand_in(saved, committed, commit: str, name: str) -> None:
           f"marks of code that is gone with `{_self()} ratchet prune`", file=sys.stderr)
 
 
-def _stamp_refusal(conflict: str, named: dict | None) -> str:
-    """The stamp refusal, naming the seed that clears it when there is a run to name.
+def _stamp_refusal(conflict: str, named: dict | None, pinned: bool = False) -> str:
+    """The stamp refusal, with what it takes to clear it on this store.
 
     The stock remedy's `ratchet seed` reads the run verify would pick. A failed
     verify can pin that to a run an older crapkit measured, or one written
     before same-line positions, and seed then keeps the old stamp or refuses
-    outright, so the remedy led back to this refusal (#75). `named` is the run
-    to seed from instead.
+    outright, so the remedy alone led back to this refusal (#75). `named` is
+    the run `--baseline ID` named, the seed to name back; `pinned` adds that a
+    failed verify holds the plain seed. Marks a newer crapkit wrote carry no
+    seed remedy at all: an upgrade clears them, and a seed would restamp them
+    backwards.
     """
     from ..ratchet import coverage_then_seed
 
-    if named is None:
+    stock = coverage_then_seed()
+    if not conflict.endswith(stock):
         return conflict
-    return conflict.removesuffix(coverage_then_seed()) + _named_seed(named)
+    if named is not None:
+        return conflict.removesuffix(stock) + _named_seed(named)
+    return conflict + (_PINNED_SEED if pinned else "")
 
 
 def _named_seed(named: dict) -> str:
@@ -957,7 +991,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     untracked = _untracked_in_scope(root, cfg)
     baseline, basis = _verify_basis(root, store, args, git)
     judged = _judged_marks(root, saved, baseline, cfg.ratchet_file)
-    _guard_ratchet_stamp(judged.marks, cfg.ratchet_file, _seed_source(store, args, baseline))
+    _guard_ratchet_stamp(judged.marks, cfg.ratchet_file, *_seed_hint(store, args, baseline, git))
     _emit_baseline(root, store, baseline, args.emit_baseline)
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.
@@ -1194,7 +1228,7 @@ def cmd_test_scoped(args: argparse.Namespace) -> int:
     return 0
 
 
-def _note_stale_staged(root: Path, flagged_paths: set) -> None:
+def _note_stale_staged(root: Path, flagged_paths: set, shown: str = "") -> None:
     """A developer who fixed the file but forgot `git add` gets told exactly that.
 
     The difference is git's to decide, through its own filters: a byte compare
@@ -1204,7 +1238,7 @@ def _note_stale_staged(root: Path, flagged_paths: set) -> None:
     from ..gitio import unstaged_paths
 
     for path in sorted(flagged_paths & unstaged_paths(root)):
-        print(f"  note: {path} differs from the working tree - the STAGED blob is "
+        print(f"  note: {shown}{path} differs from the working tree - the STAGED blob is "
               "what commits; re-stage with `git add` if you already fixed it.")
 
 
@@ -1308,16 +1342,16 @@ def _split_marked(violations: list, entries: list) -> tuple[list, list]:
     return gated, exempt
 
 
-def _note_marked_staged(exempt: list) -> None:
+def _note_marked_staged(exempt: list, noun: str = "staged") -> None:
     """One line, never a list. The count says the exemption fired; the marks
     themselves are in the committed TSV, and naming them at every commit would
     reprint debt the repo reads through `crapkit ratchet report`."""
     if exempt:
-        print(f"crapkit gate: {len(exempt)} staged function(s) carry a ratchet mark and "
+        print(f"crapkit gate: {len(exempt)} {noun} function(s) carry a ratchet mark and "
               "were not gated - `crapkit verify` fails a mark that rises", file=sys.stderr)
 
 
-def _gated_violations(root: Path, cfg, violations: list, records=()) -> list:
+def _gated_violations(root: Path, cfg, violations: list, records=(), noun: str = "staged") -> list:
     """The breaches the commit is actually refused for.
 
     The marks file is read only once something breached: a clean commit is the
@@ -1332,11 +1366,11 @@ def _gated_violations(root: Path, cfg, violations: list, records=()) -> list:
     entries = _load_ratchet_or_die(root / cfg.ratchet_file, cfg.ratchet_file)
     _ratchet_key_version(root, cfg, records, entries=entries)
     gated, exempt = _split_marked(violations, entries)
-    _note_marked_staged(exempt)
+    _note_marked_staged(exempt, noun)
     return gated
 
 
-def _staged_gate(root: Path, cfg, base: str | None = None):
+def _staged_gate(root: Path, cfg, base: str | None = None, *, whole: bool = False):
     """The gate's verdict, with both git reads started before lizard is imported.
 
     Neither answer is needed until the import is paid for and the two do not
@@ -1350,24 +1384,106 @@ def _staged_gate(root: Path, cfg, base: str | None = None):
         _analysis_tools()  # importing crapkit.hook reaches lizard too, so it waits its turn
         from ..hook import gate_staged
 
-        return gate_staged(root, cfg, reads)
+        gate = gate_staged(root, cfg, reads, whole=whole)
+    if gate.whole:
+        print("crapkit gate: nothing is staged and no commit is running, so every tracked "
+              "file was judged", file=sys.stderr)
+    return gate
+
+
+def _in_a_commit() -> bool:
+    """git sets GIT_INDEX_FILE for the hooks `git commit` runs; `pre-commit run
+    --all-files` in CI and a command typed at a shell run without it."""
+    import os
+
+    return "GIT_INDEX_FILE" in os.environ
 
 
 def cmd_hook_precommit(args: argparse.Namespace) -> int:
-    """Exit 6 when a staged function is over its ceiling, or when a staged file
+    """The commit gate, in every crapkit root that owns what the commit holds.
+    Exit 6 when a staged function is over its ceiling, or when a staged file
     could not be read at all: zero records from a file nothing read are not
     zero functions over the ceiling, and the override has no function to
     record as debt for it."""
+    base = getattr(args, "base", None)
+    roots = _hook_roots(args.repo, base)
+    if not roots:
+        print(f"crapkit gate: no staged file sits under a crapkit.toml at or below "
+              f"{Path.cwd()}, so nothing was gated; `{_self()} init` adopts a directory "
+              "for the gate", file=sys.stderr)
+        return 0
+    return max(_hook_gate(root, shown, base) for root, shown in roots)
+
+
+def _hook_roots(repo: str | None, base: str | None) -> list[tuple[Path, str]]:
+    """The roots this gate runs in, each with the prefix its printed paths take.
+
+    `--repo`, or a crapkit.toml at or above the working directory, names the one
+    root, as for every command (ADR 0002). git runs the hook at the top, so a
+    monorepo whose crapkit.toml sits in packages/api has none there, and the
+    gate refused every commit, a docs-only one included. It now runs in each
+    root below that owns a staged file and names paths from where git stands.
+    """
+    from ..rootfind import find_root
+
+    cwd = Path.cwd().resolve()
+    if repo is not None or find_root(cwd) is not None:
+        return [(_command_root(repo), "")]
+    roots = _roots_below(cwd, base)
+    for root in roots:
+        print(f"crapkit: using crapkit.toml at {root}", file=sys.stderr)
+    return [(root, f"{root.relative_to(cwd).as_posix()}/") for root in roots]
+
+
+def _roots_below(top: Path, base: str | None) -> list[Path]:
+    """The roots below `top` that own the paths the gate judges, nearest
+    crapkit.toml winning. A directory outside any repository has no staged
+    file to place, and keeps the no-configuration refusal it always got."""
+    from ..errors import GitError
+    from ..rootfind import find_root
+
+    try:
+        paths = _owned_paths(top, base)
+    except GitError:
+        raise ConfigError(no_config(top)) from None
+    return sorted({find_root((top / path).parent) for path in paths} - {None})
+
+
+def _owned_paths(top: Path, base: str | None) -> list[str]:
+    """What places the roots: the staged files inside a commit, and every tracked
+    crapkit.toml when a `--base` diff or the tracked-file check is what runs."""
+    from ..gitio import staged_names, tracked_configs
+
+    if base is not None:
+        return tracked_configs(top)
+    staged = staged_names(top)
+    if staged or _in_a_commit():
+        return staged
+    return tracked_configs(top)
+
+
+def _hook_gate(root: Path, shown: str, base: str | None) -> int:
+    """One root's verdict. `shown` prefixes every path it prints: "" at the
+    command's own root, `packages/api/` for a root found below the top."""
     from ._shared import _print_unread
 
-    root = _command_root(args.repo)
     cfg = _load_repo_config(root)
-    gate = _staged_gate(root, cfg, getattr(args, "base", None))
+    gate = _staged_gate(root, cfg, base, whole=_may_judge_tracked(base))
     _say_left_out(gate.unreadable)
-    _warn_unscoped_staged(gate.unscoped)
-    _print_unread(gate.unread, "staged")
-    code = _judge_staged(root, cfg, gate)
+    _warn_unscoped_staged([shown + path for path in gate.unscoped])
+    _print_unread({shown + path: why for path, why in gate.unread.items()}, _judged(gate))
+    code = _judge_staged(root, cfg, gate, shown)
     return 6 if gate.unread else code
+
+
+def _may_judge_tracked(base: str | None) -> bool:
+    """An empty staged diff judges every tracked file only outside a commit and
+    with no `--base`, whose own diff is the question asked."""
+    return base is None and not _in_a_commit()
+
+
+def _judged(gate) -> str:
+    return "tracked" if gate.whole else "staged"
 
 
 def _env_override_reason() -> str:
@@ -1384,33 +1500,48 @@ def _hook_override_refusal(unread: dict) -> str | None:
     return _override_refusal(with_unread(Verdict(False, [], [], [], []), unread, set(unread), set()))
 
 
-def _judge_staged(root: Path, cfg, gate) -> int:
-    violations = _gated_violations(root, cfg, gate.violations, gate.records)
-    reason = _env_override_reason()
-    refusal = _hook_override_refusal(gate.unread) if reason else None
+def _judge_staged(root: Path, cfg, gate, shown: str = "") -> int:
+    violations = _gated_violations(root, cfg, gate.violations, gate.records, _judged(gate))
+    refusal = _hook_override_refusal(gate.unread) if _env_override_reason() else None
     if violations:
-        _print_staged_violations(root, cfg, violations)
+        _print_staged_violations(root, cfg, gate, violations, shown)
     if refusal:
         # Before any side effect: the grant writes and stages the marks file,
         # raises the alert and stores a run, and the unread file refuses the
         # commit whatever the grant signed.
         print(f"crapkit: {refusal}")
         return 6
-    return _grant_or_refuse(root, cfg, violations, reason, gate.records)
+    return _grant_or_refuse(root, cfg, violations, gate.records, gate.whole)
 
 
-def _print_staged_violations(root: Path, cfg, violations: list) -> None:
-    print(f"crapkit gate: {len(violations)} staged function(s) exceed the complexity ceiling of {cfg.target}:")
+def _print_staged_violations(root: Path, cfg, gate, violations: list, shown: str) -> None:
+    """The breaches, then, inside a commit, each one whose fix was never staged."""
+    _print_breaches(violations, cfg.target, shown, _judged(gate))
+    if not gate.whole:
+        _note_stale_staged(root, {v.path for v in violations}, shown)
+
+
+def _print_breaches(violations: list, target: int, shown: str, judged: str) -> None:
+    print(f"crapkit gate: {len(violations)} {judged} function(s) exceed the complexity ceiling of {target}:")
     for v in violations:
-        print(f"  ccn {v.ccn:>3}  {v.path}:{v.start}  {v.long_name}")
-    _note_stale_staged(root, {v.path for v in violations})
+        print(f"  ccn {v.ccn:>3}  {shown}{v.path}:{v.start}  {v.long_name}")
 
 
-def _grant_or_refuse(root: Path, cfg, violations: list, reason: str, records) -> int:
+def _refuse_tracked() -> int:
+    """No commit to refuse or grant: the breach is already committed."""
+    print("decompose them and commit the split (coverage cannot save a function above the target).")
+    return 6
+
+
+def _grant_or_refuse(root: Path, cfg, violations: list, records, whole: bool = False) -> int:
     """CRAPKIT_OVERRIDE_REASON is not a bypass: it routes through the full
-    three-record audit and the gate holds unless all three land."""
+    three-record audit and the gate holds unless all three land. Outside a
+    commit nothing is granted: the breach is already committed."""
     if not violations:
         return 0
+    if whole:
+        return _refuse_tracked()
+    reason = _env_override_reason()
     if reason:
         _grant_env_override(root, cfg, violations, reason, records)
         return 0

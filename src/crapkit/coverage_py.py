@@ -40,8 +40,11 @@ if TYPE_CHECKING:
 
 _NO_BRANCH = "coverage.py report lacks branch data - run the lane with branch coverage on"
 # The oldest coverage.py whose report this reader takes: 7.13.1 writes each
-# region's start_line. pyproject.toml's py and dev extras pin the same floor.
-COVERAGE_FLOOR = "coverage>=7.13.1"
+# region's start_line. pyproject.toml's py and dev extras pin the same floor,
+# and `crapkit doctor` asks each lane's interpreter for its coverage version
+# against the same number.
+REGIONS_FLOOR = "7.13.1"
+COVERAGE_FLOOR = f"coverage>={REGIONS_FLOOR}"
 _OLD_COVERAGE = f"needs {COVERAGE_FLOOR}"
 # What every refusal of a count or a line coverage.py itself writes tells the
 # user to do: the report was edited, merged or truncated after coverage.py

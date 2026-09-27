@@ -180,9 +180,64 @@ def test_every_input_the_readme_names_exists_on_the_action():
     """The other direction: a documented input a consumer sets is silently
     ignored, because `inputs.<name>` on an undeclared name is the empty
     string."""
-    named = set(re.findall(r"`(gate|top|python-version|delta)`", _readme_section()))
+    named = set(re.findall(r"`(gate|top|python-version|delta|working-directory)`", _readme_section()))
 
     assert named - set(_action()["inputs"]) == set()
+
+
+# --- a crapkit root below the repository top -----------------------------------
+#
+# Every crapkit step ran at the workspace root. A monorepo whose crapkit.toml sits
+# in packages/api got coverage exit 3 there and a failed gate on every pull
+# request. tests/unit/test_action_monorepo.py runs the steps on such a repo;
+# these pin the shape that makes it hold for a step added later.
+
+_ROOTED = "${{ inputs.working-directory }}"
+
+
+def test_the_working_directory_defaults_to_the_checkout_itself():
+    """The default keeps every consumer whose crapkit.toml is at the top where
+    it was."""
+    assert _action()["inputs"]["working-directory"]["default"] == "."
+
+
+def _reads_the_crapkit_root(step: dict) -> bool:
+    """A step that runs crapkit, or lists the files the worklist is joined to."""
+    body = step.get("run", "")
+    return bool(_CALL.search(body)) or "git diff" in body
+
+
+def test_every_step_that_reads_the_crapkit_root_runs_in_the_working_directory():
+    rooted = [step["name"] for step in _steps() if _reads_the_crapkit_root(step)]
+    stray = [name for name in rooted if _step_named(name).get("working-directory") != _ROOTED]
+
+    assert len(rooted) == 5, rooted
+    assert stray == [], f"these steps still run at the repository top: {stray}"
+
+
+def test_the_steps_that_read_only_absolute_paths_stay_at_the_top():
+    """The install, the state directory, the comment and the exit code read
+    $GITHUB_ACTION_PATH and $CRAPKIT_STATE, which a working directory does not
+    move; leaving them where they were keeps a typo in the input from also
+    killing the steps that explain it."""
+    moved = [step.get("name") for step in _steps() if "working-directory" in step
+             and not _reads_the_crapkit_root(step)]
+
+    assert moved == []
+
+
+def test_the_base_run_scores_the_same_directory_inside_the_fork_point_worktree():
+    body = _step_named("score the base commit")["run"]
+
+    assert 'below="$(git rev-parse --show-prefix)"' in body
+    assert 'crapkit coverage --repo "$base/$below"' in body
+    assert 'cp "$base/$below.crapkit/crap.sqlite" .crapkit/crap.sqlite' in body
+
+
+def test_the_changed_files_are_named_from_the_working_directory():
+    """The worklist names a file from the crapkit root. A top-relative
+    packages/api/calc/grade.py matched no row of it."""
+    assert 'git diff --name-only "$BASE_SHA...HEAD" -z --relative >' in _step_named("the changed files")["run"]
 
 
 # --- the pull request's own delta --------------------------------------------
@@ -1056,6 +1111,31 @@ def test_every_lane_failing_points_at_the_job_log_not_above():
     assert "above" not in line, line
     assert f"`({_builder().coverage_failure(coverage)})`" in " ".join(_readme_section().split()), \
         "the README quotes the line the builder prints"
+
+
+def _refusal_without_config(directory: Path) -> dict:
+    """What `coverage --json` prints in a directory with no crapkit.toml, the
+    message taken from the CLI itself so the two cannot drift apart."""
+    from crapkit.cli._shared import _load_repo_config
+    from crapkit.errors import ConfigError
+
+    with pytest.raises(ConfigError) as refused:
+        _load_repo_config(directory)
+    return {"error": {"exit": 3, "kind": "config", "message": str(refused.value)}, "schema": 1}
+
+
+_WORKING_DIRECTORY_STEP = "set the action's `working-directory` input to the directory that holds crapkit.toml"
+
+
+def test_no_crapkit_toml_in_the_checkout_names_the_input_that_moves_the_steps(tmp_path):
+    """A monorepo job that leaves the input out ran coverage at the top and
+    exited 3. The comment named the directory it looked in and no way out;
+    a flag or a cd is no step a workflow author can take, the input is."""
+    line = _builder().no_verdict_line(_refusal_without_config(tmp_path), 3)
+
+    assert line == (f"**no verdict: `crapkit coverage` exited 3 (no crapkit.toml at {tmp_path} - "
+                    f"nothing to analyze; {_WORKING_DIRECTORY_STEP}); verify did not run.**")
+    assert _WORKING_DIRECTORY_STEP in " ".join(_readme_section().split()),         "the README quotes the step the builder prints"
 
 
 def test_the_body_renders_no_verdict_in_place_of_the_verify_line_when_coverage_failed():

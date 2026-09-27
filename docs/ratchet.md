@@ -197,11 +197,16 @@ run 1 @ 549e0ccdcdf: 3 functions scored: 2 measured / 1 untested, 2 over ceiling
 
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 2, tightened 0 - 2 mark(s) vs run 1 (549e0ccdcdf)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
 ```
 
 `seed` marks every function over its scope ceiling from the latest full run, at its current
 score. It is idempotent, and it can only lower: rerunning after an improvement reports
-`tightened`, never `added`.
+`tightened`, never `added`. Its last line names the next two steps: commit the marks file,
+then run `crapkit verify`, whose pass is the repo's first passing verdict. A seed from a run
+another crapkit version measured prints no such line, because verify refuses the stamp it
+signed; its own line names the run that restamps the marks
+([the metric stamp](#the-metric-stamp)).
 
 **Seed once, early.** Skipping it means a legacy repo's existing debt carries no marks, so
 the ratchet check has nothing to compare and coverage rot on untouched code goes unnoticed.
@@ -247,6 +252,7 @@ run 3 the fresh `coverage` somebody ran to move on. Both actions walk back to ru
 ```
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2 and the newer run 3 (pass `--baseline 3` to read it)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
 
 $ crapkit ratchet prune
 crapkit-ratchet.tsv: pruned 0, followed 0 rename(s) - 2 mark(s) vs run 1 (964eaf2ad80), skipped failed verify run 2 and the newer run 3 (pass `--baseline 3` to read it)
@@ -333,12 +339,13 @@ Scores measured under different rules are not comparable. The file's first line 
 analysis version and the lizard behind the numbers, so crapkit can refuse instead of
 comparing them silently.
 
-Three cases:
+Four cases:
 
 | Recorded stamp | Behavior |
 |---|---|
 | Matches the running metric | Compare normally. |
-| Differs | **Refused**, exit 3. |
+| Older than the running metric | **Refused**, exit 3: run `coverage`, then re-seed. |
+| Newer: a newer crapkit or lizard wrote the marks | **Refused**, exit 3: upgrade this install. `ratchet seed` and `ratchet prune` refuse these marks too. |
 | Absent (a file written before stamping) | Warn, then apply the function-identity checks below. Anonymous JavaScript/TypeScript marks need reader proof. |
 
 ```
@@ -346,6 +353,23 @@ $ crapkit verify
 crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
 EXIT=3
 ```
+
+A team upgrades one member at a time, so the other direction is the common one. A teammate
+on the newer release re-seeded and committed the marks, and your crapkit, the Action pinned
+one tag behind, or a pre-commit `rev` left at the old tag, measures the older analysis:
+
+```
+$ crapkit verify
+crapkit: ratchet marks were recorded under [crapkit-analysis=12 lizard=1.24.0] but this run measures [crapkit-analysis=11 lizard=1.24.0] — the marks come from a newer crapkit than this install; upgrade it to the version that wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than re-seed, which would restamp the team's marks backwards and make every upgraded teammate's verify refuse them
+EXIT=3
+```
+
+The versions compare field by field, as numbers: `crapkit-analysis` is crapkit's, and
+`lizard` names a newer lizard when only that field moved. Seed and prune refuse the same
+file rather than write it: a seed from an older run restamped the whole file backwards, and
+a prune dropped every mark whose function the older reader names differently. A team going
+back to an older release on purpose restores the marks file that release last wrote from git
+history.
 
 ```
 $ crapkit verify
@@ -391,9 +415,15 @@ A failed verify can leave that remedy with nothing to work on. Seed reads the ru
 pick, and after a failed verify that is the run before the failure until a verify passes
 ([seed and prune pick the run verify picks](#seed-and-prune-pick-the-run-verify-picks)). A
 fresh `coverage` run sits behind the failure too, so seed reads the old run again and keeps
-its old stamp. Name the newer run instead. On such a store the refusal names it: a plain
-`crapkit verify` names the run its taint warning names, and `crapkit verify --baseline ID`
-names run ID, since verify reads `--baseline` before it checks the stamp:
+its old stamp. Name the newer run instead. A plain `crapkit verify` on such a store says so
+at the end of its refusal: `a failed verify in this store pins a plain seed to an older run,
+and seed's line then names the newer run to read instead`. The taint warning printed above
+the refusal names that run and the flag that reads it. The refusal leaves the id out on
+purpose: the Action quotes the refusal in a pull request comment, where a run id from the
+runner's store names nothing, and on a runner that keeps its workspace that run was the pull
+request's own head, whose seed would sign the failed verify's findings as the new ceiling.
+`crapkit verify --baseline ID` names run ID, since you named it and verify reads
+`--baseline` before it checks the stamp:
 
 ```
 $ crapkit verify --baseline 12
@@ -405,7 +435,16 @@ EXIT=3
 the named run was measured under another metric too, the refusal asks for a `coverage` run
 first and a seed from the run it writes. A plain seed on the pinned run says the same at the
 end of its line: it names the newer run this crapkit measured to pass to `--baseline`, or asks
-for a `coverage` run and its id, instead of a fresh `coverage` and another seed.
+for a `coverage` run and its id, instead of a fresh `coverage` and another seed. Once the
+marks carry a newer stamp than the pinned run, a plain seed or prune refuses them and writes
+nothing: the seed would restamp them under the older metric, and the prune would drop every
+mark whose function the older reader names differently. The refusal names the same run:
+
+```
+$ crapkit ratchet prune
+crapkit: ratchet prune refused: crapkit-ratchet.tsv was recorded under [crapkit-analysis=11 lizard=1.24.0] and run 1 under the older [crapkit-analysis=10 lizard=1.24.0]; this prune would drop every mark whose function the older reader names differently, as if its code were gone; pass `--baseline 3` to read run 3
+EXIT=3
+```
 
 Reseeding from a fresh run can update compatible marks; changed function membership needs
 the identity review below first.
@@ -420,6 +459,7 @@ reseeding from a fresh coverage run updated the stamp as follows:
 ```
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
 
 $ head -1 crapkit-ratchet.tsv
 # crapkit-analysis=8 lizard=1.24.0
@@ -573,6 +613,37 @@ git config merge.crapkit-ratchet.name "crapkit ratchet 3-way merge"
 The `.driver` line is the one that matters; `.name` is only a description git shows. Put
 both in your CONTRIBUTING setup steps.
 
+A clone that skipped step 2 merges the marks file as text, because git falls back without a
+word when no driver by that name is defined. `crapkit doctor` asks `git check-attr` which
+driver the attributes name for the marks file and WARNs when this clone's git config defines
+none, with the line that defines it:
+
+```
+WARN crapkit-ratchet.tsv has merge=crapkit-ratchet in its git attributes, but merge.crapkit-ratchet.driver is not set in this clone, so git merges the marks file as text and leaves its conflicts to be resolved by hand; run `git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"` (docs/ratchet.md#the-git-merge-driver)
+```
+
+git runs the driver through a shell with the PATH `git merge` has, so `crapkit` has to
+resolve there. uvx puts no `crapkit` on PATH, so a clone that runs crapkit as `uvx crapkit`
+sets the driver through uvx:
+
+```
+git config merge.crapkit-ratchet.driver "uvx crapkit ratchet merge %O %A %B"
+```
+
+A driver git cannot start fails every marks-file merge, and the file it leaves is easy to
+commit by mistake:
+
+```
+$ git merge feature -m merge
+crapkit ratchet merge .merge_file_gnwGYk .merge_file_DvJ0hn .merge_file_ObrhTO: 1: crapkit: not found
+Auto-merging crapkit-ratchet.tsv
+CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
+```
+
+crapkit-ratchet.tsv then holds your side unchanged, with no conflict markers, and the
+other branch's lowered marks are gone from it. Do not `git add` it. Run
+`git merge --abort`, set the driver to a command that resolves, and merge again.
+
 `%O %A %B` are base, ours, theirs. The driver writes the merged result **in place over
 `%A`** and exits 0, which is what git requires of a merge driver.
 
@@ -602,7 +673,16 @@ needs no ordinal knowledge to get that right. The `#` sits in the name field, so
 never opens with the `#` that introduces the metric stamp.
 
 The driver refuses to merge across metric versions, and git falls back to a normal text
-conflict for you to resolve after re-seeding one side:
+conflict for you to resolve after re-seeding. When one side's stamp is newer, the refusal
+names that side and the metric to re-seed under, because a seed under the older release
+stamps its own older metric and the next merge refuses again:
+
+```
+$ git merge main
+crapkit: ratchet merge refused: ours is [crapkit-analysis=11 lizard=1.24.0] and theirs is [crapkit-analysis=12 lizard=1.24.0] — marks from different metric versions cannot merge; theirs is newer, so with a crapkit that measures [crapkit-analysis=12 lizard=1.24.0], run `crapkit coverage`, then re-baseline the merged marks with `crapkit ratchet seed`
+```
+
+When the stamps do not compare, as with an unstamped side, it asks you to re-seed one side:
 
 ```
 $ git merge legacy
@@ -644,6 +724,7 @@ have not committed yet is still debt somebody owes, and the report says so:
 ```
 $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run 2 (d9cdcfdcb1a)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
 
 $ crapkit ratchet report
 ratchet burn-down: 1 open mark(s), 0 repaid (0 in the last 30d, 0 in 90d)
@@ -878,9 +959,21 @@ no trail. Without `alert_command` the override is refused outright, before anyth
 
 ```
 $ crapkit verify --override "shipping the hotfix, ticket 412"
-crapkit: no alert_command configured - the override requires a visible alert line; set [crapkit] alert_command in crapkit.toml
+crapkit: no alert_command configured - the override requires a visible alert line; set [crapkit] alert_command in crapkit.toml, for example alert_command = "cat >> .crapkit/alerts.log"
 EXIT=3
 ```
+
+The line it prints appends each alert to `.crapkit/alerts.log`:
+
+```toml
+[crapkit]
+alert_command = "cat >> .crapkit/alerts.log"
+```
+
+On Windows the command runs under cmd.exe, which has no `cat`, and the refusal prints
+`alert_command = 'findstr "^" >> .crapkit/alerts.log'`, which appends the same line
+there. Point it at a chat webhook or a mail command instead when a person should see the
+alert as it fires; the command gets the alert on stdin.
 
 With it configured:
 

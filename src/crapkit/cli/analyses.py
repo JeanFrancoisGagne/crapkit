@@ -5,6 +5,7 @@ that exposes the read-side tools)."""
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -202,7 +203,10 @@ def _print_mutation(as_json: bool, mutants: list, verdicts: list, outside: list[
 
 def cmd_mcp(args: argparse.Namespace) -> int:
     """Serve stdio from `--repo`, an exact root, or from the nearest crapkit.toml
-    at or above the directory the client started in (ADR 0002).
+    at or above the directory the client started in (ADR 0002). A client that
+    started the server in its plugin's install directory gets no walk from
+    there, and a server whose start serves nothing asks a roots-capable client
+    for its workspace folders.
 
     A client registered globally opens the server in every project, most of
     which have no crapkit.toml. Refusing to start there gave the client a server
@@ -210,12 +214,36 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     A config that EXISTS and is broken still fails fast, before any client
     connects, because every tool would fail the same way anyway.
     """
-    from ..mcp_server import serve
+    from ..mcp_server import serve, started_in_plugin
 
-    root = _command_root(args.repo)
-    if (root / "crapkit.toml").is_file():
+    repo = _expanded_repo(args.repo)
+    plugin = repo is None and started_in_plugin(Path.cwd().resolve())
+    root = Path.cwd().resolve() if plugin else _command_root(repo)
+    if not plugin and (root / "crapkit.toml").is_file():
         _load_repo_config(root)
-    return serve(root)
+    return serve(root, plugin=plugin, exact=repo is not None)
+
+
+# `${workspaceFolder}`, `${userHome}`, `${env:NAME}`: the variables MCP client
+# configs are written with. The client expands them before it starts a server.
+_CLIENT_VARIABLE = re.compile(r"\$\{[^}]*\}")
+
+
+def _expanded_repo(repo: str | None) -> str | None:
+    """`--repo` when the client expanded it, else None: serve as if none was given.
+
+    Cursor's docs wire a server with `--repo ${workspaceFolder}`, and the Cursor
+    agent CLI passes that variable through unexpanded. Read as a path it named
+    `<cwd>/${workspaceFolder}`, and every tool answered `no crapkit.toml` there
+    while the client listed the server as ready. stderr is the server's log in
+    every client, so the fallback is said there."""
+    if repo is None or not _CLIENT_VARIABLE.search(repo):
+        return repo
+    print(f"crapkit mcp: --repo {repo!r} holds a variable the MCP client did not expand; "
+          f"serving the crapkit.toml at or above the directory the client started this server "
+          f"in ({Path.cwd()}) instead. Give --repo an absolute path, or drop it from the "
+          f"client's config.", file=sys.stderr)
+    return None
 
 
 def _drop_mutate_pool(root: Path) -> int:

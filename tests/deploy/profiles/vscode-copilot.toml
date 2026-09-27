@@ -1,0 +1,96 @@
+# VS Code with GitHub Copilot: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "VS Code with GitHub Copilot"
+kind = "app"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "VS Code with GitHub Copilot"
+format = "vscode-json"
+scope = "project"
+path = ".vscode/mcp.json"
+config = '''
+{
+  "servers": {
+    "crapkit": {
+      "type": "stdio",
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "config"
+env = "inherit"
+resolve = "execvp"
+# Launched from the desktop, VS Code takes PATH from the login shell; `code` from a terminal inherits it.
+path = "login-shell"
+windows = "cross-spawn"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-11-25"
+discover_first = false
+client_name = "Visual Studio Code"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = "mcp_crapkit_"
+startup_seconds = 0
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "plugin"
+manifest = ""
+fields = ["type", "command", "timeout", "env", "cwd"]
+events = ["PostToolUse"]
+matcher = "dropped"
+exit2 = "block"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "vscode"
+version = "1.139.0"
+command = "code"
+image = "gui"
+floor = ""
+headless = "a probe extension reads vscode.lm.tools under xvfb"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "MCP: List Servers > Restart; a changed server hash re-reads the tool list"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "inferred"
+"spawn.resolve" = "inferred"
+"spawn.path" = "observed"
+"spawn.windows" = "inferred"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "observed"
+"limits.startup_seconds" = "inferred"
+"hooks.loads" = "source"
+"hooks.manifest" = "source"
+"hooks.fields" = "source"
+"hooks.events" = "source"
+"hooks.matcher" = "source"
+"hooks.exit2" = "docs"
+sources = ["VS Code 1.139.0 workbench.desktop.main.js: Claude plugin format 1 reads hooks/hooks.json; the converter keeps command, windows/linux/osx, env, timeout and cwd, and runs every handler of a matcher group", "https://code.visualstudio.com/docs/copilot/customization/hooks (exit 2 is a blocking error)", "https://code.visualstudio.com/docs/copilot/customization/mcp-servers (servers, cwd, ${workspaceFolder})", "lin-vscode-electron (VS Code 1.139.0, --password-store=basic): the workspace server with cwd ${workspaceFolder} starts in the repo and a user-profile server with no cwd starts in $HOME; it offers 2025-11-25 as 'Visual Studio Code' and names the tools mcp_crapkit_*; launched from the desktop, a crapkit only a venv holds fails with 'spawn crapkit ENOENT', one in ~/.local/bin starts", "live calibration 2026-09-25: VS Code 1.139.0 starts MCP servers and fills vscode.lm.tools with no Copilot sign-in; vscode.lm.invokeTool returns structuredContent as compact JSON, not crapkit's text", "live calibration 2026-09-25: `code --add-mcp` runs without a display, writes {\"servers\": {\"crapkit\": {\"command\": \"crapkit\", \"args\": [\"mcp\"]}}, \"inputs\": []} to <user-data-dir>/User/mcp.json and exits 0; that user server starts with no trust prompt", "live calibration 2026-09-25: an mcpServers block in .vscode/mcp.json starts nothing, writes no MCP log and shows no error; the same block in a root .mcp.json works (collection workspace-dot-mcp)", "live calibration 2026-09-25: started outside a terminal (VSCODE_CLI unset) VS Code rebuilds its environment from the login shell, and a venv's crapkit fails 'spawn crapkit ENOENT'; `code .` from a terminal inherits the shell's PATH", "live calibration 2026-09-25: agent plugin servers get CLAUDE_PLUGIN_ROOT and PLUGIN_ROOT; workspace servers wait on Workspace Trust, which extension tests refuse; a pip upgrade does not restart a running server (one shim launch across it); hooks.json parsing not run (it needs a Copilot model)"]

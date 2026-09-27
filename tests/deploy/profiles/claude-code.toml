@@ -1,0 +1,91 @@
+# Claude Code: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Claude Code"
+kind = "cli"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Claude Code"
+format = "mcpservers-json"
+scope = "project"
+path = ".mcp.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "execvp"
+windows = "cross-spawn"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "ts-sdk"
+sdk = "sdk-1-29"
+protocol = "2025-11-25"
+discover_first = false
+client_name = "claude-code"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 25000
+tool_prefix = "mcp__crapkit__"
+startup_seconds = 30
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "plugin"
+manifest = ""
+fields = ["type", "command", "args", "timeout", "statusMessage", "async", "asyncRewake", "if", "matcher"]
+events = ["PostToolUse"]
+matcher = "kept"
+exit2 = "feedback"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "claude-code"
+version = "2.1.281"
+command = "claude"
+image = "core"
+floor = "2.1.139"
+headless = "claude mcp list"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "start a new session; `/mcp` reconnects a running one"
+autoupgrade = false
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
+"spawn.resolve" = "observed"
+"spawn.windows" = "inferred"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "docs"
+"limits.tool_prefix" = "observed"
+"limits.startup_seconds" = "docs"
+"hooks.loads" = "docs"
+"hooks.manifest" = "docs"
+"hooks.fields" = "docs"
+"hooks.events" = "docs"
+"hooks.matcher" = "docs"
+"hooks.exit2" = "docs"
+sources = ["calibrate.py: shim record of `claude mcp list` in crapkit-deploy:core", "https://code.claude.com/docs/en/hooks (exit 2, asyncRewake, args since 2.1.139, if since 2.1.85)", "https://code.claude.com/docs/en/mcp (MAX_MCP_OUTPUT_TOKENS default 25000, MCP_TIMEOUT)", "live calibration 2026-09-25: `claude mcp add -s project` run from proj/sub writes .mcp.json into proj/sub (the cwd); the trust keys stay under the git top's key, in forward slashes, and the server shows Connected once hasTrustDialogAccepted and enabledMcpjsonServers are set there", "live calibration 2026-09-25: `claude plugin marketplace add` also writes extraKnownMarketplaces.crapkit {source: github, repo} into $CLAUDE_CONFIG_DIR/settings.json; a later add of the same name in another spelling (the HTTPS URL after owner/repo) is refused: 'its network source differs'", "live calibration 2026-09-25: owner/repo clones over HTTPS when SSH is not configured, retries over SSH only after an HTTPS failure and then reports only the SSH error; it clones the whole repository (1,021 files) without --sparse; add, install, update and list need no login (2.1.138, 2.1.139, 2.1.281)", "live calibration 2026-09-25: plugin MCP and hook spawns get CLAUDE_PLUGIN_ROOT, CLAUDE_PLUGIN_DATA and CLAUDE_CODE_ENTRYPOINT=sdk-cli; on Windows SHELL is Git for Windows' bash under Program Files whatever Git is on PATH, and the hook PATH starts with that Git's directories unless CLAUDE_CODE_GIT_BASH_PATH names another bash", "live calibration 2026-09-25: `claude mcp list` prints the status after a glyph that differs by build and OS (U+221A on Windows 2.1.281, U+2713 on Windows 2.1.139 and 2.1.138, U+2714 on Linux 2.1.281): cells read 'Connected'", "live calibration 2026-09-25: `claude mcp get plugin:crapkit:crapkit` exits 1 'No MCP server found' on 2.1.139 and 2.1.138 and works on 2.1.281 ('Scope: Dynamic config (from command line)')", "live calibration 2026-09-25: 2.1.281 lists a --plugin-dir plugin in `mcp list` as plugin:crapkit:crapkit Connected, and `plugin list --json` shows crapkit@inline, scope session", "live calibration 2026-09-25: with MCP_SDK_GENERATION=v2 and MCP_PROTOCOL_NEGOTIATION=auto, 2.1.281 sends server/discover, takes crapkit's -32601 and sends initialize in the same process: one spawn, 2025-06-18 negotiated; without them it sends initialize first", "live calibration 2026-09-25: 2.1.139 and 2.1.138 send roots {} with no listChanged; CLAUDE_PROJECT_DIR is absent on 2.1.138 and present from 2.1.139", "live calibration 2026-09-25: Linux MCP logs: $XDG_CACHE_HOME/claude-cli-nodejs/<cwd slug>/mcp-logs-<server>/<timestamp>.jsonl (macOS not run)", "live calibration 2026-09-25: on 2.1.281 `claude plugin update crapkit@crapkit` refreshes the marketplace clone itself (0.7.6 to 0.8.0 with the clone at 0.7.6); `claude plugin install` over an older install prints 'already installed' and changes nothing", "live calibration 2026-09-25: 2.1.138 honours `if` (one spawn per .py Edit) and drops exec-form args, so a bare `crapkit` exits 2 and asyncRewake hands its usage to the model; one spawn per matched handler applies below 2.1.85 only (not run)", "live calibration 2026-09-25: Windows: `pip install -U crapkit` under a running crapkit.exe exits 0 (pip moves the running exe aside); `uv tool install crapkit@latest` exits 2 'Access is denied. (os error 5)' and leaves a broken launcher until rerun; after a pinned `uv tool install`, `uv tool upgrade` prints 'Nothing to upgrade'", "live calibration 2026-09-25: `claude -p` with an exit-2 asyncRewake hook that finishes before the answer starts a second turn in the same process: a second system/init and a second result; read the last result", "live calibration 2026-09-25: `claude -p` with a non-Anthropic ANTHROPIC_BASE_URL can send its first request while a plugin server is pending, with no crapkit tool in it: 2 of 6 runs through the shim kept the tools (8 of 8 without the shim), CLAUDE_CODE_MCP_STARTUP_WAIT_MS=5000 made it 5 of 5 (kit/stub_anthropic.py STARTUP_WAIT)", "live calibration 2026-09-25: Windows: a marketplace clone failed with CLAUDE_CONFIG_DIR at 66 characters or more (64 worked), and under a root past 100 characters with a misleading SSH host-key error"]

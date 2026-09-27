@@ -1,0 +1,238 @@
+"""The plugin and the CLI out of step: the ways a user ends up with one ahead
+of the other, or with a plugin that is not what the marketplace holds, and
+what `crapkit doctor --plugin-root` tells them.
+
+    lin-claude-plugin-ahead      the README update lines run before the CLI upgrade: the plugin
+                                 is ahead, doctor names both repairs, the CLI one clears it
+    lin-main-between-releases    main moves past a release with the version string unchanged:
+                                 Codex's refresh lines, pinned to the release tag, keep the
+                                 release's files; Claude Code keeps the old ones or doctor says so
+    lin-marketplace-pinned-tag   a Claude Code marketplace added at @v0.7.6 stays there through the
+                                 update lines, and re-adding it at the new tag moves it; Codex's
+                                 refresh lines re-add it at the new tag themselves
+    win-up-plugins-0.7.6         Claude Code and Codex upgrade their 0.7.6 copies on Windows while
+                                 a file of the old copy is open: both land on the candidate, and
+                                 Codex's second documented line fails with os error 5
+"""
+from __future__ import annotations
+
+import filecmp
+import shutil
+from pathlib import Path
+
+import pytest
+
+from kit.cells import cell
+from test_claude_plugin import (CLAUDE, cli_venv, doctor_plugin, github, harness_on_path, install_old_plugin,
+                                installed, page_lines, plain_repo, run_lines, upgrade_both, upgrade_cli)
+from test_codex_plugin import codex_root, codex_version, gap_repairs, install_old, run_guide
+
+PACKET = "deploy-plugins"
+OLD = "0.7.6"
+SKILL = Path("skills") / "crapkit" / "SKILL.md"
+
+
+# --- the plugin ahead of the CLI ---------------------------------------------------------
+
+@cell("lin-claude-plugin-ahead", channel="Claude marketplace", harness="Claude Code",
+      scenario="drift: CLI 0.7.6, the README update lines pull the candidate plugin; doctor gap; each repair it names",
+      use_cases="plugin/CLI drift", os="linux", image="core", cadence="nightly")
+def test_plugin_ahead_of_the_cli(box, candidate):
+    repo = plain_repo(box)
+    mirror = install_old_plugin(box, OLD, repo)
+    mirror.publish(candidate.staged, candidate.version)
+    steps = run_lines(box, page_lines(CLAUDE, index=1), cwd=repo, expect=None)
+    gap = steps[-1]
+    repairs = gap_repairs(gap.stdout)
+    outcomes = [(box.script(command, cwd=repo).exit, doctor_plugin(box, cwd=repo).exit) for command in repairs]
+
+    assert installed(box)["version"] == candidate.version
+    assert gap.exit == 1 and f"is version {candidate.version}, and the crapkit its hooks spawn" in gap.stdout
+    assert repairs == ["claude plugin install crapkit@crapkit", "pip install -U crapkit"]
+    assert outcomes == [(0, 1), (0, 0)]
+
+
+# --- main between releases ---------------------------------------------------------------
+
+def between_releases(box, mirror, candidate) -> Path:
+    """main one commit past the candidate release, same version string, one skill
+    line added; the tag stays on the release. Returns the new tree."""
+    tree = box.root / "tree-main"
+    shutil.copytree(candidate.staged, tree)
+    with (tree / "plugin" / SKILL).open("a", encoding="utf-8", newline="\n") as skill:
+        skill.write("\nA line main gained after the release.\n")
+    release = mirror.head(f"v{candidate.version}")
+    mirror.publish(tree, candidate.version)
+    mirror.git("tag", "-f", f"v{candidate.version}", release)
+    return tree
+
+
+def same_skill(tree: Path, root: Path) -> bool:
+    return filecmp.cmp(tree / "plugin" / SKILL, root / SKILL, shallow=False)
+
+
+def both_plugins_at_candidate(box, candidate, repo: Path):
+    cli_venv(box)
+    mirror = github(box, candidate)
+    harness_on_path(box)
+    run_lines(box, page_lines(CLAUDE), cwd=repo)
+    run_lines(box, page_lines("Codex"), cwd=repo)
+    return mirror
+
+
+@cell("lin-main-between-releases", channel="marketplace at a main commit", harness="Codex",
+      scenario="drift: same version, different contents; Codex's refresh lines, pinned to the release tag, keep "
+      "the release's files and leave main's out; doctor 0", use_cases="plugin drift", os="linux", image="core",
+      cadence="nightly")
+def test_codex_refresh_keeps_the_release_between_releases(box, candidate):
+    repo = plain_repo(box)
+    tree = between_releases(box, both_plugins_at_candidate(box, candidate, repo), candidate)
+    run_lines(box, page_lines("Codex", index=1), cwd=repo)
+    root = codex_root(box, codex_version(box))
+
+    assert same_skill(candidate.staged, root) and not same_skill(tree, root)
+    assert doctor_plugin(box, str(root)).exit == 0
+
+
+@cell("lin-main-between-releases", channel="marketplace at a main commit", harness="Claude Code",
+      scenario="drift: same version, different contents; after the README update lines Claude Code runs main's "
+      "files, or doctor --plugin-root says it does not", use_cases="plugin drift", os="linux", image="core",
+      cadence="nightly")
+def test_claude_update_between_releases_is_seen(box, candidate):
+    repo = plain_repo(box)
+    tree = between_releases(box, both_plugins_at_candidate(box, candidate, repo), candidate)
+    steps = run_lines(box, page_lines(CLAUDE, index=1), cwd=repo, expect=None)
+    box.transcript.note(f"`claude plugin update` said: {steps[1].stdout.strip()}")
+
+    assert same_skill(tree, Path(installed(box)["installPath"])) or steps[-1].exit == 1
+
+
+# --- a marketplace pinned to a tag ----------------------------------------------------------
+
+def pinned(line: str, version: str) -> str:
+    """A README marketplace line with its source pinned to the release tag:
+    `owner/repo@vX` for Claude Code's shorthand, whatever flags follow it, and
+    `--ref vX` in place of any ref Codex's URL line already carries."""
+    if "://" in line:
+        return " ".join(part for part in _without_ref(line.split())) + f" --ref v{version}"
+    return line.replace("JeanFrancoisGagne/crapkit", f"JeanFrancoisGagne/crapkit@v{version}", 1)
+
+
+def _without_ref(parts: list[str]) -> list[str]:
+    """The words of a command line with its `--ref VALUE` left out."""
+    ref = parts.index("--ref") if "--ref" in parts else None
+    return parts if ref is None else parts[:ref] + parts[ref + 2:]
+
+
+def claude_pinned_at(box, version: str, cwd: Path) -> None:
+    add, install = page_lines(CLAUDE)
+    run_lines(box, [pinned(add, version), install], cwd=cwd)
+
+
+@cell("lin-marketplace-pinned-tag", channel="marketplace add @vX", harness="Claude Code",
+      scenario="upgrade: the README update lines leave a marketplace pinned at @v0.7.6 there; re-adding it at the "
+      "new tag moves it", use_cases="plugin upgrade", os="linux", image="core", cadence="nightly")
+def test_claude_marketplace_pinned_to_a_tag(box, candidate):
+    repo = plain_repo(box)
+    cli_venv(box, spec=f"crapkit=={OLD}")
+    mirror = github(box, at=OLD)
+    harness_on_path(box)
+    claude_pinned_at(box, OLD, repo)
+    mirror.publish(candidate.staged, candidate.version)
+    upgrade_cli(box)
+    stuck = run_lines(box, page_lines(CLAUDE, index=1), cwd=repo, expect=None)
+    stuck_version = installed(box)["version"]
+    box.script("claude plugin marketplace remove crapkit", cwd=repo, expect=0)
+    claude_pinned_at(box, candidate.version, repo)
+
+    assert stuck_version == OLD and stuck[-1].exit == 1
+    assert installed(box)["version"] == candidate.version
+    assert doctor_plugin(box, cwd=repo).exit == 0
+
+
+@cell("lin-marketplace-pinned-tag", channel="marketplace add @vX", harness="Codex",
+      scenario="upgrade: a marketplace pinned at v0.7.6; the docs refresh lines remove it, re-add it at the new "
+      "tag and install from it", use_cases="plugin upgrade", os="linux", image="core", cadence="nightly")
+def test_codex_marketplace_pinned_to_a_tag(box, candidate):
+    repo = plain_repo(box)
+    cli_venv(box, spec=f"crapkit=={OLD}")
+    mirror = github(box, at=OLD)
+    harness_on_path(box)
+    add, plugin_add = page_lines("Codex")
+    run_lines(box, [pinned(add, OLD), plugin_add], cwd=repo)
+    pinned_version = codex_version(box)
+    mirror.publish(candidate.staged, candidate.version)
+    upgrade_cli(box)
+    steps = run_guide(box, repo, expect=None)
+    root = codex_root(box, codex_version(box))
+
+    assert pinned_version == OLD
+    assert [step.exit for step in steps] == [0] * len(steps)
+    assert root.name == candidate.version
+    assert doctor_plugin(box, str(root), cwd=repo).exit == 0
+
+
+# --- Windows, a file of the old copy held open ----------------------------------------------
+
+def held(root: Path):
+    """A handle on a file of an installed copy. Windows refuses to move a directory
+    while any handle under it is open: a file a program keeps open, or a shell
+    whose working directory is inside the copy."""
+    return (root / SKILL).open("rb")
+
+
+def leftovers(*roots: Path) -> list[Path]:
+    return [root for root in roots if root.exists()]
+
+
+@cell("win-up-plugins-0.7.6", channel="Claude marketplace", harness="Claude Code",
+      scenario="upgrade: CLI first, then the README update lines while a file of the 0.7.6 copy is open; every "
+      "line exits 0 and the candidate lands", use_cases="plugin upgrade", os="windows", image=None,
+      cadence="nightly")
+def test_windows_claude_upgrade_with_the_old_copy_open(box, candidate):
+    repo = plain_repo(box)
+    mirror = install_old_plugin(box, OLD, repo)
+    old = Path(installed(box)["installPath"])
+    with held(old):
+        _, steps = upgrade_both(box, mirror, candidate, repo)
+    box.transcript.note(f"left behind: {leftovers(old)}")
+
+    assert [step.exit for step in steps] == [0, 0, 0]
+    assert installed(box)["version"] == candidate.version
+
+
+def codex_upgrade_held(box, candidate) -> list:
+    """Codex's 0.7.6 plugin, a file of it held open, the release, the CLI upgrade,
+    then docs/upgrading.md's Codex lines. Returns their steps."""
+    repo = plain_repo(box)
+    mirror = install_old(box, OLD, repo)
+    old = codex_root(box, OLD)
+    with held(old):
+        mirror.publish(candidate.staged, candidate.version)
+        upgrade_cli(box)
+        steps = run_guide(box, repo, expect=None)
+    box.transcript.note(f"left behind: {leftovers(old)}")
+    return steps
+
+
+@cell("win-up-plugins-0.7.6", channel="Codex marketplace", harness="Codex",
+      scenario="upgrade: CLI first, then docs/upgrading.md's Codex lines while a file of the 0.7.6 copy is open; "
+      "Codex ends on the candidate", use_cases="plugin upgrade", os="windows", image=None, cadence="nightly")
+def test_windows_codex_upgrade_with_the_old_copy_open_lands(box, candidate):
+    codex_upgrade_held(box, candidate)
+
+    assert codex_version(box) == candidate.version
+    assert doctor_plugin(box, str(codex_root(box, candidate.version))).exit == 0
+
+
+@cell("win-up-plugins-0.7.6", channel="Codex marketplace", harness="Codex",
+      scenario="upgrade: every docs/upgrading.md Codex line exits 0 while a file of the 0.7.6 copy is open",
+      use_cases="plugin upgrade", os="windows", image=None, cadence="nightly")
+@pytest.mark.xfail(strict=True, reason="deploy-bug deploy-plugins-11: on Windows the docs' `codex plugin add "
+                   "crapkit@crapkit` exits 1, 'failed to back up plugin cache entry: Access is denied. (os error 5)', "
+                   "while a handle is open under the old copy; the `marketplace upgrade` line before it has already "
+                   "installed the new version")
+def test_windows_codex_upgrade_lines_exit_0_with_the_old_copy_open(box, candidate):
+    steps = codex_upgrade_held(box, candidate)
+
+    assert [step.exit for step in steps] == [0, 0, 0, 0]

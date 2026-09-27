@@ -18,7 +18,7 @@ from crapkit import __version__
 from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.config import load_config_text
 
-from conftest import cli_runner
+from conftest import cli_runner, repo_warnings, repo_warns
 
 GEN = "gen_cov.py"
 
@@ -139,7 +139,7 @@ def test_init_keeps_a_template_for_the_runner_it_did_not_find(py_repo: Path):
 def test_doctor_says_nothing_about_coverage_gaps_without_a_store(py_repo: Path):
     assert run_cli(py_repo, "init").returncode == 0
     res = run_cli(py_repo, "doctor")
-    assert "WARN" not in res.stdout
+    assert repo_warns(res.stdout) == [], res.stdout
 
 
 # --- doctor --json ----------------------------------------------------------
@@ -419,7 +419,7 @@ def test_doctor_warns_about_a_lane_that_writes_into_the_consumers_tree(tmp_path:
     res = run_cli(repo, "doctor")
 
     assert res.returncode == 0, "breaking an existing consumer's gate would be worse"
-    warnings = [ln for ln in res.stdout.splitlines() if ln.startswith("WARN")]
+    warnings = repo_warns(res.stdout)
     assert warnings == [
         "WARN lane 'js' writes coverage/coverage-final.json at the repo root - point it "
         "under .crapkit/ (for example .crapkit/cov/js/) to keep the tree clean",
@@ -435,7 +435,7 @@ def test_doctor_says_nothing_about_a_lane_that_writes_under_the_store(tmp_path: 
     res = run_cli(repo, "doctor")
 
     assert res.returncode == 0, res.stdout + res.stderr
-    assert "WARN" not in res.stdout, res.stdout
+    assert repo_warns(res.stdout) == [], res.stdout
 
 
 def test_the_litter_warning_rides_the_machine_report(tmp_path: Path):
@@ -445,7 +445,8 @@ def test_the_litter_warning_rides_the_machine_report(tmp_path: Path):
     payload = json.loads(run_cli(repo, "doctor", "--json").stdout)
 
     assert payload["problems"] == []
-    assert [w.split(" writes ")[1].split(" at ")[0] for w in payload["warnings"]] == ["cov.json"]
+    assert [w.split(" writes ")[1].split(" at ")[0]
+            for w in repo_warnings(payload["warnings"])] == ["cov.json"]
 
 
 def test_the_lane_init_scaffolds_draws_no_litter_warning(py_repo: Path):
@@ -456,4 +457,4 @@ def test_the_lane_init_scaffolds_draws_no_litter_warning(py_repo: Path):
     res = run_cli(py_repo, "doctor")
 
     assert res.returncode == 0, res.stdout + res.stderr
-    assert "WARN" not in res.stdout, res.stdout
+    assert repo_warns(res.stdout) == [], res.stdout

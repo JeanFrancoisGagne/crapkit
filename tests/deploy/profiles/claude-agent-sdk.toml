@@ -1,0 +1,91 @@
+# Claude Agent SDK: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Claude Agent SDK"
+kind = "sdk"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Claude Agent SDK"
+format = "mcpservers-json"
+scope = "sdk"
+path = "options.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "execvp"
+windows = "cross-spawn"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "ts-sdk"
+sdk = "sdk-1-29"
+protocol = "2025-11-25"
+discover_first = false
+client_name = "claude-code"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 25000
+tool_prefix = "mcp__crapkit__"
+startup_seconds = 30
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "plugin"
+manifest = ""
+fields = ["type", "command", "args", "timeout", "statusMessage", "async", "asyncRewake", "if", "matcher"]
+events = ["PostToolUse"]
+matcher = "kept"
+exit2 = "feedback"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "claude-agent-sdk"
+version = "0.3.281"
+command = ""
+image = "full"
+floor = ""
+headless = "mcpServerStatus()"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "start a new query"
+autoupgrade = false
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "inferred"
+"spawn.env" = "inferred"
+"spawn.resolve" = "inferred"
+"spawn.windows" = "inferred"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "inferred"
+"initialize.discover_first" = "inferred"
+"initialize.client_name" = "inferred"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "inferred"
+"hooks.loads" = "docs"
+"hooks.manifest" = "docs"
+"hooks.fields" = "inferred"
+"hooks.events" = "docs"
+"hooks.matcher" = "inferred"
+"hooks.exit2" = "inferred"
+sources = ["the SDK runs the bundled Claude Code, so each value is Claude Code's until lin-agent-sdk observes it"]

@@ -16,6 +16,7 @@ comparable, and without the stamp that reads as a clean run.
 from __future__ import annotations
 
 import math
+import re
 from typing import NamedTuple
 
 from .invocation import _self
@@ -171,12 +172,52 @@ def stamp_conflict(recorded: str, current: str) -> str | None:
     """The refusal when marks and the running metric disagree; None when they compare.
 
     An unstamped file has nothing to disagree with — the caller warns instead.
+    Marks a newer crapkit or lizard wrote are sent to an upgrade: the stock
+    coverage-then-seed would restamp them under this older metric, and every
+    teammate on the newer release would then be refused.
     """
     if not recorded or recorded == current:
         return None
-    return (f"ratchet marks were recorded under [{recorded}] but this run measures "
-            f"[{current}] - CRAP scores are not comparable across metric versions; "
+    head = f"ratchet marks were recorded under [{recorded}] but this run measures [{current}]"
+    newer = newer_tools(recorded, current)
+    if newer:
+        return (f"{head} - {upgrade_remedy(newer)} rather than re-seed, which would restamp the "
+                "team's marks backwards and make every upgraded teammate's verify refuse them")
+    return (f"{head} - CRAP scores are not comparable across metric versions; "
             f"{coverage_then_seed()}")
+
+
+def upgrade_remedy(tools: list[str]) -> str:
+    """What to do about marks a newer install measured: upgrade this one. Every
+    caller says what its own write would have done to them instead."""
+    where = (" (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike)"
+             if "crapkit" in tools else "")
+    return (f"the marks come from a newer {' and a newer '.join(tools)} than this install; "
+            f"upgrade {'both' if len(tools) > 1 else 'it'} to the version that wrote them{where}")
+
+
+# The stamp's fields, and the tool each one is the version of.
+_STAMP_TOOLS = (("crapkit-analysis", "crapkit"), ("lizard", "lizard"))
+
+
+def newer_tools(recorded: str, current: str) -> list[str]:
+    """The tools `recorded` names at a newer version than `current` does: `crapkit`
+    for the analysis version, `lizard` for lizard's. [] when neither is newer, or
+    when a stamp does not read as `crapkit-analysis=N lizard=X.Y.Z`."""
+    then, now = _stamp_versions(recorded), _stamp_versions(current)
+    return [tool for field, tool in _STAMP_TOOLS if _is_newer(then.get(field), now.get(field))]
+
+
+def _is_newer(then: tuple | None, now: tuple | None) -> bool:
+    return bool(then and now) and then > now
+
+
+def _stamp_versions(stamp: str) -> dict[str, tuple[int, ...]]:
+    """`crapkit-analysis=11 lizard=1.24.0` as {field: (11,), ...}: numbers compare
+    as numbers, so lizard 1.9.0 is older than 1.24.0. A word with no `=` is left out."""
+    fields = (word.partition("=") for word in stamp.split())
+    return {name: tuple(int(n) for n in re.findall(r"\d+", value))
+            for name, sep, value in fields if sep}
 
 
 def coverage_then_seed(rebaseline: str = "re-baseline") -> str:

@@ -1,0 +1,18 @@
+{
+  "name": "crapkit-deploy-harness-full",
+  "private": true,
+  "description": "Harness CLIs the :full deploy image adds to :core. Versions come from tools/deploy/pins.toml.",
+  "dependencies": {
+    "@ampcode/cli": "0.0.1790265644-gf7438f",
+    "@anthropic-ai/claude-agent-sdk": "0.3.281",
+    "@charmland/crush": "0.96.1",
+    "@continuedev/cli": "1.5.47",
+    "@github/copilot": "1.0.88",
+    "@google/gemini-cli": "0.61.0",
+    "@jetbrains/junie-cli": "1468.30.0",
+    "@oh-my-pi/pi-coding-agent": "18.3.0",
+    "@vscode/test-electron": "3.1.0",
+    "cline": "3.0.65",
+    "opencode-ai": "1.18.32"
+  }
+}

@@ -1,0 +1,86 @@
+# Codex: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "Codex"
+kind = "cli"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "Codex"
+format = "codex-toml"
+scope = "user"
+path = ".codex/config.toml"
+config = '''
+[mcp_servers.crapkit]
+command = "crapkit"
+args = ["mcp", "--repo", "/absolute/path/to/your/repo"]
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "allowlist"
+resolve = "execvp"
+windows = "createprocess"
+env_allow = ["HOME", "LOGNAME", "PATH", "SHELL", "USER", "__CF_USER_TEXT_ENCODING", "LANG", "LC_ALL", "TERM", "TMPDIR", "TZ"]
+env_allow_windows = ["PATH", "PATHEXT", "USERNAME", "USERDOMAIN", "USERPROFILE", "TEMP", "TMP", "SYSTEMROOT", "SYSTEMDRIVE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES", "COMSPEC", "HOMEDRIVE", "HOMEPATH", "WINDIR"]
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-06-18"
+discover_first = false
+client_name = "codex-mcp-client"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 10000
+tool_prefix = "mcp__crapkit__"
+startup_seconds = 10
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "plugin"
+manifest = ".codex-plugin/plugin.json"
+fields = ["type", "command", "timeout", "statusMessage", "async", "matcher"]
+events = ["PostToolUse"]
+matcher = "kept"
+exit2 = "feedback"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = "codex"
+version = "0.156.1"
+command = "codex"
+image = "core"
+floor = "0.131.0"
+headless = "codex app-server: mcpServerStatus/list"
+login = false
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "start a new thread; the tool catalog is cached for 30 minutes"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "observed"
+"spawn.env" = "observed"
+"spawn.resolve" = "observed"
+"spawn.windows" = "inferred"
+"spawn.env_allow" = "source"
+"spawn.env_allow_windows" = "source"
+"initialize.client" = "source"
+"initialize.sdk" = "source"
+"initialize.protocol" = "observed"
+"initialize.discover_first" = "observed"
+"initialize.client_name" = "observed"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "docs"
+"hooks.loads" = "observed"
+"hooks.manifest" = "inferred"
+"hooks.fields" = "observed"
+"hooks.events" = "observed"
+"hooks.matcher" = "observed"
+"hooks.exit2" = "inferred"
+sources = ["calibrate.py: shim record of app-server thread/start in crapkit-deploy:core (env: HOME LANG LC_ALL PATH TMPDIR TZ)", "app-server hooks/list: 50 plugin handlers, command `crapkit`, no args, trustStatus untrusted", "codex-rs rmcp-client DEFAULT_ENV_VARS (the env allowlist)", "https://developers.openai.com/codex/mcp (startup_timeout_sec default 10)", "live calibration 2026-09-25: only the app-scoped spawn sends initialize capabilities {elicitation: {form, url}}; a thread-scoped spawn also sends experimental {\"codex/auth-change\": {}}", "live calibration 2026-09-25: the server's PATH starts with the arg0 directory under CODEX_HOME/tmp and the vendored codex-path directory", "live calibration 2026-09-25: Windows: skills/list returned the account's own ~/.agents/skills with HOME and USERPROFILE sandboxed, since Codex resolves home through the Windows user profile; a Windows cell reads skills by their path under the plugin cache (Linux isolates)", "live calibration 2026-09-25: no switch turns off the startup refresh of a Git marketplace short of features.plugins = false, which turns off crapkit too; a --ref marketplace is checked against its ref; after an automatic upgrade `codex plugin marketplace upgrade` prints 'already up to date'", "live calibration 2026-09-25: plugin hooks run through `pwsh -NoProfile -Command <command>` on Windows, with CLAUDE_PLUGIN_ROOT, CLAUDE_PLUGIN_DATA, PLUGIN_ROOT and PLUGIN_DATA set; a background hook runs only while its turn stays open, and `codex exec` cancels it, so a hook cell holds the model's reply open", "live calibration 2026-09-25: `codex doctor --json` runs without a login (overallStatus fail on auth.credentials) and reports 'stdio command \"crapkit\" is not resolvable' with crapkit off PATH; `mcp list --json`, `mcp get --json` and `doctor` start no server", "live calibration 2026-09-25: thread/start opens wss://api.openai.com/v1/responses, and startup runs git ls-remote/fetch of github.com/openai/plugins and asks chatgpt.com for featured plugins; each warns and goes on offline; the Linux image has no bubblewrap and Codex uses its own copy", "live calibration 2026-09-25: Windows: a marketplace clone under <CODEX_HOME>/.tmp/marketplaces/.staging/marketplace-upgrade-XXXXXX failed 'Filename too long' past about 65 characters of CODEX_HOME (a 139-character path)", "live calibration 2026-09-25: `codex exec --dangerously-bypass-approvals-and-sandbox` writes [projects.'<repo>'] trust_level = \"trusted\" into config.toml, which a later step in the same CODEX_HOME inherits", "live calibration 2026-09-25: a local-path marketplace installs under the manifest's version (0.8.0), not 'local'", "live calibration 2026-09-25: `codex plugin add` first exists in 0.131.0 (0.130.0 exits 2): the floor the README names"]

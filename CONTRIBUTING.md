@@ -141,7 +141,7 @@ functions your diff touched, and checks that no ratchet mark rose and no test th
 in the baseline fails now. CI also runs the event-base hook and a complete verdict
 against separate base and candidate wheel installations.
 
-**In CI** (`.github/workflows/ci.yml`), five jobs. A newer push to a pull request
+**In CI** (`.github/workflows/ci.yml`), nine jobs. A newer push to a pull request
 cancels the run it replaces; every push to main runs to the end.
 
 | Job | Runs | What fails the job |
@@ -151,6 +151,11 @@ cancels the run it replaces; every push to main runs to the end.
 | `verdict` | `python tools/testing/ci.py --base "$BASE_REF" --join` checks each uploaded wheel against the bytes and commit its proof records, installs it into a fresh venv, proves its source again, transfers the complete baseline ledger and runs `verify --no-tighten`. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict. |
 | `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. Then `test_claude_code_loads_the_manifests_doctor_reads` asks that Claude Code whether each manifest encoding loads, under `CRAPKIT_REQUIRE_CLAUDE=1`. | A validation error, or a manifest this Claude Code reads another way than `doctor --plugin-root` does. |
 | `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on Crapkit, with `CRAPKIT_REQUIRE_LOCALES=1` as in `test`. | Action execution errors, a test failure or an event-base complexity breach (`hook-precommit --base "$BASE_REF"`). Its `gate: false` setting leaves score enforcement to `verdict`. |
+| `deploy-linux` | `python tools/deploy/run.py --cadence push --os linux --image core --cache gha -n 4 --shard 1/2`, and `--shard 2/2` on a second runner at the same time, builds `crapkit-deploy:core`, or reuses it from the Actions cache, and runs half of the Linux push cells of `tests/deploy` in it with no network; the two halves run every one. | A cell failure, or a new image whose tools differ from `tools/deploy/pins.toml`. |
+| `deploy-linux-native` | `tools/deploy/toolchain.py`, then `run.py --native --os linux --cadence push --cell lin-native-start` on the bare runner, where the container guard does not apply. | A cell failure. |
+| `deploy-windows` | `tools/deploy/toolchain.py`, then `run.py --native --os windows --cadence push -n 4`: the Windows push cells under cmd.exe, both PowerShells and PortableGit. | A cell failure. |
+| `deploy-action` | `tools/deploy/consumer.py` builds a consumer beside the checkout, `uses: ./crapkit` scores it with gate "true" and delta "false" under a read-only pull-request token, and `tools/deploy/assert_action.py` checks the outcome, the log line and the comment. | An assertion about what the consumer sees. |
+| `deploy-action-log` | After `deploy-action`, `tools/deploy/assert_action.py --job deploy-action` reads that job's finished log through `gh api`: the gate line, and "no pull request on this event" on a push or the 403 from posting the comment on a pull request. | A line the log does not hold, or an action outcome other than failure. |
 
 `test` also runs one macOS job, Python 3.13 with both suites in it, for the
 letter-case rows. APFS opens `SRC/a.py` for a tracked `src/a.py` under POSIX

@@ -147,7 +147,11 @@ _HOOK_PRECOMMIT = (
     "staged blobs. A function the committed ratchet marks passes. Exit 6 on a staged function "
     "over its ceiling or a staged file no reader could read. An UNREAD line names such a file "
     "and the reader's reason: change what the reason names so a reader can parse the file, or "
-    "list it under [exclude] globs in crapkit.toml to leave it ungated.")
+    "list it under [exclude] globs in crapkit.toml to leave it ungated. Outside a commit (git "
+    "sets GIT_INDEX_FILE for the hooks a commit runs) with nothing staged, as under `pre-commit "
+    "run --all-files`, it judges every tracked file instead. With no crapkit.toml at or above "
+    "the working directory, as at the git top of a monorepo, it gates in each crapkit root below "
+    "that owns a staged file.")
 
 
 def cmd_help(args) -> int:
@@ -198,7 +202,8 @@ _EXCLUDE_HELP = ("skip items whose path or function name contains this (repeatab
 # (repopath.typed_path): Git Bash and WSL spellings name their drive.
 _TYPED = "; on Windows /c/... and /mnt/c/... name the drive"
 _REPO_FLAG = {"default": None,
-              "help": "crapkit root (default: the nearest crapkit.toml at or above cwd)"}
+              "help": "crapkit root (default: the nearest crapkit.toml at or above cwd); a "
+                      "leading ~ is your home directory"}
 
 
 def _color_kwargs(version: tuple, streams: tuple) -> dict:
@@ -279,7 +284,9 @@ def build_parser() -> argparse.ArgumentParser:
                           "or, with --all, every one")
     clm.add_argument("target", nargs="*", metavar="ARG",
                      help="release: PATH NAME, taking either the bare identifier or the "
-                          "long_name next-item printed; PATH" + _WHERE)
+                          "long_name next-item printed, and for a claim taken before "
+                          "analysis version 11 on a nested def, the name that version "
+                          "gives it; PATH" + _WHERE)
     clm.add_argument("--all", action="store_true", help="release: close every open claim")
     clm.add_argument("--repo", **_REPO_FLAG)
     clm.add_argument("--json", action="store_true", help="machine output")
@@ -404,15 +411,17 @@ def build_parser() -> argparse.ArgumentParser:
     # No --repo: the root comes from the edited file's own path, walked upward to
     # the first crapkit.toml and never past a .git entry. A session root passed in
     # would resolve a worktree edit to the mainline checkout's store.
-    chk = sub.add_parser("claude-hook", help="advisory ccn check for one Claude Code "
-                                             "PostToolUse edit read from stdin; silent "
-                                             "unless a changed function is over its ceiling")
+    chk = sub.add_parser("claude-hook", help="advisory ccn check for one PostToolUse edit "
+                                             "read from stdin (Claude Code, Copilot CLI, "
+                                             "Cursor, VS Code); silent unless a changed "
+                                             "function is over its ceiling")
     chk.add_argument("--protocol", default="1", metavar="N",
                      help="hook payload protocol (default 1); anything else exits 0 silent")
     chk.set_defaults(func=_Handler("claude_hook", "cmd_claude_hook"))
 
     wl = sub.add_parser("worklist", help="ranked risk map: every admitted function, "
-                                         "finished and no-lane rows included, so it never empties")
+                                         "finished and no-lane rows included, so it never empties; "
+                                         "ends with the command to run next")
     wl.add_argument("--repo", **_REPO_FLAG)
     wl.add_argument("--top", type=int, default=None, help="cap the active list (default: config worklist_top)")
     wl.add_argument("--scope", action="append", default=[], metavar="NAME",
@@ -420,7 +429,8 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--batches", type=int, default=None, metavar="N",
                     help="split the active list into at most N batches with no shared "
                          "files, co-changing files kept together: one per agent session")
-    wl.add_argument("--json", action="store_true", help="print as JSON")
+    wl.add_argument("--json", action="store_true",
+                    help="print as JSON: the map alone, without the next-step lines the text ends with")
     wl.set_defaults(func=_Handler("queue", "cmd_worklist"))
 
     ini = sub.add_parser("init", help="sniff the repo and write a starter crapkit.toml")
@@ -437,12 +447,19 @@ def build_parser() -> argparse.ArgumentParser:
                      help="print suggested [crapkit] parallelism knobs for this machine from "
                           "cpu count and recorded lane durations; writes nothing")
     doc.add_argument("--plugin-root", nargs="?", const="", default=None, metavar="PATH",
-                     help="check an installed Claude Code plugin against this CLI instead of "
-                          "reading a repo: manifest version and hook protocol, one line per "
-                          "disagreement, silent when they agree. PATH is the plugin root or "
+                     help="check an installed crapkit plugin, Claude Code's or Codex's, "
+                          "against the crapkit on PATH instead of reading a repo: manifest "
+                          "version, hook protocol, an install whose files differ from its "
+                          "marketplace's copy at one version, and the Claude Code the hooks "
+                          "need. One line per disagreement, and each line names the command "
+                          "that closes it; exit 0 when they agree, after naming a root it "
+                          "found under PATH rather than the root PATH named (with no PATH, "
+                          "every root it checks). PATH is the plugin root or "
                           "any directory above it, ~/.claude included (the newest crapkit "
-                          "install under it wins); with no PATH, the newest crapkit install "
-                          "in Claude Code's plugin cache" + _TYPED)
+                          "install under it wins); with no PATH, every install Claude Code "
+                          "recorded, one per scope and version (a local directory marketplace "
+                          "is checked in that directory, where Claude Code loads it), else the "
+                          "newest in Claude Code's plugin cache, else the newest in Codex's" + _TYPED)
     doc.set_defaults(func=_Handler("admin", "cmd_doctor"))
 
     rat = sub.add_parser("ratchet", help="manage the committed marks file: seed new debt, prune gone code")
@@ -450,7 +467,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="seed: mark over-target functions from the latest run; "
                           "prune: drop marks whose functions left the codebase "
                           "(a mark whose file git renamed follows it instead); "
-                          "merge: 3-way git merge driver (BASE OURS THEIRS); "
+                          "merge: 3-way git merge driver (BASE OURS THEIRS), which a "
+                          "clone running crapkit through uvx configures as "
+                          "`uvx crapkit ratchet merge %%O %%A %%B`; "
                           "move: re-path marks at their recorded values (OLD NEW); "
                           "report: burn-down from the marks file's git history")
     # default=[] and not just nargs="*": argparse calls a ZERO_OR_MORE positional
@@ -479,8 +498,20 @@ def build_parser() -> argparse.ArgumentParser:
                      help="stop after N polls (default: poll until ctrl-c)")
     wat.set_defaults(func=_Handler("admin", "cmd_watch"))
 
-    srv = sub.add_parser("mcp", help="stdio MCP server exposing the read-side tools (JSON-RPC, no deps)")
-    srv.add_argument("--repo", **_REPO_FLAG)
+    srv = sub.add_parser("mcp", help="stdio MCP server exposing the read-side tools (JSON-RPC, no deps)",
+                         description="Serves crapkit's twelve read-side tools over stdio to the agent that "
+                                     "starts it. Each agent starts it from its own config file and reads its "
+                                     "own key and fields, so a block written for another agent can start nothing "
+                                     "and report no error. The block for each agent is in "
+                                     "https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md")
+    srv.add_argument("--repo", default=None,
+                     help="exact crapkit root, served or refused as named (default: the "
+                          "nearest crapkit.toml at or above cwd, else the first workspace folder "
+                          "a client that declares roots names, else the folder a GitHub Copilot "
+                          "CLI session works in; a cwd inside the client's plugin directory is "
+                          "never walked up from); a leading ~ is your home directory, and a "
+                          "value holding a ${...} variable the client did not expand is "
+                          "ignored, with a warning on stderr")
     srv.set_defaults(func=_Handler("analyses", "cmd_mcp"))
 
     mut = sub.add_parser("mutate", help="diff-scoped mutation testing: flip operators on changed lines, run the suite per mutant")

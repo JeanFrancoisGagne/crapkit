@@ -15,10 +15,10 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 
 | What printed | What it means | What to do |
 |---|---|---|
-| "crapkit advisory: N function(s) over ceiling C in PATH (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` | The PostToolUse hook judged a function the edit changed. PostToolUse runs after the write and cannot block | Decompose that function now. The commit gate refuses it later, with more work stacked behind it |
+| "crapkit advisory: N function(s) over ceiling C in PATH (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` (added context on exit 0 in Cursor, Copilot CLI and VS Code) | The PostToolUse hook judged a function the edit changed. PostToolUse runs after the write and cannot block | Decompose that function now. The commit gate refuses it later, with more work stacked behind it |
 | "crapkit advisory: PATH could not be read, so no function in it was judged (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` | The edit left a file no reader can read, so none of its functions was judged. The commit gate refuses that file once staged, with the same `UNREAD` line | Change what the reason names (for a TypeScript arrow, wrap its body in parentheses or a block), or list the file under `[exclude]` in `crapkit.toml`: [README: the gate](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#the-gate) |
 | "crapkit gate: N staged function(s) carry a ratchet mark and were not gated — `crapkit verify` fails a mark that rises" | The commit gate exempted debt the ratchet already signed for. The commit went through | Nothing. Only `crapkit verify` judges whether a mark rose |
-| "crapkit doctor: the plugin at PATH is version X, and the crapkit its hooks spawn (CLI_PATH) is Y", exit 1 | The plugin and the crapkit on PATH ship as separate artifacts and drifted apart; the line names which executable answered | Reinstall whichever is behind: `claude plugin install crapkit@crapkit`, or reinstall the CLI |
+| "crapkit doctor: the plugin at PATH is version X, and the crapkit its hooks spawn (CLI_PATH) is Y", exit 1 | The plugin and the crapkit on PATH ship as separate artifacts and drifted apart; the line names which executable answered | Update whichever is behind: the CLI, or the plugin with your agent's refresh lines, in Claude Code `claude plugin marketplace update crapkit` then `claude plugin update crapkit@crapkit --scope user`, in Codex `codex plugin marketplace remove crapkit`, then the README's `codex plugin marketplace add` line at the CLI's release tag, then `codex plugin add crapkit@crapkit`. A second `claude plugin install` only answers that the plugin is already installed |
 | "crapkit doctor: checking PATH", then nothing | You named a directory above the plugin root and doctor found the install under it. The line says which tree the verdict is about | Nothing. Exit 0 means the plugin and the CLI agree |
 | "WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it", from `crapkit doctor` | The lane measures coverage exactly as before. What it cannot feed are the two checks that read a test-results file | Add the junit flag and `results_artifact` the WARN prints. Until then exit 8 can never fire for that lane's scopes: [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start) |
 | "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping)", from `crapkit verify` | The marks file predates stamping, so nothing can be compared against it | Run `crapkit coverage`, then `crapkit ratchet seed`: seed stamps the metric of the run it reads: [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp) |
@@ -30,17 +30,20 @@ Six more lines come out of `crapkit doctor --plugin-root`, same exit 1.
 "crapkit doctor: the plugin at PATH asks for hook protocol N" means the plugin is ahead of
 the CLI, so the advisory hook exits 0 in silence on every edit.
 "crapkit doctor: the plugin at PATH has no .claude-plugin/plugin.json" means the path is not
-a plugin root and holds no crapkit install below it. "has a .claude-plugin/plugin.json that
-is not a JSON object" and "has a .claude-plugin/plugin.json with no version string" mean the
-file is there but damaged: reinstall with `claude plugin install crapkit@crapkit`, or repair
-that file. "crapkit doctor: no installed crapkit
-plugin under DIR" means the bare flag found nothing in Claude Code's plugin directory: install
-with `claude plugin install crapkit@crapkit`, or pass a PATH.
+a plugin root and holds no crapkit install below it: pass the plugin root or a directory
+above it. "has a .claude-plugin/plugin.json that is not a JSON object" and "has a
+.claude-plugin/plugin.json with no version string" mean the file is there but damaged:
+reinstall the plugin with your agent's install line (`claude plugin install crapkit@crapkit`
+in Claude Code, `codex plugin add crapkit@crapkit` in Codex), or repair that file.
+"crapkit doctor: no installed crapkit plugin under DIR or CODEX_DIR" means the
+bare flag found nothing in Claude Code's plugin directory or in Codex's: install the plugin
+with the commands the line names, Claude Code's or Codex's.
 "crapkit doctor: FAIL no `crapkit` on PATH" means the plugin is installed but the bare name
 its hooks and `.mcp.json` spawn resolves nowhere, so every PostToolUse edit fires a command
 that cannot start and the MCP server never comes up. A `pip install` into a project `.venv`
-is the usual way to land there: `pipx install crapkit`, or point the plugin at the
-environment holding it. `crapkit claude-hook` and
+or `pip install --user` is the usual way to land there: `pipx install crapkit`, or point the
+plugin at the environment holding it. When the line ends `This crapkit's launcher is in
+DIR`, add DIR to PATH and restart the agent. `crapkit claude-hook` and
 `crapkit doctor --plugin-root` are both specified in
 [README: subcommands](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#subcommands).
 
@@ -52,7 +55,7 @@ in this version.
 | Exit | What refused | Owner | First command |
 |---|---|---|---|
 | 3 | config: `crapkit.toml` unparseable, a lane command the guard refuses, a metric-stamp mismatch, a `test-scoped` file under no templated scope, a scoped file whose name is not UTF-8 or a path argument naming a file whose name is not UTF-8 (rename it with `git mv`), a root `package.json` that `init` cannot read (`init wrote no file`; save it as one UTF-8 JSON object), a root on a Windows network share (map it with the `net use` line it prints) | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
-| 4 | git: not a repository, a baseline commit rewritten out of the history, a baseline commit or fork point a shallow clone does not hold, or `crapkit ratchet report --enforce` with a debt key set in any shallow clone (mark ages and repayments need the whole history). The shallow ones end `set fetch-depth: 0 on the checkout or run git fetch --unshallow` | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list`, or `git fetch --unshallow` when the line names a shallow clone |
+| 4 | git: not a repository, a repository with no commit yet or one git refuses to open (each refusal names its fix), a baseline commit rewritten out of the history or made on a branch HEAD does not contain, a baseline commit or fork point a shallow clone does not hold, or `crapkit ratchet report --enforce` with a debt key set in any shallow clone (mark ages and repayments need the whole history). The shallow ones end `set fetch-depth: 0 on the checkout or run git fetch --unshallow` | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list`, or `git fetch --unshallow` when the line names a shallow clone |
 | 5 | a lane produced no artifact, produced one measuring a different tree or spelling this one absolutely, wrote a report crapkit refuses to read, timed out past its retries, or refused a container; the measurement owner stopped; or `crapkit verify --reuse-artifacts` found a lane's declared `results_artifact` missing or unreadable, stored no run, and ended `run verify without --reuse-artifacts so the lane writes it again`: run `crapkit verify` without the flag | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
 | 6 | gate: a function the diff touched is over its ceiling and above any ratchet mark it carries; or an `UNREAD` line names a changed file no reader could read (change what its reason names, or list it under `[exclude]`), and an override grants nothing until it is gone | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
 | 7 | ratchet: a marked function scores worse than its recorded mark | [docs: how verify uses the ratchet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#how-verify-uses-the-ratchet) | `crapkit explain PATH NAME` |
@@ -84,8 +87,12 @@ versions are not comparable; ccn did not move. Run `crapkit coverage`, then
 `crapkit ratchet seed`: seed stamps the metric of the run it reads, so a seed from a run the
 older crapkit measured keeps the old stamp and verify keeps refusing. When a failed verify
 pins the baseline, plain seed reads the pinned run. Name the newer one with
-`crapkit ratchet seed --baseline N`: on such a store the refusal itself ends with that seed,
-under plain `crapkit verify` and under `crapkit verify --baseline N` alike:
+`crapkit ratchet seed --baseline N`: on such a store a plain `crapkit verify` prints N in the
+taint warning above its refusal, and the refusal ends by saying a failed verify pins the plain
+seed; `crapkit verify --baseline N` ends with that seed itself. When the FIRST bracket is the
+newer one, a newer crapkit or lizard wrote the marks (`the marks come from a newer crapkit
+than this install`): upgrade this install, and never seed, since seed and prune refuse those
+marks and a seed would restamp the team's marks backwards:
 [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp).
 
 `lane 'py': positional argument 'slow'' narrows a full-suite coverage run ... (cmd.exe
@@ -258,6 +265,13 @@ A conflict here means the merge driver is not installed in this clone. Install i
 the merge:
 
     git config merge.crapkit-ratchet.driver "crapkit ratchet merge %O %A %B"
+
+When git printed `crapkit: not found` above the conflict, the driver is installed and git's
+PATH has no `crapkit`, which is where a clone that runs crapkit through uvx lands. The file
+then holds your side with no conflict markers: do not stage it. Run `git merge --abort`, set
+the driver to the uvx form, and merge again:
+
+    git config merge.crapkit-ratchet.driver "uvx crapkit ratchet merge %O %A %B"
 
 Owner: [docs: the git merge driver](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-git-merge-driver).
 When the driver itself refuses (`marks from different metric versions cannot merge`),

@@ -21,6 +21,7 @@ VISUALS = {
     'AN4': (['12 paths with one input identity', '12 parser jobs', 'One cache entry; 12 path-specific results'],
             ['12 paths with one input identity', 'One parser job', 'One cache entry; 12 path-specific results'])
 }
+UNLISTED_EVIDENCE = ('artifacts','sources','probe','result','repro_command','reproducible_command')
 
 
 def esc(value):
@@ -55,26 +56,45 @@ def diagram(items, after=False, variant=0):
     return '<div class="diagram '+('after' if after else 'before')+'">'+''.join(blocks)+'</div>'
 
 
-def card(candidate):
-    c = candidate
-    strength = c.get("strength", "Worth exploring")
+def before_after(c):
+    if c['id'] in VISUALS:
+        return VISUALS[c['id']]
     schematic = c.get('before_after_schematic', {})
     before = c.get("before", schematic.get('before', c.get("before_schematic", "Current callers → Split ownership → Observed cost")))
     after = c.get("after", schematic.get('after', c.get("after_schematic", "Callers → One owning module → Consistent result")))
-    if c['id'] in VISUALS:
-        before,after=VISUALS[c['id']]
-    files = ''.join(f'<li>{esc(readable(f))}</li>' for f in list_value(c.get("files")))
-    raw_evidence = c.get('evidence', [])
-    refs_list = list(c.get('evidence_files', []))
-    sources = []
-    if isinstance(raw_evidence, dict):
-        refs_list += raw_evidence.get('artifacts', [])
-        refs_list += [raw_evidence[k].split(':')[0] for k in ('probe','result') if k in raw_evidence]
-        sources = raw_evidence.get('sources', [])
-        raw_evidence = [f'{k}: {readable(v)}' for k,v in raw_evidence.items() if k not in ('artifacts','sources','probe','result','repro_command','reproducible_command')]
-    evidence = ''.join(f'<li>{esc(readable(e))}</li>' for e in list_value(raw_evidence))
+    return before, after
+
+
+def keyed_evidence(raw, refs):
+    """Evidence given as a mapping: its prose lines, the files it names and its official sources."""
+    refs += raw.get('artifacts', [])
+    refs += [raw[k].split(':')[0] for k in ('probe','result') if k in raw]
+    return [f'{k}: {readable(v)}' for k,v in raw.items() if k not in UNLISTED_EVIDENCE], refs, raw.get('sources', [])
+
+
+def evidence_parts(c):
+    raw = c.get('evidence', [])
+    refs = list(c.get('evidence_files', []))
+    if isinstance(raw, dict):
+        return keyed_evidence(raw, refs)
+    return raw, refs, []
+
+
+def evidence_html(c):
+    """The evidence list, and the links into the evidence/ folder beside this script."""
+    lines, refs, sources = evidence_parts(c)
+    evidence = ''.join(f'<li>{esc(readable(e))}</li>' for e in list_value(lines))
     evidence += ''.join(f'<li>{esc(s["supports"])} <a href="{esc(s["url"])}">Official source</a></li>' for s in sources)
-    refs = ''.join(f'<li><a href="{NAME}-evidence/{esc(f)}">{esc(f)}</a></li>' for f in dict.fromkeys(refs_list) if isinstance(f, str))
+    links = ''.join(f'<li><a href="evidence/{esc(f)}">{esc(f)}</a></li>' for f in dict.fromkeys(refs) if isinstance(f, str))
+    return evidence, links
+
+
+def card(candidate):
+    c = candidate
+    strength = c.get("strength", "Worth exploring")
+    before, after = before_after(c)
+    files = ''.join(f'<li>{esc(readable(f))}</li>' for f in list_value(c.get("files")))
+    evidence, refs = evidence_html(c)
     benefit = [c.get("leverage", ""), c.get("locality", ""), c.get("test_benefits", "")]
     benefits = ''.join(f'<p>{esc(readable(b))}</p>' for b in benefit if b)
     adr = c.get("adr", c.get("adr_conflict", "No ADR conflict."))
@@ -101,9 +121,13 @@ def load_candidates():
     return candidates
 
 
+def ranked_rows(candidates):
+    return ''.join(f'<tr><td><a href="#{esc(c["id"])}">{esc(c["id"])}</a></td><td><a href="#{esc(c["id"])}">{esc(c["title"])}</a></td><td>{esc(c["strength"])}</td><td>{esc(c.get("review_kind", "Design opportunity"))}</td></tr>' for c in candidates)
+
+
 def render(data):
     candidates = data['candidates']
-    rows = ''.join(f'<tr><td><a href="#{esc(c["id"])}">{esc(c["id"])}</a></td><td><a href="#{esc(c["id"])}">{esc(c["title"])}</a></td><td>{esc(c["strength"])}</td><td>{esc(c.get("review_kind", "Design opportunity"))}</td></tr>' for c in candidates)
+    rows = ranked_rows(candidates)
     coverage = ''.join(f'<tr><td>{esc(r["area"])}</td><td>{esc(r["disposition"])}</td></tr>' for r in data['coverage'])
     strong = sum(c['strength'] == 'Strong' for c in candidates)
     cards = ''.join(card(c) for c in candidates)
@@ -119,7 +143,7 @@ body h1{{font-size:clamp(38px,6vw,68px);margin:12px 0 20px;line-height:1.15}}bod
 <p class="meta">SOURCE 499d9db4f9ff4d212fb94ea3975c7477b6b1c968 · Review only · Production unchanged</p>
 <div class="metrics"><div class="metric"><b>{len(candidates)}</b><span>fresh candidates</span></div><div class="metric"><b>{strong}</b><span>strong recommendations</span></div><div class="metric"><b>64</b><span>production modules</span></div><div class="metric"><b>{len(data['coverage'])}</b><span>review areas</span></div></div>
 <p class="legend">Solid box: module · Arrow: flow · Dashed divider: seam · Dark box: concentrated ownership</p></header>
-<nav><a href="#priorities">Ranked list</a><a href="#coverage">Coverage map</a><a href="#evidence">Verification</a><a href="{NAME}.json">Candidate data</a><a href="{NAME}-evidence.zip">Evidence bundle</a></nav>
+<nav><a href="#priorities">Ranked list</a><a href="#coverage">Coverage map</a><a href="#evidence">Verification</a><a href="{NAME}.json">Candidate data</a><a href="evidence.zip">Evidence bundle</a></nav>
 <div class="focus"><b>First: automatic lane reuse.</b> A changed test input produces a passing trusted verdict with reuse, then exit 8 on a fresh run of the same tree. <a href="#EX1">Inspect the reproduced failure and proposed module ownership.</a></div>
 <section id="priorities"><h2>Ranked opportunities</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>Opportunity</th><th>Recommendation</th><th>Evidence class</th></tr></thead><tbody>{rows}</tbody></table></div></section>
 <section class="map"><h3>Where the strongest failures meet</h3><pre class="mermaid">flowchart LR

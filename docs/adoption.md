@@ -223,13 +223,18 @@ points at a store with no run in it.
 **Claude Code users install the plugin.** One artifact, versioned against the CLI:
 
 ```
-claude plugin marketplace add JeanFrancoisGagne/crapkit
+claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin
 claude plugin install crapkit@crapkit
 ```
 
+`--sparse` checks out the two directories the plugin ships from, 0.8 MB of a 61 MB
+repository.
+
 It carries three skills, the read-side MCP server, and one advisory PostToolUse hook that
 names functions an edit pushed over their ceiling. The hook never blocks; the commit gate
-stays the only enforcement point. After a CLI upgrade, `crapkit doctor --plugin-root PATH`
+stays the only enforcement point. Cursor imports Claude Code plugins from the same home, and
+GitHub Copilot CLI and VS Code load them too, so the hook runs there as well and hands the
+advisory to the model as added context. After a CLI upgrade, `crapkit doctor --plugin-root PATH`
 compares the two and prints nothing when they agree.
 
 The plugin registers that hook on `Edit|Write`. A session that writes source through a
@@ -240,25 +245,45 @@ does not cover that entry: it reads the plugin's own `hooks/hooks.json` and noth
 a protocol bump shows up for the shipped matcher and stays silent for the one you wrote.
 Re-check it by hand after a CLI upgrade.
 
-Codex users can install the three skills and MCP server through its own plugin manager:
+Codex users can install the three skills and MCP server through its own plugin manager,
+Codex 0.131.0 or newer:
 
 ```
-codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 ```
 
-The advisory hook instructions above configure Claude Code's PostToolUse event.
-After a CLI upgrade, follow
-[plugin and MCP client updates](upgrading.md#plugin-and-mcp-clients): refresh the
-marketplace first, update the installed plugin, then check its version and start a
-fresh client session.
+Codex loads the skills and the MCP server and no hook: the plugin's Codex manifest leaves
+hooks out, because Codex reports an edit as `apply_patch` patch text
+([README: Codex](../README.md#codex)). `--ref` pins the marketplace to the release's tag.
+Without it the marketplace follows main, and Codex reinstalls the plugin from main at its
+next start once main moves, ahead of the CLI. After a CLI upgrade, follow
+[plugin and MCP client updates](upgrading.md#plugin-and-mcp-clients): Claude Code
+refreshes its marketplace and updates the plugin; a Codex marketplace added at a tag
+stays there, so it is removed and added at the new tag before the plugin is installed
+again. The listing that checks it takes `--json` from Codex 0.137.0. Then start a fresh
+client session.
+
+Every other agent takes the MCP server from its own config file, and
+[Wiring crapkit into your agent](harnesses.md) has the block to paste for each one:
 
 | Harness | What it gets |
 |---|---|
 | Claude Code | the plugin: three skills, the MCP server, the advisory hook |
 | Codex | the plugin: three skills and the MCP server |
-| other MCP clients (Cursor, Zed, Continue) | `crapkit mcp` as a stdio server: twelve read-side tools, no skills, no hook; calls can write caches and store metadata |
+| Continue | `crapkit mcp` from [its config](harnesses.md#continue), and the skills when you copy them into `.continue/skills`, `.claude/skills` or `~/.continue/skills` |
+| Zed | `crapkit mcp` from [its config](harnesses.md#zed), and the skills when you copy them into `~/.agents/skills` |
+| Cursor, GitHub Copilot CLI, VS Code | the advisory hook, from the Claude Code plugin they load; `crapkit mcp` from its config ([Cursor](harnesses.md#cursor), [GitHub Copilot CLI](harnesses.md#github-copilot-cli), [VS Code](harnesses.md#vs-code-with-github-copilot)) for the tools |
+| every other MCP client | `crapkit mcp` as a stdio server, from [its section](harnesses.md): twelve read-side tools, no skills, no hook; calls can write caches and store metadata |
+| Aider | `crapkit rescore --gate` as its [lint command](harnesses.md#aider) |
 | anything else | the pre-commit hook and CI, which are git and shell and need no harness at all |
 
 A runtime with a skills directory but no marketplace can copy `plugin/skills/*` into it and
-get the skills alone. MCP wiring is in [agent-json.md](agent-json.md#mcp-server).
+get the skills alone: `~/.claude/skills` for Claude Code, `$CODEX_HOME/skills`
+(`~/.codex/skills` by default) for Codex, `~/.gemini/skills` for Gemini CLI. Codex and
+Claude Code keep `crapkit-onboard` out of the model's list, Gemini CLI does not;
+`gemini skills disable crapkit-onboard --scope user` takes it out once the repo is
+adopted. Each agent reads its own MCP key and fields, and one agent's block starts
+nothing in another's, without an error: [Wiring crapkit into your agent](harnesses.md)
+gives the block for each of 27. The server's contract is in
+[agent-json.md](agent-json.md#mcp-server).

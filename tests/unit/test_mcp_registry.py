@@ -196,7 +196,7 @@ def test_every_scope_in_the_array_becomes_its_own_scope_flag(name):
 # counts when it exists, differs from the name and is longer than it.
 
 def test_a_table_entry_with_a_title_and_an_output_shape_is_served_as_title_and_output_schema():
-    from crapkit.mcp_server import _listing_entry
+    from crapkit.mcp_server import _TRUNCATED, _listing_entry
 
     entry = _listing_entry({"name": "sample_tool", "title": "Sample tool for tests",
                             "description": "What it does. When to use it.", "positional": (),
@@ -205,7 +205,8 @@ def test_a_table_entry_with_a_title_and_an_output_shape_is_served_as_title_and_o
 
     assert entry["title"] == "Sample tool for tests"
     assert entry["outputSchema"] == {"type": "object",
-                                     "properties": {"rows": {"type": "array", "description": "one row per finding"}}}
+                                     "properties": {"rows": {"type": "array", "description": "one row per finding"},
+                                                    "truncated": _TRUNCATED}}
 
 
 def test_an_entry_without_title_or_output_serves_neither_field():

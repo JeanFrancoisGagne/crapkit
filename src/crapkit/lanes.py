@@ -26,6 +26,7 @@ from typing import IO, NamedTuple
 from .config import Lane
 from .coverage_istanbul import FnCoverage
 from .coverage_format import lane_format
+from .doctor import container_marker, refused_in_container
 from .errors import GitError, ToolError
 from .gitio import GitFacts, untracked_files
 from .gitpaths import readable, shown
@@ -44,14 +45,15 @@ from .procs import CwdMissing, NoProgress, own_processes, run_bounded
 from .repopath import Placing
 from .repotext import lenient, os_bytes
 from .universe import ScopeMatch, owning_scope
+from .userhome import user_home
 
 
 def _in_container() -> bool:
-    return os.environ.get("CRAPKIT_INSIDE_CONTAINER") == "1" or Path("/.dockerenv").exists()
+    return container_marker(os.environ, Path("/.dockerenv").exists()) is not None
 
 
 def _refuse_container_python(lane: Lane) -> None:
-    if lane.parser == "coveragepy" and _in_container() and not lane.container_ok:
+    if refused_in_container(lane) and _in_container():
         raise ToolError(
             f"lane {lane.name!r} runs the python suite, which is host-only "
             f"(container runs OOM); set container_ok = true only if this environment truly differs")
@@ -232,7 +234,7 @@ def _attempt_once(root: Path, lane: Lane, log_path: Path, attempt: int, owner=No
         return None
 
 
-def _pytest_cov_home(lane: Lane) -> str:
+def _pytest_cov_home(root: Path, lane: Lane) -> str:
     """Which environment the package has to land in, as concretely as the lane
     command allows.
 
@@ -240,17 +242,21 @@ def _pytest_cov_home(lane: Lane) -> str:
     lands in whatever venv the reader's shell has active; the reporter ran it
     verbatim, it installed fine, and the next `crapkit coverage` failed
     identically. So the hint binds the install to the interpreter the lane
-    names. When the lane names no interpreter, it says which environment and
-    stops there: an install line built around a word that has no `-m` flag costs
-    the reader a second, unrelated failure before they are back where they were.
+    names: `uv pip install --python WORD` in a venv uv made, which holds no pip.
+    When the lane names no interpreter, it says which environment and stops
+    there: an install line built around a word that has no `-m` flag costs the
+    reader a second, unrelated failure before they are back where they were.
     """
+    from .launchers import pip_install
+
     word = pytest_python(lane.command)
     if not word:
         return "the environment the lane's suite runs in"
-    return f"the environment `{word}` runs in (`{word} -m pip install pytest-cov`)"
+    resolved = launch_spec(root, lane).resolve(word) or word
+    return f"the environment `{word}` runs in (`{pip_install(resolved, 'pytest-cov', word)}`)"
 
 
-def _missing_plugin_hint(tail: str, lane: Lane) -> str:
+def _missing_plugin_hint(tail: str, root: Path, lane: Lane) -> str:
     """The one failure signature a new user cannot decode: pytest rejecting
     --cov points at crapkit's config when the real gap is the pytest-cov package.
 
@@ -260,7 +266,7 @@ def _missing_plugin_hint(tail: str, lane: Lane) -> str:
     if "unrecognized arguments" not in tail or "--cov" not in tail:
         return ""
     return (f" - the --cov flags come from the pytest-cov package, which has to be "
-            f"installed in {_pytest_cov_home(lane)}, not in the shell's active venv")
+            f"installed in {_pytest_cov_home(root, lane)}, not in the shell's active venv")
 
 
 def _shard_hint(root: Path, lane: Lane) -> str:
@@ -383,7 +389,7 @@ def _raise_no_artifact(root: Path, lane: Lane, log_path: Path, exit_code: int | 
     hint = f"; last output: {tail}" if tail else ""
     raise UnwrittenArtifact(
         f"lane {lane.name!r} {_no_artifact_head(root, lane, list(refused), reuse)}{detail}"
-        f"; lane log: {shown(str(log_path))}{hint}{_missing_plugin_hint(tail, lane)}"
+        f"; lane log: {shown(str(log_path))}{hint}{_missing_plugin_hint(tail, root, lane)}"
         f"{_shard_hint(root, lane)}", refused)
 
 
@@ -1040,7 +1046,7 @@ def _output_lock(path: Path) -> Path:
     # host named in one, has no UTF-8 spelling, and encoding one raised here.
     key = os_bytes(os.path.normcase(str(path.resolve())))
     host = hashlib.sha256(os_bytes(socket.gethostname())).hexdigest()[:16]
-    directory = Path.home() / ".cache" / "crapkit" / "measurements" / host
+    directory = user_home() / ".cache" / "crapkit" / "measurements" / host
     return directory / ("measurement-" + hashlib.sha256(key).hexdigest() + ".lock")
 
 

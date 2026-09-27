@@ -6,6 +6,13 @@
 #
 # `-i` is not decoration: the protocol is JSON-RPC on stdin and stdout, and
 # without it the server reads EOF and exits before the client's `initialize`.
+#
+# The server runs as uid 1000. On a Linux host where your uid is not 1000, the
+# tools still answer, but the caches they write under .crapkit/ cannot be
+# saved and every call walks the git history again. Run it as the checkout's
+# owner:
+#
+#     docker run -i --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo crapkit
 FROM python:3.12-slim
 
 # git, because every tool here shells to the crapkit CLI and the CLI reads git:

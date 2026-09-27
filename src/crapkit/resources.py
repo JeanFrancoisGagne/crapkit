@@ -16,6 +16,7 @@ from .errors import ToolError
 from .locks import exclusive_lock
 from .repopath import typed_path
 from .repotext import os_bytes
+from .userhome import user_home
 
 
 WORKER_MEMORY_MB = 35
@@ -74,7 +75,7 @@ def _budget_directory() -> Path:
     if override:
         return typed_path(override).resolve()
     host = hashlib.sha256(os_bytes(socket.gethostname())).hexdigest()[:16]
-    return Path.home() / ".cache" / "crapkit" / "workers" / host
+    return user_home() / ".cache" / "crapkit" / "workers" / host
 
 
 def _worker_limit(requested: int, shared: int, memory: int | None, inherited: int | None) -> int:

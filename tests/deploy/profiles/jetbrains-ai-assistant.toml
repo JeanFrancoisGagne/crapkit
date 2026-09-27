@@ -1,0 +1,92 @@
+# JetBrains AI Assistant: the harness profile the deploy cells read (tests/deploy/kit/profiles.py).
+name = "JetBrains AI Assistant"
+kind = "app"
+
+# docs/harnesses.md > the heading below; `config` stands in until that page carries the section.
+[doc]
+heading = "JetBrains AI Assistant"
+format = "mcpservers-json"
+scope = "sdk"
+path = "settings-import.json"
+config = '''
+{
+  "mcpServers": {
+    "crapkit": {
+      "command": "crapkit",
+      "args": [
+        "mcp",
+        "--repo",
+        "/absolute/path/to/your/repo"
+      ]
+    }
+  }
+}
+'''
+
+# How the harness starts `crapkit mcp`: working directory, environment, command lookup (POSIX, Windows).
+[spawn]
+cwd = "workspace"
+env = "inherit"
+resolve = "execvp"
+windows = "createprocess"
+
+# What it sends first, and the client a sim cell drives crapkit with.
+[initialize]
+client = "python"
+sdk = ""
+protocol = "2025-03-26"
+discover_first = false
+client_name = "ai-assistant"
+
+# What it keeps of one tool result (0: none known), its tool-name prefix, its startup bound.
+[limits]
+output_tokens = 0
+tool_prefix = ""
+startup_seconds = 0
+
+# What it does with the plugin's hooks/hooks.json.
+[hooks]
+loads = "none"
+manifest = ""
+fields = []
+events = []
+matcher = "dropped"
+exit2 = "ignored"
+
+# The pinned CLI a real cell runs; pins_key "" means no headless check exists.
+[real_cli]
+pins_key = ""
+version = ""
+command = ""
+image = ""
+floor = ""
+headless = ""
+login = true
+
+# What a user does after upgrading crapkit.
+[lifecycle]
+restart = "Settings > Tools > AI Assistant > MCP > restart the server"
+autoupgrade = true
+
+# One tag per field above: observed, source, docs or inferred.
+[evidence]
+"spawn.cwd" = "inferred"
+"spawn.env" = "inferred"
+"spawn.resolve" = "inferred"
+"spawn.windows" = "inferred"
+"initialize.client" = "inferred"
+"initialize.sdk" = "inferred"
+"initialize.protocol" = "inferred"
+"initialize.discover_first" = "inferred"
+"initialize.client_name" = "inferred"
+"limits.output_tokens" = "inferred"
+"limits.tool_prefix" = "inferred"
+"limits.startup_seconds" = "inferred"
+"hooks.loads" = "inferred"
+"hooks.manifest" = "inferred"
+"hooks.fields" = "inferred"
+"hooks.events" = "inferred"
+"hooks.matcher" = "inferred"
+"hooks.exit2" = "inferred"
+sources = ["https://www.jetbrains.com/help/ai-assistant/mcp.html (import a mcpServers JSON block)"]
+manual = ["Add the server from JSON in Settings > Tools > AI Assistant > Model Context Protocol and read its status"]

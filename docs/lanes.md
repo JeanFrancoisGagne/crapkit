@@ -43,9 +43,9 @@ ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
 WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
-ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0)
+ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.10.6)
 ok   lizard 1.24.0
-doctor: no problems found
+doctor: no problems found, 1 warning above
 ```
 
 A WARN, never a FAIL: the lane still scores. `crapkit init` writes both halves on the lanes
@@ -780,9 +780,15 @@ uncomment later.
 sync the project environment before running anything, and `init` has no business
 provisioning one to ask a question about it. If the plugin is missing, the lane says so on
 its first run — with the log path. `doctor` holds to the same rule and says so: where a
-python-headed lane gets `ok   lane 'py': python -> <path> (pytest X, pytest-cov Y)`, a
-managed one gets a `note` that its interpreter and pytest-cov were not probed, so a lane
-doctor did not ask never reads as one it found healthy.
+python-headed lane gets `ok   lane 'py': python -> <path> (pytest X, pytest-cov Y, coverage Z)`,
+a managed one gets a `note` that its interpreter and pytest-cov were not probed, so a lane
+doctor did not ask never reads as one it found healthy. A probed lane whose coverage.py is
+older than 7.6 FAILs, because coverage.py writes the function regions crapkit scores from
+only since 7.6 and `crapkit coverage` refuses that lane's report with exit 5:
+
+```
+FAIL lane 'py' runs coverage 7.4.4 (/home/you/ledger/.venv/bin/python), which writes no function regions, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.6); install 7.6 or later there with `/home/you/ledger/.venv/bin/python -m pip install "coverage>=7.6"` and raise any pin that holds it lower
+```
 
 It does check that the manager itself is installed here, because the lockfile is the
 repo's property and the PATH is the machine's. A `uv.lock` a teammate committed on a
@@ -1013,6 +1019,8 @@ run 1 @ 387e938f537: 1 functions scored: 1 measured, 1 over ceiling 6, CRAP load
 $ crapkit worklist --repo packages/api
 worklist @ 387e938f537 (run 1, floor ccn>=5, churn 12mo) - 1 of 1 active (worklist_top 50), 0 dormant
   risk     10.5  ccn   7  crap    13.1  cov  50%    6c/1a  calc/grade.py:1  classify( score , attempts , late , bonus )
+no crapkit-ratchet.tsv yet: seed marks each function over its ceiling at today's score, and from then on a mark may only fall
+-> next: crapkit ratchet seed
 ```
 
 `--repo` names the crapkit root, never the git top, and every subcommand you invoke by hand
@@ -1072,7 +1080,14 @@ decompose before committing (coverage cannot save a function above the target).
 
 Exit 6, and the path in the row is root-relative like every other crapkit row. A staged file
 that sits **above** the crapkit root is outside the diff by design, and is no longer named
-in that warning.
+in that warning. The hook git runs needs no `cd`: git starts it at the top, and with no
+`crapkit.toml` there the gate runs in `packages/api` itself and prints the same row from the
+top, `packages/api/calc/grade.py:17`.
+
+A command other than the hook that runs at the git top, such as Route 4's `crapkit verify`
+in a CI step, finds no `crapkit.toml` there and exits 3, and the refusal says which flag to
+add: `no crapkit.toml at /repo - nothing to analyze; crapkit.toml sits below it in packages/api:
+pass --repo packages/api`.
 
 ---
 
@@ -1085,7 +1100,13 @@ crapkit: lane 'py' FAILED: lane 'py' runs the python suite, which is host-only (
 ```
 
 Two triggers, either one is enough: the file `/.dockerenv` exists, or
-`CRAPKIT_INSIDE_CONTAINER=1` is set in the environment. The guard exists because a python
+`CRAPKIT_INSIDE_CONTAINER=1` is set in the environment. Docker writes `/.dockerenv` into
+every container it starts, so these all count as containers: a devcontainer, a GitHub
+Codespace, a CI job that runs in a `container:` image or on a Docker executor, and an agent
+that works in a cloud container, such as a Codex cloud task. `crapkit doctor` names each
+coverage.py lane the guard will refuse with a WARN, before the first `crapkit coverage`
+does. Podman writes `/run/.containerenv` instead, which the guard does not read; set
+`CRAPKIT_INSIDE_CONTAINER=1` there if the container caps memory. The guard exists because a python
 suite under coverage is memory-hungry and a container memory cap turns that into an OOM kill
 that looks like a flaky lane. It fires on the path that launches the suite and nowhere else,
 so `--reuse-artifacts` reads a host-built report inside a container without hitting it: that
@@ -1097,6 +1118,19 @@ container_ok = true
 ```
 
 `istanbul` lanes are never refused.
+
+`crapkit doctor` reads the same two triggers, so a devcontainer, a Codespace, a Codex cloud
+task or a CI job in a container hears about the guard before the first `coverage` run
+refuses. It prints one WARN per `coveragepy` lane that has no `container_ok`, naming the
+trigger it found:
+
+```
+WARN lane 'py' runs a coverage.py suite and this is a container (/.dockerenv exists): `crapkit coverage` refuses it with exit 5; if the container is sized for the suite, set container_ok = true on the lane (docs/lanes.md#containers)
+doctor: no problems found, 1 warning above
+```
+
+doctor exits 0 here, because the config is right and the machine is the question. The closing
+line counts the warnings, so a reader who reads only the last line still learns there is one.
 
 ---
 
@@ -1195,7 +1229,9 @@ paths shared by different checkouts. A conflicting command refuses before it
 runs. Independent output paths can run in parallel. Coordination files live under
 `~/.cache/crapkit/measurements/<host-id>`, outside report directories that runners
 may delete and recreate. The key uses the full resolved artifact path. `TEMP`,
-`TMP` and `CRAPKIT_RESOURCE_DIR` do not select another measurement domain.
+`TMP` and `CRAPKIT_RESOURCE_DIR` do not select another measurement domain. A process
+started without `USERPROFILE` (Windows) or `HOME` (POSIX) still finds the same `~`
+through the operating system; [resources.md](resources.md#analysis-workers) says how.
 If the CLI dies, its helper stops registered test processes before releasing
 ownership. Small stable lease files remain as coordination state; do not delete
 them as idle evidence.

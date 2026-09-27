@@ -11,12 +11,18 @@ So a message names `crapkit` only when PATH resolves it to a console script of
 the interpreter running crapkit, and names that interpreter otherwise, spelled
 with forward slashes so Git Bash runs it too
 (test_agent_read_commands_run_in_git_bash.py runs it in every shell).
+
+uvx starts the console script too, from an environment in uv's cache that only
+the process uvx starts has on PATH. `uvx crapkit init` told its reader to run
+`crapkit coverage`, and the shell answered 127.
 """
 import os
 import sys
 from pathlib import Path
 
 import pytest
+
+from uvx_process import CACHE_TAG, as_uvx as _as_uvx, cached_env, run_from
 
 from crapkit import invocation
 from crapkit.errors import CrapkitError
@@ -31,6 +37,14 @@ def _launcher_in(directory: Path) -> Path:
     launcher.write_bytes(b"#!/bin/sh\n")
     launcher.chmod(0o755)
     return launcher
+
+
+@pytest.fixture(autouse=True)
+def _outside_any_runner(tmp_path, monkeypatch):
+    """An installed venv no runner started, whatever runs this suite: `uv run`
+    leaves UV set, and a cached environment puts the prefix under a tag."""
+    monkeypatch.delenv("UV", raising=False)
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "venv"))
 
 
 @pytest.fixture()
@@ -50,6 +64,13 @@ def off_path(tmp_path, monkeypatch):
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
     monkeypatch.chdir(tmp_path)
+
+
+@pytest.fixture()
+def as_uvx(tmp_path, monkeypatch):
+    """argv, prefix and environment as `uvx crapkit` leaves them: the launcher in
+    an environment under uv's cache, and uv's own path in UV."""
+    _as_uvx(tmp_path, monkeypatch)
 
 
 # --- the helper itself -------------------------------------------------------
@@ -126,6 +147,38 @@ def test_an_interpreter_path_without_a_space_is_left_bare(off_path, monkeypatch)
     assert _self() == "/usr/bin/python3 -m crapkit"
 
 
+def test_a_uvx_run_names_uvx(as_uvx):
+    """The red loop: `uvx crapkit init` printed `crapkit coverage`, and a shell
+    with no crapkit on PATH answered 127. uvx is what the reader typed, and it
+    finds the same cached environment again."""
+    assert _self() == "uvx crapkit"
+
+
+def test_a_cached_run_uv_did_not_start_names_its_interpreter(tmp_path, monkeypatch):
+    """`pipx run crapkit` caches its environment the same way and sets no UV.
+    Nothing names the runner, and the interpreter running this process resolves
+    for as long as the cache keeps it."""
+    env = cached_env(tmp_path / "pipx")
+    run_from(env, monkeypatch)
+    monkeypatch.setattr(sys, "executable", "/cache/pipx/0ef8/bin/python")
+
+    assert _self() == "/cache/pipx/0ef8/bin/python -m crapkit"
+
+
+def test_an_installed_tool_under_uv_names_the_console_script(tmp_path, monkeypatch):
+    """`uv tool install crapkit` tags the tool's own environment, as uv tags
+    every environment it creates, and puts the console script on PATH. A shell
+    `uv run` started still carries UV. Only a tag above the environment makes
+    it a cache."""
+    env = tmp_path / "share" / "uv" / "tools" / "crapkit"
+    (env / "bin").mkdir(parents=True)
+    (env / "CACHEDIR.TAG").write_text(CACHE_TAG, encoding="utf-8")
+    run_from(env, monkeypatch)
+    monkeypatch.setenv("UV", "/usr/local/bin/uv")
+
+    assert _self() == "crapkit"
+
+
 # --- the messages ------------------------------------------------------------
 
 def _init_next_step(_tmp):
@@ -163,3 +216,22 @@ def test_no_console_script_on_path_prescribes_the_interpreter_that_is_running(me
 
     assert f"`{_self()} coverage`" in text
     assert "`crapkit coverage`" not in text
+
+
+@MESSAGES
+def test_a_uvx_run_prescribes_uvx(message, tmp_path, as_uvx):
+    assert "`uvx crapkit coverage`" in message(tmp_path)
+
+
+def test_the_readme_uvx_transcript_quotes_the_next_step_uvx_prints(as_uvx):
+    """README's `uvx crapkit init` block showed `next: run \\`crapkit coverage\\``,
+    the line a reader then pasted into a shell with no crapkit on PATH."""
+    from types import SimpleNamespace
+
+    from crapkit.cli.admin import _next_step
+
+    line = _next_step({"src": ("typescript",)}, (SimpleNamespace(name="js"),))
+    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    block = readme.split("$ uvx crapkit init\n", 1)[1].split("\n\n", 1)[0]
+
+    assert line in block.splitlines(), block

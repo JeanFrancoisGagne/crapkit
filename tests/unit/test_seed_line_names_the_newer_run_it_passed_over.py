@@ -49,7 +49,7 @@ def test_the_line_names_the_failed_verify_and_the_newer_run_behind_it(tmp_path, 
 
     assert cmd_ratchet(argparse.Namespace(action=action, repo=str(repo), baseline=None)) == 0
 
-    line = capsys.readouterr().out.strip()
+    line = capsys.readouterr().out.splitlines()[0]
     assert f"vs run {old} (" in line, line
     assert line.endswith(f", skipped failed verify run {failed} and the newer run {new} "
                          f"(pass `--baseline {new}` to read it)"), line
@@ -62,7 +62,7 @@ def test_a_failure_with_no_newer_run_behind_it_keeps_the_short_clause(tmp_path, 
 
     assert cmd_ratchet(argparse.Namespace(action="seed", repo=str(repo), baseline=None)) == 0
 
-    assert capsys.readouterr().out.strip().endswith(f", skipped failed verify run {failed}")
+    assert capsys.readouterr().out.splitlines()[0].endswith(f", skipped failed verify run {failed}")
 
 
 def test_the_ratchet_page_prints_the_clause_the_seed_line_appends():

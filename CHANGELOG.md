@@ -2,6 +2,9 @@
 
 ## 0.8.1 — unreleased
 
+A deploy suite now installs crapkit the way the docs say, through each channel and into
+each agent, fresh and as an upgrade, and this release fixes what it found.
+
 ### Upgrading from 0.8.0
 
 - The coverage.py reader and two source reads move to analysis version 12: a UTF-16
@@ -76,6 +79,18 @@
   withholds every file's lines.
 - Library API: `lanes.uncommitted_changes` raises `GitError` when git cannot say,
   where it returned `[]`.
+- Upgrade the CLI with the installer that owns it; the [upgrade
+  table](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) now has
+  rows for pip --user, pipx and uvx.
+- Codex users: Codex refreshes git marketplaces each time it starts, so upgrade the CLI
+  before the next Codex start, and the plugin arrives with a `.codex-plugin/plugin.json`
+  that keeps Claude Code's hook out of Codex.
+- Restart each MCP session after the upgrade. A 0.8.0 server does not notice the new
+  files under it; from 0.8.1 on, a server that outlives an upgrade says so on every call.
+- An MCP client that negotiates `2024-11-05` or `2025-03-26` no longer gets
+  `structuredContent`, or an `outputSchema` in `tools/list`, which those revisions do not
+  define; the text carries the same object. An answer longer than 7,500 characters carries `truncated`, and its `full`
+  command prints the whole answer from the CLI.
 
 ### A lane with no test results is not a lane that ran 0 tests or failed none
 
@@ -307,8 +322,8 @@ writes nothing.
   missing file. A file that does not parse to an object says `has a
   .claude-plugin/plugin.json that is not a JSON object`, and an object whose `version` is
   absent, null, a number or a list says `has a .claude-plugin/plugin.json with no version
-  string`; both end `reinstall the plugin or repair that file`. A number or a list there
-  also ended a search over several installs in a traceback.
+  string`; both then name the reinstall for each scope that holds the install. A number
+  or a list there also ended a search over several installs in a traceback.
 
 ### `init` reads package.json by one JSON rule, appends to .gitignore as git reads it, and finishes a half-done init
 
@@ -784,6 +799,10 @@ The exit codes, the lane environment and the files that change on upgrade are in
 - tools/action/comment.py strips escape codes through crapkit.plaintext, the one strip
   every other reader of a child's text uses, so rendering saved payloads by hand needs
   crapkit installed. The Action installs it before that step, as it did before.
+- The deploy workflow runs the arm64 cells on an arm64 runner, the start on the 3.15
+  prerelease, every harness at its newest release and the Docker product image, and a
+  release's run includes them. Its map, `tests/deploy/MAP.toml`, lists the cells the docs
+  and fixes checks added, and the unit tests name any cell no job runs on each OS it names.
 
 ### A lane's staleness is about bytes: it names the files that moved, and a `touch` is not one
 
@@ -1072,6 +1091,649 @@ The exit codes, the lane environment and the files that change on upgrade are in
   through a glob, and Python 3.11's glob stats each path it names, which raises for a
   process that is gone. The owner now lists `/proc` once and reads each record, and a
   record that is gone reads as no member of the group.
+
+### Agents
+
+- New page, [Wiring crapkit into your agent](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md):
+  a block to paste for each of 27 agents, from Claude Code and Codex to Cursor, VS Code,
+  Gemini CLI, Goose, Zed and Aider, with where each starts the server, what environment it
+  passes, the versions checked, what it does with the plugin's hook, and how to restart
+  after an upgrade.
+- The README, AGENTS.md, the adoption and upgrading pages, the onboard skill and
+  `crapkit mcp --help` send every agent but Claude Code and Codex to that page. They sent
+  them to one `mcpServers` block, which OpenCode 1.18.32 and Amp ignore, printing
+  `No MCP servers configured` and exiting 0, and which VS Code 1.139.0 ignores in
+  `.vscode/mcp.json` with no log and no error.
+- Gemini CLI's and Qwen Code's blocks carry `"trust": true`. With the old block `gemini mcp
+  list` showed crapkit connected, and a headless `gemini -p` still handed the model none of
+  the twelve tools, because it drops every tool that would ask for a confirmation; a
+  headless `qwen -p` offered them and declined every call. The Gemini section also says
+  that an untrusted folder disables every server and that a project
+  `.gemini/settings.json` is read only when Gemini starts in that directory.
+- The Claude Agent SDK example passes `allowedTools: ["mcp__crapkit"]`, and the Claude
+  Code section and the README's plugin section say that a headless `claude -p` needs
+  `--allowedTools mcp__crapkit`, or `mcp__plugin_crapkit_crapkit` for the plugin's server.
+  Without it, Claude Code 2.1.281 and both SDKs offered the tools and then answered every
+  call with `Claude requested permissions to use ..., but you haven't granted it yet.`
+- Goose: `goose plugin install` finds no plugin in crapkit's repository (`Error: No
+  supported plugin format found`), and the Goose section says so and gives the
+  `config.yaml` extension that connects.
+- Cline's block carries `"timeout": 60`: Cline waits 3 s for `initialize` otherwise and
+  logs a skipped server only to `~/.cline/data/logs/cline.log`. The page also says which
+  agents take PATH from the login shell (Zed, VS Code launched from the desktop), that Qwen
+  Code starts no server from a project file, and that Junie writes `.output.txt` and
+  `.output.json` into the repository.
+- The README names the Codex floor: the plugin lines need Codex 0.131.0. Beside a plugin
+  from 0.8.0, whose hooks pass `args`, `crapkit doctor --plugin-root` names a Claude Code
+  below 2.1.139, the first release that reads them.
+
+### Install
+
+- The commit-gate hook README Route 1 and Route 2 and the handbook write calls the
+  `crapkit` launcher first, then `uvx crapkit`, then `python -m crapkit`, so it reaches a
+  pipx, uv tool or uvx install. The old hook ran `python -m crapkit`, which none of those
+  installs can import. The gate section says the uvx line runs the release uv fetched
+  first, which need not be the one your team runs, and keeps the gate running after
+  `pip uninstall crapkit` on any machine with uv; Route 2's PowerShell form and the
+  handbook's callout name the uvx line too.
+- [docs/upgrading.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
+  says what a downgrade keeps and what it refuses, and that a merge driver and Route 2's
+  hooks path are set per clone.
+- The Docker image's header and `docs/agent-json.md` give a `--user "$(id -u):$(id -g)"`
+  run line: the image serves as uid 1000, and on a checkout another uid owns the tools
+  answer but cannot save their caches.
+
+### Doctor
+
+- The onboard and recover skills print the lines `crapkit doctor --plugin-root` prints when
+  it finds no plugin. With no path it names Claude Code's plugin directory and then
+  Codex's, and a path that holds no `.claude-plugin/plugin.json` gets a line that says
+  what to pass instead. The onboard skill said that line named the path and nothing else.
+- The handbook's polyglot workflow shows the WARN doctor prints for the `ui` scope, whose
+  vitest line `init` writes commented out, and the closing line that counts it.
+
+### The advisory hook runs in every agent that loads the plugin
+
+- The plugin's hook is one shell command, `crapkit claude-hook --protocol 1`, where it
+  was 50 exec-form handlers, one per file type. Every agent that loads a Claude Code
+  plugin keeps a handler's `command` and drops the fields it does not know, and only
+  Claude Code 2.1.139 and later read the `args` and `if` those handlers used. Codex,
+  Cursor, GitHub Copilot CLI, VS Code and Claude Code 2.1.138 each started a bare
+  `crapkit` per handler, up to 50 on one edit, each printing its usage and exiting 2:
+  Cursor recorded the edit as denied, VS Code stopped the agent, Copilot held one edit
+  for 30 to 100 s, and Claude Code 2.1.138 woke the model with the usage text. The hook
+  now needs no minimum Claude Code version.
+- `claude-hook` reads each agent's payload: Copilot CLI's `tool_input.path`, Cursor's
+  `postToolUse` event, and VS Code's `filePath`, multi-replace and `apply_patch` edits.
+  It skips a file whose suffix crapkit does not measure before it reads any config, the
+  job the per-file-type `if` rules did.
+- Cursor, Copilot CLI and VS Code get the advisory as one JSON object on stdout with exit
+  0, carrying the lines as `additionalContext` and `hookSpecificOutput.additionalContext`.
+  Cursor reads exit 2 as a deny, VS Code as a blocking error, and Copilot CLI shows it to
+  the user and never to the model, so a Copilot user with the documented `Bash` entry in
+  `.claude/settings.json` heard nothing either. Claude Code keeps stderr and exit 2.
+- VS Code runs a plugin's hook on every tool call and ignores its matcher, so there the
+  hook judges VS Code's file-writing tools alone; a read or a terminal call beside a
+  breaching file stays silent. The `Bash` fallback answers the shell tool by name, `Bash`
+  or Cursor's `Shell`, rather than any event carrying a `command`.
+- Codex gets its own manifest, `plugin/.codex-plugin/plugin.json`: the three skills, the
+  MCP server and `"hooks": {}`. Codex reports an edit as `apply_patch` patch text the hook
+  does not read, and without the key it loaded all 50 handlers.
+- Update the plugin together with the CLI: `claude plugin marketplace update crapkit`,
+  then `claude plugin update crapkit@crapkit --scope user`, then
+  `crapkit doctor --plugin-root`, and restart open sessions.
+
+### The plugin in each agent
+
+- Codex no longer offers `crapkit-onboard` to the model on its own. The skill's
+  `disable-model-invocation: true` is a Claude Code key, and Codex 0.156.1 ignored it
+  and listed the skill in every model request, so the model could start an adoption
+  nobody asked for. The skill now ships `agents/openai.yaml` with
+  `policy.allow_implicit_invocation: false`, which Codex reads from the plugin install
+  and from a copied skills directory alike. Type `$crapkit:crapkit-onboard` to run it
+  from the plugin, or `$crapkit-onboard` from a copied directory. `crapkit` and
+  `crapkit-recover` stay in the model's list.
+- `crapkit-onboard` and `crapkit-recover` label each `claude plugin` line as Claude
+  Code's and give the Codex line beside it. Codex installs the same two skills, and an
+  agent there that followed either one was told to run `claude plugin install`, a
+  command a machine with only Codex does not have. The onboarding skill's pointer for
+  every other agent goes to the block that agent's own config file takes.
+- The recover skill's row for a plugin that drifted from the CLI names each agent's
+  refresh lines, the ones the README runs after an upgrade. Its old line, `claude plugin
+  install crapkit@crapkit`, only answers that the plugin is already installed, and the
+  old version stays in place.
+- `crapkit doctor --plugin-root` names the same refresh pair when the plugin and the CLI
+  disagree on the version: `claude plugin marketplace update crapkit`, then `claude
+  plugin update crapkit@crapkit --scope user`. It named `claude plugin install`, and after
+  running it doctor printed the same line again.
+- The README, the adoption page, the handbook and `crapkit-onboard` name where a copy of
+  `plugin/skills/*` goes: `~/.claude/skills` for Claude Code, `$CODEX_HOME/skills`
+  (`~/.codex/skills` by default) for Codex, `~/.gemini/skills` for Gemini CLI. They said
+  "that runtime's equivalent" or "its own skills directory". Gemini CLI 0.61.0 reads a
+  skill's name and description alone, so it lists `crapkit-onboard` to its model;
+  `gemini skills disable crapkit-onboard --scope user` takes it out once the repo is
+  adopted.
+
+### `doctor` names the setups the next command refuses, and `--plugin-root` names repairs that close the gap
+
+`crapkit doctor` said "no problems found" over setups that `coverage` then refused with
+exit 5, over gates git never ran, and over plugin gaps whose printed repair changed
+nothing. Each of these now gets a line naming the object and the next step:
+
+- A `pytest --cov` lane whose coverage.py is older than 7.6 FAILs. That coverage writes
+  no function regions, so `crapkit coverage` refuses the lane's report with exit 5. The
+  lane probe asks coverage's version on the start it already made, prints it beside
+  pytest's and pytest-cov's, and names the install line for that interpreter.
+- A `coveragepy` lane with no `container_ok` WARNs inside a container (`/.dockerenv` or
+  `CRAPKIT_INSIDE_CONTAINER=1`), which the lane runner refuses with exit 5.
+- The closing line counts the WARNs above it (`doctor: no problems found, 1 warning
+  above`). A container run printed the lane's WARN and then closed on a bare "no problems
+  found", the one line a skimming reader reads.
+- A commit gate git never runs WARNs: Route 1's hook under a global `core.hooksPath`,
+  Route 2's committed hook in a clone that skipped its `git config core.hooksPath` line,
+  either one after husky's `npm install` took `core.hooksPath` back to `.husky/_` (the
+  WARN names `.husky/pre-commit` as the file to call crapkit from), and a
+  `.pre-commit-config.yaml` naming `crapkit-gate` before `pre-commit install`.
+- A marks file whose merge attribute names a driver this clone never defined WARNs with
+  the `git config merge.crapkit-ratchet.driver` line, since git otherwise merges it as
+  text.
+- Two or more `crapkit` launchers on PATH are named, each with its version: a WARN when
+  their versions differ, a note while they agree. The shell, a git hook, the plugin's
+  hooks and an MCP client each run the first one their own PATH lists, so the hook can
+  judge a commit with one version while the shell records marks with another.
+- In a venv uv made, which holds no pip, the install lines `init` and `doctor` print for a
+  missing pytest-cov or an old coverage.py, and the one `coverage` prints when pytest
+  rejects `--cov`, read `uv pip install --python <that python> ...`. The `<python> -m
+  pip install` they printed failed there with "No module named pip".
+- A lizard that crapkit cannot import FAILs naming the install for the python running
+  crapkit (`uv pip install --python <it> lizard` for a `uv tool install`). The `pip
+  install lizard` it printed ran the shell's pip, which installed elsewhere or was refused
+  as an externally managed environment.
+
+`crapkit doctor --plugin-root`:
+
+- A version gap names the side that is behind and the commands that move it. The old
+  line sent every gap to `claude plugin install crapkit@crapkit`, which prints "already
+  installed" over an older copy, and to `pip install -U crapkit`, which reaches no uv tool
+  or pipx install. A plugin behind now gets `claude plugin marketplace update crapkit`
+  and `claude plugin update crapkit@crapkit --scope <scope>` once per scope that holds the
+  install, with the project directory to run a project or local one in (a `--scope user`
+  update over a project install answered "not installed at scope user"). A plugin Claude
+  Code loads in place from a local directory marketplace gets `git -C <dir> pull`, since
+  `claude plugin update` only refreshes the cache copy beside it. A plugin Codex
+  installed gets `codex plugin marketplace remove crapkit`, the marketplace added again
+  at the CLI's release tag, and `codex plugin add crapkit@crapkit`. A CLI behind gets
+  `uv tool upgrade crapkit`, `pipx upgrade crapkit`, or pip for the python its launcher
+  starts (`uv pip` in a venv uv made). A pre-release or local build names both repairs.
+- An install whose files differ from its marketplace's copy at one version is named, with
+  the `claude plugin uninstall` and `claude plugin install` lines for each scope that
+  holds it, run in its project for a project or local install. Between
+  releases main keeps the release's version string, so `claude plugin update` answers
+  "already at the latest version" and the install keeps the release's files.
+- Run under uvx, `uv run --with` or `pipx run`, it looks past every environment that
+  runner built for this one command, which is any environment in uv's cache (the tagged
+  cache root, wherever `UV_CACHE_DIR` puts it) or in pipx's. `uvx crapkit doctor
+  --plugin-root` found crapkit there and exited 0 while `claude mcp list` failed with
+  ENOENT, and `uv run --with crapkit crapkit doctor --plugin-root` did the same from uv's
+  builds-v0 bucket, with the `--with` layer in archive-v0 behind it. It now FAILs naming
+  the install that stays: `uv tool install crapkit`, or `pipx install crapkit` if `pipx
+  run` started it (pipx 1.17 on its uv backend runs the command through `uv tool run`, in
+  uv's cache). The launcher count in `crapkit doctor` leaves those environments out too,
+  so it no longer asks you to upgrade or uninstall an environment uv rebuilds or deletes
+  on its own.
+- With no PATH it checks every install `installed_plugins.json` records, not only the
+  newest: with a user install at 0.8.0 and a project install at 0.8.1 it checked the 0.8.1
+  copy and exited 0 while every session outside that project ran 0.8.0. It looks in
+  Codex's plugin cache when Claude Code has no install, checks a marketplace added from a
+  local directory in that directory (Claude Code loads it in place), and the no-install
+  line names both harnesses' install commands.
+- A hook's `--protocol` is read from a shell-form command string as well as from `args`,
+  and the Claude Code 2.1.139 line prints only for a plugin whose hooks pass `args`.
+- Every line it prints names the command that closes it, as `doctor --help` says. The
+  protocol line names the side that is behind and its repair, the same as the version
+  line. A hooks file or manifest it cannot read names the reinstall for each scope that
+  holds the install, Codex's `codex plugin remove` and `codex plugin add`, or `git -C
+  <root> checkout -- <file>` for a plugin Claude Code loads in place from a checkout,
+  where the old line said "reinstall the plugin or repair that file". A directory with no
+  manifest names `crapkit doctor --plugin-root` with no PATH. A launcher that answers no
+  `--version` names its installer's reinstall (`uv tool install --force crapkit`, `pipx
+  reinstall crapkit`, pip's `--force-reinstall`), since each upgrade leaves a launcher
+  whose environment lost its python as broken as it was.
+- `doctor --help` says an agreeing check exits 0 after naming a root it found rather than
+  the one you typed, where it said "silent when they agree" over a run that printed
+  `crapkit doctor: checking ROOT`.
+
+### verify, seed and `runs list` read the run behind HEAD, not another branch's
+
+- The baseline is now the newest trusted run whose commit is at or behind HEAD. A store
+  keeps every branch's runs, so after a passing verify on a feature branch and `git
+  checkout main`, verify took the feature branch's run, then exited 4 with `baseline
+  commit ... is not an ancestor of HEAD (rebase or amend rewrote history)`, blaming a
+  rewrite that never happened. It now measures against main's own run. `ratchet seed`
+  and `ratchet prune` read the same run, where seed signed marks off the feature
+  branch's code, and `runs list` marks it, where it marked the run verify refused.
+- When no trusted run sits behind HEAD, verify still exits 4, and the line says why:
+  ``the newest, run 2 @ 7691376dddb, is not an ancestor of HEAD: it was made on branch
+  feature - run `crapkit coverage` on this branch for a baseline here``. A commit no
+  branch holds keeps the rewrite wording, and a shallow clone keeps its fetch-depth fix.
+  `verify --baseline ID` naming a run on another branch gets the same line. seed and
+  prune in that state say the newest run was measured on history HEAD does not contain,
+  where they said the store held no trusted run.
+- The taint rule is unchanged: a failed verify still stands in front of the runs made
+  after it, whichever branch it ran on.
+
+### The commit gate finds the crapkit root below the git top, and judges CI's `--all-files`
+
+- git runs a pre-commit hook at the repository's top. With `crapkit.toml` in
+  `packages/api`, README Route 2's hook and the handbook's refused every commit, a
+  docs-only one included, with `no crapkit.toml at TOP - nothing to analyze`. With no
+  `crapkit.toml` at or above where it runs, the hook now runs the gate in each crapkit
+  root below that owns a staged file, nearest configuration winning, and prints paths
+  from the top: `ccn   8  packages/api/app/route.py:1  route( a , b , c , d )`. A commit
+  that stages nothing under any `crapkit.toml` passes with one note on stderr, and so
+  does every commit in a repo whose gate was armed before `crapkit init`, where each
+  one was refused. `--repo DIR` still names an exact root and refuses one without a
+  configuration.
+- `pre-commit run --all-files`, the form pre-commit.ci and pre-commit/action run,
+  stages nothing and starts no commit, and the hook read only the staged diff, so it
+  passed a breach committed from a clone with no hook installed. Outside a commit (git
+  sets `GIT_INDEX_FILE` for the hooks a commit runs) and with nothing staged, the hook
+  now judges every tracked file's indexed content: `crapkit gate: 1 tracked
+  function(s) exceed the complexity ceiling of 6`, exit 6, with the functions the
+  committed ratchet marks exempt as before. Inside a commit, and under `--base REF`,
+  nothing changes.
+- The refusal every command gives in a directory with no `crapkit.toml` names both ways
+  forward and the configurations the checkout tracks, spelled from where you stand:
+  ``no crapkit.toml at /repo/packages/web - nothing to analyze; run `crapkit init` there
+  to adopt it, or pass --repo DIR to name a directory that holds one; this checkout
+  holds ../api/crapkit.toml``.
+- The handbook's Enforcement block writes the hook through `git rev-parse --git-path
+  hooks`, so it arms a working gate from a crapkit root below the git top, where
+  `.git/hooks/pre-commit` named a directory that does not exist.
+
+### Marks a newer crapkit wrote are sent to an upgrade, not a re-seed
+
+- A team upgrades one member at a time. When the upgraded teammate's re-seeded marks
+  met an older crapkit, the Action pinned one tag behind included, verify's refusal told
+  that reader to run coverage and re-seed. The seed restamped the team's marks under the
+  older analysis, and every upgraded teammate's verify then refused them. The refusal now
+  compares the two stamps field by field and, when the marks are the newer side, says
+  ``the marks come from a newer crapkit than this install; upgrade it to the version that
+  wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than
+  re-seed``. A newer lizard alone is named as lizard. Marks an older crapkit wrote keep the
+  coverage-then-seed remedy.
+- `ratchet seed` and `ratchet prune` refuse, exit 3, to rewrite marks a newer crapkit or
+  lizard recorded from a run an older one measured, and write nothing. seed restamped the
+  file backwards, and prune dropped every mark whose function the older reader names
+  differently. When this install is the older one, the refusal asks for the upgrade. When a
+  failed verify pins them to a run an older release measured, as a plain prune after
+  `ratchet seed --baseline N` on the upgrade recipe's pinned store was, it names the newer
+  run to pass to `--baseline`: that prune used to drop the marks the named seed had just
+  written.
+- The merge driver's stamp refusal names the newer side and the metric to re-seed under:
+  `theirs is newer, so with a crapkit that measures [...]`. "re-baseline one side" named
+  neither, and a seed under the older release left the stamps apart.
+- A plain `verify` on a store a failed verify pins no longer ends its stamp refusal with
+  ``re-baseline from run N with `crapkit ratchet seed --baseline N` ``. The Action quotes
+  that line in the pull request comment, where run N, from the runner's store, names
+  nothing, and on a runner that keeps its workspace it was the pull request head's own run,
+  whose seed would have signed the breach as the new ceiling. The refusal now says a failed
+  verify pins the plain seed, and the taint warning above it and seed's own line name the
+  run. `verify --baseline N` still names run N, since you named it.
+- docs/upgrading.md says to upgrade every clone, CI pin and pre-commit `rev` before
+  committing marks seeded under a newer analysis, and to move the Action's `uses:` pin in
+  the same commit as the re-seed.
+
+### A repository git cannot use is named, not quoted
+
+- Outside a git repository, `verify` and `hook-precommit` printed 129 lines of `git diff
+  --no-index` usage and never said the directory was not a repository, because git reads
+  `diff --cached` there as a diff of two paths. Every command that reads git now exits 4
+  with one line that names the directory and the fix: `<dir> is not a git repository, and
+  no directory above it is one`, then run it inside a checkout, or `git init`, `git add`
+  and `git commit` first.
+- In a fresh `git init` repo, `coverage` and `inventory` exited 4 with git's "ambiguous
+  argument 'HEAD': unknown revision" right after `init` passed. They now say `the git
+  repository at <dir> has no commit yet` and ask for the first commit. The commit gate
+  still runs on that first commit, since it reads only the index.
+- A repository git refuses to open, such as one another user owns under git's
+  `safe.directory` check, got the same usage from `verify` and the commit gate. The
+  refusal now quotes git's own message, which carries the `git config --global --add
+  safe.directory` line to run.
+- `verify` on a `.crapkit/` store copied into a fresh `git init` said a rebase or amend had
+  rewritten its baseline. It now names the missing commit.
+- Exit codes do not change. A failure in a repository git can use keeps git's own reason,
+  and a git answer given as exit 1, such as an unset config key, starts no extra process.
+
+### The MCP server answers calls it used to fail
+
+- A call to a 0.5.x tool name answers with the name 0.6.0 gave it: `unknown tool
+  'worklist': renamed list_worklist in 0.6.0, with the same arguments and result; call
+  list_worklist`. A client that pinned the old names, in a Codex `enabled_tools` list or a
+  Claude Code `mcp__crapkit__worklist` allowlist, got `unknown tool 'worklist'` and nothing
+  its model could try next. A name that was never a tool keeps the bare refusal.
+- A call that carries `wait_for_previous` runs. Gemini CLI 0.61.0 adds that boolean to
+  every MCP tool's schema for its own scheduler and forwards it, and crapkit refused it as
+  an undeclared key, so every Gemini call that carried it answered `get_next_item does
+  not take 'wait_for_previous'`. The server now drops it before checking the call; every
+  other undeclared key is still refused
+  ([ADR 0001](docs/adr/0001-mcp-invalid-arguments-are-tool-results.md)).
+- `crapkit mcp --repo ${workspaceFolder}` from a client that does not expand the variable
+  serves where the client started it. Cursor's docs wire a server that way and the Cursor
+  agent CLI passes `${workspaceFolder}` through, so the server read it as a directory
+  below its own and answered every call `no crapkit.toml in <cwd>/${workspaceFolder}`
+  while the client listed it as ready. A `--repo` that holds `${...}` is now ignored and
+  stderr names it; `crapkit mcp --help` says so.
+- A leading `~` in `--repo` or in a tool's `repo` argument is the home directory. An MCP
+  client starts the server without a shell, and cmd.exe expands no `~`, so `--repo
+  ~/app` named `<cwd>/~/app` and every call answered `no crapkit.toml` there. Every
+  subcommand's `--help` says so.
+
+### A process that outlives an upgrade says to restart it
+
+- An MCP server that outlives `pip install -U crapkit` says to restart it. The server
+  imports some modules only at its first tool call, so after an upgrade that call loaded
+  the new release's files into the old process and answered a JSON-RPC `-32603` such as
+  `TypeError: _operation() takes 2 positional arguments but 3 were given`, while a session
+  that had already served a call kept working, so the failure looked random. Each call now
+  reads the version in its own package directory first, and when it changed, answers a
+  tool result that names both versions and the restart. The check lives in the old
+  process, so it helps from the next upgrade on: a 0.8.0 server upgraded to 0.8.1 can
+  still answer the old error once, and the restart fixes it the same way.
+- An upgrade that lands while a call runs no longer breaks that call's answer. The server
+  spells the command that prints a cut answer in full before it starts the CLI, so it no
+  longer loads the new release's `packet.py` after the run.
+- `crapkit watch` checks the same way before each rescore. After an upgrade it exits 1
+  with one line that names both versions and says to restart it, where its first rescore
+  died with a traceback from inside the new files.
+
+### The MCP server finds the workspace when the client starts it elsewhere
+
+- A server whose start directory serves nothing asks a client that declares the `roots`
+  capability for its workspace folders and serves the first one a `crapkit.toml` claims.
+  VS Code starts a server from the user profile's `mcp.json` in the home directory and a
+  plugin's server in the plugin directory, so every call from a VS Code user answered `no
+  crapkit.toml in <home>` inside a measured repo. The server asks after
+  `notifications/initialized` and again after `notifications/roots/list_changed`, and a
+  call that arrives before the answer waits for it, up to 10 seconds. A server started
+  with `--repo` never asks: it serves or refuses that directory as named. A response the
+  server never asked for gets no reply; it used to get a `-32601` error. A message with an
+  `id` and no `method`, `result` or `error` answers `-32600`, the JSON-RPC code for an
+  invalid request, where it also got `-32601`.
+- A server started at or below the plugin directory the client names in `PLUGIN_ROOT`,
+  `COPILOT_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT` no longer walks up from there. A plugin
+  loaded from a crapkit checkout found crapkit's own `crapkit.toml` above the plugin
+  directory and served crapkit's repo, answering `no snapshot in <checkout>`.
+- A GitHub Copilot CLI plugin's server serves the folder its Copilot session works in.
+  Copilot starts a plugin's server in `~/.copilot/installed-plugins/crapkit/crapkit`, moves
+  a `cwd` the plugin's config names outside that directory back into it, and declares no
+  roots, so every call answered `no crapkit.toml in ...installed-plugins/crapkit/crapkit`
+  inside a measured repo. Copilot gives the server `COPILOT_AGENT_SESSION_ID`, and the
+  session keeps its working directory in `session-state/<id>/workspace.yaml` under
+  `COPILOT_HOME`; the server reads it at each call and walks up from it. Where no session
+  record names a folder, the `initialize` instructions and each tool result say the server
+  started in the plugin's install directory and ask for the workspace as the `repo`
+  argument.
+- The MCP page drops the claim that a globally registered server serves the workspace it
+  starts in, and says where each client starts it.
+
+### An MCP answer fits in one tool result
+
+- Every JSON answer is 7,500 characters or shorter, counted as its text takes them inside a
+  client's JSON of the result. Cline keeps 8,000 characters of that JSON and cuts the
+  middle out, and a brief on a 300-line function ran to 15 KB and more, so its model got
+  `get_function_brief` and `list_worklist` top 50 as JSON it could not parse. A longer
+  answer now loses the end of its list fields, largest first, then of its string fields,
+  such as a brief's `source`, then of its objects, at any depth: `check_gate` on a file
+  with 60 breaches cuts `gate.breaches` and keeps `gate.ok`, and a gate over hundreds of
+  files cuts the per-file `gate.ceilings` map by entries. It carries `truncated`: each cut
+  field by its dotted path, what it kept of what it had, and the CLI command that prints
+  the whole answer. A worklist of 50 keeps its top rows; a brief keeps its source ahead of
+  the file's other functions. A failing `check_config` report, 18 KB on a repo with 40
+  lanes that cannot start, is cut the same way and stays a tool error. Every output
+  schema declares the field.
+- `structuredContent` goes only to a client that negotiated `2025-06-18`, the revision
+  that defines it. A `2024-11-05` client such as Cline got the answer twice, which
+  doubled what it cut. `tools/list` lists `outputSchema` to the same clients only, since a
+  client on the TypeScript SDK 1.12 offers `2025-03-26` and fails a call to a tool whose
+  listed schema its result does not fill.
+- A Windows command line printed by crapkit writes a long flag such as `--top` bare, as
+  cmd.exe and PowerShell both pass it on.
+
+### Running crapkit through uvx
+
+- Under `uvx crapkit`, every next step and refusal names `uvx crapkit`: `init` ends with
+  ``next: run `uvx crapkit coverage` ``, and `coverage` with `-> next: uvx crapkit
+  worklist`. They named `crapkit`, which uvx never puts on PATH, so the command the
+  README's route for a repo that is not Python printed next answered `crapkit: not found`
+  (exit 127). crapkit started from another runner's cache, such as `pipx run`, names the
+  interpreter running it (`<python> -m crapkit`). A runner's cache is a directory tagged
+  CACHEDIR.TAG above the environment; `uv tool install` and `pipx install` still get
+  `crapkit`.
+- A packet built under uvx (`uvx crapkit brief --json`, or `get_function_brief` from an
+  MCP server uvx started) spells `commands.gate`, `scoped_tests`, `verify` and `refresh`
+  as `uvx crapkit ...`, and the Windows encoded form starts `uvx`. The agent's shell
+  answered all four with `crapkit: not found`. Everywhere else they stay `crapkit ...`.
+- `uvx crapkit doctor --plugin-root` no longer counts the launcher uvx put on its own PATH.
+  It found that copy and passed, exit 0, a plugin whose hooks spawn a `crapkit` that no
+  other process's PATH carries. It now prints ``FAIL no `crapkit` on PATH``.
+- [The git merge driver](docs/ratchet.md#the-git-merge-driver) gives a uvx clone
+  `git config merge.crapkit-ratchet.driver "uvx crapkit ratchet merge %O %A %B"`. The
+  documented `crapkit ratchet merge %O %A %B` failed every marks-file merge there with
+  `crapkit: not found` and left your side in crapkit-ratchet.tsv with no conflict markers.
+  The page and the recover skill quote that failure and say to run `git merge --abort`
+  rather than stage the file, and `crapkit ratchet --help` names the uvx line.
+- README says a Python repo installs crapkit with pip, `uv tool install` or `pipx install`
+  rather than running it through uvx: uvx puts its own interpreter first on the PATH the
+  lane inherits, so the lane's `python` has neither the suite's packages nor pytest-cov.
+
+### A claim taken before analysis version 11 keeps holding its nested def
+
+- A claim saves the name its function was handed out under. One taken under 0.7.x on a
+  Python def nested three or more deep saved `a.a.b.c( x )`, and once `coverage` measured
+  under analysis version 11, which names the def `a.b.c( x )`, that name matched no
+  function. `next-item` and `brief --batch` handed the def to the next session while the
+  claim stood, `verify` never closed the claim, `claims release` refused the name `brief`
+  prints, and `brief` left the claim out of the def's `attempts`. Each now reads a claim
+  against the run's own names, so the claim holds the def under its new name. A run that
+  still holds the saved name keeps it: a def nested in a def of its own name reads
+  `a.a.b.c` under version 11 as well, and its claim stays on it.
+- Two of version 11's renames leave a claim nothing to follow: a generic def that read
+  `]( a : int )`, and a def that moved to the next twin key because a one-line def of
+  its name above it is now listed. The [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-11)
+  says to release a claim on either before upgrading and take it again after the first
+  `coverage`.
+
+### The printed steps from `init` reach a passing verify
+
+- The README's first run is `coverage`, `worklist`, `ratchet seed`, a commit and
+  `verify`. `coverage` printed `-> next: crapkit worklist`, and `worklist` and `seed`
+  printed no next step, so a user who ran only what crapkit printed stopped at the risk
+  map with no mark signed and no verify passed.
+- `worklist` now ends with the command to run next: `coverage` when the run it ranked
+  cannot serve as a baseline, `ratchet seed` while the repo has no `crapkit-ratchet.tsv`,
+  with a line saying what the seed does, and `next-item` after that. `worklist --json`
+  prints the map alone, as before.
+- `ratchet seed` ends with ``-> next: commit crapkit-ratchet.tsv, then run `crapkit
+  verify` ``. A seed from a run another crapkit version measured adds no such line,
+  because its own line already says verify refuses those marks and names the run that
+  restamps them.
+- Every `worklist` and `seed` transcript in the README, the pages under docs/ and the
+  handbook ends with these lines. The handbook's day-one story runs `worklist` after
+  `inventory`, so its block ends with `run 1 is an inventory run (no coverage was
+  measured) and cannot serve as a baseline for next-item, ratchet seed or verify` and
+  `-> next: crapkit coverage`.
+
+### A process started without USERPROFILE finds its home
+
+- check_config, `doctor`, `doctor --json`, `doctor --plugin-root` with no PATH, `coverage`
+  and an `inventory` large enough to open the analysis pool answered `RuntimeError: Could
+  not determine home directory.` on Windows when the environment held no `USERPROFILE`,
+  `HOMEDRIVE` or `HOMEPATH`. An MCP client that builds the server's environment from an
+  allowlist, a service or a scheduled task starts crapkit that way, and every other MCP
+  tool kept working. crapkit now reads the profile folder Windows reports for the
+  process's user, the folder `USERPROFILE` names in that user's other processes, so
+  worker slots, measurement locks and the plugin cache land where they always did.
+  Setting `HOME` never helped, because Python ignores it on Windows. When nothing names
+  a home, the command exits 5 with `no home directory` and names the variable to set.
+
+### The GitHub Action scores a crapkit root below the repository top
+
+- The Action takes a `working-directory` input: the directory that holds
+  `crapkit.toml`, relative to the checkout, `"."` by default. Every step ran at the
+  workspace root, so a monorepo whose `crapkit.toml` sits in `packages/api` got
+  `crapkit coverage` exit 3 (`no crapkit.toml at ... - nothing to analyze`) and, with
+  gate `"true"`, a failed check on every pull request. The coverage, verdict, worklist
+  and changed-file steps now run in that directory, the base run scores the same
+  directory at the fork point, and the changed files are named from it, the way the
+  worklist names them. Set `working-directory: packages/api` on the crapkit step and on
+  the job's own `pip install -e ".[dev]"` step; README's "The inputs" shows both.
+- A job that leaves the input out still gets exit 3 at the top, and the comment now says
+  what to do about it: the no-verdict line ends ``set the action's `working-directory`
+  input to the directory that holds crapkit.toml`` after the directory coverage looked in.
+
+### A command at the repository top is told which root to name
+
+- A CI step starts at the repository top, and crapkit finds its root by walking up from
+  where it stands, never down. In a monorepo whose `crapkit.toml` sits in
+  `packages/api`, `crapkit verify` there refused with `no crapkit.toml at <top> -
+  nothing to analyze`. The refusal now names each tracked `crapkit.toml` below that
+  directory and the flag that reaches it: `...; crapkit.toml sits below it in
+  packages/api: pass --repo packages/api`. Several are listed, three by name. The lookup reads the git
+  index, only on the way to the refusal. With none below, the refusal names `crapkit
+  init` and `--repo DIR` instead, and any configuration elsewhere in the checkout.
+- README's gate section and the lanes page give the spelling for each route:
+  `working-directory: packages/api` for a CI step and the Action, and, to pin the commit
+  gate to one root, `--repo packages/api` on the hook line or `args: [--repo,
+  packages/api]` for the pre-commit framework.
+
+### Install, upgrade and removal
+
+- README Install says what to run when pip stops with `error: externally-managed-environment`,
+  which Debian 12, Ubuntu 23.04 and later, Homebrew and uv's own Pythons print: `pipx install
+  crapkit`, `uv tool install crapkit`, or a venv. The commit hook README prints reaches
+  either tool install, since it runs the `crapkit` command before the `python` on PATH,
+  which does not hold it. The section
+  also tells a Python 3.10 user that pip ends with `No matching distribution found for
+  crapkit` and that `uvx crapkit` runs crapkit on a Python uv finds or downloads.
+- README Install and the [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) say where
+  `pip install --user` puts the `crapkit` command (`~/.local/bin`,
+  `~/Library/Python/3.12/bin`, `%APPDATA%\Python\Python312\Scripts`) and quote pip's
+  `which is not on PATH` warning. Until PATH names that directory, the Claude Code plugin
+  lists its server as `Failed to connect`.
+- `crapkit doctor --plugin-root` run on a machine with no `crapkit` on PATH ends its FAIL
+  with the directory that holds the launcher of the crapkit running it, when there is
+  one: `This crapkit's launcher is in DIR, which PATH does not list: add that directory
+  to PATH, then restart the agent.` That is where `pip install --user` and a venv leave
+  it, and the line named only `pipx install crapkit`. Under `uvx`, `uv run --with` or
+  `pipx run` the FAIL names the install that stays instead, since that launcher sits in an
+  environment the tool deletes or rebuilds.
+- The upgrade table has rows for pip --user, pipx (`pipx upgrade crapkit`), uvx
+  (`uvx crapkit@latest --version`) and an install from the git URL (`python -m pip install
+  --force-reinstall --no-deps git+https://github.com/JeanFrancoisGagne/crapkit.git`). A
+  cached `uvx crapkit` keeps running the release it fetched first, and so does a client
+  whose entry runs `uvx crapkit mcp` until it restarts. The git line run again keeps the
+  old code, because commits between two releases share one version string.
+- The Windows launcher-lock section says what each installer does while a `crapkit.exe mcp`
+  runs, measured on Windows 11 with pip 26.2.1, pipx 1.17.6 and uv 0.12.18. pip exits 0
+  and the running server keeps serving the old code until its client restarts.
+  `uv tool upgrade` fails with `os error 32`. `uv tool install crapkit@latest`, and pipx
+  when it installs through uv, fail with `Access is denied. (os error 5)`, and after that
+  `uv tool install` the `crapkit` command raises `ModuleNotFoundError` until the install
+  runs again. The page named only error 32, which pip did not print.
+- New section: [Removing
+  crapkit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit).
+  The section takes out the hook and the merge driver first, then the files crapkit
+  wrote, then the package and the plugins, with each gate route's pieces and each
+  installer's removal line. After `pip uninstall crapkit` alone, the sh hook keeps
+  judging every commit through `uvx crapkit` on a machine with uv, with whatever release
+  uv has cached or can download, and stops every commit on `No module named crapkit`
+  without uv. The PowerShell hook of Route 1 and the handbook names the launcher pip
+  deletes, so it stops every commit on `No such file or directory`, uv or not. Every merge of `crapkit-ratchet.tsv` conflicts after the driver's `crapkit: not
+  found`. README and the handbook say the same where they point at the section.
+- The handbook's Install section names the PEP 668 refusal, the 3.10 route through
+  `uvx crapkit`, what each Windows installer does under a live session, and links the
+  upgrade table and the removal steps. Its Windows paragraph had named only `os error 32`.
+- An override or `digest --alert` with no `alert_command` now prints a line to paste:
+  `alert_command = "cat >> .crapkit/alerts.log"`, and on Windows, whose cmd.exe has no
+  `cat`, `alert_command = 'findstr "^" >> .crapkit/alerts.log'`. The configuration and
+  ratchet pages give both. The refusal named the key and no value, and no page showed
+  one.
+- The Dockerfile header and the Docker section of agent-json.md give
+  `--user "$(id -u):$(id -g)"`. On a Linux host whose uid is not 1000 the image still
+  answers, but it cannot save its churn and coupling caches under `.crapkit/`, so every
+  call walks the git history again.
+
+### Plugin installs
+
+- The marketplace lines cloned the whole repository tip for a plugin that lives in
+  `.claude-plugin/` and `plugin/`: 61 MB for Claude Code and 69 MB for Codex, and one
+  Claude Code add ran into its 120-second clone timeout. Every page now prints them with
+  `--sparse`, which checks out 0.8 MB for Claude Code
+  (`claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin`)
+  and 1.9 MB for Codex. A Claude Code marketplace added without `--sparse` keeps its full
+  clone; docs/upgrading.md has the three lines that replace it.
+- Codex reinstalled the plugin from main at its next start whenever main moved, so a push
+  between releases took a Codex user's plugin past their PyPI CLI with no command from
+  them, and `crapkit doctor --plugin-root` then exited 1. The Codex line pins the release
+  tag with `--ref`, and the release step rewrites that tag with the other version
+  surfaces. A marketplace added from an earlier page follows main; the refresh in the
+  next entry moves it onto the tag.
+- A marketplace added at a tag stays there, so the Codex refresh is now
+  `codex plugin marketplace remove crapkit`, the add line at the new tag,
+  `codex plugin add crapkit@crapkit` and `codex plugin list --marketplace crapkit --json`.
+  The old refresh ran `codex plugin add` after `codex plugin marketplace upgrade` had
+  already installed the plugin, and on Windows that repeat exited 1 with
+  `failed to back up plugin cache entry: Access is denied. (os error 5)` while a file of
+  the old copy was open, so a reader saw a failed upgrade that had landed.
+- The Codex section names the Codex its lines need: 0.131.0 or newer, since 0.130.0
+  answers `codex plugin add` with `unrecognized subcommand 'add'`, and 0.137.0 for the
+  listing's `--json`.
+- README and docs/upgrading.md say the installed plugin moves only at a release:
+  `claude plugin update` compares version strings, and main carries the last release's
+  version until the next one.
+- On Windows, `claude plugin marketplace add JeanFrancoisGagne/crapkit` failed with
+  `Filename too long` for any `CLAUDE_CONFIG_DIR` of 66 characters or more, which the
+  default `~\.claude` reaches under a user profile path of 58, and against
+  github.com Claude Code then reported only an SSH error. A 139-character evidence path
+  under `docs/architecture` was the cause, because Git for Windows leaves
+  `core.longpaths` off. That folder is now
+  `docs/architecture/2026-09-06-post-implementation/evidence/`, the longest tracked path
+  is 101 characters, and a test fails on any path over 110. The review's
+  `build-review.py` and `publish-review.py` link into the new folder, and a test
+  rebuilds and publishes the review and holds both to the committed copy.
+
+### The gate recipes in README and the handbook arm a gate that runs
+
+- The hook body README's Route 1 and Route 2 and the handbook write runs the `crapkit`
+  on PATH, then `uvx crapkit`, and falls back to `python -m crapkit`. It was `exec python
+  -m crapkit hook-precommit` alone, so a pipx or uv tool install, the installs README
+  names for the gate, and any machine with `python3` and no `python` (Debian, Ubuntu,
+  macOS) refused every commit with `exec: python: not found`. The gate section says what
+  a hook that reaches no `crapkit`, no `uvx` and no `python` that imports crapkit
+  prints: exit 127 and `exec: python: not found` with no python, exit 1 and `No module
+  named crapkit` from a python that lacks it.
+- Route 1 and the handbook's Enforcement block write the hook to `$(git rev-parse
+  --git-common-dir)/hooks/pre-commit`. In a linked worktree, where `.git` is a file,
+  `.git/hooks/pre-commit` failed with `Directory nonexistent` and the next commit went
+  through ungated. Route 1's PowerShell form takes the same path and bakes in the
+  `crapkit` launcher your shell resolves, not `python`.
+- Route 2 and the handbook's Enforcement section have a PowerShell block. Pasted into
+  PowerShell, Route 2's sh block stopped at its heredoc; the handbook's met no `printf`
+  or `chmod`, and in 5.1 a `&&` it cannot parse. Neither wrote a hook, and the next
+  commit went through ungated.
+- The gate section says to run `git config core.hooksPath` first. A hooks path set
+  globally or by husky makes git skip `.git/hooks`; a husky repo adds `crapkit
+  hook-precommit` to `.husky/pre-commit` instead of setting the path.
+- Route 1 says which PowerShell writes a byte-order mark: Windows PowerShell 5.1 from `>`
+  and `Out-File`. PowerShell 7 writes none.
+- The handbook's Enforcement block commits `crapkit.toml` and `.gitignore` with the
+  marks. It committed the marks alone, so workflow 4's CI job, which runs on a fresh
+  clone, stopped at `no crapkit.toml` before any verdict. Workflow 3 shows the `doctor`
+  run `init` leaves, `doctor: no problems found`, where it showed two FAIL lines for
+  scopes `init` already marks `coverage_optional = true`.
 
 ## 0.8.0 — 2026-09-23
 

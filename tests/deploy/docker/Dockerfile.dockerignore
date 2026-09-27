@@ -1,0 +1,10 @@
+# BuildKit reads this file for tests/deploy/docker/Dockerfile. The context is the
+# repo root, and only what the Dockerfile copies gets in, so an unrelated edit
+# never invalidates a layer.
+*
+!tests/deploy/docker/
+tests/deploy/docker/prototype/
+!tools/deploy/lock.py
+!tools/deploy/pins.py
+!tools/deploy/pins.toml
+!tools/deploy/wheelhouse.lock

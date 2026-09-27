@@ -13,9 +13,9 @@ from typing import NamedTuple
 from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
 from ..named import first_few
-from ..store import SnapshotStore
+from ..store import SnapshotStore, anywhere
 from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
-                      _print_json, _ratchet_or_die, _repo_relative, _stand)
+                      _print_json, _ratchet_or_die, _repo_relative, _stand, behind_head)
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -48,11 +48,26 @@ def _no_full_run(pick, runs: list[dict]) -> str:
 
     blocker = pick.blocker or outstanding_failure(runs)
     if blocker is None:
-        return _no_trusted_run()
+        return _nothing_behind_head(runs)
     return (f"no run to work from: verify run {blocker['id']} FAILED with "
             f"{blocker['findings']} finding(s), nothing older is left to work from, "
             f"and a fresh `{_self()} coverage` would only be refused the same way - "
             "fix the findings and let a verify pass")
+
+
+def _nothing_behind_head(runs: list[dict]) -> str:
+    """No trusted run at all, or none at or behind HEAD: every one there is was
+    measured on another branch, or on commits a rebase or an amend replaced."""
+    from ..store import is_trusted
+
+    trusted = [r for r in runs if is_trusted(r)]
+    if not trusted:
+        return _no_trusted_run()
+    newest = trusted[-1]
+    return (f"no trusted run at or behind HEAD to work from: the newest, run {newest['id']} @ "
+            f"{newest['commit'][:11]}, was measured on history HEAD does not contain (another "
+            f"branch, or commits a rebase or an amend replaced) - run `{_self()} coverage` "
+            "on this branch first")
 
 
 class _WorkRun(NamedTuple):
@@ -71,7 +86,8 @@ class _WorkRun(NamedTuple):
     blocker: dict | None
 
 
-def _latest_full_run(store: SnapshotStore, requested: int | None = None) -> _WorkRun:
+def _latest_full_run(store: SnapshotStore, requested: int | None = None, *,
+                     behind=anywhere) -> _WorkRun:
     """The run seed and prune work from, and the failed verifies passed over.
 
     `pick_baseline` — verify's own choice, not a weaker rule that agrees with it
@@ -79,6 +95,8 @@ def _latest_full_run(store: SnapshotStore, requested: int | None = None) -> _Wor
     a failed verify IS trusted, and seeding off it signs marks at values verify
     refuses as a comparison point, which is how the failure's findings stop
     being touched. Reading trust alone was that bug; reading neither was #16.
+    `behind` keeps it to runs at or behind HEAD, as verify's pick is: a run on
+    another branch signed marks for code this branch does not hold.
 
     `requested` is `--baseline ID`, admitted by the rule `verify --baseline`
     runs. Without it a failed verify in front of every newer run pinned seed
@@ -89,26 +107,27 @@ def _latest_full_run(store: SnapshotStore, requested: int | None = None) -> _Wor
     runs = store.list_runs()
     if requested is not None:
         run = admit_baseline(runs, requested, none_trusted=_no_trusted_run())
-        return _WorkRun(run, [], _newer_trusted(runs, run["id"]), True, None)
-    pick = _usable_pick(runs)
+        return _WorkRun(run, [], _newer_trusted(runs, run["id"], behind), True, None)
+    pick = _usable_pick(runs, behind)
     run = pick.run
     skipped = _skipped_failed_verifies(runs, run["id"])
-    return _WorkRun(run, skipped, _newer_trusted(runs, run["id"]), False,
+    return _WorkRun(run, skipped, _newer_trusted(runs, run["id"], behind), False,
                     _pinning_verify(pick, skipped))
 
 
-def _newer_trusted(runs: list[dict], run_id: int) -> dict | None:
-    """The newest trusted run above `run_id`, or None when `run_id` is the newest."""
+def _newer_trusted(runs: list[dict], run_id: int, behind) -> dict | None:
+    """The newest trusted run above `run_id` and behind HEAD, or None when there is none."""
     from ..store import is_trusted
 
-    return next((r for r in reversed(runs) if r["id"] > run_id and is_trusted(r)), None)
+    return next((r for r in reversed(runs)
+                 if r["id"] > run_id and is_trusted(r) and behind(r)), None)
 
 
-def _usable_pick(runs: list[dict]):
+def _usable_pick(runs: list[dict], behind):
     """verify's pick, refused when it holds no run to work from."""
     from ..store import pick_baseline
 
-    pick = pick_baseline(runs)
+    pick = pick_baseline(runs, behind)
     if pick.run is None:
         raise CrapkitError(_no_full_run(pick, runs))
     return pick
@@ -154,14 +173,30 @@ def _merge_stamp(texts: list[str]) -> None:
     Reconciling marks across metrics means picking a minimum between numbers
     produced by different rules, which is not a comparison at all.
     """
-    from ..ratchet import coverage_then_seed, read_stamp
+    from ..ratchet import read_stamp
 
     ours, theirs = read_stamp(texts[1]), read_stamp(texts[2])
     if ours != theirs:
         raise ConfigError(
             f"ratchet merge refused: ours is [{ours or 'unstamped'}] and theirs is "
             f"[{theirs or 'unstamped'}] - marks from different metric versions cannot "
-            f"merge; {coverage_then_seed('re-baseline one side')}")
+            f"merge; {_merge_remedy(ours, theirs)}")
+
+
+def _merge_remedy(ours: str, theirs: str) -> str:
+    """Re-seed under the newer side's metric. "re-baseline one side" said neither
+    which side nor under which crapkit, and a seed under the older release
+    stamps its own older metric, so the next merge refused again."""
+    from ..ratchet import coverage_then_seed, newer_tools
+
+    if newer_tools(theirs, ours):
+        side, stamp = "theirs", theirs
+    elif newer_tools(ours, theirs):
+        side, stamp = "ours", ours
+    else:
+        return coverage_then_seed("re-baseline one side")
+    return (f"{side} is newer, so with a crapkit that measures [{stamp}], "
+            f"{coverage_then_seed('re-baseline the merged marks')}")
 
 
 def _ratchet_merge(files: list) -> int:
@@ -532,17 +567,19 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     prune creates holds no mark and takes the running metric, which relabels
     nothing.
     """
+    from ..gitio import GitFacts
     from ..keys import require_unambiguous
     from ..ratchet import metric_version
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
     store = _open_store(root)
-    work = _latest_full_run(store, requested)
+    work = _latest_full_run(store, requested, behind=behind_head(GitFacts(root)))
     latest = work.run
     fresh = store.read_scored(latest["id"])
     require_unambiguous(fresh, run_id=latest["id"], advice=_identity_advice(work, action))
     saved = RatchetFile.read(root / cfg.ratchet_file)
+    _refuse_newer_marks(saved, work, action)
     marks = saved.entries
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store,
                                           entries=marks, moves_marks=True)
@@ -557,7 +594,56 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     metric_note = _metric_note(work, action, created=saved.text is None)
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(work.skipped, work.newer)}{metric_note}")
+    _print_seed_next(action, cfg.ratchet_file, metric_note)
     return 0
+
+
+# What seed or prune would do to marks from a run an older metric measured.
+_BACKWARDS = {"seed": "this seed would restamp them under the older metric, and verify under the "
+                      "newer one would refuse them",
+              "prune": "this prune would drop every mark whose function the older reader names "
+                       "differently, as if its code were gone"}
+
+
+def _refuse_newer_marks(saved, work: _WorkRun, action: str) -> None:
+    """Refuse to rewrite marks a newer crapkit or lizard recorded than the one
+    that measured the run. seed restamped the file under the run's older metric,
+    and prune judged which marks were gone by the older reader's names. Two
+    ways to get there: this install is older than the marks (upgrade it), or a
+    failed verify pins seed and prune to a run an older release measured (read
+    a newer run)."""
+    from ..ratchet import metric_version, newer_tools, run_stamp
+
+    recorded = saved.metric_stamp
+    newer = newer_tools(recorded, metric_version())
+    if newer:
+        raise ConfigError(_newer_than_install(saved, action, newer))
+    measured = run_stamp(work.run["tool_versions"])
+    if newer_tools(recorded, measured):
+        raise ConfigError(f"ratchet {action} refused: {saved.path.name} was recorded under "
+                          f"[{recorded}] and run {work.run['id']} under the older [{measured}]; "
+                          f"{_BACKWARDS[action]}; {_way_off(work.newer)}")
+
+
+def _newer_than_install(saved, action: str, newer: list[str]) -> str:
+    from ..ratchet import metric_version, upgrade_remedy
+
+    return (f"ratchet {action} refused: {saved.path.name} was recorded under "
+            f"[{saved.metric_stamp}] and this crapkit measures [{metric_version()}] — "
+            f"{upgrade_remedy(newer)}; {_BACKWARDS[action]}. A team going back to this release "
+            f"on purpose restores the {saved.path.name} it last wrote from git history")
+
+
+def _print_seed_next(action: str, ratchet_file: str, metric_note: str) -> None:
+    """The README's two steps after a seed. seed printed none, so a user who
+    followed what crapkit printed never committed the marks or ran the verify
+    that makes the first passing verdict.
+
+    A seed that signed another crapkit's metric has already said verify refuses
+    those marks and named the run that restamps them, so it adds nothing.
+    """
+    if action == "seed" and not metric_note:
+        print(f"-> next: commit {ratchet_file}, then run `{_self()} verify`")
 
 
 def _identity_advice(work: _WorkRun, action: str) -> str:

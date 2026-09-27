@@ -1,0 +1,5 @@
+# Codex reads this file beside SKILL.md. Adopting crapkit happens once per
+# repo, so the skill stays out of every turn's context and runs only when the
+# user names it, as `/crapkit:crapkit-onboard` does in Claude Code.
+policy:
+  allow_implicit_invocation: false

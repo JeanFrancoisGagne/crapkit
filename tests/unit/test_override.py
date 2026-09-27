@@ -204,3 +204,65 @@ def test_an_alert_that_fails_writing_bytes_that_are_not_utf8_grants_nothing(tmp_
 
     assert store.read_overrides(run_id) == []
     assert not (tmp_path / "ratchet.tsv").exists()
+
+
+# --- the alert_command a refusal hands the user ------------------------------------
+
+def _example_value() -> str:
+    """The command the refusal's crapkit.toml line sets, read the way config loads it."""
+    import tomllib
+
+    from crapkit.override import alert_example
+
+    return tomllib.loads("[crapkit]\n" + alert_example())["crapkit"]["alert_command"]
+
+
+def test_the_refusal_names_an_alert_command_line_to_paste(tmp_path):
+    """`set [crapkit] alert_command` named the key and no value; a user then
+    guessed one, and `cat` does not exist in the cmd.exe crapkit runs it with
+    on Windows."""
+    from crapkit.override import alert_example
+
+    with pytest.raises(ConfigError) as refused:
+        record_override(store=SnapshotStore(tmp_path / "db.sqlite"), run_id=1, root=tmp_path,
+                        ratchet_file="r.tsv", alert_command="", violations=[VIOLATION], reason="x",
+                        metric=metric_version())
+
+    assert str(refused.value).endswith(f"set [crapkit] alert_command in crapkit.toml, for example {alert_example()}")
+
+
+def test_the_example_alert_command_appends_the_override_line_on_this_platform(tmp_path):
+    (tmp_path / ".crapkit").mkdir()
+    store = SnapshotStore(tmp_path / ".crapkit" / "crap.sqlite")
+    run_id = store.write_run(commit="c", tool_versions={}, rows=[])
+
+    record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
+                    alert_command=_example_value(), violations=[VIOLATION], reason="hotfix 412",
+                    metric=metric_version())
+
+    logged = (tmp_path / ".crapkit" / "alerts.log").read_text(encoding="utf-8")
+    assert logged.splitlines() == ["crapkit OVERRIDE (hotfix 412): src/a.ts:3 f( ) crap=90.0"]
+
+
+def test_digest_alert_with_no_command_names_the_same_line(tmp_path):
+    from types import SimpleNamespace
+
+    from crapkit.cli.reports import _send_digest_alert
+    from crapkit.override import alert_example
+
+    with pytest.raises(ConfigError) as refused:
+        _send_digest_alert(tmp_path, SimpleNamespace(alert_command=" "), {"id": 1}, {"id": 2}, ["x"])
+
+    assert str(refused.value) == ("digest --alert needs [crapkit] alert_command in crapkit.toml, "
+                                  f"for example {alert_example()}")
+
+
+@pytest.mark.parametrize("page", ["docs/configuration.md", "docs/ratchet.md"])
+def test_the_config_and_override_pages_give_both_platforms_example(page):
+    from pathlib import Path
+
+    from crapkit.override import POSIX_ALERT_EXAMPLE, WINDOWS_ALERT_EXAMPLE
+
+    text = (Path(__file__).resolve().parents[2] / page).read_text(encoding="utf-8")
+
+    assert POSIX_ALERT_EXAMPLE in text and WINDOWS_ALERT_EXAMPLE in text, page

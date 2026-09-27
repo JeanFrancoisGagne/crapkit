@@ -17,6 +17,7 @@ commit`, so it holds three rules the batch commands do not:
 """
 from __future__ import annotations
 
+import sys
 import tempfile
 from itertools import chain
 from pathlib import Path
@@ -59,6 +60,7 @@ class StagedGate(NamedTuple):
     records: tuple = ()  # full staged identities, including siblings below the ceiling
     unread: dict = {}  # staged path -> why no reader could read it: judged nothing, so refused
     unreadable: tuple[str, ...] = ()  # staged names that are not UTF-8 and no scope takes
+    whole: bool = False  # nothing was staged, so every tracked file was judged whole
 
 
 def _touches(record: FunctionRecord, ranges: list[tuple[int, int]]) -> bool:
@@ -157,18 +159,37 @@ def _claimed_files(in_scope: dict) -> list[str]:
     return sorted({f for files in in_scope.values() for f in files})
 
 
-def gate_staged(root: Path, cfg: Config, reads=None) -> StagedGate:
+def gate_staged(root: Path, cfg: Config, reads=None, *, whole: bool = False) -> StagedGate:
     """`reads` is where the staged bytes come from: git processes the caller
     already started, or a spawn-on-demand pair when nobody did. The verdict is
-    the same either way."""
+    the same either way.
+
+    `whole` lets an empty staged diff judge every tracked file whole instead of
+    passing: the caller allows it outside a commit, where `pre-commit run
+    --all-files` stages nothing and a staged-only gate passed any breach already
+    committed. The blobs still come from the index, which then equals HEAD.
+    """
     reads = reads or GitReads(root)
-    ranges_by_path = changed_ranges(reads.staged_diff())
+    staged = changed_ranges(reads.staged_diff())
+    if staged or not whole:
+        return _gate_ranges(cfg, reads, staged, staged)
+    return _gate_ranges(cfg, reads, _whole_files(reads.tracked()), {})._replace(whole=True)
+
+
+def _whole_files(paths: list[str]) -> dict[str, list[tuple[int, int]]]:
+    """Every line of each file as its changed range, so every function is touched."""
+    return {path: [(1, sys.maxsize)] for path in paths}
+
+
+def _gate_ranges(cfg: Config, reads, ranges_by_path: dict, staged: dict) -> StagedGate:
+    """The functions `ranges_by_path` touches over their ceiling. Only files in
+    `staged` can be named as unscoped: the note is about a staged hole."""
     if not ranges_by_path:
         return StagedGate([])
     universe = scan_files(sorted(ranges_by_path), cfg)
     in_scope = universe.by_scope
     checked_files = _claimed_files(in_scope)
-    unscoped = _unscoped_sources(sorted(ranges_by_path), set(checked_files), cfg)
+    unscoped = _unscoped_sources(sorted(staged), set(checked_files), cfg)
     if not checked_files:
         return StagedGate([], unscoped, unreadable=universe.unreadable)
     records_by_path = staged_records(reads.staged_blobs(checked_files),

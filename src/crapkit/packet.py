@@ -19,6 +19,7 @@ import os
 import re
 import shlex
 
+from .invocation import console_script
 from .ratchet_report import DAY, mark_age_days
 from .keys import position
 from .score import remedy, shares_its_def_line, unjoined
@@ -45,7 +46,9 @@ _CLOSERS = ")]}>"
 # for a child of a venv interpreter launched without a shell, to the base
 # interpreter the venv wraps: Windows searches the parent application's
 # directory before PATH, and a venv's python.exe is a trampoline for that base.
-REFRESH = "crapkit coverage --reuse-unchanged"
+# A packet uvx built says `uvx crapkit`: uvx puts no `crapkit` on PATH, and the
+# agent reading the packet runs in a shell of its own (invocation.console_script).
+REFRESH = "coverage --reuse-unchanged"
 
 
 def function_source(text: str | None, start: int, end: int) -> str | None:
@@ -128,9 +131,12 @@ ENCODED_PREFIX = "powershell -NoProfile -NonInteractive -EncodedCommand "
 
 
 def _windows_encoded(arguments: list[str]) -> str:
-    """Cross cmd expansion and PowerShell parsing without exposing path text."""
-    quoted = " ".join("'" + _native_argument(arg).replace("'", "''") + "'" for arg in arguments)
-    script = ("$command = Get-Command crapkit -CommandType Application -TotalCount 1 -ErrorAction Stop; "
+    """Cross cmd expansion and PowerShell parsing without exposing path text.
+    Under uvx the application is uvx, and `crapkit` is its first argument."""
+    head, *lead = console_script().split()
+    quoted = " ".join("'" + _native_argument(arg).replace("'", "''") + "'"
+                      for arg in [*lead, *arguments])
+    script = (f"$command = Get-Command {head} -CommandType Application -TotalCount 1 -ErrorAction Stop; "
               "$LASTEXITCODE = 1; & $command.Source " + quoted + "; exit $LASTEXITCODE")
     encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
     return ENCODED_PREFIX + encoded
@@ -145,9 +151,15 @@ _PORTABLE_BARE = r"[\w./:][-\w./:]*"
 _WINDOWS_BARE = r"[\w./:\\][-\w./:\\]*"
 
 
+# A long flag such as `--gate` or `--top`, which sh, cmd.exe and PowerShell all
+# hand to a native command as written. PowerShell's stop-parsing token `--%` is
+# not one.
+_LONG_FLAG = r"--[a-z][-a-z]*"
+
+
 def _double_quoted(argument: str, bare: str = _PORTABLE_BARE) -> str:
     """A plain argument bare, any other inside double quotes."""
-    if argument in ("--", "--gate") or re.fullmatch(bare, argument, re.ASCII):
+    if argument == "--" or re.fullmatch(f"{_LONG_FLAG}|{bare}", argument, re.ASCII):
         return argument
     return '"' + argument + '"'
 
@@ -162,7 +174,7 @@ def _portable(argument: str) -> bool:
 
 
 def _line(words) -> str:
-    return "crapkit " + " ".join(words)
+    return _spelled(" ".join(words))
 
 
 def console_command(arguments: list[str]) -> str:
@@ -191,6 +203,12 @@ def _windows_command(arguments: list[str]) -> str:
     return _line(map(_windows_argument, arguments))
 
 
+def _spelled(arguments: str) -> str:
+    """A command line of already-quoted arguments, headed by the console script
+    as a shell outside this process starts it."""
+    return f"{console_script()} {arguments}"
+
+
 def _file_command(command: str, path: str, flags=()) -> str:
     arguments = [command, path, *flags]
     if path.startswith("-"):
@@ -206,8 +224,8 @@ def commands(path: str, scoped: bool, note: str = "") -> dict:
     """
     out = {"gate": _file_command("rescore", path, ["--gate"]),
            "scoped_tests": _file_command("test-scoped", path) if scoped else None,
-           "verify": "crapkit verify",
-           "refresh": REFRESH,
+           "verify": _spelled("verify"),
+           "refresh": _spelled(REFRESH),
            "refresh_writes_run": True}
     if not scoped and note:
         out["scoped_tests_note"] = note

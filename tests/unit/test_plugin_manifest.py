@@ -2,15 +2,16 @@
 
 Nothing in it is generated at install time, so drift between a manifest and the code
 it points at ships silently to every machine that installed the plugin. Four pins
-hold it: the manifest version against pyproject, the handler list against crapkit's
-own language->extension map, the event set against the safety contract, and every
-skill link against the blob URL, because `docs/lanes.md` resolves nowhere in the
-repo an agent is actually working in.
+hold it: both manifests' version against pyproject, the one handler against its
+recorded schema, the event set against the safety contract, and every skill link
+against the blob URL, because `docs/lanes.md` resolves nowhere in the repo an agent
+is actually working in.
 """
 from __future__ import annotations
 
 import json
 import re
+import shlex
 import tomllib
 from functools import lru_cache
 from pathlib import Path
@@ -20,6 +21,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent.parent
 PLUGIN = "plugin"
 PLUGIN_JSON = f"{PLUGIN}/.claude-plugin/plugin.json"
+CODEX_JSON = f"{PLUGIN}/.codex-plugin/plugin.json"
+ONBOARD_OPENAI_YAML = f"{PLUGIN}/skills/crapkit-onboard/agents/openai.yaml"
 MARKETPLACE_JSON = ".claude-plugin/marketplace.json"
 HOOKS_JSON = f"{PLUGIN}/hooks/hooks.json"
 MCP_JSON = f"{PLUGIN}/.mcp.json"
@@ -196,7 +199,8 @@ def _drift(plugin_version: str, cli_version: str) -> list[str]:
     from crapkit.doctor import plugin_handshake
 
     return plugin_handshake(where="plugin", version=plugin_version, cli_version=cli_version,
-                            cli_where="crapkit", protocols=("1",), supported="1")
+                            cli_where="crapkit", protocols=("1",), supported="1",
+                            harness="claude", cli_upgrade="pip install --upgrade crapkit")
 
 
 def test_both_manifests_ask_for_the_cli_release_doctor_accepts():
@@ -213,6 +217,54 @@ def test_both_manifests_ask_for_the_cli_release_doctor_accepts():
         assert _SAME_RELEASE in description, f"{name} no longer names the CLI it needs"
 
 
+def test_the_codex_manifest_ships_the_release_version_and_no_hooks():
+    """Codex reads .codex-plugin/plugin.json before .claude-plugin/plugin.json,
+    and installs the plugin under the version it finds there. Without `hooks`
+    it also loads hooks/hooks.json, whose Edit and Write events Codex never
+    sends: it reports an edit as apply_patch patch text. A path there would only
+    add to that default discovery; the empty object is the value that leaves it
+    out. Measured on Codex 0.156.1: 50 hooks with no Codex manifest or one
+    without the key, 0 with `"hooks": {}`, and 12 tools and 3 skills in every
+    case."""
+    codex, claude = _json(CODEX_JSON), _json(PLUGIN_JSON)
+    pyproject = tomllib.loads(_doc("pyproject.toml"))
+
+    assert codex["version"] == claude["version"] == pyproject["project"]["version"]
+    assert codex["name"] == claude["name"] == "crapkit"
+    assert codex["hooks"] == {}
+
+
+def test_the_codex_manifest_points_at_the_skills_and_the_mcp_server_the_plugin_holds():
+    codex = _json(CODEX_JSON)
+
+    assert (ROOT / PLUGIN / codex["skills"] / "crapkit" / "SKILL.md").is_file()
+    assert (ROOT / PLUGIN / codex["mcpServers"]).resolve() == (ROOT / MCP_JSON).resolve()
+
+
+def test_the_codex_manifest_asks_for_the_cli_release_doctor_accepts():
+    """Same rule as the Claude Code manifest: the MCP server and the skills run
+    this release's commands, so an older CLI floor is a wrong pointer."""
+    description = _json(CODEX_JSON)["description"]
+
+    assert _SAME_RELEASE in description
+    assert not _FLOOR.search(description)
+
+
+def test_codex_leaves_the_onboarding_skill_out_of_every_turn():
+    """Adopting crapkit happens once per repo. Claude Code keeps the skill out
+    of the model's context through its frontmatter; Codex reads
+    agents/openai.yaml instead, and without it listed crapkit-onboard in every
+    turn's instructions (Codex 0.156.1, one request body against a stub model:
+    three crapkit skills without the file, two with it)."""
+    import yaml
+
+    policy = yaml.safe_load(_doc(ONBOARD_OPENAI_YAML))["policy"]
+    assert policy == {"allow_implicit_invocation": False}
+    others = sorted(p.relative_to(ROOT).as_posix()
+                    for p in (ROOT / PLUGIN / "skills").glob("*/agents/openai.yaml"))
+    assert others == [ONBOARD_OPENAI_YAML], "the two working skills stay implicit"
+
+
 def test_the_plugin_ships_the_three_skills_the_repo_holds():
     found = sorted(p.parent.name for p in (ROOT / PLUGIN / "skills").glob("*/SKILL.md"))
     assert found == ["crapkit", "crapkit-onboard", "crapkit-recover"]
@@ -225,29 +277,23 @@ def test_the_plugin_tree_holds_no_python():
     assert sorted((ROOT / PLUGIN).rglob("*.py")) == []
 
 
-# --- the hook: generated from the language map, PostToolUse only ---------------
+# --- the hook: one handler, its whole invocation in `command` ------------------
 
 HANDLER_GOLDEN = Path(__file__).resolve().parent.parent / "goldens" / "plugin" / "hooks_handler_schema.json"
 
 
 @lru_cache(maxsize=None)
 def _recorded_handler() -> dict:
-    """The handler schema, held in one file outside the code that generates it.
+    """The handler schema, held in one file outside the manifest it describes.
 
     Claude Code ignores a field it does not recognise instead of refusing it, so
     a misspelled `asyncRewake` ships a hook that runs, never rewakes, and says
-    nothing about it. The golden is what the spelling is pinned against; the
-    generator below reads it rather than repeating it, so a rename cannot land
-    in both places at once and pass.
+    nothing about it. The golden is what the spelling is pinned against.
     """
     golden = json.loads(HANDLER_GOLDEN.read_text(encoding="utf-8"))
     assert golden["source"] in ("design-doc", "live-capture"), \
         "a schema golden with no provenance is a guess nobody can date"
     return golden["handler"]
-
-
-def _handler(tool: str, extension: str) -> dict:
-    return {**_recorded_handler(), "if": f"{tool}(*{extension})"}
 
 
 def test_the_recorded_schema_spells_both_async_fields_the_way_the_harness_reads_them():
@@ -260,39 +306,23 @@ def test_the_recorded_schema_spells_both_async_fields_the_way_the_harness_reads_
     assert (handler["async"], handler["asyncRewake"]) == (True, True)
 
 
-def _generated_handlers() -> list[dict]:
-    """One handler per (tool, extension) pair, extensions in map order.
-
-    The `if` filter skips the spawn itself, so an extension crapkit measures but
-    the map forgot here is an extension the advisory never sees.
-    """
-    from crapkit.universe import LANGUAGE_EXTENSIONS
-
-    return [_handler(tool, extension)
-            for extensions in LANGUAGE_EXTENSIONS.values()
-            for extension in extensions
-            for tool in TOOLS]
+def test_hooks_json_is_the_recorded_handler_once_on_edit_and_write():
+    """One handler for every edit. Fifty handlers split by an `if` per file
+    type ran as fifty processes wherever `if` was dropped; the file-type screen
+    now lives in `claude-hook` itself (tests/unit/test_claude_hook.py)."""
+    assert _json(HOOKS_JSON) == {"hooks": {"PostToolUse": [
+        {"matcher": "|".join(TOOLS), "hooks": [_recorded_handler()]}]}}
 
 
-def _generated_hooks() -> dict:
-    return {"hooks": {"PostToolUse": [{"matcher": "|".join(TOOLS),
-                                       "hooks": _generated_handlers()}]}}
+def test_the_handler_carries_its_whole_invocation_in_the_one_field_every_reader_keeps():
+    """Codex, Cursor, Copilot CLI and VS Code keep `command` and drop `args`
+    and `if`, and so did Claude Code before 2.1.139. A shell-form command line
+    is the one form that reaches all of them whole
+    (tests/unit/test_plugin_hook_readers.py replays each one)."""
+    handler = _recorded_handler()
 
-
-def test_hooks_json_is_what_the_language_extension_map_generates():
-    """The committed file is generated output. Regenerate it here and diff, so a
-    new language in `LANGUAGE_EXTENSIONS` cannot land without its handlers."""
-    assert _json(HOOKS_JSON) == _generated_hooks()
-
-
-def test_the_generator_covers_every_extension_crapkit_measures():
-    """Guards the diff above: two empty dicts also compare equal."""
-    from crapkit.universe import LANGUAGE_EXTENSIONS
-
-    extensions = [e for exts in LANGUAGE_EXTENSIONS.values() for e in exts]
-    filters = {h["if"] for h in _generated_handlers()}
-    assert len(filters) == len(extensions) * len(TOOLS) >= 20
-    assert {"Edit(*.py)", "Write(*.py)", "Edit(*.rs)", "Write(*.tsx)"} <= filters
+    assert not {"args", "if"} & set(handler)
+    assert shlex.split(handler["command"])[0] == "crapkit"
 
 
 def _committed_handlers() -> list[dict]:
@@ -302,8 +332,9 @@ def _committed_handlers() -> list[dict]:
 
 
 def _spawned_subcommand(handler: dict) -> str:
-    """What `crapkit <this>` a handler runs: the first arg that is not a flag."""
-    return next(arg for arg in handler["args"] if not arg.startswith("-"))
+    """What `crapkit <this>` a handler runs: the first word after the program
+    that is not a flag."""
+    return next(arg for arg in shlex.split(handler["command"])[1:] if not arg.startswith("-"))
 
 
 def test_hooks_json_subcommands_exist_in_parser():
@@ -329,7 +360,7 @@ def test_the_subcommand_reader_finds_the_one_the_hook_actually_spawns():
     """Guards the test above: an empty set is a subset of everything, and a
     reader that returned the `--protocol` value instead would pass it too."""
     assert {_spawned_subcommand(h) for h in _committed_handlers()} == {"claude-hook"}
-    assert _spawned_subcommand({"args": ["claude-hook", "--protocol", "1"]}) == "claude-hook"
+    assert _spawned_subcommand({"command": "crapkit claude-hook --protocol 1"}) == "claude-hook"
 
 
 def test_the_plugin_registers_post_tool_use_and_nothing_else():
@@ -340,11 +371,12 @@ def test_the_plugin_registers_post_tool_use_and_nothing_else():
 
 
 @pytest.mark.parametrize("field,value", [("async", True), ("asyncRewake", True),
-                                         ("timeout", 20), ("command", "crapkit")])
+                                         ("timeout", 20),
+                                         ("command", "crapkit claude-hook --protocol 1")])
 def test_every_handler_stays_async_bare_exe_and_bounded(field: str, value: object):
     """Sync hooks run serially: a 19-edit batch becomes a 3.6 s pause. `python`
     resolves to the WindowsApps stub and to six venvs without crapkit; the console
-    script is the real exe Windows exec form needs."""
+    script is what every harness's shell finds on PATH."""
     assert {h[field] for h in _committed_handlers()} == {value}
 
 

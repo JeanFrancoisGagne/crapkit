@@ -64,9 +64,16 @@ def stamp(repo) -> str:
     return read_stamp((repo / MARKS).read_text(encoding="utf-8"))
 
 
+def after_seed() -> str:
+    """The line every seed ends with: the README's next two steps."""
+    return f"-> next: commit {MARKS}, then run `{_self()} verify`\n"
+
+
 # --- seed ----------------------------------------------------------------------
 
 def test_seed_from_a_run_under_an_older_metric_signs_that_metric(repo, capsys):
+    """The line names the step that restamps the marks, and no verify follows
+    it: that verify would refuse the stamp this seed signed."""
     run_id = measured_run(repo, OLD)
     write_marks(repo, OLD_STAMP)
 
@@ -81,14 +88,14 @@ def test_seed_from_a_run_under_an_older_metric_signs_that_metric(repo, capsys):
         f"`{_self()} coverage` and another seed\n")
 
 
-def test_seed_from_a_run_under_the_running_metric_prints_the_line_it_always_did(repo, capsys):
+def test_seed_from_a_run_under_the_running_metric_ends_with_the_commit_and_verify(repo, capsys):
     run_id = measured_run(repo, CURRENT)
 
     assert ratchet(repo, "seed") == 0
 
     assert stamp(repo) == metric_version()
     assert capsys.readouterr().out == (
-        f"{MARKS}: added 1, tightened 0 - 1 mark(s) vs run {run_id} ({SHA[:11]})\n")
+        f"{MARKS}: added 1, tightened 0 - 1 mark(s) vs run {run_id} ({SHA[:11]})\n{after_seed()}")
 
 
 def test_seed_refuses_a_run_that_recorded_no_metric(repo):

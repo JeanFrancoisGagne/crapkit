@@ -1,6 +1,7 @@
 """Resource status reports policy and probe fallbacks without opening a pool."""
 import json
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -58,6 +59,17 @@ def test_status_does_not_create_the_budget_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("CRAPKIT_RESOURCE_DIR", str(destination))
     assert resources.resource_status()["budget_directory"] == str(destination)
     assert not destination.exists()
+
+
+def test_status_finds_the_user_budget_directory_without_home_variables(monkeypatch,
+                                                                       without_home_variables):
+    """check_config and `doctor --json` answered `RuntimeError: Could not
+    determine home directory.` here when the server's environment held no
+    USERPROFILE, while every other MCP tool worked."""
+    monkeypatch.delenv("CRAPKIT_RESOURCE_DIR", raising=False)
+    directory = Path(resources.resource_status()["budget_directory"])
+    expected = without_home_variables / ".cache" / "crapkit" / "workers"
+    assert os.path.normcase(directory.parent) == os.path.normcase(expected)
 
 
 def test_pool_backend_ceiling_preserves_available_shared_capacity(monkeypatch):

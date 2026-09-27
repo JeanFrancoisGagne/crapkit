@@ -1,21 +1,32 @@
-"""Protocol 1: one Claude Code PostToolUse payload on stdin, a ccn advisory out.
+"""Protocol 1: one PostToolUse payload on stdin, a ccn advisory out.
 
-Exit 2 with three lines of stderr is the only thing this ever says, and it says
-it about an edit in a scope crapkit measures: a function the edit changed, over
-its ceiling, carrying no ratchet mark; or a changed file the edit left unjudged,
-because no reader could read it, because git names it in bytes that are not
-UTF-8, or because git ran and could not report what the edit changed. The
-unjudged lines name the file and the reason; the commit gate refuses the first
-two once staged. Everything else is exit 0 and silence: the malformed payload,
-the unmeasured repo, a machine with no git and the internal exception included.
+The advisory is the only thing this ever says, and it says it about an edit in
+a scope crapkit measures: a function the edit changed, over its ceiling,
+carrying no ratchet mark; or a changed file the edit left unjudged, because no
+reader could read it, because git names it in bytes that are not UTF-8, or
+because git ran and could not report what the edit changed. The unjudged lines
+name the file and the reason; the commit gate refuses the first two once
+staged. Everything else is exit 0 and silence: the malformed payload, the
+unmeasured repo, a machine with no git and the internal exception included.
 
-An Edit, Write or MultiEdit event names its file in `tool_input.file_path` and
-is judged as that one file. A Bash event carries `tool_input.command` instead —
-a heredoc or `python - <<'PY'` writes source no file_path ever names — so it
-falls back to the working tree: the changed *.py files fresh enough for this
-command to have plausibly written, each through the same per-file ladder. Fresh
-means an mtime inside the window and bytes this session has not judged yet, so
-a touch or a same-bytes rewrite never repeats an advisory (`_Memory`).
+The plugin's one handler runs under several harnesses, and each sends the event
+in its own words. Claude Code and Cursor name the written file in
+`tool_input.file_path`, GitHub Copilot CLI in `tool_input.path`, and VS Code in
+`tool_input.filePath` or its patch text; Cursor also spells the event
+`postToolUse`. Each file is judged on its own, and only when its suffix is one
+crapkit measures. A Bash event carries `tool_input.command` instead (a heredoc
+or `python - <<'PY'` writes source no file_path ever names), so it falls back to
+the working tree: the changed *.py files fresh enough for this command to have
+plausibly written, each through the same per-file ladder. Fresh means an mtime
+inside the window and bytes this session has not judged yet, so a touch or a
+same-bytes rewrite never repeats an advisory (`_Memory`).
+
+Where the advisory goes depends on who reads the exit code. Claude Code hands
+exit 2's stderr to the model, so there it is three lines of stderr and exit 2.
+Cursor reads exit 2 as a deny, VS Code as a blocking error, and Copilot CLI
+shows it to the user alone, so for those three it is exit 0 and one line of
+JSON on stdout, the text under both keys they read: `additionalContext` (Copilot
+CLI, Cursor) and `hookSpecificOutput.additionalContext` (VS Code).
 
 That silence is the design, not laziness. On PostToolUse a nonzero exit that is
 not 2 is invisible and a 2 is text the model has to read, so a hook that fires
@@ -42,6 +53,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -49,6 +61,26 @@ from collections.abc import Iterator
 from pathlib import Path
 
 PROTOCOL = "1"
+
+# The one event judged, as Claude Code, Copilot CLI and VS Code spell it, then
+# as Cursor does.
+_EVENTS = ("PostToolUse", "postToolUse")
+
+# Where an Edit or Write names its file: Claude Code and Cursor, then Copilot CLI.
+_PATH_KEYS = ("file_path", "path")
+
+# VS Code's tools that write a file. VS Code runs every plugin hook on every
+# tool call and drops the `Edit|Write` matcher, so this set is that matcher in
+# VS Code's own tool names.
+_VSCODE_WRITES = frozenset({"create_file", "insert_edit_into_file", "replace_string_in_file",
+                            "multi_replace_string_in_file", "apply_patch"})
+
+# The file lines of an apply_patch body that leave a file written.
+_PATCHED = re.compile(r"^\*\*\* (?:Update File|Add File|Move to): (.+?)[ \t\r]*$", re.MULTILINE)
+
+# The shell tool, as Claude Code and Copilot CLI name it and as Cursor maps a
+# Bash matcher onto its own.
+_SHELL_TOOLS = frozenset({"Bash", "Shell"})
 
 # Git state meaning the working tree holds content this edit did not author.
 _SEQUENCING_MARKERS = ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD")
@@ -96,14 +128,24 @@ def _advise(args, stream) -> int:
     payload = _payload(stream)
     if args.protocol != PROTOCOL:
         return 0
+    return _deliver(payload, _advisory(payload))
+
+
+def _advisory(payload: dict) -> list[str]:
+    """Every advisory line this event earns: the edited files' when it names
+    any, else the Bash fallback's."""
     memory = _memory(payload)
-    edited = _edited_file(payload)
+    edited = _edited_files(payload)
     if edited:
-        return _judge_path(_edited_path(payload, edited), memory)
+        return _judge_paths(_measured(payload, edited), memory)
     return _advise_command(payload, memory)
 
 
-def _judge_path(path: Path, memory: _Memory) -> int:
+def _judge_paths(paths: list[Path], memory: _Memory) -> list[str]:
+    return [line for path in paths for line in _judge_path(path, memory)]
+
+
+def _judge_path(path: Path, memory: _Memory) -> list[str]:
     """Root discovery and judgement for one absolute file path: the tail every
     event shape shares once it holds a file to answer for.
 
@@ -116,7 +158,7 @@ def _judge_path(path: Path, memory: _Memory) -> int:
 
     root = _repo_root(path.parent)
     if root is None or _sequencing(root):
-        return 0
+        return []
     return _judge(root, tracked_spelling(root, path.relative_to(root).as_posix()), memory)
 
 
@@ -126,21 +168,60 @@ def _payload(stream) -> dict:
     return event if isinstance(event, dict) else {}
 
 
-def _edited_file(payload: dict) -> str:
-    """The path this event edited, or "" when protocol 1 does not judge the event.
+def _edited_files(payload: dict) -> list[str]:
+    """The paths this event wrote, or [] when protocol 1 does not judge the event.
 
     PostToolUse only: PreToolUse arrives before the edit lands and judges source
     that does not exist yet, and a Stop hook's exit 2 blocks the stop, which on a
     verdict read off the filesystem is an infinite loop generator. NotebookEdit
     carries `notebook_path`, so it falls out here rather than needing a rule.
     """
-    if payload.get("hook_event_name") != "PostToolUse":
-        return ""
     tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return ""
-    edited = tool_input.get("file_path")
-    return edited if isinstance(edited, str) else ""
+    if payload.get("hook_event_name") not in _EVENTS or not isinstance(tool_input, dict):
+        return []
+    if payload.get("tool_name") in _VSCODE_WRITES:
+        return _vscode_files(tool_input)
+    return _named_file(tool_input)
+
+
+def _named_file(tool_input: dict) -> list[str]:
+    """The one file an Edit or Write names, under whichever key its harness uses."""
+    for key in _PATH_KEYS:
+        if isinstance(tool_input.get(key), str):
+            return [tool_input[key]]
+    return []
+
+
+def _vscode_files(tool_input: dict) -> list[str]:
+    """The files one of VS Code's writing tools names, each once: `filePath`,
+    every replacement's `filePath`, and every file an apply_patch body leaves
+    written."""
+    named = [tool_input.get("filePath"), *(r.get("filePath") for r in _replacements(tool_input))]
+    patch = tool_input.get("input")
+    patched = _PATCHED.findall(patch) if isinstance(patch, str) else []
+    return list(dict.fromkeys(p for p in [*named, *patched] if isinstance(p, str)))
+
+
+def _replacements(tool_input: dict) -> list[dict]:
+    """multi_replace_string_in_file's edits, one object per replacement."""
+    items = tool_input.get("replacements")
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
+def _measured(payload: dict, edited: list[str]) -> list[Path]:
+    """The edited files a scope could hold, absolute, each once: on disk, with a
+    suffix crapkit measures. The plugin's per-file-type `if` rules used to screen
+    the suffix before the spawn; one handler now serves every edit, so the screen
+    runs here, before any config is read."""
+    suffixes = _suffixes()
+    paths = dict.fromkeys(_edited_path(payload, p) for p in edited)
+    return [path for path in paths if path.suffix in suffixes and path.is_file()]
+
+
+def _suffixes() -> frozenset[str]:
+    from ..languages import LANGUAGE_EXTENSIONS
+
+    return frozenset(e for extensions in LANGUAGE_EXTENSIONS.values() for e in extensions)
 
 
 def _edited_path(payload: dict, edited: str) -> Path:
@@ -167,35 +248,35 @@ def _native_path(raw: str | None, stand: str | None = None) -> Path:
 
 
 def _command_event(payload: dict) -> bool:
-    """Whether this is a PostToolUse for a tool that wrote through the shell.
+    """Whether this is a PostToolUse for the shell tool, carrying its command.
 
     Bash carries `tool_input.command` and never `file_path`, so protocol 1 has
-    no single file to judge and reads the working tree instead. Shape-based like
-    `_edited_file`: NotebookEdit and friends carry no `command` and fall out
-    here rather than needing a rule.
+    no single file to judge and reads the working tree instead. Named rather
+    than shape-based: Codex's apply_patch carries its patch in `command`, and
+    VS Code's terminal tool reaches the hook whatever the matcher says, and
+    neither was registered for the working-tree scan.
     """
-    if payload.get("hook_event_name") != "PostToolUse":
+    if payload.get("hook_event_name") not in _EVENTS or payload.get("tool_name") not in _SHELL_TOOLS:
         return False
     tool_input = payload.get("tool_input")
     return isinstance(tool_input, dict) and isinstance(tool_input.get("command"), str)
 
 
-def _advise_command(payload: dict, memory: _Memory) -> int:
+def _advise_command(payload: dict, memory: _Memory) -> list[str]:
     """The Bash fallback: judge the fresh *.py files the working tree changed.
 
     A shell heredoc or `python - <<'PY'` writes source no Edit event ever names,
     so judging only `file_path` left every Bash-written breach unadvised. Each
     file takes the same per-file ladder an Edit takes, so a file under no
-    crapkit root, mid-sequencing, unscoped or marked stays silent, and exit 2
-    means what it always means.
+    crapkit root, mid-sequencing, unscoped or marked stays silent, and the
+    advisory means what it always means.
     """
     if not _command_event(payload):
-        return 0
+        return []
     top = _repo_top(_native_path(payload.get("cwd")))
     if top is None:
-        return 0
-    # Every file is judged and prints its own block; exit 2 when any drew one.
-    return max((_judge_path(path, memory) for path in _fresh_python(top, memory)), default=0)
+        return []
+    return _judge_paths(_fresh_python(top, memory), memory)
 
 
 def _repo_top(cwd: Path) -> Path | None:
@@ -302,10 +383,11 @@ def _sequencing(root: Path) -> bool:
     return any((git_dir / marker).exists() for marker in _SEQUENCING_MARKERS)
 
 
-def _judge(root: Path, rel: str, memory: _Memory) -> int:
-    """Rungs 6 to 9: scope, analysis, verdict, output, and the session's record
-    of the bytes the verdict read. A git failure records nothing: its advisory
-    says nothing about the bytes, and the next read may get git's answer."""
+def _judge(root: Path, rel: str, memory: _Memory) -> list[str]:
+    """Rungs 6 to 9: scope, analysis, verdict, the advisory's lines, and the
+    session's record of the bytes the verdict read. A git failure records
+    nothing: its advisory says nothing about the bytes, and the next read may
+    get git's answer."""
     from ..gitpaths import readable
 
     cfg = _config(root)
@@ -313,12 +395,12 @@ def _judge(root: Path, rel: str, memory: _Memory) -> int:
         return _unreadable(cfg, rel)
     in_scope = _scoped(cfg, rel)
     if in_scope is None:
-        return 0
+        return []
     raw, records, ranges = _read(root, rel)
-    code = _answer(root, cfg, in_scope, rel, records, ranges)
+    lines = _answer(root, cfg, in_scope, rel, records, ranges)
     if not isinstance(ranges, _Unknown):
         memory.remember(root / rel, raw)
-    return code
+    return lines
 
 
 def _read(root: Path, rel: str) -> tuple:
@@ -336,9 +418,9 @@ def _read(root: Path, rel: str) -> tuple:
         diff.close()
 
 
-def _unreadable(cfg, rel: str) -> int:
-    """Exit 2 for a file a scope takes whose name git gives in bytes that are
-    not UTF-8. No function in it can be keyed, so none is judged, and the
+def _unreadable(cfg, rel: str) -> list[str]:
+    """The advisory for a file a scope takes whose name git gives in bytes that
+    are not UTF-8. No function in it can be keyed, so none is judged, and the
     commit gate refuses the file at exit 3 (Q17); saying nothing here would
     pass it unread. Advisory wording, as rung 9's: the edit landed. A name no
     scope takes stays silent, like any unscoped edit."""
@@ -347,12 +429,11 @@ def _unreadable(cfg, rel: str) -> int:
 
     scope = claiming_scope(rel, cfg)
     if scope is None:
-        return 0
-    print(f"crapkit advisory: {shown(rel)} is in scope {scope!r}, but git names it in bytes that "
-          "are not UTF-8 and crapkit reads every path as UTF-8, so no function in it was judged "
-          "(the edit landed; nothing was blocked)", file=sys.stderr)
-    print("the commit gate refuses such a file (exit 3); rename it to a UTF-8 name", file=sys.stderr)
-    return 2
+        return []
+    return [f"crapkit advisory: {shown(rel)} is in scope {scope!r}, but git names it in bytes "
+            "that are not UTF-8 and crapkit reads every path as UTF-8, so no function in it was "
+            "judged (the edit landed; nothing was blocked)",
+            "the commit gate refuses such a file (exit 3); rename it to a UTF-8 name"]
 
 
 def _config(root: Path):
@@ -493,11 +574,11 @@ def _listed(root: Path, rel: str) -> list | None | _Unknown:
     return [] if listed.stdout.strip() else None
 
 
-def _answer(root: Path, cfg, in_scope: dict, rel: str, records: list, ranges) -> int:
+def _answer(root: Path, cfg, in_scope: dict, rel: str, records: list, ranges) -> list[str]:
     """Rungs 8 and 9: an edit judged nowhere says why; the rest get the verdict."""
     unjudged = _unjudged(rel, records, ranges)
     if unjudged:
-        return _say(unjudged)
+        return unjudged
     breaches, ceiling = _verdict(cfg, in_scope, rel, records, ranges)
     return _report(root, cfg, rel, breaches, ceiling, records)
 
@@ -537,13 +618,6 @@ def _unjudged_lines(what: str, reason: str, next_step: str) -> list[str]:
     the reader's or git's own words, and what to do."""
     return [f"crapkit advisory: {what}, so no function in it was judged "
             "(the edit landed; nothing was blocked)", f"  {reason}", next_step]
-
-
-def _say(lines: list[str]) -> int:
-    """Protocol 1's one channel: stderr and exit 2. stdout stays empty."""
-    for line in lines:
-        print(line, file=sys.stderr)
-    return 2
 
 
 def _verdict(cfg, in_scope: dict, rel: str, records: list, ranges) -> tuple[list, int]:
@@ -587,17 +661,15 @@ def _keys(records: list) -> dict:
     return key_names(records)
 
 
-def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int, records: list) -> int:
-    """Rung 9. stdout stays empty whatever happens: protocol 1 reserves it for a
-    future JSON channel, and Claude Code parses stdout JSON on exit 0."""
+def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int, records: list) -> list[str]:
+    """Rung 9: the advisory for the breaches no ratchet mark covers, or [] when
+    every one is marked. `_deliver` decides where the lines go."""
     from ..keys import key_of
 
     keys = _keys(records)
     marked = _marks_for(root / cfg.ratchet_file, rel, records)
     unmarked = [rec for rec in breaches if key_of(keys, rec)[1] not in marked]
-    if not unmarked:
-        return 0
-    return _say(_advisory_lines(rel, unmarked, ceiling))
+    return _advisory_lines(rel, unmarked, ceiling) if unmarked else []
 
 
 def _marks_for(marks_path: Path, rel: str, records=()) -> set[str]:
@@ -812,3 +884,34 @@ def _last_write(directory: Path) -> float:
         return directory.stat().st_mtime
     except OSError:
         return time.time()
+
+
+def _deliver(payload: dict, lines: list[str]) -> int:
+    """Hand the advisory to the harness that sent the event, or stay silent.
+
+    Claude Code gets three lines of stderr and exit 2, which `asyncRewake`
+    hands the model; its stdout stays empty, because it parses stdout JSON on
+    exit 0. Every other harness gets exit 0 and one JSON object carrying the
+    text under both keys harnesses read: top-level `additionalContext` for
+    Copilot CLI and Cursor, `hookSpecificOutput.additionalContext` for VS Code.
+    """
+    if not lines:
+        return 0
+    text = "\n".join(lines)
+    if not _reads_context(payload):
+        print(text, file=sys.stderr)
+        return 2
+    print(json.dumps({"additionalContext": text,
+                      "hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
+    return 0
+
+
+def _reads_context(payload: dict) -> bool:
+    """Whether the harness that sent this event reads exit 2 as something
+    other than text for the model, told apart by its own payload: Cursor (a
+    deny) by its camelCase event, VS Code (a blocking error) by its own tool
+    names, Copilot CLI (shown to the user only) by `tool_result`, where Claude
+    Code sends `tool_response`."""
+    return (payload.get("hook_event_name") == "postToolUse"
+            or payload.get("tool_name") in _VSCODE_WRITES
+            or "tool_result" in payload)

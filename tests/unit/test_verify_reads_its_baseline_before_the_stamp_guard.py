@@ -70,8 +70,9 @@ def test_a_named_run_that_cannot_serve_is_refused_for_itself_not_for_the_stamp(r
 
 
 def test_the_taint_warning_prints_before_the_stamp_refusal(repo, capsys):
-    """Without a name, the refusal seeds from the run the warning above it names:
-    a plain `ratchet seed` reads the pinned run and cannot clear the stamp."""
+    """Without a name, the warning above the refusal carries the run to seed
+    from, and the refusal says a plain `ratchet seed` is pinned: the refusal
+    itself names no run id, since the Action quotes it where this store is not."""
     _, failed, fresh = pinned(repo)
     stale_marks(repo)
     capsys.readouterr()
@@ -80,10 +81,10 @@ def test_the_taint_warning_prints_before_the_stamp_refusal(repo, capsys):
 
     assert code == 3
     warning = f"warning: run {fresh} is not the baseline: verify run {failed} FAILED"
-    assert warning in err, err
+    assert warning in err and f"pass `--baseline {fresh}`" in err, err
     assert err.index(warning) < err.index("were recorded under"), err
-    assert err.strip().endswith(
-        f"re-baseline from run {fresh} with `{_self()} ratchet seed --baseline {fresh}`"), err
+    assert err.strip().endswith("pins a plain seed to an older run, and seed's line then "
+                                "names the newer run to read instead"), err
 
 
 def test_the_ratchet_page_prints_the_refusal_a_named_baseline_gets(monkeypatch):

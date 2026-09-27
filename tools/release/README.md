@@ -178,13 +178,17 @@ claude plugin marketplace update crapkit
 claude plugin update crapkit@crapkit --scope user
 claude plugin list --json
 
-codex plugin marketplace upgrade crapkit --json
-codex plugin add crapkit@crapkit --json
+codex plugin marketplace remove crapkit
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref vVERSION --sparse .claude-plugin --sparse plugin
+codex plugin add crapkit@crapkit
 codex plugin list --marketplace crapkit --json
 ```
 
-The Codex marketplace is registered once with
-`codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git`.
+The Codex marketplace is pinned to a release tag, and a marketplace added at a tag
+stays there: `codex plugin marketplace upgrade` keeps it at that tag. Removing it and
+adding it at the new tag moves the marketplace, and `codex plugin add` then installs the
+new copy. Stage 1 rewrites the `--ref` in README.md, docs/adoption.md,
+docs/upgrading.md and docs/handbook.html with the other version surfaces.
 Use the supported managers to refresh installations; do not edit their caches.
 Check that the registered source is the canonical repository and that its current
 revision and installed version match the release. Run `crapkit doctor --plugin-root PATH`

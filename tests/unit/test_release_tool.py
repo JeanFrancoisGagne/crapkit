@@ -23,12 +23,18 @@ DASH = chr(0x2014)
 NL = chr(10)
 
 
+def _codex_add(version: str) -> str:
+    return f"codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v{version}{NL}"
+
+
 def _tree(tmp_path: Path, version: str = "0.5.1", heading: str = "0.5.2") -> Path:
     """A repo copy carrying every surface at `version`, with the next
     changelog heading still unreleased."""
     root = tmp_path / "repo"
     (root / "src" / "crapkit").mkdir(parents=True)
     (root / "plugin" / ".claude-plugin").mkdir(parents=True)
+    (root / "plugin" / ".codex-plugin").mkdir(parents=True)
+    (root / "docs").mkdir()
     (root / "pyproject.toml").write_text(f'[project]{NL}name = "crapkit"{NL}version = "{version}"{NL}',
                                          encoding="utf-8")
     (root / "src" / "crapkit" / "__init__.py").write_text(f'__version__ = "{version}"{NL}',
@@ -36,9 +42,17 @@ def _tree(tmp_path: Path, version: str = "0.5.1", heading: str = "0.5.2") -> Pat
     (root / "README.md").write_text(
         f"# crapkit{NL}{NL}```{NL}$ crapkit --version{NL}crapkit {version}{NL}```{NL}{NL}"
         f"    rev: v{version}{NL}{NL}uses: JeanFrancoisGagne/crapkit@v{version}{NL}"
-        f"uses: JeanFrancoisGagne/crapkit@v{version}{NL}", encoding="utf-8")
-    (root / "plugin" / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": "crapkit", "version": version}, indent=2) + NL, encoding="utf-8")
+        f"uses: JeanFrancoisGagne/crapkit@v{version}{NL}{NL}{_codex_add(version)}{_codex_add(version)}",
+        encoding="utf-8")
+    for page, lines in (("adoption.md", 1), ("upgrading.md", 1), ("handbook.html", 2)):
+        (root / "docs" / page).write_text(_codex_add(version) * lines, encoding="utf-8")
+    onboard = root / "plugin" / "skills" / "crapkit-onboard" / "SKILL.md"
+    onboard.parent.mkdir(parents=True)
+    onboard.write_text(_codex_add(version) * 2, encoding="utf-8")
+    (root / "docs" / "agent-json.md").write_text(_codex_add(version), encoding="utf-8")
+    for manifest in (".claude-plugin", ".codex-plugin"):
+        (root / "plugin" / manifest / "plugin.json").write_text(
+            json.dumps({"name": "crapkit", "version": version}, indent=2) + NL, encoding="utf-8")
     (root / "server.json").write_text(
         json.dumps({"name": "io.github.JeanFrancoisGagne/crapkit", "version": version,
                     "packages": [{"identifier": "crapkit", "version": version}]}, indent=2) + NL,
@@ -54,7 +68,9 @@ def _tree(tmp_path: Path, version: str = "0.5.1", heading: str = "0.5.2") -> Pat
 def test_the_table_names_every_surface_a_release_touches():
     files = {s.path for s in release.SURFACES}
     assert files == {"pyproject.toml", "src/crapkit/__init__.py", "README.md",
-                     "plugin/.claude-plugin/plugin.json", "server.json"}
+                     "plugin/.claude-plugin/plugin.json", "plugin/.codex-plugin/plugin.json",
+                     "server.json", "docs/adoption.md", "docs/upgrading.md", "docs/handbook.html",
+                     "plugin/skills/crapkit-onboard/SKILL.md", "docs/agent-json.md"}
 
 
 def test_check_passes_on_a_tree_whose_surfaces_agree(tmp_path):

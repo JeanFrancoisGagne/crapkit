@@ -299,8 +299,10 @@ def test_worklist_prints_the_plain_table(inventoried_repo: Path):
     assert lines[0].startswith(f"worklist @ {head(inventoried_repo)[:11]}")
     assert "floor ccn>=1, churn 12mo" in lines[0]
     assert "2 of 2 active (worklist_top 50), 0 dormant" in lines[0]
-    assert len(lines) == 3
-    for line, entry in zip(lines[1:], active):
+    assert len(lines) == 5
+    assert "is an inventory run (no coverage was measured) and cannot serve" in lines[3], lines
+    assert lines[4].startswith("-> next: ") and lines[4].endswith("crapkit coverage"), lines
+    for line, entry in zip(lines[1:3], active):
         assert f"ccn {entry['ccn']:>3}" in line
         assert f"{entry['path']}:{entry['start']}" in line
         assert entry["function"] in line
