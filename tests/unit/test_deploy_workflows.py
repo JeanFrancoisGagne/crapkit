@@ -372,10 +372,12 @@ def test_deploy_linux_splits_the_push_set_between_parts_that_run_side_by_side():
     """One runner ran the Linux push set's tests in 363 to 525 s, and restoring and
     loading the core image adds 3 to 4 minutes: past the push budget of 10 minutes."""
     job = CI["jobs"]["deploy-linux"]
+    count = len(job["strategy"]["matrix"]["part"])
     parts = [vars(run.parse(argv)) for argv in ci_invocations(["deploy-linux"])]
 
-    assert [args.pop("shard") for args in parts] == ["1/2", "2/2"]
-    assert parts[0] == parts[1]
+    assert count >= 2
+    assert [args.pop("shard") for args in parts] == [f"{part}/{count}" for part in range(1, count + 1)]
+    assert all(args == parts[0] for args in parts)
     assert job["strategy"]["fail-fast"] is False
     assert upload_names(job) == ["deploy-linux-${{ matrix.part }}"]
 
