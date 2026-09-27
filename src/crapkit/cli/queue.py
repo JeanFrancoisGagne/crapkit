@@ -729,17 +729,12 @@ class _BriefLoader:
                                     self.key(row))
 
     def _read_mark_events(self) -> list:
-        """The mark events off the marks file's history, read once per batch, and
-        the line ratchet report prints when that history starts at a rename:
-        the age counts from there too."""
-        from ..marks_history import marks_history, rename_warning
+        """The mark events off the marks file's whole history, renames
+        included, read once per batch: the ages ratchet report gives."""
+        from ..marks_history import marks_history
         from ..ratchet_report import mark_events
 
-        history = marks_history(self.root, self.cfg.ratchet_file)
-        renamed = rename_warning(self.cfg.ratchet_file, history)
-        if renamed:
-            print(renamed, file=sys.stderr)
-        return mark_events(history.patches)
+        return mark_events(marks_history(self.root, self.cfg.ratchet_file))
 
     def attempts(self, row) -> list:
         key = self.key(row)

@@ -197,12 +197,13 @@ the report gone or unreadable. Every reader of those fields took that absence fo
 
 ### A value nobody measured is named, not printed as a fact
 
-Nine changes in this release can move an exit code: the gates' refusal of an unread
+Eleven changes in this release can move an exit code: the gates' refusal of an unread
 file and the advisory hook's exit 2, the `verify --reuse-artifacts` refusal of an
 unreadable junit, the shallow-clone refusal below, the refusal of a coverage artifact
 missing a count, the `--reuse-artifacts` refusal while `.crapkit/artifacts.json` cannot be
-read, the marks verify judges when the marks file is deleted or emptied, and the failure
-lists verify reads from an older run, in both directions. The [upgrade
+read, the marks verify judges when the marks file is deleted or emptied, the history
+`ratchet report --enforce` reads for a marks file renamed with `git mv`, and the failure
+lists verify reads from an older run, those last two in both directions. The [upgrade
 guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#missing-values-that-081-names)
 lists each with its old and new exit and what to change. A repo upgrading from 0.4.15 or older runs `crapkit coverage` once
 without `--reuse-artifacts` first: those stamps hold no refusal, so the first reuse scores
@@ -217,8 +218,12 @@ writes nothing.
   `worklist`, `next-item`, `brief` and `ratchet report` still answer, print one stderr
   line such as `warning: churn counts read only the commits this clone holds`, and carry
   `shallow` in their JSON, as do the MCP tools `list_worklist` and `get_next_item`. The
-  Action's comment repeats the line above its table. A marks file renamed with `git mv`
-  restarts its history at the rename, and `ratchet report` now names that commit.
+  Action's comment repeats the line above its table.
+- A marks file renamed with `git mv` keeps its history. `ratchet report` and `brief` read
+  the log of the old name on from the commit that renamed it, so every age and repayment
+  counts across the rename. The log started at the rename: every mark read 0 days old
+  and no earlier repayment counted, so `ratchet report --enforce` passed an age limit the
+  whole history fails and failed a repayment quota it meets.
 - A row no coverage measured carries `unmeasured: true` and its text says `not measured`:
   a function in a `no-lane` or `cc-only` scope, or one `rescore` and `check_gate` find no
   row for because it was added or renamed since the run. Such a row read as cov 0% and

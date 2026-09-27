@@ -132,7 +132,7 @@ def test_binary_marked_ratchet_history_is_text_at_its_exact_path(source_repo, ma
     (source_repo / rel).write_text(f"{marked_path}\twork()\t10\n", encoding="utf-8")
     git(source_repo, "add", ".")
     git(source_repo, "commit", "-qm", "tighten")
-    events = mark_events(marks_history(source_repo, rel).patches)
+    events = mark_events(marks_history(source_repo, rel))
     assert [(key, kind, value) for _, key, kind, value in events] == [
         ((marked_path, "work()"), "added", 20), ((marked_path, "work()"), "updated", 10)]
 
@@ -144,7 +144,7 @@ def test_codec_produced_nul_name_is_not_a_git_history_record(source_repo):
     (source_repo / "marks.tsv").write_text(row + "\n", encoding="utf-8")
     git(source_repo.parent, "add", ".")
     git(source_repo.parent, "commit", "-qm", "NUL name")
-    events = mark_events(marks_history(source_repo, "marks.tsv").patches)
+    events = mark_events(marks_history(source_repo, "marks.tsv"))
     assert [(key, kind, value) for _, key, kind, value in events] == [
         (("src/app.py", name), "added", 20)]
 

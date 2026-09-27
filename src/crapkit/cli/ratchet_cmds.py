@@ -471,16 +471,14 @@ def _refuse_a_cut_history(cfg, enforce: bool, shallow: bool) -> None:
                               f"the git history of {cfg.ratchet_file}")
 
 
-def _warn_history(ratchet_file: str, history, shallow: bool) -> None:
-    """One line for each way the history the ages count is not the file's
-    whole history: a shallow clone, and a history that starts at a rename."""
+def _warn_history(shallow: bool) -> None:
+    """One line when the history the ages count is not the file's whole
+    history: a shallow clone. A renamed marks file keeps its whole history
+    (marks_history follows the rename), so it needs no line."""
     from ..gitio import shallow_warning
-    from ..marks_history import rename_warning
 
-    for line in (shallow and shallow_warning("mark ages and repayments"),
-                 rename_warning(ratchet_file, history)):
-        if line:
-            print(line, file=sys.stderr)
+    if shallow:
+        print(shallow_warning("mark ages and repayments"), file=sys.stderr)
 
 
 def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
@@ -490,11 +488,10 @@ def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
 
     shallow = shallow_checkout(root)
     _refuse_a_cut_history(cfg, enforce, shallow)
-    history = marks_history(root, cfg.ratchet_file)
-    report = report_from_events(mark_events(history.patches),
+    report = report_from_events(mark_events(marks_history(root, cfg.ratchet_file)),
                                 working=_working_marks(root, cfg.ratchet_file))
     violations = _policy_findings(cfg, report, enforce)
-    _warn_history(cfg.ratchet_file, history, shallow)
+    _warn_history(shallow)
     if as_json:
         _print_json({**report, "policy_violations": violations, "shallow": shallow})
     else:

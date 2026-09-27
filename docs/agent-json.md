@@ -1304,8 +1304,10 @@ How much debt is open, how much was repaid, and whether the configured policy is
 | `policy_violations` | `null` when no policy was evaluated, `[]` when it ran clean, otherwise the findings. See [ratchet.md](ratchet.md#the-debt-policy). |
 | `shallow` | `true` when the checkout is a shallow clone, so every age and repayment counts only the commits the clone holds: in a depth-1 clone every mark is 0 days old and nothing was repaid. stderr carries one line naming the fix. With a debt key set, `--enforce` there prints no report: it exits 4 with the `git` error object. See [ratchet.md](ratchet.md#a-history-the-checkout-does-not-hold). |
 
-A ratchet file renamed with `git mv` starts its history at the rename, since the log walks
-no renames. The report says so on stderr, naming the commit, and the ages count from there.
+A ratchet file renamed with `git mv` keeps its history: the report goes on from the old
+name, so `anchor_ts`, every age and every repayment count across the rename, and
+`--enforce` judges them as it did before the rename. See
+[ratchet.md](ratchet.md#a-history-the-checkout-does-not-hold).
 
 ---
 

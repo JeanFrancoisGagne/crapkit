@@ -340,7 +340,7 @@ def test_a_ratchet_file_in_any_spelling_opens_the_marks_and_their_history(tmp_pa
     cfg = _load(root, f"[crapkit]\nratchet_file = '{written}'\n")
 
     assert (root / cfg.ratchet_file).is_file()
-    assert len(marks_history(root, cfg.ratchet_file).patches) == 1
+    assert len(marks_history(root, cfg.ratchet_file)) == 1
 
 
 @pytest.mark.parametrize("artifact", [*ARTIFACTS, "./backend/cov.json", ".\\backend\\cov.json"])

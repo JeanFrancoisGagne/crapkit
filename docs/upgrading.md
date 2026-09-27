@@ -233,6 +233,8 @@ paragraph below with what to change:
 | an edit that leaves a file no reader can read | `claude-hook` | 0 | 2 |
 | a declared junit it reused and cannot read | `verify --reuse-artifacts` | 0 | 5 |
 | a debt policy key in a shallow clone | `ratchet report --enforce` | 0 or 1 | 4 |
+| a marks file renamed with `git mv`, a mark past `debt_max_age_months` | `ratchet report --enforce` | 0 | 1 |
+| a marks file renamed with `git mv`, `repayment_min_per_30d` met before the rename | `ratchet report --enforce` | 1 | 0 |
 | a coverage artifact missing a count | `coverage`, `verify` | 0 | 5 |
 | a `.crapkit/artifacts.json` that cannot be read | `coverage --reuse-artifacts`, `verify --reuse-artifacts` | 0 | 5 |
 | a deleted or emptied marks file, and a marked function that rose | `verify` | 0 | 7, or 4 when the clone lacks the history |
@@ -273,6 +275,13 @@ and a repayment quota failed. Set `fetch-depth: 0` on the checkout. `worklist`,
 stderr line that names what they counted, such as
 `warning: churn counts read only the commits this clone holds` from `worklist`, and add
 `shallow: true` to their JSON (`false` in a full clone).
+
+**A renamed marks file.** After `git mv crapkit-ratchet.tsv debt.tsv`, the marks file's log
+started at the rename, so every mark read 0 days old and no earlier repayment counted:
+`ratchet report --enforce` passed an age limit the whole history fails, and failed a
+repayment quota it meets. The report now reads the old name's log on from the rename, so
+a job that renamed its marks file is judged on the whole history again, and an age limit
+it passed may now exit 1: repay the marks it names, or raise `debt_max_age_months`.
 
 **Mutants with no test verdict.** `mutate` counted a mutant whose suite exited 5, which
 means no test ran, as killed, and printed nothing else. It still counts as killed, so

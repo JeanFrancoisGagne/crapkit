@@ -196,7 +196,7 @@ def test_every_past_revision_of_the_marks_file_reads_into_the_burn_down(tmp_path
     commit(root, files={MARKS.encode(): past}, age_days=2)
     commit(root, files={MARKS.encode(): STAMPED + MARK})
 
-    report = report_from_events(mark_events(marks_history(root, MARKS).patches))
+    report = report_from_events(mark_events(marks_history(root, MARKS)))
 
     assert report["open"] == 1
     assert report["oldest"] == [{"path": "src/app.py", "long_name": "f( x )", "age_days": age}]
@@ -231,7 +231,7 @@ def test_a_utf16_revision_keeps_each_marks_entry_date(tmp_path, revisions, ages,
         else:
             commit(root, files={MARKS.encode(): data}, age_days=days)
 
-    report = report_from_events(mark_events(marks_history(root, MARKS).patches))
+    report = report_from_events(mark_events(marks_history(root, MARKS)))
 
     assert {row["long_name"]: row["age_days"] for row in report["oldest"]} == ages
     assert report["dropped_total"] == repaid

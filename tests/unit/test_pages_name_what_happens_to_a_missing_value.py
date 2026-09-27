@@ -113,6 +113,10 @@ EXIT_MOVES = {
                       "7, or 4 when the clone lacks the history"),
     "failures-walk-back": ("a failure the baseline's own commit had", "`verify`", "8", "0"),
     "retried-pass-0.7": ("a failure a 0.7.x verify retried to a pass", "`verify`", "0", "8"),
+    "renamed-marks-age": ("a marks file renamed with `git mv`, a mark past",
+                          "`ratchet report --enforce`", "0", "1"),
+    "renamed-marks-repaid": ("a marks file renamed with `git mv`, `repayment_min_per_30d` met",
+                             "`ratchet report --enforce`", "1", "0"),
 }
 
 

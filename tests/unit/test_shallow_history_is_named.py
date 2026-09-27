@@ -11,8 +11,8 @@ clone passes, and nothing on stderr said the history was cut.
 Now `--enforce` refuses to judge the debt policy in a shallow clone (exit 4,
 naming `fetch-depth: 0`), and the report and the packet carry `shallow` and
 print one stderr line. The ages and counts keep the values and meanings they
-had. A ratchet file renamed with `git mv` starts its history again at the
-rename, since the log walks no renames; the report names that commit.
+had. A ratchet file renamed with `git mv` keeps its whole history: the reader
+goes on from the old name, so it is judged as the file that was never renamed.
 
 Real git in tmp_path, the clone made through `file://` at depth 1.
 """
@@ -305,58 +305,60 @@ def test_the_mcp_tools_carry_shallow(checkouts, tool, arguments, checkout, shall
     assert result["structuredContent"]["shallow"] is shallow
 
 
-# --- a renamed marks file restarts its history at the rename -------------------
+# --- a renamed marks file keeps its history (Q87) ------------------------------
+
+RENAMED_AT = "2026-09-21T12:00:00+00:00"
+
 
 @pytest.fixture()
 def renamed(checkouts, tmp_path) -> Path:
+    """The full history with the marks file moved by `git mv` on 2026-09-21,
+    after old_debt had stood 457 days and one mark was repaid."""
     root = tmp_path / "renamed"
     shutil.copytree(checkouts["full"], root)
     git(root, "mv", "crapkit-ratchet.tsv", "debt.tsv")
     set_policy(root, "max-age", ratchet_file="debt.tsv")
-    commit(root, "rename the marks file", "2026-09-21T12:00:00+00:00")
+    commit(root, "rename the marks file", RENAMED_AT)
     return root
 
 
-def test_a_renamed_ratchet_file_names_the_commit_its_history_starts_at(renamed, capsys):
-    """The log walks no renames (a --follow cost 0.6 s of a 1.14 s report), so
-    the ages restart at the rename. The report now says where, and the age and
-    the policy verdict keep what the visible history gives them."""
-    code, body, err = report(renamed, capsys, "--enforce")
-    rename = git(renamed, "rev-parse", "HEAD").strip()[:11]
+@pytest.mark.parametrize("policy, code", [("max-age", 1), ("repayment", 0)])
+def test_a_renamed_marks_file_is_judged_as_the_unrenamed_one_is(checkouts, renamed, capsys,
+                                                                 policy, code):
+    """The log walked no renames, so after the rename every mark read 0 days
+    old and no repayment showed: `--enforce` passed an age limit the whole
+    history fails, with one warning line, and failed a quota it meets. The
+    history now goes on from the old name, and both verdicts match the
+    repo that never renamed the file. The rename commit moves the clock 20
+    days, so old_debt is 477 days old there."""
+    set_policy(checkouts["full"], policy)
+    set_policy(renamed, policy, ratchet_file="debt.tsv")
+    full_code, full, _ = report(checkouts["full"], capsys, "--enforce")
 
-    assert (code, ages(body), body["policy_violations"]) == (0, [0], [])
-    assert err.splitlines() == [
-        f"warning: debt.tsv's history starts at {rename}, the commit that renamed it from "
-        "crapkit-ratchet.tsv, so mark ages and repayments count from there"]
+    got, body, err = report(renamed, capsys, "--enforce")
+
+    assert (full_code, got) == (code, code), body
+    assert len(body["policy_violations"]) == len(full["policy_violations"])
+    assert (ages(full), ages(body)) == ([457], [477])
+    assert (body["dropped_total"], body["dropped_last_30d"]) == (1, 1)
+    assert "renamed" not in err and "warning" not in err, err
 
 
-def test_brief_prints_the_rename_line_ratchet_report_prints(renamed, capsys):
-    """brief's mark age counts from the rename as well, and said nothing: a
-    457-day mark read 0 days old with no line. Both commands read the history
-    through one reader and print its one line."""
-    _, _, report_err = report(renamed, capsys)
-
+def test_brief_ages_a_mark_across_the_rename(renamed, capsys):
+    """brief reads the same history: the 457-day mark read 0 days old."""
     code, out, err = run(renamed, capsys, "brief", "src/a.py", "old_debt", "--json")
 
-    (line,) = [ln for ln in report_err.splitlines() if "renamed it from" in ln]
     assert code == 0, err
-    assert json.loads(out)["gate_rule"]["mark_age_days"] == 0
-    assert err.splitlines().count(line) == 1, err
+    assert json.loads(out)["gate_rule"]["mark_age_days"] == 477
+    assert "renamed" not in err, err
 
 
-def test_a_ratchet_file_that_was_never_renamed_names_no_rename(checkouts, capsys):
-    set_policy(checkouts["full"], "none")
-
-    _, _, err = report(checkouts["full"], capsys)
-
-    assert "renamed" not in err
-
-
-def test_the_ratchet_page_says_a_rename_restarts_the_clock():
+def test_the_ratchet_page_says_a_rename_keeps_the_history():
     page = (ROOT / "docs" / "ratchet.md").read_text(encoding="utf-8")
+    section = page.split("## The debt policy", 1)[0].split("## Reporting the burn-down")[1]
 
-    assert "the commit that renamed it from" in page
-    assert "restart" in page.split("## The debt policy", 1)[0].split("## Reporting the burn-down")[1]
+    assert "git mv crapkit-ratchet.tsv debt.tsv" in section and "keeps its history" in section
+    assert "the commit that renamed it from" not in page
 
 
 # --- a mark no commit carries yet is documented at 0d --------------------------

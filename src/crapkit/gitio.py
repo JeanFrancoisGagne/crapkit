@@ -801,17 +801,18 @@ class LogEntry(NamedTuple):
     patch: str
 
 
-def file_log(root: Path, rel_path: str) -> list[LogEntry]:
-    """Each commit touching one file, oldest first, with its patch.
+def file_log(root: Path, rel_path: str, rev: str | None = None) -> list[LogEntry]:
+    """Each commit touching one file, oldest first, with its patch; the
+    commits `rev` reaches when one is given, else HEAD's.
 
     -U0: the readers look at +/- lines alone, so context lines are pipe traffic
     that grows with the file.
     No --follow: rename detection cost 0.6s of a 1.14s `ratchet report` on a
     72k-commit history and found nothing. The cost is real, since --follow also
     gives up the commit-graph path filtering the plain log gets (measured on a
-    30k-commit synthetic: 0.436s vs 0.257s, same events either way). The price
-    is that renaming the file restarts its history at the rename, which
-    `commit_renames` lets a reader name.
+    30k-commit synthetic: 0.436s vs 0.257s, same events either way). So the log
+    of a renamed file starts at the rename, and its first patch adds every line;
+    `commit_renames` names the old path, and `marks_history` goes on from there.
 
     A patch reads as text, each byte that is not UTF-8 as U+FFFD, unless it
     holds a NUL. That one may come from a UTF-16 revision, which PowerShell
@@ -825,7 +826,7 @@ def file_log(root: Path, rel_path: str) -> list[LogEntry]:
     # only a physical header line starts with the NUL timestamp marker. Raw LF
     # framing prevents CR in a legacy field from manufacturing a header line.
     out = _git_bytes(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at %H",
-                     "-p", *_PATCH, "--full-index", "--text", "--", rel_path)
+                     "-p", *_PATCH, "--full-index", "--text", *([rev] if rev else []), "--", rel_path)
     entries = _log_entries(out)
     revisions = _revisions(root, [patch for *_, patch in entries if b"\0" in patch])
     return [LogEntry(stamp, commit, _patch_text(patch, revisions)) for stamp, commit, patch in entries]
@@ -863,8 +864,15 @@ def _patch_text(patch: bytes, revisions: dict[str, bytes]) -> str:
     sides = _patch_sides(patch) if b"\0" in patch else ()
     if not sides:
         return lenient(patch)
-    before, after = (list(record_lines(marks_text(revisions.get(side, b"")))) for side in sides)
-    return "\n".join(_only_in(before, after, "-") + _only_in(after, before, "+"))
+    return revisions_patch(*(revisions.get(side, b"") for side in sides))
+
+
+def revisions_patch(before: bytes, after: bytes) -> str:
+    """Two whole revisions of the marks file as the +/- lines ratchet_report
+    reads: the lines one holds and the other does not, each revision read by
+    repotext.marks_text, the rule every reader of the marks file uses."""
+    old, new = (list(record_lines(marks_text(side))) for side in (before, after))
+    return "\n".join(_only_in(old, new, "-") + _only_in(new, old, "+"))
 
 
 def _only_in(lines: list[str], other: list[str], sign: str) -> list[str]:

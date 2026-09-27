@@ -667,15 +667,19 @@ to `--json`, and prints one line on stderr:
 `brief` reads `gate_rule.mark_age_days` off the same history, so its packet carries
 `shallow` and prints the same kind of line.
 
-The history is read without rename detection, which cost 0.6 s of a 1.14 s report on a
-72k-commit history. Renaming the marks file (`git mv crapkit-ratchet.tsv debt.tsv`, then
-`ratchet_file = "debt.tsv"`) therefore restarts its history at the rename: every open mark
-reads its age from that commit, and no earlier repayment counts. The report names the commit:
+A marks file renamed with `git mv crapkit-ratchet.tsv debt.tsv` (then
+`ratchet_file = "debt.tsv"`) keeps its history. The log itself walks no renames, since
+`--follow` cost 0.6 s of a 1.14 s report on a 72k-commit history; instead, when the first
+commit that touched `debt.tsv` renamed it, the report reads the log of
+`crapkit-ratchet.tsv` from that commit's parent, and so on back through every rename.
+Every age and repayment counts across the rename, and `--enforce` judges the same history
+it judged before it. The rename commit reads as what it changed: a pure rename changes no
+mark and only moves the clock, as any commit to the file does, and a rename that also
+repaid a mark counts that repayment. `brief` reads its mark age the same way.
 
-    warning: debt.tsv's history starts at 3f2a91c07be, the commit that renamed it from crapkit-ratchet.tsv, so mark ages and repayments count from there
-
-`--enforce` still judges the policy after a rename, on the history from that commit on. Keep
-the marks file's name if its ages matter to a policy.
+git pairs the two names only when the new file keeps at least half of the old one, as a
+`git mv` does. A marks file rewritten under a new name in one commit reads as a file
+created there, and its history starts at that commit.
 
 ---
 

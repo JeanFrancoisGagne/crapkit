@@ -3,9 +3,10 @@
 `ratchet report` and `brief` read mark ages and repayments off the commits that
 changed the marks file, and verify judges a deleted or emptied marks file
 against the newest marks a commit since the baseline held. The log walks no
-renames, so a marks file renamed with `git mv` starts its history at the
-rename; this module names that commit once, so every command that counts from
-it prints the same line.
+renames on its own (gitio.file_log says why), so when the first commit that
+touched the marks file renamed it with `git mv`, this module goes on reading
+the log of the old path from that commit's parent, back through every rename
+git pairs. A renamed marks file keeps every age and every repayment.
 
 gitio answers the git questions; this module decides what they mean for the
 marks. A git read that fails raises GitError, and the stand-in walk names what
@@ -15,43 +16,51 @@ never held marks.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import NamedTuple
 
 from .errors import GitError
-from .gitio import blob_at, commit_renames, commits_touching, file_log, shallow_fix
+from .gitio import (blob_at, commit_renames, commits_touching, file_log, revisions_patch,
+                    shallow_fix)
 from .ratchetfile import RatchetFile
 
 
-class MarksHistory(NamedTuple):
-    """The marks file's commits, oldest first, as (timestamp, patch); the commit
-    its history starts at, None when no commit touched it; and the path that
-    commit renamed to the marks file, None when it created it."""
-    patches: list[tuple[int, str]]
-    first: str | None
-    renamed_from: str | None
+def marks_history(root: Path, ratchet_file: str) -> list[tuple[int, str]]:
+    """The marks file's commits, oldest first, as (timestamp, patch), across
+    every rename git pairs. [] when no commit touched it."""
+    patches: list[tuple[int, str]] = []
+    path, rev = ratchet_file, None
+    while path is not None:
+        segment, path, rev = _segment(root, path, rev)
+        patches[:0] = segment
+    return patches
 
 
-def marks_history(root: Path, ratchet_file: str) -> MarksHistory:
-    log = file_log(root, ratchet_file)
-    first = log[0].commit if log else None
-    return MarksHistory([(entry.timestamp, entry.patch) for entry in log], first,
-                        first and _renamed_from(root, first, ratchet_file))
+def _segment(root: Path, path: str, rev: str | None):
+    """The log of `path` up to `rev`, and where the history goes on: the path
+    its first commit renamed to it and that commit's parent, or (None, None)
+    when that commit created it. The renaming commit's patch adds every line
+    under the new name; it reads instead as what the rename changed, so a pure
+    rename changes no mark and moves only the clock."""
+    log = file_log(root, path, rev)
+    old = _renamed_from(root, log[0].commit, path) if log else None
+    patches = [(entry.timestamp, entry.patch) for entry in log]
+    if old is None:
+        return patches, None, None
+    first = log[0]
+    patches[0] = (first.timestamp, _rename_patch(root, first.commit, old, path))
+    return patches, old, f"{first.commit}^"
 
 
-def _renamed_from(root: Path, commit: str, ratchet_file: str) -> str | None:
-    """The path `commit` renamed to the marks file, or None when it created it."""
+def _renamed_from(root: Path, commit: str, path: str) -> str | None:
+    """The path `commit` renamed to `path`, or None when it created it."""
     renames = commit_renames(root, commit)
-    return next((old for old, new in renames.items() if new == ratchet_file), None)
+    return next((old for old, new in renames.items() if new == path), None)
 
 
-def rename_warning(ratchet_file: str, history: MarksHistory) -> str | None:
-    """The one line a reader of mark ages prints when the history starts at a
-    rename, or None when the marks file was never renamed."""
-    if not history.renamed_from:
-        return None
-    return (f"warning: {ratchet_file}'s history starts at {history.first[:11]}, the commit "
-            f"that renamed it from {history.renamed_from}, so mark ages and repayments "
-            "count from there")
+def _rename_patch(root: Path, commit: str, old: str, new: str) -> str:
+    """The marks one renaming commit changed: the old file at its parent
+    against the new file at the commit."""
+    return revisions_patch(blob_at(root, f"{commit}^", old) or b"",
+                           blob_at(root, commit, new) or b"")
 
 
 def newest_committed_marks(root: Path, base: str, ratchet_file: str):

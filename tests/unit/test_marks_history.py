@@ -2,8 +2,9 @@
 
 ratchet report and brief read mark ages off the file's commits, and verify
 judges a deleted or emptied marks file against the newest marks a commit since
-the baseline held. Three readers once had three paths into git for these, and
-only ratchet report said when the history starts at a rename.
+the baseline held. Three readers once had three paths into git for these. A
+marks file renamed with `git mv` keeps its history: the reader goes on from
+the old name (Q87).
 
 The git reads under them answer a fact or raise GitError. `blob_at` answered
 None and `commits_touching` answered [] for any git failure, so a clone that
@@ -20,8 +21,9 @@ import pytest
 
 from crapkit.errors import GitError
 from crapkit.gitio import blob_at, commits_touching
-from crapkit.marks_history import marks_history, newest_committed_marks, rename_warning
+from crapkit.marks_history import marks_history, newest_committed_marks
 from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet_report import mark_events, report_from_events
 
 MARKS = "crapkit-ratchet.tsv"
 UNHELD = "0123456789abcdef0123456789abcdef01234567"
@@ -134,33 +136,111 @@ def test_a_shallow_clone_that_lacks_the_baseline_names_the_fetch(history, tmp_pa
 def test_the_history_starts_at_the_first_commit_that_touched_the_file(history):
     read = marks_history(Path(history["root"]), MARKS)
 
-    assert [ts for ts, _ in read.patches] == sorted(ts for ts, _ in read.patches)
-    assert len(read.patches) == 3
-    assert (read.first, read.renamed_from) == (history["first"], None)
-    assert rename_warning(MARKS, read) is None
-
-
-def test_a_history_that_starts_at_a_rename_names_the_commit_and_the_old_name(history):
-    root = Path(history["root"])
-    commit_file(root, MARKS, marks(9.0), "restore", "2026-05-01T12:00:00+00:00")
-    git(root, "mv", MARKS, "debt.tsv")
-    moved = commit_file(root, "README", "r2\n", "rename", "2026-06-01T12:00:00+00:00")
-
-    read = marks_history(root, "debt.tsv")
-
-    assert (read.first, read.renamed_from) == (moved, MARKS)
-    assert rename_warning("debt.tsv", read) == (
-        f"warning: debt.tsv's history starts at {moved[:11]}, the commit that renamed it "
-        f"from {MARKS}, so mark ages and repayments count from there")
+    assert [ts for ts, _ in read] == sorted(ts for ts, _ in read)
+    assert len(read) == 3
 
 
 def test_a_file_no_commit_touched_has_no_history(tmp_path):
     git(tmp_path, "init", "-q", "-b", "main")
     commit_file(tmp_path, "README", "r\n", "base", "2026-01-01T12:00:00+00:00")
 
-    read = marks_history(tmp_path, MARKS)
+    assert marks_history(tmp_path, MARKS) == []
 
-    assert (read.patches, read.first, read.renamed_from) == ([], None, None)
+
+# --- a renamed marks file keeps its history (Q87) -------------------------------
+# The log walks no renames, so `git mv` started the history at the rename: every
+# mark entered there, 0 days old, and no earlier repayment counted.
+
+RENAMED = "2026-06-01T12:00:00+00:00"
+DAY = 86400
+
+
+def several(*names: str) -> str:
+    entries = [RatchetEntry("src/a.py", f"{name}( n )", 12.0) for name in names]
+    return dump_ratchet(entries, stamp=metric_version(), key_version=KEY_VERSION)
+
+
+def stamp(date: str) -> int:
+    from datetime import datetime
+
+    return int(datetime.fromisoformat(date).timestamp())
+
+
+def test_a_renamed_file_goes_on_from_its_old_name(history):
+    """The rename itself changes no mark: it moves the clock and nothing else."""
+    root = Path(history["root"])
+    commit_file(root, MARKS, marks(9.0), "restore", "2026-05-01T12:00:00+00:00")
+    before = marks_history(root, MARKS)
+    git(root, "mv", MARKS, "debt.tsv")
+    commit_file(root, "README", "r2\n", "rename", RENAMED)
+
+    read = marks_history(root, "debt.tsv")
+
+    assert read == [*before, (stamp(RENAMED), "")]
+    report = report_from_events(mark_events(read))
+    assert (report["dropped_total"], [e["age_days"] for e in report["oldest"]]) == (1, [31])
+
+
+def test_a_rename_that_edits_the_file_reads_as_the_marks_it_changed(tmp_path):
+    """git pairs a rename that keeps most lines; the commit that also repaid a
+    mark reads as that repayment, and the marks it kept keep their age."""
+    git(tmp_path, "init", "-q", "-b", "main")
+    commit_file(tmp_path, MARKS, several("a", "b", "c", "d"), "seed", "2026-01-01T12:00:00+00:00")
+    git(tmp_path, "mv", MARKS, "debt.tsv")
+    commit_file(tmp_path, "debt.tsv", several("a", "b", "c"), "rename and repay d", RENAMED)
+
+    read = marks_history(tmp_path, "debt.tsv")
+
+    assert len(read) == 2 and [line[0] for line in read[1][1].splitlines()] == ["-"]
+    report = report_from_events(mark_events(read))
+    assert (report["open"], report["dropped_total"]) == (3, 1)
+    assert {e["age_days"] for e in report["oldest"]} == {(stamp(RENAMED) - stamp("2026-01-01T12:00:00+00:00")) // DAY}
+
+
+def test_every_rename_is_followed_back_to_the_first_name(tmp_path):
+    git(tmp_path, "init", "-q", "-b", "main")
+    commit_file(tmp_path, "a.tsv", several("a", "b"), "seed", "2026-01-01T12:00:00+00:00")
+    commit_file(tmp_path, "a.tsv", several("a"), "repay b", "2026-02-01T12:00:00+00:00")
+    git(tmp_path, "mv", "a.tsv", "b.tsv")
+    commit_file(tmp_path, "README", "r\n", "first rename", "2026-03-01T12:00:00+00:00")
+    git(tmp_path, "mv", "b.tsv", "c.tsv")
+    commit_file(tmp_path, "README", "r2\n", "second rename", RENAMED)
+
+    read = marks_history(tmp_path, "c.tsv")
+
+    assert [patch == "" for _, patch in read] == [False, False, True, True]
+    report = report_from_events(mark_events(read))
+    assert (report["dropped_total"], report["oldest"][0]["age_days"]) == (1, 151)
+
+
+def test_a_rewrite_git_cannot_pair_starts_the_history_there(tmp_path):
+    """A new name that shares no line with the old file is no rename to git:
+    the history starts where the new file does, as a file created there."""
+    git(tmp_path, "init", "-q", "-b", "main")
+    commit_file(tmp_path, MARKS, several("a", "b"), "seed", "2026-01-01T12:00:00+00:00")
+    (tmp_path / MARKS).unlink()
+    commit_file(tmp_path, "debt.tsv", several(*(f"k{i}" for i in range(10))),
+                "rewrite under a new name", RENAMED)
+
+    read = marks_history(tmp_path, "debt.tsv")
+
+    assert len(read) == 1 and read[0][0] == stamp(RENAMED)
+
+
+def test_a_depth_one_clone_of_a_renamed_file_reads_its_one_commit(history, tmp_path):
+    """The clone's one commit has no parent to rename from, so the history
+    is that commit; ratchet report says the clone is shallow."""
+    root = Path(history["root"])
+    commit_file(root, MARKS, marks(9.0), "restore", "2026-05-01T12:00:00+00:00")
+    git(root, "mv", MARKS, "debt.tsv")
+    commit_file(root, "README", "r2\n", "rename", RENAMED)
+    shallow = tmp_path / "shallow"
+    git(tmp_path, "clone", "-q", "--depth", "1", root.as_uri(), str(shallow))
+
+    read = marks_history(shallow, "debt.tsv")
+
+    report = report_from_events(mark_events(read))
+    assert len(read) == 1 and report["oldest"][0]["age_days"] == 0
 
 
 # A past revision reads by the marks file's own rule (Q20) and is never refused:
