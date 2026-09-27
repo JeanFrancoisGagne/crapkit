@@ -171,8 +171,9 @@ def _first_mark(text: str, tokens: re.Pattern) -> re.Match | None:
 def _opens_after_code(text: str, comments: _Comments) -> bool:
     """A code line ends inside a block comment: read from its start, the first
     thing past its closed strings and closed block comments is an opener that
-    follows a space or tab. `"src/*"` holds its opener in a string, `"http://x"
-    /* note` its `//`, and `// see /* here` its opener in a line comment."""
+    follows a space or tab. `x = "src/*";` holds its opener in a string, and
+    `x = 1; // see /* here` in a line comment. `s = "http://x"; /* note`
+    opens one: its `//` sits in a closed string."""
     mark = comments.block[0] in text and _first_mark(text, comments.tokens)
     return bool(mark) and mark.lastgroup == "open" and mark.start() > 0 \
         and text[mark.start() - 1] in " \t"
