@@ -1,11 +1,13 @@
-"""The fields 0.8.1 adds to the agent payloads match their one declaration.
+"""Every agent JSON payload matches its one declaration in crapkit.agent_fields.
 
-`crapkit.agent_fields.ADDED` names each added field with its payload, its JSON
-types and whether it may be null. The MCP name check walks key names only, so
-a null where a schema says number passed it. Here each command prints its real
-payload over a real repo, and every declared field must be present with one of
-its declared types; the MCP output schema must declare the same types; and
-docs/agent-json.md must name the field.
+Each command prints its real payload over a real repo, in the states that make
+its conditional keys, its list items and its nulls appear. Every key a payload
+prints must be declared, and every value must carry one of its declared JSON
+types, a null only where the declaration allows one. A check of key names alone
+let a null pass for a number, and doctor's lane `refusal` shipped with no
+declaration at all. The MCP tools serve the same declarations as their
+outputSchema. The fields 0.8.1 adds (ADDED) must also print, print their null
+and their value where they may be null, and be named in docs/agent-json.md.
 """
 from __future__ import annotations
 
@@ -14,12 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from cli_inproc_repo import (add_knotty, commit_all, git, repo, seed_artifacts,  # noqa: F401
-                             template_repo)
+from cli_inproc_repo import (KNOTTY, add_knotty, commit_all, git, repo,  # noqa: F401
+                             seed_artifacts, template_repo)
 
 from crapkit import mcp_server
-from crapkit.agent_fields import (ADDED, ERROR_OBJECT, MCP_TOOLS, VERSION, AddedField,
-                                  added_field)
+from crapkit.agent_fields import (ADDED, ERROR_OBJECT, FIELDS, MCP_TOOLS, PAYLOADS, VERSION,
+                                  AgentField, added_field)
 from crapkit.cli import main
 from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
 
@@ -30,12 +32,12 @@ ARROW = "export const pick = (x: number) => convert<string, number>(x);\n"
 # A file a scope takes whose name is not UTF-8: on POSIX byte e9, on NTFS a lone
 # surrogate. Every command refuses it with the error object.
 UNREADABLE = "src/caf\udce9.ts"
-_JSON_TYPES = {"boolean": (bool,), "integer": (int,), "string": (str,), "array": (list,),
-               "object": (dict,), "null": (type(None),)}
+_JSON_TYPES = {"boolean": (bool,), "integer": (int,), "number": (int, float), "string": (str,),
+               "array": (list,), "object": (dict,), "null": (type(None),)}
 
 
 def json_type_ok(value, types: tuple[str, ...]) -> bool:
-    """A bool is not an integer here, though Python calls it one."""
+    """A bool is not a number here, though Python calls it one."""
     if isinstance(value, bool):
         return "boolean" in types
     return any(isinstance(value, _JSON_TYPES[t]) for t in types)
@@ -43,7 +45,7 @@ def json_type_ok(value, types: tuple[str, ...]) -> bool:
 
 def values_at(payload, key: str) -> list:
     """Every value at KEY: dots walk into objects, `[]` into each array item.
-    A missing key raises, since a declared field is always present."""
+    An object that lacks the next key contributes nothing."""
     values = [payload]
     for part in key.split("."):
         values = _step(values, part)
@@ -51,8 +53,39 @@ def values_at(payload, key: str) -> list:
 
 
 def _step(values: list, part: str) -> list:
-    found = [value[part.removesuffix("[]")] for value in values]
-    return [item for value in found for item in value] if part.endswith("[]") else found
+    name = part.removesuffix("[]")
+    found = [value[name] for value in values if _holds(value, name)]
+    return _spread(found) if part.endswith("[]") else found
+
+
+def _holds(value, name: str) -> bool:
+    return isinstance(value, dict) and name in value
+
+
+def _spread(lists: list) -> list:
+    return [item for value in lists for item in value]
+
+
+def printed(value, maps: set[str], key: str = ""):
+    """(key, value) for everything a payload prints, keyed the way FIELDS keys
+    it: a key of an object declared as a map (`KEY.*` in MAPS) reads as `*`."""
+    if isinstance(value, dict):
+        for name, inner in value.items():
+            yield from _entry(_child(key, name, maps), inner, maps)
+    elif isinstance(value, list):
+        for inner in value:
+            yield from _entry(f"{key}[]", inner, maps)
+
+
+def _entry(key: str, value, maps: set[str]):
+    yield key, value
+    yield from printed(value, maps, key)
+
+
+def _child(key: str, name: str, maps: set[str]) -> str:
+    if f"{key}.*" in maps:
+        return f"{key}.*"
+    return f"{key}.{name}" if key else name
 
 
 def run_json(repo: Path, capsys, *argv: str) -> dict:
@@ -60,19 +93,66 @@ def run_json(repo: Path, capsys, *argv: str) -> dict:
     return json.loads(capsys.readouterr().out)
 
 
-def _verify(repo: Path, capsys) -> dict:
-    return run_json(repo, capsys, "verify", "--reuse-artifacts", "--json")
+def _print(out: dict, repo: Path, capsys, name: str, *argv: str) -> None:
+    out.setdefault(name, []).append(run_json(repo, capsys, *argv))
+
+
+def _print_all(out: dict, repo: Path, capsys, commands) -> None:
+    for name, argv in commands:
+        _print(out, repo, capsys, name, *argv)
+
+
+def _verify(repo: Path, capsys, *flags: str) -> dict:
+    return run_json(repo, capsys, "verify", "--reuse-artifacts", *flags, "--json")
 
 
 def _write_marks(repo: Path) -> None:
-    marks = dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 72.0)],
+    """A mark above knotty's score, so the verify over it tightens the mark."""
+    marks = dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 80.0)],
                          stamp=metric_version(), key_version=KEY_VERSION)
     (repo / MARKS).write_text(marks, encoding="utf-8", newline="\n")
 
 
 # The payloads that rank one run and say whether it still describes the files.
-_RANKED = {"worklist --json": ("worklist", "--json"), "next-item": ("next-item",),
-           "brief --json": ("brief", "src/app.ts", "knotty", "--json")}
+_RANKED = {"worklist --json": ("worklist", "--json"),
+           "worklist --batches --json": ("worklist", "--batches", "2", "--json"),
+           "next-item": ("next-item",),
+           "brief --json": ("brief", "src/app.ts", "knotty", "--json"),
+           "brief --batch": ("brief", "--batch", "2")}
+
+# The read commands over the measured run, before anyone claims a function.
+_READS = (
+    ("coverage --json", ("coverage", "--reuse-artifacts", "--json")),
+    ("inventory --json", ("inventory", "--json")),
+    *_RANKED.items(),
+    ("next-item", ("next-item", "--scope", "web")),
+    ("ratchet report --json", ("ratchet", "report", "--json")),
+    ("runs --json", ("runs", "--json")),
+    ("trend --json", ("trend", "--json")),
+    ("explain --json", ("explain", "src/app.ts", "knotty", "--json")),
+    ("explain --json", ("explain", "src/app.ts", "knotty", "--history", "--json")),
+    ("explain --json", ("explain", "src/app.ts", "knotty", "--tests", "--json")),
+    ("coupling --json", ("coupling", "--min-support", "1", "--min-confidence", "0.1", "--json")))
+
+# A claim taken, seen from the queue, the claim list and the brief, then handed back.
+_CLAIMS = (
+    ("next-item", ("next-item", "--top", "2", "--claim")),
+    ("next-item", ("next-item",)),
+    ("brief --batch", ("brief", "--batch", "2")),
+    ("claims --json", ("claims", "--json")),
+    ("brief --json", ("brief", "src/app.ts", "knotty", "--json")),
+    ("claims release --json", ("claims", "release", "--all", "--json")))
+
+# A changed function over its ceiling: the gate's breach, verify's violation,
+# the override that exempts it, and the pair it makes with knotty.
+_OVERRIDE = (
+    ("rescore --gate --json", ("rescore", "src/app.ts", "--gate", "--json")),
+    ("verify --json", ("verify", "--reuse-artifacts", "--json")),
+    ("verify --json", ("verify", "--reuse-artifacts", "--override", "a reviewed exemption",
+                       "--json")),
+    ("overrides --json", ("overrides", "--json")),
+    ("duplication --json", ("duplication", "--similarity", "0.3", "--min-lines", "3", "--json")),
+    ("brief --json", ("brief", "src/app.ts", "knotty", "--json")))
 
 
 def _forget_content(repo: Path) -> None:
@@ -119,60 +199,158 @@ def _doctor_payloads(repo: Path, capsys) -> list[dict]:
     return [clean, refused]
 
 
-@pytest.fixture()
-def payloads(repo, capsys, monkeypatch, tmp_path_factory) -> dict[str, list]:
-    """One real payload per declared payload name, from one measured repo.
-    The ranked payloads run twice, the second time over a run whose content
-    record is gone, as on a run crapkit 0.8.0 wrote. verify runs three times:
-    with no marks anywhere, over its marks file, and with that file deleted,
-    so every nullable field prints both forms."""
+def _mutate_payload(capsys) -> dict:
+    """mutate --json as it prints one mutant no test judged and one that survived."""
+    from crapkit.cli._shared import _print_json
     from crapkit.cli.analyses import _mutation_payload
     from crapkit.mutate import Mutant
     from crapkit.mutate_pool import MutantVerdict
 
-    add_knotty(repo)
-    commit_all(repo, "knotty")
-    seed_artifacts(repo)
-    out = {"coverage --json": [run_json(repo, capsys, "coverage", "--reuse-artifacts", "--json")],
-           "inventory --json": [run_json(repo, capsys, "inventory", "--json")],
-           "worklist --json": [run_json(repo, capsys, "worklist", "--json")],
-           "next-item": [run_json(repo, capsys, "next-item")],
-           "brief --json": [run_json(repo, capsys, "brief", "src/app.ts", "knotty", "--json")],
-           "ratchet report --json": [run_json(repo, capsys, "ratchet", "report", "--json")],
-           "doctor --json": _doctor_payloads(repo, capsys)}
-    _forget_content(repo)
-    for name, argv in _RANKED.items():
-        out[name].append(run_json(repo, capsys, *argv))
+    judged = [Mutant(path="a.py", line=1, op="> -> >=", original="x > 1", mutated="x >= 1"),
+              Mutant(path="a.py", line=2, op="== -> !=", original="y == 1", mutated="y != 1")]
+    _print_json(_mutation_payload(judged, [MutantVerdict.NO_VERDICT, MutantVerdict.SURVIVED],
+                                  ["docs/notes.md"]))
+    return json.loads(capsys.readouterr().out)
+
+
+def _gate_and_errors(out: dict, repo: Path, capsys) -> None:
+    """rescore with and without the gate over a file the reader refuses, and
+    the error object: a name that is not UTF-8, then a function no run holds."""
+    _print(out, repo, capsys, "rescore --json", "rescore", "src/app.ts", "--json")
     (repo / "src" / "b.ts").write_text(ARROW, encoding="utf-8")
-    out["rescore --gate --json"] = [run_json(repo, capsys, "rescore", "src/app.ts", "src/b.ts",
-                                             "--gate", "--json")]
+    _print(out, repo, capsys, "rescore --gate --json",
+           "rescore", "src/app.ts", "src/b.ts", "--gate", "--json")
     (repo / UNREADABLE).write_text(ARROW, encoding="utf-8")
-    out[ERROR_OBJECT] = [run_json(repo, capsys, "rescore", "--gate", "--json", UNREADABLE)]
+    _print(out, repo, capsys, ERROR_OBJECT, "rescore", "--gate", "--json", UNREADABLE)
     (repo / UNREADABLE).unlink()
+    _print(out, repo, capsys, ERROR_OBJECT, "brief", "src/app.ts", "nosuch", "--json")
     commit_all(repo, "an unread file")
+
+
+def _verifies(out: dict, repo: Path, capsys) -> None:
+    """verify with no marks anywhere, over its marks file, and with that file
+    deleted, so every nullable field prints both forms; the report reads the
+    committed marks between. The file the reader refuses fails the first
+    verify and is gone from the second, which passes and tightens the mark."""
     verify = [_verify(repo, capsys)]
+    (repo / "src" / "b.ts").unlink()
     _write_marks(repo)
     commit_all(repo, "marks")
     verify.append(_verify(repo, capsys))
+    _print(out, repo, capsys, "ratchet report --json", "ratchet", "report", "--json")
     (repo / MARKS).unlink()
     verify.append(_verify(repo, capsys))
     out["verify --json"] = verify
-    mutant = Mutant(path="a.py", line=1, op="> -> >=", original="x > 1", mutated="x >= 1")
-    out["mutate --json"] = [_mutation_payload([mutant], [MutantVerdict.NO_VERDICT], [])]
+
+
+def _override(out: dict, repo: Path, capsys) -> None:
+    with open(repo / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
+        fh.write(KNOTTY.replace("knotty", "knottier"))
+    _print_all(out, repo, capsys, _OVERRIDE)
+
+
+def _empty_scope(out: dict, repo: Path, capsys) -> None:
+    """inventory over a scope that claims no file, so `empty_scopes` holds one."""
+    with open(repo / "crapkit.toml", "a", encoding="utf-8", newline="\n") as fh:
+        fh.write('\n[[scope]]\nname = "gone"\npaths = ["gone"]\nlanguages = ["typescript"]\n')
+    _print(out, repo, capsys, "inventory --json", "inventory", "--json")
+
+
+@pytest.fixture()
+def payloads(repo, capsys, monkeypatch, tmp_path_factory) -> dict[str, list]:
+    """Every declared payload, printed over one measured repo. The ranked
+    payloads run twice, the second time over a run whose content record is
+    gone, as on a run crapkit 0.8.0 wrote."""
+    add_knotty(repo)
+    commit_all(repo, "knotty")
+    seed_artifacts(repo)
+    out: dict[str, list] = {}
+    _print_all(out, repo, capsys, _READS)
+    out["doctor --json"] = _doctor_payloads(repo, capsys)
+    _print_all(out, repo, capsys, _CLAIMS)
+    _forget_content(repo)
+    _print_all(out, repo, capsys, _RANKED.items())
+    _gate_and_errors(out, repo, capsys)
+    _verifies(out, repo, capsys)
+    _override(out, repo, capsys)
+    _print(out, repo, capsys, "clean --json", "clean", "--dry-run", "--json")
+    _empty_scope(out, repo, capsys)
+    _print(out, repo, capsys, "runs prune --json", "runs", "prune", "--json")
+    out["mutate --json"] = [_mutate_payload(capsys)]
     out[VERSION] = _version_payloads(capsys, monkeypatch, tmp_path_factory.mktemp("version"))
     return out
 
 
-def test_every_payload_the_declaration_names_is_printed_here(payloads):
-    assert {f.payload for f in ADDED} == set(payloads)
+def test_every_declared_payload_is_printed_here(payloads):
+    assert set(PAYLOADS) == set(payloads)
 
 
-def test_each_added_field_carries_a_declared_type_and_null_only_where_declared(payloads):
-    wrong = [f"{f.payload} {f.key} = {value!r}" for f in ADDED
-             for payload in payloads[f.payload] for value in values_at(payload, f.key)
-             if not json_type_ok(value, f.types)]
+def _maps(payload: str) -> set[str]:
+    return {f.key.removesuffix(".*") + ".*" for f in FIELDS
+            if f.payload == payload and f.key.endswith(".*")}
+
+
+def _declared(payload: str) -> dict[str, AgentField]:
+    return {f.key: f for f in FIELDS if f.payload == payload}
+
+
+def _undeclared(name: str, samples: list) -> list[str]:
+    declared, maps = _declared(name), _maps(name)
+    return sorted({f"{name} {key}" for sample in samples
+                   for key, _ in printed(sample, maps) if key not in declared})
+
+
+def _mistyped(name: str, samples: list) -> list[str]:
+    declared, maps = _declared(name), _maps(name)
+    return sorted({f"{name} {key} = {value!r:.60}" for sample in samples
+                   for key, value in printed(sample, maps)
+                   if key in declared and not json_type_ok(value, declared[key].types)})
+
+
+def test_every_key_a_payload_prints_is_declared(payloads):
+    """doctor --json printed each lane's `refusal` and nothing declared it."""
+    gaps = [gap for name, samples in payloads.items() for gap in _undeclared(name, samples)]
+
+    assert gaps == []
+
+
+def test_every_printed_value_carries_a_declared_type_and_null_only_where_declared(payloads):
+    wrong = [bad for name, samples in payloads.items() for bad in _mistyped(name, samples)]
 
     assert wrong == []
+
+
+def test_the_walk_keys_a_map_by_star_and_an_item_by_brackets():
+    walked = dict(printed({"a": {"x.py": 6}, "b": [{"c": None}]}, {"a.*"}))
+
+    assert walked == {"a": {"x.py": 6}, "a.*": 6, "b": [{"c": None}], "b[]": {"c": None},
+                      "b[].c": None}
+
+
+def test_a_bool_is_no_number_and_an_integer_is_one():
+    assert not json_type_ok(True, ("integer",)) and not json_type_ok(False, ("number",))
+    assert json_type_ok(3, ("number",)) and not json_type_ok(3.0, ("integer",))
+
+
+def test_every_named_field_says_what_it_means():
+    """A list's items and a map's values may go unnamed; a key may not."""
+    silent = [f"{f.payload} {f.key}" for f in FIELDS
+              if not f.key.endswith(("[]", "*")) and not f.description]
+
+    assert silent == []
+
+
+def test_each_added_field_is_the_declaration_its_payload_carries():
+    declared = {(f.payload, f.key): f for f in FIELDS}
+
+    assert [f for f in ADDED if declared.get((f.payload, f.key)) != f] == []
+
+
+def test_each_added_field_is_printed(payloads):
+    missing = [f"{f.payload} {f.key}" for f in ADDED
+               if not [v for payload in payloads[f.payload] for v in values_at(payload, f.key)]]
+
+    assert missing == []
 
 
 def test_doctors_lane_refusal_is_declared_as_a_sentence_or_null(payloads):
@@ -185,15 +363,15 @@ def test_doctors_lane_refusal_is_declared_as_a_sentence_or_null(payloads):
 
 
 def test_the_nullable_fields_print_both_forms(payloads):
-    """The verify pair holds the marks file on the tree, then none: each
-    nullable field shows its value once and its null once."""
+    """The verify trio holds no marks, the marks file on the tree, then none:
+    each nullable field shows its value once and its null once."""
     nullable = [f for f in ADDED if f.nullable]
     seen = {(f.payload, f.key): _null_forms(payloads, f) for f in nullable}
 
     assert seen == {(f.payload, f.key): {True, False} for f in nullable}
 
 
-def _null_forms(payloads: dict, field: AddedField) -> set[bool]:
+def _null_forms(payloads: dict, field: AgentField) -> set[bool]:
     """Whether the field printed null, its value, or both, across its payloads."""
     return {value is None for payload in payloads[field.payload]
             for value in values_at(payload, field.key)}
@@ -236,11 +414,24 @@ def _declared_types(schema: dict) -> tuple[str, ...]:
     return (kind,) if isinstance(kind, str) else tuple(kind)
 
 
+def _served(payload: str) -> dict:
+    (tool,) = [t for t in mcp_server.tool_listing() if t["name"] == MCP_TOOLS[payload]]
+    return tool["outputSchema"]
+
+
+@pytest.mark.parametrize("payload", sorted(MCP_TOOLS))
+def test_each_mcp_tool_serves_its_payloads_declaration(payload: str):
+    """`truncated` is the server's own: the answer budget adds it, no command prints it."""
+    properties = dict(_served(payload)["properties"])
+    del properties["truncated"]
+
+    assert properties == PAYLOADS[payload]
+
+
 @pytest.mark.parametrize("field", [f for f in ADDED if f.payload in MCP_TOOLS],
                          ids=lambda f: f"{MCP_TOOLS[f.payload]}:{f.key}")
-def test_the_mcp_output_schema_declares_the_same_types(field: AddedField):
-    (tool,) = [t for t in mcp_server.tool_listing() if t["name"] == MCP_TOOLS[field.payload]]
-    schema = _schema_at(tool["outputSchema"], field.key.removesuffix("[]"))
+def test_the_mcp_output_schema_declares_the_same_types(field: AgentField):
+    schema = _schema_at(_served(field.payload), field.key.removesuffix("[]"))
 
     assert _declared_types(schema) == field.types
     assert schema["description"] == field.description
