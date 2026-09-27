@@ -217,7 +217,7 @@ def test_doctor_refuses_unreadable_launcher_output(tmp_path, answer, unreadable)
                           errors="replace", env=environment, timeout=HANG_SECONDS)
 
     fail = (f"crapkit doctor: FAIL {shim} gave no readable answer to `crapkit --version`. "
-            "Repair this launcher or install crapkit on the PATH the plugin inherits.")
+            "Reinstall the crapkit it belongs to with `")
     assert "Traceback" not in done.stderr and "Exception in thread" not in done.stderr, done.stderr
     assert done.returncode == int(unreadable), done.stdout
     assert (os.path.normcase(fail) in os.path.normcase(done.stdout)) is unreadable, done.stdout

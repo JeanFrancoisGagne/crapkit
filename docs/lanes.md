@@ -783,11 +783,12 @@ its first run — with the log path. `doctor` holds to the same rule and says so
 python-headed lane gets `ok   lane 'py': python -> <path> (pytest X, pytest-cov Y, coverage Z)`,
 a managed one gets a `note` that its interpreter and pytest-cov were not probed, so a lane
 doctor did not ask never reads as one it found healthy. A probed lane whose coverage.py is
-older than 7.6 FAILs, because coverage.py writes the function regions crapkit scores from
-only since 7.6 and `crapkit coverage` refuses that lane's report with exit 5:
+older than 7.13.1 FAILs, because coverage.py writes each function's start line, which
+crapkit scores from, only since 7.13.1 and `crapkit coverage` refuses that lane's report
+with exit 5:
 
 ```
-FAIL lane 'py' runs coverage 7.4.4 (/home/you/ledger/.venv/bin/python), which writes no function regions, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.6); install 7.6 or later there with `/home/you/ledger/.venv/bin/python -m pip install "coverage>=7.6"` and raise any pin that holds it lower
+FAIL lane 'py' runs coverage 7.4.4 (/home/you/ledger/.venv/bin/python), which writes no function start lines, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.13.1); install 7.13.1 or later there with `/home/you/ledger/.venv/bin/python -m pip install "coverage>=7.13.1"` and raise any pin that holds it lower
 ```
 
 It does check that the manager itself is installed here, because the lockfile is the

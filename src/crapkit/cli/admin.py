@@ -1015,7 +1015,7 @@ def _lane_probe_findings(root: Path, lane) -> list[Finding]:
 
 
 def _coverage_floor(name: str, executable: str, version: str) -> tuple[Finding, ...]:
-    """The FAIL for a lane whose coverage.py writes no function regions, with
+    """The FAIL for a lane whose coverage.py writes no function start lines, with
     the install line spelled for the interpreter that lane runs."""
     from ..coverage_py import REGIONS_FLOOR
     from ..doctor import coverage_floor_gap

@@ -108,12 +108,14 @@ def test_a_healthy_lane_prints_the_interpreter_and_plugin_versions_it_resolves_t
                                 "(pytest 8.3.3, pytest-cov 7.1.0, coverage 7.16.0)")
 
 
-_FLOOR_INSTALL = {False: '{python} -m pip install "coverage>=7.6"',
-                  True: 'uv pip install --python {python} "coverage>=7.6"'}
+# coverage.py writes each function's start_line from 7.13.1; 7.6.0 to 7.13.0
+# write regions without it, and older releases write no regions at all.
+_FLOOR_INSTALL = {False: '{python} -m pip install "coverage>=7.13.1"',
+                  True: 'uv pip install --python {python} "coverage>=7.13.1"'}
 
 
 @pytest.mark.parametrize("uv_made", [False, True], ids=["pip-venv", "uv-venv"])
-@pytest.mark.parametrize("version", ["7.4.4", "7.5.4", "6.5.0"])
+@pytest.mark.parametrize("version", ["7.4.4", "7.5.4", "6.5.0", "7.6.0", "7.10.6", "7.13.0"])
 def test_a_lane_whose_coverage_writes_no_function_regions_fails_naming_the_floor(monkeypatch,
                                                                                 version, uv_made):
     """A repo that pins coverage 7.4 in its dev requirements passed doctor, and
@@ -133,11 +135,12 @@ def test_a_lane_whose_coverage_writes_no_function_regions_fails_naming_the_floor
     install = _FLOOR_INSTALL[uv_made].format(python=admin._shell_quote(sys.executable))
     assert findings[1].text == (
         f"lane 'py' runs coverage {version} ({sys.executable}), which writes no function "
-        "regions, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.6); "
-        f"install 7.6 or later there with `{install}` and raise any pin that holds it lower")
+        "start lines, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= "
+        f"7.13.1); install 7.13.1 or later there with `{install}` and raise any pin that holds it "
+        "lower")
 
 
-@pytest.mark.parametrize("version", ["7.6.0", "7.10.6", "7.16.0", "8.0.0b1", "unknown"])
+@pytest.mark.parametrize("version", ["7.13.1", "7.16.0", "8.0.0b1", "unknown"])
 def test_coverage_at_or_past_the_floor_or_unreadable_adds_nothing(monkeypatch, version):
     monkeypatch.setattr(admin, "_runner_report",
                         lambda word, spec: (sys.executable, "8.3.3", "7.1.0", version))

@@ -1313,14 +1313,14 @@ started it. One in pipx's own cache (its pip backend) gets `pipx install crapkit
 FAIL names no launcher directory to add to PATH, since the tool deletes or rebuilds the
 environment that holds it.
 
-A `crapkit` that answers no `--version` is a launcher the plugin starts and cannot use,
+A `crapkit` that answers no readable `--version` is a launcher the plugin starts and cannot use,
 most often one whose environment lost its python. Each installer's upgrade leaves it
 broken, so the FAIL names the reinstall for the install that owns it: `uv tool install
 --force crapkit`, `pipx reinstall crapkit`, or pip's `--force-reinstall` for the python
 it starts:
 
 ```
-crapkit doctor: FAIL /home/you/.local/bin/crapkit did not answer `crapkit --version`. Reinstall the crapkit it belongs to with `uv tool install --force crapkit`, then run this check again.
+crapkit doctor: FAIL /home/you/.local/bin/crapkit gave no readable answer to `crapkit --version`. Reinstall the crapkit it belongs to with `uv tool install --force crapkit`, then run this check again.
 ```
 
 A root doctor found rather than one you typed gets a `crapkit doctor: checking <that root>`
@@ -1355,12 +1355,13 @@ crapkit doctor: no installed crapkit plugin under ...\.claude\plugins or ...\.co
 
 A plugin with no manifest gets one line saying so and no protocol check: there is no version
 to compare, and the protocol line underneath would bury the fact that explains both. A manifest
-that is there but gives no version gets its own line, so you repair the file rather than look
-for one:
+that is there but gives no version gets its own line, which names the reinstall for each scope
+that holds the install (here a Claude Code user install), so you repair the file rather than
+look for one:
 
 ```
-crapkit doctor: the plugin at PATH has a .claude-plugin/plugin.json that is not a JSON object; reinstall the plugin or repair that file
-crapkit doctor: the plugin at PATH has a .claude-plugin/plugin.json with no version string; reinstall the plugin or repair that file
+crapkit doctor: the plugin at PATH has a .claude-plugin/plugin.json that is not a JSON object, so it has no version to compare; reinstall it with `claude plugin uninstall crapkit@crapkit --scope user`, then `claude plugin install crapkit@crapkit --scope user`, and restart Claude Code's sessions.
+crapkit doctor: the plugin at PATH has a .claude-plugin/plugin.json with no version string, so it has no version to compare; reinstall it with `claude plugin uninstall crapkit@crapkit --scope user`, then `claude plugin install crapkit@crapkit --scope user`, and restart Claude Code's sessions.
 ```
 
 The first is a file that does not parse, or parses to a list or a string. The second is an

@@ -107,7 +107,7 @@ def test_the_python_extra_over_a_venv_that_pins_coverage_74(box, templates):
 
     assert "Successfully uninstalled coverage-7.4" in said(extra) and upgraded >= (7, 10, 6)
     assert "Successfully installed coverage-7.4" in said(resync) and "crapkit" not in said(resync)
-    assert "has no function regions for any of its 3 file(s) — needs coverage >= 7.6" in said(coverage)
+    assert "has no function regions for any of its 3 file(s) - needs coverage>=7.13.1" in said(coverage)
 
 
 @cell("lin-pyextra-conflict", channel="pip [py] into a venv pinning coverage 7.4 + pytest-cov 5", harness="none",
@@ -119,7 +119,7 @@ def test_doctor_names_the_coverage_floor_before_coverage_refuses(box, templates)
     doctor = box.run(["crapkit", "doctor"], cwd=repo)
     box.run(["crapkit", "coverage"], cwd=repo, expect=5)
 
-    assert "7.6" in doctor.stdout and "no problems found" not in doctor.stdout
+    assert "7.13.1" in doctor.stdout and "no problems found" not in doctor.stdout
 
 
 # --- pip --user: a launcher on no PATH -------------------------------------------------------

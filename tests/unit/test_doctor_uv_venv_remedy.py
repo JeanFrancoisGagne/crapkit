@@ -59,7 +59,7 @@ def test_the_coverage_floor_names_uv_pip_in_a_venv_uv_made(tmp_path):
 
     (finding,) = admin._coverage_floor("py", str(python), "7.4.4")
 
-    assert (f'`uv pip install --python {admin._shell_quote(str(python))} "coverage>=7.6"`'
+    assert (f'`uv pip install --python {admin._shell_quote(str(python))} "coverage>=7.13.1"`'
             in finding.text), finding.text
 
 

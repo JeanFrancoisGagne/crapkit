@@ -1043,21 +1043,22 @@ def _release(text: str) -> tuple[int, ...] | None:
 
 # --- the coverage.py floor ---------------------------------------------------------
 #
-# coverage.py writes the per-function regions crapkit scores from since 7.6. A
-# lane whose interpreter carries an older one runs its suite, writes a report,
-# and `crapkit coverage` refuses that report with exit 5. The lane probe starts
+# coverage.py writes the per-function regions crapkit scores from, each with its
+# start_line, since 7.13.1 (coverage_py.REGIONS_FLOOR). A lane whose interpreter
+# carries an older one runs its suite, writes a report, and `crapkit coverage`
+# refuses that report with exit 5. The lane probe starts
 # that interpreter anyway, so it asks coverage's version on the same start.
 
 _COVERAGE_FLOOR = (
     "lane {name!r} runs coverage {version} ({executable}), which writes no function "
-    "regions, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= {floor}); "
+    "start lines, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= {floor}); "
     "install {floor} or later there with `{upgrade}` and raise any pin that holds it lower"
 )
 
 
 def coverage_floor_gap(name: str, executable: str, version: str,
                        upgrade: str) -> tuple[Finding, ...]:
-    """One FAIL when the lane's coverage.py predates function regions. A
+    """One FAIL when the lane's coverage.py predates function start lines. A
     version this cannot read says nothing: the lane's own run will."""
     from .coverage_py import REGIONS_FLOOR
 

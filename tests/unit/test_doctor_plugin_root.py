@@ -660,6 +660,11 @@ def test_no_path_reads_every_shape_of_the_installer_s_record(tmp_path, capsys, m
 
 
 # --- a manifest that parses and names no usable version -------------------------
+
+# The repair doctor names for a plugin Claude Code installed at user scope.
+CLAUDE_REINSTALL = ("reinstall it with `claude plugin uninstall crapkit@crapkit --scope user`, then "
+                    "`claude plugin install crapkit@crapkit --scope user`, and restart Claude Code's "
+                    "sessions")
 #
 # A plugin.json whose version is null, absent, a number or a list read as a
 # missing plugin.json, or, where installs were ranked by version, ended the
@@ -676,7 +681,7 @@ def test_a_manifest_with_no_version_string_says_so(tmp_path, capsys, version):
 
     assert (code, err) == (1, "")
     assert lines == [f"crapkit doctor: the plugin at {root} has a .claude-plugin/plugin.json with no "
-                     "version string; reinstall the plugin or repair that file"], lines
+                     f"version string, so it has no version to compare; {CLAUDE_REINSTALL}."], lines
 
 
 @pytest.mark.parametrize("manifest", ["{not json", "[]", "\"crapkit\""],
@@ -692,7 +697,7 @@ def test_a_manifest_that_is_not_an_object_names_the_file_it_found(tmp_path, caps
 
     assert (code, err) == (1, "")
     assert lines == [f"crapkit doctor: the plugin at {root} has a .claude-plugin/plugin.json that is "
-                     "not a JSON object; reinstall the plugin or repair that file"], lines
+                     f"not a JSON object, so it has no version to compare; {CLAUDE_REINSTALL}."], lines
 
 
 def test_a_manifest_whose_name_is_null_is_still_checked_by_version(tmp_path, capsys):

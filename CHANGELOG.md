@@ -1220,10 +1220,11 @@ The exit codes, the lane environment and the files that change on upgrade are in
 exit 5, over gates git never ran, and over plugin gaps whose printed repair changed
 nothing. Each of these now gets a line naming the object and the next step:
 
-- A `pytest --cov` lane whose coverage.py is older than 7.6 FAILs. That coverage writes
-  no function regions, so `crapkit coverage` refuses the lane's report with exit 5. The
-  lane probe asks coverage's version on the start it already made, prints it beside
-  pytest's and pytest-cov's, and names the install line for that interpreter.
+- A `pytest --cov` lane whose coverage.py is older than 7.13.1, the `py` extra's floor,
+  FAILs. That coverage writes no function start lines, so `crapkit coverage` refuses the
+  lane's report with exit 5. The lane probe asks coverage's version on the start it
+  already made, prints it beside pytest's and pytest-cov's, and names the install line
+  for that interpreter.
 - A `coveragepy` lane with no `container_ok` WARNs inside a container (`/.dockerenv` or
   `CRAPKIT_INSIDE_CONTAINER=1`), which the lane runner refuses with exit 5.
 - The closing line counts the WARNs above it (`doctor: no problems found, 1 warning

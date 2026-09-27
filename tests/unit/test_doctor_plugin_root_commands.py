@@ -144,9 +144,8 @@ def test_a_manifest_doctor_cannot_read_names_the_reinstall(tmp_path, capsys):
     code, lines = check(root, capsys)
 
     assert code == 1
-    assert lines == [f"crapkit doctor: the plugin at {root} has no readable "
-                     f".claude-plugin/plugin.json, so it has no version to compare; "
-                     f"{CLAUDE_REINSTALL}."]
+    assert lines == [f"crapkit doctor: the plugin at {root} has a .claude-plugin/plugin.json that "
+                     f"is not a JSON object, so it has no version to compare; {CLAUDE_REINSTALL}."]
 
 
 # --- a launcher that answers no version -------------------------------------------------
@@ -161,6 +160,7 @@ def test_a_launcher_that_answers_no_version_names_the_reinstall_of_its_install(t
     code, lines = check(plugin(tmp_path / "p"), capsys)
 
     assert code == 1
-    assert lines == [f"crapkit doctor: FAIL {launcher} did not answer `crapkit --version`. Reinstall "
+    assert lines == [f"crapkit doctor: FAIL {launcher} gave no readable answer to `crapkit --version`. "
+                     "Reinstall "
                      "the crapkit it belongs to with `uv tool install --force crapkit`, then run "
                      "this check again."]
