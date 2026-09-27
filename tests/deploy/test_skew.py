@@ -29,9 +29,14 @@ TEAM_NOTE = re.compile(r"older (crapkit|release|CLI)", re.I)
 
 
 def team_repo(box, templates, candidate):
-    """The shared repo as the upgraded teammate pushed it, and a fresh clone of it."""
+    """The shared repo as the upgraded teammate pushed it, and a fresh clone of
+    it. docs/upgrading.md holds the launcher token back until every reader runs
+    0.8.1, so the pushed crapkit.toml names the launcher the token stands for,
+    and the marks carry the candidate's stamp: that is what the old reader meets."""
     source = state.build(box, candidate.version, cache=templates)
     upstream = source.checkout(box, "upstream")
+    state.launchers_written_back(box, upstream)
+    state.commit(box, upstream, "crapkit.toml names the launcher until every reader runs 0.8.1")
     box.run(["git", "clone", "-q", str(upstream), str(box.root / "teammate")], expect=0)
     return source, box.root / "teammate"
 

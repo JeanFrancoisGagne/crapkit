@@ -1477,6 +1477,10 @@ it detects, it also leaves commented templates for the runners it did not find, 
 carry the same launcher, so uncommenting one cannot hand the bare `python` back. Every lane
 it writes reports into `.crapkit/cov/`, which is why the `.gitignore` list is so short: see
 [Where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live).
+With no lockfile the lane names its interpreter with a launcher token, so the committed
+file runs on every OS: `{python}` here, which crapkit reads as `python` on Windows and
+`python3` elsewhere, or `{python:.venv}` for a venv in the tree. See
+[The launcher token](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#the-launcher-token).
 
 `init` reads each `package.json` past a UTF-8 byte-order mark, as npm does. A root
 `package.json` that is not one UTF-8 JSON object stops `init` at exit 3 before it writes any
@@ -1528,7 +1532,7 @@ globs = [
 
 [[lane]]
 name = "py"
-command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml --continue-on-collection-errors"
+command = "{python} -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml --continue-on-collection-errors"
 artifact = ".crapkit/cov/py.json"
 results_artifact = ".crapkit/cov/junit-py.xml"
 parser = "coveragepy"
@@ -1548,7 +1552,7 @@ scopes = ["calc"]
 # runs as written, which is how a scope whose tests live elsewhere runs them.
 [crapkit.scoped_tests]
 # calc: no test file under calc/, so the whole suite runs, from tests/
-calc = "python -m pytest tests -q -p no:cacheprovider"
+calc = "{python} -m pytest tests -q -p no:cacheprovider"
 
 ```
 
@@ -1566,7 +1570,7 @@ ok   config keys all recognized
 ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
-ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.10.6)
+ok   lane 'py': python3 -> /home/you/ledger/.venv/bin/python3 (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.13.1)
 ok   lizard 1.24.0
 doctor: no problems found
 ```

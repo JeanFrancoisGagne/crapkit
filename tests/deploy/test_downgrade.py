@@ -1,8 +1,10 @@
 """A user installs the candidate, adopts a repo with it, then goes back to
 0.7.6 (a bad day, a pinned CI, a teammate's older laptop).
 
-Each command a user reaches for first (doctor, coverage, verify, next-item and
-one MCP call) either works on the store and marks the candidate wrote, or
+The candidate's init wrote the launcher token, which 0.7.6 hands to the shell
+as written, so the cell first writes each token back as the launcher
+docs/upgrading.md's Downgrading table gives. Then each command a user reaches
+for first (doctor, coverage, verify, next-item and one MCP call) either works on the store and marks the candidate wrote, or
 refuses in words that name the cause, with an exit code from the README's
 table and no traceback. Where the refusal names a fix, the cell follows it and
 expects verify to pass. Nothing the candidate recorded may be lost.
@@ -41,6 +43,7 @@ def test_lin_downgrade_0_7_6(box, templates, candidate):
 
     state.pip_install(box, f"crapkit[py]=={OLD}")
     assert OLD in box.run(["crapkit", "--version"], expect=0).stdout
+    state.launchers_written_back(box, repo)
     for argv in (["doctor"], ["coverage"], ["next-item"]):
         clear(box, box.run(["crapkit", *argv], cwd=repo))
     refusal = box.run(["crapkit", "verify"], cwd=repo)

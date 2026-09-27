@@ -16,6 +16,7 @@ import pytest
 
 from crapkit import invocation
 from crapkit.config import Config
+from crapkit.lane_command import python_token
 from crapkit.churn import parse_git_log
 from crapkit.cli.parser import build_parser
 from crapkit.scaffold import (detect_lanes, gitignore_entries, live_lanes, npm_package,
@@ -169,8 +170,12 @@ DEMO_FILES = ("calc/__init__.py", "calc/grade.py", "calc/parse.py", "calc/report
 
 def test_the_python_quickstart_prints_the_config_init_writes():
     """Including the commented lane template, which is what the prose above the
-    block promises init leaves behind."""
-    assert starter_toml(PY_SCOPES, _py_lanes(), tracked=DEMO_FILES) in _doc("README.md")
+    block promises init leaves behind. The demo repo carries no venv, so init
+    names the interpreter with the launcher token wherever `{python}` resolves."""
+    token = python_token()
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), None, interpreter=token)
+
+    assert starter_toml(PY_SCOPES, lanes, interpreter=token, tracked=DEMO_FILES) in _doc("README.md")
 
 
 def test_the_typescript_quickstart_prints_the_gitignore_line_init_writes():

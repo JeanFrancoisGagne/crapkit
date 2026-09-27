@@ -44,10 +44,23 @@ Install the older release by its number, with the installer that owns crapkit:
 - pipx: `pipx install --force "crapkit==0.7.6"`
 - uv tool: `uv tool install "crapkit==0.7.6"`
 
-The older release reads the store a newer one wrote: `doctor`, `coverage` and
-`next-item` work as before. A downgrade across an analysis version stops `verify` at
-exit 3, because the committed marks carry the newer stamp; the refusal names both
-stamps. Measure with the older release, then re-seed:
+A release before 0.8.1 does not read the [launcher
+token](configuration.md#the-launcher-token) that 0.8.1's `init` writes into each lane it
+detects. It hands `{python} -m pytest` to the shell as written, so its `doctor` FAILs the
+lane with `executable '{python}' does not resolve on PATH` and its `coverage` exits 5.
+Before the older release runs, write each token in `crapkit.toml` back as the launcher it
+stands for on your OS, spelled as the TOML string holds it:
+
+| Token | Windows | Linux and macOS |
+|---|---|---|
+| `{python}` | `python` | `python3` |
+| `{python:.venv}` | `.venv\\Scripts\\python.exe` | `.venv/bin/python` |
+
+A venv in another directory takes that directory in place of `.venv`. With the
+launchers written back, the older release reads the store a newer one wrote: `doctor`,
+`coverage` and `next-item` work as before. A downgrade across an analysis version
+stops `verify` at exit 3, because the committed marks carry the newer stamp; the
+refusal names both stamps. Measure with the older release, then re-seed:
 
 ```sh
 crapkit coverage
@@ -69,6 +82,15 @@ version is the last step of a team's upgrade, not the first. Upgrade every clone
 pin and the pre-commit `rev` before you commit marks seeded under the newer analysis, and
 move the Action's `uses:` pin in the same commit as the re-seed, so no job measures those
 marks with the older release.
+
+The [launcher token](configuration.md#the-launcher-token) follows the same order. A
+release before 0.8.1 runs a lane's `{python}` as written and the shell answers 127
+(`/bin/sh: 1: {python}: not found`), so that reader's `coverage` exits 5 and its `doctor`
+FAILs the lane. Commit a `crapkit.toml` that holds the token, whether 0.8.1's `init`
+wrote it or you swapped it in ([config
+paths](#config-paths-that-081-reads-on-every-os)), once every clone, the CI pin, the
+pre-commit `rev` and the Action's `uses:` pin run 0.8.1. Until then each lane names the
+launcher the token stands for, as [Downgrading](#downgrading) lists them.
 
 A reader you missed exits 3 on the committed marks. From 0.8.1 an older release that meets
 marks a newer one wrote says so, `the marks come from a newer crapkit than this install`,
@@ -499,7 +521,9 @@ the venv launcher for `{python:.venv}`, with the venv's own directory in place o
 `.venv`, and a bare name for `{python}`, in each lane `command`, `retest_command`,
 `[crapkit.scoped_tests]` template and `mutation_command`. Then run `crapkit doctor` on
 each OS. [The launcher token](configuration.md#the-launcher-token) lists what each
-token becomes.
+token becomes. A release before 0.8.1 cannot run the token, so swap it in once every
+reader runs 0.8.1 ([a team upgrades every
+reader](#a-team-upgrades-every-reader-before-the-re-seed-lands)).
 
 Three exit codes change for scripts that read them. A root on a Windows network share
 (`--repo \\server\share\repo`, or a working directory there) exits 3 before any lane

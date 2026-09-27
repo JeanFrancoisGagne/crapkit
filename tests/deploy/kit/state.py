@@ -378,6 +378,33 @@ def guide_says(text: str, body: str | None = None) -> str:
     return text
 
 
+TOKEN_ROW = re.compile(r"^\|\s*`(\{python[^`]*\})`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*$", re.M)
+
+
+def launcher_rows(windows: bool = WINDOWS) -> dict[str, str]:
+    """The Downgrading section's token table: token -> the launcher its row
+    gives for this OS, spelled as crapkit.toml's TOML string holds it."""
+    section = page().split("\n## Downgrading\n", 1)[1].split("\n## ", 1)[0]
+    rows = {token: win if windows else posix for token, win, posix in TOKEN_ROW.findall(section)}
+    if "{python}" not in rows:
+        raise GuideGap(f"{GUIDE}: Downgrading gives no launcher for `{{python}}`, which init writes")
+    return rows
+
+
+def launchers_written_back(box, repo: Path) -> None:
+    """The guide's step before a release older than 0.8.1 runs: each launcher
+    token in crapkit.toml written back as the launcher it stands for here."""
+    rows = launcher_rows()
+    config = repo / "crapkit.toml"
+    text = config.read_text(encoding="utf-8")
+    for token, launcher in rows.items():
+        text = text.replace(token, launcher)
+    if "{python" in text:
+        raise GuideGap(f"{GUIDE}: Downgrading names no launcher for a token crapkit.toml holds:\n{text}")
+    config.write_text(text, encoding="utf-8")
+    box.transcript.note(f"guide step: launcher tokens written back as {rows}")
+
+
 def run_line(box, repo: Path, line: str, *, expect: int | None = 0, note: str = "") -> Step:
     """One documented command, run the way a user pastes it into their shell."""
     return box.script(line, cwd=repo, expect=expect, note=note or f"guide step: {line}")

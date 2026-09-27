@@ -65,7 +65,7 @@ PROJECTS = {
     "poetry": ("poetry-project", _poetry, 'command = "poetry run python -m pytest'),
     "pdm": ("pdm-project", _pdm, 'command = "pdm run python -m pytest'),
     "pipenv": ("pipenv-project", _pipenv, 'command = "pipenv run python -m pytest'),
-    "dotvenv": ("dot-venv", _dot_venv, 'command = ".venv/bin/python -m pytest'),
+    "dotvenv": ("dot-venv", _dot_venv, 'command = "{python:.venv} -m pytest'),
 }
 
 

@@ -46,7 +46,11 @@ each agent, fresh and as an upgrade, and this release fixes what it found.
   `.venv\\Scripts\\python.exe` (as the TOML string spells it) or `.venv/bin/python`, which
   fail every lane on the other OS, or a bare `python`, which fails on an Ubuntu without
   python-is-python3. Swap the venv launcher for `{python:.venv}` and a bare name for
-  `{python}`.
+  `{python}` once every reader runs 0.8.1: an older release hands the token to the shell
+  as written, so its `doctor` FAILs the lane and its `coverage` exits 5. A downgrade writes
+  each token back as the launcher first; the [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#downgrading)
+  lists them.
 - Three exit codes change. On Windows a root on a network share exits 3 before any lane
   starts, where every lane ran in `C:\Windows`. A lane whose `cwd` names no directory
   fails as that lane, and a run with no lane left exits 5, where `crapkit coverage` ended

@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from docs_support import adopt_measured, install_candidate, user_bin, version_of
-from kit import docsnip, pyindex, repos, wheels
+from kit import docsnip, pyindex, repos, state, wheels
 from kit.cells import cell
 
 PACKET = "deploy-docs"
@@ -220,8 +220,8 @@ def stamps(refusal: str) -> set[str]:
 
 @cell("docs-downgrade", channel="pip venv, pipx, uv tool", harness="none",
       scenario="downgrade: a repo adopted under the candidate, then each downgrade row of docs/upgrading.md "
-               "installs 0.7.6; doctor, coverage and next-item work, verify refuses naming both stamps, and the "
-               "page's re-seed block ends at verify OK",
+               "installs 0.7.6 and the page's token table writes the launcher back; doctor, coverage and "
+               "next-item work, verify refuses naming both stamps, and the page's re-seed block ends at verify OK",
       use_cases="downgrade", os=("linux", "windows"), image="core", cadence="push")
 @pytest.mark.parametrize("installer", ["pip", "pipx", "uv tool"])
 def test_a_downgrade_does_what_the_upgrade_guide_says(box, templates, installer):
@@ -233,6 +233,7 @@ def test_a_downgrade_does_what_the_upgrade_guide_says(box, templates, installer)
     assert f"crapkit=={DOWNGRADE_TO}" in line and DOWNGRADE_TO in wheels.releases()
     box.script(line, cwd=repo, expect=0)
     assert DOWNGRADE_TO in version_of(box, cwd=repo)
+    state.launchers_written_back(box, repo)
     for works in (["doctor"], ["coverage"], ["next-item"]):
         box.run(["crapkit", *works], cwd=repo, expect=0)
     refused = box.run(["crapkit", "verify"], cwd=repo, expect=3)

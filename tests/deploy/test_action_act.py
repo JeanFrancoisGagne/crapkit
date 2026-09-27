@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pytest
 
-from kit import act, docsnip, gitmirror, wheels
+from kit import act, docsnip, gitmirror, state, wheels
 from kit.cells import cell
 from kit.sandbox import Toolchain
 
@@ -285,13 +285,16 @@ def test_a_monorepo_gets_a_verdict_on_the_package_it_adopted(box, candidate):
 def test_an_action_pinned_behind_the_marks_refuses_until_the_pin_moves(box, candidate):
     assert OLD in wheels.releases()
     runner = act.Runner.make(box)
-    root, built = build_consumer(box, candidate, "--container-ok")
+    root, _ = build_consumer(box, candidate, "--container-ok")
+    built = land_on_main(box, root, lambda: state.launchers_written_back(box, root),
+                         "crapkit.toml names the launcher until every reader runs 0.8.1")
     mirror = gitmirror.make(box)
     behind = act.crapkit_job(runner.release(mirror, OLD), gate="true")
 
     refused = runner.run(root, behind, act.pull_request(built))
+    analysis = state.analysis_version(candidate)
     runner.check(refused, "--event", "pull_request", "--post", "posted", "--gate-code", "3",
-                 "--comment-has", f"`crapkit verify` exited 3 and wrote no verdict: {STAMP_REFUSAL}11 ",
+                 "--comment-has", f"`crapkit verify` exited 3 and wrote no verdict: {STAMP_REFUSAL}{analysis} ",
                  "--comment-has", "but this run measures [crapkit-analysis=10 ")
 
     mirror.publish(candidate.staged, candidate.version)
