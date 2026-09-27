@@ -700,7 +700,10 @@ class _LocalClassBody:
     Its members are read as the file's global scope is read. Between them the
     function around the class is current again, so a data member's tokens are
     not charged to a function that never opened, and neither is the class's
-    closing `}`, which the enclosing function's brace count must see.
+    closing `}`, which the enclosing function's brace count must see. A data
+    member that reads like a call, `decltype(a < 2) c;`, is still being read
+    when that `}` comes, and the function around the class is made current
+    there too: left current, the call ended as the enclosing function's row.
     """
 
     def __init__(self, context, outer=None):

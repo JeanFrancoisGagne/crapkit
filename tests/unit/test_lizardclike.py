@@ -555,6 +555,32 @@ def test_a_member_of_a_class_local_to_a_member_is_a_function_too():
     assert [r.long_name for r in rows] == ["outer.A::f.B::g()", "outer.A::f()", "outer()"]
 
 
+LAST_MEMBERS = {  # label: a data member that reads like a call, last in a local class
+    "decltype": "decltype(a < 2) c;",
+    "macro": "FIELD(int) c;",
+    "function pointer": "int (*fp)(int);",
+    "array of function pointers": "void (*table[2])(void);",
+}
+
+
+@pytest.mark.parametrize("path", ["p.cpp", "p.mm"])
+@pytest.mark.parametrize("member", LAST_MEMBERS.values(), ids=LAST_MEMBERS.keys())
+def test_a_local_class_that_ends_on_a_data_member_leaves_the_function_its_row(member, path):
+    """`decltype(a < 2) c;` reads like a call and then an old-style C parameter,
+    and when the class closed after it, that call was left as the current
+    function: the function around the class ended as a row named
+    `outer.Res::decltype( a<2)`, and its own row was gone. libstdc++'s
+    std::__min_cmp holds the shape."""
+    source = ("int outer(int a) {\n    struct Res {\n        int m;\n"
+              f"        {member}\n    }};\n    if (a) {{\n        return 1;\n    }}\n"
+              "    return 0;\n}\nint after(int b) {\n    return b;\n}\n")
+
+    rows = analyze_source(path, source, note=False)
+
+    assert [(r.long_name, r.start, r.end, r.ccn_std, r.cognitive) for r in rows] == [
+        ("outer( int a)", 1, 10, 2, 1), ("after( int b)", 11, 13, 1, 0)]
+
+
 NOT_A_LOCAL_CLASS = {  # a class keyword in a body that defines no class
     "brace-initialized variable": "struct point p = {1, 2};\n    struct point q {3, 4};",
     "enum class": "enum class E { A = f(1), B };",
