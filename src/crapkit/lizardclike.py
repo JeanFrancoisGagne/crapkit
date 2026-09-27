@@ -68,6 +68,13 @@ Functions lizard hid, invented or misnamed
   concept's requires-expression, `concept C = requires (T a) { a + 1; };`,
   read as a function named requires. `_RequiresClause` reads a trailing clause
   to the body, and `_state_requires` skips a requires-expression at file scope.
+* A namespace head holding a word with arguments, `namespace std
+  _GLIBCXX_VISIBILITY(default) {` in every libstdc++ header, read as a function
+  named after the word whose body was the whole namespace. A word after the
+  name, `namespace ns ABI_TAG {`, and `inline` in `namespace a::inline b {`
+  joined the name: `nsABI_TAG`, `a::inlineb`. `_NamespaceHead` reads the head
+  for the function states and for the class tracker (ISO/IEC 14882:2020
+  [namespace.def]).
 
 The `&&` of a reference
 -----------------------
@@ -164,6 +171,11 @@ _NO_PARAMETER = (["void"], ["..."])
 # words: `: public Base<int>, ns::Other`.
 _CLASS_KEYS = frozenset({"struct", "class", "union"})
 _BASE_TOKENS = frozenset({"::", "<", ">", ",", "..."})
+
+# What ends a namespace head outside its attributes, and whether a namespace
+# opens there: its body's `{`, or the `;` of an alias or a using-directive, or
+# a `(` right after the keyword, where C's `namespace` names a function.
+_NAMESPACE_ENDS = {"{": True, ";": False, "(": False}
 
 # What stands before a C++20 `requires` at file scope: a template head's `>`, a
 # concept's `=`, a constraint's `&&`, `||`, `(` or `!`, or `requires` itself.
@@ -399,7 +411,7 @@ class _CFixes(ParameterCount):
         self.crapkit_word = None
         self.crapkit_return = 0
         self.crapkit_head = None
-        self.crapkit_class = None
+        self.crapkit_scope_head = None
         self.crapkit_held = []
         self.crapkit_named = []
         self.crapkit_suffix = 0
@@ -558,12 +570,13 @@ class _CFixes(ParameterCount):
         self.crapkit_suffix += _BRACKET_DEPTH.get(token, 0)
 
     def _state_global(self, token):
-        """`struct`, `class` and `union` open a head, read before lizard sees it,
-        and so do a `(` after `*` or `&`, which may open a nested declarator, and
-        `requires`, which names no function."""
-        if self._opens_a_class_head(token):
-            self.crapkit_class, self.crapkit_held = _ClassHead(), [token]
-            self._state = self._state_class_head
+        """`struct`, `class`, `union` and `namespace` open a head, read before
+        lizard sees it, and so do a `(` after `*` or `&`, which may open a nested
+        declarator, and `requires`, which names no function."""
+        head = self._head_opened_by(token)
+        if head is not None:
+            self.crapkit_scope_head, self.crapkit_held = head, [token]
+            self._state = self._state_scope_head
         elif token == "(" and self.last_token in _POINTER_ENDS:
             self.crapkit_declarator = [token]
             self._state = self._state_pointer_declarator
@@ -571,6 +584,11 @@ class _CFixes(ParameterCount):
             self._state = self._state_requires
         else:
             super()._state_global(token)
+
+    def _head_opened_by(self, token):
+        if token == "namespace":
+            return _NamespaceHead()
+        return _ClassHead() if self._opens_a_class_head(token) else None
 
     def _opens_a_class_head(self, token) -> bool:
         return token in _CLASS_KEYS and self.last_token != "enum"
@@ -624,14 +642,17 @@ class _CFixes(ParameterCount):
         else:
             self._declare(*nested)
 
-    def _state_class_head(self, token):
-        """A class head, dropped at its `{`, which then reads as lizard reads it.
+    def _state_scope_head(self, token):
+        """A class or namespace head, dropped at its `{`, which then reads as
+        lizard reads it.
 
         lizard read `struct alignas(16) Vec {` as a function named alignas whose
-        body was the class. Tokens that turn out to be no class head, `struct S
-        *make(int x) {`, are read again the way lizard reads them.
+        body was the class, and `namespace std _GLIBCXX_VISIBILITY(default) {` as
+        one whose body was the namespace. Tokens that turn out to be no head,
+        `struct S *make(int x) {` or `namespace fs = std::filesystem;`, are read
+        again the way lizard reads them.
         """
-        opened = self.crapkit_class.reads(token)
+        opened = self.crapkit_scope_head.reads(token)
         if opened is None:
             self.crapkit_held.append(token)
             return
@@ -690,6 +711,7 @@ class _LocalClassBody:
     def _state_global(self, token):
         self.crapkit_braces += _BRACE_DEPTH.get(token, 0)
         if self.crapkit_braces == 0:
+            self.context.current_function = self.crapkit_outer
             self.statemachine_return()
             return
         super()._state_global(token)
@@ -762,6 +784,52 @@ class _ClassHead:
 
 def _in_a_base_clause(token: str):
     return None if _is_word(token) or token in _BASE_TOKENS else False
+
+
+class _NamespaceHead:
+    """The tokens between `namespace` and the `{` of its body.
+
+    The name comes first, after any `[[...]]`, and a nested definition
+    qualifies it: `namespace a::inline b` defines a::b (ISO/IEC 14882:2020
+    [namespace.def]). A word with arguments is a GNU attribute,
+    `__attribute__((visibility("default")))`, or a macro that expands to one,
+    `_GLIBCXX_VISIBILITY(default)`, and a word after the name can only be such
+    a macro: none of them is part of the name.
+    """
+
+    def __init__(self):
+        self.words = []  # the head's tokens outside its attributes
+        self.depth = 0   # brackets open in an attribute
+
+    def reads(self, token: str):
+        """True at the `{` that opens the body, False at a token that shows the
+        keyword opens none (the `;` of an alias or a using-directive, the `(` of
+        C's `int namespace(int a)`), None while the head goes on."""
+        if self._in_an_attribute(token):
+            return None
+        if token in _NAMESPACE_ENDS:
+            return _NAMESPACE_ENDS[token]
+        self.words.append(token)
+        return None
+
+    def _in_an_attribute(self, token: str) -> bool:
+        if self.depth == 0 and not self._opens_an_attribute(token):
+            return False
+        self.depth += _BRACKET_DEPTH.get(token, 0)
+        return True
+
+    def _opens_an_attribute(self, token: str) -> bool:
+        """`[` opens `[[...]]`. A `(` after a word opens that word's arguments,
+        and the word names the attribute, not the namespace."""
+        if token == "(" and self.words:
+            self.words.pop()
+            return True
+        return token == "["
+
+    def name(self) -> str:
+        """`std`, `a::b`, or the empty name of an unnamed namespace."""
+        words = [word for word in self.words if word != "inline"]
+        return "".join(words[:_qualified_name_length(words)])
 
 
 class _RequiresClause:
@@ -927,6 +995,24 @@ class CFamilyNestingStates(CLikeNestingStackStates):
         super().__init__(context)
         self.crapkit_template = None
         self.crapkit_word = None
+        self.crapkit_namespace = None
+
+    def _state_global(self, token):
+        """A namespace head is read by `_NamespaceHead`. lizard stopped at a `(`
+        in it and joined every word it read, so the functions of `namespace std
+        _GLIBCXX_VISIBILITY(default) {` lost `std::` from their names."""
+        if token == "namespace":
+            self.crapkit_namespace = _NamespaceHead()
+            self._state = self._read_namespace_head
+        else:
+            super()._state_global(token)
+
+    def _read_namespace_head(self, token):
+        opened = self.crapkit_namespace.reads(token)
+        if opened is not None:
+            self._state = self._state_global
+        if opened:
+            self.context.add_namespace(self.crapkit_namespace.name())
 
     def _template_declaration(self, token):
         if self.crapkit_template is None:

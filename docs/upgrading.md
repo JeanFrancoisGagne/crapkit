@@ -212,8 +212,9 @@ same three commands as version 11 below.
   template argument or a member initializer, which lizard read as a template bracket,
   a function returning a function pointer after a return type that ends in `*` or
   `&`, `char *(*get(void))(void)`, a C++20 function with a trailing requires-clause,
-  `void f(T t) requires C<T>`, and the member functions of a class defined inside
-  a function. The function around such a class no longer pays for its members'
+  `void f(T t) requires C<T>`, the functions of a namespace whose head holds a macro
+  or an attribute, `namespace std _GLIBCXX_VISIBILITY(default)` in every libstdc++
+  header, and the member functions of a class defined inside a function. The function around such a class no longer pays for its members'
   decisions, so its `ccn` and `cognitive` fall. In Java, methods get rows after an
   annotated local variable, an enum constant with a body or an annotation element
   with a default, and inside a constant's body, an interface field's anonymous class,
@@ -227,7 +228,8 @@ same three commands as version 11 below.
 - Rows that were not functions go: a declaration whose trailing return type holds
   braces, an Objective-C instance-variable block, a C++20 concept's requires-expression
   (`requires( T a)`), a row named after the first statement of a function with a
-  requires-clause (`if( t)`), a Java enum constant, an annotation element with a
+  requires-clause (`if( t)`), a namespace read as one function named after its
+  head's macro (`_GLIBCXX_VISIBILITY( default)`), a Java enum constant, an annotation element with a
   braced default, a Java field's anonymous class, and a Java record declared first in
   a class or interface body, which read as a method named after it.
 - Rows named after an attribute take the function's name: `__attribute__((noinline))`,
@@ -235,7 +237,9 @@ same three commands as version 11 below.
   after an annotation with arguments, `InlineMe( replacement = ...)`. A member of a
   class declared with an export macro or an attribute, `class Q_CORE_EXPORT QString`
   or `class __declspec(dllexport) Foo`, reads `QString::size`, where it read
-  `Q_CORE_EXPORTQString::size`, or had no class in its name. A C-family function whose
+  `Q_CORE_EXPORTQString::size`, or had no class in its name, and a member of `namespace
+  ns ABI_TAG` or `namespace a::inline b` reads `ns::f` or `a::b::f`, where it read
+  `nsABI_TAG::f` or `a::inlineb::f`. A C-family function whose
   declarator sits in parentheses takes its own name: `int (*get(int k))(int)` reads
   `get( int k)`, where it read `int( * get(int k))( int)`, `static constexpr T
   (max)()` reads `max()`, where it read `T( max)()`, and a name a macro builds,

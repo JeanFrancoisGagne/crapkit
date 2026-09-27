@@ -644,3 +644,51 @@ def test_a_class_is_named_after_its_name_whatever_its_head_holds(source):
     (record,) = analyze_source("p.cpp", source, note=False)
 
     assert record.long_name == CLASS_HEADS[source]
+
+
+NAMESPACE_BODY = ("\nint f(int a) {\n  if (a) {\n    return 1;\n  }\n  return 0;\n}\n"
+                  "int g(int b) {\n  return b;\n}\n}\n")
+
+NAMESPACE_HEADS = {  # label: (head, what its functions are qualified with), by hand
+    "visibility macro": ("namespace std _GLIBCXX_VISIBILITY(default)\n{", "std::"),
+    "gnu attribute": ('namespace ns __attribute__((visibility("default"))) {', "ns::"),
+    "standard attribute": ("namespace [[deprecated]] ns {", "ns::"),
+    "word after the name": ("namespace ns ABI_TAG {", "ns::"),
+    "nested, inline": ("namespace a::inline b {", "a::b::"),
+    "nested": ("namespace a::b {", "a::b::"),
+    "plain": ("namespace ns {", "ns::"),
+    "unnamed": ("namespace {", ""),
+}
+
+
+@pytest.mark.parametrize("head,qualifier", NAMESPACE_HEADS.values(), ids=NAMESPACE_HEADS)
+def test_a_namespace_head_names_its_functions_and_is_no_function(head, qualifier):
+    """[namespace.def]: a namespace's name comes right after `namespace` and its
+    attribute-specifiers, qualified for a nested definition (`a::inline b` is
+    a::b). A GNU attribute after the name, or a macro that expands to one,
+    `_GLIBCXX_VISIBILITY(default)` in every libstdc++ header, read as a function
+    whose body was the whole namespace, and a word after the name took its place."""
+    rows = analyze_source("p.cpp", head + NAMESPACE_BODY, note=False)
+
+    assert [(r.long_name, r.ccn_std) for r in rows] == [(qualifier + "f( int a)", 2),
+                                                       (qualifier + "g( int b)", 1)]
+
+
+NOT_A_NAMESPACE = {  # source: the rows lizard gives it, as (long name, ccn_std)
+    "namespace fs = std::filesystem;\nint f(int a) {\n  return a;\n}\n": [("f( int a)", 1)],
+    "using namespace std;\nint f(int a) {\n  return a;\n}\n": [("f( int a)", 1)],
+    "int namespace(int a) {\n  if (a) {\n    return 1;\n  }\n  return 0;\n}\n":
+        [("namespace( int a)", 2)],
+}
+
+
+@pytest.mark.parametrize("source", NOT_A_NAMESPACE, ids=["alias", "using-directive",
+                                                         "C function named namespace"])
+def test_namespace_that_opens_no_namespace_reads_as_lizard_reads_it(source):
+    """An alias and a using-directive end at their `;`, and in C `namespace` is
+    an identifier like any other."""
+    path = "p.c" if source.startswith("int namespace") else "p.cpp"
+
+    rows = analyze_source(path, source, note=False)
+
+    assert [(r.long_name, r.ccn_std) for r in rows] == NOT_A_NAMESPACE[source]

@@ -838,6 +838,15 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   functions get a row and 66 rows that were no function go; `<concepts>` and
   `<iterator>` lose 14 more and gain 19. A `&&` in the clause opens no nesting level,
   so 13 functions that had a row read one `nesting` level less.
+- A namespace head holding an attribute or a macro with arguments no longer reads as a
+  function whose body is the whole namespace. `namespace std _GLIBCXX_VISIBILITY(default)
+  {` opens every libstdc++ header, and each one was a single row: GCC 14.2's
+  `stl_vector.h` read one function, `_GLIBCXX_VISIBILITY( default)`, at ccn 105, and now
+  lists 146, `stl_algobase.h` 109 and `basic_string.tcc` 36. Each new row is scored,
+  gated and ratcheted for the first time. `namespace ns __attribute__((visibility(...)))
+  {` read the same way. A word after the name, `namespace ns ABI_TAG {`, and `inline` in
+  a nested definition, `namespace a::inline b {`, no longer join the name: members read
+  `ns::f` and `a::b::f`, where they read `nsABI_TAG::f` and `a::inlineb::f`.
 
 ### Java methods that were hidden, invented or misnamed
 
