@@ -1530,8 +1530,10 @@ def _print_breaches(violations: list, target: int, shown: str, judged: str) -> N
 
 
 def _refuse_tracked() -> int:
-    """No commit to refuse or grant: the breach is already committed."""
-    print("decompose them and commit the split (coverage cannot save a function above the target).")
+    """No commit to refuse or grant: the breach is already committed, and on a
+    first hand run it is the debt the repo adopts through `ratchet seed`."""
+    print("decompose them and commit the split (coverage cannot save a function above the target), "
+          f"or record existing debt with `{_self()} ratchet seed`.")
     return 6
 
 
