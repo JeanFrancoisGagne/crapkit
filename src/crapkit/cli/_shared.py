@@ -449,10 +449,13 @@ def _dirty_tag(dirty: bool) -> str:
     return "  [dirty]" if dirty else ""
 
 
-def _gate_line(v) -> str:
+def _gate_line(v, unmeasured: bool = False) -> str:
     """One gate violation, however it was decided; verify and `rescore --gate`
-    report the same finding, so they must read the same."""
-    return (f"  GATE  crap {v.crap:8.1f}  ccn {v.ccn:>3} cov {v.cov:.0%}  "
+    report the same finding, so they must read the same. `unmeasured` prints
+    `cov -` for a cov no measurement stands behind: the GATE line said 0% where
+    the rescore table under it said `-` and `coverage not measured`."""
+    cov = "-" if unmeasured else f"{v.cov:.0%}"
+    return (f"  GATE  crap {v.crap:8.1f}  ccn {v.ccn:>3} cov {cov}  "
             f"{v.path}:{v.start}  {v.long_name}  -> {v.remedy}{_dirty_tag(v.dirty)}")
 
 

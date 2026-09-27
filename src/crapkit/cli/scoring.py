@@ -922,14 +922,16 @@ def _warn_untracked(untracked: set[str]) -> None:
 
 class _GateVerdict(NamedTuple):
     """The commit's verdict, hours before the commit: what was judged, against
-    which ceiling per file, the breaches no ratchet mark covers, and the changed
+    which ceiling per file, the breaches no ratchet mark covers, the changed
     files no reader could read, which it refuses because it judged nothing in
-    them."""
+    them, and the (path, start, long_name) of each row whose cov no measurement
+    stands behind."""
     judged: int
     ceilings: dict[str, int]
     breaches: list
     untracked: list[str]
     unread: dict[str, str] = {}
+    unmeasured: frozenset = frozenset()
 
     @property
     def ok(self) -> bool:
@@ -951,7 +953,7 @@ def _unpardoned_breaches(root: Path, cfg, overlay, touched: list) -> list:
 
 
 def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int],
-                  unread: dict[str, str]) -> _GateVerdict:
+                  unread: dict[str, str], unjoined: set = frozenset()) -> _GateVerdict:
     from ..keys import key_names
 
     untracked = _untracked_of(root, {r.path for r in overlay} | set(unread))
@@ -960,7 +962,14 @@ def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int],
     touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
     breaches = _unpardoned_breaches(root, cfg, overlay, touched)
     changed = {path: unread[path] for path in unread if path in ranges or path in untracked}
-    return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked), changed)
+    return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked), changed,
+                        _unmeasured_keys(candidates, unjoined))
+
+
+def _unmeasured_keys(rows, unjoined: set) -> frozenset:
+    """(path, start, long_name) of each row whose cov no measurement stands
+    behind, so the GATE line can say `cov -` where the table says so."""
+    return frozenset((r.path, r.start, r.long_name) for r in rows if _unmeasured(r, unjoined))
 
 
 def _breach_json(v, ceilings: dict[str, int]) -> dict:
@@ -999,16 +1008,16 @@ def _report_gate(verdict: _GateVerdict, as_json: bool) -> int:
                   f"0 over {_gate_ceiling_label(verdict.ceilings)}")
         return 0
     _print_unread(verdict.unread, "changed", file=sys.stderr)
-    _print_breaches(verdict.breaches)
+    _print_breaches(verdict.breaches, verdict.unmeasured)
     return 6
 
 
-def _print_breaches(breaches: list) -> None:
+def _print_breaches(breaches: list, unmeasured: frozenset = frozenset()) -> None:
     if breaches:
         print(f"crapkit gate: {len(breaches)} rescored function(s) over their scope ceiling:",
               file=sys.stderr)
     for v in breaches:
-        print(_gate_line(v), file=sys.stderr)
+        print(_gate_line(v, (v.path, v.start, v.long_name) in unmeasured), file=sys.stderr)
 
 
 def _rescore_baseline(root: Path) -> tuple[SnapshotStore, dict]:
@@ -1032,7 +1041,7 @@ def cmd_rescore(args: argparse.Namespace) -> int:
     rows, flat, ceilings, unread = _rescore_analyze(root, cfg, args.files, cwd=_stand(args.repo))
     unjoined: set = set()
     overlay = _rescore_overlay(store, latest, rows, flat, cfg, unjoined)
-    verdict = _gate_verdict(root, cfg, overlay, ceilings, unread) if args.gate else None
+    verdict = _gate_verdict(root, cfg, overlay, ceilings, unread, unjoined) if args.gate else None
     if args.json:
         _rescore_json(overlay, latest, None if verdict is None else _gate_json(verdict), unjoined)
     else:
