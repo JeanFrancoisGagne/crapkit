@@ -189,7 +189,7 @@ def _repository_gap(root: Path) -> str | None:
         return _NO_COMMIT.format(root=root)
     if _git_dir(root) is None:
         return _NOT_A_REPOSITORY.format(root=root)
-    reason = probe.stderr.decode("utf-8", "replace").strip()
+    reason = lenient(probe.stderr).strip()
     return f"git cannot open the repository at {root}: {reason}"
 
 

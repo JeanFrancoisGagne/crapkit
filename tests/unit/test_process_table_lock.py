@@ -73,11 +73,25 @@ def _touches_the_table(text: str) -> bool:
     return _NAMING in text or _OLD_RELEASE in text
 
 
+# tests/deploy is a session of its own (CRAPKIT_DEPLOY=1, tools/deploy/run.py),
+# which on Linux runs in a container with its own process table, and none of
+# its tests names a host process. Its act kit exports an old release's Action
+# with `git archive` all the same.
+DEPLOY = "deploy/"
+
+
+def _texts() -> dict[str, str]:
+    return {path.relative_to(TESTS).as_posix(): path.read_text(encoding="utf-8")
+            for path in TESTS.rglob("*.py") if path.name != Path(__file__).name}
+
+
+def test_no_deploy_test_names_a_host_process():
+    assert [name for name, text in _texts().items() if name.startswith(DEPLOY) and _NAMING in text] == []
+
+
 def test_every_test_that_names_a_host_process_or_runs_an_old_release_holds_the_table():
-    texts = {path.relative_to(TESTS).as_posix(): path.read_text(encoding="utf-8")
-             for path in TESTS.rglob("*.py") if path.name != Path(__file__).name}
-    holders = {name: "process_table.hold(" in text
-               for name, text in texts.items() if _touches_the_table(text)}
+    holders = {name: "process_table.hold(" in text for name, text in _texts().items()
+               if not name.startswith(DEPLOY) and _touches_the_table(text)}
 
     assert set(holders) >= {"e2e/test_child_env_e2e.py",
                             "e2e/test_verify_reads_stores_older_crapkits_wrote_e2e.py",

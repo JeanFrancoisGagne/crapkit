@@ -41,6 +41,9 @@ ALLOWED = {
         "the owner process crapkit starts writes json.dumps output, which is ASCII",
     ("_process_owner.py", "_ps_group_active", "text pipe"):
         "`ps -o pgid= -o stat=` prints group ids and state letters, ASCII in every locale",
+    ("_package.py", "installed_version", "read_text"):
+        "crapkit's own __init__.py, whose version line is ASCII; a UnicodeError reads as no "
+        "evidence of an upgrade",
     ("analyze.py", "load_cache", "open"):
         "crapkit's own analysis cache; a torn or foreign byte is a ValueError that reads as a miss",
     ("analyze.py", "_load_stamps", "open"):

@@ -22,6 +22,8 @@ from __future__ import annotations
 import os
 from pathlib import PurePath
 
+from .repotext import lenient
+
 NAME = "crapkit"
 
 # How each installer upgrades and reinstalls the install it owns, keyed on the
@@ -115,7 +117,7 @@ def _head(path: str) -> bytes:
 def _shebang_python(head: bytes) -> str | None:
     """The interpreter a script's first line names, when it names a python."""
     line = head.split(b"\n", 1)[0]
-    words = line[2:].decode("utf-8", "replace").split() if line.startswith(b"#!") else []
+    words = lenient(line[2:]).split() if line.startswith(b"#!") else []
     word = words[0] if words else ""
     return word if os.path.basename(word).startswith("python") else None
 
@@ -137,10 +139,11 @@ def _uv_made(python: str) -> bool:
     into pyvenv.cfg and installs no pip, so `python -m pip` fails there."""
     cfg = os.path.join(os.path.dirname(os.path.dirname(python)), "pyvenv.cfg")
     try:
-        with open(cfg, encoding="utf-8", errors="replace") as text:
-            return any(line.split("=")[0].strip() == "uv" for line in text)
+        with open(cfg, "rb") as raw:
+            text = lenient(raw.read())
     except OSError:
         return False
+    return any(line.split("=")[0].strip() == "uv" for line in text.splitlines())
 
 
 def pip_install(python: str, requirement: str, spelled: str | None = None) -> str:
@@ -164,7 +167,7 @@ def _pip_line(python: str | None, quote, action: str) -> str:
 def _owner_command(launcher: str, quote, action: str) -> str:
     resolved = os.path.realpath(launcher)
     head = _head(resolved)
-    text = (resolved + "\n" + head.decode("latin-1")).replace("\\", "/").lower()
+    text = (resolved + "\n" + lenient(head)).replace("\\", "/").lower()
     owner = next((commands[action] for marker, commands in _OWNERS if marker in text), None)
     return owner or _pip_line(_interpreter(resolved, head), quote, action)
 

@@ -45,7 +45,8 @@ DEPLOY_TOOLS = wheels.SRC / "tools" / "deploy"
 CONSUMER = Path("tools") / "deploy" / "consumer.py"
 FORK_REPO = "someone/consumer-fork"
 # The release a team pins behind the candidate: analysis version 10, where the
-# candidate seeds under 11 (docs/upgrading.md, "Analysis version 11").
+# candidate seeds under 12 (docs/upgrading.md, "Analysis version 11" and "Analysis
+# version 12", which give the same three commands).
 OLD = "0.7.6"
 HARNESS = "act (pinned), self-hosted in the ci image"
 RUNNER = "GitHub runner (act model)"

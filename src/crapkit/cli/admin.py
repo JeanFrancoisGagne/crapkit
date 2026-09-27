@@ -1365,8 +1365,10 @@ def _doctor_container(cfg) -> list[Finding]:
 
 
 def _text_at(path: Path) -> str:
+    from ..repotext import lenient
+
     try:
-        return path.read_text(encoding="utf-8", errors="replace")
+        return lenient(path.read_bytes())
     except OSError:
         return ""
 
@@ -2242,15 +2244,17 @@ def _claude_code_version() -> tuple[str, str] | None:
     import shutil
     import subprocess
 
+    from ..repotext import lenient
+
     executable = shutil.which("claude")
     if executable is None:
         return None
     try:
-        done = subprocess.run([executable, "--version"], capture_output=True, encoding="utf-8",
-                              errors="replace", timeout=_PROBE_TIMEOUT_SECONDS)
+        done = subprocess.run([executable, "--version"], capture_output=True,
+                              timeout=_PROBE_TIMEOUT_SECONDS)
     except (OSError, subprocess.SubprocessError):
         return None
-    return executable, done.stdout.strip()
+    return executable, lenient(done.stdout).strip()
 
 
 def _claude_code_drops_args(root: Path) -> bool:

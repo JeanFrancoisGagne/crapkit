@@ -960,6 +960,11 @@ cells = ["lin-claude-hook-stub", "lin-up-bash-matcher-0.7.6", "lin-hooks-sim"]
 
 [[doc]]
 page = "docs/agent-json.md"
+headings = ["The silence ladder"]
+exclude = "reference: claude-hook's line for a flag a newer plugin passes; tests/unit/test_claude_hook_unknown_flag.py drives it"
+
+[[doc]]
+page = "docs/agent-json.md"
 headings = ["MCP server"]
 cells = ["lin-mcp-all-tools", "lin-profiles-sim", "lin-claude-mcp-scopes", "lin-cursor-cli"]
 
@@ -967,6 +972,11 @@ cells = ["lin-mcp-all-tools", "lin-profiles-sim", "lin-claude-mcp-scopes", "lin-
 page = "docs/configuration.md"
 headings = ["Tuning the parallelism knobs"]
 cells = ["lin-pipx-agent-loop"]
+
+[[doc]]
+page = "docs/configuration.md"
+headings = ["File paths and root discovery"]
+exclude = "reference: doctor's WARN for a tracked name that holds \\; tests/unit/test_doctor_path_findings.py drives it"
 
 [[doc]]
 page = "docs/configuration.md"
@@ -1025,6 +1035,11 @@ cells = ["lin-up-pip-0.7.6"]
 
 [[doc]]
 page = "docs/ratchet.md"
+headings = ["When the first run's commit is gone"]
+exclude = "reference: prune's note and refusal in a clone that lacks the first run's commit; tests/e2e/test_git_failures_named_e2e.py drives both"
+
+[[doc]]
+page = "docs/ratchet.md"
 headings = ["The metric stamp"]
 cells = ["lin-up-lizard-only", "lin-up-pip-0.4.0", "lin-skew-cli"]
 
@@ -1065,7 +1080,7 @@ cells = ["lin-up-pip-0.7.6", "lin-up-pip-n1", "win-up-pip-0.7.6"]
 
 [[doc]]
 page = "docs/upgrading.md"
-headings = ["Analysis version 11"]
+headings = ["Analysis version 12", "Analysis version 11"]
 cells = ["lin-up-pip-0.7.6", "win-up-pip-0.7.6"]
 
 [[doc]]

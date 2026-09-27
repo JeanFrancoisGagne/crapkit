@@ -22,6 +22,7 @@ from .cli._shared import SCHEMA_VERSION, _load_repo_config, _on_its_drive
 from .errors import UNREAD_NAME_REASON, CrapkitError
 from .gitpaths import readable, shown
 from .invocation import _self
+from .repotext import repo_text
 from .plaintext import strip_escapes
 from .repopath import typed, typed_path
 from .repotext import json_kind
@@ -1994,8 +1995,9 @@ def _folder_root(folder: Path) -> Path | None:
 
 
 # The one line of a GitHub Copilot CLI session's workspace.yaml that names the
-# folder the session works in, as the CLI writes it at the file's top level.
-_CWD_LINE = re.compile(r"^cwd:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
+# folder the session works in, as the CLI writes it at the file's top level. The
+# record is read as bytes, so a CRLF line keeps its CR, which is no part of the path.
+_CWD_LINE = re.compile(r"^cwd:[ \t]*(.*?)[ \t]*\r?$", re.MULTILINE)
 
 
 def _yaml_string(value: str) -> str:
@@ -2015,8 +2017,8 @@ def _yaml_string(value: str) -> str:
 def _session_cwd(record: Path) -> Path | None:
     """The `cwd` a Copilot CLI session's workspace.yaml names, or None."""
     try:
-        match = _CWD_LINE.search(record.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        match = _CWD_LINE.search(repo_text(record, "workspace.yaml"))
+    except (OSError, CrapkitError):
         return None
     value = _yaml_string(match.group(1)) if match else ""
     return Path(value) if value else None

@@ -344,6 +344,14 @@ def test_the_session_record_cwd_is_read_as_copilot_writes_it(tmp_path, line, exp
     assert mcp_server._session_cwd(record) == Path(expected)
 
 
+def test_a_crlf_session_record_names_the_cwd_without_its_cr(tmp_path):
+    """The record is read as bytes, so a CRLF line reaches the pattern with its CR."""
+    record = tmp_path / "workspace.yaml"
+    record.write_bytes(b"id: x\r\ncwd: /home/me/app\r\ngit_root: /elsewhere\r\n")
+
+    assert mcp_server._session_cwd(record) == Path("/home/me/app")
+
+
 @pytest.mark.parametrize("text", ["id: x\n", "cwd: \n", 'cwd: "unterminated\n', "not yaml at all"])
 def test_a_session_record_without_a_cwd_names_nothing(tmp_path, text):
     record = tmp_path / "workspace.yaml"
