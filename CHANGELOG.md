@@ -847,6 +847,13 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   {` read the same way. A word after the name, `namespace ns ABI_TAG {`, and `inline` in
   a nested definition, `namespace a::inline b {`, no longer join the name: members read
   `ns::f` and `a::b::f`, where they read `nsABI_TAG::f` and `a::inlineb::f`.
+- A function-try-block, `int main() try { ... } catch (...) { ... }`, is one function
+  with its handlers. The function ended at the try block's `}`, each handler read as a
+  function named `catch( ...)`, and a constructor's row, `S::S(int a) try : x(a) {`,
+  was named after its first member initializer, `x( a)`. The function now reads as it
+  would with a try statement around its body: it ends at its last handler, and each
+  `catch` adds 1 to its `ccn` and 1 to its `cognitive`, which can put it over its
+  ceiling.
 
 ### Java methods that were hidden, invented or misnamed
 

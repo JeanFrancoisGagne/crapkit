@@ -11,6 +11,8 @@ Objective-C, "Methods Can Take Arguments").
 import pytest
 
 import lizard
+from lizard_languages.clike import CLikeReader as StockCLikeReader
+
 from crapkit import lizardclike
 from crapkit.analyze import analyze_source
 from crapkit.lizardclike import declared_parameters
@@ -718,3 +720,66 @@ def test_namespace_that_opens_no_namespace_reads_as_lizard_reads_it(source):
     rows = analyze_source(path, source, note=False)
 
     assert [(r.long_name, r.ccn_std) for r in rows] == NOT_A_NAMESPACE[source]
+
+
+# --- the function-try-block -----------------------------------------------------------
+
+G_AFTER = "int g(int b) {\n  return b;\n}\n"
+
+FUNCTION_TRY_BLOCKS = {  # label: (source, rows as (long name, start, end, ccn_std, cognitive))
+    "function": ("int f(int a) try {\n  if (a) {\n    return 1;\n  }\n  return 0;\n"
+                 "} catch (const std::exception& e) {\n  return -1;\n} catch (...) {\n"
+                 "  return -2;\n}\n" + G_AFTER,
+                 [("f( int a)", 1, 10, 4, 3), ("g( int b)", 11, 13, 1, 0)]),
+    "constructor": ("S::S(int a) try : x(a), y{a}, Base<int>{a} {\n  if (a) {\n    go();\n"
+                    "  }\n} catch (...) {\n  fail();\n}\n" + G_AFTER,
+                    [("S::S( int a)", 1, 7, 3, 2), ("g( int b)", 8, 10, 1, 0)]),
+    "main, try on a line of its own": (
+        "int main()\ntry\n{\n  return run();\n}\n// the last resort\ncatch (...)\n{\n"
+        "  return 1;\n}\n" + G_AFTER,
+        [("main()", 1, 10, 2, 1), ("g( int b)", 11, 13, 1, 0)]),
+    "members": ("struct S {\n  S(int a) try : x(a) {\n  } catch (...) {\n  }\n"
+                "  int f() const try {\n    return 1;\n  } catch (...) {\n    return 0;\n  }\n"
+                "  int x;\n};\n",
+                [("S::S( int a)", 2, 4, 2, 1), ("S::f() const", 5, 9, 2, 1)]),
+    "a try statement in its body": (
+        "int f(int a) try {\n  try {\n    go();\n  } catch (...) {\n  }\n  return 0;\n"
+        "} catch (...) {\n  return 1;\n}\n" + G_AFTER,
+        [("f( int a)", 1, 9, 3, 2), ("g( int b)", 10, 12, 1, 0)]),
+}
+
+
+@pytest.mark.parametrize("path", ["p.cpp", "p.mm"])
+@pytest.mark.parametrize("source,rows", FUNCTION_TRY_BLOCKS.values(), ids=FUNCTION_TRY_BLOCKS)
+def test_a_function_try_block_is_one_function_with_its_handlers(source, rows, path):
+    """ISO/IEC 14882:2020 [except.pre]: the handlers of a function-try-block are
+    part of the function's body. lizard ended the function at the try block's
+    `}` and read each handler as a function named catch, and named a
+    constructor's row after its first member initializer, `x( a)`. The counts
+    are those of the same function written with a try statement around its
+    body: 1 plus one per if and catch (NIST SP 500-235), and cognitive +1 per if
+    and catch."""
+    got = analyze_source(path, source, note=False)
+
+    assert [(r.long_name, r.start, r.end, r.ccn_std, r.cognitive) for r in got] == rows
+
+
+TRY_STATEMENTS = {  # label: (path, source): a try the pass leaves alone
+    "after if": ("p.cpp", "int f(int a) {\n  if (a) try {\n    go();\n  } catch (...) {\n  }\n}\n"),
+    "after if constexpr": ("p.cpp", "void f() {\n  if constexpr (N) try {\n  } catch (...) {\n  }\n}\n"),
+    "after else": ("p.cpp", "void f(int a) {\n  if (a) {\n  } else try {\n  } catch (...) {\n  }\n}\n"),
+    "after a loop": ("p.cpp", "void f(int a) {\n  while (a--) try {\n  } catch (...) {\n  }\n}\n"),
+    "after a label": ("p.cpp", "void f() {\nagain:\n  try {\n  } catch (...) {\n    goto again;\n  }\n}\n"),
+    "after do": ("p.cpp", "void f() {\n  do try {\n  } catch (...) {\n  } while (0);\n}\n"),
+    "Objective-C": ("p.m", "- (void)run {\n  @try {\n    [self go];\n  } @catch (NSException *e) {\n"
+                           "  }\n}\n"),
+    "C function named try": ("p.c", "int try(int a) {\n  return a;\n}\n"),
+    "C label named try": ("p.c", "int f(int a) {\n  if (a) goto try;\n  return 0;\ntry:\n  return 1;\n}\n"),
+}
+
+
+@pytest.mark.parametrize("path,source", TRY_STATEMENTS.values(), ids=TRY_STATEMENTS)
+def test_a_try_statement_passes_through_unchanged(path, source):
+    tokens = list(StockCLikeReader.generate_tokens(source))
+
+    assert list(lizardclike.function_try_blocks(tokens)) == tokens

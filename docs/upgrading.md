@@ -214,8 +214,10 @@ same three commands as version 11 below.
   `&`, `char *(*get(void))(void)`, a C++20 function with a trailing requires-clause,
   `void f(T t) requires C<T>`, the functions of a namespace whose head holds a macro
   or an attribute, `namespace std _GLIBCXX_VISIBILITY(default)` in every libstdc++
-  header, and the member functions of a class defined inside a function. The function around such a class no longer pays for its members'
-  decisions, so its `ccn` and `cognitive` fall. In Java, methods get rows after an
+  header, a constructor with a function-try-block, `S::S(int a) try : x(a) {`, and
+  the member functions of a class defined inside a function. The function around such
+  a class no longer pays for its members' decisions, so its `ccn` and `cognitive`
+  fall. In Java, methods get rows after an
   annotated local variable, an enum constant with a body or an annotation element
   with a default, and inside a constant's body, an interface field's anonymous class,
   or a record or interface declared in a method, whose `ccn` falls the same way. A
@@ -229,9 +231,11 @@ same three commands as version 11 below.
   braces, an Objective-C instance-variable block, a C++20 concept's requires-expression
   (`requires( T a)`), a row named after the first statement of a function with a
   requires-clause (`if( t)`), a namespace read as one function named after its
-  head's macro (`_GLIBCXX_VISIBILITY( default)`), a Java enum constant, an annotation element with a
-  braced default, a Java field's anonymous class, and a Java record declared first in
-  a class or interface body, which read as a method named after it.
+  head's macro (`_GLIBCXX_VISIBILITY( default)`), each handler of a function-try-block
+  (`catch( ...)`), a constructor's first member initializer read as the constructor
+  (`x( a)`), a Java enum constant, an annotation element with a braced default, a Java
+  field's anonymous class, and a Java record declared first in a class or interface
+  body, which read as a method named after it.
 - Rows named after an attribute take the function's name: `__attribute__((noinline))`,
   `API_AVAILABLE( ios(10))`, or `)` for an Objective-C method, and Java rows named
   after an annotation with arguments, `InlineMe( replacement = ...)`. A member of a
@@ -261,6 +265,10 @@ same three commands as version 11 below.
   and fail the gate the next time its file changes. A function whose parameter list
   held a `&&` can read one `nesting` level deeper, the depth the same body reads
   without it; `nesting` is never gated.
+- A function with a function-try-block, `int main() try { ... } catch (...) { ... }`,
+  counts its handlers: each `catch` adds 1 to `ccn` and 1 to `cognitive`, as it does
+  in a try statement, which can put the function over its ceiling and fail the gate
+  the next time its file changes.
 
 ### Analysis version 11
 

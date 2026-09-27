@@ -75,6 +75,11 @@ Functions lizard hid, invented or misnamed
   joined the name: `nsABI_TAG`, `a::inlineb`. `_NamespaceHead` reads the head
   for the function states and for the class tracker (ISO/IEC 14882:2020
   [namespace.def]).
+* A function-try-block, `int f(int a) try { ... } catch (...) { ... }`, ended
+  at the try block's `}`, and each handler read as a function named catch; a
+  constructor's, `S::S(int a) try : x(a) {`, was named after its first member
+  initializer. The token pass `function_try_blocks` puts the handlers inside
+  the body, the way a try statement holds them (ISO/IEC 14882:2020 [except.pre]).
 
 The `&&` of a reference
 -----------------------
@@ -1190,14 +1195,150 @@ def _declares_a_name(after: list, in_for: bool):
     return after[1] == "=" or (after[1] == ":" and in_for)
 
 
+# --- the function-try-block ----------------------------------------------------------
+#
+# The handlers of a function-try-block, `int f(int a) try { ... } catch (...) {
+# ... }`, are part of the function's body (ISO/IEC 14882:2020 [except.pre]).
+# lizard ended the function at the try block's `}` and read each handler as a
+# function named catch, and it named a constructor's row after its first member
+# initializer: `S::S(int a) try : x(a) {` read `x( a)`. lizard's counters charge
+# each token to the current function before the reader's states see it, so only
+# a pass ahead of them can wait for the `catch` that keeps a function open.
+#
+# The pass below spells the function the way it reads with a try statement
+# around its body, `int f(int a) { try { ... } catch (...) { ... } }`: a `{`
+# before the `try`, which moves past a constructor's member initializers, and a
+# `}` after the last handler. A `try` opens a function-try-block when a `{` or a
+# `:` follows it and what stands before it cannot end a statement. A try
+# statement follows `;`, `{`, `}`, a label's `:`, `else`, `do`, Objective-C's
+# `@`, or the `)` of an if, while, for or switch; in C, `try` is a name.
+
+_TRY = "try"
+_BEFORE_A_TRY_STATEMENT = frozenset({";", "{", "}", ":", "else", "do", "@"})
+_BEFORE_A_CONDITION = frozenset({"if", "while", "for", "switch", "constexpr"})
+
+# What ends a member initializer, so that a `{` after it opens the body:
+# `x(a) {`, `y{a} {`, `Bases(a)... {`.
+_INITIALIZER_ENDS = frozenset({")", "}", "..."})
+
+
+def function_try_blocks(tokens):
+    """lizard's token stream with each function-try-block's handlers inside its body."""
+    blocks = _FunctionTryBlocks()
+    for token in tokens:
+        yield from blocks.push(token)
+    yield from blocks.finish()
+
+
+class _FunctionTryBlocks:
+    """Reads the tokens in one of four modes: scanning, the token after a `try`,
+    a constructor's member initializers, and the token after a handler."""
+
+    def __init__(self):
+        self.prev = None     # the last code token
+        self.opened = []     # per open `(`: the code token before it
+        self.condition = False  # whether the last `)` closed an if, while, for or switch
+        self.depth = 0       # braces open
+        self.bodies = []     # per open function-try-block: the depth outside its body
+        self.held = []       # tokens held until the next code token decides them
+        self.initializers = None  # (depth, parentheses) where the initializers began
+        self.read = self._scan
+
+    def push(self, token: str) -> list:
+        if _is_code(token):
+            return self.read(token)
+        if self.read == self._scan:
+            return [token]
+        self.held.append(token)
+        return []
+
+    def finish(self) -> list:
+        """The `}` of a function whose last handler ends the file, or a held `try`."""
+        held, self.held = self.held, []
+        if self.read == self._after_a_handler:
+            return ["}", *held]
+        if self.read == self._after_try:
+            return [_TRY, *held]
+        return held
+
+    def _scan(self, token: str) -> list:
+        if token == _TRY and self._after_a_declarator():
+            self.read = self._after_try
+            return []
+        self._see(token)
+        return [token]
+
+    def _after_a_declarator(self) -> bool:
+        if self.prev is None or self.prev in _BEFORE_A_TRY_STATEMENT:
+            return False
+        return not (self.prev == ")" and self.condition)
+
+    def _after_try(self, token: str) -> list:
+        """A `{` opens the try block, a `:` a constructor's member initializers;
+        anything else makes the `try` a name, as it is in C."""
+        held, self.held = self.held, []
+        if token == "{":
+            return [*held, *self._open_the_body(token)]
+        self.read = self._scan
+        if token == ":":
+            self.initializers = (self.depth, len(self.opened))
+            self.read = self._in_initializers
+            self._see(token)
+            return [*held, token]
+        self._see(_TRY)
+        return [_TRY, *held, *self._scan(token)]
+
+    def _in_initializers(self, token: str) -> list:
+        if token == "{" and self._ends_the_initializers():
+            return [*self.held, *self._open_the_body(token)]
+        self._see(token)
+        return [token]
+
+    def _ends_the_initializers(self) -> bool:
+        """A `{` outside the initializers' brackets, after one of them ends."""
+        outside = (self.depth, len(self.opened)) == self.initializers
+        return outside and self.prev in _INITIALIZER_ENDS
+
+    def _open_the_body(self, brace: str) -> list:
+        self.held, self.read = [], self._scan
+        self.bodies.append(self.depth)
+        self._see(brace)
+        return ["{", _TRY, brace]
+
+    def _after_a_handler(self, token: str) -> list:
+        """A `catch` opens the next handler; anything else follows the last one,
+        and the function's body closes right after that handler's `}`."""
+        held, self.held = self.held, []
+        self.read = self._scan
+        if token == "catch":
+            self._see(token)
+            return [*held, token]
+        self.bodies.pop()
+        return ["}", *held, *self._scan(token)]
+
+    def _see(self, token: str) -> None:
+        self._parenthesis(token)
+        self.depth += _BRACE_DEPTH.get(token, 0)
+        self.prev = token
+        if token == "}" and self.bodies and self.bodies[-1] == self.depth:
+            self.read = self._after_a_handler
+
+    def _parenthesis(self, token: str) -> None:
+        if token == "(":
+            self.opened.append(self.prev)
+        elif token == ")" and self.opened:
+            self.condition = self.opened.pop() in _BEFORE_A_CONDITION
+
+
 class _ReferenceTokens:
-    """The reader half of the pass: DECLARATOR_AND into lizard's token stream,
-    `&&` back out of it for the reader's own states."""
+    """The reader half of the passes: a function-try-block's handlers moved
+    inside its body, and DECLARATOR_AND into lizard's token stream, `&&` back
+    out of it for the reader's own states."""
 
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):
-        return declarator_ands(_StockCLikeReader.generate_tokens(source_code, addition,
-                                                                 token_class))
+        return declarator_ands(function_try_blocks(
+            _StockCLikeReader.generate_tokens(source_code, addition, token_class)))
 
     def __call__(self, tokens, reader):
         return super().__call__((_AND if token == DECLARATOR_AND else token
