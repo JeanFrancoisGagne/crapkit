@@ -12,8 +12,10 @@ readings were wrong:
   `HashMap<K, V>`, parted one parameter into two.
 """
 import pytest
+from lizard_languages.code_reader import CodeReader
 
 from crapkit.analyze import analyze_source
+from crapkit.lizardrust import CorrectedRustReader, split_operator_pairs
 
 
 def rows(code: str) -> dict:
@@ -244,3 +246,40 @@ def test_a_comma_before_any_parameter_token_parts_nothing():
 
     assert record.params == 1
     assert record.long_name == "unit_pair , n : , i32"
+
+
+# Attributes on parameters: a generic, an array pattern, and a trait's
+# required method before a free function.
+ATTRIBUTED = """pub fn attr_map(#[allow(unused)] m: HashMap<K, V>, #[allow(unused)] [a, b]: [u8; 2]) -> u8 {
+    a
+}
+
+pub trait Hook {
+    fn required(#[allow(unused)] n: u8);
+}
+
+pub fn after_hook(n: u8) -> u8 {
+    if n > 0 { 1 } else { 0 }
+}
+"""
+
+
+def attribute_tokens(source_code, addition="", token_class=None):
+    """Rust's tokens, with an attribute's `#[` read as one token."""
+    return split_operator_pairs(
+        CodeReader.generate_tokens(source_code, r"|\#!?\[|(?:'\w+\b)", token_class))
+
+
+def test_an_attribute_read_as_one_token_opens_its_own_bracket(monkeypatch):
+    """lizard's tokenizer reads `#` and the rest of its line as one C
+    preprocessor token. A tokenizer that reads `#[` as the one token Rust
+    makes of it hands the signature a `]` with no `[` token before it. The
+    parameter list counts `#[` as the bracket it opens, so the commas in
+    `HashMap<K, V>` and `[a, b]` part nothing and the required method's `;`
+    still ends it."""
+    monkeypatch.setattr(CorrectedRustReader, "generate_tokens", staticmethod(attribute_tokens))
+    found = rows(ATTRIBUTED)
+
+    assert found["attr_map"].params == 2
+    assert "required" not in found
+    assert found["after_hook"].ccn_std == 2

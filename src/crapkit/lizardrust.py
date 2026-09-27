@@ -142,9 +142,10 @@ _DECLARING_PAIRS = frozenset({("for", "<"), ("?", "Sized")})
 # What a bracket inside a signature does to its type depth. Parentheses are
 # counted apart, by the state machine that reads the parameter list. In that
 # list a `{` also opens a struct pattern's fields, `Point { x, y }: Point`;
-# after it, a `{` opens the body.
+# after it, a `{` opens the body. A parameter's attribute closes with a `]`,
+# and a tokenizer that reads Rust's `#[` as one token opens it with that token.
 _TYPE_DEPTH = {"<": 1, "[": 1, ">": -1, "]": -1}
-_PARAMETER_DEPTH = {**_TYPE_DEPTH, "{": 1, "}": -1}
+_PARAMETER_DEPTH = {**_TYPE_DEPTH, "{": 1, "}": -1, "#[": 1}
 
 
 def _ends_operand(token: str | None) -> bool:
