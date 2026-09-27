@@ -141,9 +141,11 @@ def test_onboard_skill_fences_in_page_order(box, candidate, templates):
 # --- crapkit-recover, row by row ----------------------------------------------------------
 
 def first_command(code: int, names: dict[str, str]) -> str:
-    """The table's first command for exit `code`, its placeholders filled."""
+    """The table's first command for exit `code`, its placeholders filled: the
+    first code span of the row's last cell, which may name a second command
+    for a case the row's other cells spell out."""
     text = (docsnip.root() / RECOVER).read_text(encoding="utf-8")
-    command = re.search(rf"^\| {code} \|.*\| `([^`]+)` \|$", text, re.MULTILINE)[1]
+    command = re.search(rf"^\| {code} \|.*\| `([^`]+)`[^|]*\|$", text, re.MULTILINE)[1]
     for placeholder, value in names.items():
         command = command.replace(placeholder, value)
     return command

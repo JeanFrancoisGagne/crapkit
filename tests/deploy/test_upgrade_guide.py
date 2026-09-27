@@ -114,8 +114,21 @@ def test_win_up_pip_0_7_6(box, templates, candidate):
 
 # --- from N-1 ------------------------------------------------------------------------
 
+def same_analysis_upgrade(box, repo, candidate, source) -> None:
+    """N-1 measured under the candidate's analysis version: one coverage, then
+    verify, and the marks file stays as N-1 wrote it."""
+    marks = (repo / "crapkit-ratchet.tsv").read_bytes()
+    state.upgrade_to(box, repo, candidate, state.upgrade_line(PIP_EXTRA))
+    box.run(["crapkit", "coverage"], cwd=repo, expect=0, note="not a guide step: one coverage, no reseed")
+    state.verify(box, repo)
+
+    assert (repo / "crapkit-ratchet.tsv").read_bytes() == marks, "a same-analysis upgrade rewrote the marks"
+    state.after_upgrade(box, repo, source, candidate)
+
+
 @cell("lin-up-pip-n1", channel="pip venv", harness="none",
-      scenario="upgrade from N-1 (wheelhouse.lock): verify after one coverage, no reseed",
+      scenario="upgrade from N-1 (wheelhouse.lock): verify after one coverage, no reseed, when the candidate "
+               "keeps N-1's analysis version; the guide's reseed walk when it moves it",
       use_cases="upgrade guide", os="linux", image="core", cadence="push")
 def test_lin_up_pip_n1(box, templates, candidate, record_property):
     n1 = wheels.n_minus_1()
@@ -123,16 +136,13 @@ def test_lin_up_pip_n1(box, templates, candidate, record_property):
     source = state.build(box, n1, cache=templates)
     repo = source.checkout(box)
     install_old(box, source, "3.12", f"crapkit[py]=={n1}")
-    marks = (repo / "crapkit-ratchet.tsv").read_bytes()
+    moved = state.analysis_of(state.stamp_of(repo)) != state.analysis_version(candidate)
+    record_property("analysis_moved", moved)
 
-    state.upgrade_to(box, repo, candidate, state.upgrade_line(PIP_EXTRA))
-    box.run(["crapkit", "coverage"], cwd=repo, expect=0, note="not a guide step: one coverage, no reseed")
-    assert state.analysis_of(state.stamp_of(repo)) == state.analysis_version(candidate), \
-        "the candidate moved the analysis version past N-1's: this cell's no-reseed path no longer applies"
-    state.verify(box, repo)
-
-    assert (repo / "crapkit-ratchet.tsv").read_bytes() == marks, "a same-analysis upgrade rewrote the marks"
-    state.after_upgrade(box, repo, source, candidate)
+    if moved:
+        state.walk(box, repo, candidate, source, state.upgrade_line(PIP_EXTRA))
+    else:
+        same_analysis_upgrade(box, repo, candidate, source)
 
 
 # --- from 0.4.x ----------------------------------------------------------------------

@@ -28,7 +28,13 @@ FALLBACKS = ("pipx", "uv tool", "venv")
 
 def names_dir(text: str, directory: Path) -> bool:
     """Whether the installer's message names `directory`, in any spelling of it
-    (uv prints `$XDG_DATA_HOME/../bin`)."""
+    (uv prints `$XDG_DATA_HOME/../bin`), on one line or wrapped inside the path:
+    pipx wraps its note at 80 columns and indents the next line."""
+    unwrapped = re.sub(r"\r?\n[ \t]*", "", text)
+    return any(_names(spelled, directory) for spelled in (text, unwrapped))
+
+
+def _names(text: str, directory: Path) -> bool:
     tokens = re.split(r"[\s`'\"]+", text)
     return any(token and os.path.normpath(token) == os.path.normpath(directory) for token in tokens)
 
@@ -95,6 +101,20 @@ def test_each_fallback_the_readme_prints_installs_a_working_crapkit(box, templat
     box.prepend_path(user_bin(box))
     assert candidate.version in version_of(box, cwd=repo)
     box.run(["crapkit", "init"], cwd=repo, expect=0)
+
+
+@pytest.mark.kit
+def test_names_dir_reads_a_directory_the_installer_wrapped_inside_its_path(tmp_path):
+    """pipx wraps its PATH note at 80 columns, and a long enough path breaks
+    across two lines, the second one indented."""
+    directory = tmp_path / "home" / ".local" / "bin"
+    spelled = str(directory)
+    cut = len(spelled) - len("ocal/bin")
+    note = f"Note: '{spelled[:cut]}\n    {spelled[cut:]}' is not on your PATH environment variable."
+
+    assert names_dir(note, directory)
+    assert names_dir(f"Note: '{spelled}' is not on your PATH", directory)
+    assert not names_dir(note, tmp_path / "home" / "bin")
 
 
 # --- the upgrade table in docs/upgrading.md ----------------------------------------
