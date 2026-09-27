@@ -22,6 +22,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     from lizard_languages.python import PythonReader as _PythonReader
 
     from .lizardgolike import register as _register_golike
+    from .lizardlinecomment import register as _register_line_comments
     from .lizardpowershell import register as _register_powershell
     from .lizardpython import register as _register_python
     from .lizardrust import register as _register_rust
@@ -41,21 +42,24 @@ from .keys import bare_name
 # `.py` to one that ends a def inside a signature that runs past its first `)`
 # (crapkit #72), `.go` and `.zig` to one that reads a function type as a
 # function, and `.sh` and `.ps1` resolve to nothing at all, which lizard
-# answers with CLikeReader rather than a failure. All five belong HERE, at the
-# module scope of the module a ProcessPoolExecutor child imports, or spawned
-# workers measure with the readers lizard shipped and report plausible wrong
-# numbers.
+# answers with CLikeReader rather than a failure. The Java, Swift and
+# JavaScript-family readers stay lizard's, but their `//` comment runs on into
+# the next line after a backslash, as only C's does. All six registrations
+# belong HERE, at the module scope of the module a ProcessPoolExecutor child
+# imports, or spawned workers measure with the readers lizard shipped and report
+# plausible wrong numbers.
 #
 # lizardshell and lizardpowershell already register themselves on import, and
-# lizardrust, lizardpython and lizardgolike deliberately do not (rebinding a
-# name in another package's namespace is not something an import should do
-# quietly). Calling all five keeps the wiring readable in one place and costs
-# nothing: each is idempotent.
+# lizardrust, lizardpython, lizardgolike and lizardlinecomment deliberately do
+# not (rebinding a name in another package's namespace is not something an
+# import should do quietly). Calling all six keeps the wiring readable in one
+# place and costs nothing: each is idempotent.
 _register_rust()
 _register_shell()
 _register_powershell()
 _register_python()
 _register_golike()
+_register_line_comments()
 
 _POOL_THRESHOLD = 16
 

@@ -257,9 +257,8 @@ and at a Zig `fn (`, which is always a type. A result type's braces (`struct{ a 
 `error{Oops}!u8`) are not the body, and a parameter of function type, `f func(int, string)
 error`, counts once. A `func` right after `]` is an element type, so `[]func(){f, g}` is a
 literal and lists no function. The `type` of a Go type switch, `switch v.(type) {`, declares
-no type, so the switch's `}` no longer ends the function around it. A `//` comment ends at
-its line even when it ends in a backslash (`// C:\dir\`), where lizard spliced the next line
-onto it as C does, and each `\\` line of a Zig multiline string is text. A Zig name written
+no type, so the switch's `}` no longer ends the function around it. Each `\\` line of a Zig
+multiline string is text. A Zig name written
 as a string, `fn @"weird name"(x: i32)`, names its function, and its handle is the whole
 `@"weird name"`. The Zig reader also counts switch prongs, as the paragraph above says.
 
@@ -273,6 +272,14 @@ a level (an early return, or the relaxed bound in `?Sized`), and `catch`, `switc
 `foreach`, `case` and `def` are names. The nesting column is lizard's, and it still
 reads the `for` of a `for<'a>` binder, and of a trait implemented inside a function, as
 a loop, one level where there is none.
+
+**A `//` comment ends at its line, except in `cpp` and `objectivec`.** That holds even when
+the comment ends in a backslash (`// C:\dir\`). lizard read such a comment on into the next
+line in every language, as the C preprocessor splices lines, so that line counted as
+comment: a function whose signature sat there had no row, and one whose `if` sat there
+ended at that `if`'s `}`. crapkit ends the comment at its line in `go`, `zig`, `java`,
+`javascript`, `typescript`, `tsx`, `vue`, `swift` and `rust`. C, C++ and Objective-C keep
+the splice, because their preprocessor joins the lines before it reads any comment.
 
 ### Scope matching
 

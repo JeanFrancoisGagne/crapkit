@@ -3,7 +3,8 @@
 ## 0.8.1 — unreleased
 
 Go and Zig functions are read to where their signature ends, and no Go type switch,
-comment or Zig multiline string ends one early. A Zig switch and a Go `select` count as
+comment or Zig multiline string ends one early. A `//` comment ends at its line in every
+language but C, C++ and Objective-C. A Zig switch and a Go `select` count as
 the switch they are, Zig and shell words that decide nothing stop counting, and shell
 arithmetic counts its conditional operator. The release that ships this raises the
 analysis version, so every repo re-seeds its marks once; the [upgrading
@@ -40,17 +41,22 @@ guide](docs/upgrading.md) lists what moves.
   method's receiver, so `var f = func(a, b int) {...}` read 0 and now reads 2. Its
   long name stays `(a,b int)`.
 
-### Go and Zig blocks, comments and strings end where the language ends them
+### A `//` comment ends at its line
+
+- A `//` comment that ends in a backslash, such as `// C:\dir\`, ends at its line in
+  Go, Zig, Java, JavaScript, TypeScript, TSX, Vue, Swift and Rust. lizard read it on
+  into the next line, as a C preprocessor splices lines, so that line counted as
+  comment: a function whose signature sat there had no row, and one whose `if` sat
+  there ended at that `if`'s `}`. C, C++ and Objective-C keep the splice, because
+  their preprocessor joins the lines before it reads any comment.
+
+### Go and Zig blocks and strings end where the language ends them
 
 - A Go type switch, `switch x := v.(type) {`, is a switch. lizard read its `type` as
   a type declaration that took the switch's `{`, so the switch's `}` ended the
   function: the code after the switch counted nowhere, and `ccn` fell by each
   decision there. A function with a type switch can read higher and go over its
   ceiling.
-- A Go or Zig `//` comment that ends in a backslash, such as `// C:\dir\`, ends at its
-  line. lizard read it on into the next line, as a C preprocessor splices lines, so
-  that line counted as comment: a function whose signature sat there had no row, and
-  one whose `if` sat there ended at that `if`'s `}`.
 - Each line of a Zig multiline string, `\\...`, is text. lizard read it as code: a
   `}` in it ended the function, a `{` took the functions after it into that one, and
   an `if`, `and` or `or` in it counted.

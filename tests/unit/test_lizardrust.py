@@ -10,7 +10,9 @@ test_stock_reader_scores_the_seven_arm_match_two is the retirement signal for
 the arm rule. It pins the upstream defect, so it fails the day lizard fixes
 #494. test_stock_reader_reads_rust_tokens_as_c_tokens does the same for the
 other corrections. Drop a correction when its pin fails, and delete
-src/crapkit/lizardrust.py once every pin fails rather than repairing it.
+src/crapkit/lizardrust.py once every pin fails and lizard ends a Rust `//`
+comment at its line (tests/unit/test_lizardlinecomment.py), rather than
+repairing it.
 """
 import lizard
 import lizard_languages

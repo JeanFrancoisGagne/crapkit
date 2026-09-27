@@ -91,12 +91,20 @@ The contract for the caller (analyze.py owns the wiring):
      register in their own interpreter
   3. bump `ANALYSIS_VERSION`, because cached Rust records predate the fix
 
+A `//` comment
+--------------
+The reader also ends a `//` comment at its line's end (crapkit.lizardlinecomment
+says why). `RustReader.generate_tokens` drops the addition it is handed, so this
+reader restates its one rule, `_LIFETIME`, instead of calling it;
+tests/unit/test_lizardlinecomment.py fails the day lizard's Rust tokens change.
+
 Retirement
 ----------
 tests/unit/test_lizardrust.py pins the stock reader's wrong answers, one per
 correction, and each pin fails on the lizard release that fixes its defect. Drop
-a correction when its pin fails. Once every pin fails, delete this module along
-with the `register()` call rather than repairing it.
+a correction when its pin fails. Once every pin fails, and lizard ends a Rust
+`//` comment at its line, delete this module along with the `register()` call
+rather than repairing it.
 """
 from __future__ import annotations
 
@@ -107,9 +115,14 @@ from ._pygdefer import deferred_pygments
 with deferred_pygments():  # lizard's Erlang reader would load pygments here
     import lizard
     import lizard_languages
-    from lizard_languages.code_reader import CodeStateMachine
+    from lizard_languages.code_reader import CodeReader, CodeStateMachine
     from lizard_languages.rust import RustReader as _StockRustReader
     from lizard_languages.rust import RustStates
+
+    from .lizardlinecomment import LINE_COMMENT
+
+# lizard's one Rust tokenizer rule: a lifetime or a label, `'a`.
+_LIFETIME = r"|(?:'\w+\b)"
 
 _ARM = "=>"
 _WILDCARD = "_"
@@ -353,7 +366,8 @@ class CorrectedRustStates(RustStates):
 
 
 class CorrectedRustReader(_StockRustReader):
-    """lizard's RustReader with the match rule of lizard #494 replaced.
+    """lizard's RustReader with the match rule of lizard #494 replaced, and a
+    `//` comment ended at its line's end.
 
     Subtracting from the inherited keyword set (rather than restating the set)
     keeps every other keyword upstream counts, including ones a later lizard
@@ -378,8 +392,10 @@ class CorrectedRustReader(_StockRustReader):
 
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):
-        return split_operator_pairs(
-            _StockRustReader.generate_tokens(source_code, addition, token_class))
+        """lizard's Rust tokens, with a `//` comment ended at its line's end and
+        each operator pair split (`split_operator_pairs`)."""
+        return split_operator_pairs(CodeReader.generate_tokens(
+            source_code, LINE_COMMENT + _LIFETIME + addition, token_class))
 
 
 def register() -> None:

@@ -794,13 +794,14 @@ Its module scope imports stdlib only, because every edit on the machine pays for
 it never opens the snapshot store. Opening an older store can still migrate it, and
 a per-edit hook has no reason to read or change snapshot state.
 
-Seven reader modules sit beside the core, all registered in `analyze.py`'s
+Eight reader modules sit beside the core, all registered in `analyze.py`'s
 `deferred_pygments()` block:
 
 | Module | What it does |
 |---|---|
 | `lizardcognitive.py` | Sonar-spec cognitive complexity as a lizard token-stream extension, so every language pays the same rules with no second parse |
-| `lizardrust.py` | reads Rust where lizard's reader reads C: `match` arms (lizard #494), signatures, `\|\|` or `&&` with no operand, let-else, a `for` that is no loop, bodiless signatures, parameter commas and patterns, the nesting keyword set |
+| `lizardrust.py` | reads Rust where lizard's reader reads C: `match` arms (lizard #494), signatures, `\|\|` or `&&` with no operand, let-else, a `for` that is no loop, bodiless signatures, parameter commas and patterns, the nesting keyword set; it also ends a `//` comment at its line |
+| `lizardlinecomment.py` | ends a `//` comment at its line in lizard's Java, Swift and JavaScript-family readers, where lizard spliced the next line after a trailing backslash as only C does; Go, Zig and Rust take its `LINE_COMMENT` in their own tokenizers |
 | `lizardpython.py` | reads a Python def's signature to its body colon, where lizard ended some defs inside their signature (crapkit #72) |
 | `lizardgolike.py` | Go and Zig readers that end a signature where the language does, so a function type opens no function, a result type's braces are not the body, and a parameter's own type holds no parameters; `peek` sees each raw token before any counter (`analyze._ReaderLookahead`) |
 | `lizardshell.py` | a shell reader, because lizard ships none and answers `.sh` with `CLikeReader` instead of an error |

@@ -87,6 +87,9 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     from lizard_languages.golike import GoLikeStates
     from lizard_languages.zig import ZigReader as _StockZigReader
 
+    # A `//` comment ends at its line's end: Go and Zig splice no lines.
+    from .lizardlinecomment import LINE_COMMENT
+
 # What a token does to the depth a result type is read at.
 _DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
@@ -111,12 +114,6 @@ _DEFAULT_PRONGS = frozenset({"else", "_"})
 # the `@` and the string as two tokens, and a name that is not one word named no
 # function: `fn @"weird name"(x: i32) i32 {` reported no row, or a row named ''.
 _ZIG_QUOTED_NAME = r'|@"(?:\\.|[^"\\\n])*"'
-
-# A `//` comment ends at its line's end. lizard's tokenizer reads a comment that
-# ends in a backslash on into the next line, as a C preprocessor splices lines;
-# Go and Zig splice nothing, so the line that comment took was code. An addition
-# sits ahead of lizard's own patterns, so it wins where both match.
-_LINE_COMMENT = r"|//[^\n]*"
 
 # Each line of a Zig multiline string opens with `\\` and runs to its end. lizard
 # read the text as code, so a `}` in it ended the function and an `if` counted.
@@ -421,7 +418,7 @@ class CorrectedGoReader(_Lookahead, _StockGoReader):
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):
         """lizard's tokens, with a `//` comment ended at its line's end."""
-        return _StockGoReader.generate_tokens(source_code, _LINE_COMMENT + addition, token_class)
+        return _StockGoReader.generate_tokens(source_code, LINE_COMMENT + addition, token_class)
 
 
 class CorrectedZigReader(_Lookahead, _StockZigReader):
@@ -453,7 +450,7 @@ class CorrectedZigReader(_Lookahead, _StockZigReader):
         """lizard's tokens, with a quoted identifier `@"..."` read as one, a `//`
         comment ended at its line's end, and each line of a multiline string read
         as one."""
-        additions = _ZIG_QUOTED_NAME + _LINE_COMMENT + _ZIG_STRING_LINE + addition
+        additions = _ZIG_QUOTED_NAME + LINE_COMMENT + _ZIG_STRING_LINE + addition
         return _StockZigReader.generate_tokens(source_code, additions, token_class)
 
 

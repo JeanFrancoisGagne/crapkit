@@ -133,16 +133,17 @@ every marks file re-seeds once, with the same three commands as version 11 below
 - In Python and shell, a name spelled `switch` no longer adds to ccn_mod. The gated
   ccn is unchanged.
 
-### Go, Zig and shell readers (next analysis version)
+### Go, Zig and shell readers, and `//` comments (next analysis version)
 
-The next release reads Go and Zig signatures to where the language ends them, and raises
-the analysis version for it. Here is what moves:
+The next release reads Go and Zig signatures to where the language ends them, ends a `//`
+comment at its line in every language but C, C++ and Objective-C, and raises the analysis
+version for it. Here is what moves:
 
 - Rows appear. A function that had no row is listed: one after a package-level function
   type or a Zig `extern fn` prototype, a Zig function named `@"..."`, a Go method after
-  a `}` that closes nothing, such as the one a Go type switch left, and a Go or Zig
-  function whose signature sits on the line after a `//` comment that ends in a
-  backslash.
+  a `}` that closes nothing, such as the one a Go type switch left, and a function whose
+  signature sits on the line after a `//` comment that ends in a backslash (`// C:\dir\`)
+  in Go, Zig, Java, JavaScript, TypeScript, TSX, Vue, Swift or Rust.
 - Rows go away. A function type such as `var cb func(int) error` no longer opens a
   function, and a composite literal of functions, `[]func(){f, g}`, is no longer an
   anonymous row.
@@ -153,7 +154,8 @@ the analysis version for it. Here is what moves:
 - `ccn` rises. The function around a function type gets back the block the type took.
   A function with a Go type switch reads its whole body, where it ended at the switch's
   `}`, and so does one whose result type holds braces, one with a `//` comment ending in
-  a backslash, and a Zig function whose multiline string holds a `}`. A Go `select`
+  a backslash in any of the languages above, and a Zig function whose multiline string
+  holds a `}`. A Go `select`
   with a case reads one decision where it read none. A shell `a ? b : c` inside `(( ))`
   or `$(( ))` counts one. Any of these can be over its ceiling and fails the gate the
   next time its file changes.
