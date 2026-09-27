@@ -34,10 +34,9 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from .config import shell_words
 from .errors import GitError, ToolError
 from .gitio import head_commit, status_names, worktree_add, worktree_remove, worktree_reset, worktree_root
-from .lane_command import child_environment
+from .lane_command import child_environment, first_word
 from .mutate import apply_mutant
 from .procs import own_processes, run_bounded
 from .repotext import source_bytes, source_text
@@ -101,9 +100,9 @@ def require_live_suite(tree: Path, cfg, *, owner=None) -> None:
 
 
 def _runner_word(command: str) -> str:
-    """The word the shell will try to start, read the way that shell reads it."""
-    words = shell_words(command)
-    return words[0] if words else command
+    """The word the shell will try to start, read the way that shell reads it:
+    lane_command's first word, or the command itself when it holds none."""
+    return first_word(command) or command
 
 
 def _baseline_verdict(code: int | None) -> str:

@@ -22,7 +22,7 @@ from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self, quoted_path
 from ..lane_command import (LaunchSpec, expand_launchers, first_word, launch_spec,
-                            pytest_head, pytest_python, python_token)
+                            pytest_head, pytest_python, python_token, shell_segments)
 from ..named import first_few
 from ..repopath import typed_path
 from ..rootfind import MAX_LEVELS, find_root
@@ -859,7 +859,7 @@ def _lane_command_problems(root: Path, lane) -> list[str]:
     looked past the first word, so a dead runner after `&&` passed doctor, and
     it read a quoted `-k "tests/gone.py or x"` as a test file the repo owes."""
     spec = launch_spec(root, lane)
-    return [problem for segment in config.shell_segments(lane.command)
+    return [problem for segment in shell_segments(lane.command)
             for problem in _segment_problems(lane.name, spec, segment)]
 
 
@@ -902,10 +902,12 @@ def _doctor_lanes(root: Path, cfg) -> list[Finding]:
     """The lane checks, then the probe of every lane that passed them. A lane
     with a problem of its own is not probed: the dead-interpreter FAIL already
     names the word, and init's note would say it again one line down."""
+    from ..doctor import unreadable_payloads
+
     by_lane = [(lane, _lane_problems_of(root, lane)) for lane in cfg.lanes]
     healthy = [lane for lane, problems in by_lane if not problems]
-    return (_lane_findings(cfg, by_lane)
-            + _doctor_results_artifacts(cfg) + _doctor_lane_probes(root, healthy))
+    return (_lane_findings(cfg, by_lane) + _doctor_results_artifacts(cfg)
+            + list(unreadable_payloads(cfg.lanes)) + _doctor_lane_probes(root, healthy))
 
 
 # One probe answers three questions about the python a lane names: where the

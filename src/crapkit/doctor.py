@@ -7,6 +7,7 @@ import re
 from pathlib import PurePath
 from typing import NamedTuple
 
+from .lane_command import command_steps
 from .named import first_few
 from .universe import LANGUAGE_EXTENSIONS, exclude_matcher, scopes_with_tests
 
@@ -122,6 +123,22 @@ def files_template_gaps(scoped_tests, scope_paths: dict[str, tuple[str, ...]],
                   if _files_without_tests(name, template, scope_paths, tested))
     return tuple(Finding("FAIL", _FILES_WITHOUT_TESTS.format(
         name=name, paths=", ".join(scope_paths[name]))) for name in gaps)
+
+
+_UNREADABLE_PAYLOAD = (
+    "lane {name!r}: sh cannot split the script in `{step}`, since a quote or an escape in it "
+    "never closes, so crapkit reads nothing inside it: the full-suite guard, the pytest-cov "
+    "probe and the coverage data-file check all pass it unjudged; fix its quoting"
+)
+
+
+def unreadable_payloads(lanes) -> tuple[Finding, ...]:
+    """One WARN per `bash -c` or `sh -c` step whose payload sh cannot split
+    (Q40). The lane still loads: the shell may read it some other way, and a
+    refusal would name a problem crapkit only guessed at. What the reader has to
+    know is that no check looked inside it."""
+    return tuple(Finding("WARN", _UNREADABLE_PAYLOAD.format(name=lane.name, step=step))
+                 for lane in lanes for step in command_steps(lane.command).unreadable)
 
 
 _DATA_FILE_FLAG = re.compile(r"""--data-file[=\s]+["']?([^\s"']+)""")
