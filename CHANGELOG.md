@@ -1060,7 +1060,9 @@ next time its file changes.
   string counts. `"$($a -and $b)"` read ccn 1 and reads 2 now, as `$($a -and $b)`
   does. The string rule also takes the subexpression whole, so the quotes inside it
   pair among themselves: `"$(Get-Item "x{")"` ended at its second quote, left a `{`
-  in code, and the function around it had no row. On a large consumer repo 6 of 339
+  in code, and the function around it had no row. The rule reads eight levels of
+  parens, so `"$(f (g (h ($a -and $b))))"` counts its `-and` and
+  `"$(f (g (h ("x{"))))"` hides no function. On a large consumer repo 6 of 339
   PowerShell functions rise by 1 and no span moves. It shares the shell changes'
   analysis-version bump.
 

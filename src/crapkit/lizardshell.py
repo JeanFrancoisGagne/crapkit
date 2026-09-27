@@ -97,10 +97,11 @@ SUBSTITUTIONS INSIDE STRINGS
     one level.
 
 KNOWN LIMITS
-    - The string rule reads eight levels of parens inside a substitution, and a
-      case in it only when its subject is one word and its first pattern follows
-      `in` with no comment between. Past either, the string ends at its first
-      inner quote, as lizard's own rule ends it, and the command counts nothing.
+    - The string rule reads eight levels of parens inside a substitution, the
+      `$(` included, and a case in it only when its subject is one word and its
+      first pattern follows `in` with no comment between. Past either, the
+      string ends at its first inner quote, as lizard's own rule ends it, and
+      the command counts nothing.
     - A substitution in a heredoc body runs when the delimiter is unquoted
       (`<<EOF`, not `<<'EOF'`), and it counts nothing: the whole body is blanked.
     - What a line leaves open carries to the next, so a quote the heredoc reader

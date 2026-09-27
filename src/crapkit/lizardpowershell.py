@@ -79,11 +79,17 @@ SUBEXPRESSIONS INSIDE STRINGS
     `"$($a -and $b)"` evaluates `$a -and $b`: the quotes make its value text,
     not the expression. Once the string rule above has matched a double-quoted
     string whole, every `$( )` in it is tokenized again as code, so its `-and`,
-    `-or`, `if` and loops count the way they count written bare, at any depth.
-    The text around a subexpression stays one string token. A `` `$( `` is
-    escaped and stays text, and a single-quoted string expands nothing.
+    `-or`, `if` and loops count the way they count written bare, one
+    subexpression inside another included. The text around a subexpression
+    stays one string token. A `` `$( `` is escaped and stays text, and a
+    single-quoted string expands nothing.
 
 KNOWN LIMITS
+    - The string rule reads eight levels of parens inside a subexpression,
+      the `$(` included. Past that, the string ends at its first inner quote,
+      as it did before the rule took subexpressions whole, and the expression
+      counts nothing: `"$(f (g (h (i (j (k (l (m ($a -and $b)))))))))"` reads
+      ccn 1.
     - A `$( )` inside a `@" "@` here-string is evaluated and counts nothing:
       the whole here-string is one token.
     - PowerShell is case-insensitive and this reader is not: `If (` in code
@@ -123,10 +129,24 @@ from lizard_languages.code_reader import CodeReader, CodeStateMachine
 from lizard_languages.golike import GoLikeStates
 from lizard_languages.script_language import ScriptLanguageMixIn
 
-# A `$( )` subexpression, up to three levels of parens deep. Its own quotes pair
-# among themselves inside the string rule below; deeper, and the rule falls back
-# to ending the string at the first inner quote, as it always did.
-_SUBEXPRESSION = r"\$\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"
+# A `$( )` subexpression, up to _PAREN_LEVELS levels of parens deep. Its own
+# quotes pair among themselves inside the string rule below; deeper, and the rule
+# falls back to ending the string at the first inner quote, as it always did.
+# Every loop is possessive (`*+`): with no closing quote left in the file, the
+# backtracking version tried each `$( )` after the quote both as a
+# subexpression and as text, twice the time per subexpression.
+_PAREN_LEVELS = 8
+
+
+def _parens(levels: int) -> str:
+    """What may sit between a `(` and its `)`, LEVELS levels of parens deep."""
+    content = r"[^()]*+"
+    for _ in range(levels - 1):
+        content = r"(?:[^()]|\(" + content + r"\))*+"
+    return content
+
+
+_SUBEXPRESSION = r"\$\(" + _parens(_PAREN_LEVELS) + r"\)"
 
 # Extra alternatives for lizard's shared token pattern, tried ahead of it.
 # Order matters only among alternatives that can start at the same character:
@@ -136,7 +156,7 @@ _TOKEN_ADDITION = (
     r"|@\"[\s\S]*?\"@"          # @" here-string "@
     r"|@'[\s\S]*?'@"            # @' here-string '@
     # "double" string, backtick is the escape, a $( ) subexpression taken whole
-    r"|\"(?:`.|" + _SUBEXPRESSION + r"|[^\"`])*\""
+    r"|\"(?:`.|" + _SUBEXPRESSION + r"|[^\"`])*+\""
     r"|'(?:''|[^'])*'"          # 'single' string, '' is the escape
     r"|\$[\w:]+"                # $var, $script:var
     r"|[A-Za-z_]\w*(?:-\w+)+"   # Verb-Noun, one token

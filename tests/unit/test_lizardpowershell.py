@@ -424,6 +424,10 @@ SUBEXPRESSIONS = {
     "text around it": ('$x = "v: $($a -or $b) end"', "$x = $($a -or $b)"),
     "an if": ('$x = "$(if ($a) { 1 })"', "$x = $(if ($a) { 1 })"),
     "one inside another": ('$x = "$(G "$($a -and $b)")"', "$x = $(G $($a -and $b))"),
+    "four levels of parens": ('$x = "$(f (g (h ($a -and $b))))"',
+                              "$x = $(f (g (h ($a -and $b))))"),
+    "eight levels of parens": ('$x = "$(' + "(" * 7 + "$a -and $b" + ")" * 8 + '"',
+                               "$x = $(" + "(" * 7 + "$a -and $b" + ")" * 8),
 }
 
 
@@ -454,6 +458,33 @@ def test_a_subexpression_over_two_lines_keeps_every_later_line_number():
     spans = [(r.start, r.end, r.ccn) for r in analyze_source("two.ps1", code)]
 
     assert spans == [(1, 4, 2), (6, 8, 1)]
+
+
+def test_quotes_four_parens_deep_in_a_subexpression_pair_among_themselves():
+    """The string rule read three levels of parens. At four it did not match,
+    the string ended at `"x{`, and the `{` left in code hid function B."""
+    code = ('function A {\n  $v = "$(f (g (h ("x{"))))"\n}\n\n'
+            'function B {\n  if ($x) { 2 }\n}\n')
+
+    assert [(f.name, f.start_line, f.end_line, f.cyclomatic_complexity)
+            for f in _functions(code)] == [("A", 1, 3, 1), ("B", 5, 7, 2)]
+
+
+def test_parens_nine_levels_deep_are_the_documented_limit():
+    """The string rule reads eight levels of parens inside a subexpression. At
+    nine it does not match, the string ends at its first inner quote, and the
+    `-and` counts nothing."""
+    line = '$x = "$(' + "(" * 8 + "$a -and $b" + ")" * 9 + '"'
+    assert _columns(line)[:2] == (1, 1)
+
+
+def test_an_unpaired_quote_before_many_subexpressions_reads_in_linear_time():
+    """With no closing quote left in the file, the string rule tried every way of
+    reading each `$( )` after it as a subexpression or as text, twice the time
+    per subexpression: 1.8 s for 22 of them. Its loops no longer give back what
+    they matched, so this tokenizes at once; before, it did not finish."""
+    code = 'function F {\n  $x = "' + " $(a)" * 40 + "\n}\n"
+    assert [(f.name, f.end_line) for f in _functions(code)] == [("F", 3)]
 
 
 # --- the declaration spellings -------------------------------------------------

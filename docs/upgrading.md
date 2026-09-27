@@ -333,9 +333,10 @@ version 11 below.
   first pattern's. Such a function can gain lines and ccn: one on a large consumer repo
   went from 68 lines and ccn 26 to 140 lines and ccn 46.
 - A PowerShell expression inside a `$( )` subexpression in a double-quoted string
-  counts: `"$($a -and $b)"` reads ccn 2 where it read 1. Quotes inside the
-  subexpression pair among themselves, so a function that held
-  `"$(Get-Item "x{")"` and had no row now has one, and can be over its ceiling.
+  counts: `"$($a -and $b)"` reads ccn 2 where it read 1, up to eight levels of
+  parens deep. Quotes inside the subexpression pair among themselves, so a function
+  that held `"$(Get-Item "x{")"` and had no row now has one, and can be over its
+  ceiling.
 
 ### Analysis version 11
 
