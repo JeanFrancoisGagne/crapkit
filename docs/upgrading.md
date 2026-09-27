@@ -149,6 +149,13 @@ suite's venv. 0.8.1 reads a function's span from the `start_line` coverage.py wr
 `install coverage>=7.13.1 and rerun the lane`. A report that carries `start_line` scores as
 it did in 0.8.0.
 
+`crapkit doctor` names such a lane before `coverage` runs it, with the install line for
+that interpreter, and exits 1:
+`FAIL lane 'py' runs coverage 7.10.0 (...), which writes no function start lines, ...`.
+0.8.0 printed `doctor: no problems found` there and exited 0, so a CI step that runs
+`crapkit doctor` on such a lane fails from the upgrade until the lane's coverage is 7.13.1
+or newer.
+
 On the older coverage a nested function took its encloser's coverage. On the new one it
 scores its own region, which is the version 12 change below: re-seed once as that section
 says. A mark such a function already carried can sit under its new score, and `ratchet

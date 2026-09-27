@@ -1788,11 +1788,13 @@ def _unreadable_path(tool: dict, arguments: dict, repo: str) -> str | None:
     """The root-relative name a tool's `path` gives, when a file on disk has
     that name and it is not UTF-8; None for any other call.
 
-    Such a name never goes on a child's argv. On Windows the child read a lone
-    surrogate there as U+FFFD and looked up a file nobody named: check_gate
+    Such a name never goes on a child's argv. 0.8.0 put it there, and
+    check_gate answered isError true with a Python traceback, on Windows too.
+    Under a uv-built venv on Windows, whose launcher hands the child such a
+    name as one U+FFFD, the child looked up a file nobody named: check_gate
     answered isError true with `does not exist`, and get_function_brief and
-    get_function_history with `no function ... in src/caf\\ufffd.ts`, where the
-    CLI refuses the name at exit 3 and lists it in `unread_files`."""
+    get_function_history with `no function ... in src/caf\\ufffd.ts`. The CLI
+    refuses the name at exit 3 and lists it in `unread_files`."""
     if "path" not in tool["positional"]:
         return None
     rel = typed(str(arguments["path"]), repo)

@@ -140,6 +140,21 @@ def test_a_lane_whose_coverage_writes_no_function_regions_fails_naming_the_floor
         "lower")
 
 
+def test_the_upgrade_guide_names_the_exit_this_fail_moves():
+    """0.8.0's doctor printed `doctor: no problems found` and exited 0 on a lane
+    whose coverage predates 7.13.1. This FAIL makes it exit 1, so a CI step that
+    runs `crapkit doctor` on such a lane goes red on the upgrade. The guide's
+    section for that coverage names the line and the exit it moves."""
+    from crapkit.doctor import _COVERAGE_FLOOR
+
+    guide = (Path(__file__).resolve().parents[2] / "docs" / "upgrading.md").read_text(encoding="utf-8")
+    section = guide.split("### 0.8.1 on coverage 7.6 to 7.13.0\n", 1)[1].split("\n### ", 1)[0]
+    line = _COVERAGE_FLOOR.split(" ({executable})", 1)[0].format(name="py", version="7.10.0")
+
+    assert f"`FAIL {line} (" in section
+    assert "`doctor: no problems found`" in section and "exited 0" in section and "exits 1" in section
+
+
 @pytest.mark.parametrize("version", ["7.13.1", "7.16.0", "8.0.0b1", "unknown"])
 def test_coverage_at_or_past_the_floor_or_unreadable_adds_nothing(monkeypatch, version):
     monkeypatch.setattr(admin, "_runner_report",
