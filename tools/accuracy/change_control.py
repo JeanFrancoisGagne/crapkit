@@ -25,7 +25,9 @@ The files it keeps, under tests/accuracy/change_control/:
   CRAP at 4 dp and cov. The corpus column digests the corpus bytes, recorded
   coverage artifacts included, so a row's metric digest can only move with
   crapkit.
-- test-counts.tsv: the number of collected accuracy tests per packet.
+- test-counts.tsv: the number of accuracy test functions per packet, a
+  parametrized one counted once: its cases can depend on the OS, the shells and
+  the corpus a machine holds, and the function cannot.
 
 In-tree rules hold on any one tree (test_change_control.py, and on the head of
 every base-aware run):
@@ -37,7 +39,7 @@ every base-aware run):
 - T4 each CHANGES id other than kind none appears in CHANGELOG.md.
 - T5 metric-digests rows are unique and ascending; the last row is the running
   ANALYSIS_VERSION, lizard version and corpus, and its digest is the computed one.
-- T6 test-counts.tsv equals the collected tests per packet (pytest only).
+- T6 test-counts.tsv equals the collected test functions per packet (pytest only).
 
 Base-aware rules compare a head commit with the merge base of a base ref (pre-push:
 origin/main; the CI verdict job: refs/accuracy/green; a release: the previous tag).
@@ -53,7 +55,7 @@ before it only the in-tree rules do, since no change can be declared yet.
   is gone.
 - B3 no floor drops, no floor key is gone, and each added survivor or equivalent
   carries evidence. Added ones are printed.
-- B4 no packet's collected test count drops.
+- B4 no packet's test function count drops.
 - B5 a locked file that moved names a fresh change in its lock row, and a fresh
   change of another kind than none names a calc of the file's packet.
 - B6 a diff that touches a module a calcs.tsv row names needs a fresh change naming
@@ -2169,14 +2171,20 @@ def _tests_env(root: Path, extra: dict) -> dict:
             "PYTHONPATH": os.pathsep.join(filter(None, paths)), **extra}
 
 
+def packet_counts(node_ids: list[str]) -> dict[str, int]:
+    """{packet: test functions}: a parametrized function counts once, whatever
+    cases this machine gives it."""
+    functions = {node.split("[", 1)[0] for node in node_ids}
+    return dict(sorted(Counter(packet_of(node.split("::")[0]) for node in functions).items()))
+
+
 def collect_counts(root: Path) -> dict[str, int]:
-    """{packet: collected tests} over tests/accuracy, every tier and platform."""
+    """{packet: test functions} over tests/accuracy, every tier and platform."""
     argv = [sys.executable, "-m", "pytest", "-o", "addopts=", "--collect-only", "-q",
             "-p", "no:randomly", "-p", "no:cacheprovider", "tests/accuracy"]
     out = _process("pytest --collect-only tests/accuracy", argv, GIT_SECONDS * 5, root,
                    _tests_env(root, {tiers.COLLECT_ALL_ENV: "1"}))
-    ids = [line.strip() for line in out.splitlines() if "::" in line]
-    return dict(sorted(Counter(packet_of(node.split("::")[0]) for node in ids).items()))
+    return packet_counts([line.strip() for line in out.splitlines() if "::" in line])
 
 
 def counts_bytes(counts: dict[str, int]) -> bytes:
@@ -2217,7 +2225,7 @@ def _lock_main(argv: list[str]) -> int:
 
 
 def count_problems(committed: bytes | None, counts: dict[str, int]) -> list[Problem]:
-    """T6: test-counts.tsv holds the collected counts."""
+    """T6: test-counts.tsv holds the collected test function counts."""
     table = {row["packet"]: int(row["tests"]) for row in rows(committed)}
     wrong = sorted(packet for packet in set(table) | set(counts)
                    if table.get(packet) != counts.get(packet))

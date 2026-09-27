@@ -339,6 +339,15 @@ def test_a_collection_error_stops_the_count(make_repo):
         cc.collect_counts(top)
 
 
+def test_a_parametrized_test_counts_once_whatever_cases_it_has():
+    """Cases can follow the OS, the shells and the corpus here; the function cannot."""
+    here = ["tests/accuracy/kit/test_a.py::test_x[sh]", "tests/accuracy/kit/test_a.py::test_x[cmd]",
+            "tests/accuracy/kit/test_a.py::test_y", "tests/accuracy/score_model/test_b.py::C::test_z[1]"]
+
+    assert cc.packet_counts(here) == {"kit": 2, "score_model": 1}
+    assert cc.packet_counts(here[1:]) == cc.packet_counts(here)
+
+
 def test_count_problems_name_each_packet_that_differs():
     committed = b"packet\ttests\nkit\t10\nscore_model\t3\n"
 

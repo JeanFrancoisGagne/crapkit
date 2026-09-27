@@ -1824,14 +1824,14 @@ def test_the_calc_stage_deselects_each_test_an_open_defect_row_names(tmp_path):
                                              "tests/unit/test_b.py::test_y"]
 
 
-def test_the_open_failures_here_are_the_five_tests_ss3_and_ss4_name():
+def test_the_open_failures_here_are_the_four_tests_ss4_names():
+    """SS3's hang-bound test left the list once its row read fixed."""
     assert mutation.open_failures() == [
         "tests/unit/test_lane_reuse_refusal.py::test_the_lanes_page_quotes_the_leftover_refusal_a_run_prints",
         "tests/unit/test_lane_starts_through_its_launch_spec.py::"
         "test_a_silent_lane_is_killed_and_named_from_its_own_directory",
         "tests/unit/test_lanes_infra.py::test_a_lane_that_left_coverage_shards_is_told_they_are_there",
-        "tests/unit/test_lanes_infra.py::test_the_shard_hint_looks_in_the_directory_the_lane_ran_in",
-        "tests/unit/test_one_hang_bound.py::test_no_wait_spells_a_bound_under_the_hang_bound"]
+        "tests/unit/test_lanes_infra.py::test_the_shard_hint_looks_in_the_directory_the_lane_ran_in"]
 
 
 def test_the_deselected_tests_reach_pytest_through_its_addopts():

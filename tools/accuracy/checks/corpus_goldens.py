@@ -36,8 +36,6 @@ CHECKS = [
      "pytest": [_PACKET + "test_corpus_tool.py"]},
     {"name": "regenerate.py's canonical forms, history bundle and re-recording", "seconds": 4,
      "pytest": [_PACKET + "test_regenerate_tool.py"]},
-    {"name": "each tools function runs under its calc's independent test", "seconds": 1,
-     "pytest": [_PACKET + "test_tools_reach.py"]},
     {"name": "two runs normalize to one golden", "seconds": 15, "tiers": ["nightly"],
      "pytest": [_PACKET + "test_normalized_twice.py"]},
     {"name": "the full corpus's exports against their digests", "seconds": 180,

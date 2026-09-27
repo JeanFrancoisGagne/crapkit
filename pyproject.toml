@@ -165,13 +165,81 @@ faulthandler_timeout = 600
 patch = ["subprocess"]
 
 # mutmut 3.8.0 runs in the accuracy image (tools/accuracy/mutation.py). The
-# accuracy plan mutates every module a tests/accuracy/*/calcs.tsv row names;
-# kit-close regenerates paths_to_mutate from that union, and
-# tests/accuracy/kit/test_kit_contract.py fails from then on when the two
-# differ. Until then it holds score.py, home of the canary mutant every shard
-# must kill. also_copy carries the accuracy suite's data into mutmut's copy of
+# accuracy plan mutates every module a tests/accuracy/*/calcs.tsv row names, so
+# paths_to_mutate is that union, and tests/accuracy/kit/test_kit_contract.py
+# fails when the two differ. Regenerate the list with
+# `python -c "from accuracy.kit import calcs; print(calcs.modules(calcs.load()))"`
+# run with PYTHONPATH=tests. The weekly and nightly stages pass mutmut their own
+# source_paths from the same tables; this key is what a bare `mutmut run` reads.
+# also_copy carries the accuracy suite's data into mutmut's copy of
 # the tree: fixtures, probes, recordings, goldens, the pins and the node oracles.
 [tool.mutmut]
-paths_to_mutate = ["src/crapkit/score.py"]
+paths_to_mutate = [
+    "src/crapkit/analyze.py",
+    "src/crapkit/cache.py",
+    "src/crapkit/churn.py",
+    "src/crapkit/churn_cache.py",
+    "src/crapkit/churn_commits.py",
+    "src/crapkit/churn_log.py",
+    "src/crapkit/cli/admin.py",
+    "src/crapkit/cli/analyses.py",
+    "src/crapkit/cli/claude_hook.py",
+    "src/crapkit/cli/queue.py",
+    "src/crapkit/cli/ratchet_cmds.py",
+    "src/crapkit/cli/reports.py",
+    "src/crapkit/cli/scoring.py",
+    "src/crapkit/cli/verifying.py",
+    "src/crapkit/config.py",
+    "src/crapkit/coupling.py",
+    "src/crapkit/coupling_cache.py",
+    "src/crapkit/coverage_istanbul.py",
+    "src/crapkit/coverage_py.py",
+    "src/crapkit/covstream.py",
+    "src/crapkit/diffparse.py",
+    "src/crapkit/digest.py",
+    "src/crapkit/doctor.py",
+    "src/crapkit/dup.py",
+    "src/crapkit/gitio.py",
+    "src/crapkit/hook.py",
+    "src/crapkit/invariants.py",
+    "src/crapkit/invocation.py",
+    "src/crapkit/junitparse.py",
+    "src/crapkit/keys.py",
+    "src/crapkit/lane_command.py",
+    "src/crapkit/lanes.py",
+    "src/crapkit/lizardcognitive.py",
+    "src/crapkit/lizardpowershell.py",
+    "src/crapkit/lizardpython.py",
+    "src/crapkit/lizardrust.py",
+    "src/crapkit/lizardshell.py",
+    "src/crapkit/lizardtypescript.py",
+    "src/crapkit/mcp_server.py",
+    "src/crapkit/mutate.py",
+    "src/crapkit/mutate_pool.py",
+    "src/crapkit/override.py",
+    "src/crapkit/packet.py",
+    "src/crapkit/ratchet.py",
+    "src/crapkit/ratchet_report.py",
+    "src/crapkit/ratchetfile.py",
+    "src/crapkit/records.py",
+    "src/crapkit/report.py",
+    "src/crapkit/sarif.py",
+    "src/crapkit/scaffold.py",
+    "src/crapkit/score.py",
+    "src/crapkit/snapshot.py",
+    "src/crapkit/store.py",
+    "src/crapkit/uncovered.py",
+    "src/crapkit/universe.py",
+    "src/crapkit/verify.py",
+    "src/crapkit/watch.py",
+    "src/crapkit/worklist.py",
+    "tools/accuracy/change_control.py",
+    "tools/accuracy/mutation.py",
+    "tools/accuracy/retro.py",
+    "tools/accuracy/run.py",
+    "tools/accuracy/wheel_diff.py",
+    "tools/action/comment.py",
+    "tools/release/release.py",
+]
 also_copy = ["tests/", "tools/accuracy/pins.toml", "tools/accuracy/node/",
              "tools/accuracy/checks/"]

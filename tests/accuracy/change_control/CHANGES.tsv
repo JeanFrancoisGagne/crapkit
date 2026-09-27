@@ -1,1 +1,2 @@
 id	date	kind	calcs	analysis_version	lizard_version	changelog	reason
+C1	2026-09-27	none		11	1.24.0		the first lock over every golden and expected-value file

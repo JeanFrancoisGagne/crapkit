@@ -911,7 +911,7 @@ def _failing_tests(row: dict) -> list[str]:
 
 def open_failures(rulings: Path | None = None) -> list[str]:
     """The tests this packet's open defect rulings (rulings.tsv beside the mutation
-    tables) name, SS3 and SS4: each fails on a clean tree in the image, so the calc
+    tables) name, such as SS4: each fails on a clean tree in the image, so the calc
     stage deselects it until its row is fixed."""
     rows = read_table(rulings or TABLES.parent / "rulings.tsv", RULING_COLUMNS)
     return sorted({node for row in rows for node in _failing_tests(row)})

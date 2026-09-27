@@ -9,10 +9,15 @@ run-name: accuracy ${{ inputs.mode || (github.event_name == 'pull_request' && 'l
 #
 # The Linux cells run in the accuracy image, built from
 # tools/accuracy/image/Dockerfile and tagged by a hash of everything it is
-# built from, under `docker run --network none`: an oracle run reads recorded
-# inputs only. The ghcr package must be public (a private one counts against
-# the account's 500 MB package quota): push one bootstrap tag by hand, set the
-# package's visibility to public once, and every later push stays public.
+# built from. The mutation cells run under `docker run --network none`. The
+# oracle cells keep the network for the checks that fetch from PyPI: the wheel
+# diff, the store upgrade and the Action's last-release comment read released
+# crapkit wheels, each checked against the sha256 PyPI publishes, and the
+# coverage producer reruns install the pinned coverage and pytest-cov versions
+# they recorded with; every other oracle reads recorded inputs. The ghcr
+# package must be public (a private one counts against the account's 500 MB
+# package quota): push one bootstrap tag by hand, set the package's visibility
+# to public once, and every later push stays public.
 
 on:
   schedule:
@@ -177,14 +182,14 @@ jobs:
           path: .hypothesis
           key: hypothesis-${{ matrix.shard }}-${{ matrix.python }}-${{ github.run_id }}
           restore-keys: hypothesis-${{ matrix.shard }}-${{ matrix.python }}-
-      - name: run.py in the image, no network
+      - name: run.py in the image
         env:
           REF: ${{ needs.image.outputs.ref }}
           DIGEST: ${{ needs.image.outputs.digest }}
           TIER: ${{ needs.plan.outputs.tier }}
         run: |
           docker pull --quiet "$REF"
-          docker run --rm --network none --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src \
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src \
             -e CRAPKIT_ACCURACY_PY=${{ matrix.python }} -e CRAPKIT_ACCURACY_IMAGE="$REF" \
             -e CRAPKIT_ACCURACY_IMAGE_DIGEST="$DIGEST" -e CRAPKIT_HYPOTHESIS_DB=/src/.hypothesis/examples \
             "$REF" python tools/accuracy/run.py --tier "$TIER" --shard ${{ matrix.shard }} -n 4 \

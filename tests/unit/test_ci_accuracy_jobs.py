@@ -118,6 +118,19 @@ def test_the_windows_nightly_cell_replays_the_past_bugs_the_image_cannot():
     assert setup["if"] == step(windows, "run", "python tools/accuracy/retro.py")["if"]
 
 
+def test_the_oracle_cells_reach_pypi_and_the_mutation_cells_do_not():
+    """The nightly corpus and coverage shards list crapkit's releases and install
+    the recorded coverage producers from PyPI; offline, each of those checks
+    ends as an infra miss and the tier exits 3. A mutant never needs the network."""
+    jobs = _jobs("accuracy.yml")
+    def docker(name: str) -> list[str]:
+        return [item["run"] for item in jobs[name]["steps"] if "docker run" in str(item.get("run", ""))]
+    oracle, mutation = docker("oracles"), docker("mutation-diff") + docker("mutation-full")
+
+    assert oracle and not any("--network" in run for run in oracle)
+    assert mutation and all("--network none" in run for run in mutation)
+
+
 def _verdict_steps() -> tuple[list, int]:
     steps = _jobs()["verdict"]["steps"]
     join = steps.index(step(_jobs()["verdict"], "run", "python tools/testing/ci.py"))

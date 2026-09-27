@@ -153,7 +153,8 @@ CANARIES = {
     "plus-to-minus": "return ccn * ccn * (1.0 - cov) ** 3 - ccn",
 }
 # (1 - cov) ** 4 agrees with ** 3 at cov 0 and 1, the only coverages
-# test_score.py checks: rulings row SS2 until the score-model grid lands.
+# test_score.py checks. Rulings row SS2 recorded it as a survivor until the
+# score-model packet's grid joined the killer suite; the row is now fixed.
 EXPONENT = "return ccn * ccn * (1.0 - cov) ** 4 + ccn"
 # The score tests of the killer suite: the unit file, and the score-model
 # packet's accuracy tests once they are in the tree.

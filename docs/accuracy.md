@@ -182,7 +182,12 @@ previous tag.
 `tests/accuracy/kit/test_kit_contract.py` holds the rules every packet follows:
 no skip or xfail outside a rulings row, no crapkit import in an independent
 test's closure, every hand table citing its source, every model citing doc lines
-that still hash to their pins.
+that still hash to their pins. Suite strength's nightly reach check
+(`tests/accuracy/suite_strength/test_calc_reach.py`) runs each function a
+calcs.tsv row names: on the golden CLI run over the small corpus, or else under
+the row's independent test, both measured with coverage.py down to subprocess
+children. A function neither run reaches fails it: the row's test then checks a
+copy of the rule, or the row names the wrong function.
 
 ## Releases
 

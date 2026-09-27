@@ -35,6 +35,12 @@
   the docs, on every push and nightly. Install `pip install -e ".[dev,accuracy-push]"`:
   `git-hooks/pre-push` runs change control, which stops a push that moves a golden or a
   metric without a declared change.
+- The goldens, rulings, hand tables, probes and oracles are locked
+  (`tests/accuracy/change_control/goldens.lock`, change C1). Changing one takes a
+  `CHANGES.tsv` row first:
+  `python tools/accuracy/change_control.py declare <id> --kind fix --calcs "<calc>" --reason "<why>"`.
+  A change to a module a calc lives in takes one too, and change control's refusal
+  prints the command it needs.
 - Each past calculation bug replays its check at the commit before its fix and at the
   fix (`tools/accuracy/retro.py`); [Past bugs](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md#past-bugs)
   says what a replay proves and when a bug needs a probe.

@@ -10,12 +10,14 @@ A calcs.tsv is a tab-separated table with this header:
   not come from crapkit. Its import closure holds no crapkit module
   (kit/closure.py), which test_kit_contract checks.
 - modules: comma-separated repo paths of the modules the calculation lives
-  in (src/crapkit/score.py). kit-close builds [tool.mutmut] paths_to_mutate
-  from their union, and the pre-push hook runs the checks of every calc whose
+  in (src/crapkit/score.py). pyproject.toml's [tool.mutmut] paths_to_mutate
+  is their union, and the pre-push hook runs the checks of every calc whose
   module a diff touches.
 - functions: comma-separated `path:qualified.name` entries naming the
-  production functions the independent test reaches, which the golden CLI run
-  must execute (a test of a copy of the rule proves nothing about the rule).
+  production functions the independent test reaches. Each must run a body
+  line on the golden CLI run or, where that run starts no command reaching it,
+  under the independent test itself (suite_strength/test_calc_reach.py; a test
+  of a copy of the rule proves nothing about the rule).
 
 A calc belongs to exactly one packet.
 """
@@ -76,7 +78,7 @@ def load(root: Path = ACCURACY) -> list[Calc]:
 
 
 def modules(rows: list[Calc]) -> list[str]:
-    """The union of every row's modules: kit-close's paths_to_mutate."""
+    """The union of every row's modules: pyproject.toml's paths_to_mutate."""
     return sorted({module for row in rows for module in row.modules})
 
 

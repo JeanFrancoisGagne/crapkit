@@ -21,7 +21,7 @@ import pytest
 import hang_guard
 from accuracy.kit import calcs, closure, docrange, rulings, strategies, tiers
 
-KIT_CLOSED = False
+KIT_CLOSED = True
 KIT = Path(__file__).resolve().parent
 ACCURACY = KIT.parent
 TESTS = ACCURACY.parent
@@ -290,15 +290,8 @@ def test_every_calc_names_production_functions_that_exist():
     assert len(rows) >= 92 or not KIT_CLOSED, "kit-close needs every calc of the plan in calcs.tsv"
 
 
-@pytest.mark.nightly
-@pytest.mark.process
-def test_the_golden_run_executes_every_calc_function(tmp_path):
-    from accuracy.kit import corpus_run, reach
-    functions = [function for row in calcs.load() for function in row.functions]
-    corpus = corpus_run.SMALL if corpus_run.SMALL.is_dir() else corpus_run.SEED
-    measured = reach.measured_lines(corpus, tmp_path) if functions else {}
-
-    assert reach.unreached(functions, measured) == []
+# Whether production runs each function a row names is suite strength's check:
+# tests/accuracy/suite_strength/test_calc_reach.py.
 
 
 def _mutmut_paths() -> list[str]:

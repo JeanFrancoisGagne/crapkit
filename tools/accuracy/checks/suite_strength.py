@@ -28,7 +28,7 @@ CHECKS = [
      "pytest": [_SS + "test_mutate_differential.py"]},
     {"name": "self-measurement floor", "seconds": 0,
      "pytest": [_SS + "test_self_measure_floor.py"]},
-    {"name": "calc functions run under their independent tests", "seconds": 0,
+    {"name": "calc functions run on the golden run or their independent tests", "seconds": 0,
      "pytest": [_SS + "test_calc_reach.py"]},
     {"name": "release gate model", "seconds": 1,
      "pytest": [_SS + "test_release_gate_model.py", _SS + "test_release_gate_refusals.py"]},
