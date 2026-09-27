@@ -1096,6 +1096,16 @@ The exit codes, the lane environment and the files that change on upgrade are in
   process that is gone. The owner now lists `/proc` once and reads each record, and a
   record that is gone reads as no member of the group.
 
+### A refused analysis worker no longer hangs the command's cleanup
+
+- On Linux and macOS, a command whose analysis pool refused a starting worker (the
+  command was being cancelled, or its process guardian had died) could hang in cleanup
+  and never exit. A refused worker exits at once, and it could exit while its queue
+  thread still held the registration queue's write lock; a worker the broken pool killed
+  in the middle of its registration left the lock held the same way. Cleanup then put
+  its stop message on that queue and waited on the lock forever. Cleanup now stops the
+  registration thread with a flag and writes nothing to the queue the workers write to.
+
 ### Agents
 
 - New page, [Wiring crapkit into your agent](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md):

@@ -161,6 +161,19 @@ def test_registration_refusal_cannot_release_work_or_keep_slots(monkeypatch):
     assert len(_free_slots()) == 2
 
 
+@pytest.mark.skipif(os.name == "nt", reason="fork workers; a Windows queue writes without a cross-process lock")
+def test_a_refused_worker_that_exits_holding_the_queue_lock_cannot_stop_cleanup(tmp_path):
+    """A refused worker exits at once, and its queue feeder can still hold the
+    registration queue's write lock then (a worker the broken pool kills
+    mid-put leaves it the same way). Cleanup that puts a stop message on that
+    queue waits on the lock forever: a linux 3.12 gate run hung in close()."""
+    process = _start_fixture(tmp_path, "refused")
+    output, error = communicate(process)
+    assert process.returncode == 0, output + error
+    assert "fixture registration refusal" in output, output + error
+    _wait_for(lambda: len(_free_slots()) == 2)
+
+
 def _stopped_linux(pid):
     path = Path(f"/proc/{pid}/stat")
     if not path.exists():

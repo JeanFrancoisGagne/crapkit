@@ -94,14 +94,34 @@ def test_spawn_workers_can_start_while_later_jobs_are_still_submitting(monkeypat
         assert list(pool.map(abs, [-1])) == [1]
 
 
+def test_close_stops_the_registrar_without_writing_to_the_workers_queue(monkeypatch):
+    """A worker that exits inside its put keeps the queue's write lock, and a
+    stop message put behind that lock never arrives."""
+    class Registrations(queue.Queue):
+        def put(self, *args, **kwargs):
+            raise AssertionError("close() wrote to the queue the workers write to")
+        def close(self):
+            pass
+        def join_thread(self):
+            pass
+    registrations = Registrations()
+    context = SimpleNamespace(Queue=lambda: registrations, get_start_method=lambda: "spawn")
+    monkeypatch.setattr(pools.multiprocessing, "get_context", lambda: context)
+    monkeypatch.setattr(pools, "ProcessPoolExecutor",
+                        lambda **options: SimpleNamespace(shutdown=lambda **kwargs: None))
+    pool = pools._OwnedPool(Owner(), ["0.lock", "1.lock"])
+    pool._start_registrar()
+    pool.close()
+    assert not pool.registrar.is_alive()
+
+
 def test_a_closed_refusal_gate_does_not_strand_the_next_gate():
     owner, pending, errors = Owner(), queue.Queue(), []
     owner.cancel()
     later = Gate()
     pending.put((123, Gate(broken=True)))
     pending.put((456, later))
-    pending.put(None)
-    pools._register_workers(owner, pending, errors)
+    pools._register_workers(owner, pending, SimpleNamespace(is_set=pending.empty), errors)
     assert later.released.is_set()
     assert errors == ["owner cancelled", "owner cancelled"]
 
