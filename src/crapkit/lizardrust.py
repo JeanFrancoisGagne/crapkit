@@ -45,8 +45,10 @@ Three more corrections decide which functions exist and what they declare, in
 `CorrectedRustStates`: a signature that reaches a `;` or a `}` before any `{`
 has no body and is listed as no function, a `fn` with its `(` right after it
 is a pointer type and opens no function wherever it stands, and a comma inside
-a parameter's type or pattern parts no parameters. `loops` hands lizard's
-nesting column Rust's structures in place of C's.
+a parameter's type or pattern parts no parameters. Each function it opens is a
+`RustFunction`, which counts a parameter that binds a pattern, `[a, b]: [u8; 2]`,
+where lizard's name regex found none. `loops` hands lizard's nesting column
+Rust's structures in place of C's.
 
 Accepted, documented, not solved
 --------------------------------
@@ -97,6 +99,8 @@ a correction when its pin fails. Once every pin fails, delete this module along
 with the `register()` call rather than repairing it.
 """
 from __future__ import annotations
+
+import re
 
 from ._pygdefer import deferred_pygments
 
@@ -242,6 +246,33 @@ def _join_comma(fn) -> None:
         fn.full_parameters[-1] += " ,"
 
 
+# lizard's own reading of a parameter's name, from `FunctionInfo.parameters`:
+# a word at the end of the parameter's text or right before its ` =` or ` :`.
+_LIZARD_PARAMETER_NAME = re.compile(r"(\w+)(\s=.*)?(\s:.*)?$")
+
+
+def _parameter_name(entry: str) -> str:
+    """The name lizard reads in a parameter's text, else the text itself."""
+    named = _LIZARD_PARAMETER_NAME.search(entry)
+    return named.group(1) if named else entry.strip()
+
+
+class RustFunction(lizard.FunctionInfo):
+    """A Rust function, with one parameter per entry of its parameter list.
+
+    lizard lists an entry only when its regex finds a name in it. A Rust
+    parameter binds a pattern, and `[a, b]: [u8; 2]` or `Pair { a, b }:
+    Pair<u8>` has no name at its end or right before its `:`, so lizard listed
+    no parameter for it. `CorrectedRustStates` keeps a parameter's inner
+    commas in its entry, so every entry with text is one parameter. The empty
+    entry after a trailing comma is none.
+    """
+
+    @property
+    def parameters(self):
+        return [_parameter_name(entry) for entry in self.full_parameters if entry]
+
+
 class CorrectedRustStates(RustStates):
     """lizard's RustStates, with a signature read the way Rust declares it.
 
@@ -256,7 +287,8 @@ class CorrectedRustStates(RustStates):
       told apart at its `(`, because inside `Vec<fn()>` the `;` after it is
       not at the signature's depth.
     * A comma inside a parameter's type or pattern, `(char, char)`,
-      `HashMap<K, V>` or `Point { x, y }`, parts no parameters.
+      `HashMap<K, V>` or `Point { x, y }`, parts no parameters, and each
+      function opened is a `RustFunction`, which counts every parameter.
 
     `type_depth` counts the `<` and `[` open in the signature, and the `{` of a
     struct pattern in its parameter list, so the comma in `HashMap<K, V>` and
@@ -266,6 +298,12 @@ class CorrectedRustStates(RustStates):
     def __init__(self, context):
         super().__init__(context)
         self.type_depth = 0
+
+    def _state_global(self, token):
+        super()._state_global(token)
+        if token == self.FUNC_KEYWORD:
+            # lizard's context builds every function as a FunctionInfo.
+            self.context.current_function.__class__ = RustFunction
 
     def _function_name(self, token):
         """A `fn` right before a `(` spells a pointer type and opens no

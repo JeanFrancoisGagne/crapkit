@@ -38,11 +38,15 @@
 - A comma inside a parameter's type or pattern, `(char, char)`, `HashMap<K, V>` or a
   struct pattern's `Point { x, y }`, parts no parameters. The long name keeps its
   spelling.
+- A parameter that binds an array or struct pattern, `[a, b]: [u8; 2]` or
+  `Pair { a, b }: Pair<u8>`, counts once in `params`. lizard counts a parameter only
+  where it finds a name at the end of its text or right before its `:`, and such a
+  parameter has neither.
 - Measured over 229 files of a Rust workspace: ccn rises in 184 of 3,523 rows and falls
   in 215, cognitive falls in 993 and rises in 27, and nesting falls in 861 and rises
   in 8. Every rise in cognitive or nesting holds a `loop`. Six rows of bodiless
   signatures are gone, three functions get the row they never had, and `params` falls
-  in 8. Four test functions that implement a trait in their body fall in ccn and
+  in 8 and rises in 1. Four test functions that implement a trait in their body fall in ccn and
   cognitive. Six more rows fall where lizard's tokenizer reads a raw string's quoted
   contents as code, and a word `for` in that text counted as a loop.
 - A parameter typed `&&T` now reads `& &` in the function's long name, so that

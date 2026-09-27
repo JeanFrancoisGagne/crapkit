@@ -212,6 +212,30 @@ def test_commas_inside_a_struct_pattern_part_no_parameters():
     assert record.long_name == "struct_pattern Point { x , y } : Point , _ : i32"
 
 
+# A parameter binds a pattern. An array or struct pattern, or a type that ends
+# in `>` or `]`, leaves no name at the end of the parameter's text or right
+# before its `:`, which is where lizard looks for one.
+@pytest.mark.parametrize(("signature", "params"), [
+    ("one([a, b]: [u8; 2])", 1),
+    ("three([a, b]: [u8; 2], z: u8)", 2),
+    ("two(x: u8, [a, b]: [u8; 2])", 2),
+    ("refarr(&[a, b]: &[u8; 2], z: u8)", 2),
+    ("s1(Pair { a, b }: Pair<u8>, z: u8)", 2),
+    ("s2(Pair { a, b }: Pair<u8>)", 1),
+    ("me(&self, [a, b]: [u8; 2])", 2),
+    ("multi(\n    [a, b]: [u8; 2],\n    Pair { c, d }: Pair<u8>,\n)", 2),
+    ("tuple((a, b): (u8, u8), z: u8)", 2),
+    ("tuple_struct(Pair(a, b): Pair<u8>)", 1),
+    ("trailing(a: u8, b: u8,)", 2),
+    ("none()", 0),
+])
+def test_a_parameter_that_binds_a_pattern_is_one_parameter(signature, params):
+    code = f"pub fn {signature} -> u8 {{\n    0\n}}\n"
+    (record,) = analyze_source("src/lib.rs", code, note=False)
+
+    assert record.params == params
+
+
 def test_a_comma_before_any_parameter_token_parts_nothing():
     """`((), n)` reaches its comma with every token so far a parenthesis,
     which the long name never spells. One parameter, and the name as before."""

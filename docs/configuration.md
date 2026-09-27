@@ -237,7 +237,8 @@ in a function's body either; a `||` or `&&` with no operand before it (`move || 
 ends in `;`, such
 as a trait's required method or a foreign function, is no function, and neither is a `fn`
 pointer type, `Vec<fn(i32) -> bool>` included. A comma inside a parameter's type or
-pattern parts no parameters. Each correction retires the day upstream
+pattern parts no parameters, and a parameter that binds a pattern, `[a, b]: [u8; 2]`,
+counts once. Each correction retires the day upstream
 fixes its defect.
 
 The cognitive column charges a Rust `match` like a `switch`: +1 plus the nesting it sits
