@@ -341,8 +341,9 @@ lists what each installer printed.
 Take the commit hook and the merge driver out before the package: both call crapkit.
 After `pip uninstall crapkit` alone, the sh hook Route 1 and Route 2 write keeps judging
 every commit through `uvx crapkit` on a machine with uv, with whichever crapkit release uv
-has cached or can download, and stops every commit on `No module named crapkit` on a
-machine without uv. The PowerShell hook Route 1 and the handbook write names the launcher
+has cached or can download, and on a machine without uv stops every commit on
+`No module named crapkit`, or on `exec: python: not found` where there is no `python` at
+all, as on a Debian, Ubuntu or macOS that has only `python3`. The PowerShell hook Route 1 and the handbook write names the launcher
 that `pip uninstall crapkit` deletes, so it stops every commit on
 `No such file or directory`, with uv or without it.
 Every merge that touches `crapkit-ratchet.tsv` conflicts after the driver's

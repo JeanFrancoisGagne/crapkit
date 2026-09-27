@@ -301,17 +301,22 @@ def removal_claim(page: str, heading: str) -> str:
 
 
 @pytest.mark.parametrize("page, heading", REMOVAL_PAGES)
-@pytest.mark.parametrize("uv, said, named", [(True, "crapkit gate:", "`uvx crapkit`"),
-                                             (False, "No module named crapkit", "`No module named crapkit`")],
-                         ids=["uv", "no-uv"])
-def test_the_removal_text_says_what_the_hook_does_once_the_package_is_gone(tmp_path, page, heading, uv, said,
-                                                                          named):
-    """After `pip uninstall crapkit` the hook finds no `crapkit` command and a
-    python that no longer imports it. Where uv is installed, the body's uvx
-    line fetches crapkit and the gate keeps judging every commit; without uv,
-    every commit stops on `No module named crapkit`. The removal text said
-    every commit stops, which a team with uv never saw."""
-    env = machine(tmp_path, shims(tmp_path, crapkit=False, python="bare", uvx=uv))
+@pytest.mark.parametrize("uv, python, said, named",
+                         [(True, "bare", "crapkit gate:", "`uvx crapkit`"),
+                          (False, "bare", "No module named crapkit", "`No module named crapkit`"),
+                          (False, "missing", "python: not found", "`exec: python: not found`")],
+                         ids=["uv", "no-uv", "no-uv-python3-only"])
+def test_the_removal_text_says_what_the_hook_does_once_the_package_is_gone(tmp_path, page, heading, uv, python,
+                                                                          said, named):
+    """After `pip uninstall crapkit` the hook finds no `crapkit` command. Where
+    uv is installed, the body's uvx line fetches crapkit and the gate keeps
+    judging every commit. Without uv, every commit stops on the python line:
+    `No module named crapkit` from a python that no longer imports it, and
+    `exec: python: not found` on a machine with only `python3`, where a
+    `pip --user` install lands on Debian, Ubuntu and macOS. The removal text
+    said every commit stops, which a team with uv never saw, and then named
+    only the first of the two lines."""
+    env = machine(tmp_path, shims(tmp_path, crapkit=False, python=python, uvx=uv))
     repo = adopted(tmp_path, env)
     paste([sh()], readme_fence(ROUTE_ONE, "sh"), repo, env)
 
