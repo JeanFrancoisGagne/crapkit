@@ -10,6 +10,7 @@ compare the text."""
 from __future__ import annotations
 
 import os
+import posixpath
 import tomllib
 from pathlib import Path
 from typing import NamedTuple
@@ -542,17 +543,37 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
     _validate_lane_command(parser, full_suite, row.get("name", "?"), command,
                            _lane_dir(root, cwd))
     return Lane(name=row["name"], command=command,
-                artifact=_path("lane.artifact", row["artifact"]),
+                artifact=_lane_output(row.get("name"), "artifact", row["artifact"]),
                 parser=parser, scopes=lane_scopes,
                 cwd=cwd, path_prefix=_path("lane.path_prefix", row.get("path_prefix", ""), root),
                 env=tuple(sorted(row.get("env", {}).items())),
                 full_suite=full_suite, container_ok=row.get("container_ok", False),
-                results_artifact=_path("lane.results_artifact", row.get("results_artifact", "")),
+                results_artifact=_lane_output(row.get("name"), "results_artifact",
+                                              row.get("results_artifact", "")),
                 timeout_seconds=row.get("timeout_seconds", 0),
                 no_progress_seconds=row.get("no_progress_seconds", 0),
                 retries=row.get("retries", 0),
                 retest_command=_expanded(row.get("retest_command", "")),
                 inputs=_lane_inputs(row, root))
+
+
+def _lane_output(name, key: str, raw: str) -> str:
+    """A declared lane output, refused when it names the directory crapkit.toml
+    sits in: the runner clears each declared path before an attempt and reads
+    the one file there, and `artifact = "."` ended `crapkit coverage` in a
+    traceback."""
+    value = _path(f"lane.{key}", raw)
+    if _names_the_root(value, required=key == "artifact"):
+        raise ConfigError(f"lane {name!r}: {key} names the directory crapkit.toml sits in "
+                          f"(written {quoted_path(raw)}), not a file; set it to the report "
+                          "file the lane's command writes")
+    return value
+
+
+def _names_the_root(value: str, required: bool) -> bool:
+    """Empty, `.` or `cov/..`. An optional output left empty is one the lane
+    does not declare."""
+    return (bool(value) or required) and posixpath.normpath(value or ".") == "."
 
 
 def _lane_inputs(row: dict, root: str | os.PathLike | None = None) -> tuple[str, ...]:

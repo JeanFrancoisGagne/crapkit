@@ -889,8 +889,19 @@ def _doctor_lane_summary(cfg) -> Finding:
 
 
 def _lane_problems_of(root: Path, lane) -> list[str]:
-    return [p for p in (_lane_problem(root, lane), *_lane_command_problems(root, lane),
+    return [p for p in (_lane_problem(root, lane), *_output_directories(root, lane),
+                        *_lane_command_problems(root, lane),
                         _lane_start_problem(root, lane)) if p]
+
+
+def _output_directories(root: Path, lane) -> list[str]:
+    """A declared output that names a directory. The runner clears each declared
+    path before an attempt and reads the one file there, so the lane fails every
+    run, and doctor passed it."""
+    outputs = (("artifact", lane.artifact), ("results_artifact", lane.results_artifact))
+    return [f"lane {lane.name!r}: {key} {quoted_path(path)} names a directory, and a lane "
+            "output is one file; point it at the report file the command writes inside it"
+            for key, path in outputs if path and (root / path).is_dir()]
 
 
 def _lane_findings(cfg, by_lane: list[tuple]) -> list[Finding]:

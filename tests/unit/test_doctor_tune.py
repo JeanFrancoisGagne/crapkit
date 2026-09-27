@@ -330,7 +330,7 @@ def test_a_quoted_data_file_is_read_as_the_word_the_shell_hands_coverage(monkeyp
 def test_under_sh_a_single_quoted_or_escaped_data_file_is_one_word(monkeypatch):
     monkeypatch.setattr(config, "SHELL_IS_CMD", False)
     assert shared_coverage_data([_data_file_lane("la", "'cov a/.coverage'"),
-                                 _data_file_lane("lb", "cov\ b/.coverage")]) == ()
+                                 _data_file_lane("lb", r"cov\ b/.coverage")]) == ()
 
 
 def test_the_space_form_and_a_bash_c_payload_name_their_data_file():
