@@ -930,7 +930,8 @@ def _retried_suffix(out: dict) -> str:
     return _counted(out.get("retried_passes") or (), "new failure", "passed on rerun")
 
 
-def _report_verify(as_json: bool, out: dict, verdict, ratchet_file: str) -> None:
+def _report_verify(as_json: bool, out: dict, verdict, ratchet_file: str,
+                   sources: frozenset[str] = frozenset()) -> None:
     if as_json:
         _print_json(out)
         return
@@ -939,16 +940,20 @@ def _report_verify(as_json: bool, out: dict, verdict, ratchet_file: str) -> None
           f"({out['changed_files']} changed files)"
           f"{_forgiven_suffix(out)}{_retried_suffix(out)}"
           f"{_ratchet_suffix(out['ratchet_changes'], verdict.overridden, ratchet_file)}")
-    _print_changed_paths(out["changed_paths"])
+    _print_changed_paths(out["changed_paths"], sources)
     _print_verify_findings(verdict)
     _print_finding_split(verdict)
 
 
-def _print_changed_paths(paths: list[str]) -> None:
+def _print_changed_paths(paths: list[str], sources: frozenset[str] = frozenset()) -> None:
     """The files behind the count, on their own line so the verdict line keeps
-    its shape. Nothing for an empty diff."""
+    its shape. Nothing for an empty diff.
+
+    The scored source files come first: they are what the verdict judged, and
+    by name an adoption commit's .gitignore, marks file and crapkit.toml sorted
+    ahead of its one source file and pushed it behind `and 1 more`."""
     if paths:
-        print(f"  changed files: {first_few(paths)}")
+        print(f"  changed files: {first_few(sorted(paths, key=lambda p: (p not in sources, p)))}")
 
 
 def _refuse_lane_less_verify(cfg) -> None:
@@ -1051,7 +1056,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
                     "lanes_without_baseline_results": unjudged,
                     "unreadable_names": _unreadable_json(run.corpus.unreadable),
                     "untracked_in_scope": untracked},
-                   verdict, cfg.ratchet_file)
+                   verdict, cfg.ratchet_file, frozenset(r.path for r in scored))
     _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict)
 
