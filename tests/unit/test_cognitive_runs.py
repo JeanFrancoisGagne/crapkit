@@ -91,6 +91,14 @@ COALESCE = [
     ("a.ts", "function f(a?: number): number {\n  a ??= 1;\n  return a;\n}\n"),
     ("a.swift", "func coalesce(a: Int?) -> Int {\n    return a ?? 0\n}\n"),
     ("a.ps1", "function Test-Coalesce($a) {\n    return $a ?? 0\n}\n"),
+    # After a closing bracket, where a lone `?` would start a conditional.
+    ("a.ts", "function f(a?: number): number {\n  return (a) ?? 0;\n}\n"),
+    ("a.ts", "function f(a: unknown): number {\n  return (a as number) ?? 0;\n}\n"),
+    ("a.js", "function f(g) {\n  return g() ?? 0;\n}\n"),
+    ("a.js", "function f(a) {\n  return a[0] ?? 0;\n}\n"),
+    ("a.ts", "function f(a: number[]): number[] {\n  a[0] ??= 1;\n  return a;\n}\n"),
+    ("a.swift", "func coalesce(a: [Int?]) -> Int {\n    return (a[0]) ?? 0\n}\n"),
+    ("a.ps1", "function Test-Coalesce($a) {\n    return ($a) ?? 0\n}\n"),
 ]
 
 
