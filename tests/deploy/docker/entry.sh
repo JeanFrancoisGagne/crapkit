@@ -37,21 +37,40 @@ versions() {
     echo "git $(first_line git --version)"
     echo "pipx $(first_line pipx --version)"
     echo "prek $(first_line prek --version)"
+    python_versions
+    echo "system-python3 $(first_line /usr/bin/python3 --version)"
+    bin_dir_versions /opt/harness-core/bin /opt/harness-full/bin /opt/act/bin
+    latest_versions
+    editor_versions
+    rm -rf "$VERSION_HOME"
+}
+
+python_versions() {
     for python in /opt/toolchain/bin/python3.*; do
         echo "$(basename "$python") $(first_line "$python" -c 'import platform; print(platform.python_version())')"
     done
-    echo "system-python3 $(first_line /usr/bin/python3 --version)"
-    for dir in /opt/harness-core/bin /opt/harness-full/bin /opt/act/bin; do
+}
+
+# One line per command in each of the given bin dirs that exists, named after
+# the command, like a harness.
+bin_dir_versions() {
+    for dir in "$@"; do
         [ -d "$dir" ] || continue
         for tool in "$dir"/*; do echo "$(basename "$tool") $(first_line "$tool" --version)"; done
     done
-    # full-latest: the same commands at their newest releases.
+}
+
+# full-latest: the same commands at their newest releases.
+latest_versions() {
     for tool in /opt/harness-latest/bin/*; do
-        [ -e "$tool" ] && echo "$(basename "$tool")@latest $(first_line "$tool" --version)"
+        [ -e "$tool" ] || continue
+        echo "$(basename "$tool")@latest $(first_line "$tool" --version)"
     done
-    [ -x /opt/vscode/bin/code ] && echo "vscode $(first_line /opt/vscode/bin/code --version --no-sandbox)"
-    [ -x /opt/zed/bin/zed ] && echo "zed $(first_line /opt/zed/bin/zed --version)"
-    rm -rf "$VERSION_HOME"
+}
+
+editor_versions() {
+    if [ -x /opt/vscode/bin/code ]; then echo "vscode $(first_line /opt/vscode/bin/code --version --no-sandbox)"; fi
+    if [ -x /opt/zed/bin/zed ]; then echo "zed $(first_line /opt/zed/bin/zed --version)"; fi
 }
 
 tree_hash() {
@@ -61,12 +80,7 @@ tree_hash() {
 manifest() {
     echo "## versions"; versions
     echo "## dpkg"; dpkg-query -W
-    for prefix in /opt/npm-fixtures /opt/harness-core /opt/harness-full; do
-        [ -f "$prefix/package-lock.json" ] || continue
-        echo "## npm $prefix"
-        node -e 'const l=require(process.argv[1]); for (const [k,v] of Object.entries(l.packages)) if (k) console.log(k.replace(/^node_modules\//,""), v.version||"", v.integrity||"")' \
-            "$prefix/package-lock.json"
-    done
+    npm_locks
     # The README's `npm i -D` lines run unlocked at build time; the tarballs they
     # cached are what an offline install in a cell gets, so a cold rebuild that
     # cached a newer release shows here.
@@ -75,9 +89,23 @@ manifest() {
         | grep '\.tgz$' | LC_ALL=C sort
     echo "## runner"; "$RUNNER" -m pip freeze 2>/dev/null || uv pip freeze --python "$RUNNER"
     echo "## wheelhouse"; (cd /opt/wheelhouse && sha256sum -- * )
+    binary_hashes
+}
+
+npm_locks() {
+    for prefix in /opt/npm-fixtures /opt/harness-core /opt/harness-full; do
+        [ -f "$prefix/package-lock.json" ] || continue
+        echo "## npm $prefix"
+        node -e 'const l=require(process.argv[1]); for (const [k,v] of Object.entries(l.packages)) if (k) console.log(k.replace(/^node_modules\//,""), v.version||"", v.integrity||"")' \
+            "$prefix/package-lock.json"
+    done
+}
+
+binary_hashes() {
     echo "## binaries"
     for tree in /opt/cursor-agent /opt/goose /opt/bun /opt/act/bin /opt/junie-home /opt/vscode /opt/zed; do
-        [ -d "$tree" ] && echo "$(tree_hash "$tree") $tree"
+        [ -d "$tree" ] || continue
+        echo "$(tree_hash "$tree") $tree"
     done
     for file in /opt/toolchain/bin/pipx /opt/toolchain/bin/prek; do sha256sum "$file"; done
 }

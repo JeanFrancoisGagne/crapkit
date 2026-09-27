@@ -18,8 +18,11 @@ import sys
 import zipfile
 from pathlib import Path
 
+import lizard
 import pytest
 import yaml
+
+import crapkit.lizardshell  # noqa: F401  lizard has no .sh reader; this registers crapkit's
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT / "tools" / "deploy"))
@@ -450,6 +453,17 @@ def test_entry_sh_prints_a_line_under_each_name_the_pins_expect_for_a_downloaded
     missing = [name for name in sorted(downloaded) if not name.startswith("python") and f'echo "{name} ' not in entry]
 
     assert missing == []
+
+
+def test_every_function_entry_sh_defines_stays_at_ccn_5():
+    """crapkit.toml excludes tests/** from the repo's own gate, so no hook holds
+    the images' entry point to the ceiling. Read with crapkit's shell reader, which
+    counts elif, until and case arms; stock lizard reads a .sh file as C."""
+    source = (DOCKER / "entry.sh").read_text(encoding="utf-8")
+    functions = lizard.analyze_file.analyze_source_code("entry.sh", source).function_list
+
+    assert {"first_line", "versions", "manifest", "run_cells"} <= {fn.name for fn in functions}
+    assert [(fn.name, fn.cyclomatic_complexity) for fn in functions if fn.cyclomatic_complexity > 5] == []
 
 
 def test_a_manifest_is_read_as_utf8_whatever_the_host_code_page(monkeypatch):
