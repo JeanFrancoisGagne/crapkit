@@ -22,8 +22,9 @@ from ..universe import assign_files
 from ..uncovered import DeadLineFold
 from ._shared import (_analysis_tools, _command_root, _emit_findings, _file_sizer, _gate_line,
                       _latest_scored, _load_repo_config, _load_sources, _print_json,
-                      _print_unread, _ratchet_entries, _repo_out_path, _say_left_out,
-                      _scan, _scored_arguments, _stand, _unreadable_json, _write_tsv)
+                      _print_unread, _ratchet_entries, _refuse_unwritable_outputs,
+                      _repo_out_path, _say_left_out, _scan, _scored_arguments, _stand,
+                      _unreadable_json, _write_tsv)
 
 
 def _tracked_files(files_by_scope: dict) -> list[str]:
@@ -154,6 +155,7 @@ def _record_twin_index(root: Path, store: SnapshotStore, run_id: int) -> None:
 def cmd_inventory(args: argparse.Namespace) -> int:
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
+    _refuse_unwritable_outputs(root, {"--export": args.export})
     commit, rows, corpus, cache_hits, tool_versions = _build_inventory(root, cfg)
     state_dir = root / ".crapkit"
 
@@ -164,7 +166,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     _record_twin_index(root, store, run_id)
 
     if args.export:
-        _write_tsv(_repo_out_path(root, args.export), tsv_lines(rows))
+        _write_tsv(_repo_out_path(root, args.export, "--export"), tsv_lines(rows))
 
     summary = {
         "run_id": run_id,
@@ -513,7 +515,7 @@ def _select_lanes(cfg, requested):
 def _export_scored(root: Path, export: str, scored) -> None:
     from ..score import scored_tsv_lines
 
-    _write_tsv(_repo_out_path(root, export), scored_tsv_lines(scored))
+    _write_tsv(_repo_out_path(root, export, "--export"), scored_tsv_lines(scored))
 
 
 def _flag_counts(scored) -> dict[str, int]:
@@ -659,6 +661,7 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     lanes = _select_lanes(cfg, args.lane)
+    _refuse_unwritable_outputs(root, {"--export": args.export, "--sarif": args.sarif})
 
     run = _scored_run(root, cfg, lanes, reuse_artifacts=args.reuse_artifacts,
                       reuse_unchanged=args.reuse_unchanged)

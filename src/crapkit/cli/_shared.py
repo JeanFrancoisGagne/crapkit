@@ -271,7 +271,7 @@ def _unreadable_json(names: tuple[str, ...]) -> list[str]:
     return [shown(name) for name in names]
 
 
-def _repo_out_path(root: Path, out: str) -> Path:
+def _repo_out_path(root: Path, out: str, flag: str = "--out") -> Path:
     r"""Where a writer flag puts its file, with the directory to hold it.
 
     `report --out` created a missing parent; `--export`, `--sarif` and
@@ -287,16 +287,37 @@ def _repo_out_path(root: Path, out: str) -> Path:
     Bash's `/c/...` and WSL's `/mnt/c/...` name their drive. `Path(out)` read
     `/c/Users/...` as `C:\c\Users\...` and wrote the file into a new tree there.
     """
-    named = typed_path(out)
-    if rooted(named):
-        path = named
-    else:
-        path = (root / named).resolve()
-        if root.resolve() not in path.parents:
-            raise ConfigError(f"{quoted_path(out)} is repo-relative and climbs out of {root}; "
-                              "pass an absolute path to write outside it")
+    path = _out_target(root, out, flag)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _out_target(root: Path, out: str, flag: str) -> Path:
+    """The file `flag` names, or the refusal of one crapkit cannot write: a
+    relative path that climbs out of the tree, or a directory, which ended in
+    a PermissionError traceback at exit 1 after the run was stored."""
+    named = typed_path(out)
+    path = named if rooted(named) else _inside_the_tree(root, named, out)
+    if path.is_dir():
+        raise ConfigError(f"{flag} {quoted_path(out)} is a directory; name a file to write")
+    return path
+
+
+def _inside_the_tree(root: Path, named: Path, out: str) -> Path:
+    path = (root / named).resolve()
+    if root.resolve() not in path.parents:
+        raise ConfigError(f"{quoted_path(out)} is repo-relative and climbs out of {root}; "
+                          "pass an absolute path to write outside it")
+    return path
+
+
+def _refuse_unwritable_outputs(root: Path, outputs: dict[str, str | None]) -> None:
+    """Each writer flag's path checked before the command does any work, so a
+    refusal lands before a run is stored: `verify --sarif DIR` recorded its
+    run as verdict=ok and then crashed. `outputs` maps a flag to its value."""
+    for flag, out in outputs.items():
+        if out:
+            _out_target(root, out, flag)
 
 
 def _print_json(payload: dict) -> None:
@@ -423,7 +444,7 @@ def _emit_findings(root: Path, sarif_path: str | None, github: bool, results: li
     from ..sarifio import write_sarif
 
     if sarif_path:
-        write_sarif(_repo_out_path(root, sarif_path), results)
+        write_sarif(_repo_out_path(root, sarif_path, "--sarif"), results)
     if github:
         for r in results:
             print(github_annotation(r))

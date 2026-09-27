@@ -19,8 +19,9 @@ from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
-                      _ratchet_key_version, _repo_out_path, _repo_relative, _say_left_out, _stand,
-                      _unreadable_json, _write_tsv, behind_head, no_config, repo_text)
+                      _ratchet_key_version, _refuse_unwritable_outputs, _repo_out_path,
+                      _repo_relative, _say_left_out, _stand, _unreadable_json, _write_tsv,
+                      behind_head, no_config, repo_text)
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -243,7 +244,7 @@ def _emit_baseline(root: Path, store: SnapshotStore, baseline: dict, rel: str | 
     rows = baseline.get("rows")
     if rows is None:
         rows = store.read_scored(baseline["id"])
-    _write_tsv(_repo_out_path(root, rel),
+    _write_tsv(_repo_out_path(root, rel, "--emit-baseline"),
                baseline_tsv_lines(baseline["commit"], baseline["kind"], rows,
                                   lane_results.portable_results(baseline)))
 
@@ -980,6 +981,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     _refuse_lane_less_verify(cfg)
+    _refuse_unwritable_outputs(root, {"--sarif": args.sarif, "--emit-baseline": args.emit_baseline})
     store = _verify_store(root, args.baseline_tsv)
     saved = RatchetFile.read(root / cfg.ratchet_file)
     # One context for the whole command: the ancestry checks, the lane runner and

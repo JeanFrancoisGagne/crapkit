@@ -197,7 +197,7 @@ def _write_report(root: Path, out: str, page: str) -> Path:
     lands, so the destination changes nothing but who can open it. LF endings,
     because the page is an artifact people diff and publish.
     """
-    path = _repo_out_path(root, out)
+    path = _repo_out_path(root, out, "--out")
     path.write_text(page, encoding="utf-8", newline="\n")
     print(path)
     return path
