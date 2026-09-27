@@ -37,6 +37,29 @@
   that reads churn after upgrading walks the window once more. Scores and marks do not
   change.
 
+### A user's log settings no longer change what crapkit reads from history
+
+- With `log.showSignature=true`, git checks each signed commit's signature and prints the
+  result ahead of the commit's record. The churn window read that line
+  (`Good "git" signature for ...`, or `No signature`) as a file every signed commit
+  changed, and the ratchet history carried it inside each patch. Each walk also ran
+  `ssh-keygen` or `gpg` once per signed commit: a cold churn walk over 60 SSH-signed
+  commits took 10.7 s where it now takes 0.3 s.
+- With `log.follow=true`, git follows a lone path across a rename, and its `--follow`
+  drops commits from a log read oldest first. Once the ratchet file had been renamed,
+  `ratchet report` lost the commits after the rename, so its repayments, velocity and
+  ages came up short.
+- With `log.showRoot=false`, git lists no files and prints no patch for the root commit.
+  The files it added got no churn from it, and the marks it added never entered
+  `ratchet report`.
+- Every git crapkit runs now sets `log.showSignature=false`, `log.follow=false` and
+  `log.showRoot=true`, git's own defaults, beside the `diff.relative` and
+  `core.quotePath` it already sets. `explain --history` (above) reads under the same
+  settings. A repo without these settings reads as before. Under `log.showRoot=false`
+  the churn `commits`, `authors` and `weight` of the root commit's files move, and with
+  them `risk`; no score or mark moves. The churn caches already walk the window once
+  more after upgrading (above), so no stored count keeps the old reading.
+
 ### A comment is one line per LF
 
 - lizard counted a comment's lines with `str.splitlines`, which also ends a line at a

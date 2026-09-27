@@ -37,7 +37,18 @@ _MESSAGE_FORMAT = "--format=%h%x00%ad%x00%s%x00%b"
 # does. git still quotes a path holding a double-quote or a control character
 # whatever this says, which is why gitpaths.unquote_path stays for
 # line-oriented history and diff headers.
-_RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false")
+#
+# The three log settings hold every history read to git's own defaults.
+# log.showSignature=true prints each signed commit's verification ahead of its
+# record: explain --history read it as part of the commit's name, the churn
+# window as a changed path, and the ratchet history as patch text. Off, a walk
+# also runs no gpg or ssh-keygen per signed commit. log.follow=true follows a
+# lone path across a rename, and git's --follow drops commits under --reverse,
+# which the ratchet history reads with. log.showRoot=false prints no diff for
+# the root commit, so its files got no churn from it and its ratchet marks
+# never entered the report.
+_RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false",
+             "-c", "log.showSignature=false", "-c", "log.follow=false", "-c", "log.showRoot=true")
 # Parsed patches are a protocol, independent of display settings and converters.
 _PATCH = ("-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
           "--no-ext-diff", "--no-textconv", "--inter-hunk-context=0",
