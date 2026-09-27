@@ -291,6 +291,91 @@ def test_a_package_level_go_literal_counts_its_parameters(declaration, long_name
     assert (record.long_name, record.params) == (long_name, params)
 
 
+# --- Go: a type switch is a switch -------------------------------------------------
+
+# Hand count for Kind: 1 + two cases + the if = 4, lines 3-14.
+GO_TYPE_SWITCH = """package b
+
+func Kind(n int, v any) int {
+\tswitch v.(type) {
+\tcase int:
+\t\treturn 1
+\tcase string:
+\t\treturn 2
+\t}
+\tif n > 1 {
+\t\treturn 3
+\t}
+\treturn 0
+}
+
+func Next(n int) int {
+\tif n > 0 {
+\t\treturn 1
+\t}
+\treturn 0
+}
+"""
+
+
+def test_a_go_type_switch_leaves_its_function_the_code_after_it():
+    """lizard read the `type` of `v.(type)` as a type declaration, whose name
+    and body took the `)` and the switch's `{`. The switch's `}` then closed the
+    function: Kind read lines 3-9 at ccn 3, and its `if` counted nowhere."""
+    assert [r[:4] for r in rows("b.go", GO_TYPE_SWITCH)] == [
+        ("Kind n int , v any", 3, 14, 4), ("Next n int", 16, 21, 2)]
+
+
+@pytest.mark.parametrize("guard", ["v.(type)", "x := v.(type)", "v.( type )", "x := v.(\n\t\ttype)"])
+def test_a_go_type_switch_reads_like_an_expression_switch(guard):
+    """The same function switching on the value, `switch v {`, is the control:
+    every column but the long name and the lines the guard spans agrees."""
+    typed = GO_TYPE_SWITCH.replace("v.(type)", guard)
+    plain = GO_TYPE_SWITCH.replace("v.(type)", "v")
+    lines = guard.count("\n")
+
+    def columns(source):
+        return [(r.start, r.end, r.ccn_std, r.ccn_mod, r.ccn, r.params, r.nesting, r.cognitive)
+                for r in analyze_source("b.go", source)]
+
+    def moved(row):
+        """Kind, on line 3, holds the guard's line breaks; Next sits below them."""
+        start, end, *rest = row
+        return (start if start == 3 else start + lines, end + lines, *rest)
+
+    assert columns(typed) == [moved(row) for row in columns(plain)]
+
+
+def test_go_type_switches_in_methods_and_literals_close_at_their_own_brace():
+    source = """package b
+
+func (s *S) Kind(v any) int {
+\tf := func() int {
+\t\tswitch x := v.(type) {
+\t\tcase int:
+\t\t\treturn x
+\t\t}
+\t\treturn 0
+\t}
+\tif v != nil {
+\t\treturn f()
+\t}
+\treturn 0
+}
+"""
+    assert [r[:4] for r in rows("b.go", source)] == [
+        ("", 4, 10, 2), ("(s*S)Kind v any", 3, 15, 2)]
+
+
+def test_a_go_local_type_declaration_still_reads_as_one():
+    """A local `type` with a struct body is a declaration: its braces are the
+    struct's, and the if after it is the function's."""
+    source = ("package b\n\nfunc Add(n int) int {\n\ttype pair struct{ a, b int }\n"
+              "\tif n > 0 {\n\t\treturn 1\n\t}\n\treturn pair{}.a\n}\n")
+
+    assert rows("b.go", source) == [("Add n int", 3, 9, 2, 1, 1, 1)]
+
+
 # --- Zig: a result type with braces ----------------------------------------------
 
 ZIG_STRUCT_RESULT = """pub fn pair(n: usize) struct { usize, usize } {

@@ -21,6 +21,9 @@ misread a signature five ways:
   * a Zig name written as a string, `fn @"weird name"(x: i32)`, reached it as
     `@` and a string, so the function had no row.
 
+It also read the `type` of a Go type switch, `switch v.(type) {`, as a type
+declaration that took the switch's `{`, so the switch's `}` ended the function.
+
 The fix reads the signature the way the language does:
 
   * A parameter starts at a comma of the list itself, never at one nested in
@@ -43,10 +46,14 @@ The fix reads the signature the way the language does:
     `(a,b int)`, the key a package-level literal already had.
   * A `func` right after a `]` on the same line is an element type
     (`[]func(){f, g}`, `map[string]func(int) int{...}`), and the `{` after its
-    signature opens the composite literal, not a body. lizard read such a
-    literal as a function at ccn 1.
+    signature opens the composite literal, not a body. lizard read some such
+    literals, `[]func(){f, g}` among them, as a function at ccn 1.
   * A Zig `@"..."` is one token, and it names the function it follows `fn`
     in. keys.bare_name cuts it whole, spaces and all.
+  * A Go `type` followed by `)` is a type switch's guard and declares nothing.
+  * A `}` that reaches the machine reading the file closes nothing and is
+    ignored. lizard's machine returned from the file there and never came back,
+    so each later function ended at its body's `{` or had no row.
 
 A dropped function has to be dropped before any extension counts the token that
 ends it, or that token's condition, nesting and line go to a function that no
@@ -332,6 +339,16 @@ class GoSignatureStates(_SignatureStates):
         if _is_line_break(token):
             return self._in_tail() and _semicolon_after(self.last_token)
         return super()._ended_by(token)
+
+    def _type_definition(self, token):
+        """A type declaration names its type next. A `)` there shows the `type`
+        was a type switch's guard, `v.(type)`, and the switch's `{` opens a
+        block: lizard took that `{` for the declared type's, and the switch's `}`
+        then ended the function around it."""
+        if token == ")":
+            self._state = self._state_global
+        else:
+            super()._type_definition(token)
 
 
 class ZigSignatureStates(_SignatureStates):

@@ -29,8 +29,13 @@ guide](docs/upgrading.md) lists what moves.
   ccn 1. A function literal inside a package-level composite literal keeps its row
   and reads like any package-level literal, `(i int)`, where it read ` i int` and
   took the handle `i`.
-- A `}` that closes nothing at file level, which lizard leaves where it misreads the
-  code before it, no longer costs each Go method after it its row.
+- A Go type switch, `switch x := v.(type) {`, is a switch. lizard read its `type` as
+  a type declaration that took the switch's `{`, so the switch's `}` ended the
+  function: the code after the switch counted nowhere, and `ccn` fell by each
+  decision there. A function with a type switch can read higher and go over its
+  ceiling.
+- A `}` that closes nothing at file level, such as the one a type switch left, no
+  longer costs each Go method after it its row.
 - A Zig function named by a string, `fn @"weird name"(x: i32) i32`, is listed under
   that name, and its handle is the whole `@"weird name"`. It had no row.
 - `params` counts a parameter of function type once, where `f func(int, string)
