@@ -33,16 +33,15 @@ def _call(tmp_path: Path, params, method: str = "tools/call") -> dict:
 
 @pytest.mark.parametrize("name", ["list_runs", "get_function_brief"])
 @pytest.mark.parametrize("arguments, shown", [
-    (["x"], 'an array (["x"])'), ("x", 'a string ("x")'), (5, "a number (5)"),
-    (True, "a boolean (true)")])
+    (["x"], "an array"), ("x", "a string"), (5, "a number"), (True, "a boolean")])
 def test_arguments_that_are_not_an_object_answer_a_tool_result(tmp_path, name, arguments, shown):
+    """ADR 0001's 0.8.1 amendment spells the refusal: it names the JSON type,
+    never the value."""
     reply = _call(tmp_path, {"name": name, "arguments": arguments})
 
     assert "error" not in reply, reply
     assert reply["result"]["isError"] is True
-    assert reply["result"]["content"][0]["text"] == (
-        f"{name} takes its arguments as a JSON object of argument name to value, got {shown}; "
-        "see inputSchema")
+    assert reply["result"]["content"][0]["text"] == f"arguments must be an object (got {shown})"
 
 
 @pytest.mark.parametrize("name, shown", [(["list_runs"], "['list_runs']"), ({"a": 1}, "{'a': 1}"),
@@ -55,13 +54,21 @@ def test_a_tool_name_that_is_not_a_string_answers_unknown_tool(tmp_path, name, s
     assert reply["result"]["content"][0]["text"] == f"unknown tool {shown}"
 
 
-@pytest.mark.parametrize("method", ["tools/call", "initialize", "tools/list"])
+# What each method that reads params by name needs them to hold, as ADR 0001's
+# 0.8.1 amendment spells it. ping and tools/list read no params and answer
+# whatever type they are (test_mcp_server holds that).
+_HOLDS = {"tools/call": "naming the tool and its arguments",
+          "initialize": "carrying protocolVersion"}
+
+
+@pytest.mark.parametrize("method", ["tools/call", "initialize"])
 @pytest.mark.parametrize("params, shown", [([1], "an array"), ("x", "a string"), (3, "a number")])
 def test_params_that_are_not_an_object_answer_invalid_params(tmp_path, method, params, shown):
     reply = _call(tmp_path, params, method)
 
     assert reply["error"]["code"] == -32602, reply
-    assert reply["error"]["message"] == f"{method} takes params as a JSON object, got {shown}"
+    assert reply["error"]["message"] == (
+        f"params must be an object {_HOLDS[method]} (got {shown})")
 
 
 def test_absent_or_null_arguments_still_run_the_call(tmp_path):
@@ -118,7 +125,7 @@ def test_no_request_a_client_can_shape_answers_an_internal_error(tmp_path):
 def test_the_mcp_page_quotes_both_answers_as_the_server_gives_them(tmp_path):
     page = Path(__file__).resolve().parents[2] / "docs" / "agent-json.md"
     text = " ".join(page.read_text(encoding="utf-8").split())
-    refused = _call(tmp_path, {"name": "list_runs", "arguments": ["x"]})
+    refused = _call(tmp_path, {"name": "list_runs", "arguments": 5})
     invalid = _call(tmp_path, ["x"])
 
     assert refused["result"]["content"][0]["text"] in text

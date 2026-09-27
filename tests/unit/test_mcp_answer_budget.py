@@ -21,6 +21,7 @@ import pytest
 
 from crapkit import mcp_server
 from crapkit.mcp_server import ANSWER_CHARS, TOOLS, tool_listing
+from crapkit.packet import console_command
 
 _CONFIG = '[crapkit]\ntarget = 6\n[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n'
 
@@ -85,8 +86,8 @@ def test_a_worklist_of_fifty_keeps_the_top_rows_that_fit_and_says_how_many(monke
     assert _embedded(result) <= ANSWER_CHARS
     assert answer["active"] == payload["active"][:kept["kept"]]
     assert kept == {"kept": len(answer["active"]), "of": 50}
-    assert answer["truncated"]["full"].endswith("worklist --top 50 --json --repo "
-                                                 f"{(tmp_path / 'repo').resolve()}")
+    assert answer["truncated"]["full"].endswith(
+        f'worklist "--top=50" "--repo={(tmp_path / "repo").resolve()}" --json')
     assert answer["active_total"] == 61
     assert result["structuredContent"] == answer
 
@@ -224,7 +225,7 @@ def test_every_tool_names_the_cli_command_for_the_whole_answer(tmp_path):
     for tool in TOOLS:
         arguments = {key: "a.py" if key == "path" else "f" for key in tool["positional"]}
         full = mcp_server._full_command(tool, arguments, str(tmp_path))
-        assert " ".join(mcp_server.build_argv(tool, arguments)) in full, full
+        assert full == console_command(mcp_server.build_argv(tool, arguments, str(tmp_path))), full
 
 
 def test_the_pages_state_the_budget_the_server_holds():
@@ -254,7 +255,7 @@ def test_a_failing_doctor_report_is_cut_to_the_budget_and_stays_an_error(monkeyp
     answer = json.loads(result["content"][0]["text"])
     assert _assert_cut_to_prefixes(answer, report) == {
         "problems": {"kept": len(answer["problems"]), "of": 80}}
-    assert answer["truncated"]["full"].startswith("crapkit doctor --json --repo ")
+    assert answer["truncated"]["full"].startswith('crapkit doctor "--repo=')
 
 
 # --- fields below the top level ----------------------------------------------------
@@ -303,7 +304,7 @@ def test_a_gate_with_sixty_breaches_cuts_the_nested_breaches_and_keeps_the_verdi
     assert answer["gate"]["ok"] is False and answer["gate"]["judged"] == 61
     assert answer["gate"]["breaches"][0]["function"] == "f0( a , b )"
     assert answer["truncated"]["full"].endswith(
-        f"rescore --gate calc/big.py --json --repo {(tmp_path / 'repo').resolve()}")
+        f'rescore --gate "--repo={(tmp_path / "repo").resolve()}" --json -- calc/big.py')
 
 
 def test_a_map_keyed_by_file_is_cut_by_entries_after_the_lists(monkeypatch, tmp_path):

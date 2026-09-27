@@ -1904,8 +1904,8 @@ list, entries for an object and characters for a string, and `full` is the CLI c
 that prints the whole answer:
 
 ```json
-"truncated": {"fields": {"active": {"kept": 19, "of": 50}}, "full": "crapkit worklist --top 50 --json --repo /home/me/app"}
-"truncated": {"fields": {"functions": {"kept": 0, "of": 61}, "gate.breaches": {"kept": 34, "of": 60}}, "full": "crapkit rescore --gate calc/big.py --json --repo /home/me/app"}
+"truncated": {"fields": {"active": {"kept": 19, "of": 50}}, "full": "crapkit worklist \"--top=50\" \"--repo=/home/me/app\" --json"}
+"truncated": {"fields": {"functions": {"kept": 0, "of": 61}, "gate.breaches": {"kept": 34, "of": 60}}, "full": "crapkit rescore --gate \"--repo=/home/me/app\" --json -- calc/big.py"}
 ```
 
 A field shorter than 500 characters, such as a path or a commit, is never cut. A failing

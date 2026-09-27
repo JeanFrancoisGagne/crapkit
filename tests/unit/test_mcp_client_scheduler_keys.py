@@ -16,6 +16,9 @@ import pytest
 from crapkit import mcp_server
 from crapkit.mcp_server import TOOLS, build_argv, tool_listing
 
+# build_argv spells the repo into the argv; both sides of each comparison use this one.
+REPO = "R"
+
 
 def _measured(tmp_path: Path) -> Path:
     (tmp_path / "crapkit.toml").write_text("[crapkit]\ntarget = 6\n", encoding="utf-8")
@@ -31,7 +34,7 @@ def _ran(tmp_path: Path, tool: dict, arguments: dict) -> list:
     calls = []
 
     def run_cli(tool, arguments, repo):
-        calls.append(build_argv(tool, arguments))
+        calls.append(build_argv(tool, arguments, REPO))
         return mcp_server._result("{}", is_error=False)
 
     result = mcp_server._call_tool(_measured(tmp_path), tool["name"], arguments, run_cli=run_cli)
@@ -46,7 +49,7 @@ def test_every_tool_runs_a_call_that_carries_wait_for_previous(tmp_path, tool, v
 
     carried = _ran(tmp_path, tool, {**plain, "wait_for_previous": value})
 
-    assert carried == [build_argv(tool, plain)]
+    assert carried == [build_argv(tool, plain, REPO)]
 
 
 def test_the_calls_gemini_sent_run_as_the_same_calls_without_the_key(tmp_path):
@@ -57,7 +60,7 @@ def test_the_calls_gemini_sent_run_as_the_same_calls_without_the_key(tmp_path):
         tool = mcp_server._tool_named(name)
         expected = {k: v for k, v in arguments.items() if k != "wait_for_previous"}
 
-        assert _ran(tmp_path, tool, arguments) == [build_argv(tool, expected)]
+        assert _ran(tmp_path, tool, arguments) == [build_argv(tool, expected, REPO)]
 
 
 def test_another_undeclared_key_is_still_refused_and_the_list_does_not_offer_the_client_key(

@@ -235,7 +235,7 @@ def commands(path: str, scoped: bool, note: str = "") -> dict:
 def refresh_command() -> dict:
     """`commands` for a payload that carries `stale` and names no per-file
     command: the refresh alone, the same string a packet's `commands` holds."""
-    return {"refresh": REFRESH}
+    return {"refresh": _spelled(REFRESH)}
 
 
 def budget(row, ceiling: int) -> dict:

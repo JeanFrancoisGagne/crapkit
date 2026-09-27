@@ -112,7 +112,7 @@ def test_an_upgrade_during_a_call_still_names_the_command_for_the_whole_answer(m
     result = mcp_server._call_tool(repo, "list_runs", {})
 
     full = json.loads(result["content"][0]["text"])["truncated"]["full"]
-    assert full.endswith(f"runs --json --repo {repo.resolve()}"), full
+    assert full.endswith(f'runs "--repo={repo.resolve()}" --json'), full
 
 
 def test_the_server_reads_its_own_package_directory():

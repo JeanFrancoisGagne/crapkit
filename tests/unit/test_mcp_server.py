@@ -614,17 +614,23 @@ def test_initialize_answers_the_newest_revision_when_it_cannot_read_one(monkeypa
     assert replies[1]["result"]["protocolVersion"] == mcp_server.SUPPORTED_PROTOCOLS[0]
 
 
-@pytest.mark.parametrize("method, shown", [(None, "None"), ("omitted", "''"),
-                                           (["ping"], "['ping']"), (7, "7")],
-                         ids=["null", "absent", "a-list", "a-number"])
+@pytest.mark.parametrize("method, shown", [(None, "None"), (["ping"], "['ping']"), (7, "7")],
+                         ids=["null", "a-list", "a-number"])
 def test_a_method_that_is_not_a_known_string_is_an_unknown_method(monkeypatch, tmp_path,
                                                                   method, shown):
-    msg = {"jsonrpc": "2.0", "id": 1}
-    if method != "omitted":
-        msg["method"] = method
+    msg = {"jsonrpc": "2.0", "id": 1, "method": method}
     replies = _serve(monkeypatch, tmp_path, [json.dumps(msg), _rpc(2, "ping")])
 
     assert replies[1]["error"] == {"code": -32601, "message": f"unknown method {shown}"}
+    assert replies[2]["result"] == {}
+
+
+def test_a_message_with_an_id_and_no_method_is_an_invalid_request(monkeypatch, tmp_path):
+    """No method, result or error: neither a request nor a response, which
+    JSON-RPC 2.0 answers -32600 (ADR 0001's 0.8.1 amendment)."""
+    replies = _serve(monkeypatch, tmp_path, ['{"jsonrpc": "2.0", "id": 1}', _rpc(2, "ping")])
+
+    assert replies[1]["error"]["code"] == -32600
     assert replies[2]["result"] == {}
 
 

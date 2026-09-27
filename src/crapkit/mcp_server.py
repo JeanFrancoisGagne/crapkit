@@ -2362,6 +2362,8 @@ def _method_handler(method):
 # tools/list read none, so they answer whatever params are.
 _PARAMS_HOLD = {"initialize": "carrying protocolVersion",
                 "tools/call": "naming the tool and its arguments"}
+
+
 def _params(msg: dict):
     """The request's params, with null or absent read as the empty object."""
     params = msg.get("params")
