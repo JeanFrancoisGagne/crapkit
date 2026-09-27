@@ -1482,6 +1482,23 @@ def _doctor_merge_driver(root: Path, cfg) -> list[Finding]:
                                        config_value(root, f"merge.{driver}.driver")))
 
 
+def _doctor_marks_stamp(root: Path, cfg) -> list[Finding]:
+    """The marks file verify refuses for its metric stamp (FAIL). Right after
+    an upgrade that moves the analysis version, verify exits 3 before any lane
+    runs, and doctor said `no problems found`. A marks file crapkit cannot read
+    stops verify too, so doctor names that as well."""
+    from ..ratchet import metric_version
+    from ..ratchetfile import RatchetFile
+
+    try:
+        conflict = RatchetFile.read(root / cfg.ratchet_file).stamp_conflict(metric_version())
+    except ToolError as exc:
+        return [Finding("FAIL", str(exc))]
+    if not conflict:
+        return []
+    return [Finding("FAIL", f"`{_self()} verify` refuses {cfg.ratchet_file} at exit 3: {conflict}")]
+
+
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
                      show_files: bool) -> list[Finding]:
     named = [f for f in files if readable(f)]
@@ -1500,6 +1517,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_container(cfg)
             + _doctor_silent_gates(root)
             + _doctor_merge_driver(root, cfg)
+            + _doctor_marks_stamp(root, cfg)
             + _doctor_launchers()
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, named)
