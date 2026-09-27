@@ -16,6 +16,7 @@ from ..errors import ConfigError, CrapkitError, GitError, ToolError, UnreadableN
 from ..gitpaths import readable, shown
 from ..invocation import _self, quoted_path
 from ..merge import UNREAD_ADVICE
+from ..named import first_few
 from ..repopath import on_a_share, rooted, typed, typed_path
 from ..rootfind import find_root
 from ..store import SnapshotStore
@@ -344,10 +345,6 @@ def _init_or_repo(root: Path) -> str:
             f"directory that holds one{nearby}")
 
 
-# How many crapkit roots below a refusal names before it counts the rest.
-_NAMED_ROOTS = 3
-
-
 def _from_cwd(path: Path) -> str:
     """`path` the way the caller types it: relative when it sits under the
     working directory, absolute otherwise."""
@@ -386,8 +383,7 @@ def _roots_below_hint(root: Path) -> str:
         return ""
     if len(roots) == 1:
         return f"; crapkit.toml sits below it in {roots[0]}: pass --repo {roots[0]}"
-    more = f" and {len(roots) - _NAMED_ROOTS} more" if len(roots) > _NAMED_ROOTS else ""
-    return (f"; crapkit.toml sits below it in {', '.join(roots[:_NAMED_ROOTS])}{more}: "
+    return (f"; crapkit.toml sits below it in {first_few(roots)}: "
             "pass --repo with the one to score")
 
 

@@ -130,11 +130,12 @@ def test_an_unreadable_marketplace_record_is_no_comparison(tmp_path, monkeypatch
     assert run(capsys) == (0, [f"crapkit doctor: checking {root}"])
 
 
-def test_the_pure_rule_counts_and_names_the_first_differing_file():
+def test_the_pure_rule_counts_and_names_the_first_differing_files():
+    """The names follow crapkit.named's one rule: the first three, then a count."""
     line = stale_copy(where="/c/0.8.0", version="0.8.0", source="/m/plugin", source_version="0.8.0",
-                      differing=("a.md", "b.md", "c.md"), scopes=USER_SCOPE)
+                      differing=("a.md", "b.md", "c.md", "d.md"), scopes=USER_SCOPE)
 
-    assert "3 files differ between them (a.md, b.md and 1 more)" in line
+    assert "4 files differ between them (a.md, b.md, c.md and 1 more)" in line
     assert stale_copy(where="/c", version="0.8.0", source="/m", source_version="0.8.0",
                       differing=(), scopes=USER_SCOPE) is None
     assert stale_copy(where="/c", version="0.8.0", source="/m", source_version="0.8.1",

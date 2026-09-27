@@ -7,6 +7,7 @@ import re
 from pathlib import PurePath
 from typing import NamedTuple
 
+from .named import first_few
 from .universe import LANGUAGE_EXTENSIONS, exclude_matcher, scopes_with_tests
 
 from .config_contract import known_keys
@@ -780,16 +781,10 @@ _STALE_COPY = (
     "whose version did not move, so reinstall it with {reinstall}, and restart Claude Code's "
     "sessions."
 )
-_NAMED_FILES = 2
 
 
 def _files_differ(count: int) -> str:
     return "1 file differs" if count == 1 else f"{count} files differ"
-
-
-def _first_files(differing: tuple[str, ...]) -> str:
-    shown, rest = ", ".join(differing[:_NAMED_FILES]), len(differing) - _NAMED_FILES
-    return f"{shown} and {rest} more" if rest > 0 else shown
 
 
 def stale_copy(*, where: str, version: str | None, source: str, source_version: str | None,
@@ -804,7 +799,7 @@ def stale_copy(*, where: str, version: str | None, source: str, source_version: 
         return None
     return _STALE_COPY.format(where=where, version=version, source=source,
                               reinstall=_for_each_scope(_REINSTALL["claude"], scopes),
-                              count=_files_differ(len(differing)), named=_first_files(differing))
+                              count=_files_differ(len(differing)), named=first_few(differing))
 
 
 def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,

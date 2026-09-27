@@ -196,7 +196,8 @@ def test_the_comment_judges_the_package_diff(monorepo_job):
 
     comment = _read(job["state"], "crapkit-comment.md")
 
-    assert "**verify passed.**" in comment and "1 changed file." in comment, "\n".join(job["ran"])
+    assert "**verify passed.**" in comment, "\n".join(job["ran"])
+    assert "1 changed file (`calc/grade.py`)." in comment, "\n".join(job["ran"])
     assert "### Worklist: 1 changed file" in comment
 
 

@@ -99,9 +99,9 @@ def test_the_partial_run_hint_quotes_git_when_git_cannot_read_the_tree(tmp_path)
     reader expected every lane to reuse; none can, since nothing proves it."""
     note = _dirty_note(tmp_path)
 
-    assert note.startswith(" (git cannot say whether the working tree is clean (git "), note
+    assert note.startswith(" (git cannot say whether the working tree is clean ("), note
     assert note.endswith("), so every lane that lists no `inputs` reruns)"), note
-    assert "not a git repository" in note, note
+    assert f"({tmp_path} is not a git repository, and no directory above it is one: " in note, note
 
 
 def _outputs(root: Path) -> frozenset:

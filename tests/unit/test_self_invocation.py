@@ -171,10 +171,12 @@ def test_an_installed_tool_under_uv_names_the_console_script(tmp_path, monkeypat
     `uv run` started still carries UV. Only a tag above the environment makes
     it a cache."""
     env = tmp_path / "share" / "uv" / "tools" / "crapkit"
-    (env / "bin").mkdir(parents=True)
+    scripts = _launcher_in(env / "bin").parent
     (env / "CACHEDIR.TAG").write_text(CACHE_TAG, encoding="utf-8")
     run_from(env, monkeypatch)
     monkeypatch.setenv("UV", "/usr/local/bin/uv")
+    monkeypatch.setattr(invocation, "_scripts_dirs", lambda: {scripts.resolve()})
+    monkeypatch.setenv("PATH", str(scripts))
 
     assert _self() == "crapkit"
 

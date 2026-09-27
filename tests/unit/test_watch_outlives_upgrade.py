@@ -53,7 +53,7 @@ def test_a_watcher_stops_and_names_the_restart_at_its_first_rescore_after_an_upg
     watcher = subprocess.Popen([sys.executable, "-m", "crapkit", "watch", "--repo", str(repo),
                                 "--interval", "0.1"], env=env, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
-    assert next_line(watcher).startswith("watching 1 tracked files")
+    assert next_line(watcher).startswith("watching 1 file(s) in scope")
     _upgrade(site / "crapkit")
 
     (repo / "src" / "a.py").write_text("def f(x):\n    if x:\n        return 1\n    return x\n",
