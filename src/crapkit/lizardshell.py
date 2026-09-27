@@ -50,10 +50,13 @@ HEREDOCS
 
     `<<EOF`, `<<-EOF`, `<<'EOF'`, `<<"EOF"` and `<<\\EOF` open a body; `<<<`
     (herestring) does not; a `<<` inside `$(( ))` reads as a bit shift; a `<<`
-    inside a string is text, with the quotes counted from inside the last `$(`
-    still open, so `v="$(node - "$f" <<'JS'` opens a body; and an opener whose
-    terminator never appears is ignored, so a misread `<<` costs nothing instead
-    of blanking the rest of the file.
+    inside a string or a comment is text. What a `<<` sits in is read across
+    lines (_Context): each code line starts inside whatever the lines above left
+    open, so `v="$(node - "$f" <<'JS'` opens a body, a `<<'JS'` on the line that
+    closes a multi-line `X="$(...)"` opens one too, and a `<<` in the second line
+    of a string or of a multi-line single-quoted program opens none. An opener
+    whose terminator never appears is ignored, so a misread `<<` costs nothing
+    instead of blanking the rest of the file.
 
     A line ends where bash ends it, at LF (the source arrives with CRLF and a lone
     CR already read as LF), never at a form feed or another character
@@ -100,6 +103,11 @@ KNOWN LIMITS
       inner quote, as lizard's own rule ends it, and the command counts nothing.
     - A substitution in a heredoc body runs when the delimiter is unquoted
       (`<<EOF`, not `<<'EOF'`), and it counts nothing: the whole body is blanked.
+    - What a line leaves open carries to the next, so a quote the heredoc reader
+      misreads stays open: a heredoc after it reads as text and its body counts
+      as shell. Only a script shell itself rejects, such as an unpaired `'` in a
+      bare word, leaves one open. A case opens a context only when `case WORD
+      in` sits on one line.
     - A function defined inside another function's body is not reported; its braces
       are counted, so the outer function still closes on the right `}`.
     - A name containing `-` or `.` reaches the reader split into several tokens, so
@@ -214,7 +222,33 @@ _HOLE = re.compile(r"\\.|(" + _COMMAND_SUB + "|" + _BACKTICK_SUB + ")", re.S)
 _HEREDOC = re.compile(
     r"(?<!<)<<(?!<)(-?)\s*(?:(['\"])([A-Za-z_]\w*)\2|\\?([A-Za-z_]\w*))")
 
-_SUBSTITUTION_OPEN = re.compile(r"\$\(")
+# What each context of a line reads next, for _Context. `code` serves top-level
+# code and everything that holds code: `$( )`, `( )`, backticks and a case. A
+# lexeme is matched only where its context can hold it: a `'` opens a string in
+# code and is a letter inside "...", and a `)` closes a `$(` but not a case
+# pattern. _AT_WORD is the start of a word, where `#` opens a comment and `case`
+# is a keyword.
+_CODE = "code"
+_AT_WORD = r"(?<![^\s;&|()])"
+_INTO = r"|(?P<arith>\$\(\()|(?P<sub>\$\()|(?P<param>\$\{)|(?P<backtick>`)"
+_LEXEMES = {
+    _CODE: re.compile(
+        r"(?P<skip>\\.|<<<)|(?P<comment>" + _AT_WORD + r"\#[^\n]*)|(?P<heredoc><<)"
+        r"|(?P<ansi>\$')|(?P<single>')|(?P<double>\")"
+        r"|(?P<arith_command>" + _AT_WORD + r"\(\()" + _INTO + r"|(?P<paren>\()|(?P<close>\))"
+        r"|(?P<case>" + _AT_WORD + r"case\s+(?:\"[^\"]*\"|'[^']*'|[^\s\"'])+\s+in\b)"
+        r"|(?P<esac>" + _AT_WORD + r"esac\b)", re.S),
+    '"': re.compile(r"(?P<skip>\\.)|(?P<pop>\")" + _INTO, re.S),
+    "'": re.compile(r"(?P<pop>')"),
+    "$'": re.compile(r"(?P<skip>\\.)|(?P<pop>')", re.S),
+    "${": re.compile(r"(?P<skip>\\.)|(?P<pop>\})|(?P<double>\")" + _INTO, re.S),
+    "((": re.compile(r"(?P<pop>\)\))|(?P<aparen>\()" + _INTO),
+    "a(": re.compile(r"(?P<pop>\))|(?P<aparen>\()" + _INTO),
+}
+# The context each opening lexeme enters. "a(" is a paren inside arithmetic.
+_OPENS = {"ansi": "$'", "single": "'", "double": '"', "arith": "((",
+          "arith_command": "((", "sub": "$(", "param": "${", "paren": "(",
+          "aparen": "a(", "case": "case"}
 
 _NAME = re.compile(r"[A-Za-z_]\w*")
 
@@ -232,38 +266,81 @@ def _is_name(token) -> bool:
 
 # --- heredoc bodies, removed from the source ----------------------------------
 
-def _quoted(line: str, position: int) -> bool:
-    """True when an odd number of quotes precedes this '<<' on its line, which
-    puts it inside a string: `echo "pipe it <<EOF"` opens nothing.
+class _Context:
+    """What is open at the end of the code lines read so far, innermost last:
+    quotes, `$( )`, `( )`, backticks, `${ }`, arithmetic and case statements.
 
-    The count starts inside the last `$(` still open, because the quote before a
-    substitution quotes its output: in `v="$(node - "$f" <<'JS'` the command's
-    own quotes pair among themselves and its `<<` opens a body.
+    A `<<` opens a heredoc only in code, and a line can start inside something
+    an earlier line opened:
+
+        X="$(
+          printf x
+        )" node - "$p" <<'JS'
+
+    Counted on the last line alone, three quotes precede its `<<` and it read
+    as quoted. Carried from line 2, the `"` closes the string and the `<<` sits
+    in code. The same stack puts `v="$(node - "$f" <<'JS'` in code, a `<<` in
+    `$(( 1 << bits ))` in arithmetic, where it is a shift, and a case pattern's
+    `)` in the case rather than at the close of its `$(`.
     """
-    head = _open_substitution(line[:position])
-    return head.count('"') % 2 == 1 or head.count("'") % 2 == 1
+
+    def __init__(self) -> None:
+        self.stack: list = []
+        self._actions = {"pop": self.stack.pop, "close": self._close,
+                         "backtick": self._backtick, "esac": self._esac}
+
+    def openers(self, line: str) -> list:
+        """(delimiter, dashed) for every heredoc LINE opens in code, reading the
+        line to its end so the next one starts where this one leaves off."""
+        found: list = []
+        match = self._next(line, 0)
+        while match:
+            match = self._next(line, self._read(line, match, found))
+        return found
+
+    def _next(self, line: str, position: int):
+        top = self.stack[-1] if self.stack else _CODE
+        return _LEXEMES.get(top, _LEXEMES[_CODE]).search(line, position)
+
+    def _read(self, line: str, match, found: list) -> int:
+        """Act on one lexeme; return where the next search starts."""
+        if match.lastgroup == "heredoc":
+            return _heredoc(line, match, found)
+        opens = _OPENS.get(match.lastgroup)
+        if opens:
+            self.stack.append(opens)
+        else:
+            self._actions.get(match.lastgroup, _nothing)()
+        return match.end()
+
+    def _close(self) -> None:
+        """A `)` closes a `$(` or a `(`. After a case pattern it closes nothing."""
+        if self.stack and self.stack[-1] in ("$(", "("):
+            self.stack.pop()
+
+    def _backtick(self) -> None:
+        if self.stack and self.stack[-1] == "`":
+            self.stack.pop()
+        else:
+            self.stack.append("`")
+
+    def _esac(self) -> None:
+        if self.stack and self.stack[-1] == "case":
+            self.stack.pop()
 
 
-def _open_substitution(head: str) -> str:
-    """HEAD from just inside the last `$(` it leaves open, or all of HEAD."""
-    for opened in reversed(list(_SUBSTITUTION_OPEN.finditer(head))):
-        inside = head[opened.end():]
-        if inside.count(")") <= inside.count("("):
-            return inside
-    return head
+def _nothing() -> None:
+    """A lexeme read only so the search moves past it: an escape, a comment."""
 
 
-def _shifted(line: str, position: int) -> bool:
-    """True when this '<<' sits inside arithmetic, where it is a bit shift:
-    `$(( 1 << bits ))` puts a bare word exactly where a delimiter would go."""
-    return line.count("((", 0, position) > line.count("))", 0, position)
-
-
-def _openers(line: str) -> list:
-    """(delimiter, dashed) for every heredoc this line opens."""
-    return [(match.group(3) or match.group(4), bool(match.group(1)))
-            for match in _HEREDOC.finditer(line)
-            if not _quoted(line, match.start()) and not _shifted(line, match.start())]
+def _heredoc(line: str, match, found: list) -> int:
+    """Record the heredoc whose `<<` MATCH found, and skip its delimiter word, so
+    the quotes of `<<'JS'` open nothing."""
+    opener = _HEREDOC.match(line, match.start())
+    if not opener:
+        return match.end()
+    found.append((opener.group(3) or opener.group(4), bool(opener.group(1))))
+    return opener.end()
 
 
 def _terminates(line: str, opener) -> bool:
@@ -288,6 +365,7 @@ class _HeredocStripper:
     def __init__(self) -> None:
         self.pending: list = []   # delimiters opened on one line, bodies not started
         self.active = None        # the delimiter whose body we are inside
+        self.context = _Context()  # what the code lines so far leave open
 
     def strip(self, source: str) -> str:
         lines = source_lines(source, keepends=True)
@@ -298,7 +376,8 @@ class _HeredocStripper:
         if self.active is not None:
             return self._body_line(line)
         # The opener line is code and stays whole; the body starts on the next one.
-        self.pending = [o for o in _openers(line) if _terminated(o, lines, index)]
+        self.pending = [o for o in self.context.openers(line)
+                        if _terminated(o, lines, index)]
         self._next_body()
         return line
 

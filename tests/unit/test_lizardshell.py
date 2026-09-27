@@ -227,6 +227,51 @@ def test_a_heredoc_opener_inside_a_string_opens_no_body(line):
     assert _only(code).cyclomatic_complexity == 2
 
 
+# A line can start inside a string, a substitution or a case that an earlier line
+# opened. Counted one line at a time, the quotes on the line alone decided.
+
+def test_a_heredoc_on_the_line_that_closes_a_quoted_substitution_is_a_body():
+    """Line 4's first `"` closes the string line 2 opened, so its `<<'JS'` sits in
+    code. Counted on line 4 alone, three quotes preceded it, it read as quoted,
+    and the program's `if`, `||`, `if` and `&&` counted as shell. The body and
+    its terminator count 0 NLOC: lines 1 to 4, 8 and 9 do."""
+    code = ('load() {\n  X="$(\n    printf x\n  )" node - "$p" <<\'JS\'\n'
+            'if (a || b) { c(); }\nif (d && e) { f(); }\nJS\n  echo done\n}\n')
+    fn = _only(code)
+    assert (fn.cyclomatic_complexity, fn.end_line, fn.nloc) == (1, 9, 6)
+
+
+def test_a_heredoc_opener_on_the_second_line_of_a_string_opens_no_body():
+    """`cat <<EOF` on line 3 is text inside the string line 2 opened, so the
+    `EOF` line below ends nothing and the `if` between them counts."""
+    code = ('emit() {\n  echo "usage:\n  cat <<EOF\n"\n  if x; then y; fi\n}\nEOF\n')
+    assert _only(code).cyclomatic_complexity == 2
+
+
+def test_a_left_shift_in_a_multi_line_single_quoted_program_is_not_a_heredoc():
+    code = ("calc() {\n  awk '\n    { print x << y }\n  '\n  if a; then b; fi\n}\ny\n")
+    assert _only(code).cyclomatic_complexity == 2
+
+
+def test_a_heredoc_after_a_case_pattern_inside_a_quoted_substitution_is_a_body():
+    """The pattern's `)` does not close the `$(`, so the `<<'E'` after it sits in
+    the substitution, not in the string around it. Base 1 + one arm = 2."""
+    code = ("f() {\n  v=\"$(case $k in a) cat <<'E'\nif (a || b) { c(); }\nE\n"
+            "  ;; esac)\"\n}\n")
+    fn = _only(code)
+    assert (fn.cyclomatic_complexity, fn.end_line) == (2, 6)
+
+
+@pytest.mark.parametrize("line", [
+    "# it's a comment", "echo $# args", 'echo "${#list[@]}"', "echo 'a' \\' b",
+    "x=$'it\\'s'"])
+def test_a_quote_that_opens_nothing_leaves_the_next_heredoc_alone(line):
+    """None of these lines leaves a quote open: a comment's apostrophe, `$#`,
+    `${#...}`, an escaped quote and `$'...'`. The heredoc below each is a body."""
+    code = 'emit() {\n  ' + line + '\n  cat <<EOF\nif x; then y; fi\nEOF\n}\n'
+    assert _only(code).cyclomatic_complexity == 1
+
+
 # --- hazard: quotes and comments -----------------------------------------------
 
 def test_keywords_inside_quotes_are_not_conditions():
