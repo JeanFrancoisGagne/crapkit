@@ -89,7 +89,7 @@ READS = {
     "ls_files": gitio.ls_files,
     "head_commit": gitio.head_commit,
     "is_shallow": gitio.is_shallow,
-    "file_log_patches": lambda root: gitio.file_log_patches(root, "calc/f.py"),
+    "file_log": lambda root: gitio.file_log(root, "calc/f.py"),
     "log_lines": lambda root: list(gitio._git_lines(root, "log")),
     "staged_blobs": lambda root: gitio.staged_blobs(root, ["calc/f.py"]),
     "merge_base": lambda root: gitio.merge_base(root, "main"),
@@ -106,7 +106,7 @@ def test_outside_a_repository_every_read_says_so(loose, name):
 HEAD_READS = {
     "head_commit": gitio.head_commit,
     "diff_since_head": lambda root: gitio.diff_since(root, "HEAD"),
-    "file_log_patches": lambda root: gitio.file_log_patches(root, "f.py"),
+    "file_log": lambda root: gitio.file_log(root, "f.py"),
     "log_lines": lambda root: list(gitio._git_lines(root, "log")),
     "merge_base": lambda root: gitio.merge_base(root, "main"),
     "is_ancestor": lambda root: gitio.is_ancestor(root, "HEAD"),

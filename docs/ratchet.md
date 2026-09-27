@@ -360,7 +360,7 @@ one tag behind, or a pre-commit `rev` left at the old tag, measures the older an
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=12 lizard=1.24.0] but this run measures [crapkit-analysis=11 lizard=1.24.0] — the marks come from a newer crapkit than this install; upgrade it to the version that wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than re-seed, which would restamp the team's marks backwards and make every upgraded teammate's verify refuse them
+crapkit: ratchet marks were recorded under [crapkit-analysis=12 lizard=1.24.0] but this run measures [crapkit-analysis=11 lizard=1.24.0] - the marks come from a newer crapkit than this install; upgrade it to the version that wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than re-seed, which would restamp the team's marks backwards and make every upgraded teammate's verify refuse them
 EXIT=3
 ```
 
@@ -679,7 +679,7 @@ stamps its own older metric and the next merge refuses again:
 
 ```
 $ git merge main
-crapkit: ratchet merge refused: ours is [crapkit-analysis=11 lizard=1.24.0] and theirs is [crapkit-analysis=12 lizard=1.24.0] — marks from different metric versions cannot merge; theirs is newer, so with a crapkit that measures [crapkit-analysis=12 lizard=1.24.0], run `crapkit coverage`, then re-baseline the merged marks with `crapkit ratchet seed`
+crapkit: ratchet merge refused: ours is [crapkit-analysis=11 lizard=1.24.0] and theirs is [crapkit-analysis=12 lizard=1.24.0] - marks from different metric versions cannot merge; theirs is newer, so with a crapkit that measures [crapkit-analysis=12 lizard=1.24.0], run `crapkit coverage`, then re-baseline the merged marks with `crapkit ratchet seed`
 ```
 
 When the stamps do not compare, as with an unstamped side, it asks you to re-seed one side:

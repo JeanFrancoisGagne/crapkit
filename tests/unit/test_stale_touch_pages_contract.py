@@ -115,8 +115,11 @@ _BASELINE = "a74260f321f" + "4e0b9d2c61a8f3e57d0c1b2a9e8f7d6c5"
 
 
 def _not_behind(shallow: bool, held: bool) -> str:
-    git = SimpleNamespace(is_shallow=lambda: shallow)
-    return verifying._not_behind(git, _BASELINE, lambda commit: held)
+    """verify's line for a named baseline, in a clone where no branch holds
+    the commit, so a commit the clone holds reads as a rewrite."""
+    git = SimpleNamespace(is_shallow=lambda: shallow, branches_containing=lambda commit: [])
+    return verifying._not_behind(git, _BASELINE, f"baseline commit {_BASELINE[:11]}",
+                                 lambda commit: held)
 
 
 def test_the_readme_quotes_the_refusal_for_a_baseline_the_clone_does_not_hold(monkeypatch):

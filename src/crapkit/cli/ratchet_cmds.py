@@ -629,7 +629,7 @@ def _newer_than_install(saved, action: str, newer: list[str]) -> str:
     from ..ratchet import metric_version, upgrade_remedy
 
     return (f"ratchet {action} refused: {saved.path.name} was recorded under "
-            f"[{saved.metric_stamp}] and this crapkit measures [{metric_version()}] — "
+            f"[{saved.metric_stamp}] and this crapkit measures [{metric_version()}] - "
             f"{upgrade_remedy(newer)}; {_BACKWARDS[action]}. A team going back to this release "
             f"on purpose restores the {saved.path.name} it last wrote from git history")
 
