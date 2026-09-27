@@ -869,8 +869,8 @@ def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_w
 #
 # Each finding below is a place the gate or a lane is set up and does not run,
 # and nothing else says so: the coverage guard refuses only when `coverage`
-# starts, git skips a hook it was sent away from, and pre-commit in CI judges
-# an index nobody staged. Pure: the caller reads the environment and the files.
+# starts, and git skips a hook it was sent away from. Pure: the caller reads the
+# environment and the files.
 
 _CONTAINER_LANE = (
     "lane {name!r} runs a coverage.py suite and this is a container ({marker}): "
