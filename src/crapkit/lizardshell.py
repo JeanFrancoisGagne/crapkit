@@ -12,6 +12,10 @@ CCN CONVENTION
     Conditions counted: `if`, `elif`, `while`, `until`, `for`, `&&`, `||`, and
     `;;`. Pipes (`|`) are data flow, not branches, and are not counted.
 
+    Inside arithmetic, `(( ))` and `$(( ))`, bash reads C: the `?` of `a ? b : c`
+    counts as C's does, and the `;;` of `for ((;;))` is no case arm. Outside it
+    `?` is a glob character and counts nothing. See `_Arithmetic`.
+
     `case` is counted per arm, and the arm is its `;;` terminator rather than the
     `case` keyword, because the tokenizer makes `;;` the reliable half of that
     choice: this reader adds `;;` to lizard's shared token pattern, so an arm
@@ -79,6 +83,9 @@ KNOWN LIMITS
       extension, which reads a block by its words rather than its braces: `if`,
       `case` and the loop keywords open a nesting level, `fi`/`done`/`esac` close
       it, and `do`/`then`/`in` introduce a body already charged and cost nothing.
+    - Arithmetic is read inside `(( ))` and `$(( ))` only. A `?:` in `let "..."`,
+      in an array subscript (`a[i ? 1 : 0]=x`) or in the old `$[ ]` form counts
+      nothing.
 
 REGISTRATION
     lizard resolves a filename through `lizard_languages.get_reader_for`, which
@@ -232,6 +239,51 @@ def _defuse_block_comments(source: str) -> str:
     return source.replace("/*", "/ *")
 
 
+# --- arithmetic, where `?` decides and `;;` is no case arm ---------------------
+
+# What a parenthesis does to the depth of an open arithmetic expression.
+_PARENS = {"(": 1, ")": -1}
+
+
+class _Arithmetic:
+    """Moves `?` and `;;` in and out of the reader's condition set as `(( ))`
+    opens and closes.
+
+    Inside `(( ))`, `$(( ))` and a C-style `for (( ))`, bash reads C's
+    arithmetic: `a ? b : c` is the conditional operator, one decision as in C,
+    and `for ((;;))` writes a loop's three empty clauses, not a case arm's end.
+    Everywhere else `?` is a glob character that matches one character (`ls
+    a?b`) and `;;` ends a case arm. lizard's condition counter and crapkit's
+    cognitive pass both read the set when they reach a token, so the two
+    columns count the same `?`.
+
+    It reads raw tokens, whitespace included: the two parentheses of `((`
+    touch, and `( (cmd) )`, with a space between them, is two subshells.
+    """
+
+    def __init__(self, conditions: set):
+        self._conditions = conditions
+        self._depth = 0        # parentheses open since `((`, its own two included
+        self._previous = ""    # the raw token before this one
+
+    def __call__(self, token: str) -> None:
+        was_open = self._depth > 0
+        self._depth = self._depth_after(token)
+        self._previous = token
+        if (self._depth > 0) != was_open:
+            self._switch(self._depth > 0)
+
+    def _depth_after(self, token: str) -> int:
+        if self._depth:
+            return self._depth + _PARENS.get(token, 0)
+        return 2 if token == "(" and self._previous == "(" else 0
+
+    def _switch(self, arithmetic: bool) -> None:
+        counted, free = ("?", ";;") if arithmetic else (";;", "?")
+        self._conditions.add(counted)
+        self._conditions.discard(free)
+
+
 # --- function detection --------------------------------------------------------
 
 class ShellStates(CodeStateMachine):
@@ -331,7 +383,7 @@ class ShellReader(CodeReader, ScriptLanguageMixIn):
     _control_flow_keywords = {"if", "elif", "for", "while", "until", ";;"}
     _logical_operators = {"&&", "||"}
     _case_keywords = set()      # arms are counted as ';;', see the module docstring
-    _ternary_operators = set()  # shell has no '?:'
+    _ternary_operators = set()  # '?' decides only inside (( )), see _Arithmetic
 
     # What lizard's ND extension treats as a nesting structure; its default set is
     # the C family's and mentions neither `elif` nor `until`.
@@ -340,6 +392,17 @@ class ShellReader(CodeReader, ScriptLanguageMixIn):
     def __init__(self, context):
         super().__init__(context)
         self.parallel_states = [ShellStates(context)]
+        self._arithmetic = _Arithmetic(self.conditions)
+
+    def preprocess(self, tokens):
+        """lizard's whitespace filter, which calls this in place of its own, with
+        every raw token shown to `_Arithmetic` first. Every counter behind this
+        stage reads the condition set after the tokens before its own have been
+        seen here."""
+        for token in tokens:
+            self._arithmetic(token)
+            if not token.isspace() or token == "\n":
+                yield token
 
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):

@@ -3,9 +3,10 @@
 ## 0.8.1 — unreleased
 
 Go and Zig functions are read to where their signature ends, a Zig switch and a Go
-`select` count as the switch they are, and Zig and shell words that decide nothing stop
-counting. The release that ships this raises the analysis version, so every repo
-re-seeds its marks once; the [upgrading guide](docs/upgrading.md) lists what moves.
+`select` count as the switch they are, Zig and shell words that decide nothing stop
+counting, and shell arithmetic counts its conditional operator. The release that ships
+this raises the analysis version, so every repo re-seeds its marks once; the [upgrading
+guide](docs/upgrading.md) lists what moves.
 
 ### Go and Zig signatures end where the language ends them
 
@@ -55,9 +56,17 @@ re-seeds its marks once; the [upgrading guide](docs/upgrading.md) lists what mov
   a boolean operator; Zig's boolean or is `or`. lizard's nesting extension still
   reads it as a level.
 - `case`, `def` and `foreach` are names in Zig and open no nesting level.
-- A shell `?` is a glob character (`ls a?b`). The cognitive column charged each one as
-  a conditional operator; the shell reader counts no `?:` in `ccn`, and now neither
-  column does.
+- A shell `?` outside arithmetic is a glob character (`ls a?b`). The cognitive column
+  charged each one as a conditional operator, and now charges none.
+
+### Shell arithmetic reads as C
+
+- Inside `(( ))` and `$(( ))` bash reads C, and `a ? b : c` is C's conditional
+  operator. It now counts one in `ccn` as in C, where no shell `?` counted, and one
+  in `cognitive`, as it did in 0.8.0. `f() { echo $(( x > 0 ? 1 : 0 )); }` reads
+  `ccn` 2 where it read 1.
+- A C-style `for ((;;))` counts its loop once. Its `;;` read as a case arm's end, so
+  the loop read `ccn` 3.
 
 ### Rust reads its own syntax, not C's
 

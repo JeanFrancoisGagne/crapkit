@@ -181,7 +181,9 @@ Read the ones you are about to point a scope at. Skip the rest.
 **`shell` and `powershell` report functions only.** Statements outside any function land in
 lizard's `*global*` pseudo-function, exactly like Python module-level code. A script that is
 one long top-level sequence reports nothing. That is the answer, not a parse failure.
-A shell `?` is a glob character and costs nothing in `cognitive`.
+A shell `?` is a glob character and costs nothing, except inside `(( ))` and `$(( ))`,
+where bash reads C: there `a ? b : c` counts one in `ccn` and `cognitive`, and the `;;`
+of `for ((;;))` is no case arm.
 
 **`powershell` counts one point per `switch` arm**, the way `case` is counted in C, and
 `default` is free. Its keywords are matched case-sensitively as written, so `If (` in code

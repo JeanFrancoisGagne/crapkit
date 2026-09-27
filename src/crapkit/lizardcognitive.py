@@ -29,9 +29,11 @@ Four language-specific rules:
   * in Zig `||` merges two error sets, a type, and boolean or is spelled `or`,
     so `||` costs nothing. See `_error_set_merge`.
 
-A `?` is a conditional operator only where the reader counts one
-(`ternary_operators`). Shell's `?` is a glob and Zig's marks an optional, and
-neither reader counts `?`, so neither is charged.
+A `?` is a conditional operator only where the reader counts one in ccn, read
+off its condition set (`reader.conditions`) when the `?` arrives. Zig's `?`
+marks an optional and its reader counts none. Shell's is a glob, except inside
+arithmetic, `(( ))` and `$(( ))`, where the shell reader adds `?` to that set
+for as long as the arithmetic is open.
 
 A Python def's signature never counts. Its body starts at the token after the
 `:` that closes the signature at bracket depth 0, so `def f(x, y): return 1 if
@@ -137,19 +139,23 @@ _SHELL_BLOCK = None
 _SIGNATURE_DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
 
+# The condition set of a reader that has none: a `?` is a conditional operator.
+_QUESTION = frozenset({"?"})
+
+
 class _FnState:
     __slots__ = ("total", "stack", "max_depth", "brace_depth", "line_indent",
                  "at_line_start", "pending", "else_pending", "question_pending",
                  "bool_op", "name", "recursed", "body_started", "signature_depth",
                  "prev", "label_check", "for_pending", "c_family", "is_rust", "is_shell",
-                 "ternary", "is_zig")
+                 "conditions", "is_zig")
 
     def __init__(self, name: str, c_family: bool = False, is_rust: bool = False,
-                 is_shell: bool = False, ternary: bool = True, is_zig: bool = False):
+                 is_shell: bool = False, conditions=_QUESTION, is_zig: bool = False):
         self.c_family = c_family
         self.is_rust = is_rust
         self.is_shell = is_shell
-        self.ternary = ternary     # the reader counts `?` as a conditional operator
+        self.conditions = conditions  # what the reader counts in ccn, read at each `?`
         self.is_zig = is_zig
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
@@ -186,7 +192,7 @@ class LizardExtension:
         is_python = reader_name.lower().startswith("python")
         flags = (reader_name in _DECLARATOR_READERS, reader_name in _RUST_READERS,
                  reader_name in _SHELL_READERS,
-                 "?" in getattr(reader, "ternary_operators", "?"),
+                 getattr(reader, "conditions", _QUESTION),
                  reader_name in _ZIG_READERS)
         last = None
         for token in tokens:
@@ -524,7 +530,7 @@ def _jumps_and_recursion(state: _FnState, token: str, is_python: bool) -> None:
         # told apart, where the reader counts a `?` at all. Rust's `?` is none of
         # them: it returns early on an error or relaxes a `?Sized` bound, and an
         # early return is no increment.
-        state.question_pending = state.ternary and not state.is_rust
+        state.question_pending = "?" in state.conditions and not state.is_rust
     elif token in ("break", "continue"):
         state.label_check = not is_python
     elif token == "goto":

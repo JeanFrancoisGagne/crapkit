@@ -509,10 +509,54 @@ def test_break_with_a_level_pays_the_labeled_jump():
 
 
 def test_a_glob_question_mark_decides_nothing():
-    """Shell has no `?:`, and this reader counts none in ccn. `ls a?b` matches
-    one character, so the cognitive column charges it nothing too. It read 1
-    per `?`, 2 here."""
+    """`ls a?b` matches one character, so it is no decision in ccn and costs
+    nothing in cognitive. The cognitive column read 1 per `?`, 2 here."""
     assert _cognitive("glob.sh", "f() {\n  ls a?b\n  echo ?\n}\n") == 0
+
+
+# --- arithmetic: bash reads C inside (( )) and $(( )) ---------------------------
+
+def _columns(source):
+    (record,) = analyze_source("calc.sh", source)
+    return record.ccn_std, record.cognitive
+
+
+@pytest.mark.parametrize("line", ["echo $(( x > 0 ? 1 : 0 ))",
+                                  "(( y = x>0?1:0 ))",
+                                  "echo $(( (a + b) > 0 ? 1 : 0 ))",
+                                  "(( a > 0 ?\n     1 : 0 ))"])
+def test_a_conditional_operator_in_arithmetic_is_one_decision(line):
+    """Inside `(( ))` and `$(( ))` bash reads C, and `a ? b : c` is C's
+    conditional operator: ccn 2 and cognitive 1, as the same line reads in C.
+    ccn read 1 here, and cognitive 0 once the glob `?` stopped counting."""
+    assert _columns("f() {\n  " + line + "\n}\n") == (2, 1)
+
+
+def test_the_shell_reader_counts_it_in_lizards_own_pipeline_too():
+    assert _only("f() {\n  echo $(( x > 0 ? 1 : 0 ))\n}\n").cyclomatic_complexity == 2
+
+
+def test_a_question_mark_between_two_arithmetic_expressions_is_a_glob():
+    assert _columns("f() {\n  echo $(( a ? 1 : 0 )) a?b $(( b ? 2 : 3 ))\n}\n") == (3, 2)
+
+
+def test_two_subshells_are_no_arithmetic():
+    """`( (cmd) )` has a space between its parentheses: two subshells, and the
+    `?` inside a glob."""
+    assert _columns("f() {\n  ( (ls a?b) )\n}\n") == (1, 0)
+
+
+def test_an_endless_c_style_for_counts_its_loop_once():
+    """`for ((;;))` writes a loop's three empty clauses. Its `;;` read as a
+    case arm's end, so the loop counted 2."""
+    assert _columns("f() {\n  for ((;;)); do\n    step\n  done\n}\n") == (2, 1)
+
+
+def test_a_case_arm_after_arithmetic_still_counts():
+    """case +1, the conditional inside it +1 and its nesting +1."""
+    source = "f() {\n  case $1 in\n    a) (( n = n > 0 ? 1 : 0 )) ;;\n    b) ls x? ;;\n  esac\n}\n"
+
+    assert _columns(source) == (4, 3)
 
 
 def test_analysis_version_invalidates_the_cached_shell_cognitive_column():

@@ -133,8 +133,6 @@ every marks file re-seeds once, with the same three commands as version 11 below
 - In Python and shell, a name spelled `switch` no longer adds to ccn_mod. The gated
   ccn is unchanged.
 
-### Go and Zig signatures (next analysis version)
-
 ### Go, Zig and shell readers (next analysis version)
 
 The next release reads Go and Zig signatures to where the language ends them, and raises
@@ -144,16 +142,18 @@ opens a function, so the function around it gets back the block the type took an
 row, one after a package-level function type, a Zig `extern fn` prototype or a Zig name
 written `@"..."`, is listed, and one whose result type holds braces reads its whole body.
 A composite literal of functions, `[]func(){f, g}`, is no longer an anonymous row, and a
-function literal inside a package-level one reads `(i int)` where it read ` i int`. Either can be over its
-ceiling and fails the gate the next time its file changes. `params` moves for parameters
-of function type or with a braced type. A Zig switch reads as one decision in `ccn`, the
+function literal inside a package-level one reads `(i int)` where it read ` i int`.
+Either can be over its ceiling and fails the gate the next time its file changes.
+`params` moves for parameters of function type or with a braced type. A Zig switch reads as one decision in `ccn`, the
 smaller of the two columns, where it read one per prong and one more for `else =>`, so a
 Zig function with a switch reads lower. A Go `select` with a case reads one decision
 where it read none, so its function reads one higher and can go over its ceiling. A Zig
 `try`, an optional's `?` and an error-set `||` stop adding to `cognitive`, `try` and `?`
 stop adding to `nesting`, and a shell glob's `?` stops adding to `cognitive`, so those
-columns can fall in Zig and shell repos. No named function's long name changes, so
-only those literal rows change key. Re-seed once: `crapkit coverage`, `crapkit ratchet
+columns can fall in Zig and shell repos. A shell `a ? b : c` inside `(( ))` or `$(( ))`
+now counts one in `ccn`, so a shell function holding one reads higher and can go over
+its ceiling, and a `for ((;;))` reads one lower. No named function's long name changes,
+so only those literal rows change key. Re-seed once: `crapkit coverage`, `crapkit ratchet
 prune`, then `crapkit ratchet seed`. Prune drops the marks of the rows that go away or
 change key.
 
