@@ -292,7 +292,10 @@ def _mutants(text: str, changed_lines: set[int] | None, language: str) -> list[M
 
 
 def apply_mutant(text: str, mutant: Mutant) -> str:
+    """`text` with the mutated line in place of line `mutant.line`. The line
+    keeps its own ending (CRLF, CR, LF or none): rebuilt as LF, it changed a
+    byte of a CRLF file outside what the mutant mutates."""
     lines = text.splitlines(keepends=True)
-    eol = "\n" if lines[mutant.line - 1].endswith("\n") else ""
-    lines[mutant.line - 1] = mutant.mutated + eol
+    line = lines[mutant.line - 1]
+    lines[mutant.line - 1] = mutant.mutated + line[len(line.splitlines()[0]):]
     return "".join(lines)

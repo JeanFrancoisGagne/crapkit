@@ -154,6 +154,41 @@ def test_apply_mutant_replaces_exactly_one_line():
     assert len(out.splitlines()) == len(PY.splitlines())
 
 
+@pytest.mark.parametrize("ending", ["\r\n", "\r", "\n"], ids=["crlf", "cr", "lf"])
+def test_apply_mutant_changes_no_byte_outside_the_mutated_line(ending):
+    """A mutant is spliced into the original text and keeps the mutated line's
+    own ending. apply_mutant rebuilt that ending as a bare LF, so in a CRLF file
+    every mutant also turned the mutated line's CRLF into LF."""
+    source = PY.replace("\n", ending)
+    (first, *_) = file_mutants(PY, changed_lines={3}, language="python")
+    out = apply_mutant(source, first)
+    before, after = source.splitlines(keepends=True), out.splitlines(keepends=True)
+
+    assert after[2] == first.mutated + ending
+    assert after[:2] + after[3:] == before[:2] + before[3:]
+
+
+def test_a_crlf_files_mutants_keep_every_crlf():
+    """The bytes mutate writes for each mutant of a CRLF file, as the pool
+    writes them: 0.8.1 left 4 CRLF and 1 bare LF where the file holds 5 CRLF."""
+    from crapkit.repotext import source_bytes, source_text
+
+    raw = PY.replace("\n", "\r\n").encode("ascii")
+    text = source_text(raw)
+    written = [source_bytes(apply_mutant(text, mutant), raw)
+               for mutant in file_mutants(text, changed_lines={3}, language="python")]
+
+    assert written
+    assert {(out.count(b"\r\n"), out.count(b"\n")) for out in written} == {(5, 5)}
+
+
+def test_apply_mutant_on_a_last_line_with_no_ending_adds_none():
+    source = PY + "    if x < 0: return 0"
+    (mutant, *_) = file_mutants(source, changed_lines={6}, language="python")
+
+    assert apply_mutant(source, mutant) == PY + mutant.mutated
+
+
 # --- the corpus cut: which of the diff's files may grow mutants at all -----------
 
 CORPUS_TOML = (
