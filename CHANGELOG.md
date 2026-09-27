@@ -45,10 +45,17 @@
   character, in every language. `brief`, `worklist` and the gates named lines the
   function does not sit on, and a span moved onto the next function joined that
   function's coverage: a function its tests call scored its uncalled neighbour's 0%. A
-  comment now counts one line per LF.
+  comment now counts one line per LF, as git, Python's compiler, coverage.py, c8 and
+  `@vitest/coverage-v8` count it.
+- JavaScript's own rule, which Babel, TypeScript source maps and V8's stack traces
+  number by, also ends a line at U+2028 and U+2029. The istanbul reader now moves
+  those numbers onto crapkit's lines (below), so a JavaScript or TypeScript function
+  below such a comment reads its own coverage under `@vitest/coverage-v8`,
+  `@vitest/coverage-istanbul`, jest and nyc alike. Before, a V8 lane on a JavaScript
+  file gave it its neighbour's.
 - Those functions' spans, coverage and CRAP change, so this release raises the analysis
   version and every marks file re-seeds once. See the [upgrade
-  guide](docs/upgrading.md#next-analysis-version-a-comment-is-one-line-per-lf).
+  guide](docs/upgrading.md#next-analysis-version-line-ends).
 
 ### Every refused file is counted and named, once per run
 

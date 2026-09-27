@@ -173,9 +173,10 @@ Prune drops the marks of the rows that go away or change key.
 
 ### Next analysis version: line ends
 
-The release after 0.8.0 moves some shell numbers and some JavaScript and TypeScript
-coverage, so it raises the analysis version and every marks file re-seeds once, with
-the same three commands as version 11 below.
+The release after 0.8.0 moves some shell numbers, the line numbers of functions that sit
+below certain comments, and some JavaScript and TypeScript coverage, so it raises the
+analysis version and every marks file re-seeds once, with the same three commands as
+version 11 below.
 
 - The shell reader ends a heredoc line at LF only, as bash does. It used to end one at
   a vertical tab, form feed, `\x1c`-`\x1e`, NEL, U+2028 and U+2029 too. A body line
@@ -185,28 +186,20 @@ the same three commands as version 11 below.
   such a line, up where body text had counted and down where code had been blanked. A
   function the change puts over its ceiling fails the gate the next time its file
   changes.
-- An istanbul lane's line numbers land on crapkit's own lines. `@vitest/coverage-v8`
-  ends a JavaScript line at LF only; Babel (jest, nyc, `@vitest/coverage-istanbul`) and
-  TypeScript source maps also end one at U+2028 and U+2029; crapkit ends one at LF,
-  CRLF and a lone CR. Below a lone CR or a U+2028 the coverage of one function went to
-  a neighbor, so `cov`, CRAP and the uncovered lines `verify` checks a diff against
-  move for JavaScript and TypeScript functions in such files. A function that reads
-  less covered now can go over its ceiling.
-
-### Next analysis version: a comment is one line per LF
-
-The release after 0.8.0 moves the line numbers of functions that sit below certain
-comments, so it raises the analysis version and every marks file re-seeds once, with
-the same three commands as version 11 below.
-
 - lizard counted a comment's lines with Python's `str.splitlines`, which also ends a
   line at a vertical tab, a form feed, `\x1c`, `\x1d`, `\x1e`, U+0085, U+2028 and
   U+2029. A comment holding one of them moved every function below it down one line
-  per character. A comment now counts one line per LF, the way the compiler, git and
-  the editor count it.
-- Every such function's `start` and `end` move up to the lines it sits on. Coverage
-  joins onto the span, so a function the move had pushed onto its neighbour's lines
-  now reads its own coverage and its own CRAP.
+  per character. A comment now counts one line per LF, as git, Python's compiler,
+  coverage.py, c8 and `@vitest/coverage-v8` count it. Every such function's `start` and
+  `end` move up to the lines it sits on, and a function the move had pushed onto its
+  neighbour's lines now reads its own coverage and its own CRAP.
+- An istanbul lane's line numbers land on crapkit's own lines. `@vitest/coverage-v8`
+  ends a JavaScript line at LF only; Babel (jest, nyc, `@vitest/coverage-istanbul`) and
+  TypeScript source maps also end one at U+2028 and U+2029; crapkit ends one at LF,
+  CRLF and a lone CR. Below a lone CR, or a U+2028 in a string or a comment, the
+  coverage of one function went to a neighbor, so `cov`, CRAP and the uncovered lines
+  `verify` checks a diff against move for JavaScript and TypeScript functions in such
+  files. A function that reads less covered now can go over its ceiling.
 
 ### Analysis version 11
 
