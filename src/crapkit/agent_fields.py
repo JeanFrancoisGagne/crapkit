@@ -16,7 +16,7 @@ from typing import NamedTuple
 # The MCP tool that returns each payload, for the payloads a tool returns.
 MCP_TOOLS = {"worklist --json": "list_worklist", "next-item": "get_next_item",
              "brief --json": "get_function_brief", "ratchet report --json": "get_ratchet_report",
-             "rescore --gate --json": "check_gate"}
+             "rescore --gate --json": "check_gate", "doctor --json": "check_config"}
 
 
 _EMPTY_SCOPES = ("each declared scope that claims no file, or whose every file no reader could "
@@ -144,6 +144,10 @@ ADDED = (
     AddedField(VERSION, "analysis_version", ("integer",),
                "the analysis semantics version, the number doctor --json reports and the "
                "ratchet's metric stamp carries"),
+    AddedField("doctor --json", "lanes[].refusal", ("string", "null"),
+               "why --reuse-artifacts will not score the lane's artifact on disk: the lane's "
+               "last attempt wrote no artifact and the file predates it, or "
+               ".crapkit/artifacts.json cannot be read; null when reuse would score it"),
 )
 
 

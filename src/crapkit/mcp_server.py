@@ -1147,10 +1147,7 @@ TOOLS: tuple[dict, ...] = (
                             "type": ("string", "null"),
                             "description": ("commit stamped on the artifact, null for a lane that "
                             "never ran")},
-                        "refusal": {
-                            "type": ("string", "null"),
-                            "description": ("why --reuse-artifacts will not score the artifact on "
-                            "disk (the lane's last attempt left it unwritten), null when it would")},
+                        "refusal": schema_of("doctor --json", "lanes[].refusal"),
                         "seconds": {
                             "type": ("number", "null"),
                             "description": "how long the lane took last time, null when it never ran"}}}}},

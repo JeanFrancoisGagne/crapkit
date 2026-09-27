@@ -18,7 +18,8 @@ from cli_inproc_repo import (add_knotty, commit_all, git, repo, seed_artifacts, 
                              template_repo)
 
 from crapkit import mcp_server
-from crapkit.agent_fields import ADDED, ERROR_OBJECT, MCP_TOOLS, VERSION, AddedField
+from crapkit.agent_fields import (ADDED, ERROR_OBJECT, MCP_TOOLS, VERSION, AddedField,
+                                  added_field)
 from crapkit.cli import main
 from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
 
@@ -104,6 +105,20 @@ def _version_payloads(capsys, monkeypatch, where: Path) -> list[dict]:
     return printed
 
 
+def _doctor_payloads(repo: Path, capsys) -> list[dict]:
+    """doctor over the seeded artifacts, then with the stamp file unreadable,
+    so each lane's `refusal` prints its null once and its sentence once."""
+    stamps = repo / ".crapkit" / "artifacts.json"
+    kept = stamps.read_bytes() if stamps.is_file() else None
+    clean = run_json(repo, capsys, "doctor", "--json")
+    stamps.write_text("not json", encoding="utf-8")
+    refused = run_json(repo, capsys, "doctor", "--json")
+    stamps.unlink()
+    if kept is not None:
+        stamps.write_bytes(kept)
+    return [clean, refused]
+
+
 @pytest.fixture()
 def payloads(repo, capsys, monkeypatch, tmp_path_factory) -> dict[str, list]:
     """One real payload per declared payload name, from one measured repo.
@@ -123,7 +138,8 @@ def payloads(repo, capsys, monkeypatch, tmp_path_factory) -> dict[str, list]:
            "worklist --json": [run_json(repo, capsys, "worklist", "--json")],
            "next-item": [run_json(repo, capsys, "next-item")],
            "brief --json": [run_json(repo, capsys, "brief", "src/app.ts", "knotty", "--json")],
-           "ratchet report --json": [run_json(repo, capsys, "ratchet", "report", "--json")]}
+           "ratchet report --json": [run_json(repo, capsys, "ratchet", "report", "--json")],
+           "doctor --json": _doctor_payloads(repo, capsys)}
     _forget_content(repo)
     for name, argv in _RANKED.items():
         out[name].append(run_json(repo, capsys, *argv))
@@ -157,6 +173,15 @@ def test_each_added_field_carries_a_declared_type_and_null_only_where_declared(p
              if not json_type_ok(value, f.types)]
 
     assert wrong == []
+
+
+def test_doctors_lane_refusal_is_declared_as_a_sentence_or_null(payloads):
+    """0.8.1 gives each doctor --json lane a `refusal`; the declaration left it
+    out, so no check caught a type or a null the key does not allow."""
+    field = added_field("doctor --json", "lanes[].refusal")
+
+    assert field.types == ("string", "null")
+    assert _null_forms(payloads, field) == {True, False}
 
 
 def test_the_nullable_fields_print_both_forms(payloads):
