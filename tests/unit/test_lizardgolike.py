@@ -549,6 +549,65 @@ def test_a_brace_that_closes_nothing_moves_the_functions_after_it_one_line(path,
     assert rows(path, stray) == moved
 
 
+# --- Go and Zig: a comment or a string that ends at its line --------------------------
+
+# lizard's tokenizer reads a `//` comment that ends in a backslash on into the next
+# line, as a C preprocessor splices lines. Go and Zig splice nothing: the comment
+# ends at its line's end, and the line after it is code.
+GO_COMMENT_ENDING_IN_A_BACKSLASH = """package b
+
+// A Windows path such as C:\\dir\\
+func A(n int) int {
+\t// the next line is code: C:\\dir\\
+\tif n > 0 {
+\t\treturn 1
+\t}
+\treturn 0
+}
+"""
+
+ZIG_COMMENT_ENDING_IN_A_BACKSLASH = """// A Windows path such as C:\\dir\\
+fn a(n: u8) u8 {
+    // the next line is code: C:\\dir\\
+    if (n > 0) {
+        return 1;
+    }
+    return 0;
+}
+"""
+
+
+def test_a_go_comment_ending_in_a_backslash_ends_at_its_line():
+    """The comment above A took A's signature line, so A had no row; the one
+    inside took the `if` line, and the if's `}` ended the function."""
+    assert rows("b.go", GO_COMMENT_ENDING_IN_A_BACKSLASH) == [("A n int", 4, 10, 2, 1, 1, 1)]
+
+
+def test_a_zig_comment_ending_in_a_backslash_ends_at_its_line():
+    assert rows("a.zig", ZIG_COMMENT_ENDING_IN_A_BACKSLASH) == [("a n : u8", 2, 8, 2, 1, 1, 1)]
+
+
+@pytest.mark.parametrize("line", ["a } b", "open {", "if (x) and y or z", 'say "hi', "it's", "// no comment"])
+def test_a_zig_multiline_string_line_is_text(line):
+    """A Zig multiline string is a run of lines that open with `\\\\`, each read
+    to its end. lizard read its text as code: a `}` there ended the function, a
+    `{` took the functions after it, and `if`, `and` and `or` counted."""
+    source = ("fn a(n: u8) usize {\n    const s =\n        \\\\" + line + "\n        \\\\second line\n    ;\n"
+              "    if (n > 0) {\n        return s.len;\n    }\n    return 0;\n}\n\n"
+              "fn b(n: u8) u8 {\n    if (n > 0) {\n        return 1;\n    }\n    return 0;\n}\n")
+
+    assert rows("a.zig", source) == [("a n : u8", 1, 10, 2, 1, 1, 1), ("b n : u8", 12, 17, 2, 1, 1, 1)]
+
+
+def test_a_zig_backslash_inside_a_string_or_a_comment_opens_no_multiline_string():
+    """Only a `\\\\` that starts a token opens a multiline string: one inside a
+    string, a character literal or a comment belongs to that token."""
+    source = ("fn a(n: u8) u8 {\n    const p = \"C:\\\\dir\\\\\";\n    const c = '\\\\';\n"
+              "    // a \\\\ in a comment\n    if (n > p.len and c > 0) {\n        return 1;\n    }\n    return 0;\n}\n")
+
+    assert rows("a.zig", source) == [("a n : u8", 1, 9, 3, 1, 1, 2)]
+
+
 # --- registration ----------------------------------------------------------------
 
 def test_lizard_resolves_go_and_zig_to_the_corrected_readers():

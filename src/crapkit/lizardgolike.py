@@ -23,6 +23,9 @@ misread a signature five ways:
 
 It also read the `type` of a Go type switch, `switch v.(type) {`, as a type
 declaration that took the switch's `{`, so the switch's `}` ended the function.
+Its tokenizer read a `//` comment ending in a backslash on into the next line, as
+C splices lines, and the text of a Zig multiline string (`\\...` lines) as code,
+so a brace in either lost or ended a function.
 
 The fix reads the signature the way the language does:
 
@@ -51,6 +54,8 @@ The fix reads the signature the way the language does:
   * A Zig `@"..."` is one token, and it names the function it follows `fn`
     in. keys.bare_name cuts it whole, spaces and all.
   * A Go `type` followed by `)` is a type switch's guard and declares nothing.
+  * A `//` comment ends at its line's end, and each `\\` line of a Zig
+    multiline string is one token.
   * A `}` that reaches the machine reading the file closes nothing and is
     ignored. lizard's machine returned from the file there and never came back,
     so each later function ended at its body's `{` or had no row.
@@ -106,6 +111,16 @@ _DEFAULT_PRONGS = frozenset({"else", "_"})
 # the `@` and the string as two tokens, and a name that is not one word named no
 # function: `fn @"weird name"(x: i32) i32 {` reported no row, or a row named ''.
 _ZIG_QUOTED_NAME = r'|@"(?:\\.|[^"\\\n])*"'
+
+# A `//` comment ends at its line's end. lizard's tokenizer reads a comment that
+# ends in a backslash on into the next line, as a C preprocessor splices lines;
+# Go and Zig splice nothing, so the line that comment took was code. An addition
+# sits ahead of lizard's own patterns, so it wins where both match.
+_LINE_COMMENT = r"|//[^\n]*"
+
+# Each line of a Zig multiline string opens with `\\` and runs to its end. lizard
+# read the text as code, so a `}` in it ended the function and an `if` counted.
+_ZIG_STRING_LINE = r"|\\\\[^\n]*"
 
 # Go keywords that can end a line inside a type without a semicolon following:
 # the spec inserts one only after an identifier, a literal, a closing bracket and
@@ -403,6 +418,11 @@ class CorrectedGoReader(_Lookahead, _StockGoReader):
         context.crapkit_header = None
         self.parallel_states = [GoSignatureStates(context)]
 
+    @staticmethod
+    def generate_tokens(source_code, addition="", token_class=None):
+        """lizard's tokens, with a `//` comment ended at its line's end."""
+        return _StockGoReader.generate_tokens(source_code, _LINE_COMMENT + addition, token_class)
+
 
 class CorrectedZigReader(_Lookahead, _StockZigReader):
     """lizard's ZigReader with its signatures read to where Zig ends them and
@@ -430,8 +450,11 @@ class CorrectedZigReader(_Lookahead, _StockZigReader):
 
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):
-        """lizard's tokens, with a quoted identifier `@"..."` read as one."""
-        return _StockZigReader.generate_tokens(source_code, _ZIG_QUOTED_NAME + addition, token_class)
+        """lizard's tokens, with a quoted identifier `@"..."` read as one, a `//`
+        comment ended at its line's end, and each line of a multiline string read
+        as one."""
+        additions = _ZIG_QUOTED_NAME + _LINE_COMMENT + _ZIG_STRING_LINE + addition
+        return _StockZigReader.generate_tokens(source_code, additions, token_class)
 
 
 # Any filename picks the reader; the file is never opened.

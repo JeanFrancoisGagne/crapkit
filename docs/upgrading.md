@@ -139,8 +139,10 @@ The next release reads Go and Zig signatures to where the language ends them, an
 the analysis version for it. Here is what moves:
 
 - Rows appear. A function that had no row is listed: one after a package-level function
-  type or a Zig `extern fn` prototype, a Zig function named `@"..."`, and a Go method
-  after a `}` that closes nothing, such as the one a Go type switch left.
+  type or a Zig `extern fn` prototype, a Zig function named `@"..."`, a Go method after
+  a `}` that closes nothing, such as the one a Go type switch left, and a Go or Zig
+  function whose signature sits on the line after a `//` comment that ends in a
+  backslash.
 - Rows go away. A function type such as `var cb func(int) error` no longer opens a
   function, and a composite literal of functions, `[]func(){f, g}`, is no longer an
   anonymous row.
@@ -150,12 +152,14 @@ the analysis version for it. Here is what moves:
   named function's long name changes.
 - `ccn` rises. The function around a function type gets back the block the type took.
   A function with a Go type switch reads its whole body, where it ended at the switch's
-  `}`. A function whose result type holds braces reads its whole body. A Go `select`
+  `}`, and so does one whose result type holds braces, one with a `//` comment ending in
+  a backslash, and a Zig function whose multiline string holds a `}`. A Go `select`
   with a case reads one decision where it read none. A shell `a ? b : c` inside `(( ))`
   or `$(( ))` counts one. Any of these can be over its ceiling and fails the gate the
   next time its file changes.
 - `ccn` falls. A Zig switch reads as one decision in `ccn`, the smaller of the two
-  columns, where it read one per prong and one more for `else =>`. A shell `for ((;;))`
+  columns, where it read one per prong and one more for `else =>`. An `if`, `and` or
+  `or` in the text of a Zig multiline string no longer counts. A shell `for ((;;))`
   reads one lower.
 - Reporting columns move. `params` moves for parameters of function type or with a
   braced type, and for a package-level literal's parameters, which read 0. A Zig `try`,
