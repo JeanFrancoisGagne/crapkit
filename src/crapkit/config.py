@@ -531,7 +531,56 @@ def _lane_dir(root: str | os.PathLike | None, cwd: str) -> Path | None:
     return Path(root) / cwd if cwd else Path(root)
 
 
+# What Windows refuses in a file name: these characters, the control
+# characters, the device names below (with or without an extension), and a
+# name that ends in a dot or a space. A lane's name is part of the file names
+# crapkit writes for it, so the loader refuses such a name on every OS.
+_NAME_CHARS = frozenset('<>:"/\\|?*')
+_DEVICE_NAMES = frozenset({"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+                           *(f"{port}{n}" for port in ("COM", "LPT")
+                             for n in (*"0123456789", "¹", "²", "³"))})
+
+
+def _lane_name(name: str) -> None:
+    """The lane's name, refused when Windows could not use it as a file name:
+    `unit?` ended `crapkit coverage` in a traceback, and `a:b` wrote the lane's
+    log into an alternate data stream of a file named .crapkit/lane-a."""
+    problem = _unusable_file_name(name)
+    if problem:
+        raise ConfigError(f"lane {name!r}: {problem}; crapkit writes the lane's log to "
+                          ".crapkit/lane-<name>.log and refuses such a name on every OS so "
+                          "one crapkit.toml works on each; rename the lane")
+
+
+def _unusable_file_name(name: str) -> str:
+    """Why Windows cannot use `name` as a file name, or "" when it can."""
+    held = _refused_characters(name)
+    if held:
+        return f"the name holds {' '.join(map(_shown, held))}, which Windows refuses in a file name"
+    device = name.split(".")[0].rstrip(" ").upper()
+    if device in _DEVICE_NAMES:
+        return f"{device} is a device name Windows reserves, so no file can take it"
+    return _unusable_end(name)
+
+
+def _refused_characters(name: str) -> list[str]:
+    return sorted({ch for ch in name if ch in _NAME_CHARS or ord(ch) < 32})
+
+
+def _shown(ch: str) -> str:
+    return f"U+{ord(ch):04X}" if ord(ch) < 32 else ch
+
+
+def _unusable_end(name: str) -> str:
+    if not name:
+        return "the name is empty"
+    if name[-1] in ". ":
+        return f"the name ends in {'a dot' if name[-1] == '.' else 'a space'}, which Windows drops"
+    return ""
+
+
 def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = None) -> Lane:
+    _lane_name(row["name"])
     parser = row["parser"]
     lane_scopes = tuple(row.get("scopes", ()))
     unknown_scopes = set(lane_scopes) - scope_names
@@ -594,13 +643,24 @@ def _reject_shared_artifacts(lanes: list, root=None) -> None:
 
 
 def _unique_lanes(rows, scope_names: set, root) -> list[Lane]:
+    """The lanes, keyed on the name as Windows and macOS compare file names,
+    which ignore case: `unit` and `Unit` would write one log file."""
     lanes: dict[str, Lane] = {}
     for row in rows:
         lane = _parse_lane(row, scope_names, root)
-        if lane.name in lanes:
-            raise ConfigError(f"duplicate lane name {lane.name!r}; each lane needs its own name")
-        lanes[lane.name] = lane
+        _refuse_second(lanes.get(lane.name.lower()), lane)
+        lanes[lane.name.lower()] = lane
     return list(lanes.values())
+
+
+def _refuse_second(earlier: Lane | None, lane: Lane) -> None:
+    if earlier is None:
+        return
+    if earlier.name == lane.name:
+        raise ConfigError(f"duplicate lane name {lane.name!r}; each lane needs its own name")
+    raise ConfigError(f"lanes {earlier.name!r} and {lane.name!r} differ only in case, and "
+                      "Windows and macOS ignore case in a file name, so both would write the "
+                      f"log .crapkit/lane-{lane.name}.log; rename one")
 
 
 def _scoped_tests(main: dict) -> tuple[tuple[str, str], ...]:
