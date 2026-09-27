@@ -199,6 +199,18 @@ def test_a_stamp_without_a_full_sha_and_a_boolean_names_no_commit(monkeypatch, c
     assert (payload["commit"], payload["dirty"]) == (None, None)
 
 
+@pytest.mark.parametrize("stamp", [b'{"commit": "\xe9", "dirty": false}', b"\xff\xfe{}"])
+def test_a_stamp_holding_bytes_that_are_not_utf8_names_no_commit(monkeypatch, capsys, tmp_path,
+                                                                 stamp):
+    package = _installed(tmp_path)
+    (package / parser._BUILD_STAMP).write_bytes(stamp)
+    _runs_from(monkeypatch, package)
+
+    payload = _version_json(capsys, "--version", "--json")
+
+    assert (payload["commit"], payload["dirty"]) == (None, None)
+
+
 def test_a_checkout_answers_from_git_over_a_stamp_committed_in_it(monkeypatch, capsys, tmp_path):
     """git says what a checkout is at now; a stamp in src/crapkit is a leftover."""
     _checkout(tmp_path)

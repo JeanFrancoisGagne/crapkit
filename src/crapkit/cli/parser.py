@@ -187,11 +187,14 @@ def _build_identity() -> tuple[str | None, bool | None, bool]:
 def _stamped_identity(package) -> tuple[str | None, bool | None, bool]:
     """The commit, dirty flag and release flag setup.py wrote into the installed
     package, or (None, None, False) when there is no stamp or it does not hold a
-    full sha and a boolean dirty flag."""
+    full sha and a boolean dirty flag. Read leniently: a byte that is not UTF-8
+    makes the stamp unreadable JSON, not a UnicodeDecodeError."""
     import json
 
+    from ..repotext import lenient
+
     try:
-        stamp = json.loads((package / _BUILD_STAMP).read_text(encoding="utf-8"))
+        stamp = json.loads(lenient((package / _BUILD_STAMP).read_bytes()))
     except (OSError, ValueError):
         return _NO_BUILD
     return _stamp_fields(stamp) if isinstance(stamp, dict) else _NO_BUILD
