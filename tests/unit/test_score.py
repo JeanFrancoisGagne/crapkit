@@ -29,9 +29,11 @@ def test_crap_cubes_by_products_so_every_platform_prints_one_score():
     libm. Through `** 3`, Windows UCRT and glibc parted in the last bit on
     CRAP(2, 26/99), and CRAP(36, 53/120), exactly 261.57225, printed 261.5723
     on both where the exact value rounds half to even to 261.5722."""
-    assert crap(2, 26 / 99).hex() == "0x1.cd460645bebedp+1"
-    assert crap(36, 53 / 120).hex() == "0x1.05927ef9db22dp+8"
-    assert f"{crap(36, 53 / 120):.4f}" == "261.5722"
+    parted, tie = crap(2, 26 / 99), crap(36, 53 / 120)
+
+    assert parted.hex() == "0x1.cd460645bebedp+1"
+    assert tie.hex() == "0x1.05927ef9db22dp+8"
+    assert f"{tie:.4f}" == "261.5722"
 
 
 def test_join_by_span_overlap_flags_measured():

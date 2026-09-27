@@ -38,9 +38,11 @@ def test_a_score_a_few_units_in_the_last_place_over_its_ceiling_is_at_it():
 def test_the_closest_exact_crap_above_a_whole_ceiling_still_reads_over_it():
     """CRAP(1, 399/400) = 1 + 1/64,000,000, the smallest excess over a whole
     number at ccn 1 to 60 and totals up to 400."""
-    assert crap(1, 399 / 400) == 1.000000015625
-    assert over_ceiling(crap(1, 399 / 400), 1)
-    assert remedy(1, crap(1, 399 / 400), 1) == "add-tests"
+    value = crap(1, 399 / 400)
+
+    assert value == 1.000000015625
+    assert over_ceiling(value, 1)
+    assert remedy(1, value, 1) == "add-tests"
 
 
 def test_remedy_says_ok():
