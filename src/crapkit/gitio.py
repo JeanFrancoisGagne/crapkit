@@ -514,6 +514,9 @@ def _binary_source_path(record: str, extensions: tuple[str, ...]) -> str | None:
 
 def _binary_source_paths(root: Path, basis: tuple[str, ...],
                          paths: tuple[str, ...]) -> tuple[str, ...]:
+    """The source files git summarized as binary. With the stat refresh off,
+    numstat also names a touched file whose bytes did not change; its forced
+    --text patch is empty, so the patch is the same."""
     from .universe import LANGUAGE_EXTENSIONS
 
     extensions = tuple(ext for group in LANGUAGE_EXTENSIONS.values() for ext in group)

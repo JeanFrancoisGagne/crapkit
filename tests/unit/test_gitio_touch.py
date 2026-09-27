@@ -160,6 +160,30 @@ def test_a_patch_read_still_carries_an_edit(repo, reader):
     assert "\n+export const a = 2;" in PATCHES[reader](repo)
 
 
+def test_the_binary_source_read_leaves_the_index_as_it_found_it(tmp_path):
+    """Under `*.py -diff` git prints `Binary files ... differ` for a Python
+    file, so diff_since asks `git diff --numstat` which binary files are
+    source and reads their patch again with --text. The numstat read is a
+    worktree diff too: with the stat refresh on it rewrote the index over a
+    touched file, as the plain patch read did."""
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / ".gitattributes").write_bytes(b"*.py -diff\n")
+    (tmp_path / "src").mkdir()
+    for name in ("touched.py", "edited.py"):
+        (tmp_path / "src" / name).write_bytes(b"def f():\n    return 1\n")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
+    _touch(tmp_path / "src" / "touched.py")
+    (tmp_path / "src" / "edited.py").write_bytes(b"def f():\n    return 2\n")
+    before = _index_state(tmp_path)
+
+    patch = diff_since(tmp_path, "HEAD")
+
+    assert _index_state(tmp_path) == before
+    assert "\n+    return 2" in patch
+    assert "src/touched.py" not in patch
+
+
 def test_status_names_each_kind_of_change_from_a_root_below_the_top(tmp_path):
     """git status names every path from the repo top; the readers hand back
     paths relative to crapkit's root, the way ls-files spells them there."""
