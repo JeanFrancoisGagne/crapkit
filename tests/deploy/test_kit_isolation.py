@@ -550,17 +550,46 @@ def must_start(spec: dict) -> bool:
     return IN_IMAGE or spec.get("image") == "core"
 
 
-def version_check(box, spec: dict) -> bool | None:
-    """Whether `<command> --version` printed the pinned version, run the way
-    a user who installed it has it: its bin dir on PATH. None for a harness
-    this run does not need that could not start. The bound is SLOW: Copilot
-    CLI unpacks itself into a fresh home on its first start, 105 s on a
-    loaded Windows machine."""
+LATEST_LINE = re.compile(r"^(\S+)@latest (.*)$", re.MULTILINE)
+VERSION = re.compile(r"\d+(?:\.\d+)+(?:-[0-9a-z]+)?")
+
+
+def _version_in(printed: str) -> str:
+    """The version in a `--version` line, without the words or the release
+    date around it; the whole line when it holds none."""
+    found = VERSION.search(printed)
+    return found.group() if found else printed
+
+
+def latest_prints(environ) -> dict[str, str]:
+    """command -> the version its newest release printed, offline, when run.py
+    held full-latest to its pins (CRAPKIT_DEPLOY_LATEST_VERSIONS names that
+    file). Empty in every other image and natively."""
+    recorded = environ.get("CRAPKIT_DEPLOY_LATEST_VERSIONS")
+    if not recorded:
+        return {}
+    text = Path(recorded).read_text(encoding="utf-8")
+    return {command: _version_in(printed) for command, printed in LATEST_LINE.findall(text)}
+
+
+def expected_prints(spec: dict, latest: dict[str, str]) -> str:
+    """What `<command> --version` must print: in full-latest, for a command
+    whose newest release comes first on PATH, what that release printed;
+    else the pin."""
+    return latest.get(spec["command"], spec.get("prints", spec["version"]))
+
+
+def version_check(box, spec: dict, latest: dict[str, str]) -> bool | None:
+    """Whether `<command> --version` printed what expected_prints names, run
+    the way a user who installed it has it: its bin dir on PATH. None for a
+    harness this run does not need that could not start. The bound is SLOW:
+    Copilot CLI unpacks itself into a fresh home on its first start, 105 s on
+    a loaded Windows machine."""
     step = box.run([box.which(spec["command"]), "--version"], bound=sandbox.SLOW)
     if step.exit != 0 and not must_start(spec):
         box.transcript.note(f"{spec['command']} does not start here, and no cell on this machine drives it")
         return None
-    return spec.get("prints", spec["version"]) in step.stdout + step.stderr
+    return expected_prints(spec, latest) in step.stdout + step.stderr
 
 
 def held_harnesses(box) -> dict[str, dict]:
@@ -576,10 +605,29 @@ def startable_harnesses(box) -> dict[str, dict]:
 
 
 def run_each_harness(box) -> dict[str, bool]:
-    """harness -> whether it printed its pinned version."""
+    """harness -> whether it printed its pinned version, or in full-latest
+    the version its newest release printed when run.py checked the image."""
     box.put_harnesses_on_path()
-    checked = {name: version_check(box, spec) for name, spec in startable_harnesses(box).items()}
+    latest = latest_prints(os.environ)
+    checked = {name: version_check(box, spec, latest) for name, spec in startable_harnesses(box).items()}
     return {name: printed for name, printed in checked.items() if printed is not None}
+
+
+def test_a_harness_is_held_to_its_pin_or_to_the_newest_release_full_latest_recorded(tmp_path):
+    """full-latest puts each harness's newest release first on PATH, so the
+    version check holds it to what that release printed when the image was
+    built; a harness it has no line for, and every one elsewhere, to its pin."""
+    recorded = tmp_path / "versions.txt"
+    recorded.write_text("claude@latest 2.1.283 (Claude Code)\ncodex@latest codex-cli 0.157.1\n"
+                        "amp@latest 0.0.1790467310-ge147a9 (released 2026-09-27T00:01:50.000Z)\n"
+                        "omp@latest omp/18.3.2\nbroken@latest no version here\n", encoding="utf-8")
+    latest = latest_prints({"CRAPKIT_DEPLOY_LATEST_VERSIONS": str(recorded)})
+
+    assert latest == {"claude": "2.1.283", "codex": "0.157.1", "amp": "0.0.1790467310-ge147a9",
+                      "omp": "18.3.2", "broken": "no version here"}
+    assert expected_prints({"command": "codex", "version": "0.156.1"}, latest) == "0.157.1"
+    assert expected_prints({"command": "junie", "version": "1468.30.0", "prints": "1468.30"}, latest) == "1468.30"
+    assert latest_prints({}) == {}
 
 
 def test_no_harness_binary_changes_during_the_session_with_every_update_switch_set(box, request):

@@ -758,7 +758,7 @@ def test_a_faketime_run_mounts_the_preload_and_the_offset_read_only(tmp_path):
 def test_the_container_command_carries_the_clock_mounts_before_the_image(monkeypatch, tmp_path):
     monkeypatch.setattr(run, "image_digest", lambda tag: "")
     argv = run.container_command("crapkit-deploy:core", tmp_path, [], online=False, run_index=0,
-                                 mounts=["-v", "rc:/etc/faketimerc:ro"])
+                                 flags=["-v", "rc:/etc/faketimerc:ro"])
 
     assert argv[argv.index("rc:/etc/faketimerc:ro") - 1] == "-v"
     assert argv.index("rc:/etc/faketimerc:ro") < argv.index("crapkit-deploy:core")
@@ -825,6 +825,24 @@ def test_a_latest_run_writes_the_drift_for_the_job_summary(tmp_path, capsys):
     assert (tmp_path / "latest-drift.txt").read_text(encoding="utf-8") == "".join(line + "\n" for line in drift)
     assert "run: latest: claude: pinned 2.1.281" in capsys.readouterr().out
     assert run.report_latest(LATEST_PINS, "full", tmp_path / "other") == []
+
+
+def test_a_full_latest_container_is_told_where_run_py_recorded_what_each_newest_release_prints(
+        monkeypatch, tmp_path):
+    """The kit's version check holds a newest release to that file, not to its pin."""
+    recorded = "CRAPKIT_DEPLOY_LATEST_VERSIONS=/out/versions-full-latest.txt"
+    commands = []
+    monkeypatch.setattr(run, "image_digest", lambda tag: "")
+    monkeypatch.setattr(run.subprocess, "run", lambda argv: commands.append(argv) or subprocess.CompletedProcess(argv, 0))
+    for image in ("full-latest", "full"):
+        args = run.parse(["--image", image, "--online"])
+        args.tag = f"crapkit-deploy:{image}"
+        run._run_once(args, tmp_path, 0)
+
+    latest, full = commands
+    assert latest[latest.index(recorded) - 1] == "-e"
+    assert latest.index(recorded) < latest.index("crapkit-deploy:full-latest")
+    assert not [flag for flag in full if flag.startswith("CRAPKIT_DEPLOY_LATEST_VERSIONS=")]
 
 
 def test_full_latest_reports_its_drift_even_when_its_image_is_this_weeks(monkeypatch, tmp_path):

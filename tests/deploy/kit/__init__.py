@@ -58,4 +58,8 @@ The environment a run.py invocation hands the kit:
   CRAPKIT_DEPLOY_IMAGE_DIGEST
                              the digest of the image a cell ran in, for its
                              JUnit record; "native" when unset
+  CRAPKIT_DEPLOY_LATEST_VERSIONS
+                             full-latest only: <out>/versions-full-latest.txt,
+                             what each newest release printed offline, which
+                             the kit's version check holds it to
 """

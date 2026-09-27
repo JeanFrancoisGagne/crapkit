@@ -427,10 +427,11 @@ def image_digest(tag: str) -> str:
 
 
 def container_command(tag: str, out: Path, selected: list[str], online: bool, run_index: int,
-                      mounts: list[str] = ()) -> list[str]:
-    """One fresh container per run. A baked tag carries <out>/in at /opt/deploy/in."""
+                      flags: list[str] = ()) -> list[str]:
+    """One fresh container per run. A baked tag carries <out>/in at /opt/deploy/in.
+    flags: more `docker run` flags, the clock's mounts and latest_env's."""
     inside = "/opt/deploy/in" if tag.endswith("-baked") else "/out/in"
-    argv = ["docker", "run", "--rm", "--user", "1000:1000", "-v", f"{out.resolve()}:/out", *mounts,
+    argv = ["docker", "run", "--rm", "--user", "1000:1000", "-v", f"{out.resolve()}:/out", *flags,
             "-e", "CRAPKIT_DEPLOY=1", "-e", f"CRAPKIT_DEPLOY_IMAGE={tag}",
             "-e", f"CRAPKIT_DEPLOY_IMAGE_DIGEST={image_digest(tag)}", "-e", f"CRAPKIT_DEPLOY_IN={inside}"]
     argv += pinsfile.platform_flags(tag) + ([] if online else ["--network", "none"])
@@ -606,11 +607,21 @@ def host_os(native: bool) -> str:
     return {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
 
 
+def latest_env(image: str) -> list[str]:
+    """full-latest: where check_versions recorded, offline, what each newest
+    release prints. The kit's version check holds a harness first on PATH from
+    /opt/harness-latest/bin to that line and every other one to its pin."""
+    if not image.endswith(pinsfile.LATEST):
+        return []
+    return ["-e", f"CRAPKIT_DEPLOY_LATEST_VERSIONS=/out/versions-{image}.txt"]
+
+
 def _run_once(args, out: Path, run_index: int) -> int:
     if args.native:
         return run_native(args, out, run_index)
     clock = faketime_mounts(out, args.faketime, pinsfile.platform(pinsfile.load(), args.image))
-    command = container_command(args.tag, out, pytest_args(args), args.online, run_index, clock)
+    flags = clock + latest_env(args.image)
+    command = container_command(args.tag, out, pytest_args(args), args.online, run_index, flags)
     return subprocess.run(command).returncode
 
 

@@ -140,7 +140,11 @@ rebuilds one small layer. A new image must print every pinned version
 (`entry.sh versions`) or `run.py` removes its tag. `full-latest` is held to
 its pinned tools the same way. Its build args change once an ISO week, so it
 rebuilds on the first run of each week, and every run writes
-`<out>/latest-drift.txt`.
+`<out>/latest-drift.txt`. Its cells run with each newest release first on
+PATH, so the kit's version check holds that release to what it printed in
+`<out>/versions-full-latest.txt` (run.py passes the path as
+`CRAPKIT_DEPLOY_LATEST_VERSIONS`) and every other harness to its pin; a week
+in which a harness moved past its pin stays green.
 
 ### cells-arm64 on an x86_64 machine
 
