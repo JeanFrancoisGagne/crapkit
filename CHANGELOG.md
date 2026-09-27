@@ -1032,6 +1032,17 @@ re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-shell-and-powe
   NLOC. Measured on a large consumer repo's 1,263 shell functions: 131 rise in ccn, by
   1 to 7, and 4 lose 4 to 29 NLOC of heredoc body. A function the rise puts over its
   ceiling fails the gate the next time its file changes.
+- A case statement inside a quoted substitution ends at its `esac`. Each pattern ends
+  in a bare `)`, and `"$(case $os in Linux) echo l;; esac)"` was cut at `Linux)`, so
+  its arms counted nothing, and a quote or a brace in an arm could hide the next
+  function. The same `)` no longer ends a function whose body is a subshell,
+  `f() ( case ... esac )`: on a large consumer repo one such function ended 72 lines
+  early, and now spans its 140 lines and reads ccn 46 where it read 28.
+- A quoted substitution reads eight levels of parens, up from three, so the `|| true`
+  after a `node -e '...'` program with five levels of calls in it counts.
+- An unpaired double quote before many substitutions no longer stalls the shell
+  reader. With no closing quote left in the file, the string rule tried every way of
+  reading each `$( )` after it, twice the time per substitution: 7 s for 24 of them.
 
 ### PowerShell reads the expression inside a quoted subexpression
 

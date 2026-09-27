@@ -87,9 +87,17 @@ SUBSTITUTIONS INSIDE STRINGS
     count written bare, at any depth: `"$(a "$(b || c)")"` reaches the `||`. The
     text around a substitution stays one string token, so the `}` that ends
     `${v:-$(cmd)}` closes nothing. A `$(` after a backslash, or inside single
-    quotes, is text and stays in its string.
+    quotes, is text and stays in its string. A case statement inside a
+    substitution is matched whole, from `case WORD in PATTERN)` to its `esac`,
+    because each pattern ends in a bare `)` that does not close the substitution:
+    `"$(case $os in Linux) echo l;; esac)"` counts its arm and opens and closes
+    one level.
 
 KNOWN LIMITS
+    - The string rule reads eight levels of parens inside a substitution, and a
+      case in it only when its subject is one word and its first pattern follows
+      `in` with no comment between. Past either, the string ends at its first
+      inner quote, as lizard's own rule ends it, and the command counts nothing.
     - A substitution in a heredoc body runs when the delimiter is unquoted
       (`<<EOF`, not `<<'EOF'`), and it counts nothing: the whole body is blanked.
     - A function defined inside another function's body is not reported; its braces
@@ -140,11 +148,40 @@ from crapkit.sourcelines import source_lines
 # hold quotes of its own: `v="$(node -e 'require("fs")' "$f")"`. lizard's shared
 # rule ends the string at the first inner quote, and every quote after it pairs off
 # by one until some brace lands inside a string. This alternative fires at the same
-# '"' and wins, because a reader's additions are tried ahead of it. It allows three
-# levels of parens inside the substitution; deeper, or unbalanced inside its own
-# quotes, and it simply does not match, which leaves lizard's rule as it was.
-_COMMAND_SUB = r"\$\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"
-_DQ_STRING = r'"(?:\\.|' + _COMMAND_SUB + r'|[^"\\])*"'
+# '"' and wins, because a reader's additions are tried ahead of it. It allows
+# _PAREN_LEVELS levels of parens inside the substitution; deeper, or unbalanced
+# inside its own quotes, and it simply does not match, which leaves lizard's rule
+# as it was.
+#
+# A case statement inside the substitution is taken whole, from `case WORD in
+# PATTERN)` to its first `esac`, because each pattern ends in a bare `)`. Read as
+# the substitution's close, it cut `"$(case $os in Linux) echo l;; esac)"` at
+# `Linux)`: `case` reached the counters and `esac` stayed in the string.
+#
+# Every loop is possessive (`*+`, `++`): it never gives back what it matched. A
+# string with no closing quote after it made the backtracking version try each
+# `$( )` both as a substitution and as text, twice the time per substitution.
+_PAREN_LEVELS = 8
+_CASE_START = (r"\bcase\s++(?:\"[^\"]*+\"|[^\s\"])++\s++in\s++\(?+"
+               r"(?:\"[^\"]*+\"|'[^']*+'|[^\s\"'()])++\)")
+_CASE_BLOCK = _CASE_START + r"(?:(?!\besac\b)[\s\S])*+\besac\b"
+
+
+def _parens(levels: int) -> str:
+    """What may sit between a `(` and its `)`, LEVELS levels of parens deep."""
+    content = _run("")
+    for _ in range(levels - 1):
+        content = _run(r"|\(" + content + r"\)")
+    return content
+
+
+def _run(nested: str) -> str:
+    return (r"(?:" + _CASE_BLOCK + r"|(?!" + _CASE_START + r")[^()]" + nested
+            + r")*+")
+
+
+_COMMAND_SUB = r"\$\(" + _parens(_PAREN_LEVELS) + r"\)"
+_DQ_STRING = r'"(?:\\.|' + _COMMAND_SUB + r'|[^"\\])*+"'
 
 # Extra alternatives for lizard's shared token pattern. Order matters only among
 # alternatives that can start at the same character.
@@ -380,6 +417,10 @@ class ShellStates(CodeStateMachine):
     lizard's whitespace-stripping `preprocessing` is an extension a caller can
     reorder or omit (crapkit's analyze.py builds two different chains). Dropping
     newlines too is what lets a `foo()` header sit a line above its `{`.
+
+    A body that is a subshell, `f() ( ... )`, ends at its own `)`, and a case
+    pattern's bare `)` inside it is skipped: read as the close, the first
+    pattern of a consumer repo's 140-line function ended it 72 lines early.
     """
 
     def __init__(self, context):
@@ -389,6 +430,8 @@ class ShellStates(CodeStateMachine):
         self._opener = "{"
         self._closer = "}"
         self._depth = 0
+        self._cases: list = []     # the depth each open `case ... in` sits at
+        self._subject_left = 0     # tokens a `case` may still wait for its `in`
 
     def __call__(self, token, reader=None):
         if token.isspace():
@@ -439,15 +482,42 @@ class ShellStates(CodeStateMachine):
         self._opener = opener
         self._closer = ")" if opener == "(" else "}"
         self._depth = 1
+        self._cases = []
         self._state = self._body
 
     def _body(self, token):
         if token == self._opener:
             self._depth += 1
-        elif token == self._closer:
-            self._depth -= 1
-            if not self._depth:
-                self._end()
+        elif token == self._closer and not self._ends_pattern(token):
+            self._close()
+        else:
+            self._read_case(token)
+
+    def _close(self):
+        self._depth -= 1
+        if not self._depth:
+            self._end()
+
+    def _ends_pattern(self, token) -> bool:
+        """A `)` that ends a case pattern, not a subshell: `a)` in `case $v in a)`.
+        It matters only in a body that is itself a subshell, `f() ( ... )`."""
+        return token == ")" and self._case_here()
+
+    def _case_here(self) -> bool:
+        return bool(self._cases) and self._cases[-1] == self._depth
+
+    def _read_case(self, token):
+        """A case opens at its `in`, when at most two tokens sit between it and
+        `case` (`$v` is two: `$` and `v`), and closes at its `esac`. A `case` word
+        no `in` follows, as in `echo case`, opens nothing."""
+        if token == "in" and self._subject_left > 0:
+            self._cases.append(self._depth)
+        elif token == "esac" and self._case_here():
+            self._cases.pop()
+        self._count_subject(token)
+
+    def _count_subject(self, token):
+        self._subject_left = 3 if token == "case" else self._subject_left - 1
 
     def _end(self):
         self.context.end_of_function()

@@ -321,6 +321,25 @@ def test_a_subshell_bodied_function_is_reported():
     assert (fn.name, fn.cyclomatic_complexity, fn.end_line) == ("isolated", 2, 3)
 
 
+def test_a_case_pattern_does_not_close_a_subshell_bodied_function():
+    """A pattern ends in a bare `)`, and the body's own `)` comes after `esac`.
+    Read as the body's close, the first pattern ended `pick` on line 3 with ccn 1,
+    and both arms fell outside it. Base 1 + two arms = 3, lines 1 to 6."""
+    code = ('pick() (\n  case "$1" in\n    a) echo a;;\n    (b) echo b;;\n  esac\n)\n'
+            'after() {\n  if x; then :; fi\n}\n')
+    assert [(f.name, f.start_line, f.end_line, f.cyclomatic_complexity)
+            for f in _functions(code)] == [("pick", 1, 6, 3), ("after", 7, 9, 2)]
+
+
+def test_a_subshell_inside_a_case_arm_still_closes_where_it_should():
+    """Only a pattern's `)` is skipped: the `( cd x )` inside an arm pairs with its
+    own `(`, and a `case` word that no `in` follows opens nothing."""
+    code = ('pick() (\n  echo case\n  case $v in\n    a) ( cd x && ls );;\n  esac\n)\n'
+            'after() {\n  echo hi\n}\n')
+    assert [(f.name, f.end_line, f.cyclomatic_complexity) for f in _functions(code)] == [
+        ("pick", 6, 3), ("after", 9, 1)]
+
+
 # --- only functions, never top-level code --------------------------------------
 
 REAL_SHAPED = '''#!/usr/bin/env bash
@@ -441,6 +460,11 @@ HOLES = {
     "a default": ("x=${y:-$(a && b)}", "x=$(a && b)"),
     "a quoted default": ('x="${y:-$(a && b)}"', "x=$(a && b)"),
     "an if": ('x="$(if a; then b; fi)"', "x=$(if a; then b; fi)"),
+    "a case": ('x="$(case $y in a) b;; esac)"', "x=$(case $y in a) b;; esac)"),
+    "a case with a quote in an arm": ('x="$(case "$y" in a) echo "b";; esac)"',
+                                      'x=$(case "$y" in a) echo "b";; esac)'),
+    "eight levels of parens": ('x="$(' + " (" * 7 + " a && b" + " )" * 8 + '"',
+                               "x=$(" + " (" * 7 + " a && b" + " )" * 8),
 }
 
 
@@ -473,6 +497,46 @@ def test_a_substitution_over_two_lines_keeps_every_later_line_number():
     spans = [(r.start, r.end, r.ccn) for r in analyze_source("two.sh", code)]
 
     assert spans == [(1, 4, 2), (6, 8, 1)]
+
+
+def test_a_case_inside_a_quoted_substitution_closes_at_its_esac():
+    """Each arm's pattern ends in a bare `)`. Taken as the substitution's close,
+    the first one cut the hole at `Linux)`: `case` reached the counters and `esac`
+    stayed in the string, so the level never closed and both ifs after it paid
+    one level too many. Written bare, the line reads ccn_std 1 + two arms + two
+    ifs = 5, cognitive switch 1 + two ifs = 3, nesting 1 (Sonar B2)."""
+    code = ('f() {\n  os="$(case "$(uname -s)" in Linux) echo linux;; Darwin) echo mac;; esac)"\n'
+            '  if a; then :; fi\n  if b; then :; fi\n}\n')
+    (record,) = analyze_source("case.sh", code)
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == (5, 3, 1)
+
+
+def test_a_brace_in_a_quoted_case_arm_hides_no_function():
+    """`"$(case $x in a) echo "a{";; esac)"` is one string in shell. Cut at `a)`,
+    its `"a{"` paired off wrong and the `{` left in code swallowed `g`."""
+    code = ('f() {\n  v="$(case $x in a) echo "a{";; b) echo b;; esac)"\n}\n\n'
+            'g() {\n  return 1\n}\n')
+    assert [(r.long_name, r.start, r.end, r.ccn_std)
+            for r in analyze_source("arm.sh", code)] == [("f()", 1, 3, 3), ("g()", 5, 7, 1)]
+
+
+def test_parens_nine_levels_deep_are_the_documented_limit():
+    """The string rule reads eight levels of parens inside a substitution. At
+    nine it does not match, the string ends at its first inner quote as lizard's
+    own rule ends it, and the `&&` counts nothing."""
+    line = 'x="$(' + " (" * 8 + " a && b" + " )" * 9 + '"'
+    assert _columns(line)[:2] == (1, 1)
+
+
+def test_an_unpaired_quote_before_many_substitutions_reads_in_linear_time():
+    """With no closing quote left in the file, the string rule used to try every
+    way of reading each `$( )` after it as a substitution or as text: two ways per
+    substitution, 7 s for 24 of them and twice that for each one more. Its loops
+    no longer give back what they matched, so this tokenizes at once; before, it
+    did not finish."""
+    code = 'f() {\n  x="' + " $(a)" * 40 + "\n}\n"
+    assert [(f.name, f.end_line) for f in _functions(code)] == [("f", 3)]
 
 
 # --- through crapkit's own analysis path ---------------------------------------

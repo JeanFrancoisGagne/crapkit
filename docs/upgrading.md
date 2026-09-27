@@ -327,6 +327,10 @@ version 11 below.
   no ccn and no NLOC. On a large consumer repo 131 of 1,263 shell functions rose by 1
   to 7. A function the rise puts over its ceiling fails the gate the next time its
   file changes.
+- A case statement inside a quoted substitution counts its arms, and a function whose
+  body is a subshell, `f() ( case ... esac )`, ends at its own `)` rather than at the
+  first pattern's. Such a function can gain lines and ccn: one on a large consumer repo
+  went from 68 lines and ccn 28 to 140 lines and ccn 46.
 - A PowerShell expression inside a `$( )` subexpression in a double-quoted string
   counts: `"$($a -and $b)"` reads ccn 2 where it read 1. Quotes inside the
   subexpression pair among themselves, so a function that held
