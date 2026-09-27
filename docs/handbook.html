@@ -228,7 +228,7 @@
 <!-- ============================ 02 SCORE ============================ -->
 <h2 id="score"><span class="sn">02</span>The score</h2>
 <p class="lede">Two inputs, and the second one has an exponent on it. That is the whole design.</p>
-<p><code>ccn</code> is cyclomatic complexity, the count of independent paths through a function. crapkit takes the <strong>smaller</strong> of lizard's standard and modified counts, where modified treats a whole <code>switch</code> or <code>match</code> as one decision. Comprehension <code>for</code> and <code>if</code>, ternaries, and <code>and</code>/<code>or</code> all count.</p>
+<p><code>ccn</code> is cyclomatic complexity, the count of independent paths through a function. crapkit takes the <strong>smaller</strong> of lizard's standard and modified counts, where modified treats a whole <code>switch</code> or <code>match</code> as one decision. A Rust <code>match</code>, a shell <code>case</code> and a PowerShell <code>switch</code> cost one point per arm in both counts, so the gate reads a twelve-arm one as 13. Comprehension <code>for</code> and <code>if</code>, ternaries, and <code>and</code>/<code>or</code> all count.</p>
 <p><code>cov</code> is branch coverage inside the function's span. With no branches it falls back to statement coverage, and with no statements to invoked-or-not. A half-executed straight-line function never reads as fully covered.</p>
 
 <figure class="panel">

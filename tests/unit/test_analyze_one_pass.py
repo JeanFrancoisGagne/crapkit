@@ -13,6 +13,7 @@ two-pass implementation they replaced.
 from pathlib import Path
 
 import lizard
+import pytest
 
 from crapkit import analyze
 from crapkit.analyze import analyze_one
@@ -86,6 +87,42 @@ def test_a_property_named_case_moves_both_columns_exactly_as_it_always_did(tmp_p
     (rec,) = _records(tmp_path, "c.ts", src)
 
     assert (rec.ccn_std, rec.ccn_mod) == (4, 2)
+
+
+DEFAULT_ONLY = {
+    "p.c": "int f(int x) {\n  switch (x) { default: return 1; }\n}\n",
+    "p.m": "int f(int x) {\n  switch (x) { default: return 1; }\n}\n",
+    "p.java": "class A { int f(int x) {\n  switch (x) { default: return 1; }\n} }\n",
+    "p.ts": "function f(x: number) {\n  switch (x) { default: return 1; }\n}\n",
+    "p.js": "function f(x) {\n  switch (x) { default: return 1; }\n}\n",
+    "p.vue": ("<script>\nexport default { methods: { f(x) {\n"
+              "  switch (x) { default: return 1; }\n} } }\n</script>\n"),
+    "p.go": "func f(x int) int {\n  switch x {\n  default:\n    return 1\n  }\n}\n",
+    "p.swift": "func f(x: Int) -> Int {\n  switch x {\n  default:\n    return 1\n  }\n}\n",
+    "p.zig": "fn f(x: i32) i32 {\n    switch (x) {\n        else => return 1,\n    }\n}\n",
+}
+
+
+@pytest.mark.parametrize("name", sorted(DEFAULT_ONLY))
+def test_a_switch_with_only_a_default_reads_one_above_in_the_modified_column(tmp_path, name):
+    """lizard -m adds the switch's point and takes one back per `case`, so a
+    switch with no case keeps it: ccn_mod reads one above ccn_std, as lizard
+    reads it. ccn is the smaller column, so the gate never sees the point."""
+    (rec,) = _records(tmp_path, name, DEFAULT_ONLY[name])
+
+    assert (rec.ccn_mod, rec.ccn) == (rec.ccn_std + 1, rec.ccn_std)
+
+
+def test_a_powershell_switch_costs_its_arms_in_both_columns(tmp_path):
+    """A PowerShell arm has no `case` to take the opener's point back, so the
+    opener gets none: a default-only switch reads the two columns equal, and
+    each other arm costs one point in both (see crapkit.lizardpowershell)."""
+    only_default = "function F {\n  switch ($x) { default { 1 } }\n}\n"
+    two_arms = "function G {\n  switch ($x) { 1 { 'a' } 2 { 'b' } default { 'c' } }\n}\n"
+    (f,) = _records(tmp_path, "f.ps1", only_default)
+    (g,) = _records(tmp_path, "g.ps1", two_arms)
+
+    assert [(r.ccn_std, r.ccn_mod) for r in (f, g)] == [(1, 1), (3, 3)]
 
 
 def test_analyze_one_reads_each_file_in_a_single_lizard_pass(tmp_path, monkeypatch):
