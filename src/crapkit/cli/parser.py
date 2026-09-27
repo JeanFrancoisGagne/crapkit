@@ -146,7 +146,7 @@ class _VersionAction(argparse.Action):
 
 def _build_words(stream) -> str:
     """` (commit <sha>, dirty)` for a person at a terminal running a crapkit
-    from a git checkout, and nothing for anyone else.
+    that knows the commit it was built from, and nothing for anyone else.
 
     A pipe keeps the two words `crapkit X.Y.Z`: doctor's launcher probe and the
     scripts that check an install read exactly those, and a third word read as
@@ -159,20 +159,50 @@ def _build_words(stream) -> str:
     return f" (commit {commit}, {'dirty' if dirty else 'clean'})"
 
 
+# The file setup.py's build writes into the package; a test holds the two names equal.
+_BUILD_STAMP = "_build.json"
+
+
 def _build_identity() -> tuple[str | None, bool | None]:
-    """The commit a crapkit run from a git checkout is at, and whether that
-    checkout holds changes the commit does not: staged or unstaged edits, or a
-    file git neither tracks nor ignores. (None, None) for an installed build,
-    which carries no commit, and for a checkout git cannot read."""
-    top = _checkout_of(_package_dir())
+    """The commit this crapkit was built from, and whether its checkout held
+    changes the commit does not: staged or unstaged edits, or a file git neither
+    tracks nor ignores. A source checkout or an editable install answers from
+    git now; an installed build answers from the stamp its build wrote. (None,
+    None) for a build made with no checkout at hand and for a checkout git
+    cannot read."""
+    package = _package_dir()
+    top = _checkout_of(package)
     if top is None:
-        return None, None
+        return _stamped_identity(package)
     from .. import gitio
 
     try:
         return gitio.head_commit(top), bool(gitio.status_names(top))
     except GitError:
         return None, None
+
+
+def _stamped_identity(package) -> tuple[str | None, bool | None]:
+    """The commit and dirty flag setup.py wrote into the installed package, or
+    (None, None) when there is no stamp or it does not hold a full sha and a
+    boolean."""
+    import json
+
+    try:
+        stamp = json.loads((package / _BUILD_STAMP).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, None
+    return _stamp_fields(stamp) if isinstance(stamp, dict) else (None, None)
+
+
+def _stamp_fields(stamp: dict) -> tuple[str | None, bool | None]:
+    import re
+
+    commit, dirty = stamp.get("commit"), stamp.get("dirty")
+    if isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit) \
+            and isinstance(dirty, bool):
+        return commit, dirty
+    return None, None
 
 
 def _package_dir():
@@ -206,8 +236,9 @@ def _version_json_asked(argv: list[str] | None) -> bool:
 
 
 def _print_version_json() -> int:
-    """The version, the build's commit and dirty flag (null for an installed
-    build), and the analysis version the ratchet stamp and doctor carry."""
+    """The version, the build's commit and dirty flag (null for a build made
+    with no checkout at hand), and the analysis version the ratchet stamp and
+    doctor carry."""
     from ..analyze import ANALYSIS_VERSION
     from ._shared import _print_json
 
@@ -312,9 +343,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="crapkit", **_color_kwargs(sys.version_info, (sys.stdout, sys.stderr)))
     parser.add_argument("--version", action=_VersionAction, default=argparse.SUPPRESS,
                         help="print the program name and its version; on a terminal, a crapkit "
-                             "run from a git checkout adds its commit and whether the checkout "
-                             "is dirty. --version --json prints one object: version, commit, "
-                             "dirty and analysis_version")
+                             "built from a git checkout adds that commit and whether the "
+                             "checkout was dirty. --version --json prints one object: version, "
+                             "commit, dirty and analysis_version")
     sub = parser.add_subparsers(dest="command", required=True)
 
     inv = sub.add_parser("inventory", help="build the per-function complexity inventory snapshot")

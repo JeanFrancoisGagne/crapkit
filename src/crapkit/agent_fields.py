@@ -145,12 +145,14 @@ _ADDED = (
     AgentField(VERSION, "version", ("string",),
                "the installed distribution's version, the number the text line prints"),
     AgentField(VERSION, "commit", ("string", "null"),
-               "the commit, full sha, of the git checkout crapkit runs from (a source checkout "
-               "or an editable install); null for an installed build, which carries no commit, "
-               "and for a checkout git cannot read"),
+               "the commit, full sha, this crapkit was built from: read from git for a source "
+               "checkout or an editable install, and from the stamp the build wrote for an "
+               "installed wheel; null for a build made with no git checkout at hand and for a "
+               "checkout git cannot read"),
     AgentField(VERSION, "dirty", ("boolean", "null"),
-               "true when that checkout holds changes the commit does not: staged or unstaged "
-               "edits, or a file git neither tracks nor ignores; null when commit is null"),
+               "true when that checkout holds changes the commit does not (for an installed "
+               "wheel, held them when it was built): staged or unstaged edits, or a file git "
+               "neither tracks nor ignores; null when commit is null"),
     AgentField(VERSION, "analysis_version", ("integer",),
                "the analysis semantics version, the number doctor --json reports and the "
                "ratchet's metric stamp carries"),
