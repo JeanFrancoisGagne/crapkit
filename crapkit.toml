@@ -9,9 +9,11 @@ notes = [
 # itself (golden, change-control and cross-surface tests are left out). The
 # killer puts the mutation worktree's src/ first on PYTHONPATH, because an
 # editable install points at the main checkout and would test unmutated code.
-# The deadline is three times the killer's measured clean run.
+# The deadline is three times the killer's slowest measured clean run: 546 s
+# alone on four CPUs, 1114 s inside a loaded nightly shard, where
+# test_mutation_command_is_sound times it.
 mutation_command = "python tools/accuracy/mutation.py killer"
-mutation_timeout_seconds = 1800
+mutation_timeout_seconds = 3600
 mutation_workers = 1
 
 # One command per scope. No {files} placeholder on purpose: the tests live in

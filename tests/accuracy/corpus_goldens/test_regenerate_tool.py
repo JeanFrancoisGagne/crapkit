@@ -8,7 +8,9 @@
   (coverage.py 7.16.1 on CPython 3.14, vitest with istanbul) gives the
   committed recorded/ artifacts, parsed JSON equal and JUnit text equal.
   The recording interpreter is CRAPKIT_ACCURACY_PY314, or the image's
-  /opt/venv/3.14 (ACCURACY_VENVS moves it).
+  /opt/venv/3.14 (ACCURACY_VENVS moves it). Linux only: recordings are made in
+  the image, and a native Windows or macOS cell has no 3.14 with the nightly
+  lock, so there the check could only report a missing interpreter.
 """
 import importlib.util
 import json
@@ -143,6 +145,7 @@ def _read(path: Path):
 
 @pytest.mark.nightly
 @pytest.mark.process
+@pytest.mark.platform("linux")
 def test_re_recording_gives_the_committed_artifacts(tmp_path, oracle):
     oracle("vitest")
     names = regenerate.record(_python314(), oracles.node_modules("nightly"), tmp_path / "out")

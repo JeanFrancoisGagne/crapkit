@@ -15,7 +15,7 @@ def test_pure_sizes_per_tier(tier, examples, derandomized):
     chosen = settings.profile("pure", tier)
 
     assert (chosen.max_examples, chosen.derandomize) == (examples, derandomized)
-    assert chosen.deadline is not None
+    assert chosen.deadline == settings.PURE_DEADLINE
 
 
 @pytest.mark.parametrize("tier, examples", [
