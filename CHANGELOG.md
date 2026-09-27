@@ -1445,10 +1445,11 @@ is rebuilt at the first `duplication` or `brief` after upgrading.
   language `//` and `/* */`, where a block comment's lines without a leading `*` were
   read as code.
 - A block comment opened after code, `int x = a; /* starts here`, leaves its later lines
-  out, where only those starting with `*` were left out before. An opener after an open
-  quote or a `//` on its line opens nothing, and so does one that no later line of the
-  function closes: a line starting with `/*` inside a template literal is code, as are the
-  lines after it.
+  out, where only those starting with `*` were left out before. The line is read from its
+  start: an opener inside a string or after a `//` opens nothing, and a `//` inside a
+  closed string does not stop one, so `s = "http://x"; /* note` opens a block comment. An
+  opener that no later line of the function closes opens nothing either: a line starting
+  with `/*` inside a template literal is code, as are the lines after it.
 
 ## 0.8.0 — 2026-09-23
 

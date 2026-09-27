@@ -25,6 +25,7 @@ from hashlib import blake2b
 import heapq
 from itertools import chain
 from posixpath import splitext
+import re
 from typing import NamedTuple
 
 from .keys import lookup
@@ -49,26 +50,50 @@ class _Comments(NamedTuple):
     `line` holds the prefixes that make a whole line a comment. `block` is the
     opener and closer of a block comment, or None in a language without one.
     `starts` is every prefix that sends a line down the slow path: the line
-    prefixes and the block opener."""
+    prefixes and the block opener. `tokens` reads a line from its start for a
+    block opener after code, in a language with block comments (`_tokens`)."""
 
     line: tuple[str, ...]
     block: tuple[str, str] | None
     starts: tuple[str, ...]
+    tokens: re.Pattern | None
 
 
-def _comments(line: tuple[str, ...], block: tuple[str, str] | None = None) -> _Comments:
-    return _Comments(line, block, line + (block[:1] if block else ()))
+def _tokens(line: tuple[str, ...], block: tuple[str, str], strings: str, quotes: str) -> re.Pattern:
+    """One token of a line read from its start: a closed string, a closed
+    block comment, a `stop` (a line comment, or a quote that no later quote
+    closes), or an `open`, a block opener no later closer on the line closes.
+    `strings` matches one closed string of the language, and `quotes` holds
+    the characters that open one."""
+    opener, closer = map(re.escape, block)
+    stops = "|".join(map(re.escape, line + tuple(quotes)))
+    return re.compile(f"{strings}|{opener}.*?{closer}|(?P<stop>{stops})|(?P<open>{opener})")
+
+
+def _comments(line: tuple[str, ...], block: tuple[str, str] | None = None,
+              strings: str = "", quotes: str = "") -> _Comments:
+    tokens = _tokens(line, block, strings, quotes) if block else None
+    return _Comments(line, block, line + (block[:1] if block else ()), tokens)
 
 
 # A comment is what the language's reference calls one, so a Python `// 2` or
 # `**kwargs` line, a C `*out = x;` or `#define` line and a Rust `#[attr]` line
 # are code. Python's docstrings are string literals; a line starting with
 # three quotes is left out all the same, as it always was. The markers are read
-# at a line's start, and a block opener after code too; no string is parsed,
-# and a block comment ends at its first closer, nested or not.
-_C_FAMILY = _comments(("//",), ("/*", "*/"))
+# at a line's start, and a block opener after code too, where the line is read
+# from its start for strings; a block comment ends at its first closer, nested
+# or not. A backslash escapes the character after it in a string, a backtick in
+# a PowerShell "..." string; a PowerShell '...' string and a Go `...` string
+# escape nothing. `'` opens a string in JavaScript, TypeScript and Vue; in the
+# other C-family languages it marks one character, `'a'` or `'\n'`, and a `'`
+# that marks none, a Rust lifetime or label, is no quote.
+_BACKSLASH = r'"(?:\\.|[^"\\])*"'
+_C_FAMILY = _comments(("//",), ("/*", "*/"), rf"{_BACKSLASH}|'(?:\\.[^'\\]{{0,8}}|[^'\\])'|`[^`]*`", '"`')
+_JS_FAMILY = _comments(("//",), ("/*", "*/"), rf"{_BACKSLASH}|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`", "\"'`")
 _COMMENTS = {"python": _comments(("#", '"""', "'''")), "shell": _comments(("#",)),
-             "powershell": _comments(("#",), ("<#", "#>")), "zig": _comments(("//",))}
+             "powershell": _comments(("#",), ("<#", "#>"), r"\"(?:`.|[^\"`])*\"|'[^']*'", "\"'"),
+             "zig": _comments(("//",)), "typescript": _JS_FAMILY, "tsx": _JS_FAMILY,
+             "javascript": _JS_FAMILY, "vue": _JS_FAMILY}
 _COMMENTS_BY_SUFFIX = {suffix: _COMMENTS.get(language, _C_FAMILY)
                        for language, suffixes in LANGUAGE_EXTENSIONS.items() for suffix in suffixes}
 # The one threshold a run's index is stored at: brief's, and duplication's
@@ -137,22 +162,20 @@ def _opening(text: str, comments: _Comments) -> tuple[str | None, int]:
     return None, 0
 
 
-def _quoted_or_commented(head: str, comments: _Comments) -> bool:
-    """`head`, a line up to a block opener, leaves the opener in a string, by
-    an odd count of one kind of quote, or in a line comment."""
-    return any(head.count(quote) % 2 for quote in "\"'`") \
-        or any(marker in head for marker in comments.line)
+def _first_mark(text: str, tokens: re.Pattern) -> re.Match | None:
+    """The first token of a line past its closed strings and closed block
+    comments: a line comment, an open quote or an unclosed opener."""
+    return next((token for token in tokens.finditer(text) if token.lastgroup), None)
 
 
 def _opens_after_code(text: str, comments: _Comments) -> bool:
-    """A code line ends inside a block comment: its last opener follows a space
-    or tab, stands clear of strings and line comments, and nothing after it on
-    the line closes it. `"src/*"` and `'case $x in /*) ;;'` hold theirs in a
-    string."""
-    opener, closer = comments.block
-    at = text.rfind(opener)
-    return at > 0 and text[at - 1] in " \t" and closer not in text[at + len(opener):] \
-        and not _quoted_or_commented(text[:at], comments)
+    """A code line ends inside a block comment: read from its start, the first
+    thing past its closed strings and closed block comments is an opener that
+    follows a space or tab. `"src/*"` holds its opener in a string, `"http://x"
+    /* note` its `//`, and `// see /* here` its opener in a line comment."""
+    mark = comments.block[0] in text and _first_mark(text, comments.tokens)
+    return bool(mark) and mark.lastgroup == "open" and mark.start() > 0 \
+        and text[mark.start() - 1] in " \t"
 
 
 def _uncommented(text: str, closer: str | None, comments: _Comments) -> tuple[str, str | None]:

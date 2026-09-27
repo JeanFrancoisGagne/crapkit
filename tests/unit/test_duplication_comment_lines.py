@@ -185,12 +185,45 @@ AFTER_CODE = {
                              '  n += 2;', '  /* note */', '  return glob + n;', '}'], 6),
     "never-closed": ("m.c", ['int clamp(int a) {', '    int x = a; /* never closed', '    x += 1;',
                              '    x *= 2;', '    return x;', '}'], 6),
+    "open-template-literal": ("m.js", ['function clamp(a) {', '  const s = `a /* b', '  c`;', '  a += 1;',
+                                       '  /* note */', '  return s + a;', '}'], 6),
+}
+
+# The line is read from its start: a `//` or `#` inside a closed string or a
+# closed block comment is no line comment, a quote of one kind inside a
+# string of the other is no quote, a backslash escapes a quote, and in the
+# languages where `'` marks one character, a Rust lifetime opens nothing. The
+# first opener outside them all is the one that counts.
+AFTER_CODE_READ_FROM_THE_START = {
+    "line-comment-in-a-string": ("m.c", ['int f(void) {', '    const char *s = "http://x"; /* note',
+                                         '     * more', '       plain', '     */', '    return 0;', '}'], 4),
+    "powershell-line-comment-in-a-string": ("m.ps1", ['function F {', '    $s = "a#b" <# note', '    more',
+                                                      '    #>', '    $s', '}'], 4),
+    "line-comment-in-a-closed-block-comment": ("m.c", ['int f(int a) {',
+                                                       '    int x = a; /* http://x */ x += 1; /* note',
+                                                       '    more', '    */', '    return x;', '}'], 4),
+    "other-quote-in-a-string": ("m.js", ['function f(a) {', '  const s = "it\'s"; /* note', '  more', '  */',
+                                         '  return s;', '}'], 4),
+    "escaped-quote-in-a-string": ("m.c", ['int f(void) {', '    puts("\\""); /* note', '    more', '    */',
+                                          '    return 0;', '}'], 4),
+    "quote-as-a-character": ("m.c", ['int f(void) {', "    char q = '\"'; /* note", '    more', '    */',
+                                     '    return q;', '}'], 4),
+    "rust-lifetime": ("m.rs", ['fn f(x: &str) -> usize {', "    let s: &'static str = x; /* note",
+                               '    more', '    */', '    s.len()', '}'], 4),
+    "first-opener-with-a-quote-after-it": ("m.c", ['int f(int a) {', '    int x = a; /* say " /* more',
+                                                   '    more', '    */', '    return x;', '}'], 4),
+    "powershell-backslash-ends-a-string": ("m.ps1", ['function F {', '    $d = "C:\\temp\\" <# note',
+                                                     '    more', '    #>', '    $d', '}'], 4),
+    # The limit the README names: a raw string escapes nothing, but its last
+    # backslash reads as escaping the quote, so the string reads as open.
+    "raw-string-ending-in-a-backslash": ("m.rs", ['fn f() -> usize {', '    let p = r"C:\\"; /* note',
+                                                  '    more', '    */', '    p.len()', '}'], 6),
 }
 
 
-@pytest.mark.parametrize("shape", AFTER_CODE)
+@pytest.mark.parametrize("shape", [*AFTER_CODE, *AFTER_CODE_READ_FROM_THE_START])
 def test_a_block_comment_opened_after_code_leaves_its_later_lines_out(shape):
-    path, lines, kept = AFTER_CODE[shape]
+    path, lines, kept = {**AFTER_CODE, **AFTER_CODE_READ_FROM_THE_START}[shape]
     rows = [row(path, "f", 1, len(lines))]
 
     ((_, shingles),) = function_index(rows, {path: NL.join(lines) + NL}, min_lines=1).functions()
