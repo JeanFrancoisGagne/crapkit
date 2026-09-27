@@ -727,11 +727,14 @@ checkout holds, where 0.8.0 returned `[]`, which read as a clean tree.
 
 A running `crapkit.exe mcp` holds its console launcher open, and each installer meets
 that lock its own way. Measured on Windows 11 with pip 26.2.1, pipx 1.17.6 and uv
-0.12.18, upgrading 0.7.6 to 0.8.0 while a server from the same install ran:
+0.12.18, upgrading 0.7.6 to 0.8.0 while a server from the same install ran; the pip
+22.3.1 row upgraded 0.8.0 to 0.8.1 under a running 0.8.0 server, and pip 23.3, 23.3.2,
+24.0 and 25.0.1 did what the first row says:
 
 | Command | Exit | What it printed and left behind |
 |---|---|---|
 | `python -m pip install --upgrade crapkit` | 0 | `Successfully installed crapkit-0.8.0`, then `WARNING: Failed to remove contents in a temporary directory`. pip moved the busy `crapkit.exe` into that directory: `crapkit --version` says 0.8.0, and the running server still answers as 0.7.6 |
+| `python -m pip install --upgrade crapkit`, pip 22.3.1, the pip a Python 3.11.2 venv ships | 1 | `ERROR: Could not install packages due to an OSError: [WinError 5] Access is denied: '...\pip-uninstall-...\crapkit.exe'`. pip puts the old release back, and `pip list` still shows it. Run `python -m pip install --upgrade pip` first, then the upgrade |
 | `pipx upgrade crapkit`, pipx using pip | 0 | `upgraded package crapkit from 0.7.6 to 0.8.0`, and the rest as for pip |
 | `pipx upgrade crapkit`, pipx using uv (uv on PATH) | 1 | `error: failed to remove file ...\Scripts/crapkit.exe: Access is denied. (os error 5)`. 0.7.6 stays installed and runs |
 | `uv tool upgrade crapkit` | 1 | `failed to copy file ... The process cannot access the file because it is being used by another process. (os error 32)`. The package is already 0.8.0; the rerun says `Nothing to upgrade` |

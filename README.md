@@ -325,14 +325,17 @@ when moving from any older release to today's reader.
 ### The exe lock on Windows
 
 A running `crapkit.exe mcp` holds its launcher open, and each installer meets that lock
-its own way. pip succeeds: it moves the busy `crapkit.exe` aside and installs the new
-release, and the running server keeps serving the old code until you restart its
-client. pipx does the same when it installs through pip. `uv tool upgrade crapkit`
-fails with `os error 32`. `uv tool install crapkit@latest`, and `pipx upgrade crapkit`
-when pipx installs through uv, fail with `Access is denied. (os error 5)`; after that
-`uv tool install` the `crapkit` command fails with `ModuleNotFoundError: No module
-named 'crapkit'` until the install runs again. After any of those three failures, stop
-the server or its agent session, rerun the same command, then restart the client. The
+its own way. From pip 23.3 on, pip succeeds: it moves the busy `crapkit.exe` aside and
+installs the new release, and the running server keeps serving the old code until you
+restart its client. pipx does the same when it installs through pip. An older pip, such
+as the 22.3.1 a Python 3.11.2 venv ships, fails with `ERROR: Could not install packages
+due to an OSError: [WinError 5] Access is denied` and puts the old release back: run
+`python -m pip install --upgrade pip` first, or stop the server as for uv. `uv tool
+upgrade crapkit` fails with `os error 32`. `uv tool install crapkit@latest`, and `pipx
+upgrade crapkit` when pipx installs through uv, fail with `Access is denied. (os error
+5)`; after that `uv tool install` the `crapkit` command fails with `ModuleNotFoundError:
+No module named 'crapkit'` until the install runs again. After any of those failures,
+stop the server or its agent session, rerun the same command, then restart the client. The
 [Windows upgrade procedure](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#windows-launcher-locks)
 lists what each installer printed.
 
@@ -1528,7 +1531,7 @@ globs = [
 
 [[lane]]
 name = "py"
-command = "python -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml --continue-on-collection-errors"
+command = "{python} -m pytest --cov --cov-branch --cov-report=json:.crapkit/cov/py.json --junitxml=.crapkit/cov/junit-py.xml --continue-on-collection-errors"
 artifact = ".crapkit/cov/py.json"
 results_artifact = ".crapkit/cov/junit-py.xml"
 parser = "coveragepy"
@@ -1548,7 +1551,7 @@ scopes = ["calc"]
 # runs as written, which is how a scope whose tests live elsewhere runs them.
 [crapkit.scoped_tests]
 # calc: no test file under calc/, so the whole suite runs, from tests/
-calc = "python -m pytest tests -q -p no:cacheprovider"
+calc = "{python} -m pytest tests -q -p no:cacheprovider"
 
 ```
 
@@ -1556,6 +1559,12 @@ The last block is the one an agent loop needs. `crapkit test-scoped` exits 3 for
 whose scope declares no template, and [AGENTS.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#4-run-the-owning-scopes-tests)
 makes it step 4 of the burn-down loop. Every key is in
 [docs/configuration.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md).
+
+`{python}` is the launcher token: crapkit reads it as `python` on Windows and `python3` on
+Linux and macOS, so one committed line runs on every OS. A `.venv` in the repo that holds
+pytest gets `{python:.venv}` instead. [The launcher
+token](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#the-launcher-token)
+lists each form.
 
 ### 2. Check the config against the repo
 
@@ -1566,7 +1575,7 @@ ok   config keys all recognized
 ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
-ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.10.6)
+ok   lane 'py': python3 -> /home/you/.venvs/ledger/bin/python3 (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.13.1)
 ok   lizard 1.24.0
 doctor: no problems found
 ```
@@ -1793,17 +1802,19 @@ export function classify(row: Row): string {
 $ crapkit rescore src/grade.ts --gate
 rescore vs run 1 @ 8bfbe613fcd (coverage STALE, complexity fresh)
    ccn   cov     crap  remedy      function
-     5    0%     30.0  add-tests   src/grade.ts:22  band ( score )
-     5    0%     30.0  add-tests   src/grade.ts:38  demote ( letter , row Row )
-     4    0%     20.0  add-tests   src/grade.ts:8  penalty ( attempts , late )
+     5     -     30.0  add-tests   src/grade.ts:22  band ( score )  (coverage not measured)
+     5     -     30.0  add-tests   src/grade.ts:38  demote ( letter , row Row )  (coverage not measured)
+     4     -     20.0  add-tests   src/grade.ts:8  penalty ( attempts , late )  (coverage not measured)
      4   45%      6.7  add-tests   src/grade.ts:48  classify ( row Row )
      4   75%      4.2  ok          src/grade.ts:59  average ( scores Array )
 gate: 4 changed function(s) judged, 0 over ceiling 6
 ```
 
 Exit 0 and the `gate:` line: every changed piece is at or under 6. The `crap` column is loud because its coverage half
-is still run 1's, from before three of those functions existed, and `add-tests` is the
-literal instruction for step 6.
+is still run 1's, from before three of those functions existed. Run 1 has no row for
+`band`, `demote` or `penalty`, so each prints `-` for `cov`, ends `(coverage not
+measured)` and scores as if no test ran it. `add-tests` is the literal instruction for
+step 6.
 
 ### 6. Cover the new pieces
 

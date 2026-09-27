@@ -16,6 +16,7 @@ import pytest
 
 from crapkit import invocation
 from crapkit.config import Config
+from crapkit.lane_command import python_token
 from crapkit.churn import parse_git_log
 from crapkit.cli.parser import build_parser
 from crapkit.scaffold import (detect_lanes, gitignore_entries, live_lanes, npm_package,
@@ -103,7 +104,9 @@ def test_every_lane_example_in_the_docs_comes_back_from_doctor_clean():
 
 
 def _py_lanes():
-    return detect_lanes(frozenset({"pyproject.toml"}), None)
+    """The lane init writes where no venv in the tree carries pytest: the
+    `{python}` launcher token, which reads as this OS's python at load."""
+    return detect_lanes(frozenset({"pyproject.toml"}), None, interpreter=python_token())
 
 
 def _js_lanes():

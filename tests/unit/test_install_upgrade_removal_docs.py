@@ -177,6 +177,18 @@ def test_the_readme_no_longer_says_every_locked_upgrade_fails_with_error_32():
     assert "make an upgrade fail with Windows error 32" not in lock
 
 
+@pytest.mark.parametrize("page, heading", [("README.md", "### The exe lock on Windows"), LOCKS])
+def test_the_lock_text_says_which_pip_moves_the_exe_aside_and_what_an_older_one_does(page, heading):
+    """pip 22.3.1, which a Python 3.11.2 venv ships, exits 1 with WinError 5 under
+    a running `crapkit.exe mcp` and rolls back; pip 23.3 and newer move the exe
+    aside. The page said pip succeeds, with no version."""
+    lock = _prose(_section(page, heading))
+
+    assert "23.3" in lock and "22.3.1" in lock, page
+    assert "[WinError 5] Access is denied" in lock, page
+    assert "`python -m pip install --upgrade pip`" in lock, page
+
+
 # --- removal ----------------------------------------------------------------------------
 
 # Each installer the docs name, and its own removal line.
