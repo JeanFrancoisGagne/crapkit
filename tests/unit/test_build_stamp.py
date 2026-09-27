@@ -39,6 +39,8 @@ def _checkout(root: Path) -> str:
     (root / "src" / "crapkit").mkdir(parents=True)
     (root / "src" / "crapkit" / "__init__.py").write_text("", encoding="utf-8")
     (root / ".gitignore").write_text("build/\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text('[project]\nname = "crapkit"\nversion = "1.2.3"\n',
+                                         encoding="utf-8")
     git(root, "init", "-q")
     commit_all(root, "a checkout")
     return git(root, "rev-parse", "HEAD").strip()
@@ -51,7 +53,34 @@ def test_the_build_writes_the_file_the_reader_reads():
 def test_a_clean_checkout_stamps_its_commit(tmp_path):
     commit = _checkout(tmp_path)
 
-    assert setup.checkout_stamp(tmp_path) == {"commit": commit, "dirty": False}
+    assert setup.checkout_stamp(tmp_path) == {"commit": commit, "dirty": False,
+                                              "release": False}
+
+
+def test_a_clean_checkout_at_its_versions_tag_is_a_release(tmp_path):
+    """The release script tags v<version> before it builds."""
+    commit = _checkout(tmp_path)
+    git(tmp_path, "tag", "v1.2.3")
+
+    assert setup.checkout_stamp(tmp_path) == {"commit": commit, "dirty": False, "release": True}
+
+
+@pytest.mark.parametrize("tag, edit", [("v1.2.2", False), ("1.2.3", False), ("v1.2.3", True)])
+def test_another_tag_or_a_dirty_tree_is_no_release(tmp_path, tag, edit):
+    _checkout(tmp_path)
+    git(tmp_path, "tag", tag)
+    if edit:
+        (tmp_path / "src" / "crapkit" / "__init__.py").write_text("X = 1\n", encoding="utf-8")
+
+    assert setup.checkout_stamp(tmp_path)["release"] is False
+
+
+@pytest.mark.parametrize("pyproject", [None, "not toml [", "[tool]\n", "project = 1\n"])
+def test_a_version_pyproject_does_not_give_is_none(tmp_path, pyproject):
+    if pyproject is not None:
+        (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+
+    assert setup.project_version(tmp_path) is None
 
 
 @pytest.mark.parametrize("change", ["edited", "staged", "untracked"])
@@ -107,7 +136,7 @@ def test_the_stamp_written_is_the_one_the_reader_prints(tmp_path):
 
     setup.write_stamp(package, setup.tree_stamp(tmp_path / "tree"))
 
-    assert parser._stamped_identity(package) == (commit, False)
+    assert parser._stamped_identity(package) == (commit, False, False)
 
 
 def _stamp(package: Path, stamp) -> None:
@@ -115,23 +144,27 @@ def _stamp(package: Path, stamp) -> None:
     (package / setup.STAMP).write_text(json.dumps(stamp), encoding="utf-8")
 
 
-def test_a_tree_with_no_git_carries_the_stamp_its_sdist_holds(tmp_path):
-    carried = {"commit": "ab" * 20, "dirty": True}
+@pytest.mark.parametrize("release", [False, True])
+def test_a_tree_with_no_git_carries_the_stamp_its_sdist_holds(tmp_path, release):
+    carried = {"commit": "ab" * 20, "dirty": not release, "release": release}
     _stamp(tmp_path / "sdist" / "src" / "crapkit", carried)
 
     stamp = setup.tree_stamp(tmp_path / "sdist")
     setup.write_stamp(tmp_path / "lib" / "crapkit", stamp)
 
     assert stamp == carried
-    assert parser._stamped_identity(tmp_path / "lib" / "crapkit") == ("ab" * 20, True)
+    assert parser._stamped_identity(tmp_path / "lib" / "crapkit") == ("ab" * 20, not release,
+                                                                      release)
 
 
-@pytest.mark.parametrize("carried", [[], {"commit": "abc", "dirty": False},
-                                     {"commit": "ab" * 20}])
+@pytest.mark.parametrize("carried", [[], {"commit": "abc", "dirty": False, "release": False},
+                                     {"commit": "ab" * 20, "release": False},
+                                     {"commit": "ab" * 20, "dirty": False},
+                                     {"commit": "ab" * 20, "dirty": False, "release": "yes"}])
 def test_a_stamp_the_tree_cannot_vouch_for_is_removed(tmp_path, carried):
     """A build/lib reused from an earlier build must not keep that build's commit."""
     _stamp(tmp_path / "sdist" / "src" / "crapkit", carried)
-    _stamp(tmp_path / "lib" / "crapkit", {"commit": "cd" * 20, "dirty": False})
+    _stamp(tmp_path / "lib" / "crapkit", {"commit": "cd" * 20, "dirty": False, "release": False})
     stamp = setup.tree_stamp(tmp_path / "sdist")
     setup.write_stamp(tmp_path / "lib" / "crapkit", stamp)
 
@@ -177,29 +210,33 @@ def builds():
     pytest.importorskip("setuptools.command.bdist_wheel")
 
 
+def _committed(tree: Path) -> str:
+    git(tree, "init", "-q")
+    commit_all(tree, "a build")
+    return git(tree, "rev-parse", "HEAD").strip()
+
+
 def test_a_wheel_built_in_a_checkout_names_its_commit(tmp_path, builds):
     tree = _project(tmp_path / "checkout")
-    git(tree, "init", "-q")
-    commit_all(tree, "a release candidate")
-    commit = git(tree, "rev-parse", "HEAD").strip()
+    commit = _committed(tree)
 
     assert _wheel_stamp(_built(tree, "build_wheel", tmp_path / "dist")) == {
-        "commit": commit, "dirty": False}
+        "commit": commit, "dirty": False, "release": False}
 
 
-def test_a_wheel_built_from_the_sdist_names_the_checkouts_commit(tmp_path, builds):
-    """`python -m build` builds the wheel from the sdist, which has no .git."""
+def test_a_release_wheel_built_from_the_sdist_names_the_checkouts_commit(tmp_path, builds):
+    """`python -m build`, which the release script runs once the tag is cut,
+    builds the wheel from the sdist, which has no .git."""
     tree = _project(tmp_path / "checkout")
-    git(tree, "init", "-q")
-    commit_all(tree, "a release candidate")
-    commit = git(tree, "rev-parse", "HEAD").strip()
+    commit = _committed(tree)
+    git(tree, "tag", f"v{setup.project_version(tree)}")
     sdist = _built(tree, "build_sdist", tmp_path / "sdist")
     with tarfile.open(sdist) as archive:
         archive.extractall(tmp_path / "unpacked", **_EXTRACT)
     unpacked, = (tmp_path / "unpacked").iterdir()
 
     assert _wheel_stamp(_built(unpacked, "build_wheel", tmp_path / "dist")) == {
-        "commit": commit, "dirty": False}
+        "commit": commit, "dirty": False, "release": True}
 
 
 def test_a_wheel_built_with_no_checkout_at_hand_carries_no_stamp(tmp_path, builds):

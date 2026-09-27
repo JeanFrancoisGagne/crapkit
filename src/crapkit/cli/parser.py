@@ -146,30 +146,32 @@ class _VersionAction(argparse.Action):
 
 def _build_words(stream) -> str:
     """` (commit <sha>, dirty)` for a person at a terminal running a crapkit
-    that knows the commit it was built from, and nothing for anyone else.
+    that knows the commit it was built from and is not a release, and nothing
+    for anyone else: a release's line stays `crapkit X.Y.Z`.
 
     A pipe keeps the two words `crapkit X.Y.Z`: doctor's launcher probe and the
     scripts that check an install read exactly those, and a third word read as
     no version at all. `--version --json` carries the commit for a program."""
     if not _on_a_terminal(stream):
         return ""
-    commit, dirty = _build_identity()
-    if commit is None:
+    commit, dirty, release = _build_identity()
+    if commit is None or release:
         return ""
     return f" (commit {commit}, {'dirty' if dirty else 'clean'})"
 
 
 # The file setup.py's build writes into the package; a test holds the two names equal.
 _BUILD_STAMP = "_build.json"
+_NO_BUILD = (None, None, False)
 
 
-def _build_identity() -> tuple[str | None, bool | None]:
-    """The commit this crapkit was built from, and whether its checkout held
-    changes the commit does not: staged or unstaged edits, or a file git neither
-    tracks nor ignores. A source checkout or an editable install answers from
-    git now; an installed build answers from the stamp its build wrote. (None,
-    None) for a build made with no checkout at hand and for a checkout git
-    cannot read."""
+def _build_identity() -> tuple[str | None, bool | None, bool]:
+    """The commit this crapkit was built from, whether its checkout held changes
+    the commit does not (staged or unstaged edits, or a file git neither tracks
+    nor ignores), and whether the build is a release. A source checkout or an
+    editable install answers from git now and is no release; an installed build
+    answers from the stamp its build wrote. (None, None, False) for a build made
+    with no checkout at hand and for a checkout git cannot read."""
     package = _package_dir()
     top = _checkout_of(package)
     if top is None:
@@ -177,32 +179,32 @@ def _build_identity() -> tuple[str | None, bool | None]:
     from .. import gitio
 
     try:
-        return gitio.head_commit(top), bool(gitio.status_names(top))
+        return gitio.head_commit(top), bool(gitio.status_names(top)), False
     except GitError:
-        return None, None
+        return _NO_BUILD
 
 
-def _stamped_identity(package) -> tuple[str | None, bool | None]:
-    """The commit and dirty flag setup.py wrote into the installed package, or
-    (None, None) when there is no stamp or it does not hold a full sha and a
-    boolean."""
+def _stamped_identity(package) -> tuple[str | None, bool | None, bool]:
+    """The commit, dirty flag and release flag setup.py wrote into the installed
+    package, or (None, None, False) when there is no stamp or it does not hold a
+    full sha and a boolean dirty flag."""
     import json
 
     try:
         stamp = json.loads((package / _BUILD_STAMP).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None, None
-    return _stamp_fields(stamp) if isinstance(stamp, dict) else (None, None)
+        return _NO_BUILD
+    return _stamp_fields(stamp) if isinstance(stamp, dict) else _NO_BUILD
 
 
-def _stamp_fields(stamp: dict) -> tuple[str | None, bool | None]:
+def _stamp_fields(stamp: dict) -> tuple[str | None, bool | None, bool]:
     import re
 
     commit, dirty = stamp.get("commit"), stamp.get("dirty")
     if isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit) \
             and isinstance(dirty, bool):
-        return commit, dirty
-    return None, None
+        return commit, dirty, stamp.get("release") is True
+    return _NO_BUILD
 
 
 def _package_dir():
@@ -242,7 +244,7 @@ def _print_version_json() -> int:
     from ..analyze import ANALYSIS_VERSION
     from ._shared import _print_json
 
-    commit, dirty = _build_identity()
+    commit, dirty, _release = _build_identity()
     _print_json({"analysis_version": ANALYSIS_VERSION, "commit": commit, "dirty": dirty,
                  "version": _version_number()})
     return 0
@@ -343,9 +345,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="crapkit", **_color_kwargs(sys.version_info, (sys.stdout, sys.stderr)))
     parser.add_argument("--version", action=_VersionAction, default=argparse.SUPPRESS,
                         help="print the program name and its version; on a terminal, a crapkit "
-                             "built from a git checkout adds that commit and whether the "
-                             "checkout was dirty. --version --json prints one object: version, "
-                             "commit, dirty and analysis_version")
+                             "built from a git checkout, other than a release, adds that commit "
+                             "and whether the checkout was dirty. --version --json prints one "
+                             "object: version, commit, dirty and analysis_version")
     sub = parser.add_subparsers(dest="command", required=True)
 
     inv = sub.add_parser("inventory", help="build the per-function complexity inventory snapshot")

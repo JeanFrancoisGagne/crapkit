@@ -277,9 +277,21 @@ def test_an_installed_build_without_a_stamp_at_a_terminal_prints_the_plain_line(
 
 def test_a_person_at_a_terminal_reads_the_commit_an_installed_build_stamped(monkeypatch,
                                                                             tmp_path):
-    _runs_from(monkeypatch, _installed(tmp_path, json.dumps({"commit": SHA, "dirty": True})))
+    _runs_from(monkeypatch, _installed(tmp_path, json.dumps({"commit": SHA, "dirty": True,
+                                                             "release": False})))
 
     assert _line_on(monkeypatch, _Terminal()) == f"{_version_line()} (commit {SHA}, dirty)"
+
+
+def test_a_release_keeps_the_plain_line_and_names_its_commit_as_json(monkeypatch, capsys,
+                                                                     tmp_path):
+    """The commit goes on the line of a build that is not a release (Q12); a
+    release's line stays `crapkit X.Y.Z`, as the README shows it."""
+    _runs_from(monkeypatch, _installed(tmp_path, json.dumps({"commit": SHA, "dirty": False,
+                                                             "release": True})))
+
+    assert _version_json(capsys, "--version", "--json")["commit"] == SHA
+    assert _line_on(monkeypatch, _Terminal()) == _version_line()
 
 
 def test_the_package_is_looked_for_where_crapkit_runs_from():
