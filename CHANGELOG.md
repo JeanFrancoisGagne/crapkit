@@ -6,14 +6,16 @@
 
 - `crap` cubes `1 - cov` with two products instead of `** 3`. IEEE 754 rounds a product
   correctly everywhere and leaves `pow()` to each C library, so Windows and Linux gave
-  some scores different last bits. CRAP(36, 53/120) is exactly 261.57225 and printed
-  261.5723 on both, where rounding half to even gives 261.5722. Measured on Windows over
-  ccn 1 to 60 and every coverage fraction up to 240ths, 21 scores print a different 4 dp
-  value: 12 fall by 0.0001 and 9 rise by 0.0001. One prints a different 2 dp value:
-  CRAP(25, 19/50) is exactly 173.955 and now prints 173.96, not 173.95. Marks are
-  stored at 4 dp, so a rise would read as a ratchet regression on a function nobody
-  touched. The change needs an analysis-version bump, which makes each marks file
-  re-seed once.
+  some scores different last bits. CRAP(36, 53/120) is exactly 261.57225 and now prints
+  261.5722, not 261.5723: the `** 3` double sat just above the tie on both. Measured on
+  Windows over ccn 1 to 60 and every coverage fraction up to 240ths, 21 scores print a
+  different 4 dp value: 12 fall by 0.0001 and 9 rise by 0.0001. One prints a different
+  2 dp value: CRAP(25, 19/50) is exactly 173.955 and now prints 173.96, not 173.95.
+  Marks are stored at 4 dp, and seed never raises a mark, so after the re-seed a marked
+  function whose score rose reads as a ratchet regression nobody caused, such as
+  CRAP(20, 3/200) at `402.2686 -> 402.2687`; raise that mark by hand. The change needs
+  an analysis-version bump, which makes each marks file re-seed once.
+  [Upgrading](docs/upgrading.md#next-analysis-version-score-arithmetic) lists what moves.
 
 ### A CRAP exactly at its ceiling reads ok
 

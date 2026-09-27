@@ -44,6 +44,43 @@ any mark changes.
 | Coverage or JUnit producer | Run a fresh lane and resolve [artifact admission errors](lanes.md#a-junit-that-says-the-run-did-not-finish). |
 | Shared exports or portable baselines | Upgrade readers before writing [encoded records](portable-records.md) for them. |
 
+### Next analysis version: score arithmetic
+
+The release after 0.8.0 cubes `1 - cov` with two products where it called `** 3`.
+`pow()` differs between C libraries, so Windows and Linux gave some scores different
+last bits. A few scores move at the 4 dp a mark is stored at, so the release raises
+the analysis version and every marks file re-seeds once, with the same three commands
+as [version 11](#analysis-version-11): `crapkit coverage`, `crapkit ratchet prune`,
+then `crapkit ratchet seed`. No function changes its name, so prune drops no mark for
+this change. Commit the marks file.
+
+Over ccn 1 to 60 and every coverage fraction up to 240ths, measured on Windows:
+
+- 21 scores print a different 4 dp value. 12 fall by 0.0001: CRAP(36, 53/120) is
+  exactly 261.57225 and now prints 261.5722, not 261.5723. 9 rise by 0.0001:
+  CRAP(20, 3/200) now prints 402.2687, not 402.2686.
+- One score prints a different 2 dp value: CRAP(25, 19/50) is exactly 173.955 and now
+  prints 173.96, not 173.95.
+
+Seed tightens a mark whose score fell. It never raises one, so a marked function whose
+score rose keeps its old mark, and `crapkit verify` reports a ratchet regression on a
+function nobody edited, such as `402.2686 -> 402.2687`. Raise that mark by hand in
+`crapkit-ratchet.tsv` to the value verify prints and commit it; see [a mark never rises
+through verify](ratchet.md#overrides-and-the-audit-trail).
+
+A CRAP exactly at its ceiling now reads at it. CRAP(18, 2/3) is exactly 30, but its
+double is 30.000000000000004, so at `target = 30` its remedy said `add-tests`, the run
+totals counted it over target and seed marked it. It now reads `ok`, seed leaves it
+unmarked, and a mark it already has leaves the marks file at the next `verify` that
+passes.
+
+Two numbers that are not stored move too. `est_uncovered_paths` rounds
+`(1 - cov) * ccn` half to even on the exact product, so (1 - 5/12) * 6 = 3.5 reads 4
+where it read 3. `crap_load` adds the scores exactly and rounds once, so a load at a
+2 dp tie can move by 0.01. The first `trend` or `report` after upgrading sums every
+stored run again, once; on a store of about a million scored rows that takes a few
+seconds.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or
@@ -151,10 +188,6 @@ cleanup removes. Budget disk space for the pool and use
 concurrency and cleanup rules. [Command cleanup](lanes.md#the-kill-takes-the-whole-process-tree)
 describes Windows Jobs and POSIX process groups. These are process-lifetime controls,
 not a sandbox for configured test commands.
-
-The first `trend` or `report` after upgrading from 0.8.0 sums every stored run again,
-once: the stored totals now count a CRAP exactly at its ceiling as at it, and add each
-load exactly. On a store of about a million scored rows that takes a few seconds.
 
 Git filenames retain their literal identity through scoring and output. Coverage
 paths still have to name the measured tree. Use the documented
