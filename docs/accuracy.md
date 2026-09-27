@@ -189,6 +189,13 @@ python tools/accuracy/run.py --tier push -n 4
 is what CI's Windows job runs. A bare `python -m pytest tests/accuracy/<packet>`
 selects the push tier too.
 
+On Windows the push tier pastes crapkit's printed commands into cmd.exe,
+Windows PowerShell 5.1, PowerShell 7 and Git Bash, and reads the PowerShell
+probes with the parsers of both PowerShells. Windows and Git for Windows bring
+all of them but PowerShell 7: install it with `winget install Microsoft.PowerShell`
+so `pwsh` is on PATH. On Linux and macOS the commands go to bash. A shell that is
+not installed fails the check that needs it, and the failure says how to install it.
+
 ### Nightly
 
 The nightly tier needs the `accuracy` extra, the nightly Node tools and the full

@@ -1,13 +1,20 @@
 """docs/accuracy.md's tables and pyproject.toml's mutmut list are written from the accuracy tables.
 
 tools/docs/generate.py reads every tests/accuracy/*/calcs.tsv and rulings.tsv;
-test_generated_guidance.py fails while a generated block is out of date.
+test_generated_guidance.py fails while a generated block is out of date. The
+page's push setup is checked against the shells the push tier runs.
 """
 import importlib.util
 from pathlib import Path
+import re
 import tomllib
 
+from accuracy.corpus_goldens import shells
+
 ROOT = Path(__file__).resolve().parents[2]
+# How the page names each shell shells.SHELLS lists.
+SHELL_NAMES = {"cmd": "cmd.exe", "cmd-delayed": "cmd.exe", "powershell": "Windows PowerShell 5.1",
+               "pwsh": "PowerShell 7", "bash": "Git Bash"}
 
 
 def _load():
@@ -69,3 +76,15 @@ def test_one_file_takes_several_blocks(tmp_path):
     assert generate._applied(tmp_path, [("d.md", "a", "A"), ("d.md", "b", "B")]) == {
         "d.md": "<!-- generated:a -->\nA\n<!-- /generated:a -->\n"
                 "<!-- generated:b -->\nB\n<!-- /generated:b -->\n"}
+
+
+def test_the_push_setup_names_every_shell_the_push_tier_runs():
+    """A contributor learns from the page, not from a failed check, that the
+    Windows push needs PowerShell 7 beside the shells Windows ships."""
+    page = (ROOT / "docs/accuracy.md").read_text(encoding="utf-8")
+    push = page.split("\n### Push\n", 1)[1].split("\n### ", 1)[0]
+    install = re.search(r"\((winget [^)]+)\)", shells.INSTALL["pwsh"]).group(1)
+
+    assert [shell for shell in shells.SHELLS["win32"] if SHELL_NAMES[shell] not in push] == []
+    assert shells.POSIX_SHELLS == ("bash",) and "go to bash" in push
+    assert f"`{install}`" in push
