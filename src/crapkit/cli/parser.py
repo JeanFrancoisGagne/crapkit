@@ -493,8 +493,10 @@ def build_parser() -> argparse.ArgumentParser:
     # would resolve a worktree edit to the mainline checkout's store.
     chk = sub.add_parser("claude-hook", help="advisory ccn check for one PostToolUse edit "
                                              "read from stdin (Claude Code, Copilot CLI, "
-                                             "Cursor, VS Code); silent unless a changed "
-                                             "function is over its ceiling")
+                                             "Cursor, VS Code); silent unless the edit leaves "
+                                             "a function over its ceiling or a file it could "
+                                             "not judge, or the hook passes a flag this "
+                                             "crapkit does not know")
     chk.add_argument("--protocol", default="1", metavar="N",
                      help="hook payload protocol (default 1); anything else exits 0 silent")
     chk.set_defaults(func=_Handler("claude_hook", "cmd_claude_hook"))
