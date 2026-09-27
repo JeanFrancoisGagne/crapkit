@@ -70,7 +70,17 @@ def commit(repo: Path, step: int, files: dict[str, str], body: str = "") -> None
         (repo / path).write_text(text, encoding="utf-8", newline="\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", f"step {step}" + (f"\n\n{body}" if body else ""),
-        when=BASE + step * 3600)
+        when=stamp(step))
+
+
+def stamp(step: int) -> int:
+    """Steps an hour apart, so two of them can fall on two dates."""
+    return BASE + step * 3600
+
+
+def day(step: int) -> str:
+    """The date explain prints for a step: its UTC day, since every commit says +0000."""
+    return time.strftime("%Y-%m-%d", time.gmtime(stamp(step)))
 
 
 def marks(*names: str) -> str:
@@ -109,12 +119,12 @@ def signed(tmp_path: Path, request) -> Path:
 
 def test_explain_history_names_each_signed_commit_by_its_own_name(signed):
     names = git(signed, "log", "--no-show-signature", "--format=%h").split()
-    day = time.strftime("%Y-%m-%d", time.gmtime(BASE))
 
-    seen = under(signed, "log.showSignature", "true", lambda repo: _function_commits(repo, "src/e.py", 1, 2))
+    seen = under(signed, "log.showSignature", "true",
+                 lambda repo: _function_commits(repo, "src/e.py", 1, 2))
 
-    assert seen == [{"sha": names[0], "date": day, "subject": "step 1", "body": "body 1"},
-                    {"sha": names[1], "date": day, "subject": "step 0", "body": "body 0"}]
+    assert seen == [{"sha": names[0], "date": day(1), "subject": "step 1", "body": "body 1"},
+                    {"sha": names[1], "date": day(0), "subject": "step 0", "body": "body 0"}]
 
 
 def test_churn_counts_the_paths_a_signed_commit_changed_and_nothing_else(signed):
