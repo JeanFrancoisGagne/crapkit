@@ -259,3 +259,32 @@ def test_a_dot_directorys_source_is_never_unclaimed():
 
     assert uni.by_scope == {"src": [], "py": ["scripts/c.py"]}
     assert uni.unclaimed == ()
+
+
+# --- an extension names its language whatever its letter case -----------------
+#
+# lizard picks a reader with a case-blind suffix regex, so `src/MAIN.CPP` is
+# C++ to the reader. The scope's extension arm compared case-exactly, so the
+# file was neither scored nor named unclaimed, and the commit gate passed a
+# ccn-8 function in it that it refused in `src/main.cpp`.
+
+CPP_AND_PY = Config(target=6, exclude_globs=(),
+                    scopes=(Scope(name="src", paths=("src",), languages=("python", "cpp")),))
+
+
+@pytest.mark.parametrize("path", ["src/MAIN.CPP", "src/defs.H", "src/Tool.PY", "src/mixed.Cpp"])
+def test_an_extension_claims_its_language_whatever_its_letter_case(path):
+    assert scan_files([path, "src/main.cpp"], CPP_AND_PY).by_scope == {
+        "src": sorted([path, "src/main.cpp"])}
+
+
+def test_an_upper_case_extension_no_scope_path_owns_is_named_unclaimed():
+    uni = scan_files(["other/Tool.PY", "other/notes.TXT"], CPP_AND_PY)
+
+    assert uni.by_scope == {"src": []}
+    assert uni.unclaimed == ("other/Tool.PY",)
+
+
+def test_the_path_arm_still_compares_letter_case_exactly():
+    """git keys a path by its bytes: `SRC/a.py` is not under `src`."""
+    assert scan_files(["SRC/a.py"], CPP_AND_PY).unclaimed == ("SRC/a.py",)
