@@ -31,19 +31,29 @@ UNREAD_NAME_REASON = ("its name is not UTF-8, and crapkit reads every path as UT
 
 
 class UnreadableNameError(ConfigError):
-    r"""Exit 3 for files whose names are not UTF-8, each name given as the
-    stderr line spells it (`\xNN` per such byte). The error object lists them
-    in `unread_files`, in the item shape a gate verdict lists unread files in,
-    so an adapter that speaks another protocol (check_gate) can return the
-    refusal as that verdict."""
+    r"""Exit 3 for files whose names are not UTF-8, each name as git gives it
+    (a lone surrogate per such byte). The error object lists them in
+    `unread_files`, in the item shape every gate verdict lists unread files in,
+    {path, reason, dirty}: `path` spells each such byte `\xNN`, as the stderr
+    line does, and `dirty` is verify's, true for a name in `dirty`. The command
+    that knows the working tree fills `dirty` (`with_dirty`); an adapter that
+    speaks another protocol (check_gate) returns the refusal as that verdict."""
 
-    def __init__(self, message: str, shown_names: list[str]):
+    def __init__(self, message: str, names: list[str], dirty: frozenset[str] = frozenset()):
         super().__init__(message)
-        self.shown_names = tuple(shown_names)
+        self.names = tuple(names)
+        self.dirty = frozenset(dirty)
+
+    def with_dirty(self, dirty: frozenset[str]) -> UnreadableNameError:
+        """The same refusal, `dirty` naming the files with uncommitted edits or
+        that git does not track."""
+        return UnreadableNameError(str(self), list(self.names), dirty)
 
     def json_fields(self) -> dict:
-        return {"unread_files": [{"path": name, "reason": UNREAD_NAME_REASON}
-                                 for name in self.shown_names]}
+        from .gitpaths import shown
+
+        return {"unread_files": [{"path": shown(name), "reason": UNREAD_NAME_REASON,
+                                  "dirty": name in self.dirty} for name in self.names]}
 
 
 class GitError(CrapkitError):

@@ -1402,10 +1402,23 @@ the sentence that names the fix instead of an empty stream:
 | 5 | `tool` | A lane or an external tool failed: every lane failed, an artifact the last attempt never wrote, lizard missing. |
 
 `message` is the stderr line without its `crapkit: ` prefix; that line and the exit code
-are unchanged. A refusal of a file whose name is not UTF-8 (a lookup argument naming one,
-a `rescore` argument or a scanned file a scope takes) adds `unread_files`, one object per file: `path`, each byte that is not
-UTF-8 spelled `\xNN`, and `reason`, which says to rename it with `git mv`. The stderr line
-names the first file and counts the rest; `unread_files` lists every one. Verdict exits are not errors: `verify`'s 6 to 9 and `rescore --gate`'s 6
+are unchanged. A refusal of a file whose name is not UTF-8 adds `unread_files`, one
+`{path, reason, dirty}` object per file, the item shape `rescore --gate --json` and
+`verify --json` list unread files in: `path`, each byte that is not UTF-8 spelled `\xNN`;
+`reason`, which says to rename it with `git mv`; and `dirty`, true when the file has
+uncommitted edits or git does not track it (verify's meaning; a name the index holds and
+the working tree lacks, as every such name in a Git for Windows checkout is, is an
+uncommitted deletion). The refusals that add it: a file argument naming such a file on
+disk (`rescore`, `rescore --gate`, `brief`, `explain`, `mutate --files`, `claims
+release`, `ratchet move`), and a scan meeting such a name a scope takes (`inventory`,
+`coverage`, `verify`, `doctor`). The stderr line names the first file and counts the
+rest; `unread_files` lists every one:
+
+```json
+{"error": {"exit": 3, "kind": "config", "message": "src/caf\\xe9.py (and 1 more) is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name", "unread_files": [{"dirty": false, "path": "src/caf\\xe9.py", "reason": "its name is not UTF-8, and crapkit reads every path as UTF-8: rename it (git mv) to a UTF-8 name"}, {"dirty": true, "path": "src/o\\x92brien.py", "reason": "its name is not UTF-8, and crapkit reads every path as UTF-8: rename it (git mv) to a UTF-8 name"}]}, "schema": 1}
+```
+
+Verdict exits are not errors: `verify`'s 6 to 9 and `rescore --gate`'s 6
 print their own payloads, with the verdict inside. Without `--json`, stdout stays empty
 on an error.
 
@@ -1679,7 +1692,10 @@ the stderr line; `get_next_item`, which has no `--json` flag, answers the stderr
 refusal of a file a scope takes whose name is not UTF-8: the CLI's error object lists it in
 `unread_files`, and `check_gate` returns `gate.ok` false with that list. The server reaches
 that verdict itself and never puts the name on the CLI's command line, where Windows would
-hand the CLI U+FFFD in place of each byte that is not UTF-8. `isError` is also
+hand the CLI U+FFFD in place of each byte that is not UTF-8. `get_function_brief` and
+`get_function_history` answer such a `path` the same way the CLI's `brief` and `explain`
+do, with the exit-3 error object and its `unread_files` (`isError: true`), which the server
+also builds without starting the CLI. `isError` is also
 true in the cases where no CLI call runs at all: the missing-config result above, an
 unknown tool name, and an argument the tool's own table refuses.
 

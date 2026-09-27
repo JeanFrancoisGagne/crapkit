@@ -189,8 +189,23 @@ def no_verdict_line(coverage: dict | None, coverage_exit: int) -> str:
     failed measurement read the artifact the dead lane left from an earlier
     run, passed over it, and became the trusted baseline.
     """
-    return (f"**no verdict: `crapkit coverage` exited {coverage_exit} "
-            f"({coverage_failure(coverage)}); verify did not run.**")
+    return _listed(f"**no verdict: `crapkit coverage` exited {coverage_exit} "
+                   f"({coverage_failure(coverage)}); verify did not run.**",
+                   _refused_bullets(coverage))
+
+
+def _refused_bullets(payload: dict | None) -> list[str]:
+    """One bullet per file an error object's `unread_files` lists. Its message
+    names the first file and counts the rest, as the stderr line in the job log
+    does, so the comment is where a reviewer reads every name."""
+    error = (payload or {}).get("error") or {}
+    return [f"- refused: `{_cell_text(u.get('path'))}`: {_cell_text(u.get('reason'))}"
+            for u in error.get("unread_files") or []]
+
+
+def _listed(line: str, bullets: list[str]) -> str:
+    """A verdict line with its bullets under it, or the line alone."""
+    return "\n".join([line, "", *bullets]) if bullets else line
 
 
 def _over(coverage: dict) -> str:
@@ -406,8 +421,8 @@ def verdict_line(verify: dict | None, exit_code: int, base_reason: str | None = 
         return (f"**`crapkit verify` exited {exit_code} and wrote no verdict.** "
                 f"Read the job log: this is tooling, not a score.")
     if verify.get("error"):
-        return (f"**`crapkit verify` exited {exit_code} and wrote no verdict: "
-                f"{_first_line(verify['error'].get('message'))}.**")
+        return _listed(f"**`crapkit verify` exited {exit_code} and wrote no verdict: "
+                       f"{_first_line(verify['error'].get('message'))}.**", _refused_bullets(verify))
     if not verify.get("ok"):
         return _failed(verify, exit_code)
     if base_reason is not None:

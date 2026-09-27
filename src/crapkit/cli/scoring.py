@@ -18,12 +18,12 @@ from ..invocation import _self
 from ..repopath import typed_path
 from ..snapshot import build_inventory_rows, tsv_lines
 from ..store import SnapshotStore
-from ..universe import assign_files, scan_files
+from ..universe import assign_files
 from ..uncovered import DeadLineFold
 from ._shared import (_analysis_tools, _command_root, _emit_findings, _file_sizer, _gate_line,
                       _latest_scored, _load_repo_config, _load_sources, _print_json,
                       _print_unread, _ratchet_entries, _repo_out_path, _say_left_out,
-                      _scored_arguments, _stand, _unreadable_json, _write_tsv)
+                      _scan, _scored_arguments, _stand, _unreadable_json, _write_tsv)
 
 
 def _tracked_files(files_by_scope: dict) -> list[str]:
@@ -123,7 +123,7 @@ def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int
     lizard, *_ = _analysis_tools()
     from ..analyze import ANALYSIS_VERSION, unread_reasons
     commit = (git or GitFacts(root)).head_commit()
-    universe = scan_files(ls_files(root), cfg, size_of=_file_sizer(root))
+    universe = _scan(root, ls_files(root), cfg)
     _say_left_out(universe.unreadable)
     flat = _present_on_disk(root, _tracked_files(universe.by_scope))
     records_by_path, cache_hits = _analyzed_corpus(

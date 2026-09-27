@@ -18,7 +18,7 @@ from cli_inproc_repo import (add_knotty, commit_all, repo, seed_artifacts,  # no
                              template_repo)
 
 from crapkit import mcp_server
-from crapkit.agent_fields import ADDED, MCP_TOOLS, AddedField
+from crapkit.agent_fields import ADDED, ERROR_OBJECT, MCP_TOOLS, AddedField
 from crapkit.cli import main
 from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
 
@@ -26,6 +26,9 @@ ROOT = Path(__file__).resolve().parents[2]
 MARKS = "crapkit-ratchet.tsv"
 # One TypeScript arrow the reader refuses: the file scores zero functions.
 ARROW = "export const pick = (x: number) => convert<string, number>(x);\n"
+# A file a scope takes whose name is not UTF-8: on POSIX byte e9, on NTFS a lone
+# surrogate. Every command refuses it with the error object.
+UNREADABLE = "src/caf\udce9.ts"
 _JSON_TYPES = {"boolean": (bool,), "integer": (int,), "string": (str,), "array": (list,),
                "object": (dict,), "null": (type(None),)}
 
@@ -107,6 +110,9 @@ def payloads(repo, capsys) -> dict[str, list]:
     (repo / "src" / "b.ts").write_text(ARROW, encoding="utf-8")
     out["rescore --gate --json"] = [run_json(repo, capsys, "rescore", "src/app.ts", "src/b.ts",
                                              "--gate", "--json")]
+    (repo / UNREADABLE).write_text(ARROW, encoding="utf-8")
+    out[ERROR_OBJECT] = [run_json(repo, capsys, "rescore", "--gate", "--json", UNREADABLE)]
+    (repo / UNREADABLE).unlink()
     commit_all(repo, "an unread file")
     verify = [_verify(repo, capsys)]
     _write_marks(repo)
@@ -151,7 +157,7 @@ def test_the_unread_finding_has_one_shape_in_every_payload(payloads):
     shapes = {f.payload: f.key for f in ADDED if f.key.endswith("unread_files")}
     keys = {payload: _entry_keys(payloads[payload][0], key) for payload, key in shapes.items()}
 
-    assert set(shapes.values()) == {"gate.unread_files", "unread_files"}
+    assert set(shapes.values()) == {"gate.unread_files", "unread_files", "error.unread_files"}
     assert keys == {payload: [["dirty", "path", "reason"]] for payload in shapes}
 
 

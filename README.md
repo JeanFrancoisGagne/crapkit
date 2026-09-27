@@ -858,8 +858,11 @@ lane failed, `coverage` prints an error object instead of a summary and the lane
 are only in the job log, and the line says so: `(every lane failed (1 of 1); the lane
 errors are in the job log)`. When `coverage` printed nothing at all, it crashed or was
 killed before it could: `(it printed no run summary, so it crashed or was killed before
-scoring; its error is in the job log)`. With `gate: "true"` the job exits with coverage's
-code.
+scoring; its error is in the job log)`. When `coverage` refused files a scope takes whose
+names are not UTF-8, the parenthesis names the first and counts the rest, and one bullet
+under the line names each file the error object lists in `unread_files`:
+``- refused: `src/caf\xe9.py`: its name is not UTF-8, ...``. With `gate: "true"` the job
+exits with coverage's code.
 
 The other gate that judges a delta is the portable baseline in [Route 4](#route-4-ci):
 commit `crapkit-baseline.tsv` on the default branch and run `crapkit verify --baseline-tsv

@@ -26,10 +26,10 @@ from ..repopath import typed_path
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
 from ..gitpaths import readable
-from ..universe import assign_files, overlapping_scope, path_matchers, scan_files
+from ..universe import overlapping_scope, path_matchers
 from ..watch import Snapshot, poll, snapshot
-from ._shared import (_command_root, _file_sizer, _init_root, _load_repo_config, _print_json,
-                      _say_left_out, repo_text)
+from ._shared import (_command_root, _init_root, _load_repo_config, _print_json, _say_left_out,
+                      _scan, repo_text)
 
 
 def _present_lockfiles(root: Path) -> frozenset[str]:
@@ -804,7 +804,7 @@ def _init_files(root: Path) -> list[str]:
 
 
 def _doctor_scopes(root: Path, cfg, files: list[str], show_files: bool) -> list[Finding]:
-    universe = scan_files(files, cfg, size_of=_file_sizer(root))
+    universe = _scan(root, files, cfg)
     _say_left_out(universe.unreadable)
     return (_doctor_scope_files(universe.by_scope, cfg, show_files)
             + _doctor_unclaimed(universe.unclaimed)
@@ -1142,8 +1142,7 @@ def _newest_scored_paths(root: Path) -> set[str] | None:
 
 
 def _scoped_files(root: Path, cfg, files: list[str]) -> set[str]:
-    by_scope = assign_files(files, cfg, size_of=_file_sizer(root))
-    return {f for scoped in by_scope.values() for f in scoped}
+    return {f for scoped in _scan(root, files, cfg).by_scope.values() for f in scoped}
 
 
 def _unread_now(root: Path, paths: list[str]) -> dict[str, str]:
@@ -1938,7 +1937,7 @@ def _watched_scan(root: Path, cfg):
     from ..lane_changes import visible_paths
 
     declared = tuple(dict.fromkeys(path for scope in cfg.scopes for path in scope.paths))
-    return scan_files(list(visible_paths(root, declared)), cfg, size_of=_file_sizer(root))
+    return _scan(root, list(visible_paths(root, declared)), cfg)
 
 
 def _flat(universe) -> list[str]:

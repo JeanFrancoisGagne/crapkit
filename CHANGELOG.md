@@ -454,15 +454,25 @@ version bump under Upgrading from 0.8.0 above.
   file named in Latin-1 under a scope named no file on disk and its breach passed with no
   advisory; it now exits 2 with an advisory naming the file and the rename.
 - Under `--json`, the error object of each such refusal lists every refused file in a new
-  `unread_files` field, a `path` and a `reason` per file, where the stderr line names the
-  first and counts the rest. The `check_gate` MCP tool answers a `path` a scope takes
+  `unread_files` field, where the stderr line names the first and counts the rest. Each
+  item is `{path, reason, dirty}`, the shape `rescore --gate --json` and `verify --json`
+  list unread files in, `dirty` true when the file has uncommitted edits or git does not
+  track it. The refusals that carry it: `inventory`, `coverage`, `verify` and `doctor` on
+  a scanned name a scope takes, and `rescore`, `rescore --gate`, `brief`, `explain`,
+  `mutate --files`, `claims release` and `ratchet move` on a file argument naming such a
+  file. The Action's comment gives each file coverage or verify refused this way a bullet
+  under its no-verdict line, where it quoted the message alone and so named only the
+  first. The `check_gate` MCP tool answers a `path` a scope takes
   whose name is not UTF-8 with a verdict, `gate.ok` false, `judged` 0 and the file in
   `gate.unread_files` with `dirty` true, the entry shape `rescore --gate --json` lists,
   plus the `baseline_run`, `baseline_commit` and `note` every verdict carries, where 0.8.0
   answered `isError: true` with a Python traceback, on Windows too. Under a uv-built venv
   on Windows, whose launcher hands the CLI such a name as one U+FFFD, it answered
   `isError: true` with `src/caf\ufffd.ts does not exist`. The server now decides this
-  verdict without starting the CLI.
+  verdict without starting the CLI. `get_function_brief` and `get_function_history`, under
+  the same launcher, answered such a `path` with `no function named ... in
+  src/caf\ufffd.ts` at exit 1; they now answer the exit-3 error object `brief` and
+  `explain` print, `unread_files` included, also without starting the CLI.
 - A `rescore` or `rescore --gate` argument naming a file whose name is not UTF-8 and that
   no scope takes is left out with one `crapkit: left out` line on stderr, and the gate
   judges 0, as `hook-precommit` does for the same staged file. It exited 3 with the

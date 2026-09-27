@@ -308,7 +308,7 @@ def _refuse_claimed(names: list[str], cfg: Config, matchers: tuple[ScopeMatch, .
     claimed = sorted((path, owner) for path, owner in _candidates(names, cfg, matchers)
                      if owner is not None)
     if claimed:
-        raise UnreadableNameError(_claimed_text(claimed), [shown(path) for path, _ in claimed])
+        raise UnreadableNameError(_claimed_text(claimed), [path for path, _ in claimed])
 
 
 def scan_files(files: list[str], cfg: Config, *,

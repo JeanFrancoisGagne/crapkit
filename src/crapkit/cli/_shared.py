@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from ..config import load_config_text
-from ..errors import ConfigError, CrapkitError, ToolError, UnreadableNameError
+from ..errors import ConfigError, CrapkitError, GitError, ToolError, UnreadableNameError
 from ..gitpaths import readable, shown
 from ..invocation import _self, quoted_path
 from ..merge import UNREAD_ADVICE
@@ -20,7 +20,7 @@ from ..repopath import on_a_share, rooted, typed, typed_path
 from ..rootfind import find_root
 from ..store import SnapshotStore
 from ..repotext import marks_text, os_text, repo_text
-from ..universe import claiming_scope, left_out_lines
+from ..universe import claiming_scope, left_out_lines, scan_files
 
 
 SCHEMA_VERSION = 1  # bumped whenever a --json field is removed or retyped
@@ -196,10 +196,40 @@ def _readable_argument(rel: str, root: Path) -> str:
     if readable(rel):
         return rel
     if os.path.lexists(root / rel):
-        raise UnreadableNameError(f"{shown(rel)} is named in bytes that are not UTF-8, and crapkit "
-                                  "reads every path as UTF-8: rename it (git mv) to a UTF-8 name",
-                                  [shown(rel)])
+        raise _name_refusal(rel, root)
     return os_text(rel)
+
+
+def _name_refusal(rel: str, root: Path) -> UnreadableNameError:
+    """The exit-3 refusal of a file argument whose name is not UTF-8, for the
+    CLI and for the MCP tools that answer it without starting the CLI."""
+    return UnreadableNameError(f"{shown(rel)} is named in bytes that are not UTF-8, and crapkit "
+                               "reads every path as UTF-8: rename it (git mv) to a UTF-8 name",
+                               [rel], _uncommitted(root, [rel]))
+
+
+def _uncommitted(root: Path, names) -> frozenset[str]:
+    """Which of `names` hold uncommitted edits or are not tracked: verify's
+    `dirty`, which a refusal's `unread_files` carries. Read only on the way
+    out of a refusal. A file git never tracked is dirty, a file the index holds
+    and the working tree lacks is an uncommitted deletion, and in a tree git
+    cannot list every name is untracked."""
+    from ..gitio import ls_files, status_names
+
+    try:
+        clean = set(ls_files(root)) - set(status_names(root))
+    except GitError:
+        clean = set()
+    return frozenset(name for name in names if name not in clean)
+
+
+def _scan(root: Path, files: list[str], cfg):
+    """`scan_files` over the working tree at `root`: sizes read off disk, and
+    a refusal whose `unread_files` says which names are dirty."""
+    try:
+        return scan_files(files, cfg, size_of=_file_sizer(root))
+    except UnreadableNameError as exc:
+        raise exc.with_dirty(_uncommitted(root, exc.names)) from None
 
 
 def _say_left_out(names: tuple[str, ...]) -> None:

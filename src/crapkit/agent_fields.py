@@ -62,10 +62,15 @@ _SCORED_CHANGES = ("how many files the run scored hold other content now than th
 _REFRESH = ("crapkit coverage --reuse-unchanged: the cheapest run that brings scored_changes to 0 "
             "and clears stale")
 _UNREAD_DIRTY = "true when the file has uncommitted edits or is untracked"
+_REFUSED_NAMES = ("every file the command refused because its name is not UTF-8 (exit 3), "
+                  "where the message names the first and counts the rest")
+# The object any --json command prints on stdout when it dies before its own payload.
+ERROR_OBJECT = "--json error object"
 
 
-def _unread_fields(payload: str, key: str, dirty: str) -> tuple[AddedField, ...]:
-    return (AddedField(payload, key, ("array",), _UNREAD),
+def _unread_fields(payload: str, key: str, dirty: str,
+                   listed: str = _UNREAD) -> tuple[AddedField, ...]:
+    return (AddedField(payload, key, ("array",), listed),
             AddedField(payload, f"{key}[].path", ("string",), _UNREAD_PATH),
             AddedField(payload, f"{key}[].reason", ("string",), _UNREAD_REASON),
             AddedField(payload, f"{key}[].dirty", ("boolean",), dirty))
@@ -94,6 +99,7 @@ ADDED = (
     *_unread_fields("rescore --gate --json", "gate.unread_files",
                     "always true here: the gate judges the working tree's changes since HEAD"),
     *_unread_fields("verify --json", "unread_files", _UNREAD_DIRTY),
+    *_unread_fields(ERROR_OBJECT, "error.unread_files", _UNREAD_DIRTY, _REFUSED_NAMES),
     AddedField("verify --json", "lanes_without_results", ("array",),
                "lanes that declare no results_artifact, so nothing checked their tests for new "
                "failures"),

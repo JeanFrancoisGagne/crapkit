@@ -1628,7 +1628,7 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     a failure: `gate` exits 6 on a breach and its payload says so in `gate.ok`."""
     unread = _unreadable_path(tool, arguments, repo)
     if unread is not None:
-        return _unread_name_result(Path(repo), unread)
+        return _unread_name_answer(tool, Path(repo), unread)
     argv = build_argv(tool, arguments, repo)
     proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
@@ -1638,18 +1638,31 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
 
 
 def _unreadable_path(tool: dict, arguments: dict, repo: str) -> str | None:
-    """The root-relative name a gate tool's `path` gives, when a file on disk
-    has that name and it is not UTF-8; None for any other call.
+    """The root-relative name a tool's `path` gives, when a file on disk has
+    that name and it is not UTF-8; None for any other call.
 
     Such a name never goes on a child's argv. On Windows the child read a lone
-    surrogate there as U+FFFD, looked up a file nobody named, and check_gate
-    answered isError true with `does not exist`."""
-    if not tool.get("unread_verdict"):
+    surrogate there as U+FFFD and looked up a file nobody named: check_gate
+    answered isError true with `does not exist`, and get_function_brief and
+    get_function_history with `no function ... in src/caf\\ufffd.ts`, where the
+    CLI refuses the name at exit 3 and lists it in `unread_files`."""
+    if "path" not in tool["positional"]:
         return None
     rel = typed(str(arguments["path"]), repo)
     if rel is None or readable(rel) or not os.path.lexists(Path(repo) / rel):
         return None
     return rel
+
+
+def _unread_name_answer(tool: dict, root: Path, rel: str) -> dict:
+    """The answer to a `path` whose name is not UTF-8: check_gate's verdict, and
+    for every other tool the error object the CLI prints when it refuses the
+    argument, `unread_files` and all."""
+    from .cli._shared import _name_refusal
+
+    if tool.get("unread_verdict"):
+        return _unread_name_result(root, rel)
+    return _result(_error_text(_name_refusal(rel, root)), is_error=True)
 
 
 def _unread_name_result(root: Path, rel: str) -> dict:

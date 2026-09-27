@@ -294,14 +294,15 @@ def _measured_with_an_unreadable_file(tmp_path: Path) -> Path:
 
 def test_the_gates_error_object_lists_the_name_in_unread_files(tmp_path):
     """rescore --gate still exits 3 with its one stderr line; --json adds the
-    name and the reason as `unread_files`, the shape a gate verdict lists."""
+    name, the reason and `dirty` as `unread_files`, the shape a gate verdict
+    lists. Nobody added the file, so it is dirty."""
     repo = _measured_with_an_unreadable_file(tmp_path)
 
     result = run_cli(repo, "rescore", "--gate", UNREADABLE_ARGUMENT, "--json")
 
     assert result.returncode == 3, result.stdout + result.stderr
     assert result.stderr == f"crapkit: src/caf\\xe9.py {ARGUMENT_REFUSAL}\n", result.stderr
-    assert json.loads(result.stdout)["error"]["unread_files"] == [UNREAD_FILE]
+    assert json.loads(result.stdout)["error"]["unread_files"] == [{**UNREAD_FILE, "dirty": True}]
 
 
 def _check_gate_reply(repo: Path, path: str) -> dict:
@@ -353,7 +354,8 @@ def test_check_gate_judges_a_name_no_scope_takes_as_any_unscoped_file(tmp_path, 
 @pytest.mark.parametrize("command", ["inventory", "coverage", "verify"])
 def test_a_refused_scoped_name_is_listed_in_the_error_objects_unread_files(tmp_path, command):
     """The scan's refusal names the first file on stderr and counts the rest;
-    --json lists each one."""
+    --json lists each one. Committed as they are on POSIX, both are clean; Git
+    for Windows cannot check either name out, so git reads both deleted."""
     repo = _repo(tmp_path)
     assert run_cli(repo, "coverage").returncode == 0
     _commit(repo, {b"src/caf\xe9.py": SOURCE, b"src/o\x92brien.py": SOURCE}, "add two Latin-1 names")
@@ -361,8 +363,9 @@ def test_a_refused_scoped_name_is_listed_in_the_error_objects_unread_files(tmp_p
     result = run_cli(repo, command, "--json")
 
     assert result.returncode == 3, result.stdout + result.stderr
+    dirty = sys.platform == "win32"
     assert json.loads(result.stdout)["error"]["unread_files"] == [
-        UNREAD_FILE, {**UNREAD_FILE, "path": "src/o\\x92brien.py"}]
+        {**UNREAD_FILE, "dirty": dirty}, {**UNREAD_FILE, "path": "src/o\\x92brien.py", "dirty": dirty}]
 
 
 # --- a name no scope takes: left out, one line ---------------------------------------
