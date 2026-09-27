@@ -11,6 +11,7 @@ from crapkit.scaffold import (DEFAULT_EXCLUDES, LaneSpec, NpmPackage, detect_lan
                               gitignore_entries, gitignore_update, live_lanes, lockfile_runner,
                               npm_package, pytest_testpaths, python_launcher, sniff_scopes,
                               source_candidates, starter_toml)
+from crapkit.scaffold import _testpath_slug
 
 SCOPES = {"pylib": ("python",), "src": ("typescript",)}
 
@@ -750,6 +751,39 @@ def test_sibling_lanes_each_name_their_own_coverage_data_file():
     assert [dict(lane.env) for lane in lanes] == [{"COVERAGE_FILE": ".coverage.py-conform"},
                                                   {"COVERAGE_FILE": ".coverage.py-impl"}]
     assert shared_coverage_data(lanes) == ()
+
+
+@pytest.mark.parametrize("testpaths, names", [
+    (("tests", ".tests"), ["py-tests", "py--tests"]),
+    (("tests", "../tests"), ["py-tests", "py----tests"]),
+    (("./conform/", "..\\impl"), ["py-conform", "py----impl"]),
+], ids=["dot-dir", "parent-dir", "backslash-parent"])
+def test_each_sibling_lane_is_named_from_the_testpath_the_guard_reads(testpaths, names):
+    """The slug read testpaths with `strip('./')`, so `.tests` and `../tests`
+    named a lane `py-tests` beside the real tests/ one: two stubs with one name
+    and one artifact, which the loader refuses once both are uncommented."""
+    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), None),
+                        testpaths=testpaths)
+
+    assert [line.split('"')[1] for line in text.splitlines()
+            if line.startswith('# name = "py-')] == names
+
+
+@pytest.mark.parametrize("testpath, positional", [
+    ("..\\tests", "../tests"), ("..\\impl", "../impl"), ("./conform/", "conform"),
+], ids=["tab-escape", "bad-escape", "dot-slash"])
+def test_a_sibling_lane_names_its_testpath_in_the_guards_spelling(testpath, positional):
+    """The stub wrote the testpath into a TOML string as pytest's config spells
+    it. Uncommented, `..\\tests` read as `.<TAB>ests` and `..\\impl` did not
+    parse; `/` is a separator pytest takes on every OS."""
+    text = starter_toml(IMPL_SCOPE, detect_lanes(frozenset({"pytest.ini"}), None),
+                        testpaths=("other", testpath))
+    name = f"py-{_testpath_slug(testpath)}"
+
+    lane = load_config_text('[[scope]]\nname = "impl"\npaths = ["impl"]\n'
+                            'languages = ["python"]\n' + _uncommented_lane(text, name)).lanes[0]
+
+    assert lane.command.startswith(f"python -m pytest {positional} --cov")
 
 
 def test_a_repo_with_no_pytest_lane_gets_no_sibling_lanes():
