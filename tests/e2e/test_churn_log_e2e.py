@@ -119,8 +119,9 @@ def _subcommand(argv: list[str]) -> str:
 
 
 def window_walks(walks: list[list[str]]) -> list[list[str]]:
-    """Walks of the window. crapkit cuts one with --max-age; a walk cut with
-    --since, which reads git's clock, counts as a walk too."""
+    """Walks of the window. crapkit cuts one with --since=@<seconds> +0000; a
+    walk cut with --max-age, or with a --since that reads git's clock, counts
+    as a walk too."""
     return [argv for argv in walks if any(a.startswith(WINDOW_CUTOFF) for a in argv)]
 
 
@@ -184,7 +185,7 @@ def test_the_window_walk_is_cut_a_year_before_head_s_commit_date(coupled_repo, t
 
     assert res.returncode == 0, res.stdout + res.stderr
     assert {arg for argv in window_walks(walks) for arg in argv
-            if arg.startswith(WINDOW_CUTOFF)} == {f"--max-age={_year_before(int(head_date))}"}
+            if arg.startswith(WINDOW_CUTOFF)} == {f"--since=@{_year_before(int(head_date))} +0000"}
 
 
 def test_brief_really_reports_coupling(coupled_repo):

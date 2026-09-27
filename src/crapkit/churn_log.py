@@ -64,8 +64,12 @@ LOG_NAME = "churn-log-v3.z"
 # leave in every upgraded repo: they are deleted.
 LEGACY_NAMES = ("churn-log.z", "churn-log-v2.z")
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-# datetime's last second, 9999-12-31T23:59:59Z: a commit dated past it anchors there.
-_LAST_SECOND = 253_402_300_799
+_SECOND = timedelta(seconds=1)
+# The Gregorian calendar repeats every 400 years: 146,097 days, 4,800 months.
+# months_before folds a date and a count into one cycle from 1970, so it counts
+# exactly past datetime's year 9999 and back past its year 1.
+_CYCLE_SECONDS = 146_097 * 86_400
+_CYCLE_MONTHS = 4_800
 LOG_FORMAT = "--format=%x01%an%x02%at%x02%ct"
 # Names in UTF-8 whatever i18n.logOutputEncoding says: the reader decodes UTF-8.
 _LOG_ARGS = (LOG_FORMAT, "--encoding=UTF-8", "--name-only")
@@ -147,13 +151,21 @@ def months_before(stamp: int, months: int) -> int:
     """`months` calendar months before `stamp`, in UTC: the same day and time
     of day, where a day the earlier month lacks runs on into the next, the way
     git counts "N months ago" (6 months before Aug 31 is Mar 3). 0 when that
-    falls before 1970."""
-    moment = _EPOCH + timedelta(seconds=min(stamp, _LAST_SECOND))
+    falls before 1970. Exact at any date: a commit a skewed clock dated past
+    the year 9999 still has a window of `months` months."""
+    cycles, months = divmod(months, _CYCLE_MONTHS)
+    shift = stamp - stamp % _CYCLE_SECONDS
+    cut = shift + _calendar_months_before(stamp - shift, months) - cycles * _CYCLE_SECONDS
+    return max(cut, 0)
+
+
+def _calendar_months_before(stamp: int, months: int) -> int:
+    """months_before for a stamp in 1970-2369 and fewer than 4,800 months,
+    where every date lies inside datetime's range; negative before 1970."""
+    moment = _EPOCH + timedelta(seconds=stamp)
     year, month = divmod(moment.year * 12 + moment.month - 1 - months, 12)
-    if year < 1970:
-        return 0
     first = moment.replace(year=year, month=month + 1, day=1)
-    return int((first + timedelta(days=moment.day - 1) - _EPOCH).total_seconds())
+    return (first + timedelta(days=moment.day - 1) - _EPOCH) // _SECOND
 
 
 def _anchor(root: Path, head: str | None) -> int | None:
@@ -447,14 +459,23 @@ def _window_log(root: Path, head: str | None, cutoff: int | None) -> Iterator[st
     sit in a copy keyed on its parent, and the next range walk would add it
     again. Only a caller with no HEAD to key on walks HEAD itself.
 
-    Cut at `cutoff`, the one the caller records (`--max-age`, git's own name
-    for "committed at or after"), never at `--since=N months ago`, which git
-    reads against today's date. No cutoff means no commit to anchor the window
-    on, and so nothing in it."""
+    Cut at `cutoff`, the one the caller records, never at `--since=N months
+    ago`, which git reads against today's date. No cutoff means no commit to
+    anchor the window on, and so nothing in it."""
     if cutoff is None:
         return iter(())
-    return _git_lines(root, "log", "--relative", f"--max-age={cutoff}", *_LOG_ARGS,
+    return _git_lines(root, "log", "--relative", _since(cutoff), *_LOG_ARGS,
                       *([head] if head else []))
+
+
+def _since(cutoff: int) -> str:
+    """The git option that keeps commits dated at or after `cutoff`, in Unix
+    seconds. `@<seconds> +0000` is the one date form git reads as that exact
+    second at any size: git 2.43 for Windows reads `--max-age=<seconds>` as a
+    32-bit int, so a cutoff past 2038-01-19 wrapped and the window listed
+    nothing, and it reads a bare `@<seconds>` through its date parser, which
+    misreads any second past 2099."""
+    return f"--since=@{cutoff} +0000"
 
 
 def _range_log(root: Path, base: str, head: str) -> Iterator[str]:

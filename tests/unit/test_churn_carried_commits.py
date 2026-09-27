@@ -88,7 +88,7 @@ class FakeGit:
 
     def window(self, root, head=None, cutoff=None):
         """The window at `head` (the current HEAD's when no head is named),
-        cut at `cutoff` as --max-age cuts it."""
+        cut at `cutoff` as the walk's --since cuts it."""
         self.window_calls += 1
         walked = since(self.logs.get(head, self.log), cutoff)
         if self.cutoff_after_walk is not None:

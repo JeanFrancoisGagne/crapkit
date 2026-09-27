@@ -886,7 +886,8 @@ snapshot record, all three or nothing). Leave it alone.
 - No wall clock in scoring paths. The churn window ends at HEAD's commit date, and churn
   weights and burn-down ages anchor on the newest commit in the log, so a fixed tree
   reports byte-identically. `git log --since=N.months.ago` reads today's date: cut a
-  window with `--max-age` at a cutoff computed from a commit's date.
+  window with `--since=@<seconds> +0000` at a cutoff computed from a commit's date
+  (git 2.43 for Windows wraps a `--max-age` past 2038).
 - JSON is sorted-keys and carries no timestamps in rows.
 
 ## The docs are pinned to the code

@@ -25,8 +25,8 @@ CRAPKIT = Path(".crapkit")
 CACHE = CRAPKIT / "coupling-cache-v2.json"
 LOG_Z = CRAPKIT / "churn-log-v3.z"
 LOG_KEY = CRAPKIT / "churn-log-v3.json"
-# A window walk is cut with --max-age. One cut with --since, which reads git's
-# clock, counts as a walk too.
+# A window walk is cut with --since=@<seconds> +0000. One cut with --max-age,
+# or with a --since that reads git's clock, counts as a walk too.
 WINDOW_CUTOFF = ("--since", "--max-age")
 
 APP_PY = """def plain(x):

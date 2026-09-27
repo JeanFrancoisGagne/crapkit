@@ -158,7 +158,7 @@ class WindowCommits:
     def expire(self, cutoff: int) -> None:
         """Drop every commit a walk cut at `cutoff` would no longer list: the
         ones committed before it. The commit date, not the author date: git's
-        --max-age reads the committer's clock, and a rebased commit has two."""
+        --since reads the committer's clock, and a rebased commit has two."""
         gone = {seq for seq, commit in self.commits.items() if _aged(commit, cutoff)}
         if gone:
             self._drop(gone)

@@ -57,7 +57,7 @@ def test_a_walked_window_names_its_head_and_the_cutoff_its_date_names(tmp_path, 
     window = churn_log.walked_window(tmp_path, 12, HEAD)
 
     assert window.cutoff == CUTOFF
-    assert walk(git, window) == ("log", "--relative", f"--max-age={CUTOFF}",
+    assert walk(git, window) == ("log", "--relative", f"--since=@{CUTOFF} +0000",
                                  churn_log.LOG_FORMAT, "--encoding=UTF-8", "--name-only", HEAD)
 
 
@@ -65,14 +65,28 @@ def test_a_stored_window_walks_from_the_head_its_key_names(tmp_path, git):
     argv = walk(git, churn_log.stored_window(tmp_path, 12, HEAD))
 
     assert argv[-1] == HEAD
-    assert f"--max-age={CUTOFF}" in argv
+    assert f"--since=@{CUTOFF} +0000" in argv
 
 
 def test_no_walk_ever_reads_the_clock(tmp_path, git):
+    """`@<seconds> +0000` is an exact second; any other --since, such as
+    `12 months ago`, reads git's clock."""
     for head in (HEAD, None):
         list(churn_log.walked_window(tmp_path, 12, head).lines)
 
-    assert [arg for argv in git.logs for arg in argv if arg.startswith("--since")] == []
+    cuts = [arg for argv in git.logs for arg in argv if arg.startswith(("--since", "--max-age"))]
+    assert cuts == [f"--since=@{CUTOFF} +0000"] * 2
+
+
+def test_a_cutoff_past_2038_reaches_git_digit_for_digit(tmp_path, git):
+    """git 2.43 for Windows reads `--max-age` as a 32-bit int and wrapped any
+    cutoff past 2038-01-19; the absolute --since carries every digit."""
+    git.cutoff = 7_000_001_000_000_000
+
+    argv = walk(git, churn_log.walked_window(tmp_path, 12, HEAD))
+
+    assert "--since=@7000001000000000 +0000" in argv
+    assert not any(arg.startswith("--max-age") for arg in argv)
 
 
 def test_a_head_with_no_commit_date_walks_nothing(tmp_path, git):

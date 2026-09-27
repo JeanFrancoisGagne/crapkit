@@ -171,13 +171,88 @@ def test_months_before_1970_is_the_epoch():
     assert churn_log.months_before(utc("1971-06-01T00:00:00"), 30) == 0
 
 
-def test_a_commit_dated_past_year_9999_anchors_on_its_last_second():
-    assert churn_log.months_before(10 ** 15, 12) == utc("9998-12-31T23:59:59")
+def civil(year: int, month: int, day: int, seconds: int = 0) -> int:
+    """Unix seconds at a UTC date in the proleptic Gregorian calendar, for any
+    year datetime cannot hold: days counted from the leap-year rule itself."""
+    y = year - (month <= 2)
+    era, yoe = divmod(y, 400)
+    doy = (153 * (month + (-3 if month > 2 else 9)) + 2) // 5 + day - 1
+    doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+    return (era * 146_097 + doe - 719_468) * DAY + seconds
+
+
+def test_the_civil_oracle_agrees_with_datetime_where_both_reach():
+    for text in ("1970-01-01", "2000-02-29", "2025-08-31", "2100-03-01", "9999-12-31"):
+        year, month, day = map(int, text.split("-"))
+        assert civil(year, month, day, 3_723) == utc(f"{text}T01:02:03")
+
+
+@pytest.mark.parametrize(("stamp", "months", "cutoff"), [
+    # 12000 is a leap year (divisible by 400): Feb 29 12000 exists.
+    (civil(12000, 6, 1), 12, civil(11999, 6, 1)),
+    (civil(12000, 3, 31, 45), 1, civil(12000, 3, 2, 45)),  # Feb 31 runs on 2 days
+    (civil(12100, 3, 31), 1, civil(12100, 3, 3)),  # 12100 is not: Feb 31 runs on 3
+    (civil(10000, 1, 15), 1, civil(9999, 12, 15)),  # back across datetime's last year
+    (civil(221_818_234, 8, 31, 7), 6, civil(221_818_234, 3, 3, 7)),
+    (civil(2425, 7, 15), 4_801, civil(2025, 6, 15)),  # 400 years and one month
+    (civil(9_000, 1, 1), 3_000_000_000, 0),  # 250 million years back is before 1970
+])
+def test_months_before_counts_exactly_past_year_9999(stamp, months, cutoff):
+    """A commit dated past datetime's year 9999 counts back on the same
+    calendar; clamped to 9999-12-31, its window swallowed every commit
+    between that date and HEAD, thousands of years of them."""
+    assert churn_log.months_before(stamp, months) == cutoff
+
+
+def commit_at(repo: Path, when: int, *names: str) -> None:
+    """One commit dated `when` that edits `names`."""
+    for name in names:
+        (repo / name).write_text(f"at {when}\n", encoding="utf-8", newline="\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", f"at {when}", when=when)
+
+
+def history_at(repo: Path, edits: list[tuple[int, str]]) -> dict:
+    """The churn of one commit per (Unix seconds, file) pair, oldest first."""
+    new_repo(repo)
+    for when, name in edits:
+        commit_at(repo, when, name)
+    return {path: (row.commits, row.weight) for path, row in load_churn(repo, 12).items()}
+
+
+def test_a_history_committed_after_2038_weighs_what_it_did_in_2024(tmp_path):
+    """git 2.43 for Windows reads `--max-age` as a 32-bit int, so a cutoff past
+    2038-01-19 wrapped negative and the window listed nothing: a tree whose
+    HEAD a skewed clock dated 2040 read every file dormant. The same history
+    sixteen years earlier, another leap year, is the oracle: same spacing to
+    the second, same churn."""
+    def spaced(year: int) -> list[tuple[int, str]]:
+        return [(civil(year, 1, 1), "a.py"), (civil(year, 1, 1, 60), "b.py"),
+                (civil(year, 3, 1), "a.py"), (civil(year, 6, 1), "b.py")]
+
+    in_2024 = history_at(tmp_path / "y2024", spaced(2024))
+    in_2040 = history_at(tmp_path / "y2040", spaced(2040))
+
+    assert {path: commits for path, (commits, _) in in_2024.items()} == {"a.py": 2, "b.py": 2}
+    assert in_2040 == in_2024
+
+
+def test_a_head_past_year_9999_keeps_a_twelve_month_window(tmp_path):
+    """HEAD at 12000-06-01: the window opens at 11999-06-01, to the second."""
+    churn = history_at(tmp_path / "repo", [
+        (civil(11999, 3, 1), "old.py"),
+        (civil(11999, 5, 31, DAY - 1), "just_out.py"),
+        (civil(11999, 6, 1), "edge.py"),
+        (civil(11999, 9, 1), "a.py"),
+        (civil(12000, 6, 1), "head.py"),
+    ])
+
+    assert sorted(churn) == ["a.py", "edge.py", "head.py"]
 
 
 def test_commit_time_reads_the_commit_date_not_the_author_date(tmp_path):
     """A rebased commit carries two dates, and the window filters on the
-    commit date, as `--max-age` does."""
+    commit date, as git's `--since` does."""
     repo = new_repo(tmp_path / "repo")
     (repo / "a.py").write_text("x\n", encoding="utf-8")
     git(repo, "add", "-A")

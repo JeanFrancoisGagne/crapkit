@@ -5,7 +5,8 @@ cutoff back when HEAD moves: 6 months before a commit on Aug 31 is Mar 3, and
 before one on Sep 1 it is Mar 1. A log cut at the later cutoff lacks the
 commits between the two, and re-dating it cannot bring them back. So the log's
 key records the cutoff its walk was cut at, the walk is cut at exactly that
-cutoff (`--max-age`), and a refresh below it walks the window instead.
+cutoff (`--since=@<cutoff> +0000`), and a refresh below it walks the window
+instead.
 
 Every git seam is monkeypatched; walks are counted, never timed. The fake
 names each HEAD's cutoff as its commit date; months_before has tests of its own.
