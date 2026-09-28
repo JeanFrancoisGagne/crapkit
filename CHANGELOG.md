@@ -57,6 +57,16 @@ each agent, fresh and as an upgrade, and this release fixes what it found.
   in a Python traceback at exit 1. A lane with `path_prefix` fed another checkout's
   coverage.py report, or a lane scoped to the root fed another checkout's coverage.py or
   istanbul report, fails the same way, where it exited 0.
+- A lane whose `bash -c` or `sh -c` payload hands pytest a positional that narrows the
+  suite, or hands vitest a file filter beside `--coverage`, now exits 3 at config load, as
+  the same command without the wrapper always did: drop the positional or set
+  `full_suite = false`. A lane whose `artifact` is empty or names the root (`.`), or whose
+  `results_artifact` names the root, exits 3 at load too.
+- A lane whose name Windows cannot use as a file name (`unit?`, `a:b`, `nul`, a trailing
+  dot or space) now exits 3 at load on every OS, and so do two lanes whose names differ
+  only in case. `unit?` ended `crapkit coverage` in a Python traceback at exit 1, and
+  `a:b` wrote the lane's log into an NTFS alternate data stream of `.crapkit/lane-a`.
+  Rename the lane.
 - Many more exit codes move. The upgrade guide lists each with its 0.8.0 and 0.8.1 exit
   and what to change: [missing values](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#missing-values-that-081-names), [the
   commit gate](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#the-commit-gate-in-081), [text that is not
@@ -238,6 +248,12 @@ the report gone or unreadable. Every reader of those fields took that absence fo
   `artifact` or `results_artifact`, is gone, and `junit.xml: unreadable (why)` when it
   cannot be opened. The stderr line and the stored `rerun_reason` said the bytes of a file
   that no longer exists differ from its stamp. The lane reran either way.
+- The merge driver reads an empty base as no common ancestor. Two branches that each
+  created `crapkit-ratchet.tsv`, such as two first seeds, met in an add/add merge; git
+  handed the driver an empty `%O`, the driver read it as a legacy marks file and refused
+  with `ratchet key identity versions differ; reconcile the legacy function mapping before
+  merging`, and git recorded a conflict. The driver now merges the two files as a union,
+  each mark both sides hold at the lower value.
 
 ### A value nobody measured is named, not printed as a fact
 
@@ -272,8 +288,11 @@ writes nothing.
   a function in a `no-lane` or `cc-only` scope, or one `rescore` and `check_gate` find no
   row for because it was added or renamed since the run. Such a row read as cov 0% and
   untested, and `brief` and `next-item` multiplied that stand-in into
-  `est_uncovered_paths`. `cov`, `crap`, `flag`, `remedy` and `est_uncovered_paths` keep
-  their values until JSON schema 2.
+  `est_uncovered_paths`. The `worklist` row prints `-` in its cov column for a `no-lane`
+  or `cc-only` function, as `rescore` does; it printed `cov   0%` beside a cc-only `crap`
+  equal to ccn. `rescore --gate` prints `cov -` on such a row's GATE line, as its table
+  does; the GATE line said `cov 0%`. `cov`, `crap`, `flag`, `remedy` and
+  `est_uncovered_paths` keep their values until JSON schema 2.
 - `brief`, `next-item`, `explain` and the MCP tools `get_function_brief` and
   `get_next_item` give a function in a scope no lane covers its own dark-line note: `no lane covers scope 'src',
   so no artifact can name uncovered lines for src/a.py; add 'src' to a [[lane]]'s scopes
@@ -574,7 +593,10 @@ version bump under Upgrading from 0.8.0 above.
   (U+4E0A) above a ccn-8 function moved an edit on its last line below the function, so
   `hook-precommit` exited 0 and `verify`, `claude-hook` and `mutate` read the edit as
   touching nothing. The analysis cache version moves, so the first run reads
-  every file again.
+  every file again. A UTF-16 file with no byte-order mark, which scored no function with
+  nothing said, is an unread file: every gate names it as UNREAD and exits 6, and the
+  reason says to save it as UTF-8 or with its mark. The analysis cache version moves
+  again for it (cache=9).
 - Every reader of the marks file (`verify`, `ratchet report`, `brief`, the advisory hook,
   the override grant and the merge driver) reads it by one rule: UTF-16 by its byte-order
   mark, else UTF-8 with each other byte as U+FFFD. A cp1252 byte in one mark's name, or a
@@ -673,6 +695,12 @@ The exit codes, the lane environment and the files that change on upgrade are in
   1; and `next-item --exclude` and MCP `get_next_item` handed out the
   directory they were told to skip as `pkg\legacy`, `./pkg/legacy` or `PKG/Legacy`.
   `--help` for each file argument and for `--exclude` names the spellings it reads.
+- A file argument that names a directory exits 3 with `src is a directory; name the
+  source files in it`: `rescore`, `rescore --gate` and `explain`, and MCP `check_gate`,
+  which answers isError true. `rescore --gate src`, `src/`, `.` and `""` judged 0
+  functions and passed at exit 0 while a file under it failed the gate when named, and
+  `check_gate` answered `gate.ok` true; a directory named like a source file ended in a
+  PermissionError traceback.
 - The flags that write or open a file read their path the way a file argument does:
   `--export`, `--sarif`, `--emit-baseline`, `report --out`, `verify --baseline-tsv`,
   `inventory --db` and `doctor --plugin-root`, and the `CLAUDE_CONFIG_DIR` and
@@ -680,6 +708,11 @@ The exit codes, the lane environment and the files that change on upgrade are in
   exited 0 and wrote `C:\c\Users\me\x.tsv`, and a baseline, database or plugin
   directory typed `/c/...` or `/mnt/c/...` was looked for under `C:\c` or `C:\mnt`.
   `--help` for each flag names the spellings.
+- A writer flag that names a directory exits 3 before the command does any work, with
+  `--sarif 'out' is a directory; name a file to write`: `--export`, `--sarif`,
+  `--emit-baseline` and `report --out`. `--json` prints the error object. `verify --sarif
+  DIR` stored its run as verdict=ok and then ended in a PermissionError traceback at exit
+  1 with nothing on stdout.
 - On Windows a root on a network share exits 3 before crapkit starts any child: `--repo
   \\server\share\repo`, a session standing in a share, and a `\\wsl.localhost\...`
   checkout, `init` included. The line says to map the share to a drive letter
@@ -730,6 +763,16 @@ The exit codes, the lane environment and the files that change on upgrade are in
   a case-insensitive disk `python -m pytest Tests --cov=app` under `testpaths = ["tests"]`
   is the whole suite. It was refused at exit 3 as narrowing, which sent the user to
   `full_suite = false`.
+- `init` reads each pytest testpath in the full-suite guard's spelling. `testpaths =
+  [".tests"]` or `["../tests"]` read as `tests/`, so `init` wrote the whole-suite
+  `scoped_tests` command without the `tests` positional under a comment saying testpaths
+  already collects `tests/`. A commented sibling-lane stub names its testpath with `/`
+  separators: `..\tests` read as a tab once uncommented, and `..\impl` did not parse.
+- A source file whose extension is upper case (`src/MAIN.CPP`, `src/defs.H`,
+  `src/Tool.PY`) scores and gates as its lower-case twin does. It was neither scored nor
+  named unclaimed, and `hook-precommit` passed a ccn-8 function in it at exit 0. `doctor`
+  now names such a file outside every scope path as unclaimed. Those files add functions
+  and move no existing score, so there is no analysis bump.
 
 ### Colour codes stay out of the text a program reads
 
@@ -768,6 +811,12 @@ The exit codes, the lane environment and the files that change on upgrade are in
   PostToolUse hands the model an exit 2's stderr on every Edit or Write. The flags this
   build knows, `--protocol` included, are still read, and other subcommands keep
   argparse's refusal.
+- An MCP string argument holding U+0000, which JSON allows and no file name or process
+  argument can hold, answers a tool result with `isError: true` before anything spawns:
+  `path must not hold a NUL character (U+0000)`, naming the argument. `check_gate`
+  `path`, `get_function_brief` `name`, an item of `get_next_item` `exclude` and any
+  tool's `repo` answered JSON-RPC `-32603` carrying `ValueError: embedded null
+  character`.
 
 ### The same repo prints the same bytes on every machine
 
@@ -790,7 +839,12 @@ The exit codes, the lane environment and the files that change on upgrade are in
   finds this installation's console script, and otherwise the interpreter running it,
   spelled with forward slashes. Before the first run, an MCP tool on Windows named
   `C:\venv\Scripts\python.exe -m crapkit coverage` as the step to run, and Git Bash
-  answered `C:venvScriptspython.exe: command not found`.
+  answered `C:venvScriptspython.exe: command not found`. A uv tool or pipx install on
+  Windows counts as this installation: both copy the launcher into their bin directory
+  instead of linking it, and a copy with the same bytes as the launcher in the install's
+  own Scripts directory starts the same interpreter. Under `uv tool install crapkit` on
+  Windows, `init` named `.../uv/tools/crapkit/Scripts/python.exe -m crapkit coverage` as
+  the next step.
 - A report or packet command made on Linux runs as printed in cmd.exe, PowerShell, Git
   Bash and bash, and a report made on Linux and one made on Windows print the same line.
   The Linux page quoted a path in single quotes, which cmd.exe hands over as part of the
@@ -808,6 +862,10 @@ The exit codes, the lane environment and the files that change on upgrade are in
 - A failed alert command that printed nothing is refused with `(exit N) and printed
   nothing` in `hook-precommit`, `verify --override` and `digest --alert`, where the
   refusal quoted an empty string.
+- `mutate` keeps the mutated line's own line ending, so a mutant changes no byte outside
+  that line. In a CRLF file every mutant also turned the mutated line's CRLF into a bare
+  LF, and in a file whose lines end in CR alone the mutated line took the next line with
+  it.
 
 ### CI, tests and release tooling
 
@@ -1048,7 +1106,7 @@ The exit codes, the lane environment and the files that change on upgrade are in
 - The prune line names the renames it followed, up to three:
   `followed 1 rename(s) (calc/grade.py -> calc/grading.py)`.
 - `verify` names the files behind its count, on a line under the verdict: the first three,
-  then `and N more`, as in `changed files: app/m.py, app/n.py, tests/test_m.py`. `--json`
+  the files verify scored ahead of the rest, then `and N more`, as in `changed files: app/m.py, app/n.py, tests/test_m.py`. `--json`
   lists them all as `changed_paths` beside the `changed_files` count.
 - A source file inside a scope that nobody has `git add`ed is not judged, because verify's
   diff and its corpus hold git-tracked files only, and it read as `(0 changed files)`.
@@ -1088,6 +1146,10 @@ The exit codes, the lane environment and the files that change on upgrade are in
   and lists no function. It read the failed `git ls-files` as "untracked" and listed
   every legacy function in the file. `ls-files` now reads its path literally, so an
   untracked `calc/[id].py` no longer matches a tracked `calc/i.py`.
+- `crapkit --help` says when the hook speaks: `silent unless the edit leaves a function
+  over its ceiling or a file it could not judge, or the hook passes a flag this crapkit
+  does not know`. It said the hook was silent unless a changed function was over its
+  ceiling.
 
 ### watch reads content, and the history caches know their depth
 
@@ -1173,9 +1235,42 @@ The exit codes, the lane environment and the files that change on upgrade are in
 - The Docker image's header and `docs/agent-json.md` give a `--user "$(id -u):$(id -g)"`
   run line: the image serves as uid 1000, and on a checkout another uid owns the tools
   answer but cannot save their caches.
+- `crapkit --version --json` prints one object, with the two flags in either order:
+  `version`, `commit`, `dirty`, `analysis_version` and `schema`. `commit` is the full sha
+  the running crapkit was built from, and `dirty` says whether that checkout held staged
+  or unstaged edits or a file git neither tracks nor ignores. A source checkout or an
+  editable install answers from git. The build writes both into the package
+  (`crapkit/_build.json`, from a new `setup.py`), so a wheel built in a git checkout, a
+  `pip install git+URL` and a wheel built from an sdist cut in a checkout name their
+  commit too. Both are null for a build made with no checkout at hand. On a terminal,
+  `crapkit --version` of a build that is not a release adds `(commit <sha>, clean)` or
+  `(commit <sha>, dirty)`. A release, built from a clean checkout tagged `v<version>`,
+  prints `crapkit X.Y.Z` as before, and a pipe always gets those two words, which scripts
+  and `doctor --plugin-root` read. Before, `--version --json` printed the text line:
+  argparse ran `--version` before it read `--json`, and two builds that printed the same
+  version could not be told apart.
+
+### A `bash -c` lane is judged by what its payload runs
+
+- The full-suite guard read `bash -c "python -m pytest tests/unit --cov"` as three words
+  with no pytest in them, so a lane that narrows its suite loaded with no refusal. On
+  Windows a single-quoted payload split at every space under cmd.exe, and a whole-suite
+  lane was refused on `tests'`, a token bash never hands pytest, with a hint to switch to
+  double quotes. crapkit now reads the script of a `bash -c` or `sh -c` step with sh's
+  rules on both OSes, as bash itself does, and judges each command in it. doctor's
+  pytest-cov probe asks the python inside the payload, and doctor WARNs when sh cannot
+  split a payload, since no check looked inside it.
+- doctor read a lane's `--data-file` with a pattern that stopped at the first space or
+  quote, so `--data-file="cov a/.coverage"` and `--data-file="cov b/.coverage"` read as
+  one file `cov`: doctor warned that the lanes delete each other's data, and `doctor
+  --tune` held `max_parallel_lanes` at 1. It now reads the value the shell hands
+  coverage.
 
 ### Doctor
 
+- doctor FAILs a lane whose `artifact` or `results_artifact` names a directory
+  (`artifact = "coverage"` for vitest's report directory). Such a lane fails every run,
+  and doctor passed it.
 - The onboard and recover skills print the lines `crapkit doctor --plugin-root` prints when
   it finds no plugin. With no path it names Claude Code's plugin directory and then
   Codex's, and a path that holds no `.claude-plugin/plugin.json` gets a line that says
@@ -1269,6 +1364,13 @@ nothing. Each of these now gets a line naming the object and the next step:
 - A marks file whose merge attribute names a driver this clone never defined WARNs with
   the `git config merge.crapkit-ratchet.driver` line, since git otherwise merges it as
   text.
+- A marks file `verify` refuses for its metric stamp gets a line with verify's own refusal
+  and remedy. Right after an upgrade that moves the analysis version, verify exited 3
+  before any lane ran while doctor said `no problems found`. Marks an older metric
+  stamped WARN at exit 0, since the upgrade guide runs doctor before the review and the
+  re-seed that clear them. Marks a newer crapkit or lizard stamped FAIL, since only an
+  upgrade of this install clears them. A marks path doctor cannot read FAILs too, where
+  doctor passed it.
 - Two or more `crapkit` launchers on PATH are named, each with its version: a WARN when
   their versions differ, a note while they agree. The shell, a git hook, the plugin's
   hooks and an MCP client each run the first one their own PATH lists, so the hook can
@@ -1372,8 +1474,9 @@ nothing. Each of these now gets a line naming the object and the next step:
   sets `GIT_INDEX_FILE` for the hooks a commit runs) and with nothing staged, the hook
   now judges every tracked file's indexed content: `crapkit gate: 1 tracked
   function(s) exceed the complexity ceiling of 6`, exit 6, with the functions the
-  committed ratchet marks exempt as before. Inside a commit, and under `--base REF`,
-  nothing changes.
+  committed ratchet marks exempt as before. The refusal ends ``or record existing debt
+  with `crapkit ratchet seed` ``, the route for debt the repo already holds. Inside a
+  commit, and under `--base REF`, nothing changes.
 - The refusal every command gives in a directory with no `crapkit.toml` names both ways
   forward and the configurations the checkout tracks, spelled from where you stand:
   ``no crapkit.toml at /repo/packages/web - nothing to analyze; run `crapkit init` there
@@ -1405,6 +1508,11 @@ nothing. Each of these now gets a line naming the object and the next step:
 - The merge driver's stamp refusal names the newer side and the metric to re-seed under:
   `theirs is newer, so with a crapkit that measures [...]`. "re-baseline one side" named
   neither, and a seed under the older release left the stamps apart.
+- verify's stamp refusal, the unstamped-marks warning and the merge driver's refusal name
+  `crapkit ratchet prune` between `crapkit coverage` and `crapkit ratchet seed`, as the
+  upgrade guide runs them. They named coverage and seed only, and seed never drops a mark,
+  so a mark under a key analysis 12 moved (a UTF-16 source, a name holding a byte cp1252
+  leaves undefined) stayed in the file.
 - A plain `verify` on a store a failed verify pins no longer ends its stamp refusal with
   ``re-baseline from run N with `crapkit ratchet seed --baseline N` ``. The Action quotes
   that line in the pull request comment, where run N, from the runner's store, names
