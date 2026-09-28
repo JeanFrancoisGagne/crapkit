@@ -150,7 +150,7 @@ def test_the_upgrade_table_holds_no_row_the_tests_do_not_know():
 def test_the_changelog_counts_the_same_changes_the_upgrade_table_lists():
     words = {9: "Nine", 10: "Ten", 11: "Eleven", 12: "Twelve"}
 
-    assert (f"{words[len(EXIT_MOVES)]} changes in this release can move an exit code"
+    assert (f"{words[len(EXIT_MOVES)]} changes that name a missing value can move an exit code"
             in " ".join(_doc("CHANGELOG.md").split()))
 
 
