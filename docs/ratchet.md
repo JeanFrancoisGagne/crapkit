@@ -344,13 +344,13 @@ Four cases:
 | Recorded stamp | Behavior |
 |---|---|
 | Matches the running metric | Compare normally. |
-| Older than the running metric | **Refused**, exit 3: run `coverage`, then re-seed. |
+| Older than the running metric | **Refused**, exit 3: run `coverage`, then `ratchet prune`, then re-seed. |
 | Newer: a newer crapkit or lizard wrote the marks | **Refused**, exit 3: upgrade this install. `ratchet seed` and `ratchet prune` refuse these marks too. |
 | Absent (a file written before stamping) | Warn, then apply the function-identity checks below. Anonymous JavaScript/TypeScript marks need reader proof. |
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`
 EXIT=3
 ```
 
@@ -373,7 +373,7 @@ history.
 
 ```
 $ crapkit verify
-warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) - run `crapkit coverage`, then re-baseline with `crapkit ratchet seed` to stamp it
+warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) - run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed` to stamp it
 verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files) ratchet: restamped -> git add crapkit-ratchet.tsv
   changed files: crapkit-ratchet.tsv
 EXIT=0
@@ -667,6 +667,13 @@ app/b.py	bar( y )	22.0000
 side that changed wins over the side that did not; when both changed the **lower** value
 wins, because a mark can only fall and `prune` is re-runnable.
 
+Two branches that each created the marks file, such as two first seeds, meet in an add/add
+merge, and git hands the driver an empty base. The driver reads an empty or blank base as no
+common ancestor and merges the two files as a union, each mark both sides hold at the lower
+value. OURS and THEIRS must still share one metric stamp and one key format. Before 0.8.1
+the driver read that base as a legacy file and refused with
+`ratchet key identity versions differ`.
+
 Per key means per twin. One branch tightening `__post_init__` and the other tightening
 `__post_init__#2` in the same file is not a conflict, because those are two keys; the driver
 needs no ordinal knowledge to get that right. The `#` sits in the name field, so a marks line
@@ -679,14 +686,14 @@ stamps its own older metric and the next merge refuses again:
 
 ```
 $ git merge main
-crapkit: ratchet merge refused: ours is [crapkit-analysis=11 lizard=1.24.0] and theirs is [crapkit-analysis=12 lizard=1.24.0] - marks from different metric versions cannot merge; theirs is newer, so with a crapkit that measures [crapkit-analysis=12 lizard=1.24.0], run `crapkit coverage`, then re-baseline the merged marks with `crapkit ratchet seed`
+crapkit: ratchet merge refused: ours is [crapkit-analysis=11 lizard=1.24.0] and theirs is [crapkit-analysis=12 lizard=1.24.0] - marks from different metric versions cannot merge; theirs is newer, so with a crapkit that measures [crapkit-analysis=12 lizard=1.24.0], run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline the merged marks with `crapkit ratchet seed`
 ```
 
 When the stamps do not compare, as with an unstamped side, it asks you to re-seed one side:
 
 ```
 $ git merge legacy
-crapkit: ratchet merge refused: ours is [crapkit-analysis=8 lizard=1.24.0] and theirs is [unstamped] - marks from different metric versions cannot merge; run `crapkit coverage`, then re-baseline one side with `crapkit ratchet seed`
+crapkit: ratchet merge refused: ours is [crapkit-analysis=8 lizard=1.24.0] and theirs is [unstamped] - marks from different metric versions cannot merge; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline one side with `crapkit ratchet seed`
 Auto-merging crapkit-ratchet.tsv
 CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
 Automatic merge failed; fix conflicts and then commit the result.
@@ -877,8 +884,9 @@ file empty; before this, an emptied file was restamped into a header with no row
 marks' digest in `ratchet_source_sha256`. When the clone does not hold the history since the
 baseline, verify refuses with exit 4 rather than judge against no marks.
 
-The `changed files:` line under the verdict names the files behind the count: the first
-three, then `and N more`. `--json` lists them all as `changed_paths` beside the
+The `changed files:` line under the verdict names the files behind the count, the files
+verify scored first and the rest by name: the first three, then `and N more`. `--json`
+lists them all as `changed_paths` beside the
 `changed_files` count. verify judges git-tracked files only, so a new source file inside a
 scope that nobody has `git add`ed is not judged, and verify says so on stderr instead of
 reading it as no change:
