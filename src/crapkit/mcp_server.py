@@ -311,10 +311,11 @@ TOOLS: tuple[dict, ...] = (
             "path": {
                 "type": "string",
                 "description": ("repo-relative, or absolute inside repo, source file to judge "
-                "as edited. Outside the repo or missing answers a config error, and an "
-                "unchanged or unscoped file judges 0. A file a scope takes whose name is not UTF-8 "
-                "answers gate.ok false with the name in gate.unread_files. repo may be any directory "
-                "under the checkout, and path stays relative to the root it walks up to.")}},
+                "as edited. Outside the repo, missing or a directory answers a config error, "
+                "and an unchanged or unscoped file judges 0. A file a scope takes whose name "
+                "is not UTF-8 answers gate.ok false with the name in gate.unread_files. repo may "
+                "be any directory under the checkout, and path stays relative to the root it "
+                "walks up to.")}},
         "output": PAYLOADS["rescore --gate --json"],
     },
     {

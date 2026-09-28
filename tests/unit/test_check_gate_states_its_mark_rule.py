@@ -55,7 +55,7 @@ def test_the_path_argument_says_what_it_accepts_and_what_judges_nothing():
     text = entry()["inputSchema"]["properties"]["path"]["description"]
 
     assert "absolute inside repo" in text, text
-    assert "Outside the repo or missing answers a config error" in text, text
+    assert "Outside the repo, missing or a directory answers a config error" in text, text
     assert "an unchanged or unscoped file judges 0" in text, text
     assert "any directory under the checkout" in text, text
 
