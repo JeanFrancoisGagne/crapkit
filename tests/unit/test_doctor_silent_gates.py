@@ -136,8 +136,6 @@ def test_a_framework_hook_without_the_gate_in_its_config_is_not_a_gate():
     assert skipped_gates(route(), (installed,), framework=False) == ()
 
 
-# --- pre-commit in CI -----------------------------------------------------------
-
 # --- through git ------------------------------------------------------------------
 
 def _git(root: Path, *args: str, env: dict | None = None) -> str:
