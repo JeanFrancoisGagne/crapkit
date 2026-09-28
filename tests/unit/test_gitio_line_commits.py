@@ -48,8 +48,10 @@ def test_line_commits_stops_at_the_limit(repo):
 
 
 def test_a_hunk_line_is_never_read_as_a_header(repo):
-    """What a git that ignores -s prints: each hunk line behind its indicator."""
-    patched = git(repo, "log", "-L1,3:f.py", "--format=%x00%H")
+    """What a git that ignores -s prints: each hunk line behind its indicator.
+    --text keeps the hunks on every git: git 2.55 prints `Binary files ... differ`
+    for a file holding a NUL where git 2.43 printed its hunks."""
+    patched = git(repo, "log", "-L1,3:f.py", "--text", "--format=%x00%H")
     assert b"+" + FAKE_HEADER in patched and b"caf\xe9" in patched
 
     found = [name.decode() for name in gitio._LINE_LOG_HEADER.findall(patched)]
