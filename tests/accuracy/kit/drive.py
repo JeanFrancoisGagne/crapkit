@@ -8,8 +8,11 @@ and stdio around crapkit.cli.main; `spawn=True`, a set CRAPKIT_ACCURACY_PYTHON
 interpreter instead.
 
 `date_now` sets GIT_TEST_DATE_NOW for the call, which is the clock git reads
-for `--since`: a golden, xplat or wheel-diff run passes the epoch corpus.toml
-names, so the churn window cannot move with the calendar.
+for a relative `--since`. crapkit 0.8.0 and older cut the churn window at
+`--since=12.months.ago`, so a golden, xplat, wheel-diff or retro run passes the
+epoch corpus.toml names and the window of such a release cannot move with the
+calendar. Later crapkit ends the window at HEAD's commit date and never reads
+git's clock for it.
 
 A usage error or an unknown command raises DriveUnsupported: a replay against
 an older crapkit that lacks the command is `not replayable`, never red.

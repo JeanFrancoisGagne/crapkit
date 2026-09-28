@@ -59,6 +59,7 @@ def test_json_from_prose_fails_naming_the_command():
 
 def _churned(repo_root, now):
     driver = drive.Driver(repo_root, date_now=now)
+    assert driver.env["GIT_TEST_DATE_NOW"] == str(now)
     assert driver.run("coverage").code == 0
     listing = driver.json("worklist")
     return len(listing["active"]), listing["dormant_count"]
@@ -66,11 +67,14 @@ def _churned(repo_root, now):
 
 @pytest.mark.nightly
 @pytest.mark.process
-def test_date_now_is_the_clock_the_churn_window_reads(make_repo):
+def test_the_churn_window_ends_at_head_whatever_git_s_clock_reads(make_repo):
+    # The 12-month window ends at HEAD's commit date (runtime-guards-2), so the
+    # seed's one over-floor function stays active with git's clock a day or
+    # three years past the seed commit.
     spec = repos.tree_spec(SEED)
 
     assert _churned(make_repo(spec).root, repos.EPOCH + 86_400) == (1, 0)
-    assert _churned(make_repo(spec).root, repos.EPOCH + 3 * YEAR) == (0, 1)
+    assert _churned(make_repo(spec).root, repos.EPOCH + 3 * YEAR) == (1, 0)
 
 
 @pytest.mark.nightly

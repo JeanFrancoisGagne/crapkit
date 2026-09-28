@@ -50,13 +50,15 @@ def _worklist_counts(run):
 @pytest.mark.nightly
 def test_the_clock_is_the_corpus_epoch(seed_run, tmp_path):
     # The seed commit is one day old at the corpus epoch, so its one
-    # over-floor function is active; 13 months later the 12-month churn
-    # window holds no commit and the same function is dormant.
+    # over-floor function is active. The 12-month churn window ends at HEAD's
+    # commit date, not at the clock (runtime-guards-2), so with the clock 13
+    # months later the same function is still active.
     later = corpus_run.measure(corpus_run.SEED, tmp_path, corpus_run.DEFAULT_NOW + 400 * 86_400)
 
     assert seed_run.date_now == corpus_run.DEFAULT_NOW
+    assert later.date_now == corpus_run.DEFAULT_NOW + 400 * 86_400
     assert _worklist_counts(seed_run) == (1, 0)
-    assert _worklist_counts(later) == (0, 1)
+    assert _worklist_counts(later) == (1, 0)
 
 
 @pytest.mark.nightly
