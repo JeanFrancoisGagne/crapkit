@@ -11,6 +11,8 @@
   --declared-since the move needs a CHANGES row added since the ref, worked
   on a two-commit CHANGES history; a candidate that exits 5 stops the replay
   with exit 1, while the same failure on the base side is infra (exit 3).
+- hand: each plant's line appears once in the file it plants, checked on
+  every push, since the replays that plant run only nightly.
 """
 from fractions import Fraction
 import importlib.util
@@ -100,6 +102,15 @@ def test_declared_calcs_are_the_rows_added_since_the_ref(tmp_path):
 
 
 # --- record and replay (nightly and release: each replay measures two wheels) -------------
+
+@pytest.mark.parametrize("name", sorted(wheels.PLANTS))
+def test_every_plant_s_line_is_in_the_file_it_plants(name):
+    """The replays that plant run nightly; this check runs on every push, so a
+    source edit that moves a planted line fails before the nightly."""
+    file_name, line, _ = wheels.PLANTS[name]
+
+    assert (wheels.SOURCE / file_name).read_bytes().decode("utf-8").count(line) == 1
+
 
 def replayed(test):
     return pytest.mark.nightly(pytest.mark.release(pytest.mark.process(test)))

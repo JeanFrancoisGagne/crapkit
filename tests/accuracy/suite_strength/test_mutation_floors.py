@@ -9,7 +9,8 @@ equivalents are set aside, and a timeout is not a kill.
 
 The canary is score.crap. A weekly shard whose score.crap mutants do not all
 die is void, so the killer suite has to kill a hand-made one: each mutant below
-is one operator mutmut 3 applies to `ccn * ccn * (1.0 - cov) ** 3 + ccn`,
+is one operator mutmut 3 applies to score.crap's two lines,
+`uncovered = 1.0 - cov` and `ccn * ccn * (uncovered * uncovered * uncovered) + ccn`,
 applied to a copy of src/, and the unit tests of score.py must fail on it.
 """
 from __future__ import annotations
@@ -145,17 +146,19 @@ def _group_rows(receipt: Path, equivalents: list[dict]) -> list[tuple]:
 
 # --- the canary ----------------------------------------------------------------------------------
 
-ORIGINAL = "return ccn * ccn * (1.0 - cov) ** 3 + ccn"
+ORIGINAL = ("uncovered = 1.0 - cov\n"
+            "    return ccn * ccn * (uncovered * uncovered * uncovered) + ccn")
 CANARIES = {
-    "multiply-to-divide": "return ccn / ccn * (1.0 - cov) ** 3 + ccn",
-    "minus-to-plus": "return ccn * ccn * (1.0 + cov) ** 3 + ccn",
-    "one-to-two": "return ccn * ccn * (2.0 - cov) ** 3 + ccn",
-    "plus-to-minus": "return ccn * ccn * (1.0 - cov) ** 3 - ccn",
+    "multiply-to-divide": ORIGINAL.replace("ccn * ccn", "ccn / ccn"),
+    "minus-to-plus": ORIGINAL.replace("1.0 - cov", "1.0 + cov"),
+    "one-to-two": ORIGINAL.replace("1.0 - cov", "2.0 - cov"),
+    "plus-to-minus": ORIGINAL.replace(") + ccn", ") - ccn"),
 }
-# (1 - cov) ** 4 agrees with ** 3 at cov 0 and 1, the only coverages
+# (1 - cov)^4 agrees with (1 - cov)^3 at cov 0 and 1, the only coverages
 # test_score.py checks. Rulings row SS2 recorded it as a survivor until the
 # score-model packet's grid joined the killer suite; the row is now fixed.
-EXPONENT = "return ccn * ccn * (1.0 - cov) ** 4 + ccn"
+EXPONENT = ORIGINAL.replace("uncovered * uncovered * uncovered",
+                            "uncovered * uncovered * uncovered * uncovered")
 # The score tests of the killer suite: the unit file, and the score-model
 # packet's accuracy tests once they are in the tree.
 SCORE_TESTS = [target for target in ("tests/unit/test_score.py", "tests/accuracy/score_model")
@@ -183,6 +186,15 @@ def _suite(tree: Path) -> subprocess.CompletedProcess:
             "-p", "no:cacheprovider",
             "-p", "no:randomly", "-n", "0"]
     return hang_guard.run(argv, env=env, cwd=REPO, text=True, encoding="utf-8", errors="replace")
+
+
+def test_score_crap_reads_as_the_canary_expects():
+    """The canaries run nightly; this check runs on every push, so an edit to
+    score.crap that the canary texts no longer match fails before the nightly."""
+    text = (REPO / "src" / "crapkit" / "score.py").read_text(encoding="utf-8")
+
+    assert text.count(ORIGINAL) == 1
+    assert all(mutant != ORIGINAL for mutant in [*CANARIES.values(), EXPONENT])
 
 
 @pytest.mark.nightly

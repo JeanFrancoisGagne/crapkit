@@ -10,7 +10,7 @@ from pathlib import Path
 import zipfile
 
 SOURCE = Path(__file__).resolve().parents[3] / "src" / "crapkit"
-CRAP_LINE = "    return ccn * ccn * (1.0 - cov) ** 3 + ccn\n"
+CRAP_LINE = "    return ccn * ccn * (uncovered * uncovered * uncovered) + ccn\n"
 COGNITIVE_LINE = '        cognitive=getattr(fn, "cognitive_complexity", 0) or 0,\n'
 # Cognitive complexity gains 1 at ccn 3, and nowhere else. The runtime guards
 # pin CRAP at coverage 0 and 1 and bound it in between, so a planted CRAP move
@@ -22,6 +22,7 @@ COGNITIVE_PLANT = ("analyze.py", COGNITIVE_LINE,
                    " + (1 if std == 3 else 0),\n")
 # Every CRAP computation stops the process with exit 5, as an internal-check stop does.
 STOP_PLANT = ("score.py", CRAP_LINE, "    raise SystemExit(5)\n")
+PLANTS = {"cognitive": COGNITIVE_PLANT, "stop": STOP_PLANT}
 
 
 def _text(path: Path, plant: tuple | None) -> str:
