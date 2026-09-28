@@ -239,7 +239,8 @@ same three commands as version 11 below.
   field's anonymous class, and a Java record declared first in a class or interface
   body, which read as a method named after it.
 - Rows named after an attribute take the function's name: `__attribute__((noinline))`,
-  `API_AVAILABLE( ios(10))`, or `)` for an Objective-C method, and Java rows named
+  `API_AVAILABLE( ios(10))`, `LOCKS_EXCLUDED( mu)` after a constructor or destructor,
+  or `)` for an Objective-C method, and Java rows named
   after an annotation with arguments, `InlineMe( replacement = ...)`. A member of a
   class declared with an export macro or an attribute, `class Q_CORE_EXPORT QString`
   or `class __declspec(dllexport) Foo`, reads `QString::size`, where it read

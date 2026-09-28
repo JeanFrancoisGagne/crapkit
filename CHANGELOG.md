@@ -790,17 +790,22 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   or in a member initializer, `static constexpr bool v = N < 19;`, no longer hides
   every function after it. lizard read the `<` as a template bracket and read on to the
   next `>` in the file: fmt 11.0.2's chrono.h kept rows for its first 1,102 lines of
-  2,432, 113 functions, and now lists 285. Each new row is scored, gated and ratcheted
-  for the first time.
+  2,432, 113 functions. This fix lists 285, and with the local-class members below the
+  file lists 297. Each new row is scored, gated and ratcheted for the first time.
 - A declaration whose trailing return type holds braces, `static auto check(int) ->
   decltype(all(Tag{}));`, has no row. The braces read as a body.
 - An attribute between the parameter list and the body keeps the function's name and
-  start line. `int run(int a) __attribute__((noinline)) {` read `__attribute__`, and an
-  Objective-C method with `API_AVAILABLE(ios(10))` or `NS_SWIFT_NAME(...)` read `)`,
-  started on the attribute's line and counted 1 of cognitive for recursion on the
-  body's first `)`. These rows take their real name, a new ratchet key, so a mark
-  recorded under `__attribute__((noinline))`, `API_AVAILABLE( ios(10))` or `)` is no
-  longer seen; `ratchet prune` drops it.
+  start line. `int run(int a) __attribute__((noinline)) {` read `__attribute__`, a
+  destructor with a lock annotation, `S::~S() LOCKS_EXCLUDED(mu) {`, read
+  `LOCKS_EXCLUDED`, and an Objective-C method with `API_AVAILABLE(ios(10))` or
+  `NS_SWIFT_NAME(...)` read `)`, started on the attribute's line and counted 1 of
+  cognitive for recursion on the body's first `)`. These rows take their real name, a
+  new ratchet key, so a mark recorded under `__attribute__((noinline))`,
+  `API_AVAILABLE( ios(10))`, `LOCKS_EXCLUDED( mu)` or `)` is no longer seen; `ratchet
+  prune` drops it. A macro with arguments before the name, `static int EXPORT(x) f(int
+  a, int b)`, still names f. One shape keeps lizard's reading: after a list of unnamed
+  parameters of a named type, `int run(Foo) LOCKS_EXCLUDED(mu) {` is still named
+  `LOCKS_EXCLUDED`.
 - An Objective-C instance-variable block, `@interface Extension () { int _first; }`, is
   no function. It read as one named `Extension()`, or after its last variable when the
   extension adopted a protocol.

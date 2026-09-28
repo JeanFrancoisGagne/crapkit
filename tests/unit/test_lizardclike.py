@@ -182,6 +182,21 @@ ATTRIBUTED = {  # path: (source, (bare name, start, cognitive)), worked by hand
     "cpp-override.cpp": ("struct W {\n  int run(int a) const override __attribute__((cold))" + BODY
                          + "};\n", ("run", 2, 1)),
     "c-gnu.m": ("int run(int a) __attribute__((noinline))" + BODY, ("run", 1, 1)),
+    "ctor.cpp": ("S::S(int a) __attribute__((cold))" + BODY, ("S", 1, 1)),
+    "dtor.cpp": ("S::~S() LOCKS_EXCLUDED(mu)" + BODY, ("~S", 1, 1)),
+    "in-class-ctor.cpp": ("struct S {\n  S(int a) LOCKS_EXCLUDED(mu)" + BODY + "};\n", ("S", 2, 1)),
+    "in-class-dtor.cpp": ("struct S {\n  ~S() LOCKS_EXCLUDED(mu)" + BODY + "};\n", ("~S", 2, 1)),
+    "template-ctor.cpp": ("template <class T>\nS<T>::S(int a) LOCKS_EXCLUDED(mu)" + BODY,
+                          ("S", 2, 1)),
+    "lock-address.cpp": ("ScopedTrace::~ScopedTrace() GTEST_LOCK_EXCLUDED_(&UnitTest::mutex_)"
+                         + BODY, ("~ScopedTrace", 1, 1)),
+    "ctor.mm": ("S::S(int a) __attribute__((cold))" + BODY, ("S", 1, 1)),
+    "qualified-lock.cpp": ("int run() EXCLUSIVE_LOCKS_REQUIRED(ns::mu)" + BODY, ("run", 1, 1)),
+    "member-lock.cpp": ("int run(Foo) EXCLUSIVE_LOCKS_REQUIRED(a.mu)" + BODY, ("run", 1, 1)),
+    "unnamed-int.c": ("int run(int) ATTR(mu)" + BODY, ("run", 1, 1)),
+    "void-list.c": ("static void run(void) __acquires(lock)" + BODY, ("run", 1, 1)),
+    "trait-argument.cpp": ("struct S {\n  S() NOEXCEPT_IF(\n      is_nothrow<Alloc>::value)\n"
+                           "    : Alloc()" + BODY + "};\n", ("S", 2, 1)),
 }
 
 
@@ -189,7 +204,10 @@ ATTRIBUTED = {  # path: (source, (bare name, start, cognitive)), worked by hand
 def test_an_attribute_before_the_body_leaves_the_name_and_the_start_alone(path):
     """lizard named the row after the attribute (`__attribute__`,
     `API_AVAILABLE`) or, for a method, after the attribute's last `)`, which then
-    read as recursion; an attribute on a later line moved the start there."""
+    read as recursion; an attribute on a later line moved the start there. A
+    constructor or destructor has no return type and reads the same way: it is
+    named after its class. An attribute's arguments that name a lock, `(ns::mu)`
+    or `(a.mu)`, never name a function, and neither does a list after `(int)`."""
     source, hand = ATTRIBUTED[path]
 
     rows = analyze_source(path, source, note=False)
@@ -231,6 +249,50 @@ def test_a_word_and_parentheses_before_a_declaration_stay_where_lizard_put_them(
     (record,) = analyze_source("p.cpp", source, note=False)
 
     assert record.long_name == UNCHANGED[source]
+
+
+MACRO_BEFORE_THE_NAME = {  # label: (path, source, (long name, start, params, ccn)), by hand
+    "export macro": ("p.c", "static int EXPORT(x) f(int a, int b)" + BODY,
+                     ("f( int a , int b)", 1, 2, 2)),
+    "after a pointer": ("p.c", "static char * ATTR(x) f(int a, int b)" + BODY,
+                        ("f( int a , int b)", 1, 2, 2)),
+    "on its own line": ("p.cpp", "static size_t QT_FUNCTION_TARGET(VAES)\n"
+                                 "aeshash256(const uchar *a, size_t len) noexcept" + BODY,
+                        ("aeshash256( const uchar * a , size_t len)", 2, 2, 2)),
+    "numbers": ("p.c", "void __printf(1, 2) foo(const char *a, ...)" + BODY,
+                ("foo( const char * a , ...)", 1, 1, 2)),
+    "a string": ("p.c", 'static int __section(".init") foo(int a)' + BODY, ("foo( int a)", 1, 1, 2)),
+    "a number before a void list": ("p.c", "static void __aligned(16) foo(void)" + BODY,
+                                    ("foo()", 1, 0, 2)),
+    "an empty list": ("p.cpp", "static void QT_FUNCTION_TARGET(SSE2) foo()" + BODY,
+                      ("foo()", 1, 0, 2)),
+    "an unnamed builtin type": ("p.c", "static void EXPORT(x) handler(unsigned int, char *)"
+                                + BODY, ("handler( unsigned int , char *)", 1, 2, 2)),
+    "a lone name in both lists": ("p.cpp", "static int EXPORT(x) f(Foo)" + BODY,
+                                  ("f( Foo)", 1, 1, 2)),
+    "a member": ("p.cpp", "static int EXPORT(cfg.level) f(Foo)" + BODY, ("f( Foo)", 1, 1, 2)),
+    "an address": ("p.cpp", "static int EXPORT(&table) f(Foo)" + BODY, ("f( Foo)", 1, 1, 2)),
+    "then an attribute": ("p.c", "static int EXPORT(x) f(int a) ATTR(y)" + BODY,
+                          ("f( int a)", 1, 1, 2)),
+    "objective-c": ("p.m", "static int EXPORT(x) f(int a, int b)" + BODY,
+                    ("f( int a , int b)", 1, 2, 2)),
+    "objective-c++": ("p.mm", "static int EXPORT(x) f(int a, int b)" + BODY,
+                      ("f( int a , int b)", 1, 2, 2)),
+}
+
+
+@pytest.mark.parametrize("path,source,hand", MACRO_BEFORE_THE_NAME.values(),
+                         ids=MACRO_BEFORE_THE_NAME.keys())
+def test_a_macro_between_the_return_type_and_the_name_leaves_the_function_its_row(
+        path, source, hand):
+    """`static int EXPORT(x) f(int a, int b)` declares f: `EXPORT(x)` is a
+    macro's arguments, which a literal (`__printf(1, 2)`) or a lone name
+    (`(VAES)`) shows, and `(int a, int b)` declares named parameters. The
+    attribute rule read f's list as the arguments of an attribute after a
+    function named EXPORT."""
+    (record,) = analyze_source(path, source, note=False)
+
+    assert (record.long_name, record.start, record.params, record.ccn) == hand
 
 
 NEXT = "int g(void) {\n  return 1;\n}\n"

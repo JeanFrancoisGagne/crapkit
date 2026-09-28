@@ -34,12 +34,16 @@ Functions lizard hid, invented or misnamed
 * A trailing return type holding braces, `-> decltype(all(Tag{}))`, gave a
   declaration a row: the `{` read as its body.
 * An attribute between a parameter list and the body took the function's
-  name: `int run(int a) __attribute__((noinline)) {` read `__attribute__`, and
-  an Objective-C method with `API_AVAILABLE(ios(10))` read `)`, started on the
-  attribute's line and counted the body's first `)` as recursion. A word read
-  that way must follow the list of a function with a return type, and
-  `decltype`, `typeof` and the rest of `_NOT_A_NAME` never name one, so
-  `constexpr decltype(auto) f(int a)` stays f.
+  name: `int run(int a) __attribute__((noinline)) {` read `__attribute__`,
+  `S::~S() LOCKS_EXCLUDED(mu) {` read `LOCKS_EXCLUDED`, and an Objective-C
+  method with `API_AVAILABLE(ios(10))` read `)`, started on the attribute's
+  line and counted the body's first `)` as recursion. A word read that way
+  must follow the list of a function with a return type, or of a constructor
+  or destructor, and `decltype`, `typeof` and the rest of `_NOT_A_NAME` never
+  name one, so `constexpr decltype(auto) f(int a)` stays f. A macro with
+  arguments before the name, `static int EXPORT(x) f(int a, int b)`, spells
+  the same tokens in the other order; `names_the_function` tells the two
+  apart by what each list holds.
 * An Objective-C class extension's instance variables, `@interface E () { int
   _a; }`, read as a function named E, and in a `.m` file any word after a C
   function's parameter list, a prototype's `;` included, named a method.
@@ -107,9 +111,13 @@ Accepted, documented, not solved
   is lost. One bare word, or `override` and `final`, reads right.
 * A function returning a pointer to a member function, `int (S::*pick(int
   k))(int)`, still takes lizard's name, `int( S :: * pick(int k))( int)`.
-* A macro with arguments between a specifier and the function's name, `static
-  EXPORT(x) f(int a)`, reads as a function named EXPORT with an attribute: the
-  shape is the one `int run(int) __attribute__((cold))` has.
+* Two lists that hold only names read the way lizard reads them, as a macro
+  and then the function: `static int EXPORT(x) f(Foo)` is f, so `int run(Foo)
+  LOCKS_EXCLUDED(mu)`, whose parameter is unnamed, is still named
+  `LOCKS_EXCLUDED`. So is `int run() ATTR()`, an attribute with no arguments.
+* A macro whose arguments hold a call, a template argument or nothing, before
+  a function whose parameters are unnamed and of a named type, takes the row:
+  `static int EXPORT() f(Foo)` reads `EXPORT()`.
 
 Registration
 ------------
@@ -147,6 +155,29 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
 _BRACKET_DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 _ANGLE_DEPTH = {"<": 1, ">": -1}
 _PAREN_DEPTH = {"(": 1, ")": -1}
+
+# The tokens besides words and numbers that a parameter declaration spells
+# before any default: `const char *a`, `int (*cb)(int)`, `std::map<int, char> m`,
+# `int a[4]`. A `.`, `->`, `!` or a string never appears there, and they do in
+# the arguments of an attribute: `REQUIRES(a.mu)`, `__section(".init")`.
+_DECLARATOR_PUNCTUATION = frozenset({"*", "&", "&&", "::", "<", ">", ",", "(", ")", "[", "]",
+                                     "..."})
+
+# What a parameter declaration may start with besides a word: `::std::string s`,
+# C's `...`, an attribute's `[[maybe_unused]] int a`. A literal or an operator
+# first, `(1, 2)`, `(&table)`, `((cold))`, makes the list a macro's arguments,
+# and so does a member access anywhere: `(cfg.level)`, `(this->mu)`.
+_DECLARATION_OPENERS = frozenset({"::", "...", "["})
+_MEMBER_ACCESS = frozenset({".", "->"})
+
+# The builtin type specifiers and qualifiers (ISO/IEC 9899:2018 6.7.2, 6.7.3;
+# ISO/IEC 14882:2020 [dcl.type]). A declaration made of these alone, `unsigned
+# int` or `char *`, declares a parameter it leaves unnamed: `void handler(int)`.
+# `(void)` declares that there are none.
+_BUILTIN_TYPES = frozenset({"void", "char", "short", "int", "long", "float", "double", "signed",
+                            "unsigned", "bool", "_Bool", "wchar_t", "char8_t", "char16_t",
+                            "char32_t", "const", "volatile"})
+_POINTER_TOKENS = frozenset({"*", "&", "&&"})
 
 # What ends a statement outside parentheses, and so ends anything that was only
 # read as a template argument list.
@@ -338,6 +369,103 @@ def _is_a_name(tokens: list[str]) -> bool:
     return bool(tokens) and _qualified_name_length(tokens) == len(tokens)
 
 
+def names_the_function(first: list[str], second: list[str]) -> bool:
+    """Whether `W1 (first) W2 (second)`, after a return type, declares W2.
+
+    Both orders are written. An attribute follows the parameter list, `int
+    run(int a) LOCKS_EXCLUDED(mu)`, and a macro that expands to one stands
+    before the name, `static int EXPORT(x) f(int a, int b)`. A first list no
+    parameter declaration can spell (ISO/IEC 9899:2018 6.7.6.3), `(1, 2)`,
+    `(&table)` or `(cfg.level)`, is a macro's arguments. A first list that
+    declares parameters, `(int a)`, `(int)` or `(void)`, is the function's.
+    Otherwise W2 is the function when its list declares parameters or none,
+    `(int a, int b)`, `()`, or when both lists hold lone names, `EXPORT(x)
+    f(Foo)`, which is how lizard reads them.
+    """
+    if _cannot_declare(first):
+        return True
+    if _declares_parameters(first):
+        return False
+    return _reads_as_a_parameter_list(second) or (_lone_names(first) and _lone_names(second))
+
+
+def _lone_names(tokens: list[str]) -> bool:
+    """`x`, `Foo` or `ns::mu, other`: names and nothing else, which a macro's
+    arguments and a list of unnamed parameters both can be."""
+    return all(map(_is_a_name, _declarations(tokens)))
+
+
+def _reads_as_a_parameter_list(tokens: list[str]) -> bool:
+    return not tokens or tokens == ["..."] or _declares_parameters(tokens)
+
+
+def _cannot_declare(tokens: list[str]) -> bool:
+    """`1, 2`, `".init"`, `&table`, `(cold)`, `cfg.level`: a list with a
+    declaration that starts with a literal or an operator, or reaches into a member."""
+    return not all(map(_may_declare, _declarations(tokens)))
+
+
+def _may_declare(tokens: list[str]) -> bool:
+    spelled = _before_the_default(tokens)
+    return not spelled or (_opens_a_declaration(spelled[0])
+                           and _MEMBER_ACCESS.isdisjoint(spelled))
+
+
+def _opens_a_declaration(token: str) -> bool:
+    return _is_word(token) or token in _DECLARATION_OPENERS
+
+
+def _before_the_default(tokens: list[str]) -> list[str]:
+    """`std::string s` of `std::string s = ""`."""
+    return list(itertools.takewhile(lambda token: token != "=", tokens))
+
+
+def _declares_parameters(tokens: list[str]) -> bool:
+    """`int a, int b`, `const char *a, ...`, `unsigned int, char *` or `void`:
+    a list whose every declaration declares a parameter, by its name or by a
+    builtin type, or which says there is none. `()` and `(...)` say nothing."""
+    declared = [_names_a_parameter(declaration) or _is_a_builtin_type(declaration)
+                for declaration in _declarations(tokens) if declaration != ["..."]]
+    return bool(declared) and all(declared)
+
+
+def _is_a_builtin_type(tokens: list[str]) -> bool:
+    """`int`, `unsigned long`, `void *`, or `void` alone."""
+    words = [token for token in tokens if token not in _POINTER_TOKENS]
+    return bool(words) and _BUILTIN_TYPES.issuperset(words)
+
+
+def _names_a_parameter(tokens: list[str]) -> bool:
+    """`size_t len`, `const char *a`, `std::string s = ""`: a type, then a name
+    no `::` joins to it. A lone type, `Foo`, a lock, `ns::mu` or `a.mu`, and a
+    call, `ios(10)`, name none."""
+    spelled = _before_the_default(tokens)
+    return (_separate_names(spelled) > 1 and _is_word(spelled[0])
+            and all(map(_spells_a_declarator, spelled)))
+
+
+def _separate_names(tokens: list[str]) -> int:
+    """How many words stand on their own outside template arguments: `std ::
+    map < int , char > m` holds two, `trait < T > :: value` one."""
+    count, angle, before = 0, 0, None
+    for token in tokens:
+        angle = _angle_depth(angle, token, 0)
+        count += angle == 0 and _is_word(token) and before != "::"
+        before = token
+    return count
+
+
+def _spells_a_declarator(token: str) -> bool:
+    return _is_word(token) or token[0].isdigit() or token in _DECLARATOR_PUNCTUATION
+
+
+def names_a_special_member(name: str) -> bool:
+    """`S::S`, `S<T>::S`, `S::~S`: a constructor or a destructor, named after
+    the class that qualifies it (ISO/IEC 14882:2020 [class.ctor], [class.dtor])."""
+    levels = name.split("::")
+    return len(levels) > 1 and levels[-1].lstrip("~") == levels[-2].split("<")[0]
+
+
 def _forget_the_parameters(fn) -> None:
     """Leave lizard's nesting counter where a list with nothing in it leaves it.
 
@@ -419,6 +547,9 @@ class _CFixes(ParameterCount):
         self.crapkit_typed = False
         self.crapkit_last_name = None
         self.crapkit_word = None
+        self.crapkit_word_line = 0
+        self.crapkit_arguments = []
+        self.crapkit_depth = 0
         self.crapkit_return = 0
         self.crapkit_head = None
         self.crapkit_scope_head = None
@@ -479,10 +610,12 @@ class _CFixes(ParameterCount):
         C parameter declaration, and a `(` after it as a new function, so
         `int run(int a) __attribute__((noinline)) {` was a function named
         `__attribute__`. A word that follows the list of a function declared
-        with a return type waits one token: before a `(` it is an attribute
-        (`__attribute__((...))`, `API_AVAILABLE(ios(10))`) whose arguments are
-        skipped. A word before anything else keeps lizard's reading, and so
-        does a function with no return type. That is what keeps `MACRO(x)` on
+        with a return type, or of a constructor or destructor, waits one token:
+        before a `(` it is an attribute (`__attribute__((...))`,
+        `API_AVAILABLE(ios(10))`, `LOCKS_EXCLUDED(mu)`) unless its arguments
+        show that the first word was a macro and this one names the function.
+        A word before anything else keeps lizard's reading, and so does any
+        other function with no return type. That is what keeps `MACRO(x)` on
         one line and `TEST(a, b) {` on the next two declarations, and
         `FMT_VISIBILITY("hidden") auto f(int a) {` after a template head one
         function named f. `override` and `final` are read and dropped, as lizard
@@ -494,13 +627,15 @@ class _CFixes(ParameterCount):
             self.crapkit_clause = _RequiresClause()
             self._state = self._state_requires_clause
         elif self._may_be_an_attribute(token):
-            self.crapkit_word = token
+            self.crapkit_word, self.crapkit_word_line = token, self.context.current_line
             self._state = self._state_attribute_word
         else:
             CLikeStates._state_dec_to_imp(self, token)
 
     def _may_be_an_attribute(self, token) -> bool:
-        return self.crapkit_typed and _is_word(token) and token not in _DECLARATOR_WORDS
+        return (_is_word(token) and token not in _DECLARATOR_WORDS
+                and (self.crapkit_typed
+                     or names_a_special_member(self.context.current_function.name)))
 
     def _state_requires_clause(self, token):
         """A trailing requires-clause, `void f(T t) requires C<T> {` (ISO/IEC
@@ -514,16 +649,33 @@ class _CFixes(ParameterCount):
             self._state(token)
 
     def _state_attribute_word(self, token):
-        """The token after that word: a `(` opens the attribute's arguments."""
+        """The token after that word: a `(` opens the word's arguments."""
         if token == "(":
-            self.next(self._state_attribute_arguments, token)
+            self.crapkit_arguments, self.crapkit_depth = [], 0
+            self._state = self._state_attribute_arguments
+            self._state(token)
             return
         CLikeStates._state_dec_to_imp(self, self.crapkit_word)
         self._state(token)
 
-    @CodeStateMachine.read_inside_brackets_then("()", "_state_dec_to_imp")
-    def _state_attribute_arguments(self, _):
-        """An attribute's arguments, nested parentheses included."""
+    def _state_attribute_arguments(self, token):
+        """The word's arguments, nested parentheses included, held to their `)`.
+
+        They are an attribute's, and skipped, unless `names_the_function` reads
+        the first list as a macro's arguments and these as the parameters of
+        the function the word names: `static int EXPORT(x) f(int a, int b)`.
+        Then the word and its list are read again as that function, from the
+        word's line.
+        """
+        self.crapkit_arguments.append(token)
+        self.crapkit_depth += _PAREN_DEPTH.get(token, 0)
+        if self.crapkit_depth:
+            return
+        self._state = self._state_dec_to_imp
+        if names_the_function(self.crapkit_list[:-1], self.crapkit_arguments[1:-1]):
+            self._start_function([self.crapkit_word], self.crapkit_word_line)
+            for held in self.crapkit_arguments:
+                self._state(held)
 
     def _state_dec(self, token):
         """lizard's parameter list, then what the list turned out to hold."""
@@ -560,9 +712,10 @@ class _CFixes(ParameterCount):
         self.crapkit_suffix = 0
         self._state = self._state_return_suffix
 
-    def _start_function(self, name: list[str]) -> None:
-        """A function named `get` or `S :: get`, from the line its declaration starts on."""
-        start = self.context.current_function.start_line or self.context.current_line
+    def _start_function(self, name: list[str], start: int = 0) -> None:
+        """A function named `get` or `S :: get`, from `start`, or else from the
+        line the declaration being read started on."""
+        start = start or self.context.current_function.start_line or self.context.current_line
         self.try_new_function(name[0])
         self.context.current_function.start_line = start
         for token in name[1:]:
