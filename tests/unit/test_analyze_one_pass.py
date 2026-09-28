@@ -125,6 +125,40 @@ def test_a_powershell_switch_costs_its_arms_in_both_columns(tmp_path):
     assert [(r.ccn_std, r.ccn_mod) for r in (f, g)] == [(1, 1), (3, 3)]
 
 
+SEVEN_ARMS = {
+    "Rust": ("s.rs", "fn f(x: i32) -> i32 {\n  match x {\n"
+             + "".join(f"    {n} => {n},\n" for n in range(1, 8)) + "    _ => 0,\n  }\n}\n"),
+    "shell": ("s.sh", "f() {\n  case \"$1\" in\n"
+              + "".join(f"    {n}) echo {n} ;;\n" for n in range(1, 8)) + "  esac\n}\n"),
+    "PowerShell": ("s.ps1", "function F($x) {\n  switch ($x) {\n"
+                   + "".join(f"    {n} {{ {n} }}\n" for n in range(1, 8)) + "  }\n}\n"),
+}
+C_SEVEN_CASES = ("int f(int x) {\n  switch (x) {\n"
+                 + "".join(f"  case {n}: return {n};\n" for n in range(1, 8)) + "  }\n  return 0;\n}\n")
+
+
+def _readme_sentence(fragment: str) -> str:
+    text = " ".join((Path(__file__).resolve().parents[2] / "README.md")
+                    .read_text(encoding="utf-8").split())
+    start = text.index(fragment)
+    return text[text.rfind(". ", 0, start) + 2:text.index(". ", start) + 1]
+
+
+def test_the_readme_names_every_reader_that_gates_each_arm(tmp_path):
+    """README's Languages section names the readers whose arms cost a point in
+    the modified column too, with a seven-arm example that gates at 8 where a
+    C switch gates at 2. A reader left out reads to a user as lizard -m."""
+    sentence = _readme_sentence("in the modified column too")
+    measured = {lang: _records(tmp_path, *case)[0] for lang, case in SEVEN_ARMS.items()}
+    (c,) = _records(tmp_path, "s.c", C_SEVEN_CASES)
+
+    assert {lang: (r.ccn_std, r.ccn_mod, r.ccn) for lang, r in measured.items()} == \
+        dict.fromkeys(SEVEN_ARMS, (8, 8, 8))
+    assert (c.ccn_std, c.ccn_mod, c.ccn) == (8, 2, 2)
+    assert [lang for lang in SEVEN_ARMS if lang not in sentence] == []
+    assert "gates at `ccn` 8" in sentence and "seven cases is 2" in sentence
+
+
 def test_analyze_one_reads_each_file_in_a_single_lizard_pass(tmp_path, monkeypatch):
     """Two passes over a 14k-file corpus cost 10.7 s of the cold run's lizard
     phase; one costs 6.4 s. Counting analyzer runs is what keeps it at one."""
