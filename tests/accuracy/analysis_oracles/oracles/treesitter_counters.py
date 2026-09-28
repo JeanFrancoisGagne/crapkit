@@ -43,6 +43,7 @@ class Spec:
     guards: frozenset = frozenset()       # Swift guard: an if whose body is its else
     coalescing: frozenset = frozenset()   # ??, orelse: a decision, no cognitive
     early_returns: frozenset = frozenset()  # Rust ?, Zig try, let-else: a decision
+    chains: frozenset = frozenset()       # Swift a?.b: each `?` under one is a decision
     lambdas: frozenset = frozenset()      # closures crapkit keeps in the enclosing row
     logical: frozenset = frozenset({"&&", "||"})
     comments: frozenset = frozenset({"comment"})
@@ -108,6 +109,7 @@ SPECS = {
                   _f("switch_statement"), _f("switch_entry"), _f("parameter"),
                   catches=_f("catch_block"), ternaries=_f("ternary_expression"),
                   guards=_f("guard_statement"), coalescing=_f("nil_coalescing_expression"),
+                  chains=_f("navigation_expression", "call_expression"),
                   lambdas=_f("lambda_literal"),
                   comments=_f("comment", "multiline_comment"),
                   jumps=_f("control_transfer_statement"), labels=_f("simple_identifier")),
@@ -394,6 +396,28 @@ def _switch_or_operators(node, spec: Spec, mod: bool) -> int:
     return logical_operators(node, spec)
 
 
+# The members that name an optional type itself, not a member of its value: its metatype
+# (`Int?.self`) and Optional's own case and initializers (`Empty?.none`, `Int?.some(1)`).
+TYPE_MEMBERS = frozenset({b".self", b".Type", b".Protocol", b".none", b".some", b".init"})
+
+
+def _marks_a_type(mark, data: bytes) -> bool:
+    """A `?` followed by a member in TYPE_MEMBERS: it marks the optional type itself."""
+    after = mark.next_sibling
+    return after is not None and data[after.start_byte:after.end_byte] in TYPE_MEMBERS
+
+
+def optional_chains(node, spec: Spec, data: bytes) -> int:
+    """The `?` of an optional chain directly under node (Swift `a?.b`, `f()?.g`, `c?()`,
+    `d?[0]`): one short-circuit decision each (NIST SP 500-235 sec. 4.1), as `?.` is in
+    TypeScript. A `?` before `.self`, `.Type`, `.Protocol`, `.none`, `.some` or `.init`
+    marks a type and is none: `Empty?.none` is the case none of Optional<Empty>."""
+    if node.type not in spec.chains:
+        return 0
+    return sum(1 for child in node.children
+               if child.type == "?" and not _marks_a_type(child, data))
+
+
 def _one_decision(node, spec: Spec) -> bool:
     if _conditionless_for(node):
         return False
@@ -405,7 +429,7 @@ def _decisions(node, spec: Spec, data: bytes, mod: bool) -> int:
         return 1
     if node.type in spec.cases:
         return _case(node, data, mod)
-    return _switch_or_operators(node, spec, mod)
+    return _switch_or_operators(node, spec, mod) + optional_chains(node, spec, data)
 
 
 def ccn(fn, spec: Spec, data: bytes, mod: bool = False) -> int:

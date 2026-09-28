@@ -8,9 +8,10 @@ crapkit defect shape covers is set aside for that column (ts_defect_shapes and
 ts_shapes_swift).
 
 SwiftLint counts from 0, counts a switch's default and leaves out `&&`, `||`,
-`?:` and `??`. The McCabe text starts at 1, excludes the default and counts a
-short-circuit operator and a nil-coalescing pick; crapkit's Swift reader also
-counts `?:`, as the tree-sitter counter does. Each difference is a named
+`?:`, `??` and the `?` of an optional chain. The McCabe text starts at 1,
+excludes the default and counts a short-circuit operator, a nil-coalescing pick
+and an optional chain's `?`; crapkit's Swift reader also counts `?:`, as the
+tree-sitter counter does. Each difference is a named
 transform with its own rulings row, and the operators are counted from
 tree-sitter nodes. A hand case pins each rule with SwiftLint's raw value and
 crapkit's.
@@ -43,6 +44,12 @@ def logical_operators(fn, context) -> int:
                for node in counters.own_nodes(fn, context.spec))
 
 
+def optional_chains(fn, context) -> int:
+    """AO-SWIFTLINT-OPTIONAL-CHAIN: each `?` of an optional chain the function owns."""
+    return sum(counters.optional_chains(node, context.spec, context.data)
+               for node in counters.own_nodes(fn, context.spec))
+
+
 def defaults(fn, context) -> int:
     """AO-SWIFTLINT-DEFAULT: SwiftLint counts a switch's default entry."""
     return -sum(counters.is_default(entry, context.data)
@@ -56,6 +63,7 @@ TOOLS = {
         "AO-SWIFTLINT-TERNARY": lambda fn, c: len(_own(fn, c, {"ternary_expression"})),
         "AO-SWIFTLINT-DEFAULT": defaults,
         "AO-SWIFTLINT-COALESCING": lambda fn, c: len(_own(fn, c, {"nil_coalescing_expression"})),
+        "AO-SWIFTLINT-OPTIONAL-CHAIN": optional_chains,
     }),
 }
 
@@ -130,9 +138,12 @@ HAND = {
     "AO-SWIFTLINT-DEFAULT": ("func f(k: Int) -> Int {\n    switch k {\n    case 1:\n        return 10\n"
                              "    case 2:\n        return 20\n    default:\n        return 0\n    }\n}\n"),
     "AO-SWIFTLINT-COALESCING": COALESCE,
+    "AO-SWIFTLINT-OPTIONAL-CHAIN": "func f(a: String?) -> Int? {\n    return a?.count\n}\n",
 }
-# crapkit reads the ?? hand case 1 until calc-bug analysis-oracles-78 is fixed.
-HELD = {"AO-SWIFTLINT-COALESCING": "AO-SWIFT-COALESCE"}
+# crapkit reads the ?? hand case 1 until calc-bug analysis-oracles-78 is fixed, and the
+# optional chain's 1 until calc-bug analysis-oracles-162 is.
+HELD = {"AO-SWIFTLINT-COALESCING": "AO-SWIFT-COALESCE",
+        "AO-SWIFTLINT-OPTIONAL-CHAIN": "AO-SWIFT-OPTIONAL-CHAIN"}
 
 
 @pytest.fixture(scope="module")
