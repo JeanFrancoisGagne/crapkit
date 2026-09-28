@@ -530,7 +530,7 @@ def _jumps_and_recursion(state: _FnState, token: str, is_python: bool) -> None:
         # told apart, where the reader counts a `?` at all. Rust's `?` is none of
         # them: it returns early on an error or relaxes a `?Sized` bound, and an
         # early return is no increment.
-        state.question_pending = "?" in state.conditions and not state.is_rust
+        state.question_pending = _counts_question(state)
     elif token in ("break", "continue"):
         state.label_check = not is_python
     elif token == "goto":
@@ -538,6 +538,12 @@ def _jumps_and_recursion(state: _FnState, token: str, is_python: bool) -> None:
     elif _is_recursion(state, token):
         state.recursed = True
         state.total += 1
+
+
+def _counts_question(state: _FnState) -> bool:
+    """A `?` waits to be told apart only where the reader counts one in ccn, and
+    never in Rust. The reader's condition set is read now, at the `?`."""
+    return "?" in state.conditions and not state.is_rust
 
 
 def _is_recursion(state: _FnState, token: str) -> bool:
