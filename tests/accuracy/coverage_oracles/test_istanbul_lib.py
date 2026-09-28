@@ -1,7 +1,8 @@
 """istanbul's own library and crap-typescript, read over the same recordings crapkit reads.
 
 1. istanbul-lib-coverage 3.2.2 totals every file's branches and statements. The
-   counters no function span holds (outside_branches.mjs, json only) plus
+   counters no function holds (a branch arm by the function's span, a statement
+   by its body, as docs/lanes.md reads them; outside_branches.mjs, json only) plus
    crapkit's per-function counts must equal those totals, covered and total
    compared as two separate numbers: a counter crapkit drops or counts twice
    moves one of them.
