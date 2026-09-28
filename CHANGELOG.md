@@ -1370,9 +1370,17 @@ each marks file re-seed once.
   so an advanced function no longer reads 0. The long name, which is the ratchet key,
   still holds only the header list, so no key changes. A packet's `params` list still
   names only the header's parameters; its `source` holds the block.
-- Rows appear and phantom rows go, so upgrade in this order: `crapkit coverage`, then
-  `crapkit ratchet prune` to drop marks left under phantom names, then
-  `crapkit ratchet seed`.
+- A parameter counts once whatever its entry holds, in the header list and in the
+  `param(...)` block. A comma inside an attribute or a default value,
+  `[Parameter(Mandatory, Position = 0)]` or `$Items = @(1, 2, 3)`, added a parameter,
+  and a name in braces, `${Pattern}`, or holding a `?`, `$ok?`, counted none.
+  `params` is reporting only, so no score moves.
+- A header parameter written in braces keeps its braces in the long name:
+  `function A(${x}, ${y})` reads `A ${x} , ${y}` where it read `A $ { x } , $ { y }`,
+  so that function's ratchet key changes.
+- Rows appear, phantom rows go and some keys change, so upgrade in this order:
+  `crapkit coverage`, then `crapkit ratchet prune` to drop marks left under names the
+  run no longer has, then `crapkit ratchet seed`.
 
 ### Shell keeps a function's whole name
 

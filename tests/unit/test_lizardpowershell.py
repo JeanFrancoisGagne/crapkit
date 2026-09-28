@@ -718,6 +718,40 @@ def test_a_param_block_declares_the_parameters(shape):
     assert (record.params, " " in record.long_name) == (count, False)
 
 
+# Each list, the function's long name (its ratchet key, as it read before) and
+# the parameters PowerShell's parser finds in it.
+PARAMETER_LISTS = [
+    ("(${x}, ${y})", "Get-A ${x} , ${y}", 2),
+    ("([int] ${Count} = 3)", "Get-A [ int ] ${Count} = 3", 1),
+    ("([Parameter(Mandatory = $true, Position = 0)] [string] $Name)",
+     "Get-A [ Parameter Mandatory = $true , Position = 0 ] [ string ] $Name", 1),
+    ("($Items = @(1, 2, 3), $Last)", "Get-A $Items = @ 1 , 2 , 3 , $Last", 2),
+    ("([ValidateSet('a', 'b')] $Kind, $Count)", "Get-A [ ValidateSet 'a' , 'b' ] $Kind , $Count", 2),
+    ("($s = { param($p, $q) $p }, $Last)", "Get-A $s = { param $p , $q $p } , $Last", 2),
+    ("()", "Get-A", 0),
+    (" {\n    param([byte[]] ${Pattern}, [byte[]] ${Mask})\n", "Get-A", 2),
+    (" {\n    param(${my var}, $Other)\n", "Get-A", 2),
+    (" {\n    param($ok?)\n", "Get-A", 1),
+]
+
+
+@pytest.mark.parametrize("parameters, long_name, count", PARAMETER_LISTS, ids=[
+    "header braced names", "header typed braced name with default", "header attribute with commas",
+    "header array default", "header validate set", "header script block default", "header empty",
+    "block braced names", "block braced name with a space", "block name with a question mark"])
+def test_a_parameter_counts_once_whatever_its_name_or_value_holds(parameters, long_name, count):
+    """PowerShell's parser reads one parameter per entry of the header list or
+    the param() block. lizard's count split the header at every comma, the ones
+    inside an attribute or a default too, and dropped a name that does not end
+    in a word character, `${Pattern}` or `$ok?`. The long name, the ratchet
+    key, reads as it did."""
+    body = "" if parameters.startswith(" {") else " {\n"
+    code = f"function Get-A{parameters}{body}    1\n}}\n"
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.long_name, record.params) == (long_name, count)
+
+
 # --- only declarations, never top-level code -----------------------------------
 
 def test_top_level_script_code_is_not_reported_as_a_function():

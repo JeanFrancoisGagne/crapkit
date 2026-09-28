@@ -13,9 +13,10 @@ WHAT IS REPORTED
     The parameters are the header list's (`function Name ($a, $b) { }`) plus
     those of the `param(...)` block that opens the body, the usual shape of an
     advanced function: one per entry, whatever attributes, type and default it
-    carries. Only the header list shows in the long name. The long name is the
-    ratchet key, and a key that grew the block's parameters would orphan every
-    mark recorded before this reader read the block.
+    carries, and however its name is written: `${Pattern}` and `$ok?` count
+    as `$Name` does. Only the header list shows in the long name. The long
+    name is the ratchet key, and a key that grew the block's parameters would
+    orphan every mark recorded before this reader read the block.
 
     A class or an enum is skipped whole. Its methods get no row, and the
     decisions in them count toward no function, not the function whose body
@@ -93,8 +94,9 @@ KEYWORDS IN ANY CASE
     a member (`$xs.foreach({ })`). Written in lower case, each of those cost
     a loop or a cognitive switch the capitalized spelling did not.
 
-    `-and`, `-or` and `-xor` come out in lower case wherever they stand, since
-    an operator is never a command or an argument. They are no nesting
+    `-and`, `-or` and `-xor` come out in lower case wherever they stand, as
+    the operators they almost always are (see KNOWN LIMITS for the one place
+    they are not). They are no nesting
     structure: an operator opens no level (Sonar Cognitive Complexity, App.
     B2), so `if ($a -and $b -or $c)` reads nesting 1. As loop words to
     lizard's ND column, each `-and` and `-or` added a level, and the condition
@@ -159,6 +161,11 @@ KNOWN LIMITS
       requires the opener to end its line and the terminator to start one;
       this reader does not check either, so `@"` inside an expression opens a
       body that runs to the next `"@`.
+    - `-and`, `-or` and `-xor` right after a command's name or arguments
+      still count. PowerShell passes them to the command as parameters:
+      `if (Test-Path $a -or $b)` hands `-or` to Test-Path, which fails at run
+      time, while `$x.Count -or $b` and `(Test-Path $a) -or $b` are the
+      operator. The point matches what such a line's author meant.
     - A `param()` block's parameters count in `params` and are missing from a
       packet's `params` list, which crapkit reads off the long name.
     - A class's methods get no row, so their complexity is not gated.
@@ -239,7 +246,7 @@ _KEYWORDS = frozenset({
     "function", "filter", "workflow", "configuration", "class", "enum"})
 
 # The logical operators spelled as words, as the rules read them: in lower case
-# wherever they stand, because an operator is never a command or an argument.
+# wherever they stand (KNOWN LIMITS names the one place they are no operator).
 _OPERATORS = frozenset({"-and", "-or", "-xor"})
 
 # What a statement can follow on the same line: `(` opens `$(...)` and
@@ -372,22 +379,38 @@ _BRACE_CHANGE = {"{": 1, "}": -1}
 _DEPTH_CHANGE = {"(": 1, "[": 1, "?[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
 
-class _ParamBlock:
-    """The parameters a function's param(...) block declares.
+# What a variable token holds besides its name's word characters: the `$`,
+# the braces and space of `${my var}`, the `?` of `$ok?`.
+_NOT_A_WORD = re.compile(r"\W")
 
-    One per comma-separated entry: the entry's first variable at the block's
+
+def _one_word(variable: str) -> str:
+    """A parameter's variable as the one word lizard's parameter count reads.
+
+    lizard counts an entry only when it ends in a word character, so
+    `${Pattern}` and `$ok?` counted nothing. They are recorded as `Pattern`
+    and `ok_`, one parameter each, as PowerShell's parser reads them.
+    """
+    return _NOT_A_WORD.sub("_", variable.strip("${}"))
+
+
+class _ParamBlock:
+    """The parameters a function's header list or param(...) block declares.
+
+    One per comma-separated entry: the entry's first variable at the list's
     own depth. An attribute, a type or a default sits inside brackets or after
     that variable, so `[Parameter(Mandatory = $true)][string]$Name =
-    $env:USERNAME` is the one parameter `$Name`.
+    $env:USERNAME` is the one parameter `$Name`, and the commas inside
+    `[Parameter(Mandatory, Position = 0)]` or `@(1, 2)` start no entry.
     """
 
     def __init__(self, function):
         self._function = function
-        self._depth = 1        # inside the block's own parentheses
+        self._depth = 1        # inside the list's own parentheses
         self._named = False    # the current entry has its variable
 
     def read(self, token: str) -> bool:
-        """Read one token; True once the block's closing parenthesis is read."""
+        """Read one token; True once the list's closing parenthesis is read."""
         self._depth += _DEPTH_CHANGE.get(token, 0)
         if self._depth == 1:
             self._entry(token)
@@ -397,8 +420,12 @@ class _ParamBlock:
         if token == ",":
             self._named = False
         elif token.startswith("$") and not self._named:
-            self._function.full_parameters.append(token)
+            self._function.full_parameters.append(_one_word(token))
             self._named = True
+
+
+# The parentheses around a header list, which its long name leaves out.
+_PARENS = frozenset({"(", ")"})
 
 
 class PowerShellStates(GoLikeStates):
@@ -414,7 +441,8 @@ class PowerShellStates(GoLikeStates):
     parts arrive as separate tokens and are joined back. Go writes
     `func name(args) {` and always has the parameter list, while PowerShell
     usually writes `function Name {` and declares its parameters in a
-    `param(...)` block that opens the body, which `_ParamBlock` reads. A class
+    `param(...)` block that opens the body. `_ParamBlock` counts the entries
+    of both lists; the header's tokens also join the long name. A class
     or an enum opens a function too, one that is never listed, so the
     decisions in its methods count toward no function. Everything else, the
     brace bookkeeping and nested declarations, is the inherited machine.
@@ -466,9 +494,19 @@ class PowerShellStates(GoLikeStates):
         elif token == "{":
             self.next(self._expect_function_impl, token)
         elif token == "(":
-            self.next(self._function_dec, token)
+            self._parameters = _ParamBlock(self.context.current_function)
+            self._state = self._header
         else:
             self._abandon(token)
+
+    def _header(self, token):
+        """The header list, `function Name ($a, $b)`. Its parameters count as a
+        param() block's do. Its tokens join the long name, the ratchet key, one
+        by one and without the parentheses, as lizard's own reading had them."""
+        if token not in _PARENS:
+            self.context.current_function.add_to_long_name(" " + token)
+        if self._parameters.read(token):
+            self._state = self._expect_function_impl
 
     def _function_impl(self, _):
         body = self.statemachine_clone()
