@@ -656,7 +656,10 @@ Arguments are checked against the served schema before the CLI spawns. `tools/li
 carries `required` from each tool's positionals, and a missing positional, an undeclared
 key or a wrong type answers a tool result with `isError` true, naming the MCP tool rather
 than the CLI command behind it (`get_function_brief needs name (see inputSchema.required)`),
-not a `-32602` protocol error; ADR 0001 under `docs/adr/` says why. `arguments` sent as a
+not a `-32602` protocol error; ADR 0001 under `docs/adr/` says why. A string argument, or
+an array item, that holds U+0000 gets the same kind of answer
+(`path must not hold a NUL character (U+0000)`), since no file name or process argument
+can carry one. `arguments` sent as a
 list, a string or a number get the same kind of answer, naming the JSON type they came as
 (`arguments must be an object (got a number)`), since MCP takes them by name; only null
 or absent `arguments` read as `{}`. `params` that
@@ -838,7 +841,6 @@ Shared rules belong to these modules:
 |---|---|
 | `universe.py` | which scope owns a path. `owning_scope` is the only predicate, and the deepest declared `paths` entry wins. `scan_files` judges an unreadable name: refused when a scope takes it, else listed in `Universe.unreadable` for the command to name once (`left_out_lines`) |
 | `languages.py` | which file types crapkit measures, as suffixes per language. It imports nothing, so `claude-hook` screens an edited file against it before reading any config |
-| `config.py` | what words a lane command holds. `shell_words` and `shell_segments` read it the way the shell that runs it reads it |
 | `config_contract.py` | which configuration shapes, keys and enum values are valid. Runtime admission, doctor and the generated editor schema share this vocabulary |
 | `procs.py` | how an owned command starts, is waited on and is bounded. `run_owned` and `run_bounded` stop descendants before returning or releasing leases |
 | `_process_owner.py` | who holds registered command trees. `own_processes` yields the in-process or guardian owner; `prepare` names a command's registration before spawn and `register_then` takes it back unread; the owner's stderr goes to the `owner.log` `_log_path` names; `helper_flags` starts crapkit's own helper interpreters (the owner, the POSIX start gate) in this process's UTF-8 mode, and a lane's command never gets it |
@@ -847,11 +849,11 @@ Shared rules belong to these modules:
 | `userhome.py` | where the user's home is. `user_home` reads the environment, then the profile folder Windows reports; every cache, lock or plugin path under the home starts from it |
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
-| `lane_command.py` | how a lane starts and how its command reads. `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike; `child_environment` builds every lane, flake-retest and mutation child's environment; `expand_launchers` reads the launcher token (`{python}`, `{python:DIR}`) for this OS, and config calls it once as it builds the Lane |
+| `lane_command.py` | how a lane's command reads and how its child starts. `shell_words` and `shell_segments` read the line the way the shell that runs it reads it; `command_steps` also reads the script of a `bash -c` or `sh -c` step with sh's rules and marks one sh cannot split; `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike; `child_environment` builds every lane, flake-retest and mutation child's environment; `expand_launchers` reads the launcher token (`{python}`, `{python:DIR}`) for this OS, and config calls it once as it builds the Lane |
 | `repopath.py` | which file git names by a path that did not come from git. One entry per source: `typed` and `typed_path` for a path a person or agent typed (arguments, `--repo`, writer flags, hook payloads), `declared` for one crapkit.toml holds, `Reported` for one a runner wrote, `fragment` for a piece to match; `inside` is the one placing rule for an absolute path |
 | `lane_results.py` | which run's record of a lane's test results a comparison reads. `read_results` parses a lane's record into `LaneResults`, where a lane with no junit this run has no count and no failure list (None), never 0 tests or no failures, and a list a verify older than 0.8.0 stored is not trusted; a comparison reads the run it compares against, else the newest run behind it that recorded one, else says it cannot compare. verify's baseline and coverage's `suite_drops` both walk it. No other module reads `failures`, `tests_total` or `tests_skipped` off a lane record, and `tests/unit/test_lane_results.py` fails on one that does |
 | `marks_history.py` | what the marks file held in the past: the history `ratchet report` and `brief` read mark ages off, followed back through every `git mv` of the marks file, and the newest committed marks verify judges a missing or emptied marks file against. A git read under it that fails raises `GitError`; none answers an empty history |
-| `agent_fields.py` | which fields a release adds to the agent JSON payloads: each one's payload, key, JSON types (null among them only where it may be null) and meaning. The MCP output schemas take those entries from it, and `tests/unit/test_agent_fields.py` checks the printed payloads, the MCP schemas and docs/agent-json.md against it. Add a field there first; JSON schema 1 never changes an existing field's meaning |
+| `agent_fields.py` | every field of every agent JSON payload (each `--json` command's, `next-item`'s, `brief --batch`'s, `--version --json` and the error object), declared once: its payload, key, JSON types (null among them only where it may be null) and meaning. `ADDED` names the fields a release adds. The MCP tools serve these declarations as their outputSchema, and `tests/unit/test_agent_fields.py` prints every payload and checks it, the MCP schemas and docs/agent-json.md against them. Add a field there first; JSON schema 1 never changes an existing field's meaning |
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators. A name that is not UTF-8 comes back in its surrogateescape spelling and `readable` tells it apart; each reader decides what it means, and nothing here prints |
 | `repotext.py` | how bytes crapkit did not write become text. One named kind per source: a file the repository owns (`repo_text`, refused by the byte), JSON (`repo_json`, and `JsonStream` for a coverage artifact read a chunk at a time), the marks file, git's free text and a runner's output (`lenient`), bytes handed back to git (`escaped`), a plugin's JSON as Claude Code reads it, source files and OS text. `tests/unit/test_decode_guard.py` fails on a decode policy spelled anywhere else |
@@ -929,12 +931,16 @@ else, usually later, usually as a plausible wrong number.
   ratchet stamps every marks file with the version that produced it, and `verify` refuses
   to weigh fresh scores against marks another version signed. 0.4.5 bumped it to 8,
   because shell blocks now nest. Without the bump nothing refuses, and 40k marks are
-  quietly compared against numbers they never described.
-- **Read a lane command with `config.shell_words` or `config.shell_segments`, never
-  `str.split()`.** A whitespace split breaks a quoted interpreter path at its space and
-  reads `-k "not slow"` as three positionals. The full-suite guard, `doctor` and the
-  pytest-cov probe all go through those two, and they read the command the way the shell
-  that will run it reads it: sh on POSIX, cmd.exe on Windows.
+  quietly compared against numbers they never described. Then re-measure `GOLDEN_RECORDS`
+  in `tests/unit/test_analysis_cache_identity.py` on every Python the CI runs and set
+  `GOLDEN_ANALYSIS_VERSION` to the new version; a test fails until you do.
+- **Read a lane command with `lane_command.command_steps`, `shell_words` or
+  `shell_segments`, never `str.split()`.** A whitespace split breaks a quoted interpreter
+  path at its space and reads `-k "not slow"` as three positionals. They read the command
+  the way the shell that will run it reads it, sh on POSIX and cmd.exe on Windows
+  (`config.SHELL_IS_CMD` says which), and `command_steps` then reads a `bash -c` or
+  `sh -c` payload with sh's rules. The full-suite guard, doctor's pytest-cov probe and
+  data-file check, and the lanes hint all read `command_steps`.
 - **Own commands that can time out or be cancelled through `procs.run_owned`.**
   `run_bounded` is the shell-command adapter. Windows Jobs and POSIX process groups
   cover descendants; guardians retain protected leases until cleanup finishes.
