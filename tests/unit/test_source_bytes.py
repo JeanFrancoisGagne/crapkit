@@ -72,6 +72,78 @@ def test_the_precommit_gate_refuses_a_ccn8_function_staged_as_utf16(tmp_path, ca
     assert "tangled( a )" in capsys.readouterr().out
 
 
+# --- UTF-16 with no byte-order mark -------------------------------------------------
+#
+# Read through UTF-8 or cp1252, such a file is text with a NUL at every other
+# character. It scored no function and said nothing, so the commit gate passed a
+# ccn-8 function it refuses behind a mark. It is an unread file now, which every
+# gate fails on, naming it.
+
+UNMARKED = [
+    # id, the encoder, the byte order the refusal names
+    ("utf16-le-no-bom", lambda text: text.encode("utf-16-le"), "UTF-16 LE"),
+    ("utf16-be-no-bom", lambda text: text.encode("utf-16-be"), "UTF-16 BE"),
+]
+
+
+@pytest.mark.parametrize("encode, order", [row[1:] for row in UNMARKED], ids=[row[0] for row in UNMARKED])
+@pytest.mark.parametrize("name, text", [("a.ps1", PS1), ("a.py", PY), ("a.m", "int f(int x) { if (x) return 1; return 2; }\n")],
+                         ids=["powershell", "python", "objectivec"])
+def test_utf16_with_no_byte_order_mark_is_an_unread_file(tmp_path, encode, order, name, text):
+    (tmp_path / name).write_bytes(encode(text))
+
+    on_disk = analyze_one((str(tmp_path / name), name))[1]
+    staged = staged_records({name: encode(text)})[name]
+
+    for records in (on_disk, staged):
+        assert records == []
+        assert f"{name}: " in records.reason
+        assert f"{order} with no byte-order mark" in records.reason
+
+
+@pytest.mark.parametrize("encode", [row[1] for row in UNMARKED], ids=[row[0] for row in UNMARKED])
+def test_the_precommit_gate_refuses_a_file_staged_as_utf16_with_no_mark(tmp_path, capsys, encode):
+    root = repository(tmp_path)
+    commit(root, files={b"crapkit.toml": CONFIG, b"src/app.py": b"x = 1\n"})
+    checkout(root)
+    stage(root, b"src/big.py", encode(TANGLED))
+
+    assert main(["hook-precommit", "--repo", str(root)]) == 6
+    assert "src/big.py" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("raw", [
+    b"def f(x):\n    return x  # \x00\n",
+    "def f(x):\n    return x  # 渡辺\n".encode(),
+    b"def f(x):\n    return x\n# " + b"\x00a" * 3 + b"\n" + b"# padding\n" * 20,
+], ids=["one-nul", "utf8-cjk", "nul-pairs-past-a-long-head"])
+def test_a_file_that_is_not_mostly_nul_pairs_keeps_its_functions(raw):
+    """The test reads the share of NULs at one parity, so a stray NUL or a few
+    of them never turn a scored file into an unread one."""
+    records = staged_records({"a.py": raw})["a.py"]
+
+    assert [r.long_name for r in records] == ["f( x )"]
+    assert getattr(records, "reason", None) is None
+
+
+def test_a_cached_record_from_before_the_refusal_is_read_again(tmp_path):
+    """A cache=8 entry holds such a file as no function; served warm, the file
+    would stay silent."""
+    import hashlib
+
+    from crapkit.analyze import _analysis_key, analyze_files, fingerprint
+
+    raw = PY.encode("utf-16-le")
+    (tmp_path / "a.py").write_bytes(raw)
+    key = _analysis_key("a.py", hashlib.sha256(raw).hexdigest())
+    old = {"fp": fingerprint().rsplit(";cache=", 1)[0] + ";cache=8", "entries": {key: []}}
+
+    records, hits, _ = analyze_files(tmp_path, ["a.py"], cache=old)
+
+    assert hits == 0
+    assert "UTF-16 LE with no byte-order mark" in records["a.py"].reason
+
+
 UNDEFINED = [
     # id, a declaration whose name holds the byte, the name each byte scores as
     ("powershell", "a.ps1", b"function Write-Caf%s {\n  param($x)\n  if ($x) { return 1 }\n  return 2\n}\n",

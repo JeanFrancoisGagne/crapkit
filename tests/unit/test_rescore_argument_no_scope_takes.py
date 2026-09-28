@@ -1,4 +1,4 @@
-"""Q17 for a file argument whose name is not UTF-8.
+"""A file argument whose name is not UTF-8, judged by the scope that takes it.
 
 `rescore --gate` refused any such name on disk at exit 3 without asking which
 scope takes it, where hook-precommit leaves the same staged file out with one

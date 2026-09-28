@@ -11,7 +11,8 @@ it. Inside a commit, nothing staged still passes in silence.
 from pathlib import Path
 
 import pytest
-from cli_inproc_repo import add_knotty, commit_all, git, repo, template_repo  # noqa: F401
+from cli_inproc_repo import (add_knotty, commit_all, git, istanbul, repo,  # noqa: F401
+                             seed_artifacts, template_repo)
 
 from crapkit.cli import main
 from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
@@ -47,6 +48,30 @@ def test_outside_a_commit_a_committed_breach_fails(committed_breach, capsys):
     assert "tracked function(s) exceed the complexity ceiling of 6:" in out, out
     assert "ccn   8  src/app.ts:20  knotty ( n )" in out, out
     assert "decompose them and commit the split" in out, out
+
+
+def test_the_whole_tree_refusal_names_the_adoption_route(committed_breach, capsys):
+    """Existing debt is what a first hand run meets, and `ratchet seed` is how
+    a repo adopts it; the refusal named only decomposition."""
+    _, out, _ = run(committed_breach, capsys)
+
+    advice = out.splitlines()[-1]
+    assert advice.startswith("decompose them and commit the split"), out
+    assert "or record existing debt with `" in advice, out
+    assert advice.endswith(" ratchet seed`."), out
+
+
+def test_following_the_seed_route_passes_the_tracked_file_check(committed_breach, capsys):
+    seed_artifacts(committed_breach)
+    istanbul(committed_breach, "coverage/unit.json", "src/app.ts",
+             {"dispatch": (1, 13, 2), "plain": (13, 20, 1), "knotty": (20, 30, 1)})
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(committed_breach)]) == 0
+    assert main(["ratchet", "seed", "--repo", str(committed_breach)]) == 0
+    capsys.readouterr()
+
+    code, out, err = run(committed_breach, capsys)
+
+    assert (code, out) == (0, ""), out + err
 
 
 def test_marked_functions_pass_the_tracked_file_check(committed_breach, capsys):

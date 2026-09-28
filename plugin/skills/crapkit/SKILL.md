@@ -76,7 +76,7 @@ The loop is done when `crapkit next-item` says `empty: true` with `scored_change
 means no artifact named lines for this file, and `flag` says which case you are in:
 
 - `untested`: write the first test at the public seam, then `crapkit coverage`. The lines appear. The exception is `remedy: split-lines`: another function shares the source lines, or a Python def's body starts on the line its signature ends, so no test moves the score. Put each definition on its own lines, and such a def's body on its own line after the signature, first.
-- `measured`: the artifact no longer matches the tree. Commit or revert the edits, then `crapkit coverage`.
+- `measured`: the file's bytes changed since a lane measured it. Rerun `crapkit coverage`; committing changes nothing.
 - `cc-only`: the scope sets `coverage_optional`, so only decompose clears it. Most languages land here, because only Python and JS/TS have coverage parsers.
 - `[]`: the artifact answered and nothing is dark.
 

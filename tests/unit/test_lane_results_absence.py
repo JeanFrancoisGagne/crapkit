@@ -583,7 +583,7 @@ def test_the_lanes_page_quotes_both_lines_the_refusal_prints(tmp_path, capsys):
 
 
 def test_a_lane_that_declares_no_junit_is_not_refused(counted, capsys):
-    """Q27's other half: a lane that never declared a junit passes, named under
+    """A lane that never declared a junit passes, named under
     lanes_without_results, since there was no report to read."""
     code, out, err = run(["verify", "--reuse-artifacts", "--json"], counted, capsys)
 

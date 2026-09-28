@@ -197,7 +197,7 @@ REACHED_BY_GLUE = {
 @pytest.mark.parametrize("spelling", ANOTHER_TREE)
 def test_a_key_from_another_tree_reaches_no_scope_whatever_the_prefix(tmp_path, which,
                                                                         spelling):
-    """PC8. The reader glues path_prefix onto an absolute key too, and
+    """The reader glues path_prefix onto an absolute key too, and
     `backend/` + `/other/checkout/a.py` is a path under the `backend` scope, so
     the reach check said the artifact reached its scope. Every function in it
     scored untested with exit 0, and the same report without path_prefix was

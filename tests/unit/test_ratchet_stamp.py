@@ -75,7 +75,7 @@ def test_a_lizard_bump_alone_conflicts():
 
 
 def test_marks_stamped_by_0_8_0_are_refused_until_one_reseed():
-    """Q9: a change that can move an existing function's ccn, name or coverage
+    """A change that can move an existing function's ccn, name or coverage
     on the same tree bumps the analysis version. 0.8.1's coverage.py reader
     refuses a report without start_line and scores a nested function on its
     own region; it reads a UTF-16 source that 0.8.0 scored as empty, and keys

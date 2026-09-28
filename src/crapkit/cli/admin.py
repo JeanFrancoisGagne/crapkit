@@ -22,7 +22,7 @@ from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
 from ..invocation import _self, quoted_path
 from ..lane_command import (LaunchSpec, expand_launchers, first_word, launch_spec,
-                            pytest_head, pytest_python, python_token)
+                            pytest_head, pytest_python, python_token, shell_segments)
 from ..named import first_few
 from ..repopath import typed_path
 from ..rootfind import MAX_LEVELS, find_root
@@ -859,7 +859,7 @@ def _lane_command_problems(root: Path, lane) -> list[str]:
     looked past the first word, so a dead runner after `&&` passed doctor, and
     it read a quoted `-k "tests/gone.py or x"` as a test file the repo owes."""
     spec = launch_spec(root, lane)
-    return [problem for segment in config.shell_segments(lane.command)
+    return [problem for segment in shell_segments(lane.command)
             for problem in _segment_problems(lane.name, spec, segment)]
 
 
@@ -889,8 +889,19 @@ def _doctor_lane_summary(cfg) -> Finding:
 
 
 def _lane_problems_of(root: Path, lane) -> list[str]:
-    return [p for p in (_lane_problem(root, lane), *_lane_command_problems(root, lane),
+    return [p for p in (_lane_problem(root, lane), *_output_directories(root, lane),
+                        *_lane_command_problems(root, lane),
                         _lane_start_problem(root, lane)) if p]
+
+
+def _output_directories(root: Path, lane) -> list[str]:
+    """A declared output that names a directory. The runner clears each declared
+    path before an attempt and reads the one file there, so the lane fails every
+    run, and doctor passed it."""
+    outputs = (("artifact", lane.artifact), ("results_artifact", lane.results_artifact))
+    return [f"lane {lane.name!r}: {key} {quoted_path(path)} names a directory, and a lane "
+            "output is one file; point it at the report file the command writes inside it"
+            for key, path in outputs if path and (root / path).is_dir()]
 
 
 def _lane_findings(cfg, by_lane: list[tuple]) -> list[Finding]:
@@ -902,10 +913,12 @@ def _doctor_lanes(root: Path, cfg) -> list[Finding]:
     """The lane checks, then the probe of every lane that passed them. A lane
     with a problem of its own is not probed: the dead-interpreter FAIL already
     names the word, and init's note would say it again one line down."""
+    from ..doctor import unreadable_payloads
+
     by_lane = [(lane, _lane_problems_of(root, lane)) for lane in cfg.lanes]
     healthy = [lane for lane, problems in by_lane if not problems]
-    return (_lane_findings(cfg, by_lane)
-            + _doctor_results_artifacts(cfg) + _doctor_lane_probes(root, healthy))
+    return (_lane_findings(cfg, by_lane) + _doctor_results_artifacts(cfg)
+            + list(unreadable_payloads(cfg.lanes)) + _doctor_lane_probes(root, healthy))
 
 
 # One probe answers three questions about the python a lane names: where the
@@ -1469,6 +1482,31 @@ def _doctor_merge_driver(root: Path, cfg) -> list[Finding]:
                                        config_value(root, f"merge.{driver}.driver")))
 
 
+def _doctor_marks_stamp(root: Path, cfg) -> list[Finding]:
+    """The marks file verify refuses for its metric stamp. Right after an
+    upgrade that moves the analysis version, verify exits 3 before any lane
+    runs, and doctor said `no problems found`.
+
+    Marks an older metric stamped WARN: the upgrade guide runs doctor first
+    and resolves its failures before it measures, reviews and re-seeds, so a
+    FAIL stopped the guide at its first step and sent the user to re-seed
+    before the review. Marks a newer crapkit or lizard stamped FAIL, since
+    only an upgrade of this install clears them, and so does a marks file
+    crapkit cannot read, which stops verify too."""
+    from ..ratchet import metric_version, newer_tools
+    from ..ratchetfile import RatchetFile
+
+    try:
+        marks = RatchetFile.read(root / cfg.ratchet_file)
+    except ToolError as exc:
+        return [Finding("FAIL", str(exc))]
+    conflict = marks.stamp_conflict(metric_version())
+    if not conflict:
+        return []
+    level = "FAIL" if newer_tools(marks.metric_stamp, metric_version()) else "WARN"
+    return [Finding(level, f"`{_self()} verify` refuses {cfg.ratchet_file} at exit 3: {conflict}")]
+
+
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
                      show_files: bool) -> list[Finding]:
     named = [f for f in files if readable(f)]
@@ -1487,6 +1525,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_container(cfg)
             + _doctor_silent_gates(root)
             + _doctor_merge_driver(root, cfg)
+            + _doctor_marks_stamp(root, cfg)
             + _doctor_launchers()
             + _doctor_tools()
             + _doctor_scoped_tests(cfg, named)

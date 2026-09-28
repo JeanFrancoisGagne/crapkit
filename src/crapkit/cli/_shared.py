@@ -177,13 +177,25 @@ def _scored_arguments(files, root: Path, cfg, cwd: Path | None = None) -> list[s
     """The root-relative names a scoring command reads from its file arguments.
 
     A name that is not UTF-8 and that no scope takes is left out with one
-    stderr line (Q17), as a scan leaves such a name out: `rescore --gate`
+    stderr line, as a scan leaves such a name out: `rescore --gate`
     refused it at exit 3, where hook-precommit passes the same staged file.
     A name a scope takes still gets the rename refusal."""
     placed = sorted({_placed(raw, root, cwd) for raw in files})
     left_out = _left_out_arguments(placed, root, cfg)
     _say_left_out_arguments(left_out)
-    return sorted({_readable_argument(rel, root) for rel in placed if rel not in left_out})
+    return sorted({_not_a_directory(_readable_argument(rel, root), root)
+                   for rel in placed if rel not in left_out})
+
+
+def _not_a_directory(rel: str, root: Path) -> str:
+    """A file argument, refused when it names a directory. A directory has no
+    functions of its own and no scope takes it, so `rescore --gate src`, `.`
+    and `""` judged 0 functions and passed while a file inside failed the gate
+    when named, and `check_gate` answered `ok: true`. One named like a source
+    file reached the analyzer and ended in a PermissionError traceback."""
+    if (root / rel).is_dir():
+        raise ConfigError(f"{shown(rel)} is a directory; name the source files in it")
+    return rel
 
 
 def _left_out_arguments(names: list[str], root: Path, cfg) -> list[str]:
@@ -259,7 +271,7 @@ def _unreadable_json(names: tuple[str, ...]) -> list[str]:
     return [shown(name) for name in names]
 
 
-def _repo_out_path(root: Path, out: str) -> Path:
+def _repo_out_path(root: Path, out: str, flag: str = "--out") -> Path:
     r"""Where a writer flag puts its file, with the directory to hold it.
 
     `report --out` created a missing parent; `--export`, `--sarif` and
@@ -275,16 +287,37 @@ def _repo_out_path(root: Path, out: str) -> Path:
     Bash's `/c/...` and WSL's `/mnt/c/...` name their drive. `Path(out)` read
     `/c/Users/...` as `C:\c\Users\...` and wrote the file into a new tree there.
     """
-    named = typed_path(out)
-    if rooted(named):
-        path = named
-    else:
-        path = (root / named).resolve()
-        if root.resolve() not in path.parents:
-            raise ConfigError(f"{quoted_path(out)} is repo-relative and climbs out of {root}; "
-                              "pass an absolute path to write outside it")
+    path = _out_target(root, out, flag)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _out_target(root: Path, out: str, flag: str) -> Path:
+    """The file `flag` names, or the refusal of one crapkit cannot write: a
+    relative path that climbs out of the tree, or a directory, which ended in
+    a PermissionError traceback at exit 1 after the run was stored."""
+    named = typed_path(out)
+    path = named if rooted(named) else _inside_the_tree(root, named, out)
+    if path.is_dir():
+        raise ConfigError(f"{flag} {quoted_path(out)} is a directory; name a file to write")
+    return path
+
+
+def _inside_the_tree(root: Path, named: Path, out: str) -> Path:
+    path = (root / named).resolve()
+    if root.resolve() not in path.parents:
+        raise ConfigError(f"{quoted_path(out)} is repo-relative and climbs out of {root}; "
+                          "pass an absolute path to write outside it")
+    return path
+
+
+def _refuse_unwritable_outputs(root: Path, outputs: dict[str, str | None]) -> None:
+    """Each writer flag's path checked before the command does any work, so a
+    refusal lands before a run is stored: `verify --sarif DIR` recorded its
+    run as verdict=ok and then crashed. `outputs` maps a flag to its value."""
+    for flag, out in outputs.items():
+        if out:
+            _out_target(root, out, flag)
 
 
 def _print_json(payload: dict) -> None:
@@ -411,7 +444,7 @@ def _emit_findings(root: Path, sarif_path: str | None, github: bool, results: li
     from ..sarifio import write_sarif
 
     if sarif_path:
-        write_sarif(_repo_out_path(root, sarif_path), results)
+        write_sarif(_repo_out_path(root, sarif_path, "--sarif"), results)
     if github:
         for r in results:
             print(github_annotation(r))
@@ -449,10 +482,13 @@ def _dirty_tag(dirty: bool) -> str:
     return "  [dirty]" if dirty else ""
 
 
-def _gate_line(v) -> str:
+def _gate_line(v, unmeasured: bool = False) -> str:
     """One gate violation, however it was decided; verify and `rescore --gate`
-    report the same finding, so they must read the same."""
-    return (f"  GATE  crap {v.crap:8.1f}  ccn {v.ccn:>3} cov {v.cov:.0%}  "
+    report the same finding, so they must read the same. `unmeasured` prints
+    `cov -` for a cov no measurement stands behind: the GATE line said 0% where
+    the rescore table under it said `-` and `coverage not measured`."""
+    cov = "-" if unmeasured else f"{v.cov:.0%}"
+    return (f"  GATE  crap {v.crap:8.1f}  ccn {v.ccn:>3} cov {cov}  "
             f"{v.path}:{v.start}  {v.long_name}  -> {v.remedy}{_dirty_tag(v.dirty)}")
 
 

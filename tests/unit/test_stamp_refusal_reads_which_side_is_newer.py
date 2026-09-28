@@ -57,7 +57,8 @@ def test_version_parts_compare_as_numbers_not_as_text():
 
 def test_marks_an_older_crapkit_wrote_keep_coverage_then_seed():
     assert stamp_conflict(OLD, NEW).endswith(
-        "run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`")
+        "run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with "
+        "`crapkit ratchet seed`")
 
 
 def test_a_stamp_it_cannot_read_keeps_coverage_then_seed():

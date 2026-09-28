@@ -45,7 +45,9 @@ where a UTF-16 file was a traceback instead of a sentence.
 - A source file the scorer reads goes through `source_chars`, and one crapkit
   rewrites (a mutant) through `source_text` and back through `source_bytes`,
   which return every byte it held. Both take the same order of encodings;
-  `analyze.decode_source` says why the order is fixed.
+  `analyze.decode_source` says why the order is fixed. `unmarked_utf16` names
+  the UTF-16 that order cannot read, a file with no byte-order mark, which the
+  scorer refuses as an unread file.
 - Text the OS hands over (argv, the environment, a host name, a directory name)
   arrives as Python decodes it: a byte that is not UTF-8 is a lone surrogate on
   POSIX. `os_bytes` turns it back into the bytes the OS meant, for a hash or a
@@ -357,6 +359,29 @@ def source_chars(raw: bytes) -> str:
         return raw.decode("utf-8")
     except UnicodeDecodeError:
         return source_text(raw).translate(_UNDEFINED_AS_LETTERS)
+
+
+# How far into a source file the unmarked UTF-16 test reads, in characters: the
+# 8,000 git reads before it calls a file binary.
+_UNMARKED_HEAD = 8000
+
+
+def unmarked_utf16(chars: str) -> str | None:
+    """`UTF-16 LE` or `UTF-16 BE` when `source_chars` read UTF-16 that carries
+    no byte-order mark, else None.
+
+    UTF-8 and cp1252 each read the byte 00 as one NUL character, so such a file
+    reads as text with a NUL for the high byte of every ASCII character: at each
+    odd position for little-endian, each even one for big-endian. The test is a
+    NUL in at least half the positions of one parity in the file's head. A
+    stray NUL in a UTF-8 file never reaches that share.
+    """
+    head = chars[:_UNMARKED_HEAD]
+    pairs = len(head) // 2
+    for order, start in (("UTF-16 LE", 1), ("UTF-16 BE", 0)):
+        if pairs and 2 * head[start::2].count("\0") >= pairs:
+            return order
+    return None
 
 
 def _c1(error: UnicodeError) -> tuple[str | bytes, int]:

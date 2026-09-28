@@ -1,4 +1,4 @@
-"""coverage.py's shards under a name that is not UTF-8 (utf8-author shape-31).
+"""coverage.py's shards under a name that is not UTF-8.
 
 A pytest-cov lane in a checkout under a Latin-1 directory, or on a host whose
 name is Latin-1, leaves its `.coverage.<host>.<pid>.<random>` shards and no

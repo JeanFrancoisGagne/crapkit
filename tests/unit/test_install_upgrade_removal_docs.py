@@ -177,6 +177,18 @@ def test_the_readme_no_longer_says_every_locked_upgrade_fails_with_error_32():
     assert "make an upgrade fail with Windows error 32" not in lock
 
 
+@pytest.mark.parametrize("page, heading", [("README.md", "### The exe lock on Windows"), LOCKS])
+def test_the_lock_text_says_which_pip_moves_the_exe_aside_and_what_an_older_one_does(page, heading):
+    """pip 22.3.1, which a Python 3.11.2 venv ships, exits 1 with WinError 5 under
+    a running `crapkit.exe mcp` and rolls back; pip 23.3 and newer move the exe
+    aside. The page said pip succeeds, with no version."""
+    lock = _prose(_section(page, heading))
+
+    assert "23.3" in lock and "22.3.1" in lock, page
+    assert "[WinError 5] Access is denied" in lock, page
+    assert "`python -m pip install --upgrade pip`" in lock, page
+
+
 # --- removal ----------------------------------------------------------------------------
 
 # Each installer the docs name, and its own removal line.
@@ -189,7 +201,63 @@ UNINSTALL = {
     "the Claude Code marketplace": "claude plugin marketplace remove crapkit",
     "the Codex plugin": "codex plugin remove crapkit@crapkit",
     "the Codex marketplace": "codex plugin marketplace remove crapkit",
+    "the Copilot CLI plugin": "copilot plugin uninstall crapkit@crapkit",
+    "the Copilot CLI marketplace": "copilot plugin marketplace remove crapkit",
+    "the Docker image": "docker rmi crapkit",
 }
+
+
+# --- the channels past the Python installers ---------------------------------------------
+
+# The deploy suite's channels that run crapkit without a pip-style installer, and
+# the line that moves each one to a new release. Measured: Copilot CLI 1.0.88's
+# `plugin marketplace update` and `plugin update`; the Dockerfile installs the
+# clone's own source at build time; pre-commit 4.6.2's `autoupdate` in the
+# lin-up-precommit-0.7.6 cell.
+CHANNEL_UPGRADES = {
+    "the Copilot CLI plugin": ("`copilot plugin marketplace update crapkit`", "`copilot plugin update crapkit@crapkit`"),
+    "the Docker image": ("`git pull`", "`docker build -t crapkit .`"),
+    "the pre-commit framework (Route 3)": ("`pre-commit autoupdate`", "`rev`"),
+    "the GitHub Action": ("`uses: JeanFrancoisGagne/crapkit@...`", "new tag"),
+}
+
+
+def _upgrade_table_row(label: str) -> str:
+    table = _doc("docs/upgrading.md").split("\n## ", 1)[0]
+    rows = [line for line in table.splitlines() if line.startswith(f"| {label} |")]
+    assert rows, f"the upgrade table has no row for {label}"
+    return rows[0]
+
+
+@pytest.mark.parametrize("channel", sorted(CHANNEL_UPGRADES))
+def test_every_channel_past_pip_has_its_upgrade_row(channel):
+    row = _upgrade_table_row(channel)
+
+    assert all(part in row for part in CHANNEL_UPGRADES[channel]), row
+
+
+def test_the_plugin_section_gives_the_copilot_update_and_the_path_doctor_needs():
+    """doctor --plugin-root with no PATH looks in Claude Code's and Codex's
+    caches only, so a Copilot install is checked by its directory."""
+    lines = _fenced_lines(_section("docs/upgrading.md", "## Plugin and MCP clients"))
+    copilot = "crapkit doctor --plugin-root ~/.copilot/installed-plugins/crapkit/crapkit"
+
+    assert ["copilot plugin marketplace update crapkit", "copilot plugin update crapkit@crapkit", copilot] == \
+        lines[lines.index("copilot plugin marketplace update crapkit"):][:3]
+    assert "copilot plugin update crapkit@crapkit" in _doc("docs/harnesses.md")
+
+
+def test_the_removal_counts_the_three_plugins_that_start_bare_crapkit():
+    body = _prose(_section(*REMOVAL))
+
+    assert "Both plugins" not in body
+    assert "The Claude Code, Codex and Copilot CLI plugins" in body
+
+
+def test_route_3_names_prek_beside_pre_commit():
+    route = _prose(_section("README.md", "### Route 3: the pre-commit framework"))
+
+    assert "`prek install`" in route
 
 
 @pytest.mark.parametrize("installer", sorted(UNINSTALL))

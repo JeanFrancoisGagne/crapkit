@@ -46,7 +46,7 @@ def test_parallel_lanes_intersect_inside_their_run(tmp_path):
     assert uncovered.missing_by_path(tmp_path, cfg, folded=folded) == {'src/f.py': {5}}
 
 
-# --- boundary-25: the fold serves the walked lines only while the bytes are the walked ones
+# --- the fold serves the walked lines only while the bytes are the walked ones
 
 def _same_size_same_time(path) -> None:
     """[7] becomes [9]: same length, and the old modification time put back."""

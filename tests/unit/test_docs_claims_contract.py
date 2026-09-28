@@ -104,7 +104,9 @@ def test_every_lane_example_in_the_docs_comes_back_from_doctor_clean():
 
 
 def _py_lanes():
-    return detect_lanes(frozenset({"pyproject.toml"}), None)
+    """The lane init writes where no venv in the tree carries pytest: the
+    `{python}` launcher token, which reads as this OS's python at load."""
+    return detect_lanes(frozenset({"pyproject.toml"}), None, interpreter=python_token())
 
 
 def _js_lanes():
@@ -172,10 +174,8 @@ def test_the_python_quickstart_prints_the_config_init_writes():
     """Including the commented lane template, which is what the prose above the
     block promises init leaves behind. The demo repo carries no venv, so init
     names the interpreter with the launcher token wherever `{python}` resolves."""
-    token = python_token()
-    lanes = detect_lanes(frozenset({"pyproject.toml"}), None, interpreter=token)
-
-    assert starter_toml(PY_SCOPES, lanes, interpreter=token, tracked=DEMO_FILES) in _doc("README.md")
+    assert starter_toml(PY_SCOPES, _py_lanes(), interpreter=python_token(),
+                        tracked=DEMO_FILES) in _doc("README.md")
 
 
 def test_the_typescript_quickstart_prints_the_gitignore_line_init_writes():

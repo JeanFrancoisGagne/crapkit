@@ -275,15 +275,18 @@ TS_LANE_SPAN = "npm run test -- --coverage"
 MISSING = "MISSING DEPENDENCY"
 
 
-def _ts_scaffold(box, repo) -> None:
+def _ts_scaffold(box, repo) -> str:
     """Step 1: init's three lines as printed, the lane the prose names, and the
-    WARN doctor gives a scope with no scoped_tests template."""
+    WARN doctor gives a scope with no scoped_tests template. Returns what init
+    printed."""
     command, printed = docsnip.outputs(installers.section_fences(README, "1. Scaffold the config", 1)[0])[0]
-    assert said(box.script(command, cwd=repo, expect=0)).splitlines() == printed.splitlines()
+    init = said(box.script(command, cwd=repo, expect=0))
+    assert init.splitlines() == printed.splitlines()
     lane = installers.inline(README, "Quickstart: TypeScript", TS_LANE_SPAN)
     assert f'command = "{lane}"' in (repo / "crapkit.toml").read_text(encoding="utf-8")
     warn = installers.inline(README, "Quickstart: TypeScript", "scope 'src' has a lane but no")
     assert warn in said(box.run(["crapkit", "doctor"], cwd=repo, expect=0))
+    return init
 
 
 def _ts_provider(box, repo) -> None:
@@ -307,18 +310,19 @@ def _ts_fix(box, repo) -> None:
     _run_step(box, repo, "6. Cover the new pieces")
 
 
-def ts_quickstart(box, templates) -> Path:
+def ts_quickstart(box, templates) -> tuple[Path, list[str]]:
     """The TypeScript quickstart from step 1 to step 7 on a vitest-only repo
-    whose node_modules the user already installed."""
+    whose node_modules the user already installed. Returns the repo, and what
+    init and step 3's commands printed, in order."""
     repo = repos.checkout(box, "ts-vitest-only", cache=templates)
     box.run(["npm", "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=repo, expect=0)
-    _ts_scaffold(box, repo)
+    printed = [_ts_scaffold(box, repo)]
     _ts_provider(box, repo)
-    _run_step(box, repo, "3. Score the repo")
+    printed += [said(step) for step in _run_step(box, repo, "3. Score the repo")]
     _run_step(box, repo, "4. Seed the ratchet and commit")
     _ts_fix(box, repo)
     _run_step(box, repo, "7. Verify")
-    return repo
+    return repo, printed
 
 
 @cell("lin-uvtool-ts-quickstart", channel="uv tool", harness="none (sh + node)",
@@ -327,7 +331,7 @@ def ts_quickstart(box, templates) -> Path:
       os="linux", image="core", cadence="push")
 def test_the_typescript_quickstart_from_a_uv_tool_install(box, templates, candidate):
     install = installers.uv_tool(box)
-    repo = ts_quickstart(box, templates)
+    repo, _ = ts_quickstart(box, templates)
 
     assert candidate.version in install.run(box, repo, "--version").stdout
     assert "src/grade.ts" not in (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8")
@@ -336,10 +340,17 @@ def test_the_typescript_quickstart_from_a_uv_tool_install(box, templates, candid
 @cell("win-ts-quickstart", channel="uv tool", harness="node via cmd.exe", scenario="fresh: TS quickstart on Windows",
       use_cases="TypeScript quickstart", os="windows", image=None, cadence="nightly")
 def test_the_typescript_quickstart_on_windows(box, templates, candidate):
+    """uv copies crapkit.exe into its bin dir on Windows instead of linking it,
+    and 0.8.1 took the copy for another install's: init told the reader to run
+    `.../Scripts/python.exe -m crapkit coverage`, and coverage printed the same
+    form for worklist. The copy starts this install's interpreter, so the next
+    steps name the console script."""
     install = installers.uv_tool(box)
-    repo = ts_quickstart(box, templates)
+    repo, printed = ts_quickstart(box, templates)
 
     assert install.launcher.suffix == ".exe"
+    assert "next: run `crapkit coverage`" in printed[0], printed[0]
+    assert "-> next: crapkit worklist" in printed[1].splitlines(), printed[1]
     assert "src/grade.ts" not in (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8")
 
 

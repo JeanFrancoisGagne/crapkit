@@ -46,11 +46,11 @@ def _json(res) -> dict:
 
 # --- the churn window: gitio._git_lines under churn_log's walk ---------------
 #
-# utf8-author-shape-1, -boundary-1 and -history-1. worklist, next-item, brief,
-# coupling and the MCP list_worklist tool all walk the 12-month window, and the
-# window's `git log --format=%x01%an... --name-only` prints each author name and
-# each path as stored. Every row commits src/app.py twice, once as `base` and
-# once with the row's bytes, then reads the window through each command.
+# worklist, next-item, brief, coupling and the MCP list_worklist tool all walk
+# the 12-month window, and the window's
+# `git log --format=%x01%an... --name-only` prints each author name and each
+# path as stored. Every row commits src/app.py twice, once as `base` and once
+# with the row's bytes, then reads the window through each command.
 
 def _churn_row(row_id, *, config=None, commits=(), base_files=None, base_age=0, churn=(2, 2), mcp=False):
     return pytest.param(config or {}, list(commits), base_files or {}, base_age, churn, mcp, id=row_id)
@@ -136,7 +136,7 @@ def test_a_tracked_name_that_is_not_utf8_is_left_out_of_the_window_and_named(tmp
                          ids=["invalid-utf8", "cp1252-smart-quote", "valid-accent-control"])
 def test_the_range_walk_after_head_moves_reads_a_new_author(tmp_path, author):
     """The window laid down clean, then a commit whose author is the row's
-    bytes: the warm read walks only the new range (utf8-author-boundary-1)."""
+    bytes: the warm read walks only the new range."""
     repo = scored_repo(tmp_path / "repo", author=b"base")
     answered(run_cli(repo, "coverage"))
     assert _json(run_cli(repo, "brief", "src/app.py", "pick", "--json"))["churn"]["commits"] == 1
@@ -157,8 +157,7 @@ def _pinned_repo(root: Path, author: bytes) -> dict:
 
 def test_a_cr_inside_an_author_name_keeps_the_commit_whole(tmp_path):
     """Universal newlines ended a line at the CR in b'Bob\\rX', cutting the
-    header off its dates, and the commit's weight doubled with nothing said
-    (utf8-author-boundary-1 cr_in_author)."""
+    header off its dates, and the commit's weight doubled with nothing said."""
     with_cr = _pinned_repo(tmp_path / "cr", b"Bob\rX")
     control = _pinned_repo(tmp_path / "plain", b"BobX")
 
@@ -167,9 +166,9 @@ def test_a_cr_inside_an_author_name_keeps_the_commit_whole(tmp_path):
 
 # --- one function's history: explain --history and get_function_history -----
 #
-# utf8-author-shape-2, -boundary-5 and -history-5. `git log -L` prints each
-# commit's subject and body and the span's patch lines as stored. A cp1252
-# source line is text analyze.decode_source admits on purpose.
+# `git log -L` prints each commit's subject and body and the span's patch
+# lines as stored. A cp1252 source line is text analyze.decode_source
+# admits on purpose.
 
 CP1252_APP = APP.replace(b"    return 0\n", b"    return 0  # caf\xe9\n")
 
@@ -232,10 +231,9 @@ def test_get_function_history_over_the_mcp_server_reads_a_latin1_subject(tmp_pat
 
 # --- the mutation pool's git output: procs._captured_text --------------------
 #
-# utf8-author-shape-3, -boundary-6 and -history-3. `git worktree add` and a
-# kept tree's `checkout --force` print `HEAD is now at <sha> <subject>`, and
-# `clean -xdff` prints `Removing <name>`; the owned run captured both as strict
-# UTF-8, so mutate stopped before any mutant ran.
+# `git worktree add` and a kept tree's `checkout --force` print `HEAD is now at
+# <sha> <subject>`, and `clean -xdff` prints `Removing <name>`; the owned run
+# captured both as strict UTF-8, so mutate stopped before any mutant ran.
 
 MUT_APP = b"def f(x):\n    return x > 0\n"
 MUT_TEST = b"import sys\nsys.path.insert(0, 'src')\nimport app\nassert app.f(1) and not app.f(0)\n"
@@ -298,7 +296,7 @@ def test_a_kept_pool_resets_to_a_head_whose_subject_is_not_utf8(tmp_path):
 
 @pytest.mark.skipif(not LINUX, reason="a file name that is not UTF-8 exists only on a POSIX filesystem")
 def test_a_kept_pool_cleans_a_file_whose_name_is_not_utf8(tmp_path):
-    """`clean -xdff` names the leftover it removes (utf8-author-shape-3, Linux)."""
+    """`clean -xdff` names the leftover it removes, on Linux."""
     repo = _kept_pool(tmp_path / "repo")
     for tree in (repo / ".crapkit" / "mutate-pool").glob("w*"):
         (tree / os.fsdecode(b"caf\xe9.o")).write_bytes(b"x")
@@ -308,9 +306,9 @@ def test_a_kept_pool_cleans_a_file_whose_name_is_not_utf8(tmp_path):
 
 # --- a git config value: gitio.config_value under doctor ----------------------
 #
-# utf8-author-shape-8 and -boundary-16. doctor reads core.hooksPath and
-# `rev-parse --git-path hooks/pre-commit`; a .git/config written in a legacy
-# code page hands both back in bytes that are not UTF-8.
+# doctor reads core.hooksPath and `rev-parse --git-path hooks/pre-commit`; a
+# .git/config written in a legacy code page hands both back in bytes that
+# are not UTF-8.
 
 CONFIG_ROWS = [
     pytest.param(b"[core]\n\thooksPath = hooks-caf\xe9\n", id="hookspath-invalid-utf8"),
@@ -335,12 +333,12 @@ def test_doctor_reads_a_git_config_value_in_any_bytes(tmp_path, config):
 
 # --- rows no input reaches ------------------------------------------------------
 #
-# utf8-author-shape-1, an LF or a NUL inside an author name: an LF ends the
+# An LF or a NUL inside an author name: an LF ends the
 # author line of a commit object and git stops a name at a NUL, so no walk
 # reads either. A CR does reach the walk, in
 # test_a_cr_inside_an_author_name_keeps_the_commit_whole.
-# utf8-author-shape-3 on win32, a leftover pool file named in Latin-1: NTFS
+# On win32, a leftover pool file named in Latin-1: NTFS
 # stores every name as UTF-16, so `clean` names each file in UTF-8 there.
-# utf8-author-shape-3 and -history-3, the unowned worktree commands: mutate
+# The unowned worktree commands: mutate
 # passes the measurement owner to every pool command, and the unowned path
 # reads git's answer through gitio._spawn, which never raises on a byte.

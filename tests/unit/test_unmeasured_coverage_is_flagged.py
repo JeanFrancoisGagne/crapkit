@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from cli_inproc_repo import commit_all, repo, seed_artifacts, template_repo  # noqa: F401
+from cli_inproc_repo import add_knotty, commit_all, repo, seed_artifacts, template_repo  # noqa: F401
 from hand_scored_repo import run
 
 from crapkit import mcp_server
@@ -215,6 +215,25 @@ def test_the_rescore_table_says_not_measured_on_that_row_alone(rescored, capsys,
     flagged = table_lines(out, path, "not measured")
     assert code == 0 and len(lines) >= 2
     assert [f"  {name} (" in ln for ln in flagged] == ([True] if said else [])
+
+
+def test_the_gate_line_says_not_measured_where_the_table_does(rescored, capsys):
+    """One output, one answer: the GATE line said `cov 0%` for a function the
+    run never saw while the table under it said `-` and `coverage not
+    measured`. A measured breach keeps its percentage."""
+    add_knotty(rescored)
+    app = rescored / "src" / "app.ts"
+    grown = "".join(f"  if (x > {n}) {{ return {n}; }}\n" for n in range(1, 7)) + "  return -x;"
+    app.write_text(app.read_text(encoding="utf-8").replace("  return -x;", grown),
+                   encoding="utf-8", newline="\n")
+
+    code, out, err = run(rescored, capsys, "rescore", "--gate", "src/app.ts")
+
+    gate = {ln.split("  ")[-2].split(" (")[0]: ln for ln in err.splitlines() if "GATE" in ln}
+    assert code == 6, out + err
+    assert table_lines(out, "src/app.ts", "knotty")[0].endswith("(coverage not measured)"), out
+    assert " cov -  src/app.ts:" in gate["knotty"], err
+    assert " cov 50%  src/app.ts:13  " in gate["plain"], err
 
 
 def test_check_gate_carries_the_flag_to_an_mcp_client(rescored):

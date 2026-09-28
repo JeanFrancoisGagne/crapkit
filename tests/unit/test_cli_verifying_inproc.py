@@ -324,7 +324,7 @@ def _knotty(repo):
     return repo
 
 
-# --- the files verify judged, by name (S26) -----------------------------------
+# --- the files verify judged, by name -----------------------------------------
 #
 # "(1 changed files)" named nothing, so a reader could not check what verify
 # judged, and a new file nobody added read as "(0 changed files)".
@@ -354,7 +354,28 @@ def test_past_three_changed_files_the_line_counts_the_rest(baselined, capsys):
 
     _, out, _ = run(["verify", "--reuse-artifacts"], baselined, capsys)
 
-    assert "  changed files: a.txt, b.txt, c.txt and 2 more" in out.splitlines(), out
+    assert "  changed files: src/app.ts, a.txt, b.txt and 2 more" in out.splitlines(), out
+
+
+def test_the_scored_source_file_is_named_before_the_config_files(baselined, capsys):
+    """An adoption commit changes .gitignore, the marks and crapkit.toml beside
+    one source file; sorted by name, the source file was the one behind
+    `and 1 more`. The JSON list stays sorted."""
+    (baselined / ".gitignore").write_text(".crapkit/\ncoverage/\nalerts.log\nout/\n",
+                                          encoding="utf-8")
+    with open(baselined / "crapkit.toml", "a", encoding="utf-8") as fh:
+        fh.write("# adopted\n")
+    write_marks(baselined, ("src/app.ts", "dispatch ( kind : string )", 99.0))
+    git(baselined, "add", ".gitignore", "crapkit.toml", MARKS)
+    add_knotty(baselined)
+
+    _, out, _ = run(["verify", "--reuse-artifacts"], baselined, capsys)
+    _, as_json, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+
+    assert ("  changed files: src/app.ts, .gitignore, crapkit-ratchet.tsv and 1 more"
+            in out.splitlines()), out
+    assert json.loads(as_json)["changed_paths"] == [".gitignore", MARKS, "crapkit.toml",
+                                                     "src/app.ts"]
 
 
 def test_a_clean_tree_prints_no_changed_files_line(baselined, capsys):
@@ -876,7 +897,7 @@ def test_a_test_the_baseline_never_saw_fail_is_a_new_failure(baselined, capsys):
     """A lane declaring no retest_command keeps its failures untouched, so the
     verdict is the lane's report. The baseline's lane declared no
     results_artifact, so exit 8 comes with the line saying the failure may
-    predate the change (Q26): a gate fails closed, and the line keeps that from
+    predate the change: a gate fails closed, and the line keeps that from
     reading as this change's doing."""
     _junit(baselined, failing=True)
     _results_artifact(baselined)

@@ -13,10 +13,21 @@ does not turn those runs into measurements of the new reader.
 | uv tool | `uv tool upgrade crapkit` |
 | uvx | `uvx crapkit@latest --version` |
 | pip from the git URL | `python -m pip install --force-reinstall --no-deps git+https://github.com/JeanFrancoisGagne/crapkit.git` |
+| the Copilot CLI plugin | `copilot plugin marketplace update crapkit`, then `copilot plugin update crapkit@crapkit` ([below](#plugin-and-mcp-clients)) |
+| the Docker image | in the crapkit clone it was built from, `git pull`, then `docker build -t crapkit .`, then restart the client |
+| the pre-commit framework (Route 3) | `pre-commit autoupdate`, or set `rev` to the new tag |
+| the GitHub Action | move `uses: JeanFrancoisGagne/crapkit@...` to the new tag |
 
 Check `crapkit --version` in the environment your shell, hook and MCP client use.
 For a source checkout, follow [Development](../README.md#development). Stop a live
 MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-locks).
+
+The last four rows move what runs crapkit rather than the CLI. The Docker image holds its
+own crapkit, installed from the clone at build time, and a container keeps the image it
+started from. pre-commit and the Action install the release their `rev` or `uses:` tag
+names, so move each one in the commit that re-seeds, as [the next
+section](#a-team-upgrades-every-reader-before-the-re-seed-lands) says. prek reads the
+same `.pre-commit-config.yaml` and its `rev`.
 
 `pip --user` puts the launcher in the user scripts directory: `~/.local/bin` on Linux,
 `~/Library/Python/3.12/bin` for a python.org Python 3.12 on macOS, and
@@ -83,14 +94,22 @@ pin and the pre-commit `rev` before you commit marks seeded under the newer anal
 move the Action's `uses:` pin in the same commit as the re-seed, so no job measures those
 marks with the older release.
 
-The [launcher token](configuration.md#the-launcher-token) follows the same order. A
-release before 0.8.1 runs a lane's `{python}` as written and the shell answers 127
-(`/bin/sh: 1: {python}: not found`), so that reader's `coverage` exits 5 and its `doctor`
-FAILs the lane. Commit a `crapkit.toml` that holds the token, whether 0.8.1's `init`
-wrote it or you swapped it in ([config
+The [launcher token](configuration.md#the-launcher-token) waits for the same readers.
+A release before 0.8.1, 0.8.0 included, does not know `{python}` or `{python:DIR}` and
+hands the shell the token as written, so every lane whose command holds one fails at
+exit 5 in a clone, a CI job, an Action pin or a pre-commit `rev` still on that release,
+and its `doctor` FAILs the lane. The lane's
+`last output: $ {python:.venv} -m pytest ...` is followed by
+`The filename, directory name, or volume label syntax is incorrect.` under cmd.exe, or by
+`/bin/sh: 1: {python:.venv}: not found` and `(exit 127)` under sh, then
+`crapkit: every lane failed`. Commit a lane `command`, `retest_command`,
+`[crapkit.scoped_tests]` template or `mutation_command` that holds the token, whether
+0.8.1's `init` wrote it or you swapped it in ([config
 paths](#config-paths-that-081-reads-on-every-os)), once every clone, the CI pin, the
-pre-commit `rev` and the Action's `uses:` pin run 0.8.1. Until then each lane names the
-launcher the token stands for, as [Downgrading](#downgrading) lists them.
+pre-commit `rev` and the Action's `uses:` pin run 0.8.1: with the re-seed or after it.
+Until then each lane names the launcher the token stands for, as
+[Downgrading](#downgrading) lists them. A teammate who meets those lines upgrades
+crapkit.
 
 A reader you missed exits 3 on the committed marks. From 0.8.1 an older release that meets
 marks a newer one wrote says so, `the marks come from a newer crapkit than this install`,
@@ -110,16 +129,22 @@ again. That run's
 [twin-key note](ratchet.md#twins-one-name-several-functions) names the first five
 files that give one name to several functions and ends with `... and N more file(s)
 define a name more than once`. Restart each client's MCP session after upgrading so
-its running server uses the new code. A server that outlived the upgrade answers every
-tool call with that instruction instead of running it:
+its running server uses the new code.
 
-    crapkit was upgraded from 0.8.0 to 0.8.1 while this MCP server ran, and the server still runs 0.8.0's code, which cannot load the new files. Restart the crapkit MCP server (reconnect it in your client, or start a new session), then call list_runs again.
+The server that outlives this upgrade runs 0.8.0, and a server from 0.8.0 or earlier
+does not check. Its first call after the upgrade can fail with a JSON-RPC `-32603` error
+such as `TypeError: _operation() takes 2 positional arguments but 3 were given` or
+`ToolError: measurement owner stopped before confirming ownership`, and the restart
+fixes that. A `crapkit watch` from 0.8.0 can end in a Python traceback at its next
+rescore; start it again.
 
-A server from 0.8.0 or earlier does not check, and its first call after the upgrade can
-fail with a JSON-RPC `-32603` error such as `TypeError: _operation() takes 2 positional
-arguments but 3 were given` or `ToolError: measurement owner stopped before confirming
-ownership`. The restart fixes that too. A running `crapkit watch` stops at its next
-rescore after the upgrade, exits 1 and says to restart it.
+From 0.8.1 on, the server checks. On the next upgrade after this one, a 0.8.1 server
+that outlived it answers every tool call with the restart instead of running it:
+
+    crapkit was upgraded from 0.8.1 to 0.8.2 while this MCP server ran, and the server still runs 0.8.1's code, which cannot load the new files. Restart the crapkit MCP server (reconnect it in your client, or start a new session), then call list_runs again.
+
+A 0.8.1 `crapkit watch` stops at its next rescore after such an upgrade, exits 1 and says
+to restart it.
 
 Keep a copy of the committed ratchet and its diff before an upgrade. In each repo:
 
@@ -181,13 +206,25 @@ some functions' names or numbers:
   functions appear for the first time and one over its ceiling fails the gate the next
   time its file changes.
 - An identifier that holds one of the five bytes cp1252 leaves undefined (0x81, 0x8D,
-  0x8F, 0x90, 0x9D) keeps its name, the byte read as the letter U+01NN. 0.8.0 keyed
-  such a function as `�( x )`, `(anonymous)` or, in C, `if( x)` at ccn 1; it now
-  keys as `cafƁ( x )` at its own ccn, so a mark under the old key names a function the
-  run lacks.
+  0x8F, 0x90, 0x9D) keeps its name, the byte read as the letter U+01NN. In Python,
+  TypeScript and C, 0.8.0 keyed such a function as `�( x )`, `(anonymous)` or `if( x)`
+  at ccn 1; it now keys as `cafƁ( x )` at its own ccn, so a mark under the old key names
+  a function the run lacks. In Go, Java, Rust, Swift, shell and PowerShell, and in a C
+  function whose `if` has no braces, 0.8.0 scored no such function at all: it appears
+  for the first time, as a UTF-16 source's functions do, and one over its ceiling fails
+  the gate the next time its file changes.
 
 The stamp records the rules either way, so every marks file re-seeds once. The first
 `inventory` or `coverage` after the upgrade analyzes every file again.
+
+Two coverage joins move scores on the same tree and config without moving the stamp. On
+a case-insensitive disk, a coverage.py key in another letter case than the directories
+list, such as `PKG/mod.py` for git's `pkg/mod.py` (coverage.py on macOS keeps the case
+the import system handed it), and an istanbul key whose directories below the checkout
+are in another case, such as `SRC/app.ts` for git's `src/app.ts`, now join git's file.
+0.8.0 left that file's functions `untested` at cov 0, so they move to `measured` and
+their CRAP falls. A mark set while they read untested sits above the new number, and
+`verify` tightens it as it tightens any mark that falls.
 
 After upgrading coverage.py where a lane needs it, in each repo:
 
@@ -205,6 +242,10 @@ one of those five bytes moved a key, it drops the mark left under the old one. W
 seed and prune both read the pinned run: pass the new run's id to each, `crapkit ratchet
 prune --baseline N` then `crapkit ratchet seed --baseline N`; their lines and verify's
 refusal name it. Review the diff and commit it before the next `crapkit verify`.
+Until the re-seed, `crapkit doctor` WARNs on the marks file with the refusal `verify`
+prints and still exits 0, so the doctor step under
+[Measure before changing marks](#measure-before-changing-marks) passes, and the three
+commands above clear both.
 
 ### Analysis version 11
 
@@ -475,6 +516,76 @@ upgrading from 0.4.15 or older, run `crapkit coverage` once without `--reuse-art
 before any reuse. Every lane runs: one that works writes its artifact and stamp again, and
 one that still writes nothing exits 5 and records the refusal the old release never
 wrote, so the next reuse refuses it with `wrote no artifact on its last attempt`.
+
+## The commit gate in 0.8.1
+
+Two changes move the commit hook's exit code, in CI and at the top of a monorepo:
+
+| What the hook meets | 0.8.0 exit | 0.8.1 exit |
+|---|---|---|
+| `pre-commit run --all-files`, the form pre-commit.ci and pre-commit/action run, on a tree holding a function over its ceiling that no ratchet mark signs | 0 | 6 |
+| a commit in a repo whose `crapkit.toml` sits in a directory below the git top, or whose hook was armed before `crapkit init` | 3 on every commit | 0, or 6 when a staged file in a crapkit root below breaches |
+
+**`--all-files` judges every tracked file.** pre-commit's `--all-files` stages nothing and
+starts no commit, so 0.8.0 judged an empty diff and passed. 0.8.1 tells a commit by
+`GIT_INDEX_FILE`, which git sets for the hooks a commit runs. Outside a commit, with
+nothing staged, the hook prints `crapkit gate: nothing is staged and no commit is running,
+so every tracked file was judged` and exits 6 on each function over its ceiling that the
+committed ratchet does not mark. Before you move the `rev` to the 0.8.1 tag, run
+`crapkit hook-precommit` by hand with nothing staged: seed the debt it names with
+`crapkit ratchet seed` and commit the marks, or decompose those functions. A commit still
+judges only what it stages.
+
+**A hook at the top of a monorepo.** git runs the hook at the repository's top. With
+`crapkit.toml` only in a directory below, 0.8.0 refused every commit there with exit 3
+and `no crapkit.toml at TOP`, a docs-only commit included, and so did a hook armed before
+`crapkit init`. 0.8.1 runs the gate in each crapkit root below that owns a staged file
+and passes a commit that stages nothing under any `crapkit.toml`, with one note on
+stderr. A team that committed with `--no-verify` to get past the exit 3 can stop, and a
+staged breach under a root below now exits 6.
+
+## Other exit codes that move in 0.8.1
+
+The tables above and [text that is not UTF-8](#text-that-is-not-utf-8) cover the missing
+values, the commit gate and bytes that are not UTF-8, and [config
+paths](#config-paths-that-081-reads-on-every-os) ends with three more. These are the
+rest:
+
+| What the job meets | Command | 0.8.0 exit | 0.8.1 exit | Action |
+|---|---|---|---|---|
+| `git checkout main` after a passing verify on a feature branch | `verify` | 4, blaming a rebase or amend | its verdict against main's own run; 4 only when no trusted run sits behind HEAD | None |
+| a pytest lane whose coverage.py is older than 7.13.1 | `doctor` | 0 | 1, a FAIL naming the install line | Install `coverage>=7.13.1` where the lane runs |
+| a run under uvx, `uv run --with` or `pipx run` | `doctor --plugin-root` | 0 | 1, ``FAIL no `crapkit` on PATH`` | `uv tool install crapkit`, or `pipx install crapkit` |
+| a user-scope plugin older than a project-scope one, no PATH given | `doctor --plugin-root` | 0 | 1 | Update the older install |
+| a flag this crapkit does not know | `claude-hook` | 2, with the usage block | 0, with one line naming the version skew | Upgrade crapkit, then run `crapkit doctor --plugin-root` |
+| an advisory under Cursor, Copilot CLI or VS Code | `claude-hook` | 2 | 0, the advisory as one JSON object on stdout | A wrapper reads `additionalContext`; Claude Code keeps exit 2 |
+| a file an agent's shell wrote under a scope, named in bytes that are not UTF-8 | `claude-hook` | 0 | 2, an advisory naming the file and the rename | Rename the file to UTF-8 |
+| a file argument spelled `SRC\app.ts` on a case-insensitive disk, or `/c/...`, `/mnt/c/...` or `\\?\C:\...` on Windows, holding a breach | `rescore --gate`, `check_gate` | 0, 0 functions judged | 6, and `gate.ok` false | Decompose the function it names |
+| a file argument that names a directory (`src`, `src/`, `.`, `""`) holding a breach | `rescore --gate`, `check_gate` | 0, 0 functions judged, and `gate.ok` true | 3, `src is a directory; name the source files in it`; `check_gate` answers `isError` true, and `rescore` and `explain` refuse the same way | Name the files, as `git ls-files src` lists them |
+| a writer flag (`--export`, `--sarif`, `--emit-baseline`, `report --out`) that names a directory | the command that takes it | 1, a `PermissionError` traceback; `verify --sarif` had stored its run | 3 before any run is stored, `--sarif 'out' is a directory; name a file to write` | Name a file |
+| `python -m pytest Tests` under `testpaths = ["tests"]` on a case-insensitive disk | `coverage` | 3, refused as narrowing | runs as the whole suite | Drop a `full_suite = false` set only to get past it |
+| an istanbul key naming this checkout by an 8.3 name, a junction or symlink, a lower-case drive or a `\\?\` prefix | `coverage`, `verify` | 5, the lane FAILED | 0, the lane scores | None |
+| a coverage artifact that starts with a UTF-8 byte-order mark | `coverage`, `verify` | 5 | 0 | None |
+| a coverage.py region with no `summary` object | `coverage`, `verify` | 0 | 5 | Regenerate the report with the coverage tool |
+| Windows, a process started with no `USERPROFILE`, `HOMEDRIVE` or `HOMEPATH` | `doctor`, `coverage`, `check_config` | 1, `RuntimeError: Could not determine home directory.` | 0, from the profile folder Windows reports; 5 with `no home directory` when nothing names one | Set `USERPROFILE` where nothing names a home |
+
+## Values that move without an exit code
+
+Three changes move text or JSON a script reads, with no exit code to flag them:
+
+- Every message crapkit writes spells a dash ` - ` where 0.8.0 printed an em dash, the
+  `message` of a `--json` error object included. A path or a function name crapkit quotes
+  keeps its own characters. A script that matches a line matches ` - ` now.
+- The churn window counts on the UTC calendar. On a machine whose local date is not the
+  UTC date, a commit on the window's first day can move in or out of churn once, so
+  `risk`, `weight` and `commits` in `worklist --json`, `next-item` and `brief --json` can
+  differ from 0.8.0 on that machine. Scores do not move.
+- A partial run's `crap_load` sums only the scopes it measured, the functions its
+  `over_target` and `grade` count. 0.8.0 added a failed or skipped lane's functions at the
+  cov-0 stand-in, so a run line read `0 over ceiling 6, CRAP load 32.0` where the measured
+  scopes held 2.0. `coverage --json` and the run line report the smaller number, and
+  `by_scope` still carries each unmeasured scope's own load.
+
 ## Text that is not UTF-8
 
 In 0.8.1 a byte that is not UTF-8 in a commit, a file name, a report or an MCP frame
@@ -542,9 +653,9 @@ the venv launcher for `{python:.venv}`, with the venv's own directory in place o
 `.venv`, and a bare name for `{python}`, in each lane `command`, `retest_command`,
 `[crapkit.scoped_tests]` template and `mutation_command`. Then run `crapkit doctor` on
 each OS. [The launcher token](configuration.md#the-launcher-token) lists what each
-token becomes. A release before 0.8.1 cannot run the token, so swap it in once every
-reader runs 0.8.1 ([a team upgrades every
-reader](#a-team-upgrades-every-reader-before-the-re-seed-lands)).
+token becomes. A release before 0.8.1 cannot run the token, so commit the swap only once
+every reader runs 0.8.1, as [a team upgrades every
+reader](#a-team-upgrades-every-reader-before-the-re-seed-lands) says.
 
 Three exit codes change for scripts that read them. A root on a Windows network share
 (`--repo \\server\share\repo`, or a working directory there) exits 3 before any lane
@@ -743,6 +854,40 @@ such a marketplace, upgrade the CLI before the next Codex start, or the plugin r
 ahead of it, then move the marketplace onto the tag with the lines above and run
 `crapkit doctor --plugin-root PATH` to confirm the two agree.
 
+A GitHub Copilot CLI plugin moves from its marketplace, in two steps:
+
+```sh
+copilot plugin marketplace update crapkit
+copilot plugin update crapkit@crapkit
+crapkit doctor --plugin-root ~/.copilot/installed-plugins/crapkit/crapkit
+```
+
+`doctor --plugin-root` with no PATH checks Claude Code's install and Codex's, never
+Copilot's, so give it the Copilot copy's directory, as above. Start a new `copilot`
+session to load the updated skills and hook. Measured with Copilot CLI 1.0.88.
+
+### MCP answers in 0.8.1
+
+Three changes reach an MCP client that parses answers:
+
+- A client that negotiates `2024-11-05` or `2025-03-26` no longer gets
+  `structuredContent`, and `tools/list` lists no `outputSchema` to it, since neither
+  revision defines them. Read the text content, which carries the same JSON object. A
+  client on `2025-06-18` gets both, as before.
+- An answer longer than 7,500 characters loses the end of its list fields, then of its
+  string fields, then of its objects, and gains `truncated`: which fields it cut, what
+  each kept of what it had, and `full`, the CLI command that prints the whole answer. Run
+  `truncated.full` when you need every row
+  ([the rule](agent-json.md#mcp-server)).
+- JSON-RPC codes move. `params` that are not an object answer `-32602` where 0.8.0
+  answered `-32603`; a `method` that is an object or an array answers `-32601` where it
+  answered `-32603`; a message with an `id` and no `method`, `result` or `error` answers
+  `-32600` where it answered `-32601`; a response the server never asked for gets no
+  reply where it got `-32601`; `arguments` that are not an object get a tool result with
+  `isError: true` where they got `-32603`; and Gemini CLI's `wait_for_previous` argument
+  is dropped and the call runs, where 0.8.0 refused it as an undeclared key. A client
+  that retried on `-32603` handles `-32602` and `-32600` too.
+
 Start fresh MCP sessions after upgrading so their server uses the installed code. Every
 other agent restarts its server its own way: the After an upgrade row of its section in
 [Wiring crapkit into your agent](harnesses.md) says how. Skill copies and custom hook
@@ -760,8 +905,19 @@ Replace the old name where the client lists it. The 0.6.0 entry of the
 
 ## Library callers
 
-Code that imports crapkit's Python modules gets one release of warning before a
-name it calls moves. 0.8.1 moved the suite-drop check into `lane_results`, where it
+crapkit publishes no list of its Python names, so code that imports its modules can
+meet a moved name with no warning. Three names warn for one release before they go, and
+this section names them. 0.8.1 also moved these with no warning:
+
+| 0.8.0 | 0.8.1 |
+|---|---|
+| `crapkit.gitio.file_log_patches` | gone: `ImportError` |
+| `crapkit.gitpaths.history_line` | gone: `ImportError` |
+| `crapkit.lanes.SUITE_DROP_FRACTION` | `crapkit.lane_results.SUITE_DROP_FRACTION` |
+| `mcp_server.build_argv(tool, arguments)` | `build_argv(tool, arguments, repo)`: the old call raises `TypeError` |
+| `mutate_pool.run_one` and `run_mutants` return `True` for a killed mutant | they return `MutantVerdict`, and `bool(MutantVerdict.SURVIVED)` is `True`, so an `if run_one(...)` reads a survivor as killed: compare with the enum |
+
+The three that warn: 0.8.1 moved the suite-drop check into `lane_results`, where it
 walks the trusted runs behind the current one. `crapkit.lanes.suite_drops(previous, current)`
 still answers for one last trusted run's lane provenance and raises a
 DeprecationWarning; call `crapkit.lane_results.suite_drops(behind, current)`, where
@@ -783,11 +939,14 @@ checkout holds, where 0.8.0 returned `[]`, which read as a clean tree.
 
 A running `crapkit.exe mcp` holds its console launcher open, and each installer meets
 that lock its own way. Measured on Windows 11 with pip 26.2.1, pipx 1.17.6 and uv
-0.12.18, upgrading 0.7.6 to 0.8.0 while a server from the same install ran:
+0.12.18, upgrading 0.7.6 to 0.8.0 while a server from the same install ran; the pip
+22.3.1 row upgraded 0.8.0 to 0.8.1 under a running 0.8.0 server, and pip 23.3, 23.3.2,
+24.0 and 25.0.1 did what the first row says:
 
 | Command | Exit | What it printed and left behind |
 |---|---|---|
 | `python -m pip install --upgrade crapkit` | 0 | `Successfully installed crapkit-0.8.0`, then `WARNING: Failed to remove contents in a temporary directory`. pip moved the busy `crapkit.exe` into that directory: `crapkit --version` says 0.8.0, and the running server still answers as 0.7.6 |
+| `python -m pip install --upgrade crapkit`, pip 22.3.1, the pip a Python 3.11.2 venv ships | 1 | `ERROR: Could not install packages due to an OSError: [WinError 5] Access is denied: '...\pip-uninstall-...\crapkit.exe'`. pip puts the old release back, and `pip list` still shows it. Run `python -m pip install --upgrade pip` first, then the upgrade |
 | `pipx upgrade crapkit`, pipx using pip | 0 | `upgraded package crapkit from 0.7.6 to 0.8.0`, and the rest as for pip |
 | `pipx upgrade crapkit`, pipx using uv (uv on PATH) | 1 | `error: failed to remove file ...\Scripts/crapkit.exe: Access is denied. (os error 5)`. 0.7.6 stays installed and runs |
 | `uv tool upgrade crapkit` | 1 | `failed to copy file ... The process cannot access the file because it is being used by another process. (os error 32)`. The package is already 0.8.0; the rerun says `Nothing to upgrade` |
@@ -862,11 +1021,14 @@ The other routes leave their own pieces:
 | uvx | `uv cache clean crapkit`, which drops the releases uvx cached; a Route 1 or Route 2 hook left in place fetches crapkit again at the next commit |
 | the Claude Code plugin | `claude plugin uninstall crapkit@crapkit`, then `claude plugin marketplace remove crapkit` |
 | the Codex plugin | `codex plugin remove crapkit@crapkit`, then `codex plugin marketplace remove crapkit` |
+| the Copilot CLI plugin | `copilot plugin uninstall crapkit@crapkit`, then `copilot plugin marketplace remove crapkit` |
+| the Docker image | delete the client's `docker run ... crapkit` server entry, then `docker rmi crapkit` |
 | another MCP client | delete the `crapkit` server entry from its config ([its section](harnesses.md)) |
 
-Remove the plugins with the package. Both plugins start the bare `crapkit` command, so
-with the package gone and the Claude Code plugin still installed, `claude mcp list`
-shows `plugin:crapkit:crapkit: crapkit mcp - ✘ Failed to connect`.
+Remove the plugins with the package. The Claude Code, Codex and Copilot CLI plugins all
+start the bare `crapkit` command, so with the package gone and the Claude Code plugin
+still installed, `claude mcp list` shows
+`plugin:crapkit:crapkit: crapkit mcp - ✘ Failed to connect`.
 
 ## Release evidence
 

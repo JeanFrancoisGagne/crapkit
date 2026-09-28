@@ -49,7 +49,8 @@ def test_the_json_refusal_names_the_pin_and_no_run_id(repo, capsys):
     message = json.loads(out)["error"]["message"]
     assert code == 3
     assert message.endswith(
-        f"run `{_self()} coverage`, then re-baseline with `{_self()} ratchet seed`; {PINNED}"), message
+        f"run `{_self()} coverage`, then `{_self()} ratchet prune`, then re-baseline with "
+        f"`{_self()} ratchet seed`; {PINNED}"), message
     assert "--baseline" not in message and "from run " not in message, message
     assert f"warning: run {fresh} is not the baseline: verify run {failed} FAILED" in err, err
     assert f"pass `--baseline {fresh}`" in err, err
@@ -91,7 +92,8 @@ def test_with_nothing_pinned_the_refusal_keeps_coverage_then_seed(repo, capsys):
     assert code == 3
     assert "is not the baseline" not in err, err
     assert err.strip().endswith(
-        f"run `{_self()} coverage`, then re-baseline with `{_self()} ratchet seed`"), err
+        f"run `{_self()} coverage`, then `{_self()} ratchet prune`, then re-baseline with "
+        f"`{_self()} ratchet seed`"), err
 
 
 def test_a_run_named_with_baseline_is_still_the_seed_the_refusal_names(repo, capsys):

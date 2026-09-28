@@ -3,8 +3,9 @@
 - In a container, doctor WARNs on the coverage.py lane that `crapkit coverage`
   then refuses, naming the trigger and the key; the docs' key clears both.
 - A crapkit hook in .git/hooks that a global core.hooksPath sends git away
-  from, and pre-commit run in CI over an empty index, both pass without a
-  word; doctor names each, and the fix it names arms the gate again.
+  from passes without a word; doctor names it, and the fix it names arms the
+  gate again. pre-commit run in CI judges every tracked file, and doctor says
+  nothing about the workflow that runs it.
 - An MCP client that kept a 0.5.x tool name after upgrading gets the new name
   back instead of a bare "unknown tool".
 - The 60-second start runs on CPython 3.14, the version the new classifier

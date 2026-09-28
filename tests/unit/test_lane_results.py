@@ -274,7 +274,7 @@ def _returned_records(tree: ast.Module) -> set[str]:
 
 
 def test_every_public_lane_results_name_has_a_caller_outside_it():
-    """arch-15 narrows lane_results to the names its callers use. A name nobody
+    """lane_results makes public only the names its callers use. A name nobody
     outside the module reads is its own detail and stays private; a record a
     public function returns is interface whoever names it."""
     tree = ast.parse(_MODULE.read_text(encoding="utf-8"))

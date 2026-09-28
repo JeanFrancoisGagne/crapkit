@@ -173,10 +173,15 @@ GOLDEN_CORPUS = {
                  "        if (xs[i] > 0 && xs[i] < 100) t += xs[i];\n    }\n    return t;\n}\n"),
 }
 
-# Measured under CPython 3.11.2, 3.12.14, 3.13.15 and 3.14.7 with lizard 1.24.0
-# at analysis version 11: the same tuples on all four. An analyzer change that
-# moves them bumps ANALYSIS_VERSION and rewrites this table; a row that moves
-# on one Python only means the fingerprint needs the Python version.
+# Measured under CPython 3.11.2, 3.11.16, 3.12.14, 3.13.15 and 3.14.7 with
+# lizard 1.24.0 at analysis version 12: the same tuples on all five, and the
+# same ones analysis version 11 gave. A bump of ANALYSIS_VERSION re-measures
+# this table on every Python the CI runs and moves GOLDEN_ANALYSIS_VERSION with
+# it; until then the test below it fails, so a bump cannot leave the golden
+# skipped. A row that moves on one Python only means the fingerprint needs the
+# Python version.
+GOLDEN_ANALYSIS_VERSION = 12
+GOLDEN_LIZARD_VERSION = '1.24.0'
 GOLDEN_RECORDS = [
     ('app.py', 'pick( kind , n )', 1, 7, 5, 5, 5, 7, 2, 2, 5, 1, 0),
     ('app.py', 'open( self , x )', 11, 12, 2, 2, 2, 2, 2, 0, 1, 1, 0),
@@ -192,8 +197,15 @@ def _flat(records: dict) -> list[tuple]:
     return [tuple(r) for path in sorted(records) for r in records[path]]
 
 
-@pytest.mark.skipif((analyze.ANALYSIS_VERSION, lizard.version) != (11, '1.24.0'),
-                    reason='the golden was measured at analysis version 11 with lizard 1.24.0')
+def test_the_golden_was_measured_at_the_running_analysis_version():
+    """A bump that leaves the table behind fails here instead of skipping it."""
+    assert analyze.ANALYSIS_VERSION == GOLDEN_ANALYSIS_VERSION, (
+        f'ANALYSIS_VERSION is {analyze.ANALYSIS_VERSION}: re-measure GOLDEN_RECORDS '
+        f'on every Python the CI runs and set GOLDEN_ANALYSIS_VERSION to it')
+
+
+@pytest.mark.skipif(lizard.version != GOLDEN_LIZARD_VERSION,
+                    reason=f'the golden was measured with lizard {GOLDEN_LIZARD_VERSION}')
 def test_every_python_the_ci_runs_computes_the_records_a_cache_would_serve(tmp_path):
     """A cache written under one Python is served under another, so the
     records have to be the ones that Python would compute itself."""

@@ -426,7 +426,7 @@ def _read(root: Path, rel: str) -> tuple:
 def _unreadable(cfg, rel: str) -> list[str]:
     """The advisory for a file a scope takes whose name git gives in bytes that
     are not UTF-8. No function in it can be keyed, so none is judged, and the
-    commit gate refuses the file at exit 3 (Q17); saying nothing here would
+    commit gate refuses the file at exit 3; saying nothing here would
     pass it unread. Advisory wording, as rung 9's: the edit landed. A name no
     scope takes stays silent, like any unscoped edit."""
     from ..gitpaths import shown

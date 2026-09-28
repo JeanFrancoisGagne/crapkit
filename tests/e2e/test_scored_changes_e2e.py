@@ -255,7 +255,7 @@ def _corrupt_index(repo: Path) -> None:
 
 
 def test_a_corrupt_index_reads_null_and_names_git_s_error(tmp_path):
-    """shape-21: git fails while crapkit reads the tree. The count is null,
+    """git fails while crapkit reads the tree. The count is null,
     neither changed nor unchanged, and the text warning carries git's error."""
     repo = _py_repo(tmp_path)
     _measure(repo)
@@ -295,7 +295,7 @@ def test_the_worklist_stays_quiet_when_nothing_moved(tmp_path):
     assert "warning:" not in res.stderr, res.stderr
 
 
-# --- c12: a lane scope and a coverage_optional scope, through brief ----------
+# --- a lane scope and a coverage_optional scope, through brief ---------------
 
 TS_APP = """export function dispatch(kind: string): number {
   switch (kind) {

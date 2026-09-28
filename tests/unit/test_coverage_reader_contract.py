@@ -138,7 +138,7 @@ def test_the_same_document_laid_out_another_way_reads_the_same(tmp_path, fmt, la
 
 @pytest.mark.parametrize("fmt", FORMATS)
 def test_a_utf8_byte_order_mark_is_read_past(tmp_path, fmt):
-    """A JSON artifact is JSON: a BOM is read past (Q16), as a PowerShell
+    """A JSON artifact is JSON: a BOM is read past, as a PowerShell
     `Out-File -Encoding utf8` copy or a Windows editor leaves one. The digest
     stays the file's own bytes, mark included."""
     raw = codecs.BOM_UTF8 + _bytes(tmp_path, fmt)

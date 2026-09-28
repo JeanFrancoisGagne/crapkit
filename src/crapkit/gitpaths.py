@@ -4,8 +4,9 @@ A path is UTF-8 text here, the one spelling every row, mark and key is joined
 on. git names a file in the bytes its name was created with, and a Linux
 checkout can hold a Latin-1 name that has no UTF-8 spelling at all. Such a name
 comes back as a value like any other: its surrogateescape spelling, the str the
-OS reads back as the same bytes (Q17's travel rule). `readable` tells it apart,
-and each reader decides what the name means to it. The scope assignment
+OS reads back as the same bytes, so it reaches git again as git gave it.
+`readable` tells it apart, and each reader decides what the name means to it.
+The scope assignment
 (universe.scan_files) refuses one a scope takes and lists the rest as left out,
 lane reuse counts one as a change, and churn skips it. Nothing here prints.
 """

@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from typing import NamedTuple
 
 from .config import PYTEST_CONFIG_FILES, pytest_testpaths_texts as pytest_testpaths  # noqa: F401  init and tests import it from here
+from .config import _as_testpath
 
 from .universe import (LANGUAGE_EXTENSIONS, exclude_matcher, excluded, is_test_file,
                        scopes_with_tests)
@@ -459,21 +460,26 @@ _TESTPATH_STUB_INTRO = (
 
 
 def _testpath_slug(testpath: str) -> str:
-    """A lane name out of a testpath. It also names the lane's artifact and log
-    file, so anything a path may hold and a filename may not becomes a dash."""
-    stripped = testpath.replace("\\", "/").strip("./")
-    return "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in stripped)
+    """A lane name out of a testpath, read in the full-suite guard's spelling
+    (`config._as_testpath`). It also names the lane's artifact and log file, so
+    anything a path may hold and a filename may not becomes a dash. `.tests`
+    and `../tests` are other directories than tests/, so their lanes take
+    other names."""
+    return "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in _as_testpath(testpath))
 
 
 def _testpath_lane(lane: LaneSpec, testpath: str) -> LaneSpec:
-    """The detected pytest lane narrowed to one testpath, carrying its own
+    r"""The detected pytest lane narrowed to one testpath, carrying its own
     artifact pair: two lanes may not declare the same artifact path. It names
     its own coverage.py data file too, since the siblings start in one directory
-    and two of them run at once would share `.coverage` there."""
+    and two of them run at once would share `.coverage` there. The positional
+    is the testpath in the full-suite guard's spelling: `/` is a separator pytest
+    takes on every OS, where a `\` in the TOML string read `..\tests` as a tab."""
     name = f"{lane.name}-{_testpath_slug(testpath)}"
     artifact = f"{_COV_DIR}/{name}.json"
     results = f"{_COV_DIR}/junit-{name}.xml"
-    command = (lane.command.replace(_PYTEST_INVOCATION, f"{_PYTEST_INVOCATION}{testpath} ")
+    positional = _as_testpath(testpath)
+    command = (lane.command.replace(_PYTEST_INVOCATION, f"{_PYTEST_INVOCATION}{positional} ")
                .replace(lane.artifact, artifact).replace(lane.results_artifact, results))
     return lane._replace(name=name, command=command, artifact=artifact,
                          results_artifact=results,
@@ -658,8 +664,10 @@ def _repo_test_dir(tracked, scopes: dict[str, tuple[str, ...]]) -> str:
 def _covered_by_testpaths(test_dir: str, testpaths: tuple[str, ...]) -> bool:
     """Does a bare `pytest` already collect test_dir, because testpaths names
     it or a directory under it? Then a positional would only repeat the config,
-    and the full-suite guard reads a repeated positional as narrowing."""
-    cleaned = [path.replace("\\", "/").strip("./") for path in testpaths]
+    and the full-suite guard reads a repeated positional as narrowing. Each
+    testpath is read in that guard's own spelling (`config._as_testpath`), so
+    `.tests` and `../tests` are not tests/."""
+    cleaned = [_as_testpath(path) for path in testpaths]
     return bool(test_dir) and any(p == test_dir or p.startswith(test_dir + "/") for p in cleaned)
 
 

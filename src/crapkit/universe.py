@@ -6,7 +6,7 @@ nested node_modules (measured hang).
 
 A name git gives in bytes that are not UTF-8 has no spelling a row can be keyed
 on. It arrives in the list in its surrogateescape spelling (gitpaths), and the
-scope assignment below judges it by claim (Q17). When a scope takes it, the
+scope assignment below judges it by claim. When a scope takes it, the
 assignment refuses with exit 3 and names the rename: left out, a scoped file
 nothing read would pass every gate. Any other such name is left out, and the
 verdict lists it (`Universe.unreadable`) for the command to name once.
@@ -168,9 +168,21 @@ def owning_scope(path: str, matchers: tuple[ScopeMatch, ...]) -> str | None:
     a directory own that file.
     """
     for m in matchers:
-        if (path == m.path or path.startswith(m.prefix)) and path.endswith(m.extensions):
+        if (path == m.path or path.startswith(m.prefix)) and _has_extension(path, m.extensions):
             return m.name
     return None
+
+
+def _has_extension(path: str, extensions: tuple[str, ...]) -> bool:
+    """Does the path end in one of these lower-case extensions, in any letter case?
+
+    lizard picks a file's reader with a case-blind suffix match, so
+    `src/MAIN.CPP` is C++ to the reader, and it has to be C++ to the scope:
+    compared case-exactly it was neither scored nor named unclaimed, and the
+    commit gate passed a ccn-8 function in it. Only the extension folds; the
+    directory part stays exact, because git keys a path by its bytes.
+    """
+    return path.lower().endswith(extensions)
 
 
 def overlapping_scope(directory: str, matchers: tuple[ScopeMatch, ...]) -> str | None:
@@ -209,7 +221,7 @@ def _candidate(path: str, matchers: tuple[ScopeMatch, ...]) -> tuple[str | None,
     owner = owning_scope(path, matchers)
     if owner is not None:
         return owner, True
-    return None, any(path.endswith(m.extensions) for m in matchers)
+    return None, any(_has_extension(path, m.extensions) for m in matchers)
 
 
 def _candidates(files: list[str], cfg: Config,

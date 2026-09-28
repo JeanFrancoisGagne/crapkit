@@ -5,7 +5,7 @@ and the wrong-tree check asked whether a scope reached the glued key:
 `backend/` + `/other/checkout/pkg/mod.py` sits under the `backend` scope. So a
 monorepo lane fed a report from another checkout scored every function in its
 scope untested with exit 0, while the same lane without path_prefix failed with
-the wrong-tree refusal (PC8). The check now asks only keys the runner wrote
+the wrong-tree refusal. The check now asks only keys the runner wrote
 relative to this checkout.
 
 Real git, real CLI, the prefix spelled each way crapkit.toml reads it.

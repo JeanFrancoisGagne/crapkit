@@ -5,9 +5,9 @@ before each attempt (lane_outputs). A file at a declared path afterwards is
 one the attempt wrote; a leftover goes back only where the attempt wrote
 nothing. The old test compared modification times, so a command that only
 touched the previous report passed, and the previous run's numbers were scored
-and stamped as this commit's (stale-touch shape-8, boundary-11). The flake
+and stamped as this commit's. The flake
 retest judged its junit the same way and ignored a retest that rewrote it
-inside the old file's time tick (boundary-23).
+inside the old file's time tick.
 
 Every lane here writes, touches or leaves its artifact through a real child
 process started by the lane runner.
@@ -37,7 +37,7 @@ SCRIPTS = {
     "nothing": "pass",
     "same-bytes": f"open('cov.json', 'w', encoding='utf-8').write({ISTANBUL!r})",
     "new-bytes": f"open('cov.json', 'w', encoding='utf-8').write({ISTANBUL + ' '!r})",
-    # boundary-11's same-bytes lane: it reads the old report to write it back
+    # The same-bytes lane: it reads the old report to write it back
     "reads-its-old-report": "data = open('cov.json').read(); open('cov.json', 'w').write(data)",
 }
 
@@ -174,7 +174,7 @@ RETESTS = {
 
 @pytest.mark.parametrize("name", sorted(RETESTS))
 def test_the_retest_counts_the_report_it_wrote_and_only_that_one(name, tmp_path):
-    """rewrites-passing-old-time is boundary-23's same-size pass: the retest's
+    """rewrites-passing-old-time is a same-size pass: the retest's
     report kept the failing one's time, and its passes were ignored."""
     (tmp_path / "junit.xml").write_text(FAILING, encoding="utf-8")
     os.utime(tmp_path / "junit.xml", ns=(OLD, OLD))

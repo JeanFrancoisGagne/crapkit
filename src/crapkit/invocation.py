@@ -14,6 +14,12 @@ message. Otherwise it names that interpreter: `sys.executable`, never bare
 `python`, since on Windows a bare `python` reaches the WindowsApps stub, a venv
 that has no crapkit, or the base interpreter a venv wraps.
 
+pipx and uv tool put the console script in a bin dir of their own. On POSIX
+that is a symlink into the tool's environment, which counts where it points.
+On Windows both copy the launcher there byte for byte. A launcher holds the
+path of the interpreter it starts, so a copy whose bytes equal the launcher in
+this interpreter's scripts dir starts this interpreter, and counts too.
+
 The interpreter is spelled with forward slashes. An agent's Bash tool on
 Windows is Git Bash, which drops every backslash of `C:\\venv\\Scripts\\python.exe`
 and answers 127; `C:/venv/Scripts/python.exe` runs in Git Bash, cmd.exe and
@@ -48,7 +54,6 @@ answered about `'.\\\\mini'`, a token nobody typed.
 """
 from __future__ import annotations
 
-import filecmp
 import os
 import shutil
 import sys
@@ -90,11 +95,20 @@ def _runs_here(found: str | None) -> bool:
     if found is None:
         return False
     launcher = Path(found).resolve()
-    return any(_same_launcher(launcher, scripts / launcher.name) for scripts in _scripts_dirs())
+    return launcher.parent in _scripts_dirs() or _copied_here(launcher)
 
 
-def _same_launcher(launcher: Path, installed: Path) -> bool:
-    return launcher == installed or (installed.is_file() and filecmp.cmp(launcher, installed, shallow=False))
+def _copied_here(launcher: Path) -> bool:
+    return any(_same_bytes(launcher, scripts / launcher.name) for scripts in _scripts_dirs())
+
+
+def _same_bytes(one: Path, other: Path) -> bool:
+    """Whether two files hold the same bytes. A file that cannot be read, or
+    is not there, proves nothing."""
+    try:
+        return one.stat().st_size == other.stat().st_size and one.read_bytes() == other.read_bytes()
+    except OSError:
+        return False
 
 
 def _scripts_dirs() -> set[Path]:

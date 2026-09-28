@@ -207,7 +207,7 @@ def test_a_marks_file_saved_with_a_bom_holds_the_same_marks(scored_repo: Path):
     assert "added 0, tightened 0 - 1 mark(s) vs run " in seed.stdout, seed.stdout
 
 
-# --- the marks file reads by its own mark, else UTF-8 with U+FFFD (Q20) ---------------
+# --- the marks file reads by its own mark, else UTF-8 with U+FFFD ---------------------
 #
 # A rewrite of a file whose read replaced a byte would save U+FFFD in place of the
 # name that held it, or drop the mark as a function that is gone, so every writer
@@ -335,7 +335,7 @@ def test_a_utf16_marks_file_is_rewritten_as_utf16_in_its_own_line_ending(scored_
     (PY_TOML.replace("\n", "\r\n").encode(), 0),
 ], ids=["utf16", "cp1252", "utf8", "crlf"])
 def test_crapkit_toml_keeps_its_refusal_whatever_the_marks_rule(tmp_path: Path, body, code):
-    """Q20 is the marks file's rule alone: crapkit.toml is parsed as TOML, and a
+    """U+FFFD is the marks file's rule alone: crapkit.toml is parsed as TOML, and a
     byte read as U+FFFD there would be a setting nobody wrote."""
     res = _run(_py_repo(tmp_path, body), "inventory")
 
@@ -402,7 +402,7 @@ def test_the_advisory_reads_its_marks_by_the_marks_rule(tmp_path: Path, shape):
     assert ("sprawl( n )" in res.stderr) == (shape == "none"), res.stderr
 
 
-# --- the marks file's history reads by the same rule (Q20) ------------------------------
+# --- the marks file's history reads by the same rule ------------------------------------
 
 DAY = 86400
 

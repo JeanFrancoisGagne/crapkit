@@ -63,7 +63,7 @@ def _one_commit_repo(root: Path) -> None:
     _git(root, "commit", "-q", "-m", "one")
 
 
-# -- Q11: the 0.8.0 staleness reader stays, and warns ----------------------------
+# -- the 0.8.0 staleness reader stays, and warns ---------------------------------
 
 def test_the_changelog_no_longer_tells_library_callers_to_rename():
     """0.8.1 keeps `lanes.lane_sources_unchanged` through 0.8.x as a wrapper that
@@ -88,7 +88,7 @@ def test_the_shim_the_changelog_names_answers_a_bool_and_warns(tmp_path):
     assert answer is False, "no stamp vouches for the artifact, so its lines are not fresh"
 
 
-# -- Q38: the same-size edit under a restored modification time ------------------
+# -- the same-size edit under a restored modification time -----------------------
 
 def test_no_release_line_claims_a_same_size_edit_under_a_restored_mtime_is_caught():
     """git's index answers "unchanged" from its stat data, and 0.8.1 trusts it
@@ -109,7 +109,7 @@ def test_the_changelog_names_the_same_size_edit_as_a_limit():
     assert "measured for 0.9.0" in section
 
 
-# -- Q37: verify tells a commit the clone lacks from a rewrite --------------------
+# -- verify tells a commit the clone lacks from a rewrite -------------------------
 
 _BASELINE = "a74260f321f" + "4e0b9d2c61a8f3e57d0c1b2a9e8f7d6c5"
 
@@ -149,7 +149,7 @@ def test_the_changelog_quotes_the_not_in_this_clone_refusal(monkeypatch):
     assert re.search(r"blamed a rebase or an amend", _prose(_release()))
 
 
-# -- S23: the history caches key on the clone's depth ----------------------------
+# -- the history caches key on the clone's depth ---------------------------------
 
 def _has_history_depth() -> bool:
     from crapkit import churn_log
@@ -195,7 +195,7 @@ def test_the_changelog_says_a_deepened_clone_rebuilds_the_history_caches():
     assert "A cache 0.8.0 wrote reads as a full clone's" in section
 
 
-# -- S18: watch judges content ----------------------------------------------------
+# -- watch judges content ---------------------------------------------------------
 
 def _watch_polls_content() -> bool:
     from crapkit import watch
@@ -256,7 +256,7 @@ def test_the_changelog_and_the_help_agree_on_what_watch_rescores():
     assert "`watch` rescores a file when its bytes change, not when its mtime moves" in section
 
 
-# -- S19, S20, signal-1: what claude-hook remembers and what it says it could not judge
+# -- what claude-hook remembers and what it says it could not judge
 
 def _hook():
     from crapkit.cli import claude_hook
@@ -334,7 +334,7 @@ def test_the_unread_next_step_agents_gives_is_the_one_the_hook_prints():
     assert "[exclude] globs" in closing and "`[exclude] globs`" in _page("AGENTS.md")
 
 
-# -- S21: ratchet prune refuses when the commit its renames start from is gone ---
+# -- ratchet prune refuses when the commit its renames start from is gone --------
 
 def _ratchet_cmds():
     from crapkit.cli import ratchet_cmds
@@ -373,7 +373,7 @@ def test_the_exit_code_table_lists_the_git_refusals_0_8_1_adds():
     assert "missing from this clone" in row and "`ratchet prune`" in row
 
 
-# -- S27: doctor names the refusal reuse applies ----------------------------------
+# -- doctor names the refusal reuse applies ---------------------------------------
 
 def _admin():
     from crapkit.cli import admin
@@ -394,7 +394,7 @@ def test_the_doctor_row_documents_the_refusal_each_json_lane_carries(tmp_path):
     assert "`doctor --json` gives each lane a `refusal`" in _prose(_release())
 
 
-# -- S10, Q15: scored_changes beside stale ------------------------------------------
+# -- scored_changes beside stale ----------------------------------------------------
 
 def _queue():
     from crapkit.cli import queue
@@ -486,7 +486,7 @@ def test_agents_brief_table_reads_scored_changes_before_stale():
     assert all("predates HEAD" not in row for row in rows)
 
 
-# -- S26, c26: counts that name their files ----------------------------------------
+# -- counts that name their files --------------------------------------------------
 
 
 _VERDICT = re.compile(r"^ *verify (OK|FAILED) @ .*\((\d+) changed files\)")
@@ -581,7 +581,7 @@ def test_the_changelog_quotes_what_init_says_about_untracked_source(tmp_path):
     assert f"``{reason[reason.index('run `git add` first'):]}``" in _prose(_release())
 
 
-# -- S26, shape-22: the Action names a base diff git refused ------------------------
+# -- the Action names a base diff git refused ---------------------------------------
 
 def _comment_builder():
     """tools/action/comment.py, loaded by path the way the action runs it."""
@@ -628,7 +628,7 @@ def test_the_pages_quote_the_names_the_comment_gives_verify_s_count():
     assert f"``{named}``" in _prose(_page("README.md"))
 
 
-# -- Q67: the stamp records git blob ids -------------------------------------------
+# -- the stamp records git blob ids ------------------------------------------------
 
 def _module(name: str):
     """crapkit.NAME."""
@@ -654,7 +654,7 @@ def test_the_record_the_pages_describe_is_the_id_git_add_would_store(tmp_path):
     assert "stamp holds the git blob id of each file it measured" in _prose(_page("AGENTS.md"))
 
 
-# -- Q33: a failed lane's leftover stays refused until new bytes replace it --------
+# -- a failed lane's leftover stays refused until new bytes replace it -------------
 
 def test_a_leftover_stays_refused_through_a_touch_and_a_lost_stamp_file_until_new_bytes(tmp_path):
     import os
@@ -781,7 +781,7 @@ def test_each_page_that_names_the_same_size_limit_says_where_git_holds_it(page):
     for phrase in _WHERE_THE_LIMIT_HOLDS:
         assert phrase in text, (page, phrase)
 
-# -- S12, S13: explain reads the run's lines, not HEAD's ------------------------------
+# -- explain reads the run's lines, not HEAD's ----------------------------------------
 
 def _reports():
     from crapkit.cli import reports
@@ -837,7 +837,7 @@ def test_the_changelog_limit_names_every_reader_s_blind_spot_and_the_touch_that_
     assert "`touch` the files after restoring them, and every reader compares their content" in section
 
 
-# -- arch-13, arch-14, Q38: one verdict per lane, and a reuse line that names its limits
+# -- one verdict per lane, and a reuse line that names its limits
 
 _FRESHNESS = _module("lane_freshness")
 _ONE_VERDICT = _FRESHNESS is not None
@@ -892,7 +892,7 @@ def test_both_lane_kinds_prove_the_crapkit_version(tmp_path, inputs):
 
 @pytest.mark.parametrize("page", ["CHANGELOG.md", "docs/upgrading.md"])
 def test_the_pages_keep_the_0_8_0_staleness_reads_as_a_shim_and_name_its_replacement(page):
-    """Q11: a 0.8.0 library name stays through 0.8.x as a warning shim. A page
+    """A 0.8.0 library name stays through 0.8.x as a warning shim. A page
     saying it is gone sends a caller to rewrite code that still runs."""
     text = _prose(_release() if page == "CHANGELOG.md" else _upgrading_freshness())
 

@@ -177,8 +177,8 @@ def test_a_salvage_written_after_the_failed_attempt_reuses(repo: Path):
     assert _run_count(repo) == 1, "the salvage was read, not rerun"
 
 
-# (stale-touch shape-9, boundary-10, history-3) what happens to the leftover,
-# each keeping its bytes; --reuse-artifacts and --reuse-unchanged both refuse it
+# What happens to the leftover, each keeping its bytes; --reuse-artifacts and
+# --reuse-unchanged both refuse it
 KEPT_BYTES = {"touch": _touch, "copy-checkout-without-times": _copy_checkout,
               "same-bytes-rewrite": _same_bytes, "stamps-file-deleted": _stamps_deleted}
 
@@ -247,7 +247,7 @@ def test_the_artifact_a_killed_attempt_set_aside_is_reused(repo: Path, flag):
     assert not (repo / ".crapkit" / "aside").exists()
 
 
-# (stale-touch boundary-10) what happens to the leftover before an agent asks
+# What happens to the leftover before an agent asks
 # for the function's dark lines
 BEFORE_BRIEF = {"no-touch": lambda repo: repo, "touch": _touch}
 

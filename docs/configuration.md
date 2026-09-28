@@ -166,11 +166,14 @@ diff commands and textconv do not change attribution. A supported source file
 marked binary by Git attributes receives a text fallback; ordinary binary files
 remain outside source decoding. Source text is read as UTF-16 when the file opens
 with a UTF-16 byte-order mark (what PowerShell 5.1's `Out-File` and the ISE write),
-else as UTF-8, else as cp1252. Each of the five bytes cp1252 leaves undefined (0x81,
-0x8D, 0x8F, 0x90, 0x9D) reads as the letter U+01NN, NN the byte (0x81 reads as `Ɓ`),
-so an identifier that holds one stays one name and the file scores as its UTF-8 twin
-does. No cp1252 file can spell those five letters, so no name read this way collides
-with one a file wrote.
+else as UTF-8, else as cp1252. A file with no byte-order mark that holds a NUL in at
+least half the even or odd positions of its first 8,000 characters is UTF-16 all the
+same; crapkit reads no function from it, and every gate fails on it as an unread file,
+naming it. Save it as UTF-8, or as UTF-16 behind its mark. Each of the five bytes
+cp1252 leaves undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D) reads as the letter U+01NN, NN
+the byte (0x81 reads as `Ɓ`), so an identifier that holds one stays one name and the
+file scores as its UTF-8 twin does. No cp1252 file can spell those five letters, so no
+name read this way collides with one a file wrote.
 Inventory, the pre-commit gate, the advisory hook and `brief --json`'s `source` all
 read it that way. `mutate` writes a mutant back in the file's own encoding and
 changes no byte outside the mutated line. git's text fallback for a UTF-16 file
@@ -407,7 +410,7 @@ An array of tables. One lane per coverage command. Full recipes in [lanes.md](la
 
 | Key | Type | Required | Default | What it does |
 |---|---|---|---|---|
-| `name` | string | yes | | The lane's id. Names its log at `.crapkit/lane-<name>.log` and `coverage --lane`. |
+| `name` | string | yes | | The lane's id. Names its log at `.crapkit/lane-<name>.log` and `coverage --lane`. Since the log is a file, the loader refuses on every OS, exit 3, a name Windows cannot use as a file name: one holding `<`, `>`, `:`, `"`, `/`, `\`, `\|`, `?`, `*` or a control character, a device name (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, or `COM` or `LPT` and a digit, 0 to 9, `¹`, `²` or `³`, with or without an extension, such as `nul.txt`), a name that ends in a dot or a space, and an empty name. Two lanes whose names differ only in case are refused too, since Windows and macOS give them one log file. |
 | `command` | string | yes | | Run through the shell, cwd at the repo root unless `cwd` says otherwise. Its exit code is recorded, not enforced: a suite with known failures still writes a valid artifact. crapkit reads it with the shell that will run it, sh on POSIX and cmd.exe on Windows, and so does `doctor`. That reading covers quoting, carets, `&&` segments, redirections and `;`: [How a lane command is read](lanes.md#how-a-lane-command-is-read). A `{python}` or `{python:DIR}` token names the interpreter so one committed line runs on every OS: [The launcher token](#the-launcher-token). |
 | `artifact` | string | yes | | Repo-relative path to the coverage file the command writes. Its absence after the command (and its retries) is the failure. Two lanes may not share an artifact path. Point it under `.crapkit/cov/`, which `init` already gitignores; `doctor` warns about a lane writing at the repo root. `\` separates directories on every OS and a leading `./` is dropped, here and in `results_artifact`. See [Where artifacts live](lanes.md#where-artifacts-live). |
 | `parser` | `istanbul` \| `coveragepy` | yes | | How to read the artifact. |

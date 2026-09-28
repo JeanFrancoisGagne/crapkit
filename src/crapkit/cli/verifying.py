@@ -19,8 +19,9 @@ from ..store import SnapshotStore
 from ..universe import owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
-                      _ratchet_key_version, _repo_out_path, _repo_relative, _say_left_out, _stand,
-                      _unreadable_json, _write_tsv, behind_head, no_config, repo_text)
+                      _ratchet_key_version, _refuse_unwritable_outputs, _repo_out_path,
+                      _repo_relative, _say_left_out, _stand, _unreadable_json, _write_tsv,
+                      behind_head, no_config, repo_text)
 from .scoring import _scored_run
 
 if TYPE_CHECKING:
@@ -243,7 +244,7 @@ def _emit_baseline(root: Path, store: SnapshotStore, baseline: dict, rel: str | 
     rows = baseline.get("rows")
     if rows is None:
         rows = store.read_scored(baseline["id"])
-    _write_tsv(_repo_out_path(root, rel),
+    _write_tsv(_repo_out_path(root, rel, "--emit-baseline"),
                baseline_tsv_lines(baseline["commit"], baseline["kind"], rows,
                                   lane_results.portable_results(baseline)))
 
@@ -929,7 +930,8 @@ def _retried_suffix(out: dict) -> str:
     return _counted(out.get("retried_passes") or (), "new failure", "passed on rerun")
 
 
-def _report_verify(as_json: bool, out: dict, verdict, ratchet_file: str) -> None:
+def _report_verify(as_json: bool, out: dict, verdict, ratchet_file: str,
+                   sources: frozenset[str] = frozenset()) -> None:
     if as_json:
         _print_json(out)
         return
@@ -938,16 +940,20 @@ def _report_verify(as_json: bool, out: dict, verdict, ratchet_file: str) -> None
           f"({out['changed_files']} changed files)"
           f"{_forgiven_suffix(out)}{_retried_suffix(out)}"
           f"{_ratchet_suffix(out['ratchet_changes'], verdict.overridden, ratchet_file)}")
-    _print_changed_paths(out["changed_paths"])
+    _print_changed_paths(out["changed_paths"], sources)
     _print_verify_findings(verdict)
     _print_finding_split(verdict)
 
 
-def _print_changed_paths(paths: list[str]) -> None:
+def _print_changed_paths(paths: list[str], sources: frozenset[str] = frozenset()) -> None:
     """The files behind the count, on their own line so the verdict line keeps
-    its shape. Nothing for an empty diff."""
+    its shape. Nothing for an empty diff.
+
+    The scored source files come first: they are what the verdict judged, and
+    by name an adoption commit's .gitignore, marks file and crapkit.toml sorted
+    ahead of its one source file and pushed it behind `and 1 more`."""
     if paths:
-        print(f"  changed files: {first_few(paths)}")
+        print(f"  changed files: {first_few(sorted(paths, key=lambda p: (p not in sources, p)))}")
 
 
 def _refuse_lane_less_verify(cfg) -> None:
@@ -980,6 +986,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
     _refuse_lane_less_verify(cfg)
+    _refuse_unwritable_outputs(root, {"--sarif": args.sarif, "--emit-baseline": args.emit_baseline})
     store = _verify_store(root, args.baseline_tsv)
     saved = RatchetFile.read(root / cfg.ratchet_file)
     # One context for the whole command: the ancestry checks, the lane runner and
@@ -1049,7 +1056,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
                     "lanes_without_baseline_results": unjudged,
                     "unreadable_names": _unreadable_json(run.corpus.unreadable),
                     "untracked_in_scope": untracked},
-                   verdict, cfg.ratchet_file)
+                   verdict, cfg.ratchet_file, frozenset(r.path for r in scored))
     _refuse_override(verdict, args.override)
     return _verify_exit_code(verdict)
 
@@ -1528,8 +1535,10 @@ def _print_breaches(violations: list, target: int, shown: str, judged: str) -> N
 
 
 def _refuse_tracked() -> int:
-    """No commit to refuse or grant: the breach is already committed."""
-    print("decompose them and commit the split (coverage cannot save a function above the target).")
+    """No commit to refuse or grant: the breach is already committed, and on a
+    first hand run it is the debt the repo adopts through `ratchet seed`."""
+    print("decompose them and commit the split (coverage cannot save a function above the target), "
+          f"or record existing debt with `{_self()} ratchet seed`.")
     return 6
 
 

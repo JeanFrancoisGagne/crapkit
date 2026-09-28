@@ -314,7 +314,7 @@ def test_hook_precommit_help_names_the_unread_refusal_and_its_fix(capsys):
 
 
 def test_the_onboarding_pages_say_what_to_do_about_an_unread_file():
-    """PRD signal-1: the user meets the refusal before the first refused commit.
+    """The user meets the refusal before the first refused commit.
     The upgrade guide says to run coverage and fix or exclude each file, the
     help text says the hook refuses such a file, and the recover skill routes
     an UNREAD line under exit 6."""

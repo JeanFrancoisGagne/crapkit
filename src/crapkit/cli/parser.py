@@ -8,7 +8,7 @@ import os
 import sys
 
 from .. import __version__
-from ..errors import ConfigError, CrapkitError
+from ..errors import ConfigError, CrapkitError, GitError
 from ..invocation import _self, quoted_path
 
 # The claude-* namespace, named here rather than read off the parser, because the
@@ -60,9 +60,13 @@ def _version_line() -> str:
     neither import is worth making. A disagreement, or a distribution this scan
     cannot see, goes to importlib.metadata and takes its answer.
     """
+    return f"crapkit {_version_number()}"
+
+
+def _version_number() -> str:
     if _published_version() == __version__:
-        return f"crapkit {__version__}"
-    return f"crapkit {_metadata_version()}"
+        return __version__
+    return _metadata_version()
 
 
 def _metadata_version() -> str:
@@ -136,8 +140,117 @@ class _VersionAction(argparse.Action):
         super().__init__(option_strings, dest, nargs=0, **kwargs)
 
     def __call__(self, parser, namespace, values, option_string=None):
-        print(_version_line())
+        print(_version_line() + _build_words(sys.stdout))
         parser.exit()
+
+
+def _build_words(stream) -> str:
+    """` (commit <sha>, dirty)` for a person at a terminal running a crapkit
+    that knows the commit it was built from and is not a release, and nothing
+    for anyone else: a release's line stays `crapkit X.Y.Z`.
+
+    A pipe keeps the two words `crapkit X.Y.Z`: doctor's launcher probe and the
+    scripts that check an install read exactly those, and a third word read as
+    no version at all. `--version --json` carries the commit for a program."""
+    if not _on_a_terminal(stream):
+        return ""
+    commit, dirty, release = _build_identity()
+    if commit is None or release:
+        return ""
+    return f" (commit {commit}, {'dirty' if dirty else 'clean'})"
+
+
+# The file setup.py's build writes into the package; a test holds the two names equal.
+_BUILD_STAMP = "_build.json"
+_NO_BUILD = (None, None, False)
+
+
+def _build_identity() -> tuple[str | None, bool | None, bool]:
+    """The commit this crapkit was built from, whether its checkout held changes
+    the commit does not (staged or unstaged edits, or a file git neither tracks
+    nor ignores), and whether the build is a release. A source checkout or an
+    editable install answers from git now and is no release; an installed build
+    answers from the stamp its build wrote. (None, None, False) for a build made
+    with no checkout at hand and for a checkout git cannot read."""
+    package = _package_dir()
+    top = _checkout_of(package)
+    if top is None:
+        return _stamped_identity(package)
+    from .. import gitio
+
+    try:
+        return gitio.head_commit(top), bool(gitio.status_names(top)), False
+    except GitError:
+        return _NO_BUILD
+
+
+def _stamped_identity(package) -> tuple[str | None, bool | None, bool]:
+    """The commit, dirty flag and release flag setup.py wrote into the installed
+    package, or (None, None, False) when there is no stamp or it does not hold a
+    full sha and a boolean dirty flag. Read leniently: a byte that is not UTF-8
+    makes the stamp unreadable JSON, not a UnicodeDecodeError."""
+    import json
+
+    from ..repotext import lenient
+
+    try:
+        stamp = json.loads(lenient((package / _BUILD_STAMP).read_bytes()))
+    except (OSError, ValueError):
+        return _NO_BUILD
+    return _stamp_fields(stamp) if isinstance(stamp, dict) else _NO_BUILD
+
+
+def _stamp_fields(stamp: dict) -> tuple[str | None, bool | None, bool]:
+    import re
+
+    commit, dirty = stamp.get("commit"), stamp.get("dirty")
+    if isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit) \
+            and isinstance(dirty, bool):
+        return commit, dirty, stamp.get("release") is True
+    return _NO_BUILD
+
+
+def _package_dir():
+    """The directory this crapkit's package runs from."""
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[1]
+
+
+def _checkout_of(package):
+    """The checkout `package` was built from, when it sits at <checkout>/src/crapkit
+    beside the checkout's .git, as it does in a source checkout and an editable
+    install; else None.
+
+    A wheel installed into a virtual environment inside some other repository
+    has git above it too, but the repository is not the one crapkit was built
+    from, and its package directory is not that repository's src/crapkit."""
+    top = package.parent.parent
+    if package.parent.name == "src" and (top / ".git").exists():
+        return top
+    return None
+
+
+def _version_json_asked(argv: list[str] | None) -> bool:
+    """`crapkit --version --json`, in either order, with nothing else.
+
+    argparse runs --version the moment it reads it and exits, so a --json after
+    it was never read and the pair printed the text line."""
+    args = sys.argv[1:] if argv is None else argv
+    return set(args) == {"--version", "--json"}
+
+
+def _print_version_json() -> int:
+    """The version, the build's commit and dirty flag (null for a build made
+    with no checkout at hand), and the analysis version the ratchet stamp and
+    doctor carry."""
+    from ..analyze import ANALYSIS_VERSION
+    from ._shared import _print_json
+
+    commit, dirty, _release = _build_identity()
+    _print_json({"analysis_version": ANALYSIS_VERSION, "commit": commit, "dirty": dirty,
+                 "version": _version_number()})
+    return 0
 
 
 # The fix sentence is merge.UNREAD_ADVICE, spelled out here because the parser
@@ -234,7 +347,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="crapkit", **_color_kwargs(sys.version_info, (sys.stdout, sys.stderr)))
     parser.add_argument("--version", action=_VersionAction, default=argparse.SUPPRESS,
-                        help="print the program name and its version")
+                        help="print the program name and its version; on a terminal, a crapkit "
+                             "built from a git checkout, other than a release, adds that commit "
+                             "and whether the checkout was dirty. --version --json prints one "
+                             "object: version, commit, dirty and analysis_version")
     sub = parser.add_subparsers(dest="command", required=True)
 
     inv = sub.add_parser("inventory", help="build the per-function complexity inventory snapshot")
@@ -413,8 +529,10 @@ def build_parser() -> argparse.ArgumentParser:
     # would resolve a worktree edit to the mainline checkout's store.
     chk = sub.add_parser("claude-hook", help="advisory ccn check for one PostToolUse edit "
                                              "read from stdin (Claude Code, Copilot CLI, "
-                                             "Cursor, VS Code); silent unless a changed "
-                                             "function is over its ceiling")
+                                             "Cursor, VS Code); silent unless the edit leaves "
+                                             "a function over its ceiling or a file it could "
+                                             "not judge, or the hook passes a flag this "
+                                             "crapkit does not know")
     chk.add_argument("--protocol", default="1", metavar="N",
                      help="hook payload protocol (default 1); anything else exits 0 silent")
     chk.set_defaults(func=_Handler("claude_hook", "cmd_claude_hook"))
@@ -653,6 +771,8 @@ def _arguments(argv: list[str] | None) -> argparse.Namespace | int:
     """The parsed argv, or the exit code of an argv answered before any handler runs."""
     if _unknown_claude_command(argv):
         return 0
+    if _version_json_asked(argv):
+        return _print_version_json()
     named_path = _path_first_arg(argv)
     if named_path is not None:
         return _refuse_path_argument(named_path)

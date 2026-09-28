@@ -1,4 +1,4 @@
-"""A UTF-16 source file's changed lines, counted in its text lines (PRD U29).
+"""A UTF-16 source file's changed lines, counted in its text lines.
 
 git summarizes a UTF-16 file as binary, so crapkit asks for its patch with
 `--text`, and git then counts a line at every 0A byte. A character whose UTF-16

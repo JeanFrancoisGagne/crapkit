@@ -6,8 +6,7 @@ POSIX is the locale's: under en_US.ISO-8859-1 it went back as
 b"pkg/caf\\xe9.py", a file that does not exist. coverage skipped the file as
 missing (2 files and 2 functions instead of 3 and 4; 8 functions and CRAP load
 115.87 instead of 9 and 127.87 on the larger repo), and claude-hook exited 0
-with nothing to say about an edit that broke the ceiling (hunter rows
-py314-help boundary-7, boundary-16 and boundary-20's LANG row).
+with nothing to say about an edit that broke the ceiling.
 
 The console entry now starts the command again once with `-X utf8` when the
 filesystem encoding is not UTF-8, so every open, stat and argument spells

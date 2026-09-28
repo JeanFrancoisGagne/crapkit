@@ -25,7 +25,7 @@ every lane on this page.
 | Part | Rule |
 |---|---|
 | `command` | Runs through the shell at the repo root (or `cwd`). Its **exit code is recorded, not enforced**. A brownfield suite with 98 known failures still writes a valid artifact, and demanding green here would make such a repo unmeasurable. |
-| `artifact` | The coverage file the command writes, repo-relative. Its absence after the command and all its retries is the failure. Two lanes may not declare the same artifact path: reused paths cross-attribute coverage under `--reuse-artifacts`. |
+| `artifact` | The coverage file the command writes, repo-relative. Its absence after the command and all its retries is the failure. Two lanes may not declare the same artifact path: reused paths cross-attribute coverage under `--reuse-artifacts`. It names one file. An empty value or one that names the root (`.`, `cov/..`) is refused at load with exit 3, and so is a `results_artifact` that names the root. `doctor` FAILs an `artifact` or `results_artifact` that names a directory, such as vitest's `coverage` report directory: point it at the report file inside. |
 | `parser` | `istanbul` or `coveragepy`. Nothing else exists. |
 | `scopes` | Which scopes this lane's numbers speak for. A scope no lane names can only score `no-lane`, and `doctor` fails on it. |
 | `results_artifact` | The JUnit report the same command writes. Two checks read it and neither runs without it: the [crashed-worker trust check](#a-junit-that-says-the-run-did-not-finish), which refuses a run the runner did not finish, and no-new-failures, which is `verify`'s exit 8. |
@@ -76,6 +76,7 @@ runner and which words are files the repo owes.
 | `pytest --cov && coverage json` | Two commands. `&&`, `\|\|`, `&` and `\|` each start a new one, and every segment that runs the runner is checked on its own. |
 | `pytest --cov > lane.log 2>&1` | The redirections are the shell's; the runner never sees them. A quoted `">"` is an argument and stays. |
 | `pytest --cov; echo done` | On sh the `;` ends the command. To cmd.exe it is an ordinary character, so `echo` and `done` land in pytest's argv and the lane is refused. |
+| `bash -c 'pytest --cov tests'` | The payload is sh text on both OSes. Under cmd.exe, bash.exe splits the line it is handed with sh's quote rules, so `'` quotes there and `tests` is one positional. The guard judges each command inside the payload, and `doctor` WARNs when sh cannot split it (a quote that never closes), since then no check looked inside. |
 | a non-breaking space in a value | Not a word break. Words break on space, tab and line endings, the way both shells break them, so a value pasted out of rendered docs stays one token. |
 
 A command the shell itself would refuse (a quote that never closes) falls back to a
@@ -128,7 +129,15 @@ interpreter path (`"C:/Program Files/Python/python.exe" -m pytest ...`) is one w
 two; a dead runner after `&&` is still a dead runner; and a path inside a quoted
 `-k "tests/gone.py or x"` is a marker expression, not a file the repo owes.
 
-It also starts each distinct first word once, with `--version`, and FAILs the lane when the
+The pytest-cov probe asks the python inside a `bash -c` or `sh -c` payload, the one that
+runs pytest there, and the coverage data-file check reads a `--data-file` there too. A
+payload sh cannot split gets its own WARN, for example:
+
+```
+WARN lane 'py': sh cannot split the script in `bash -c "python -m pytest 'tests"`, since a quote or an escape in it never closes, so crapkit reads nothing inside it: the full-suite guard, the pytest-cov probe and the coverage data-file check all pass it unjudged; fix its quoting
+```
+
+`doctor` also starts each distinct first word once, with `--version`, and FAILs the lane when the
 shell cannot run it. A stock Windows PATH carries a `python.exe` stub with no Store app
 behind it: it resolves, it exits 9009, and before 0.4.5 `doctor` called that repo clean
 while `coverage` exited 5 on the same command. Reproduced here with a `python3` on PATH

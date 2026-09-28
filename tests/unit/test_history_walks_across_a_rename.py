@@ -1,6 +1,6 @@
 """Every history walk, judged at a `git mv`.
 
-Q87 made the marks file's history follow a rename: its log walked no renames,
+0.8.1 made the marks file's history follow a rename: its log walked no renames,
 so after `git mv crapkit-ratchet.tsv debt.tsv` every mark read 0 days old
 (tests/unit/test_marks_history.py and test_shallow_history_is_named.py). The
 other walks over git's or the store's history, each at a rename:

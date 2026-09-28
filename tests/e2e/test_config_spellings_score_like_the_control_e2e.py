@@ -146,7 +146,7 @@ def _case_rows(tmp_path: Path) -> None:
         pytest.skip("needs a case-insensitive filesystem (Windows NTFS, macOS APFS)")
 
 
-# --- path_prefix (PC2) ---------------------------------------------------------------
+# --- path_prefix ---------------------------------------------------------------------
 
 @pytest.mark.parametrize("prefix", ["backend/", "backend//", "backend\\", "./backend", "./backend/",
                                     ".\\backend", ".\\backend\\", "/backend", "/backend/"])
@@ -160,7 +160,7 @@ def test_a_path_prefix_in_another_case_scores_like_the_control(tmp_path, control
     _same_as_control(tmp_path, control, prefix=prefix)
 
 
-# --- [exclude] globs (PC1) -------------------------------------------------------------
+# --- [exclude] globs -------------------------------------------------------------------
 
 @pytest.mark.parametrize("glob", ["src\\gen\\**", "src\\gen/**", "**\\gen\\**", "src\\gen\\*.py",
                                   "./src/gen/**", ".\\src\\gen\\**", "/src/gen/**", "src/gen/",
@@ -169,7 +169,7 @@ def test_an_exclude_glob_spelling_scores_like_the_control(tmp_path, control, glo
     _same_as_control(tmp_path, control, glob=glob)
 
 
-# --- scope paths (PL7, PC6) --------------------------------------------------------------
+# --- scope paths -------------------------------------------------------------------------
 
 @pytest.mark.parametrize("src_path", ["./src", "./src/", "src/", "src\\", ".\\src", "/src"])
 def test_a_relative_scope_path_spelling_scores_like_the_control(tmp_path, control, src_path):
@@ -179,7 +179,7 @@ def test_a_relative_scope_path_spelling_scores_like_the_control(tmp_path, contro
 
 @pytest.mark.parametrize("src_path", ["Src", "SRC/", ".\\Src"])
 def test_a_scope_path_in_another_case_scores_like_the_control(tmp_path, control, src_path):
-    """PL7: git names the directory `src`, and `Src/` claimed none of its files,
+    """git names the directory `src`, and `Src/` claimed none of its files,
     so the scope scored 0 functions at exit 0."""
     _case_rows(tmp_path)
     _same_as_control(tmp_path, control, src_path=src_path, backend_path="Backend")
@@ -212,7 +212,7 @@ def _respelled(repo: Path, **spelled: str) -> None:
 
 @pytest.mark.parametrize("which", ["posix", "msys", "wsl", "unc", "unc-forward"])
 def test_an_absolute_scope_path_is_refused_instead_of_scoring_nothing(tmp_path, which):
-    """PC6: it loaded, scored the scope at 0 files and exited 0, and only doctor
+    """It loaded, scored the scope at 0 files and exited 0, and only doctor
     said anything. It is refused at load, naming the path as written."""
     repo = _repo(tmp_path, "repo")
     written = _absolute(repo, which)
@@ -243,7 +243,7 @@ def test_a_scope_path_that_climbs_out_of_the_root_is_refused(tmp_path, src_path)
 @pytest.mark.parametrize("artifact", [".crapkit\\cov\\be.json", "./.crapkit/cov/be.json",
                                       ".\\.crapkit\\cov\\be.json"])
 def test_an_artifact_spelling_scores_like_the_control_and_reuses(tmp_path, control, artifact):
-    """boundary-6: the lane wrote .crapkit/cov/be.json, and on Linux a key
+    """The lane wrote .crapkit/cov/be.json, and on Linux a key
     spelled `.crapkit\\cov\\be.json` opened another name and failed the lane.
     It reads the file written, on a run and on --reuse-artifacts."""
     repo = _repo(tmp_path, "repo", be_artifact=artifact)
