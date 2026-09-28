@@ -147,7 +147,7 @@ def test_config_parses_the_progress_deadline():
     assert cfg.lanes[0].no_progress_seconds == 300
 
 
-def test_the_shard_recipe_runs_in_windows_powershell(tmp_path):
+def test_the_shard_recipe_runs_in_windows_powershell(tmp_path, on_a_host):
     """Windows PowerShell 5.1 has no `&&`, so `coverage combine && coverage json
     -o ...` stopped at a parse error before either command ran. The recipe names
     the two commands one after the other, and the `-o` target goes in as one
