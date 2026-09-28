@@ -474,14 +474,36 @@ def test_a_keyword_compared_as_an_operand_counts_nothing(line):
     "echo a\n    if true; then :; fi", "echo a; if true; then :; fi",
     "echo a | if read l; then :; fi", "! if true; then :; fi", "time if true; then :; fi",
     "echo a # done\n    if true; then :; fi", "x=$(if true; then echo 1; fi)",
-    "echo a & if true; then :; fi",
+    "echo a & if true; then :; fi", "arr=(a b)\n    if true; then :; fi",
+    "arr=($(ls) b); if true; then :; fi",
 ])
 def test_a_keyword_that_starts_a_command_still_counts(line):
     """A line start, `;`, `|`, `&`, `!`, `time`, `$(` and a comment's end all
-    put the next word where a command starts, so the `if` there counts."""
+    put the next word where a command starts, so the `if` there counts, after
+    an array literal too."""
     (record,) = analyze_source("probe.sh", LOOP_WITH.format(line=line))
 
     assert (record.ccn_std, record.cognitive) == (4, 5)
+
+
+@pytest.mark.parametrize("line, ccn, cognitive", [
+    ("declare -A m=([if]=1 [while]=2)", 3, 3),
+    ("m[for]=3", 3, 3),
+    ("m+=([done]=4)", 3, 3),
+    ("arr=(if while done)", 3, 3),
+    ("arr+=(for)", 3, 3),
+    ("arr=(\n      if\n      done\n    )", 3, 3),
+    ('[ if = "$f" ] && echo y', 4, 4),
+    ('[[ done == "$f" ]] && echo y', 4, 4),
+])
+def test_a_keyword_in_an_array_a_subscript_or_a_test_operand_counts_nothing(line, ccn, cognitive):
+    """An array literal's elements, a subscript and the operands of `[` are
+    words, never a command's start: `arr=(if done)` holds two strings and
+    `m[for]=3` sets the key `for`. Each such keyword counted a condition or a
+    loop, or closed the loop around it."""
+    (record,) = analyze_source("probe.sh", LOOP_WITH.format(line=line))
+
+    assert (record.ccn_std, record.cognitive) == (ccn, cognitive)
 
 
 def test_a_keyword_after_a_line_the_backslash_continues_keeps_its_place():

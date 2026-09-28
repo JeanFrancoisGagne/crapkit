@@ -215,8 +215,8 @@ not toward the function that declares the class, so nothing gates a method's com
 Move logic you want gated into a function.
 
 **`shell` reads a keyword only where a command starts**, as the shell does. `echo done`,
-`state=done`, `[ "$s" = done ]`, `echo $(date) done` and a case pattern such as `done)`
-cost nothing.
+`state=done`, `[ "$s" = done ]`, `m[for]=3`, `arr=(if done)`, `echo $(date) done` and a
+case pattern such as `done)` cost nothing.
 
 **Pester test files need a glob of your own.** Pester names them `Foo.Tests.ps1`, beside the
 source they test, and no default exclude claims that spelling. `**/*.test.*` does not match
