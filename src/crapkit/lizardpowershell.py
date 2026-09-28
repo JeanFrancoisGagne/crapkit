@@ -166,8 +166,6 @@ KNOWN LIMITS
       `if (Test-Path $a -or $b)` hands `-or` to Test-Path, which fails at run
       time, while `$x.Count -or $b` and `(Test-Path $a) -or $b` are the
       operator. The point matches what such a line's author meant.
-    - A `param()` block's parameters count in `params` and are missing from a
-      packet's `params` list, which crapkit reads off the long name.
     - A class's methods get no row, so their complexity is not gated.
 
 REGISTRATION

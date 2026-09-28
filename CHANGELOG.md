@@ -1368,8 +1368,7 @@ each marks file re-seed once.
   function whose body declares the class. Methods still get no row.
 - `params` counts the parameters of the `param(...)` block that opens a function body,
   so an advanced function no longer reads 0. The long name, which is the ratchet key,
-  still holds only the header list, so no key changes. A packet's `params` list still
-  names only the header's parameters; its `source` holds the block.
+  still holds only the header list, so no key changes.
 - A parameter counts once whatever its entry holds, in the header list and in the
   `param(...)` block. A comma inside an attribute or a default value,
   `[Parameter(Mandatory, Position = 0)]` or `$Items = @(1, 2, 3)`, added a parameter,
