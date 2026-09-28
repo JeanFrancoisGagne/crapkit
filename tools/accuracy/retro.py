@@ -39,7 +39,8 @@ refused row pending, with the refusal and its date in the note, since a refused
 replay is no evidence.
 
 The ledger row carries a digest over the check's file, its static import
-closure under tests/ and tools/, and the data files of its packet, so a replay
+closure under tests/ and tools/, and the data files of its packet, taken in
+repo path order with case so every OS computes the same one, so a replay
 that no longer matches the code it recorded shows as stale. `nightly` replays
 the stale rows plus one seventh of the rest (every row once a week); `release`
 replays every row whose digest changed plus the bundle rows, whose commits live
@@ -331,13 +332,15 @@ def _package_inits(test_file: Path, repo: Path) -> set[Path]:
 
 def check_files(test: str, probe: str = "", repo: Path = REPO) -> list[Path]:
     """The check's file, its import closure, the packages it sits in and its packet's
-    data files."""
+    data files, ordered by their repo path with its case, as Linux orders them:
+    Windows orders paths without case, which gave a check another digest there."""
     test_file = (repo / test.split("::")[0]).resolve()
     files = (_closure_files(test_file, repo) | _package_inits(test_file, repo)
              | _packet_data(test_file, repo))
     if probe:
         files.add((repo / RETRO.relative_to(REPO) / "probes" / probe).resolve())
-    return sorted(files)
+    root = repo.resolve()
+    return sorted(files, key=lambda path: path.relative_to(root).parts)
 
 
 def digest(test: str, probe: str = "", repo: Path = REPO, env: str = "") -> str:

@@ -918,6 +918,18 @@ def test_the_digest_is_sha256_over_each_file_s_path_and_bytes(small_tree):
     assert retro.digest(TEST, repo=small_tree) == _expected_digest(small_tree, READS)
 
 
+def test_the_digest_orders_paths_with_their_case_on_every_platform(small_tree):
+    """Windows orders paths without case and Linux with it, so a check whose packet
+    data held probes/swift/Accessors.swift beside probes/swift/probes.tsv had one
+    digest after a Windows replay and another on Linux: the Linux retro job read
+    every such row as stale and replayed it each night."""
+    mixed = ["tests/accuracy/pkt/fixtures/Beta.txt", "tests/accuracy/pkt/fixtures/alpha.txt"]
+    for name in mixed:
+        (small_tree / name).write_text("x\n", encoding="utf-8")
+
+    assert retro.digest(TEST, repo=small_tree) == _expected_digest(small_tree, READS + mixed)
+
+
 def test_the_check_s_files_are_its_closure_and_its_packet_s_data(small_tree):
     files = retro.check_files(TEST, repo=small_tree)
 
