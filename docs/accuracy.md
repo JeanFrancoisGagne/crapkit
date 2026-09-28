@@ -962,7 +962,9 @@ release against the previous tag. On top of the in-tree rules they refuse a
 change that drops or rewrites a recorded row (`CHANGES.tsv`, `bugs.tsv`, the
 ledger, the retro tables, a rulings id), lowers a mutation floor, collects fewer
 tests in a packet, or declares a calc that did not move. Each refusal prints the
-command that fixes it.
+command that fixes it. The rows of a bug `bugs.tsv` marks `open` are the one
+exception: its fix waits off main and lands as other commits, so those rows follow
+it, as long as the bug keeps a `bugs.tsv` row.
 
 ## Add a check
 

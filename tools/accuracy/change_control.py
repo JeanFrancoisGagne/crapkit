@@ -52,7 +52,9 @@ before it only the in-tree rules do, since no change can be declared yet.
 - B2 every row of CHANGES.tsv, bugs.tsv, triage.tsv, every retro.tsv and the
   kit's seed-changes.tsv is still there byte for byte, every (id, test) row of
   ledger.tsv is still there (a replay re-records its own row), and no rulings id
-  is gone.
+  is gone. A bug the base's bugs.tsv marks `open` waits on a fix off main, which
+  lands as other commits, so its rows may change or go as long as it keeps a
+  bugs.tsv row.
 - B3 no floor drops, no floor key is gone, and each added survivor or equivalent
   carries evidence. Added ones are printed.
 - B4 no packet's test function count drops.
@@ -1313,10 +1315,30 @@ def _gone_rulings(diff: Diff) -> list[Problem]:
             for key in gone]
 
 
+def _open_bugs(diff: Diff) -> set[str]:
+    """The bugs the base's bugs.tsv marks `open`: each waits on a fix off main."""
+    return {row.get("id", "") for row in rows(diff.base.read(BUGS)) if row.get("replay") == "open"}
+
+
+def _settled(old: list[str], landing: set[str]) -> list[str]:
+    """The base's rows B2 holds: all but an open bug's, whose fix lands as other commits
+    (a cherry-pick), so its rows get rewritten to name them."""
+    return old[:1] + [row for row in old[1:] if row.split("\t")[0] not in landing]
+
+
+def _unrowed(diff: Diff, landing: set[str]) -> list[Problem]:
+    kept = {row.get("id") for row in rows(diff.head.read(BUGS))}
+    return [Problem("B2", f"open bug {bug} lost every {BUGS} row",
+                    "keep the row that names the check that catches it")
+            for bug in sorted(landing - kept)]
+
+
 def rule_b2(diff: Diff) -> list[Problem]:
-    found = [_lost_rows(path, lines(diff.base.read(path)), lines(diff.head.read(path)))
+    landing = _open_bugs(diff)
+    found = [_lost_rows(path, _settled(lines(diff.base.read(path)), landing),
+                        lines(diff.head.read(path)))
              for path in _changed_matching(diff, GROWING)]
-    return list(filter(None, found)) + _gone_rulings(diff)
+    return list(filter(None, found)) + _gone_rulings(diff) + _unrowed(diff, landing)
 
 
 def _floor_key(row: dict) -> tuple:

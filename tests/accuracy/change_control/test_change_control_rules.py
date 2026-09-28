@@ -59,6 +59,35 @@ def test_a_replay_re_records_its_ledger_row_and_a_dropped_row_is_lost():
     assert "B2" in pure_rules(replayed, {**BASE, LEDGER: LEDGER_HEADER.replace("id", "bug")})
 
 
+BUGS_HEADER = "id\ttest\tfix_commits\treplay\n"
+
+
+def _open_bug_tree(bugs: str, ledger: str, retro: str) -> dict:
+    return {**BASE, seeds.BUGS: BUGS_HEADER + "R01\ttests/a.py::t\t2222222\tpublic\n" + bugs,
+            LEDGER: LEDGER_HEADER + ledger, seeds.RETRO: "id\ttest\n" + retro}
+
+
+OPEN_BUG = _open_bug_tree(
+    "R98\ttests/a.py::t_v6\t978a6c9\topen\nR98\ttests/a.py::t_green\t978a6c9\topen\n",
+    "R98\ttests/a.py::t_v6\topen\topen\t\nR98\ttests/a.py::t_green\topen\topen\t\n",
+    "R98\ttests/a.py::t_v6\nR98\ttests/a.py::t_green\n")
+LANDED_BUG = _open_bug_tree("R98\ttests/a.py::t_v6\t9703f4b\tpublic\n",
+                            "R98\ttests/a.py::t_v6\tred\tpass\tab12\n", "R98\ttests/a.py::t_v6\n")
+
+
+def test_an_open_bug_s_rows_follow_its_fix_when_it_lands():
+    """A bug bugs.tsv marks `open` waits on a fix off main, and a cherry-pick lands that
+    fix as other commits, so its bugs.tsv, retro.tsv and ledger rows name the landed
+    commits and drop a pair that never caught it: B2 holds while the bug keeps a
+    bugs.tsv row. Every other row still stays byte for byte."""
+    settled_edit = LANDED_BUG[seeds.BUGS].replace("2222222", "3333333")
+
+    assert "B2" not in pure_rules(OPEN_BUG, LANDED_BUG)
+    assert "B2" in pure_rules(OPEN_BUG, {**LANDED_BUG, seeds.BUGS: BUGS_HEADER})
+    assert "B2" in pure_rules(OPEN_BUG, {**LANDED_BUG, seeds.BUGS: settled_edit})
+    assert "B2" in pure_rules(LANDED_BUG, _open_bug_tree("", "", ""))
+
+
 # --- the scenarios -------------------------------------------------------------------------
 
 def _edited_metric_row(tree):
