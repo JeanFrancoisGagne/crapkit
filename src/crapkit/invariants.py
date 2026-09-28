@@ -52,9 +52,11 @@ UNSETTLED = ("The run was stored without a verdict, so it cannot serve as a base
              "and the marks file was not tightened.")
 PRINTED = "Nothing was printed as a verdict."
 
-FLAGS = frozenset(("measured", "untested", "no-lane", "cc-only"))
+FLAGS = frozenset(("measured", "untested", "excluded", "no-lane", "cc-only"))
 REMEDIES = frozenset(("decompose", "split-lines", "add-tests", "ok"))
-_ZERO_COV_FLAGS = frozenset(("untested", "no-lane"))
+_ZERO_COV_FLAGS = frozenset(("untested", "excluded", "no-lane"))
+# README's Flags table: no test can move these rows' number, so CRAP is ccn.
+_CCN_FLAGS = frozenset(("cc-only", "excluded"))
 _DECOMPOSE = frozenset(("decompose",))
 _OK = frozenset(("ok",))
 _OVER = frozenset(("add-tests", "split-lines"))
@@ -204,8 +206,8 @@ _EXACT_AT = {1.0: (lambda ccn: ccn, "at coverage 1, CRAP must equal ccn"),
 
 
 def _ends_problem(row) -> str | None:
-    if row.flag == "cc-only":
-        return None if _near(row.crap, row.ccn) else "a cc-only row's CRAP must equal its ccn"
+    if row.flag in _CCN_FLAGS:
+        return None if _near(row.crap, row.ccn) else "a cc-only or excluded row's CRAP must equal its ccn"
     exact = _EXACT_AT.get(row.cov)
     if exact is None or _near(row.crap, exact[0](row.ccn)):
         return None
@@ -221,20 +223,23 @@ def _crap_problem(row) -> str | None:
 
 def _flag_problem(row) -> str | None:
     if row.flag not in FLAGS:
-        return "flag must be measured, untested, no-lane or cc-only"
+        return "flag must be measured, untested, excluded, no-lane or cc-only"
     if row.flag in _ZERO_COV_FLAGS and row.cov != 0.0:
-        return "an untested or no-lane row must read coverage 0"
+        return "an untested, excluded or no-lane row must read coverage 0"
     return None
 
 
 def _expected_remedies(ccn: int, crap: float, ceiling: int) -> frozenset:
     """README's remedy table. split-lines and add-tests share a condition and
-    differ on whether another function shares the lines, which a row cannot say."""
+    differ on whether another function shares the lines, which a row cannot say.
+    A CRAP at its ceiling reads ok, and a double a hair above the ceiling
+    cannot say whether the exact CRAP sits at it or over it: CRAP(18, 2/3) is
+    exactly 30 and its double 30.000000000000004."""
     if ccn > ceiling:
         return _DECOMPOSE
     if crap <= ceiling:
         return _OK
-    return _OVER
+    return _OVER if crap > ceiling * _HIGH else _OK | _OVER
 
 
 def remedy_problem(row, ceiling: int | None) -> str | None:
@@ -419,10 +424,13 @@ def check_rollup(by_scope: dict) -> None:
     _spent("rollup", began)
 
 
+_SUMMARY_FLAGS = ("measured", "untested", "excluded", "no_lane", "cc_only")
+
+
 def _bucket_problem(summary: dict) -> str | None:
-    counted = summary["measured"] + summary["untested"] + summary["no_lane"] + summary["cc_only"]
+    counted = sum(summary[flag] for flag in _SUMMARY_FLAGS)
     if counted != summary["functions"]:
-        return f"the four flag counts sum to the functions scored ({counted} counted)"
+        return f"the five flag counts sum to the functions scored ({counted} counted)"
     return None
 
 

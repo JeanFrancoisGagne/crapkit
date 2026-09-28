@@ -24,10 +24,11 @@ import pytest
 
 from crapkit import invariants as inv
 from crapkit.churn import FileChurn
+from crapkit.coverage_istanbul import FnCoverage
 from crapkit.errors import InternalCheckError, ToolError
 from crapkit.merge import FunctionRecord
 from crapkit.ratchet import RatchetEntry
-from crapkit.score import ScoredRow
+from crapkit.score import ScoredRow, score_rows
 from crapkit.snapshot import InventoryRow
 from crapkit.verify import GateViolation, Verdict
 from crapkit.worklist import WorklistEntry
@@ -160,10 +161,13 @@ def test_inventory_rows_take_the_shape_checks_only():
     (dict(cov=1.01), "coverage must be a number from 0 to 1"),
     (dict(cov=1.0, crap=6.0), "at coverage 1, CRAP must equal ccn"),
     (dict(cov=0.0, crap=6.0), "at coverage 0, CRAP must equal ccn^2+ccn"),
-    (dict(flag="partial"), "flag must be measured, untested, no-lane or cc-only"),
-    (dict(flag="untested"), "an untested or no-lane row must read coverage 0"),
-    (dict(flag="no-lane"), "an untested or no-lane row must read coverage 0"),
-    (dict(flag="cc-only", cov=0.0, crap=20.0), "a cc-only row's CRAP must equal its ccn"),
+    (dict(flag="partial"), "flag must be measured, untested, excluded, no-lane or cc-only"),
+    (dict(flag="untested"), "an untested, excluded or no-lane row must read coverage 0"),
+    (dict(flag="no-lane"), "an untested, excluded or no-lane row must read coverage 0"),
+    (dict(flag="excluded", crap=4.0), "an untested, excluded or no-lane row must read coverage 0"),
+    (dict(flag="cc-only", cov=0.0, crap=20.0), "a cc-only or excluded row's CRAP must equal its ccn"),
+    (dict(flag="excluded", cov=0.0, crap=20.0),
+     "a cc-only or excluded row's CRAP must equal its ccn"),
     (dict(remedy="add-tests"), "remedy must follow the README remedy table at ceiling 6"),
     (dict(remedy="decompose"), "remedy must follow the README remedy table at ceiling 6"),
 ])
@@ -188,6 +192,45 @@ def test_the_remedy_rule_reads_each_row_s_scope_ceiling():
     rows = [scored(ccn=7, cov=1.0, crap=7.0, remedy="decompose", scope="src"),
             scored(ccn=7, cov=1.0, crap=7.0, remedy="ok", scope="util")]
     inv.check_rows(rows, {"src": 6, "util": 10}.__getitem__)
+
+
+def _inventory(name: str, start: int, end: int, ccn: int) -> InventoryRow:
+    return InventoryRow("src", "src/m.py", f"{name}( x )", start, end, ccn, ccn, ccn,
+                        end - start + 1, 1, 1)
+
+
+def test_the_rows_of_functions_their_lane_excluded_pass_the_row_checks():
+    """README's Flags table: a function its coverage tool was told to leave out
+    reads `excluded`, cov 0 and crap = ccn, and its remedy is ok or decompose:
+    ccn 5 under ceiling 6 is 5.0 ok, ccn 8 is 8.0 decompose."""
+    rows = [_inventory("small", 1, 4, 5), _inventory("big", 6, 20, 8)]
+    coverage = {"src/m.py": [FnCoverage("small", 1, 4, False, 0, 0, excluded=True),
+                             FnCoverage("big", 6, 20, False, 0, 0, excluded=True)]}
+
+    judged = score_rows(rows, coverage, lane_scopes={"src"}, target=6)
+
+    assert [(r.flag, r.cov, r.crap, r.remedy) for r in judged] == [
+        ("excluded", 0.0, 5.0, "ok"), ("excluded", 0.0, 8.0, "decompose")]
+    inv.check_rows(judged, lambda scope: 6)
+
+
+def test_a_crap_exactly_at_its_ceiling_passes_the_remedy_check():
+    """ccn 18 at 2/3 branch coverage is 324 x (1/3)^3 + 18 = 30 exactly, and its
+    double reads 30.000000000000004. README: a CRAP at its ceiling reads ok, so
+    at target 30 the row reads ok and the remedy check lets it through."""
+    rows = [_inventory("tie", 1, 40, 18)]
+    coverage = {"src/m.py": [FnCoverage("tie", 1, 40, True, 3, 2)]}
+
+    judged = score_rows(rows, coverage, lane_scopes={"src"}, target=30)
+
+    assert [(r.flag, r.remedy) for r in judged] == [("measured", "ok")]
+    inv.check_rows(judged, lambda scope: 30)
+
+
+def test_a_crap_a_hair_over_its_ceiling_still_owes_its_remedy():
+    """30.001 is over a ceiling of 30 by far more than float noise: ok is wrong there."""
+    row = scored(ccn=18, cov=0.5, crap=30.001, remedy="ok")
+    assert "README remedy table" in stopped(inv.check_rows, [row], lambda scope: 30)
 
 
 def test_without_a_ceiling_the_remedy_must_still_be_a_documented_word():
@@ -348,8 +391,8 @@ def test_totals_inside_their_bounds_pass():
 
 
 def summary(**over) -> dict:
-    base = {"run_id": 1, "functions": 10, "measured": 6, "untested": 2, "no_lane": 1,
-            "cc_only": 1, "over_target": 1, "grade": "D", "crap_load": 40.0}
+    base = {"run_id": 1, "functions": 10, "measured": 5, "untested": 2, "excluded": 1,
+            "no_lane": 1, "cc_only": 1, "over_target": 1, "grade": "D", "crap_load": 40.0}
     return {**base, **over}
 
 
@@ -358,7 +401,8 @@ def test_a_summary_inside_its_bounds_passes():
 
 
 def test_each_summary_bound_stops_its_wrong_count():
-    assert "four flag counts sum" in stopped(inv.check_summary, summary(measured=5), 10)
+    assert "five flag counts sum" in stopped(inv.check_summary, summary(measured=4), 10)
+    assert "five flag counts sum" in stopped(inv.check_summary, summary(excluded=0), 10)
     assert "over_target <= judged rows" in stopped(inv.check_summary, summary(), 0)
     assert "README band table (D)" in stopped(inv.check_summary, summary(grade="C"), 10)
 
