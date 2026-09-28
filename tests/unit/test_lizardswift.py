@@ -363,6 +363,27 @@ def test_a_type_member_or_a_keyword_mark_is_no_chain(expression):
     assert _counts(source) == (1, 1, 1, 0, 0)
 
 
+@pytest.mark.parametrize("expression", [
+    "Empty?.none", "Int?.some(1)", "Int?.init(1)", "[Int]?.none", "Set<Int>?.none",
+    "(Int, Int)?.none", "Int??.none", "y == Int?.none", "[String?.none, \"\"]"])
+def test_a_member_of_the_optional_type_itself_is_no_chain(expression):
+    """Optional's own members: `Empty?.none` is the case `none` of the type
+    `Optional<Empty>`, and `Int?.some(1)` and `Int?.init(1)` build a value of it. The `?`
+    marks the type, as in `Int?.self`, and reads no value that could be nil."""
+    source = f"func noChain() {{\n    let x = {expression}\n}}\n"
+
+    assert _counts(source) == (1, 1, 1, 0, 0)
+
+
+@pytest.mark.parametrize("chain", ["a?.map(f)", "a?.noneLeft", "a?.initial", "a?.someday"])
+def test_a_value_member_near_an_optional_member_name_still_chains(chain):
+    """Only the whole member names `none`, `some` and `init` name the optional type's
+    own members; `a?.map` and `a?.noneLeft` read a member of a value that may be nil."""
+    source = f"func chain() {{\n    let x = {chain}\n}}\n"
+
+    assert _counts(source) == (2, 2, 2, 0, 0)
+
+
 def test_a_chain_in_a_default_value_keeps_the_long_name():
     """The decision a chain adds has no source spelling, so the long name, and with it
     the ratchet key, reads as it did before the chain counted."""

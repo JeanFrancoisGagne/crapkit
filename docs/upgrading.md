@@ -296,8 +296,9 @@ Swift:
 - ccn falls where the `case` of `if case`, a keyword argument label (`for name:`) or an
   optional mark (`(any Error)?`) counted. It rises by 1 for each `??` and for each `?`
   of an optional chain after a name (`a?.b`, `self?.done()`), which counted nothing.
-  A chain after `)` or `]` (`f()?.g`) keeps its 1 and loses the nesting level it
-  opened. `params` and `nesting` fall where a comma inside one parameter or a `try`
+  `Empty?.none` and `Int?.some(1)` name a member of the optional type and chain
+  nothing. A chain after `)` or `]` (`f()?.g`) keeps its 1 and loses the nesting level
+  it opened. `params` and `nesting` fall where a comma inside one parameter or a `try`
   counted; neither is in the score.
 
 Rust:

@@ -316,7 +316,8 @@ decisions the way the McCabe text does: each `a ?? b` is one, and so is each `?`
 optional chain (`a?.b`, `f()?.g`, `c?()`), which adds to `ccn` only, as `?.` does in
 TypeScript. The `case` of `if case`, a keyword argument label such as
 `func value(for name: String)`, and an optional mark (`(any Error)?`, `[Int]?`,
-`Int?.self`) are none. A conditional operator's `?`, which Swift writes with spaces on both
+`Int?.self`, and `Empty?.none` or `Int?.some(1)`, which name a member of the optional
+type) are none. A conditional operator's `?`, which Swift writes with spaces on both
 sides, still counts.
 
 ### Scope matching

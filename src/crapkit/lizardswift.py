@@ -47,7 +47,9 @@ do:
     follows, is a label. lizard renames a label only when it is written
     `(for:` on one line, so the rest counted as a loop, an if or a catch.
   * a `?` glued to what it follows is an optional mark (`(any Error)?`,
-    `[Int]?`, `Set<Int>?`, `Int?.self`) or the start of an optional chain.
+    `[Int]?`, `Set<Int>?`, and `Int?.self`, `Empty?.none` or `Int?.some(1)`,
+    which name the optional type or one of its own members) or the start of an
+    optional chain.
     Swift writes the conditional operator with whitespace on both sides of its
     `?`, so a glued one is never that operator; lizard read it as one after
     `)`, `]` or `>`, +1 ccn and a nesting level. A mark decides nothing.
@@ -160,10 +162,11 @@ class _Chain(str):
 _CHAIN = _Chain("?.")
 # A word the tokenizer glued to its `?` (`a?`), the marks that are keywords and chain
 # nothing (`try?`, `as?`, a failable `init?`), and the members that name the optional
-# type itself rather than a value's member (`Int?.self`, `T?.Type`).
+# type itself rather than a value's member: its metatype (`Int?.self`, `T?.Type`) and
+# Optional's own case and initializers (`Empty?.none`, `Int?.some(1)`, `Int?.init(1)`).
 _GLUED_MARK = re.compile(r"\w+\?")
 _KEYWORD_MARKS = frozenset({"try?", "as?", "init?"})
-_TYPE_MEMBERS = (["self"], ["Type"], ["Protocol"])
+_TYPE_MEMBERS = (["self"], ["Type"], ["Protocol"], ["none"], ["some"], ["init"])
 
 
 def _spelled(token: str) -> str:
@@ -267,7 +270,8 @@ def _next_code(tokens: list[str], index: int) -> int:
 
 def _chains(tokens: list[str], index: int) -> bool:
     """The mark at `index` starts an optional chain: a `(` or `[` right after it, or a
-    `.` after it, on its line or the next, that names no member of the type itself."""
+    `.` after it, on its line or the next, that names no member of the optional type
+    itself (`_TYPE_MEMBERS`)."""
     if tokens[index + 1:index + 2] in (["("], ["["]):
         return True
     dot = _next_code(tokens, index)
