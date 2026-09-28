@@ -13,7 +13,8 @@ that must catch it and where it replays. retro/ledger.tsv holds one row per
 bugs row: what tools/accuracy/retro.py saw on the before commit (red only on an
 AssertionError; anything else is `not replayable`, with its class) and on the
 fix (pass). A row stays `pending` only while this tree does not hold its check
-yet; `open` marks a bug whose fix is not on main.
+yet. retro.py can also mark a bug `open` while its fix is off main, but every
+fix these tables name is merged, so no row here is open.
 """
 from __future__ import annotations
 
@@ -124,7 +125,7 @@ def test_a_triaged_fix_commit_names_every_bug_it_fixed():
 
 def _replay_kind(bug_id: str) -> str:
     number = int(bug_id[1:])
-    return "bundle" if number <= 12 else ("open" if bug_id in ("R98", "R99") else "public")
+    return "bundle" if number <= 12 else "public"
 
 
 BUG_RULES = (
@@ -135,7 +136,7 @@ BUG_RULES = (
      lambda row: row["test"].startswith(f"tests/accuracy/{row['packet']}/test_")),
     ("a known method", lambda row: row["method"] in METHODS),
     ("a known platform", lambda row: row["platform"] in PLATFORMS),
-    ("bundle for R01 to R12, open for R98 and R99",
+    ("bundle for R01 to R12, public for the rest",
      lambda row: row["replay"] == _replay_kind(row["id"])),
     ("a calc and a symptom", lambda row: row["calc"].strip() and row["symptom"].strip()),
     ("a named probe exists", lambda row: not row["probe"] or (RETRO / "probes" / row["probe"]).is_file()),
@@ -199,7 +200,7 @@ def _function_exists(test: str) -> bool:
 def _ledger_problem(row: dict) -> str | None:
     state = (row["before"], row["fix"])
     if state == ("open", "open"):
-        return None if row["id"] in ("R98", "R99") else f"{row['id']}: only an unmerged fix is open"
+        return f"{row['id']}: open, but its fix is merged; replay it on the merged commits"
     if state == ("pending", "pending"):
         return f"{row['id']} {row['test']}: {_waiting_for(row)}" if _function_exists(row["test"]) else None
     return _replayed_problem(row)

@@ -15,8 +15,9 @@ signature, not text (Unicode Standard sec. 23.8; Python's utf-8-sig codec).
 - self-diff: hook-precommit decodes a staged blob in memory for a small commit
   and reads it back from a temp tree for a large one; both gate the same
   functions for every byte variant, and (hand) every function of a new file.
-  A lone CR is a line end to the reader and not to git's diff: two strict
-  xfails (calc-bug analysis-oracles-150).
+  A lone CR is a line end to the reader and not to git's diff; the gate maps
+  git's lines onto the reader's, so an edit below one is still gated (rulings
+  AO-HOOK-CR-ONLY and AO-HOOK-LONE-CR-SHIFT, fixed from analysis-oracles-150).
 No crapkit import.
 """
 from __future__ import annotations
