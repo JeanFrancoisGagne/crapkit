@@ -293,9 +293,11 @@ Swift:
 - A function listed before keeps its long name, so its mark keeps its key. A row that
   named no function is gone: `init id : id` for a `super.init(id: id)` call, `get` for
   `r.get()`. `ratchet prune` drops its mark.
-- ccn falls where the `case` of `if case`, a keyword argument label (`for name:`) or a
-  `?` glued to what it follows (`(any Error)?`, `f()?.g`) counted, and rises by 1 for
-  each `??`. `params` and `nesting` fall where a comma inside one parameter or a `try`
+- ccn falls where the `case` of `if case`, a keyword argument label (`for name:`) or an
+  optional mark (`(any Error)?`) counted. It rises by 1 for each `??` and for each `?`
+  of an optional chain after a name (`a?.b`, `self?.done()`), which counted nothing.
+  A chain after `)` or `]` (`f()?.g`) keeps its 1 and loses the nesting level it
+  opened. `params` and `nesting` fall where a comma inside one parameter or a `try`
   counted; neither is in the score.
 
 Rust:

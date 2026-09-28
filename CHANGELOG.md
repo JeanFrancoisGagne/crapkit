@@ -965,13 +965,17 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
 - The `case` of `if case`, `guard case`, `while case` and `for case` no longer counts as a
   switch case, +1 ccn_std and a nesting level. A keyword spelled as an argument label,
   `func value(for name: String)`, no longer counts as a loop, an if or a catch in ccn,
-  cognitive or nesting. A `?` glued to what it follows, the optional mark of
-  `(any Error)?` or the chain of `f()?.g`, is no conditional operator; the one Swift
-  writes with spaces on both sides still is. Each `??` now adds 1 to ccn, as `&&` does.
-  On Alamofire 5 the gated ccn falls on 100 functions and rises on 12, and ccn_std now
-  differs from tree-sitter-swift's count on 4 of 832 functions, down from 125. Those 4
-  hold a `&&` or `||` in a `#if` line or an `@unknown default`, which crapkit counts as
-  no decision on purpose.
+  cognitive or nesting. An optional mark, `(any Error)?`, `[Int]?` or `Int?.self`, is no
+  decision; after `)`, `]` or `>` it counted as a conditional operator. Each `?` of an
+  optional chain, `a?.b`, `f()?.g`, `c?()` or `d?[0]`, adds 1 to ccn and nothing to
+  cognitive or nesting, the way `?.` counts in TypeScript: after a name it counted
+  nothing, and after `)` or `]` it counted as a conditional operator with a nesting
+  level. The conditional operator, which Swift writes with spaces on both sides, still
+  counts. Each `??` now adds 1 to ccn, as `&&` does. On Alamofire 5 the gated ccn rises
+  on 117 functions and falls on 80. Against tree-sitter-swift's count plus one per
+  optional chain, ccn_std now differs on 4 of 832 functions, down from 201 of the 780
+  that 0.8.0 listed. Those 4 hold a `&&` or `||` in a `#if` line or an
+  `@unknown default`, which crapkit counts as no decision on purpose.
 - `params` no longer counts a comma inside one parameter (`pair: (Int, Int)`,
   `(A, B) -> Void`, `[1, 2]`, `Dictionary<String, Int>()`), and `nesting` no longer
   rises at each `try`. A comparison in a default value, spaced or not

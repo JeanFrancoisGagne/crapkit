@@ -339,13 +339,37 @@ def test_an_optional_type_mark_is_no_decision(mark):
         .replace("<", " < ").replace(">", " > ").replace(":", " :").replace("- >", "->").split())
 
 
-@pytest.mark.parametrize("chain", ["f()?.g()", "a[0]?.b", "{ $0 }()?.b"])
-def test_an_optional_chain_is_no_decision(chain):
-    """Optional Chaining: `f()?.g()` calls g only when f returned a value, which the
-    function does not branch on."""
+@pytest.mark.parametrize("chain,decisions", [
+    ("a?.b", 1), ("f()?.g()", 1), ("a[0]?.b", 1), ("{ $0 }()?.b", 1), ("c?()", 1), ("d?[0]", 1),
+    ("self?.done()", 1), ("a?\n            .b", 1), ("a?.b?.c", 2), ("f()?.g?[0]?()", 3)])
+def test_each_optional_chain_is_one_decision(chain, decisions):
+    """Optional Chaining: `a?.b` reads b only when a holds a value and gives nil
+    otherwise, one short-circuit decision per `?` (NIST SP 500-235 sec. 4.1), as
+    `a?.b` counts in TypeScript. It opens no block, and the Sonar paper ignores it
+    (Ignore shorthand), so cognitive and nesting stay 0. A chain after a name read no
+    decision, and one after `)` or `]` read a conditional operator with its nesting."""
     source = f"func chain() {{\n    let x = {chain}\n}}\n"
 
-    assert _counts(source)[:3] == (1, 1, 1)
+    assert _counts(source) == (1 + decisions,) * 3 + (0, 0)
+
+
+@pytest.mark.parametrize("expression", ["Int?.self", "[Int]?.self", "(() -> Void)?.self",
+                                        "Int?.Type.self", "try? load()", "x as? Int", "a!.b"])
+def test_a_type_member_or_a_keyword_mark_is_no_chain(expression):
+    """Types, Metatype Type: `Int?.self` names the optional type itself. `try?` and `as?`
+    give nil for a failure and chain nothing, and `a!` unwraps without a choice."""
+    source = f"func noChain() {{\n    let x = {expression}\n}}\n"
+
+    assert _counts(source) == (1, 1, 1, 0, 0)
+
+
+def test_a_chain_in_a_default_value_keeps_the_long_name():
+    """The decision a chain adds has no source spelling, so the long name, and with it
+    the ratchet key, reads as it did before the chain counted."""
+    source = "func f(limit: Int = config?.limit ?? 3, next: Int = m?(1)) {\n    show(1)\n}\n"
+
+    assert _rows(source)[0][0] == "f limit : Int = config? . limit ?? 3 , next : Int = m? 1"
+    assert _counts(source)[:3] == (4, 4, 4)
 
 
 @pytest.mark.parametrize("ternary", ["(a > b) ? 1 : 2", "f(a) ? 1 : 2", "a > b\n        ? 1\n        : 2"])

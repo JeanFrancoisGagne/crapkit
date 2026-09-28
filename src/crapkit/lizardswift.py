@@ -36,8 +36,8 @@ it lose their rows:
 Decisions
 ---------
 The McCabe count is 1 + the binary decisions (NIST SP 500-235 sec. 4.1).
-lizard counted three Swift spellings that decide nothing and missed one that
-does:
+lizard counted three Swift spellings that decide nothing and missed two that
+do:
 
   * the `case` of `if case`, `guard case`, `while case` and `for case` belongs
     to that statement's one condition. lizard counted it as a switch case too,
@@ -47,9 +47,14 @@ does:
     follows, is a label. lizard renames a label only when it is written
     `(for:` on one line, so the rest counted as a loop, an if or a catch.
   * a `?` glued to what it follows is an optional mark (`(any Error)?`,
-    `[Int]?`, `Set<Int>?`) or an optional chain (`f()?.g`). Swift writes the
-    conditional operator with whitespace on both sides of its `?`, so only
-    that `?` is a decision; lizard counted both, +1 ccn and a nesting level.
+    `[Int]?`, `Set<Int>?`, `Int?.self`) or the start of an optional chain.
+    Swift writes the conditional operator with whitespace on both sides of its
+    `?`, so a glued one is never that operator; lizard read it as one after
+    `)`, `]` or `>`, +1 ccn and a nesting level. A mark decides nothing.
+  * an optional chain (`a?.b`, `f()?.g`, `c?()`, `d?[0]`) reads the rest of
+    the chain only when the value before its `?` is not nil: one short-circuit
+    decision per `?`, as `a?.b` is in TypeScript. It adds 1 to ccn and nothing
+    to cognitive or nesting. lizard counted none after a name.
   * `a ?? b` picks one of two values, one decision, and lizard counted none.
 
 A comma inside one parameter's type or default, as in `pair: (Int, Int)`,
@@ -71,7 +76,9 @@ so every count and every name reads it as before, and only
 `_Plain`: its value carries a leading `_`, the way lizard renames a label
 written `(for:`, so no count reads it, and the parameter list names it by its
 source spelling. A `<` that compares is an `_Operator`, the same value again,
-which only the parameter count reads differently.
+which only the parameter count reads differently. An optional chain's decision
+is a `_Chain`, a token added after its `?` with the value `?.`, which ccn counts
+and the parameter list skips, so a long name reads as before.
 
 Registration
 ------------
@@ -141,6 +148,22 @@ class _Plain(str):
     @property
     def spelling(self) -> str:
         return self[1:]
+
+
+class _Chain(str):
+    """The one decision an optional chain makes (`a?.b`, `f()?.g`, `c?()`, `d?[0]`): the
+    rest of the chain runs only when the value before its `?` is not nil. It follows
+    that `?` in the token stream with the value `?.`, which ccn counts and cognitive and
+    nesting do not. It has no source spelling, so the parameter list skips it."""
+
+
+_CHAIN = _Chain("?.")
+# A word the tokenizer glued to its `?` (`a?`), the marks that are keywords and chain
+# nothing (`try?`, `as?`, a failable `init?`), and the members that name the optional
+# type itself rather than a value's member (`Int?.self`, `T?.Type`).
+_GLUED_MARK = re.compile(r"\w+\?")
+_KEYWORD_MARKS = frozenset({"try?", "as?", "init?"})
+_TYPE_MEMBERS = (["self"], ["Type"], ["Protocol"])
 
 
 def _spelled(token: str) -> str:
@@ -226,13 +249,48 @@ def _read_all(tokens: list[str]) -> list[str]:
     return read
 
 
+def _is_mark(tokens: list[str], index: int) -> bool:
+    """A `?` glued to what it follows: `)?`, `]?`, `>?`, or the tokenizer's `a?`."""
+    token = tokens[index]
+    if token == "?":
+        return index > 0 and not tokens[index - 1].isspace()
+    return token not in _KEYWORD_MARKS and bool(_GLUED_MARK.fullmatch(token))
+
+
+def _next_code(tokens: list[str], index: int) -> int:
+    """The index of the first token after `index` that is not whitespace."""
+    index += 1
+    while index < len(tokens) and tokens[index].isspace():
+        index += 1
+    return index
+
+
+def _chains(tokens: list[str], index: int) -> bool:
+    """The mark at `index` starts an optional chain: a `(` or `[` right after it, or a
+    `.` after it, on its line or the next, that names no member of the type itself."""
+    if tokens[index + 1:index + 2] in (["("], ["["]):
+        return True
+    dot = _next_code(tokens, index)
+    member = _next_code(tokens, dot)
+    return tokens[dot:dot + 1] == ["."] and tokens[member:member + 1] not in _TYPE_MEMBERS
+
+
 def _optional_marks(tokens):
-    """The raw tokens, each `?` glued to the token before it made a `_Plain`. The
-    tokenizer already glues one after a word (`String?`); this takes the rest."""
-    previous = "\n"
-    for token in tokens:
-        yield _Plain("_?") if token == "?" and not previous.isspace() else token
-        previous = token
+    """The raw tokens, each `?` glued to the token before it made a `_Plain`, and a
+    `_Chain` after each mark that starts an optional chain. The tokenizer already glues
+    one after a word (`String?`); this takes the rest."""
+    tokens = list(tokens)
+    for index in range(len(tokens)):
+        yield from _marked(tokens, index)
+
+
+def _marked(tokens: list[str], index: int) -> list[str]:
+    """The token at `index` as the reader keeps it, then a `_Chain` if it starts one."""
+    token = tokens[index]
+    if not _is_mark(tokens, index):
+        return [token]
+    kept = _Plain("_?") if token == "?" else token
+    return [kept, _CHAIN] if _chains(tokens, index) else [kept]
 
 
 class _Clauses:
@@ -331,7 +389,7 @@ class CorrectedSwiftStates(_StockSwiftStates):
         if token == "(" and self.br_count == 1:
             self.parameter_brackets = []
         _nest(self.parameter_brackets, token)
-        if token not in "()":
+        if token not in "()" and not isinstance(token, _Chain):
             inside = len(self.parameter_brackets) > 1
             _add_parameter(self.context.current_function, _spelled(token), inside)
 
@@ -341,7 +399,8 @@ class CorrectedSwiftReader(_StockSwiftReader):
 
     # pylint: disable=too-few-public-methods
 
-    _logical_operators = _StockSwiftReader._logical_operators | {"??"}
+    # `a ?? b` and an optional chain's `?.` each decide once, the way `&&` does.
+    _logical_operators = _StockSwiftReader._logical_operators | {"??", _CHAIN}
 
     # lizard's ND extension reads a reader's `loops` in place of its own set. This is
     # that set without `try`, which in Swift marks an expression and opens no block.
