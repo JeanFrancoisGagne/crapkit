@@ -909,7 +909,7 @@ $ crapkit verify --json
 | `commit` | string | The commit the verified tree is at. Equal to `baseline_commit` when you are verifying uncommitted work. |
 | `changed_files` | int | Files in the diff being judged. |
 | `unreadable_names` | array of strings | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`: the names the `crapkit: left out` lines on stderr give. `[]` when every name is UTF-8. A scope that takes such a name never gets here: the command exits 3 first. |
-| `changed_paths` | array of strings | Those files, sorted, since 0.8.1. The text form names the first three on a line under the verdict, `changed files: app/m.py, app/n.py, tests/test_m.py`, then `and N more`. |
+| `changed_paths` | array of strings | Those files, sorted, since 0.8.1. The text form names the first three on a line under the verdict, the files verify scored ahead of the rest, `changed files: app/m.py, app/n.py, tests/test_m.py`, then `and N more`. |
 | `untracked_in_scope` | array of strings | Source files inside a scope that git does not track, since 0.8.1. verify's diff and corpus hold git-tracked files only, so these were not judged. The text form warns on stderr, names the first three and says to `git add` them. |
 
 ### Findings
@@ -1439,6 +1439,7 @@ name, so `anchor_ts`, every age and every repayment count across the rename, and
 | `digest` | **Never JSON.** Plain lines, and silent when nothing changed. |
 | `report` | No payload of its own. It writes one self-contained HTML page to `.crapkit/report.html` (or `--out PATH`, repo-relative, or an absolute path you name) and prints that path on stdout, rendering the `worklist` and `trend` payloads above at their defaults. Read those two instead of parsing the page. |
 | `explain` | Plain lines by default. `--json` emits the same content as one sorted-keys object with `schema` 1: the score per run, the ratchet mark, and under `--history` the commits that touched the function, each carrying its message `body` alongside its sha. `NAME` takes a start line as of 0.4.5, the same form `brief` takes. `--history` reads the span the newest run measured on the working tree, maps it through the uncommitted diff onto HEAD's lines, and asks `git log -L` about those. `commits` is `null` with a `commits_note` when the span holds only uncommitted lines (`pkg/m.py:9-10 holds only uncommitted lines, so no commit has touched it yet`) and when git cannot answer, quoting git's error and ending ``fix what git reports, then run `crapkit explain --history` again``. `--tests` withholds its test ids whenever the file's dark lines are withheld: `tests` is `null` and `tests_note` repeats `uncovered_lines_note`, because the contexts sit on the same stale line numbers. |
+| `--version --json` | `{"analysis_version", "commit", "dirty", "schema", "version"}` (since 0.8.1), with the two flags in either order. `version` is the number `crapkit --version` prints. `commit` is the full sha this crapkit was built from: git answers for a source checkout or an editable install, and an installed wheel reads the stamp its build wrote into `crapkit/_build.json` (every build made in a git checkout writes one, and a wheel built from an sdist carries the sdist's). `dirty` is true when that checkout held staged or unstaged edits or a file git neither tracks nor ignores. Both are `null` for a build made with no checkout at hand and for a checkout git cannot read. `analysis_version` is the number `doctor --json` reports and the ratchet's metric stamp carries. The text form is `crapkit X.Y.Z` in a pipe; on a terminal a build that is not a release adds `(commit <sha>, clean)` or `(commit <sha>, dirty)`. |
 
 ### Read commands that write
 
@@ -1953,8 +1954,11 @@ declares `required` from each tool's positionals (`get_function_brief` and
 `get_function_history` require `path` and `name`). A missing positional answers
 `get_function_brief needs name (see inputSchema.required)`, an undeclared key answers
 `list_worklist does not take 'bogus'; accepted: repo, top, scope`, and a wrong type answers
-`top must be an integer (got "three")`. Arguments that are not an object, by-position ones
-included, answer with the JSON type they came as,
+`top must be an integer (got "three")`. A string that holds U+0000, or an array item that
+does, answers `path must not hold a NUL character (U+0000)` with the argument's own name:
+no file name or process argument can carry one, and before 0.8.1 it answered `-32603`.
+Arguments that are not an object, by-position ones included, answer with the JSON type
+they came as,
 `arguments must be an object (got a number)`: MCP takes them by name. Only null or absent
 `arguments` read as none given; an empty string, `0`, `false` and `[]` get the same
 refusal, such as `arguments must be an object (got a boolean)`. The refusal names the
