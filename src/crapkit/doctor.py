@@ -1,12 +1,14 @@
 """`crapkit doctor` checks: does crapkit.toml still describe THIS repo? Pure."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 import os
 import re
 from pathlib import PurePath
 from typing import NamedTuple
 
+from .lane_command import command_steps
 from .named import first_few
 from .universe import LANGUAGE_EXTENSIONS, exclude_matcher, scopes_with_tests
 
@@ -124,7 +126,39 @@ def files_template_gaps(scoped_tests, scope_paths: dict[str, tuple[str, ...]],
         name=name, paths=", ".join(scope_paths[name]))) for name in gaps)
 
 
-_DATA_FILE_FLAG = re.compile(r"""--data-file[=\s]+["']?([^\s"']+)""")
+_UNREADABLE_PAYLOAD = (
+    "lane {name!r}: sh cannot split the script in `{step}`, since a quote or an escape in it "
+    "never closes, so crapkit reads nothing inside it: the full-suite guard, the pytest-cov "
+    "probe and the coverage data-file check all pass it unjudged; fix its quoting"
+)
+
+
+def unreadable_payloads(lanes) -> tuple[Finding, ...]:
+    """One WARN per `bash -c` or `sh -c` step whose payload sh cannot split
+    (Q40). The lane still loads: the shell may read it some other way, and a
+    refusal would name a problem crapkit only guessed at. What the reader has to
+    know is that no check looked inside it."""
+    return tuple(Finding("WARN", _UNREADABLE_PAYLOAD.format(name=lane.name, step=step))
+                 for lane in lanes for step in command_steps(lane.command).unreadable)
+
+
+def _flag_values(words: tuple[str, ...], flag: str) -> Iterator[str]:
+    """Every value `flag` takes in one argv: `--flag=value` or `--flag value`."""
+    for at, word in enumerate(words):
+        if word.startswith(flag + "="):
+            yield word[len(flag) + 1:]
+        elif word == flag and at + 1 < len(words):
+            yield words[at + 1]
+
+
+def _data_file_flag(command: str) -> str:
+    """The first `--data-file` a step of the command hands coverage, "" when
+    none does. Read as the shell reads the line, a `bash -c` payload included: a
+    regex stopped at the first space or quote, so `"cov a/.coverage"` and
+    `"cov b/.coverage"` both read as `cov`."""
+    values = (value for step in command_steps(command).steps
+              for value in _flag_values(step.words, "--data-file"))
+    return next(values, "")
 
 
 def _coverage_data_file(lane) -> str:
@@ -132,8 +166,8 @@ def _coverage_data_file(lane) -> str:
 
     The command's own `--data-file`, else COVERAGE_FILE from the lane's env,
     else coverage.py's default, in the directory the lane starts in."""
-    flag = _DATA_FILE_FLAG.search(lane.command)
-    name = flag.group(1) if flag else dict(lane.env).get("COVERAGE_FILE") or ".coverage"
+    name = (_data_file_flag(lane.command) or dict(lane.env).get("COVERAGE_FILE")
+            or ".coverage")
     return os.path.normcase(os.path.normpath(os.path.join(lane.cwd or ".", name)))
 
 
@@ -835,8 +869,8 @@ def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_w
 #
 # Each finding below is a place the gate or a lane is set up and does not run,
 # and nothing else says so: the coverage guard refuses only when `coverage`
-# starts, git skips a hook it was sent away from, and pre-commit in CI judges
-# an index nobody staged. Pure: the caller reads the environment and the files.
+# starts, and git skips a hook it was sent away from. Pure: the caller reads the
+# environment and the files.
 
 _CONTAINER_LANE = (
     "lane {name!r} runs a coverage.py suite and this is a container ({marker}): "

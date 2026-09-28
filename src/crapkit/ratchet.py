@@ -221,13 +221,17 @@ def _stamp_versions(stamp: str) -> dict[str, tuple[int, ...]]:
 
 
 def coverage_then_seed(rebaseline: str = "re-baseline") -> str:
-    """The remedy every stamp refusal prints: a fresh run, then the seed.
+    """The remedy every stamp refusal prints: a fresh run, a prune, then the seed.
 
     Seed stamps the metric of the run it reads. Right after an upgrade the
     newest run is the older crapkit's, so seed alone kept the old stamp and
-    verify refused again.
+    verify refused again. A new metric can also move a function's key (a
+    UTF-16 source, a name holding a byte cp1252 leaves undefined), and seed
+    never drops a mark, so prune goes between them to drop the mark left under
+    the old key, as the upgrade guide says.
     """
-    return f"run `{_self()} coverage`, then {rebaseline} with `{_self()} ratchet seed`"
+    return (f"run `{_self()} coverage`, then `{_self()} ratchet prune`, then {rebaseline} "
+            f"with `{_self()} ratchet seed`")
 
 
 def comment_line(line: str) -> bool:

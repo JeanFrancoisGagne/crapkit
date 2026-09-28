@@ -7,6 +7,7 @@ lane durations already sit on disk: advisory, and identical for identical input.
 """
 import pytest
 
+from crapkit import config
 from crapkit.config import Lane
 from crapkit.doctor import parallel_seconds, shared_coverage_data, suggest_knobs, tune_lines
 from crapkit.junitparse import suite_seconds
@@ -303,3 +304,38 @@ def test_lanes_sharing_a_data_file_hold_the_lane_slots_at_one():
         "and combines, and two of them at once can fail one lane; give each lane its own "
         "COVERAGE_FILE, for example env = { COVERAGE_FILE = \".coverage.a\" } in lane 'a' and "
         "env = { COVERAGE_FILE = \".coverage.b\" } in lane 'b', then rerun doctor --tune"]
+
+
+def _data_file_lane(name: str, spelled: str) -> Lane:
+    return _lane(name, command=f"coverage run --data-file={spelled} -m pytest -q && "
+                               f"coverage json --data-file={spelled} -o .crapkit/cov/{name}.json")
+
+
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+@pytest.mark.parametrize("a, b", [
+    ('"cov a/.coverage"', '"cov b/.coverage"'),
+    ('cov" a"/.coverage', 'cov" b"/.coverage'),
+])
+def test_a_quoted_data_file_is_read_as_the_word_the_shell_hands_coverage(monkeypatch, shell_is_cmd,
+                                                                          a, b):
+    """PT2: a regex stopped at the first space or quote, so `cov a/.coverage`
+    and `cov b/.coverage` both read as `cov`, and `doctor --tune` held the
+    lane slots at 1 for two lanes that never share a file."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    assert shared_coverage_data([_data_file_lane("la", a), _data_file_lane("lb", b)]) == ()
+    assert shared_coverage_data([_data_file_lane("la", a), _data_file_lane("lb", a)]) == (
+        ("la", "lb"),)
+
+
+def test_under_sh_a_single_quoted_or_escaped_data_file_is_one_word(monkeypatch):
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    assert shared_coverage_data([_data_file_lane("la", "'cov a/.coverage'"),
+                                 _data_file_lane("lb", r"cov\ b/.coverage")]) == ()
+
+
+def test_the_space_form_and_a_bash_c_payload_name_their_data_file():
+    assert shared_coverage_data([
+        _lane("la", command='coverage run --data-file "cov a/.coverage" -m pytest'),
+        _lane("lb", command="bash -c \"coverage run --data-file='cov b/.coverage' -m pytest\"")]) == ()
+    assert shared_coverage_data([_lane("la", command="coverage json --data-file"),
+                                 _lane("lb")]) == (("la", "lb"),), "no value, the default file"

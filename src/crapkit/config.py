@@ -10,16 +10,18 @@ compare the text."""
 from __future__ import annotations
 
 import os
-import re
-import shlex
+import posixpath
 import tomllib
-from collections.abc import Iterator
 from pathlib import Path
 from typing import NamedTuple
 
 from .errors import ConfigError
 from .invocation import quoted_path
 from .config_contract import admit, enum_values
+from . import lane_command
+# shell_words and shell_segments are read through this module by callers that
+# predate lane_command's tokenizer.
+from .lane_command import Step, command_steps, shell_segments, shell_words  # noqa: F401
 from .repopath import Refused, declared, disk_spelling, file_separators
 from .repotext import plain_utf8
 
@@ -85,208 +87,19 @@ _PYTEST_VALUE_FLAGS = frozenset({
 })
 
 
-# Lane commands run under shell=True: sh on POSIX, cmd.exe on Windows. The two
-# read a command line differently, and the guard has to read it like the one
-# that will run it, or it accepts a lane cmd.exe breaks and refuses one it runs.
+# Lane commands run under shell=True: sh on POSIX, cmd.exe on Windows. The one
+# flag every reader of a lane command asks; lane_command reads the line in the
+# dialect it names, and admin and verifying say which shell runs the lane.
 SHELL_IS_CMD = os.name == "nt"
 
 
-def shell_words(command: str, cmd: bool | None = None) -> list[str]:
-    """The words the shell hands the runner. `-m "not live and not perf"` is one
-    argument there and must be one token here — a whitespace split reads four
-    positionals into it. A command the shell would refuse (a quote that never
-    closes) gets the whitespace read instead: a rough lint beats a crash at
-    config load."""
-    return [word for word, _ in _shell_tokens(command, cmd)]
-
-
-def _shell_tokens(command: str, cmd: bool | None = None) -> list[tuple[str, bool]]:
-    """The words, each with a flag: True when quoting or an escape built it. A
-    built word is an argument and never the shell's own syntax, however it is
-    spelled — `"&&"` and cmd.exe's `^&` both reach the program as the text `&&`
-    and `&`. The whitespace fallback knows no quoting, so it builds nothing."""
-    cmd = SHELL_IS_CMD if cmd is None else cmd
-    try:
-        return _cmd_tokens(command) if cmd else _sh_tokens(command)
-    except ValueError:
-        return [(word, False) for word in command.split()]
-
-
-def _sh_tokens(command: str) -> list[tuple[str, bool]]:
-    """sh's reading, from shlex, plus the flag. shlex outside posix mode leaves
-    the quotes and backslashes in the word, so a word whose two spellings differ
-    is one sh built. When the two readings disagree on where the words are
-    (`a\\ b` is one word to posix mode and two outside it), nothing is called
-    built: the operator split then reads exactly what 0.4.4 read."""
-    words = shlex.split(command)
-    raw = shlex.split(command, posix=False)
-    if len(raw) != len(words):
-        raw = words
-    return [(word, word != spelling) for word, spelling in zip(words, raw)]
-
-
-def _uncaret(command: str) -> list[tuple[str, bool]]:
-    """cmd.exe's escape. Outside a quoted run `^` is dropped and the character
-    behind it is handed on untouched, so `-k ^"not slow^"` reaches the runner as
-    `-k "not slow"`. Inside a quoted run cmd.exe leaves the caret alone: `-k
-    "a^b"` reaches the runner with its caret, so stripping unconditionally would
-    misread the two spellings cmd.exe passes through. Each character carries a
-    flag: True when a caret handed it on, which makes it text, not syntax."""
-    kept: list[tuple[str, bool]] = []
-    chars = iter(command)
-    in_quote = False
-    for char in chars:
-        if char == "^" and not in_quote:
-            kept += _escaped(chars)
-            continue
-        if char == '"':
-            in_quote = not in_quote
-        kept.append((char, False))
-    return kept
-
-
-def _escaped(chars: Iterator[str]) -> list[tuple[str, bool]]:
-    """The character a caret hands on, marked as text. A caret at the end of the
-    line escapes nothing: cmd.exe asks for another line, and a lane command is
-    one line."""
-    char = next(chars, "")
-    return [(char, True)] if char else []
-
-
-def _cmd_tokens(command: str) -> list[tuple[str, bool]]:
-    """cmd.exe's reading: a double quote opens or closes a quoted run wherever it
-    sits, so `--cov-report=json:"a b\\py.json"` is one word and the quotes
-    themselves are dropped; a single quote is an ordinary character, so
-    `'not live'` is two words; a backslash separates path components and escapes
-    nothing. A caret-escaped quote still opens the run: cmd.exe hands the quote
-    itself to the program, and the program's own reader honours it. A quote that
-    never closes raises, and shell_words falls back."""
-    words: list[tuple[str, bool]] = []
-    word, built = "", False
-    in_quote = False
-    for char, escaped in _uncaret(command):
-        if char == '"':
-            in_quote, built = not in_quote, True
-        elif _ends_the_word(char, in_quote):
-            words += _kept(word, built)
-            word, built = "", False
-        else:
-            word, built = word + char, built or escaped
-    if in_quote:
-        raise ValueError(f"no closing quotation: {command}")
-    return words + _kept(word, built)
-
-
-# What breaks one word from the next, outside a quoted run: what cmd.exe splits
-# on and what 0.4.4's shlex had. str.isspace() is wider — U+00A0, U+000B, U+000C
-# and the unicode separators are all true — and a non-breaking space pasted out
-# of rendered docs stays inside the word cmd.exe hands the runner.
-_WORD_BREAKS = " \t\r\n"
-
-
-def _ends_the_word(char: str, in_quote: bool) -> bool:
-    """A word break separates words only outside a quoted run."""
-    return char in _WORD_BREAKS and not in_quote
-
-
-def _kept(word: str, built: bool) -> list[tuple[str, bool]]:
-    """The word so far. A run of whitespace ends no word, but a pair of quotes
-    writes one: cmd.exe hands the program the empty argument in `-k "" tests`,
-    and dropping it moved every later token one place left, so the flag in
-    front swallowed a path that is really a positional."""
-    return [(word, built)] if word or built else []
-
-
-# The operators that end one command and start another. sh and cmd.exe share
-# all four, and a lane that chains a report or an upload step after the run is
-# an ordinary shape (`coverage run -m pytest && coverage json`).
-_SHELL_OPERATORS = frozenset({"&&", "||", "&", "|"})
-
-
-# A redirection and its target: `>`, `>>`, `2>`, `2>&1`, `>nul`. Both shells
-# keep them, so neither reaches the program's argv (verified cmd.exe argv:
-# `--cov=src 2>&1` -> ["--cov=src"]). Not an operator: a redirection belongs to
-# the command it sits in and starts no new one.
-_REDIRECTION = re.compile(r"\d*[<>]{1,2}")
-
-
-def shell_segments(command: str, cmd: bool | None = None) -> list[list[str]]:
-    """One argv per command on the line, read by the shell that will run it."""
-    cmd = SHELL_IS_CMD if cmd is None else cmd
-    tokens = _drop_redirections(_shell_tokens(command, cmd))
-    if not cmd:
-        tokens = _split_semicolons(tokens)
-    return _command_segments(tokens, _separators(cmd))
-
-
-def _separators(cmd: bool) -> frozenset[str]:
-    """What ends one command and starts the next. sh adds ';'; to cmd.exe it is
-    an ordinary character the program is handed (verified argv for
-    `--cov=src; echo done`: ["--cov=src;", "echo", "done"])."""
-    return _SHELL_OPERATORS if cmd else _SHELL_OPERATORS | {";"}
-
-
-def _split_semicolons(tokens: list[tuple[str, bool]]) -> list[tuple[str, bool]]:
-    """sh's ';' as its own word. shlex leaves it stuck to the word in front
-    (`--cov=src;`), so the first command read clean while the next command's
-    words landed in its argv, and the lane was refused naming a program pytest
-    never sees. A quoted ';' is an argument and stays where it is."""
-    out: list[tuple[str, bool]] = []
-    for word, built in tokens:
-        if built or not word.endswith(";"):
-            out.append((word, built))
-        else:
-            out += _kept(word[:-1], False) + [(";", False)]
-    return out
-
-
-def _drop_redirections(tokens: list[tuple[str, bool]]) -> list[tuple[str, bool]]:
-    """The words left once the shell has taken its own plumbing. Reading `>` as
-    a word refused a lane naming a positional the program is never handed."""
-    kept: list[tuple[str, bool]] = []
-    skip = False
-    for word, built in tokens:
-        if skip:
-            skip = False
-        elif _redirects(word, built):
-            skip = _takes_the_next_word(word)
-        else:
-            kept.append((word, built))
-    return kept
-
-
-def _redirects(word: str, built: bool) -> bool:
-    """Is this the shell's plumbing? A quoted `">"` is an argument: quoting is
-    how an operator is written when the program is meant to get it."""
-    return not built and _REDIRECTION.match(word) is not None
-
-
-def _takes_the_next_word(word: str) -> bool:
-    """`> run.log` opens the word behind it; `2>run.log` and `2>&1` carry their
-    target, and the word behind them is the program's again."""
-    return _REDIRECTION.fullmatch(word) is not None
-
-
-def _command_segments(tokens: list[tuple[str, bool]],
-                      separators: frozenset[str]) -> list[list[str]]:
-    """One list per command on the line. Only the segment a runner sits in is
-    that runner's argv: reading `pytest --cov && coverage json` flat called
-    `coverage` a positional pytest is never handed. A word quoting or an escape
-    built is an argument whatever it spells, so `-k "a && b"`, `"&&"` and
-    cmd.exe's `^&` all stay inside their segment."""
-    segments: list[list[str]] = [[]]
-    for word, built in tokens:
-        if word in separators and not built:
-            segments.append([])
-        else:
-            segments[-1].append(word)
-    return segments
-
-
-def _quote_hint(command: str) -> str:
+def _quote_hint(step: Step) -> str:
     """The usual reason a Windows lane trips the guard: a value in single
-    quotes, which cmd.exe hands the runner one word per space."""
-    if SHELL_IS_CMD and "'" in command:
+    quotes, which cmd.exe hands the runner one word per space. Only a step
+    cmd.exe read keeps a ' in its words: a `bash -c` payload is read with sh's
+    quotes, and telling its author to switch to double quotes sent a lane past
+    the guard."""
+    if step.cmd and any("'" in word for word in step.words):
         return " (cmd.exe does not treat ' as a quote: write the value in double quotes)"
     return ""
 
@@ -461,13 +274,13 @@ def _validate_coveragepy_command(name: str, command: str, lane_dir: Path | None 
     # Subset coverage under a suite with cross-file pollution is run-order-dependent;
     # a full-suite lane refuses positional narrowing. Scoped suites opt out with
     # full_suite = false, an explicit and reviewable decision. Every chained
-    # segment is read: a second pytest run narrows just as much as the first.
-    for segment in shell_segments(command):
-        _refuse_pytest_narrowing(name, command, segment, lane_dir)
+    # step is read, a `bash -c` payload's included: a second pytest run
+    # narrows just as much as the first.
+    for step in command_steps(command).steps:
+        _refuse_pytest_narrowing(name, step, lane_dir)
 
 
-def _refuse_pytest_narrowing(name: str, command: str, tokens: list[str],
-                             lane_dir: Path | None = None) -> None:
+def _refuse_pytest_narrowing(name: str, step: Step, lane_dir: Path | None = None) -> None:
     """One command's argv. A segment that runs no pytest has nothing to narrow,
     and a positional equal to a configured testpaths entry narrows nothing.
 
@@ -477,12 +290,12 @@ def _refuse_pytest_narrowing(name: str, command: str, tokens: list[str],
     leaves its other testpaths unmeasured with nothing saying so, which is why
     the message names the multi-lane pattern rather than only the flag.
     """
-    positionals = _narrowing_arguments(_tokens_after_pytest(tokens))
+    positionals = _narrowing_arguments(_tokens_after_pytest(list(step.words)))
     for tok in _outside_testpaths(positionals, lane_dir):
         raise ConfigError(
             f"lane {name!r}: positional argument '{tok}' narrows a full-suite coverage run; "
             f"drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), "
-            f"or set full_suite = false deliberately{_quote_hint(command)}; a suite whose "
+            f"or set full_suite = false deliberately{_quote_hint(step)}; a suite whose "
             f"testpaths cannot be collected in one process needs one lane per testpath, "
             f"each with full_suite = false and its own artifact")
 
@@ -524,10 +337,11 @@ def _validate_istanbul_command(name: str, command: str) -> None:
     # The measured vitest trap: any file filter passed beside --coverage silently
     # narrows the coverage include set. A lane command is fixed configuration, so
     # the combination is a config error, not a runtime surprise. Each chained
-    # segment is its own argv: a script path in a post-run step is that step's,
-    # and a vitest run after `npm run build` is still a vitest run.
-    for segment in shell_segments(command):
-        _refuse_istanbul_filter(name, segment)
+    # step is its own argv: a script path in a post-run step is that step's,
+    # and a vitest run after `npm run build`, or inside `sh -c`, is still a
+    # vitest run.
+    for step in command_steps(command).steps:
+        _refuse_istanbul_filter(name, list(step.words))
 
 
 def _refuse_istanbul_filter(name: str, tokens: list[str]) -> None:
@@ -697,12 +511,8 @@ def _parse_scopes(rows, root: str | os.PathLike | None = None
 def _expanded(command: str) -> str:
     """The command with its launcher tokens expanded for the OS reading the
     file, once, as the Lane is built (lane_command.expand_launchers), so every
-    reader of the command sees the one the shell will run. Imported here and
-    not at the top: lane_command reads this module's shell tokenizer as it
-    loads."""
-    from .lane_command import expand_launchers
-
-    return expand_launchers(command)
+    reader of the command sees the one the shell will run."""
+    return lane_command.expand_launchers(command)
 
 
 def _validate_lane_command(parser: str, full_suite: bool, name: str, command: str,
@@ -721,7 +531,56 @@ def _lane_dir(root: str | os.PathLike | None, cwd: str) -> Path | None:
     return Path(root) / cwd if cwd else Path(root)
 
 
+# What Windows refuses in a file name: these characters, the control
+# characters, the device names below (with or without an extension), and a
+# name that ends in a dot or a space. A lane's name is part of the file names
+# crapkit writes for it, so the loader refuses such a name on every OS.
+_NAME_CHARS = frozenset('<>:"/\\|?*')
+_DEVICE_NAMES = frozenset({"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+                           *(f"{port}{n}" for port in ("COM", "LPT")
+                             for n in (*"0123456789", "¹", "²", "³"))})
+
+
+def _lane_name(name: str) -> None:
+    """The lane's name, refused when Windows could not use it as a file name:
+    `unit?` ended `crapkit coverage` in a traceback, and `a:b` wrote the lane's
+    log into an alternate data stream of a file named .crapkit/lane-a."""
+    problem = _unusable_file_name(name)
+    if problem:
+        raise ConfigError(f"lane {name!r}: {problem}; crapkit writes the lane's log to "
+                          ".crapkit/lane-<name>.log and refuses such a name on every OS so "
+                          "one crapkit.toml works on each; rename the lane")
+
+
+def _unusable_file_name(name: str) -> str:
+    """Why Windows cannot use `name` as a file name, or "" when it can."""
+    held = _refused_characters(name)
+    if held:
+        return f"the name holds {' '.join(map(_shown, held))}, which Windows refuses in a file name"
+    device = name.split(".")[0].rstrip(" ").upper()
+    if device in _DEVICE_NAMES:
+        return f"{device} is a device name Windows reserves, so no file can take it"
+    return _unusable_end(name)
+
+
+def _refused_characters(name: str) -> list[str]:
+    return sorted({ch for ch in name if ch in _NAME_CHARS or ord(ch) < 32})
+
+
+def _shown(ch: str) -> str:
+    return f"U+{ord(ch):04X}" if ord(ch) < 32 else ch
+
+
+def _unusable_end(name: str) -> str:
+    if not name:
+        return "the name is empty"
+    if name[-1] in ". ":
+        return f"the name ends in {'a dot' if name[-1] == '.' else 'a space'}, which Windows drops"
+    return ""
+
+
 def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = None) -> Lane:
+    _lane_name(row["name"])
     parser = row["parser"]
     lane_scopes = tuple(row.get("scopes", ()))
     unknown_scopes = set(lane_scopes) - scope_names
@@ -733,17 +592,37 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
     _validate_lane_command(parser, full_suite, row.get("name", "?"), command,
                            _lane_dir(root, cwd))
     return Lane(name=row["name"], command=command,
-                artifact=_path("lane.artifact", row["artifact"]),
+                artifact=_lane_output(row.get("name"), "artifact", row["artifact"]),
                 parser=parser, scopes=lane_scopes,
                 cwd=cwd, path_prefix=_path("lane.path_prefix", row.get("path_prefix", ""), root),
                 env=tuple(sorted(row.get("env", {}).items())),
                 full_suite=full_suite, container_ok=row.get("container_ok", False),
-                results_artifact=_path("lane.results_artifact", row.get("results_artifact", "")),
+                results_artifact=_lane_output(row.get("name"), "results_artifact",
+                                              row.get("results_artifact", "")),
                 timeout_seconds=row.get("timeout_seconds", 0),
                 no_progress_seconds=row.get("no_progress_seconds", 0),
                 retries=row.get("retries", 0),
                 retest_command=_expanded(row.get("retest_command", "")),
                 inputs=_lane_inputs(row, root))
+
+
+def _lane_output(name, key: str, raw: str) -> str:
+    """A declared lane output, refused when it names the directory crapkit.toml
+    sits in: the runner clears each declared path before an attempt and reads
+    the one file there, and `artifact = "."` ended `crapkit coverage` in a
+    traceback."""
+    value = _path(f"lane.{key}", raw)
+    if _names_the_root(value, required=key == "artifact"):
+        raise ConfigError(f"lane {name!r}: {key} names the directory crapkit.toml sits in "
+                          f"(written {quoted_path(raw)}), not a file; set it to the report "
+                          "file the lane's command writes")
+    return value
+
+
+def _names_the_root(value: str, required: bool) -> bool:
+    """Empty, `.` or `cov/..`. An optional output left empty is one the lane
+    does not declare."""
+    return (bool(value) or required) and posixpath.normpath(value or ".") == "."
 
 
 def _lane_inputs(row: dict, root: str | os.PathLike | None = None) -> tuple[str, ...]:
@@ -764,13 +643,24 @@ def _reject_shared_artifacts(lanes: list, root=None) -> None:
 
 
 def _unique_lanes(rows, scope_names: set, root) -> list[Lane]:
+    """The lanes, keyed on the name as Windows and macOS compare file names,
+    which ignore case: `unit` and `Unit` would write one log file."""
     lanes: dict[str, Lane] = {}
     for row in rows:
         lane = _parse_lane(row, scope_names, root)
-        if lane.name in lanes:
-            raise ConfigError(f"duplicate lane name {lane.name!r}; each lane needs its own name")
-        lanes[lane.name] = lane
+        _refuse_second(lanes.get(lane.name.lower()), lane)
+        lanes[lane.name.lower()] = lane
     return list(lanes.values())
+
+
+def _refuse_second(earlier: Lane | None, lane: Lane) -> None:
+    if earlier is None:
+        return
+    if earlier.name == lane.name:
+        raise ConfigError(f"duplicate lane name {lane.name!r}; each lane needs its own name")
+    raise ConfigError(f"lanes {earlier.name!r} and {lane.name!r} differ only in case, and "
+                      "Windows and macOS ignore case in a file name, so both would write the "
+                      f"log .crapkit/lane-{lane.name}.log; rename one")
 
 
 def _scoped_tests(main: dict) -> tuple[tuple[str, str], ...]:

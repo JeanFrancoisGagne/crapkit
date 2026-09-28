@@ -1,9 +1,15 @@
-"""Every stamp refusal names coverage before seed.
+"""Every stamp refusal names coverage, then prune, then seed.
 
 Seed stamps the metric of the run it reads. Right after an upgrade the newest
 trusted run was measured under the old metric, so the remedy the refusals used
 to print, `ratchet seed` alone, kept the old stamp and verify refused again.
 The remedy is a fresh coverage run, then the seed.
+
+A new metric can also move a function's key: 0.8.1 reads a UTF-16 source and a
+name holding a byte cp1252 leaves undefined. Seed never drops a mark, so the
+mark under the old key stayed, and the upgrade guide runs `ratchet prune`
+between the two. The refusals named only coverage and seed, and they are the
+first thing an upgrading user meets.
 """
 import argparse
 
@@ -38,7 +44,7 @@ def test_the_stamp_refusal_names_coverage_then_seed():
     assert stamp_conflict(OLD, NEW) == (
         f"ratchet marks were recorded under [{OLD}] but this run measures [{NEW}] - CRAP "
         "scores are not comparable across metric versions; run `crapkit coverage`, then "
-        "re-baseline with `crapkit ratchet seed`")
+        "`crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`")
 
 
 def test_the_unstamped_warning_names_coverage_then_seed(tmp_path, capsys):
@@ -48,7 +54,8 @@ def test_the_unstamped_warning_names_coverage_then_seed(tmp_path, capsys):
 
     assert capsys.readouterr().err == (
         "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) - "
-        "run `crapkit coverage`, then re-baseline with `crapkit ratchet seed` to stamp it\n")
+        "run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with "
+        "`crapkit ratchet seed` to stamp it\n")
 
 
 def test_the_merge_refusal_names_coverage_then_seed(tmp_path):
@@ -61,4 +68,5 @@ def test_the_merge_refusal_names_coverage_then_seed(tmp_path):
     assert str(refused.value) == (
         f"ratchet merge refused: ours is [{OLD}] and theirs is [{NEW}] - marks from different "
         f"metric versions cannot merge; theirs is newer, so with a crapkit that measures [{NEW}], "
-        "run `crapkit coverage`, then re-baseline the merged marks with `crapkit ratchet seed`")
+        "run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline the merged "
+        "marks with `crapkit ratchet seed`")

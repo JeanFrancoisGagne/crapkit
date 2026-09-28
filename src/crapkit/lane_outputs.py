@@ -80,10 +80,13 @@ class Outputs:
             _move(path, self._aside[name])
 
     def clear(self) -> None:
-        """Before a later attempt: drop what an earlier one of this run left at
-        a declared path, so the next attempt is judged on its own."""
+        """Before each attempt: drop what an earlier one of this run left at a
+        declared path, so the next attempt is judged on its own. A path crapkit
+        cannot clear fails the lane, as a file it cannot move aside does: an
+        OSError here ended the whole command in a traceback, and every other
+        lane's measurement with it."""
         for name in self._names:
-            (self._root / name).unlink(missing_ok=True)
+            _cleared(self._root / name, name)
 
     def written(self, name: str) -> bool:
         """Whether an attempt of this run wrote the declared file."""
@@ -100,6 +103,24 @@ class Outputs:
                 self.leftovers[name] = _sha256(self._root / name)
         shutil.rmtree(self._dir, ignore_errors=True)
         _prune_empty(self._dir.parent)
+
+
+def _cleared(path: Path, name: str) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        raise ToolError(_uncleared(path, name, exc)) from exc
+
+
+def _uncleared(path: Path, name: str, exc: OSError) -> str:
+    """Why a declared path would not clear: a directory, which no attempt can
+    write as the one file a lane output is, or a file another process holds
+    (Windows refuses to delete one an editor or a viewer has open)."""
+    if path.is_dir():
+        return (f"{name} is a directory, and a lane output is one file; point the lane's "
+                "artifact or results_artifact at the report file its command writes")
+    return (f"crapkit cannot clear {name} before the lane's next attempt ({exc}); close "
+            "whatever holds it and rerun")
 
 
 def _sha256(path: Path) -> str:
