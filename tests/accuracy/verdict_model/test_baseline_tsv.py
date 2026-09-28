@@ -12,8 +12,8 @@
   before rows carried `occurrence` reads as occurrence 0 (portable-records.md:
   16/17-column scored exports remain readable).
 - README exit 8: failures the baseline already had do not count. The portable
-  record carries no test failures, so under `--baseline-tsv` they count as
-  new: ruling V8, an open defect.
+  record names the tests its run failed, so `--baseline-tsv` forgives them as
+  the store does: ruling V8, fixed.
 """
 from __future__ import annotations
 
@@ -211,8 +211,8 @@ def test_the_record_and_the_store_give_one_verdict(make_repo, tmp_path, change, 
 @rulings.applies("V8")
 def test_a_failure_the_baseline_had_is_not_new_under_the_record(make_repo, tmp_path):
     """README exit 8: failures the baseline already had do not count. The
-    store baseline forgives a test that failed at the baseline; the portable
-    record of that same baseline does not."""
+    store baseline forgives a test that failed at the baseline, and so does the
+    portable record of that same baseline."""
     world = WORLD.with_test(vw.Test("known", failed=True))
     sc = _measured(make_repo, world)
     store = sc.run("verify", "--no-tighten", "--json")

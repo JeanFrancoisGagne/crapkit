@@ -16,17 +16,18 @@ every step:
 
 - on a copy of the repo, `verify` against the store's baseline and `verify`
   against the TSV record it emits (--emit-baseline, then --baseline-tsv) give
-  one verdict: the same exit and JSON but for the run ids, and under ruling
-  V8 a failure the baseline had counts as new under the record. Both read the
-  lanes' artifacts on disk, so only the baseline's source differs.
+  one verdict: the same exit and JSON but for the run ids. The record names
+  the tests its run failed, so it forgives what the store forgives (ruling V8,
+  fixed). Both read the lanes' artifacts on disk, so only the baseline's
+  source differs.
 
 Each verify also checks the baseline it named, the gate, regression and
 new-failure sets, the exit code and, on a pass, the tighten (with damping). The
 `tsv` command verifies a fresh clone (no .crapkit/) against that record, which
-must give the model's gate and ratchet findings, and its whole verdict when the
-baseline had no failing test (ruling V8). Around a runs prune every read
-command runs twice, and each answer is what test_retention.read_commands
-allows: unchanged, or less the pruned runs where it lists the run history.
+must give the model's whole verdict, a test the baseline failed included.
+Around a runs prune every read command runs twice, and each answer is what
+test_retention.read_commands allows: unchanged, or less the pruned runs where
+it lists the run history.
 
 test_every_step_in_one_scripted_history walks one fixed history through every
 command, so each is exercised on every push whatever the machine draws.
@@ -462,9 +463,9 @@ class History(RuleBasedStateMachine):
 
     def tsv(self):
         """On a copy: the store's baseline emitted as a TSV gives the model's
-        verdict on a clone with no store. The record carries no test failures,
-        so a failure the baseline had counts as new there (ruling V8, an open
-        defect test_baseline_tsv pins); with none, the whole verdict agrees."""
+        verdict on a clone with no store. The record names the tests the
+        baseline run failed, so a failure the baseline had is forgiven there as
+        in the store (ruling V8, fixed; test_baseline_tsv pins it)."""
         if not self._verdict_possible():
             return self.verify()
         copy = self._copy("tsv")
@@ -475,9 +476,7 @@ class History(RuleBasedStateMachine):
         result = copy.run("verify", "--baseline-tsv", "b.tsv", "--json")
         expected = expected_verdict(self.sc.world, base, self._tree(base), self._marks())
         got = json_verdict(result.json())
-        assert (got.gate, got.ratchet) == (expected.gate, expected.ratchet)
-        if not base.failures:
-            assert (result.code, got) == (expected.exit, expected)
+        assert (result.code, got) == (expected.exit, expected)
 
     # --- after every step -------------------------------------------------------------------
 
@@ -521,21 +520,15 @@ class History(RuleBasedStateMachine):
 
 
 def one_verdict(store, record) -> str:
-    """The exit and every JSON field but the run ids agree. Ruling V8
-    (calc-bug verdict-model-3, pinned in test_baseline_tsv.py): the record
-    carries no test failures, so a failure the store's baseline had, and
-    forgives, counts as new under the record. Returns which rule held."""
+    """The exit and every JSON field but the run ids agree, a failure the
+    store's baseline had and forgives included: the record names the tests its
+    run failed (ruling V8, calc-bug verdict-model-3, fixed and pinned in
+    test_baseline_tsv.py). Returns the kind of state that agreed."""
     ours, theirs = _verdict_fields(store), _verdict_fields(record)
-    forgiven = frozenset(ours.get("forgiven_failures", ()))
     report = f"store: {store.code} {store.stdout}{store.stderr}\nrecord: {record.code} {record.stdout}{record.stderr}"
-    if not forgiven:
-        assert (record.code, theirs) == (store.code, ours), report
-        return f"one verdict, exit {store.code}"
-    base, got = json_verdict(store.json()), json_verdict(record.json())
-    assert (got.gate, got.ratchet, got.new_failures) == \
-        (base.gate, base.ratchet, base.new_failures | forgiven), report
-    assert record.code == got.exit, report
-    return "V8"
+    assert (record.code, theirs) == (store.code, ours), report
+    forgiven = ", a failure forgiven" if ours.get("forgiven_failures") else ""
+    return f"one verdict, exit {store.code}{forgiven}"
 
 
 def _verdict_fields(result) -> dict:
@@ -644,17 +637,19 @@ ONE_VERDICT = {
     "only the run ids differ": (_verified(0), _verified(0, baseline_run=None, run_id=1), True),
     "a gate finding differs": (_verified(6, gate_violations=GATE), _verified(0), False),
     "the exit differs": (_verified(0), _verified(6), False),
-    "V8: the forgiven failure is new": (_verified(0, forgiven_failures=["t::known"]),
-                                        _verified(8, new_failures=["t::known"]), True),
-    "V8, but the record exits 0": (_verified(0, forgiven_failures=["t::known"]),
-                                   _verified(0, new_failures=["t::known"]), False),
+    "both forgive the baseline's failure": (_verified(0, forgiven_failures=["t::known"]),
+                                            _verified(0, forgiven_failures=["t::known"],
+                                                      baseline_run=None, run_id=1), True),
+    "the record counts the forgiven failure as new (V8)": (
+        _verified(0, forgiven_failures=["t::known"]), _verified(8, new_failures=["t::known"]),
+        False),
     "both refuse alike": (vw.drive.Result(("verify",), 5, "", "a"), vw.drive.Result(("verify",), 5, "", "b"), True),
     "one refuses": (_verified(0), vw.drive.Result(("verify",), 5, "", ""), False),
 }
 
 
 @pytest.mark.parametrize("case", sorted(ONE_VERDICT))
-def test_one_verdict_allows_only_the_run_ids_and_v8(case):
+def test_one_verdict_allows_only_the_run_ids(case):
     """one_verdict's table, worked from its docstring."""
     store, record, holds = ONE_VERDICT[case]
     try:
