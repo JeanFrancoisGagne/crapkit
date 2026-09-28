@@ -216,6 +216,10 @@ one of those five bytes moved a key, it drops the mark left under the old one. W
 seed and prune both read the pinned run: pass the new run's id to each, `crapkit ratchet
 prune --baseline N` then `crapkit ratchet seed --baseline N`; their lines and verify's
 refusal name it. Review the diff and commit it before the next `crapkit verify`.
+Until the re-seed, `crapkit doctor` WARNs on the marks file with the refusal `verify`
+prints and still exits 0, so the doctor step under
+[Measure before changing marks](#measure-before-changing-marks) passes, and the three
+commands above clear both.
 
 ### Analysis version 11
 
@@ -517,6 +521,8 @@ rest:
 | an advisory under Cursor, Copilot CLI or VS Code | `claude-hook` | 2 | 0, the advisory as one JSON object on stdout | A wrapper reads `additionalContext`; Claude Code keeps exit 2 |
 | a file an agent's shell wrote under a scope, named in bytes that are not UTF-8 | `claude-hook` | 0 | 2, an advisory naming the file and the rename | Rename the file to UTF-8 |
 | a file argument spelled `SRC\app.ts` on a case-insensitive disk, or `/c/...`, `/mnt/c/...` or `\\?\C:\...` on Windows, holding a breach | `rescore --gate`, `check_gate` | 0, 0 functions judged | 6, and `gate.ok` false | Decompose the function it names |
+| a file argument that names a directory (`src`, `src/`, `.`, `""`) holding a breach | `rescore --gate`, `check_gate` | 0, 0 functions judged, and `gate.ok` true | 3, `src is a directory; name the source files in it`; `check_gate` answers `isError` true, and `rescore` and `explain` refuse the same way | Name the files, as `git ls-files src` lists them |
+| a writer flag (`--export`, `--sarif`, `--emit-baseline`, `report --out`) that names a directory | the command that takes it | 1, a `PermissionError` traceback; `verify --sarif` had stored its run | 3 before any run is stored, `--sarif 'out' is a directory; name a file to write` | Name a file |
 | `python -m pytest Tests` under `testpaths = ["tests"]` on a case-insensitive disk | `coverage` | 3, refused as narrowing | runs as the whole suite | Drop a `full_suite = false` set only to get past it |
 | an istanbul key naming this checkout by an 8.3 name, a junction or symlink, a lower-case drive or a `\\?\` prefix | `coverage`, `verify` | 5, the lane FAILED | 0, the lane scores | None |
 | a coverage artifact that starts with a UTF-8 byte-order mark | `coverage`, `verify` | 5 | 0 | None |
