@@ -4,9 +4,11 @@ README.md#flags-why-a-coverage-number-is-missing, as a model:
 
 - `cc-only` when the scope sets coverage_optional;
 - `no-lane` when no lane's `scopes` names the scope;
+- `excluded` when the lane's artifact measured the file and was told to leave
+  the function out: an ignore hint or a pragma, ground_truth.tsv `absent` or
+  `excluded` in a file the artifact keys;
 - `untested` when a lane covers the scope but its artifact is silent on the
-  function: the file is not among the artifact's keys (read with json.load), or
-  the producer dropped the function (an ignore hint, ground_truth.tsv `absent`);
+  function: the file is not among the artifact's keys (read with json.load);
 - `measured` otherwise, except that README.md#remedy-what-to-do-about-it floors
   a Python def whose body starts on its signature's line to untested.
 
@@ -112,8 +114,17 @@ def flag_model(path: str, start: int, keys: set[str]) -> str:
         return "cc-only"
     if not has_lane:
         return "no-lane"
-    spoken = path in keys and _speaks(_truth(_files()[path]).get(start))
-    return "measured" if spoken else "untested"
+    return _lane_flag(path, start, keys)
+
+
+def _lane_flag(path: str, start: int, keys: set[str]) -> str:
+    """A laned function's flag, read off its lane's artifact and ground truth."""
+    if path not in keys:
+        return "untested"
+    row = _truth(_files()[path]).get(start)
+    if row is not None and row.unmeasured:
+        return "excluded"
+    return "measured" if _speaks(row) else "untested"
 
 
 def _expected(driver, scored: list[dict]) -> dict[tuple[str, int], str]:
@@ -129,7 +140,7 @@ def test_every_scored_flag_follows_the_readme_table(flagged):
     driver, _, scored = flagged
     found = {(row["path"], int(row["start"])): row["flag"] for row in scored}
 
-    assert set(found.values()) == {"measured", "untested", "no-lane", "cc-only"}
+    assert set(found.values()) == {"measured", "untested", "excluded", "no-lane", "cc-only"}
     assert found == _expected(driver, scored)
 
 
@@ -149,6 +160,8 @@ SCORED_AS = {
     "no-lane": lambda row: float(row["cov"]) == 0.0,
     "cc-only": lambda row: (float(row["crap"]) == int(row["ccn"])
                             and row["remedy"] in ("ok", "decompose")),
+    "excluded": lambda row: (float(row["crap"]) == int(row["ccn"])
+                             and row["remedy"] in ("ok", "decompose")),
     "measured": lambda row: 0.0 <= float(row["cov"]) <= 1.0,
 }
 

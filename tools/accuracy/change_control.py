@@ -845,15 +845,18 @@ def eslint_answer(row: dict, source: str | None, column: str) -> str | None:
     return None if None in answers else str(min(map(int, answers)))
 
 
+# README, "Flags: why a coverage number is missing": cc-only and excluded score crap = ccn.
+CCN_FLAGS = ("cc-only", "excluded")
+
+
 def exact_crap(row: dict, source: str | None) -> str | None:
     """The README's CRAP from the row's own ccn and cov, exactly: ccn^2 (1 - cov)^3 +
-    ccn, and ccn itself on a cc-only row (README, "Flags: why a coverage number is
-    missing": cc-only scores crap = ccn)."""
+    ccn, and ccn itself on a cc-only or excluded row."""
     try:
         ccn, cov = int(row["ccn"]), Fraction(float(row["cov"]))
     except (KeyError, ValueError):
         return None
-    return repr(float(ccn if row.get("flag") == "cc-only" else exact.crap(ccn, cov)))
+    return repr(float(ccn if row.get("flag") in CCN_FLAGS else exact.crap(ccn, cov)))
 
 
 COUNTS_TABLE = "accuracy.coverage_oracles.counts_table"
@@ -902,8 +905,9 @@ def _counts_of(tree, name: str) -> dict:
     return tables[name]
 
 
-# README, "Flags: why a coverage number is missing": untested and no-lane score cov = 0.
-ZERO_COV_FLAGS = ("untested", "no-lane")
+# README, "Flags: why a coverage number is missing": untested, excluded and no-lane
+# score cov = 0.
+ZERO_COV_FLAGS = ("untested", "excluded", "no-lane")
 
 
 def counts_cov(tree, cell: Cell, row: dict) -> str | None:

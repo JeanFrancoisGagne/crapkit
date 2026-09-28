@@ -17,9 +17,11 @@ crapkit's code:
   cache file's bytes as they were.
 - self-diff: the release's answers and the candidate's on one .crapkit/
   differ only in calcs a CHANGES row declared on or after the release's date.
-- CG5 (strict xfail): 0.6.0, the last release of the path format 0.7.0
-  retired without renaming the cache files, and this crapkit rewrite each
-  other's churn and coupling caches on every command.
+- CG5 (fixed): 0.6.0, the last release of the path format 0.7.0 retired
+  without renaming the cache files, and 0.7.0 to 0.8.0 rewrote each other's
+  churn-cache-v2.json and coupling-cache-v1.json on every command. This
+  crapkit writes churn-cache-v3.json and coupling-cache-v2.json, so neither
+  install touches the other's.
 """
 from pathlib import Path
 
@@ -127,7 +129,7 @@ def _rewritten(lines: list[str]) -> str:
 
 @rulings.applies("CG5")
 def test_a_retired_format_under_a_shared_name_is_never_rewritten(retired, tmp_path):
-    """R100's class: README names each cache by its format (coupling-cache-v1.json),
+    """R100's class: README names each cache by its format (coupling-cache-v2.json),
     so an older install on the same tree keeps its own file warm."""
     root = retired.copy(tmp_path / "repo")
     old, new = retired.driver(root, retired.site), retired.driver(root)

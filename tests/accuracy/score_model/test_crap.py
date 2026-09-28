@@ -188,14 +188,20 @@ def _after_d13(key: tuple) -> str:
 
 
 def test_the_tie_list_is_re_derived_for_the_d13_fix():
-    """D5 after D13: once crapkit computes with basic operations, the after_d13
-    column is what each listed tie prints. Two ties then round half-even and
-    leave the list (2 dp at CRAP(25, 19/50), 4 dp at CRAP(36, 53/120)); 90 stay."""
+    """D5 after D13: crapkit computes with basic operations, so the after_d13
+    column is what each listed tie prints, and it is the crapkit column. Two ties
+    rounded half-even once D13 landed and left the list (2 dp at CRAP(25, 19/50),
+    4 dp at CRAP(36, 53/120)); 90 stay, and none of them prints its exact value."""
     rows = cases.tie_table()
 
-    assert [key for key, row in rows.items() if _after_d13(key) != row["after_d13"]] == []
-    assert sorted(key for key, row in rows.items() if row["after_d13"] == row["exact"]) == [
-        (2, 25, 19, 50), (4, 36, 53, 120)]
+    assert _keys_where(rows, lambda key, row: _after_d13(key) != row["after_d13"]) == []
+    assert _keys_where(rows, lambda key, row: row["after_d13"] != row["crapkit"]) == []
+    assert _keys_where(rows, lambda key, row: row["after_d13"] == row["exact"]) == []
+    assert len(rows) == 90
+
+
+def _keys_where(rows: dict, holds) -> list[tuple]:
+    return [key for key, row in rows.items() if holds(key, row)]
 
 
 def _after_d13_problem(key: tuple, exact_value: Fraction, ties: dict) -> str | None:

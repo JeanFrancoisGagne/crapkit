@@ -6,15 +6,18 @@ What churn is, from the docs:
   in the churn window, a logistic weight that rises to 0.5 for the newest commit
   and falls to near zero for the oldest. When every commit shares one timestamp
   there is no range, and each commit counts once.
-- CONTEXT.md#the-worklist ("Churn window"): a commit counts while its commit
+- CONTEXT.md#the-worklist ("Churn window"): the months are counted back from
+  HEAD's commit date, never from today's; a commit counts while its commit
   date is at or after the window's cutoff; its recency weight reads the author
-  date.
+  date. README.md#risk-what-ranks-the-worklist: so a fixed tree ranks
+  identically forever.
 - docs/agent-json.md#next-item: `commits` and `authors` are the file's churn in
   the window.
 
 How this walk reads git, and where it departs from crapkit's reader on purpose:
 - The window is what `git log --since="<months> months ago"` lists: git's own
-  reading of the months, on git's clock, which GIT_TEST_DATE_NOW freezes.
+  reading of the months, on a clock GIT_TEST_DATE_NOW sets to the walked
+  commit's commit date. The clock a test runs crapkit on plays no part.
 - `--numstat -z`: git prints every path verbatim, never C-quoted (git-log docs
   on -z; git-config core.quotePath). An earlier walk read numstat without -z
   and missed every non-ASCII path, because git quoted it; that was the oracle's
@@ -36,7 +39,7 @@ from pathlib import Path
 import re
 
 from accuracy.kit import exact
-from .history_git import git, top_and_prefix, under
+from .history_git import git, text, top_and_prefix, under
 
 HEADER = "%x01%H%x02%an%x02%ae%x02%at%x02%ct"
 _RECORD = re.compile(rb"\A(-|\d+)\t(-|\d+)\t(.*)\Z", re.S)
@@ -115,10 +118,20 @@ def _rooted(commit: Commit, prefix: str) -> Commit:
                   _cut(commit.paths, prefix), tuple(pair for pair in renames if pair[1]))
 
 
-def walk(root: Path, months: int, now: int | None = None, rev: str = "HEAD") -> list[Commit]:
-    """The window's commits at `rev`, newest first, their paths cut to `root`."""
+def commit_date(root: Path, rev: str = "HEAD") -> int:
+    """`rev`'s commit date (%ct): the moment the window counts back from."""
+    return int(text(root, "log", "-1", "--format=%ct", rev))
+
+
+def walk(root: Path, months: int | None, rev: str = "HEAD") -> list[Commit]:
+    """The window's commits at `rev`, newest first, their paths cut to `root`.
+    `months` None lists every commit: a window that reaches back past 1970."""
     top, prefix = top_and_prefix(root)
-    out = git(top, "-c", "core.quotePath=true", "log", f"--since={months} months ago",
+    if months is None:
+        cut, now = (), None
+    else:
+        cut, now = (f"--since={months} months ago",), commit_date(top, rev)
+    out = git(top, "-c", "core.quotePath=true", "log", *cut,
               "--numstat", "-z", f"--format={HEADER}", rev, "--", now=now)
     return [_rooted(commit, prefix) for commit in parse(out)]
 

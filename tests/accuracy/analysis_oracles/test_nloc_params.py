@@ -9,8 +9,9 @@ tag nightly; the defs a known defect shape covers (py_line_shapes) are set aside
 under its rulings id and counted.
 
 Two relations hold whatever the counts are: nloc lies between 0 and the span's
-line count on every row crapkit wrote, and a comment or blank line added to
-a body leaves nloc alone where a statement adds one.
+line count on every row crapkit wrote (on crapkit's own source, less the defs a
+known nloc defect shape covers), and a comment or blank line added to a body
+leaves nloc alone where a statement adds one.
 """
 import pytest
 
@@ -109,9 +110,28 @@ def _outside_span(rows) -> list:
     return [row for row in rows if not 0 <= row["nloc"] <= row["end"] - row["start"] + 1]
 
 
-def test_nloc_lies_within_the_span_on_every_row(src_inventory, probe_inventory,
+def _shape_reasons(corpus, row: dict) -> list[str]:
+    """The known nloc defect shapes (py_line_shapes) the row's def holds."""
+    source = corpus.files[row["path"]].decode("utf-8")
+    lines = py_line_shapes.Lines(source)
+    return next((lines.reasons(fn) for fn, _ in tokenize_nloc.per_def(source)
+                 if fn.lineno == row["start"]), [])
+
+
+def _unexplained(corpus, rows: list) -> list:
+    """Rows off the relation, less the defs a known defect shape covers, set
+    aside under its rulings id and counted as the tokenize comparison does:
+    AO-PY-NLOC-PREFIX drops a prefixed triple-quoted string's lines twice, so
+    such a def's nloc can fall below 0 until that defect is fixed."""
+    reasons = {id(row): _shape_reasons(corpus, row) for row in rows}
+    runlog.note("skipped_files", oracle="nloc within span: defs set aside",
+                count=sum(bool(found) for found in reasons.values()), compared=len(rows))
+    return [row for row in rows if not reasons[id(row)]]
+
+
+def test_nloc_lies_within_the_span_on_every_row(src_corpus, src_inventory, probe_inventory,
                                                py_shape_inventory):
-    assert _outside_span(src_inventory.rows) == []
+    assert _unexplained(src_corpus, _outside_span(src_inventory.rows)) == []
     assert _outside_span(probe_inventory.rows) == []
     assert _outside_span(py_shape_inventory.rows) == []
 

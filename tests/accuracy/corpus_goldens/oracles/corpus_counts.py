@@ -4,14 +4,19 @@ No crapkit: the counts come from the producers' own files.
 
 - coverage.py JSON (format 3): every function region of every file, keyed by
   its `start_line`, with the region's own summary counts (num_branches and
-  covered_branches, num_statements and covered_lines) and whether any of its
-  lines ran.
-- istanbul JSON (coverage-final.json): every fnMap entry, its span from
-  decl.start.line to loc.end.line (docs/lanes.md, the istanbul key table), its
-  call count, and the branch arms and statements that count against it. A
-  branch counts against the innermost function whose span holds the branch's
-  loc.start.line, which the same table states; a statement is attributed the
-  same way here, which that table does not say (it says only "in its span").
+  covered_branches, num_statements and covered_lines), whether any of its
+  lines ran, and whether coverage.py excluded every statement in it (its lines
+  are all excluded_lines, as `# pragma: no cover` on the def leaves them).
+- istanbul JSON (coverage-final.json): every fnMap entry, its call count, and
+  the branch arms and statements that count against it, by the rule
+  docs/lanes.md's istanbul key table states. A function's span runs from
+  decl.start to loc.end (else the end of the start line), and its body from
+  loc.start (else decl.start). A branch counts against the innermost function
+  whose span holds its loc.start, a statement against the innermost one whose
+  body holds its start. Positions compare the line, then the column, and a
+  missing column stands for the whole line: the first column at a start, the
+  last at an end. The innermost is the one over the fewest lines, then the one
+  that starts later, then the one fnMap lists first.
 
 A function two entries share a start line with is marked `shared`: coverage
 cannot say whose counts are whose.
@@ -37,6 +42,7 @@ class Counts:
     statements_total: int
     invoked: bool
     shared: bool = False
+    excluded: bool = False
 
     def ratio(self) -> Fraction:
         """Branches when there are any, then statements, then invoked or not
@@ -57,7 +63,8 @@ def _region(path: str, name: str, region: dict) -> Counts:
     return Counts(path, name, start, max(lines, default=start),
                   summary.get("covered_branches", 0), summary.get("num_branches", 0),
                   summary["covered_lines"], summary["num_statements"],
-                  bool(region.get("executed_lines")))
+                  bool(region.get("executed_lines")),
+                  excluded=bool(region.get("excluded_lines")) and not lines)
 
 
 def coveragepy(artifact: Path) -> list[Counts]:
@@ -68,34 +75,54 @@ def coveragepy(artifact: Path) -> list[Counts]:
 
 # --- istanbul ------------------------------------------------------------------------
 
+LAST = float("inf")
+
+
+def _point(point: dict | None, missing: float) -> tuple:
+    """(line, column); a missing column stands for the whole line."""
+    if not point or point.get("line") is None:
+        return (0, 0)
+    column = point.get("column")
+    return (point["line"], missing if column is None else column)
+
+
 @dataclass(frozen=True)
 class _Span:
     key: str
     name: str
-    start: int
-    end: int
+    start: tuple
+    end: tuple
+    body: tuple
 
 
 def _spans(data: dict) -> list[_Span]:
-    spans = []
-    for key, entry in data["fnMap"].items():
-        start = entry["decl"]["start"]["line"]
-        end = (entry.get("loc") or {}).get("end", {}).get("line") or start
-        spans.append(_Span(key, entry.get("name") or "(anonymous)", start, end))
-    return spans
+    return [_span(key, entry) for key, entry in data["fnMap"].items()]
 
 
-def innermost(spans: list[_Span], line: int) -> _Span | None:
-    """The deepest span holding `line`: the latest start, then the earliest end."""
-    holding = [span for span in spans if span.start <= line <= span.end]
-    return max(holding, key=lambda span: (span.start, -span.end), default=None)
+def _span(key: str, entry: dict) -> _Span:
+    """One fnMap entry: it opens at decl.start, its body at loc.start (else
+    decl.start), and it ends at loc.end (else the end of its first line)."""
+    start = _point(entry["decl"]["start"], 0)
+    loc = entry.get("loc") or {}
+    end = _point(loc.get("end"), LAST)
+    body = _point(loc.get("start"), 0)
+    return _Span(key, entry.get("name") or "(anonymous)", start,
+                 end if end[0] else (start[0], LAST), body if body[0] else start)
 
 
-def _attributed(spans: list[_Span], lines: dict[str, int]) -> dict[str, list[str]]:
-    """{fnMap key: [entry ids]} for entries whose line the function holds innermost."""
+def innermost(spans: list[_Span], at: tuple, opens=lambda span: span.start) -> _Span | None:
+    """The innermost span holding `at` from where `opens` says it opens: over the
+    fewest lines, then the later start, then the first listed."""
+    holding = [span for span in spans if opens(span) <= at <= span.end]
+    return min(holding, key=lambda span: (span.end[0] - span.start[0],
+                                          tuple(-part for part in span.start)), default=None)
+
+
+def _attributed(spans: list[_Span], starts: dict[str, tuple], opens) -> dict[str, list[str]]:
+    """{fnMap key: [entry ids]} for entries whose start the function holds innermost."""
     owned: dict[str, list[str]] = defaultdict(list)
-    for entry, line in lines.items():
-        owner = innermost(spans, line)
+    for entry, at in starts.items():
+        owner = innermost(spans, at, opens)
         if owner is not None:
             owned[owner.key].append(entry)
     return owned
@@ -112,16 +139,21 @@ def _statements(data: dict, ids: list[str]) -> tuple[int, int]:
 
 def _file_counts(path: str, data: dict) -> list[Counts]:
     spans = _spans(data)
-    branch_lines = {key: branch["loc"]["start"]["line"] for key, branch in data["branchMap"].items()}
-    statement_lines = {key: statement["start"]["line"]
-                       for key, statement in data["statementMap"].items()}
-    branches = _attributed(spans, branch_lines)
-    statements = _attributed(spans, statement_lines)
-    starts = [span.start for span in spans]
-    return [Counts(path, span.name, span.start, span.end, *_arms(data, branches[span.key]),
-                   *_statements(data, statements[span.key]), data["f"][span.key] > 0,
-                   starts.count(span.start) > 1)
+    branch_starts = {key: _point(branch["loc"]["start"], 0)
+                     for key, branch in data["branchMap"].items()}
+    statement_starts = {key: _point(statement["start"], 0)
+                        for key, statement in data["statementMap"].items()}
+    branches = _attributed(spans, branch_starts, lambda span: span.start)
+    statements = _attributed(spans, statement_starts, lambda span: span.body)
+    starts = [span.start[0] for span in spans]
+    return [Counts(path, span.name, span.start[0], _last_line(span),
+                   *_arms(data, branches[span.key]), *_statements(data, statements[span.key]),
+                   data["f"][span.key] > 0, starts.count(span.start[0]) > 1)
             for span in spans]
+
+
+def _last_line(span: _Span) -> int:
+    return int(span.end[0])
 
 
 def istanbul(artifact: Path) -> list[Counts]:

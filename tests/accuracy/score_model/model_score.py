@@ -6,21 +6,22 @@ docs say nothing, the model says what it assumed, and rulings.tsv records the
 gap.
 
 doc: README.md:22-31 sha256=58a8efc378668435998df0eec0fcc96f968802e558c0729fda608abd82ff6346
-doc: README.md:817-845 sha256=37c50a8de99d5249e9b6f68956332cacd268340c56525ae17eee176a1a0bd4a6
-doc: README.md:846-878 sha256=a5ad841c6db8ba40f62dca771cae0b6b472691749715b4ac5652e5eccd3ad0f1
-doc: README.md:800-800 sha256=f2641c8c17668dbee44078a26ce35b9f5c91431c698439fed9d6e877733c218a
-doc: README.md:804-805 sha256=86556191ce5d4702e23629a9537e7c8481e04c41d7a1c7b190db74f76bba5c12
-doc: docs/agent-json.md:113-137 sha256=a5de32dcbd86433a5660d15ff6c472c3862f432d074ba4bcdc3a11bb81acab8e
-doc: docs/agent-json.md:190-227 sha256=d36083d295330ee4109e0b2bfc627f8988117f490148d067e5750dc8b1a7c685
-doc: docs/agent-json.md:478-483 sha256=263d2c6d9e4cddf07af5869c4db0f7a8c421ad4b9cb9c4abf1ecbccdba1acb4f
-doc: docs/agent-json.md:618-707 sha256=a2fab3c2de01100cfde062809b6970ca7587cc4f9a793792fe572de115a033c7
-doc: docs/agent-json.md:709-739 sha256=20f38e8d079c1f1c1f04db43a5300f445cdb5dc33c61f0c001366fd082e75608
-doc: docs/agent-json.md:920-929 sha256=7a6a4826dc919d5470141b0675da95ca3c02a442d36f39407408fa56736c3918
-doc: docs/configuration.md:72-72 sha256=34f7afec831b09edb7bd1c92940727005cd92d1d398e9a416999c6965598c567
-doc: docs/configuration.md:147-147 sha256=f4f4b349d64468b5ce2fe66c8f4f3b9a5fcaff4baaa2afc81c11cbfe38597e3c
-doc: docs/configuration.md:386-408 sha256=14f21583464d1e2351e295daff1fcdf9779e6570fec05b47c5d0cdbecae56d58
-doc: docs/lanes.md:1242-1286 sha256=71044d8cbf5845d64e26953f33c97c4dd7f992776a78865c1831100099dfc470
-doc: docs/lanes.md:222-238 sha256=6cedd1513e73cb392304f96d40a511cecb365168a505079857d13ac8e3aa21f0
+doc: README.md:831-867 sha256=4d04351159d77054f876d44a9dca52ec041fe6940869964a8922a43b88e66732
+doc: README.md:868-900 sha256=ed88a1a74cd588bd0c3154aff3a1c7fdf452c0175272fd74b663ba05f722a29b
+doc: README.md:814-814 sha256=f2641c8c17668dbee44078a26ce35b9f5c91431c698439fed9d6e877733c218a
+doc: README.md:818-819 sha256=58c95af3ae9606a57556aea2d9670f97dd6d1cba444b50493d1418c73c6db78c
+doc: docs/agent-json.md:55-57 sha256=b810777e09330020c2391a09065f5d2f4f61c27f30649680c1731aee97dfa0a5
+doc: docs/agent-json.md:114-138 sha256=68d672fd677408747dc4b3f35275d94d23ebb90f5b2d5fec4692d4087156928f
+doc: docs/agent-json.md:197-234 sha256=d36083d295330ee4109e0b2bfc627f8988117f490148d067e5750dc8b1a7c685
+doc: docs/agent-json.md:485-490 sha256=263d2c6d9e4cddf07af5869c4db0f7a8c421ad4b9cb9c4abf1ecbccdba1acb4f
+doc: docs/agent-json.md:625-714 sha256=a2fab3c2de01100cfde062809b6970ca7587cc4f9a793792fe572de115a033c7
+doc: docs/agent-json.md:716-751 sha256=430d45fb0828fae3e18ed80a19403d46e0b916533626241ebe8b54fe60a131de
+doc: docs/agent-json.md:935-944 sha256=c5076f0073e9f3e41c19ac7d08f69d62585c6cb65b9e88f9cc7e963a03a7d62f
+doc: docs/configuration.md:86-86 sha256=34f7afec831b09edb7bd1c92940727005cd92d1d398e9a416999c6965598c567
+doc: docs/configuration.md:161-161 sha256=f4f4b349d64468b5ce2fe66c8f4f3b9a5fcaff4baaa2afc81c11cbfe38597e3c
+doc: docs/configuration.md:444-470 sha256=3bd1b9c043f1537e3fb17a0bb635cb2e32190103047d180b568ed4d3f071848f
+doc: docs/lanes.md:1348-1394 sha256=a3831d3fd0280427081bb8cb07e633fb55695f38d10c1982f44e0a3e816b9e83
+doc: docs/lanes.md:243-284 sha256=9dd23e4fd594b2c521910bc53bee1020cba1606204a15a27adafd9d2d14013f2
 """
 from __future__ import annotations
 
@@ -30,10 +31,12 @@ import math
 
 from accuracy.kit import exact
 
-FLAGS = ("measured", "untested", "no-lane", "cc-only")
+FLAGS = ("measured", "untested", "excluded", "no-lane", "cc-only")
+# README.md:839, 841: no test can move these rows' number, so CRAP is ccn.
+CCN_FLAGS = ("excluded", "cc-only")
 
 
-# --- coverage and CRAP (README.md:22-31, docs/lanes.md:222-238) --------------------------
+# --- coverage and CRAP (README.md:22-31, docs/lanes.md:243-284) --------------------------
 
 def coverage_ratio(branches: tuple[int, int], statements: tuple[int, int],
                    invoked: bool) -> Fraction:
@@ -47,14 +50,14 @@ def coverage_ratio(branches: tuple[int, int], statements: tuple[int, int],
 
 
 def crap(ccn: int, cov: Fraction | int, flag: str = "measured") -> Fraction:
-    """README.md:824-826: cc-only scores crap = ccn; the three other flags carry
-    their cov into the formula (untested and no-lane at cov 0)."""
-    if flag == "cc-only":
+    """README.md:837-841: cc-only and excluded score crap = ccn; the three other
+    flags carry their cov into the formula (untested and no-lane at cov 0)."""
+    if flag in CCN_FLAGS:
         return Fraction(ccn)
     return exact.crap(ccn, cov)
 
 
-# --- remedy, grade and the budget (README.md:830-844, agent-json.md:131-135) -------------
+# --- remedy, grade and the budget (README.md:846-866, agent-json.md:132-136) -------------
 
 def remedy(ccn: int, score: Fraction | float, ceiling: int, shared: bool = False) -> str:
     """The README's remedy table, read top to bottom."""
@@ -79,7 +82,7 @@ def est_uncovered_paths(ccn: int, cov: Fraction) -> int:
     return int(exact.half_even((1 - Fraction(cov)) * ccn, 0))
 
 
-# --- the ceiling (configuration.md:72, :147) ------------------------------------------------
+# --- the ceiling (configuration.md:86, :161) ------------------------------------------------
 
 def ceiling(scope: str, repo_target: int, scope_targets: dict[str, int | None]) -> int:
     """A scope's own `target` when it sets one, else the repo's."""
@@ -87,7 +90,7 @@ def ceiling(scope: str, repo_target: int, scope_targets: dict[str, int | None]) 
     return repo_target if own is None else own
 
 
-# --- the rescore overlay (README.md:800) ----------------------------------------------------
+# --- the rescore overlay (README.md:814) ----------------------------------------------------
 
 @dataclass(frozen=True)
 class Fresh:
@@ -107,7 +110,7 @@ def _same_lines(row: Fresh, other: Fresh) -> bool:
 
 def shared_span(row: Fresh, rows: list[Fresh]) -> bool:
     """Another function on the same lines, or a Python def whose body is its
-    def line (README.md:835)."""
+    def line (README.md:851)."""
     one_line_def = row.path.endswith(".py") and row.start == row.end
     return one_line_def or any(_same_lines(row, other) for other in rows)
 
@@ -126,7 +129,7 @@ def overlay(row: Fresh, rows: list[Fresh], baseline: dict[tuple[str, str], list[
     return min(named, key=lambda pair: abs(pair[0] - row.start))[1], "measured"
 
 
-# --- totals, grade per run, coverage summary (README.md:839-844, agent-json.md:905-918) ---
+# --- totals, grade per run, coverage summary (README.md:859-866, agent-json.md:920-933) ---
 
 @dataclass(frozen=True)
 class Row:
@@ -153,12 +156,12 @@ def flag_counts(rows: list[Row]) -> dict[str, int]:
 
 
 def judged(rows: list[Row], unmeasured: set[str]) -> list[Row]:
-    """agent-json.md:921: a partial run leaves its unmeasured scopes out of
+    """agent-json.md:936: a partial run leaves its unmeasured scopes out of
     over_target and the grade."""
     return [row for row in rows if row.scope not in unmeasured]
 
 
-# --- worklist admission and ranking (README.md:846-878, agent-json.md:618-707) -------------
+# --- worklist admission and ranking (README.md:868-900, agent-json.md:625-714) -------------
 
 def hot_weight(weights: list[float]) -> float | None:
     """The weight at the top 10%: promotion is off when every weight is equal.
@@ -187,7 +190,7 @@ def lowest_debt_ccn(ceiling_value: int) -> int:
 
 
 def risk(ccn: int, weight: float) -> Fraction:
-    """agent-json.md:696: ccn * weight, rounded to four decimals."""
+    """agent-json.md:703: ccn * weight, rounded to four decimals."""
     return Fraction(exact.half_even(ccn * Fraction(weight), 4))
 
 
@@ -202,7 +205,7 @@ class Entry:
 
 
 def rank_key(entry: Entry) -> tuple:
-    """Risk first, then ccn, then commits (README.md:858-866 ranks bucket at 5.4
+    """Risk first, then ccn, then commits (README.md:880-888 ranks bucket at 5.4
     over curve at 4.5), then the file and its position as the stable tail.
     ASSUMED past commits: path, start, occurrence (rulings SM-RANK-TAIL)."""
     return (-risk(entry.ccn, entry.weight), -entry.ccn, -entry.commits, entry.path,
@@ -216,11 +219,11 @@ def split_active(entries: list[Entry]) -> tuple[list[Entry], list[Entry]]:
     return active, dormant
 
 
-# --- next-item (agent-json.md:113-227) -----------------------------------------------------
+# --- next-item (agent-json.md:114-234) -----------------------------------------------------
 
 def queue_takes(flag: str, remedy_now: str, has_churn: bool, admits: bool) -> bool:
     """A row next-item ranks: never no-lane; over its ceiling at any churn
-    (agent-json.md:210: an over-target row is queued whatever its ccn); else it
+    (agent-json.md:217: an over-target row is queued whatever its ccn); else it
     needs churn in the window and the admission rule."""
     if flag == "no-lane":
         return False
@@ -228,7 +231,7 @@ def queue_takes(flag: str, remedy_now: str, has_churn: bool, admits: bool) -> bo
 
 
 def skip_bucket(flag: str, excluded: bool, taken: bool, has_churn: bool) -> str | None:
-    """agent-json.md:208-216: the reasons bucket of a row the queue did not take."""
+    """agent-json.md:215-223: the reasons bucket of a row the queue did not take."""
     if flag == "no-lane":
         return "no_lane"
     if excluded:
@@ -239,13 +242,14 @@ def skip_bucket(flag: str, excluded: bool, taken: bool, has_churn: bool) -> str 
 
 
 def next_item_order(rows: list[Row], commits: dict[str, int]) -> list[Row]:
-    """The queue by crap descending. ASSUMED ties: more commits first, then path
-    and start (rulings SM-NEXT-TAIL)."""
-    return sorted(rows, key=lambda row: (-row.crap, -commits.get(row.path, 0), row.path,
-                                         row.start))
+    """The queue by crap descending (agent-json.md:55-57): scores equal at 4
+    decimal places go to the file with more commits, then by path and start line.
+    The places are taken on the exact value of the score, half to even."""
+    return sorted(rows, key=lambda row: (-round(Fraction(row.crap), 4),
+                                         -commits.get(row.path, 0), row.path, row.start))
 
 
-# --- batches (agent-json.md:709-740) -------------------------------------------------------
+# --- batches (agent-json.md:716-752) -------------------------------------------------------
 
 def _root(parent: dict[str, str], name: str) -> str:
     while parent[name] != name:
@@ -275,7 +279,7 @@ def groups(files: list[str], pairs: list[tuple[str, str, float]],
     return sorted((frozenset(group) for group in found.values()), key=sorted)
 
 
-# --- regrowth (agent-json.md:478-483) --------------------------------------------------------
+# --- regrowth (agent-json.md:485-490) --------------------------------------------------------
 
 def regrown(ccns: list[int]) -> bool:
     """ccn fell between two runs and rose again at any later point."""
@@ -285,7 +289,7 @@ def regrown(ccns: list[int]) -> bool:
     return any(ccns[i] > ccns[i - 1] for i in range(fell_at + 1, len(ccns)))
 
 
-# --- digest (README.md:805) ------------------------------------------------------------------
+# --- digest (README.md:819) ------------------------------------------------------------------
 
 def comparable_pair(lane_sets: list[frozenset[str]]) -> tuple[int, int] | None:
     """The two newest runs with identical lane sets, as indexes, newest last.
@@ -297,10 +301,10 @@ def comparable_pair(lane_sets: list[frozenset[str]]) -> tuple[int, int] | None:
     return None
 
 
-# --- doctor --tune (configuration.md:386-405) ------------------------------------------------
+# --- doctor --tune (configuration.md:444-470) ------------------------------------------------
 
 def coverage_data_file(cwd: str, env: dict) -> str:
-    """lanes.md:1265-1275: a coveragepy lane writes COVERAGE_FILE, else .coverage,
+    """lanes.md:1373-1383: a coveragepy lane writes COVERAGE_FILE, else .coverage,
     in the directory it starts in."""
     return "/".join(part for part in (cwd.strip("/"), env.get("COVERAGE_FILE") or ".coverage")
                     if part and part != ".")
@@ -308,7 +312,7 @@ def coverage_data_file(cwd: str, env: dict) -> str:
 
 def data_files_collide(a: str, b: str) -> bool:
     """One file, or one lane on BASE beside another on BASE.suffix, which the
-    first deletes and combines (lanes.md:1267-1270)."""
+    first deletes and combines (lanes.md:1375-1378)."""
     return a == b or _combines(a, b) or _combines(b, a)
 
 

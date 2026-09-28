@@ -1,9 +1,10 @@
 """Git histories for the history packet, as kit.repos specs.
 
 Every date is fixed, so a spec builds the same commits on every OS. The churn
-specs pass a `now` beside the spec: the GIT_TEST_DATE_NOW the window is read
-at. Paths stay legal on Windows; a spec that needs a quote or a control
-character in a path lives in a Linux-only test.
+specs pass a `now` beside the spec: the GIT_TEST_DATE_NOW crapkit runs on. The
+churn window counts back from HEAD's commit date, never from that clock. Paths
+stay legal on Windows; a spec that needs a quote or a control character in a
+path lives in a Linux-only test.
 """
 from __future__ import annotations
 
@@ -131,6 +132,10 @@ ORDER_O = EPOCH
 ORDER_RITA = 3_850_001_337_500_000
 ORDER_SUE = 5_467_832_636_718_751
 ORDER_SAM = 7_000_001_000_000_000
+# The window counts back from HEAD's commit date, here in the year 221,823,171, and
+# 12 months back from there hold sam's commit alone. 2.7 billion months, 225 million
+# years, reach back past 1970, so the window holds all four commits.
+ORDER_EDGE_MONTHS = 2_700_000_000
 
 
 def _p(head: str, tail: str) -> str:
@@ -139,7 +144,8 @@ def _p(head: str, tail: str) -> str:
 
 
 ORDER_EDGE = Spec(steps=(
-    Commit(files={"crapkit.toml": config(), "src/p.py": _p("o", "o"), "src/z.py": functions("z")},
+    Commit(files={"crapkit.toml": config(months=ORDER_EDGE_MONTHS), "src/p.py": _p("o", "o"),
+                  "src/z.py": functions("z")},
            date=ORDER_O, message="oscar", author=("oscar", "oscar@example.com")),
     Branch("side"),
     Commit(files={"src/p.py": _p("r", "o")}, date=ORDER_RITA, message="rita",
@@ -210,6 +216,7 @@ TIED_SETS = tuple([("src/a.py", "src/b.py")] + [("src/a.py",), ("src/b.py",)] * 
                   + [("src/y.py", "src/z.py")] * 3 + [("src/y.py",), ("src/z.py",)] * 24)
 
 # --- a month end: 6 months before Aug 31 is Mar 3, before Sep 1 it is Mar 1 (R59) ---------
+# HEAD^1 is committed on Aug 31 and HEAD on Sep 1, so moving HEAD moves the cutoff back.
 AUG_31 = 1_756_641_600  # 2025-08-31T12:00:00Z
 SEP_1 = AUG_31 + DAY
 MARCH_2 = 1_740_916_800  # 2025-03-02T12:00:00Z: out of the window on Aug 31, in on Sep 1
@@ -221,8 +228,8 @@ MONTH_END = Spec(steps=(
            author=BEA),
     Commit(files={"src/a.py": functions("f", branches=3), "src/b.py": functions("g", "h")},
            date=1_748_779_200, message="june"),
-    Commit(files={"src/b.py": functions("g", "h", branches=2)}, date=AUG_31 - DAY,
-           message="august 30", author=CHEN),
+    Commit(files={"src/b.py": functions("g", "h", branches=2)}, date=AUG_31,
+           message="august 31", author=CHEN),
     Commit(files={"src/c.py": functions("k")}, date=SEP_1 - 6 * 3_600, message="september 1"),
 ))
 

@@ -2,6 +2,28 @@
 
 ## 0.8.1 — unreleased
 
+### Analysis version 12
+
+- This release raises the analysis version from 11 to 12, so every marks file re-seeds
+  once: `crapkit coverage`, `crapkit ratchet prune`, then `crapkit ratchet seed`. The
+  [upgrade guide](docs/upgrading.md#analysis-version-12) lists what moves. (accuracy
+  change C2)
+- Go and Zig functions are read to where their signature ends, and no Go type switch,
+  comment or Zig multiline string ends one early. A `//` comment ends at its line in
+  every language but C, C++ and Objective-C. A Zig switch and a Go `select` count as the
+  switch they are, Zig and shell words that decide nothing stop counting, and shell
+  arithmetic counts its conditional operator.
+- Rust reads its own syntax: a signature, a `for` that is no loop and a closure's `||`
+  decide nothing, `loop` counts as a loop, and a signature with no body is no function.
+- A shell heredoc line ends where bash ends it, and JavaScript and TypeScript coverage
+  stays with its own function below a lone CR or U+2028.
+- Coverage lands on the function that owns it: an uncalled arrow or method reads 0, and
+  a nested Python def measured by coverage.py 7.6 to 7.13.0 reads its own region.
+- A function its coverage tool was told to leave out reads the new flag `excluded` and
+  scores `crap = ccn`.
+- CRAP comes out the same on Windows and Linux, and a CRAP exactly at its ceiling reads
+  ok.
+
 ### `mutate` keeps an operator its language reads as one token whole
 
 - `mutate` read Go's channel arrow `<-` as the comparison `<`: `ch <- v` grew `ch <=- v`
@@ -164,8 +186,6 @@
   hover, the MCP descriptions of `churn_window_months` and `window_months`, and the
   `report` page's footer say the window counts back from HEAD's commit date.
 
-No score changes.
-
 ### Coupled pairs that tie rank by their paths
 
 - `coupling` ranks two pairs whose support x confidence are equal by their paths, and
@@ -271,7 +291,7 @@ No score changes.
   file gave it its neighbour's.
 - Those functions' spans, coverage and CRAP change, so this release raises the analysis
   version and every marks file re-seeds once. See the [upgrade
-  guide](docs/upgrading.md#next-analysis-version-line-ends).
+  guide](docs/upgrading.md#line-ends).
 
 ### Every refused file is counted and named, once per run
 
@@ -333,8 +353,8 @@ No score changes.
 - The reader now ends a heredoc line where bash does. `ccn`, cognitive, nesting and
   NLOC move for a `.sh` or `.bash` function with a vertical tab, form feed,
   `\x1c`-`\x1e`, NEL, U+2028 or U+2029 on a heredoc line or on the line that opens one.
-  This needs the next analysis version, so marks re-seed once with it; see
-  [docs/upgrading.md](docs/upgrading.md#next-analysis-version-line-ends).
+  This is part of analysis version 12, so marks re-seed once with it; see
+  [docs/upgrading.md](docs/upgrading.md#line-ends).
 
 ### JavaScript and TypeScript coverage stays with its own function below a lone CR or U+2028
 
@@ -353,17 +373,9 @@ No score changes.
   the line inside one that V8 counted whole. A file with no named function has nothing
   to decide by and keeps its numbers. Every other file keeps its numbers as they are.
 - `cov`, CRAP and the uncovered lines `verify` checks a diff against move for
-  JavaScript and TypeScript functions in such files, so this rides the next analysis
-  version too. The reader reads each measured file once per parse to tell: about 3 s
+  JavaScript and TypeScript functions in such files, so this is part of analysis
+  version 12 too. The reader reads each measured file once per parse to tell: about 3 s
   more on a 24 s parse of 29,615 file records on Windows.
-
-Go and Zig functions are read to where their signature ends, and no Go type switch,
-comment or Zig multiline string ends one early. A `//` comment ends at its line in every
-language but C, C++ and Objective-C. A Zig switch and a Go `select` count as
-the switch they are, Zig and shell words that decide nothing stop counting, and shell
-arithmetic counts its conditional operator. The release that ships this raises the
-analysis version, so every repo re-seeds its marks once; the [upgrading
-guide](docs/upgrading.md) lists what moves.
 
 ### Go and Zig signatures end where the language ends them
 
@@ -506,8 +518,8 @@ guide](docs/upgrading.md) lists what moves.
   language has a switch statement, and `def pick(switch): return switch` read ccn_mod
   3. Over 43,771 standard-library and site-packages files, 205 Python rows fall. The
   gated ccn takes the lower of the two columns and moves in none.
-- The change needs an analysis-version bump, which makes each marks file re-seed once
-  ([upgrading](docs/upgrading.md#next-analysis-version-rust-rows)).
+- The change is part of analysis version 12, which makes each marks file re-seed once
+  ([upgrading](docs/upgrading.md#rust-rows)).
 
 ### The lane guard reads a command the way sh and cmd.exe read it
 
@@ -587,7 +599,7 @@ lane commands the way the shell that runs them does:
   that opens an indented method or arrow counts for the code around it, so an uncalled
   class method reads 0 where it read 1/6. Over a 658-function artifact from a large
   consumer repo, 12 functions change coverage: 5 rise and 7 fall. A fall raises CRAP on
-  a function nobody edited, so the change needs an analysis-version bump, which makes
+  a function nobody edited, so the change is part of analysis version 12, which makes
   each marks file re-seed once. [What the istanbul parser
   reads](docs/lanes.md#what-the-istanbul-parser-reads) states the rule.
 - A coverage.py report from 7.6 up to 7.13.0 names no `start_line`, so a region
@@ -604,7 +616,7 @@ lane commands the way the shell that runs them does:
   which names `start_line`, every function joins the region 7.16.1 gives it, except a
   nested def with nothing but a docstring, which those reports do not place.
   Nested defs measured by those coverage.py versions change score, which is part of
-  the same analysis-version bump.
+  analysis version 12.
 - A new flag, `excluded`, marks a function its coverage tool was told to leave out:
   `# pragma: no cover` or an exclude pattern that takes every statement in it under
   coverage.py (from coverage.py 7.10.1 its default patterns take a stub whose body is
@@ -620,7 +632,7 @@ lane commands the way the shell that runs them does:
   taking the def-line floor. The coverage summary counts the flag as `excluded` (JSON)
   and `N excluded` (text), the MCP schemas list it, and the README's Flags table
   explains it. Excluded functions fall from `ccn^2 + ccn` to `ccn`, so marks tighten at
-  the next ratchet update; this is part of the same analysis-version bump.
+  the next ratchet update; this is part of analysis version 12.
 
 ### Every platform computes the same CRAP
 
@@ -633,9 +645,9 @@ lane commands the way the shell that runs them does:
   2 dp value: CRAP(25, 19/50) is exactly 173.955 and now prints 173.96, not 173.95.
   Marks are stored at 4 dp, and seed never raises a mark, so after the re-seed a marked
   function whose score rose reads as a ratchet regression nobody caused, such as
-  CRAP(20, 3/200) at `402.2686 -> 402.2687`; raise that mark by hand. The change needs
-  an analysis-version bump, which makes each marks file re-seed once.
-  [Upgrading](docs/upgrading.md#next-analysis-version-score-arithmetic) lists what moves.
+  CRAP(20, 3/200) at `402.2686 -> 402.2687`; raise that mark by hand. The change is part
+  of analysis version 12, which makes each marks file re-seed once.
+  [Upgrading](docs/upgrading.md#score-arithmetic) lists what moves.
 
 ### A CRAP exactly at its ceiling reads ok
 
@@ -731,6 +743,8 @@ lane commands the way the shell that runs them does:
   and lists every calculation and every ruling. `python tools/docs/generate.py` writes
   those tables, and pyproject.toml's `[tool.mutmut]` `paths_to_mutate`, from the
   `calcs.tsv` and `rulings.tsv` tables; the unit suite fails while one is out of date.
+- The rulings this release's fixes close read `fixed`, and their strict xfails are gone.
+  The fixes that move no scored cell are declared together (accuracy change C3).
 
 ### Digest lines that tie list by path
 

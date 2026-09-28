@@ -26,8 +26,8 @@ HERE = Path(__file__).resolve().parent
 pytestmark = pytest.mark.process
 
 
-def _expected(root: Path, months: int, now: int) -> dict[str, Said]:
-    walked = git_walk.churn(git_walk.walk(root, months, now=now))
+def _expected(root: Path, months: int | None) -> dict[str, Said]:
+    walked = git_walk.churn(git_walk.walk(root, months))
     return {path: Said(c.commits, c.authors, c.weight) for path, c in walked.items()}
 
 
@@ -60,7 +60,7 @@ def test_every_path_matches_the_numstat_walk(make_repo):
 
     stored, rows = churn_reads.churn(built.root, specs.MIXED_NOW)
 
-    expected = _expected(built.root, 12, specs.MIXED_NOW)
+    expected = _expected(built.root, 12)
     assert specs.NON_ASCII in expected and "src/ancient.py" not in expected
     assert stored == expected
     _rows_agree(rows, expected)
@@ -74,7 +74,7 @@ def test_single_timestamp_weighs_one(make_repo, spec):
 
     stored, rows = churn_reads.churn(built.root, specs.ONE_NOW)
 
-    assert stored == _expected(built.root, 12, specs.ONE_NOW)
+    assert stored == _expected(built.root, 12)
     assert all(said.weight == said.commits for said in stored.values())
     _rows_agree(rows, stored)
 
@@ -84,7 +84,7 @@ def test_root_below_git_top_joins(make_repo):
 
     stored, rows = churn_reads.churn(built.root, specs.NESTED_NOW)
 
-    expected = _expected(built.root, 12, specs.NESTED_NOW)
+    expected = _expected(built.root, 12)
     assert set(expected) == {"crapkit.toml", "src/a.py", "src/b.py"}
     assert stored == expected
     _rows_agree(rows, expected)
@@ -108,10 +108,10 @@ def test_a_quoted_numstat_path_is_the_oracle_s_to_unquote(make_repo):
                                                                       specs.MIXED_NOW))
 
 
-def _literal_reading(root: Path, now: int) -> Decimal:
+def _literal_reading(root: Path) -> Decimal:
     """src/b.py's weight when the range runs to the newest commit git log lists
     at the root, a commit that changes nothing under it included."""
-    commits = git_walk.walk(root, 12, now=now)
+    commits = git_walk.walk(root, 12)
     oldest, _ = git_walk.span(commits)
     stamps = [commit.at for commit in commits if "src/b.py" in commit.paths]
     newest = max(commit.at for commit in commits)
@@ -125,7 +125,7 @@ def test_the_newest_commit_with_a_file_under_the_root_anchors_the_range(make_rep
     stored, _ = churn_reads.churn(built.root, specs.NESTED_NOW)
 
     rulings.pin_ruling("H5", crapkit=stored["src/b.py"].weight,
-                       oracle=_literal_reading(built.root, specs.NESTED_NOW))
+                       oracle=_literal_reading(built.root))
 
 
 def _reset(built: repos.Built, rev: str) -> None:
@@ -139,7 +139,8 @@ def _head(built: repos.Built) -> str:
 def test_weight_independent_of_commit_order(make_repo):
     """A merged branch's commit sits above the ones it merged over in a carried
     table and below them in git's log; the dates put src/p.py on a 4-place
-    rounding edge (repos/history_specs.py ORDER_EDGE)."""
+    rounding edge (repos/history_specs.py ORDER_EDGE), and its window reaches
+    back past 1970, so git's whole log is the window."""
     built, cold = make_repo(specs.ORDER_EDGE), make_repo(specs.ORDER_EDGE)
     merged = _head(built)
     _reset(built, "HEAD^1")
@@ -148,7 +149,7 @@ def test_weight_independent_of_commit_order(make_repo):
 
     carried, _ = churn_reads.churn(built.root, specs.ORDER_EDGE_NOW)
 
-    expected = _expected(built.root, 12, specs.ORDER_EDGE_NOW)
+    expected = _expected(built.root, None)
     assert expected["src/p.py"] == Said(4, 4, Decimal("0.5720"))
     assert carried == expected
     assert churn_reads.churn(cold.root, specs.ORDER_EDGE_NOW)[0] == expected
@@ -169,10 +170,10 @@ def test_authors_match_window_after_carry(make_repo):
 
     carried, _ = churn_reads.churn(built.root, specs.EXPIRY_AFTER)
 
-    commits = git_walk.walk(built.root, 12, now=specs.EXPIRY_AFTER)
+    commits = git_walk.walk(built.root, 12)
     assert specs.OLD[0] not in git_walk.window_authors(commits)
     assert sorted(_stored_authors(built.root)) == sorted(git_walk.window_authors(commits))
-    assert carried == _expected(built.root, 12, specs.EXPIRY_AFTER)
+    assert carried == _expected(built.root, 12)
     assert churn_reads.churn(cold.root, specs.EXPIRY_AFTER)[0] == carried
 
 
@@ -191,7 +192,7 @@ def test_pydriller_walk_matches(make_repo, oracle):
 
     stored, _ = churn_reads.churn(built.root, specs.MIXED_NOW)
 
-    assert stored == _said_map(pydriller_adapter.walk(built.root, specs.MIXED_NOW, 12))
+    assert stored == _said_map(pydriller_adapter.walk(built.root, 12))
 
 
 def _counts(values: dict, paths: tuple) -> str:
@@ -207,7 +208,7 @@ def test_pydriller_folds_a_renamed_file_s_history(make_repo, oracle):
 
     stored, _ = churn_reads.churn(built.root, specs.MIXED_NOW)
 
-    folded = pydriller_adapter.commits_count(built.root, specs.MIXED_NOW, 12)
+    folded = pydriller_adapter.commits_count(built.root, 12)
     rulings.pin_ruling("H2", crapkit=_counts({p: s.commits for p, s in stored.items()}, names),
                        oracle=_counts(folded, names))
 
@@ -221,7 +222,7 @@ def test_pydriller_tells_contributors_apart_by_address(make_repo, oracle):
 
     stored, _ = churn_reads.churn(built.root, specs.MIXED_NOW)
 
-    by_address = pydriller_adapter.contributors_count(built.root, specs.MIXED_NOW, 12)
+    by_address = pydriller_adapter.contributors_count(built.root, 12)
     rulings.pin_ruling("H3", crapkit=_counts({p: s.authors for p, s in stored.items()}, names),
                        oracle=_counts(by_address, names))
 
@@ -295,7 +296,7 @@ def test_the_window_transform_makes_bugspots_read_crapkit_s_commits(make_repo, o
     oracle("bugspots")
     spec, now = getattr(specs, name), {"MIXED": specs.MIXED_NOW, "EXPIRY": specs.EXPIRY_AFTER}[name]
     built = make_repo(spec)
-    commits = git_walk.walk(built.root, 12, now=now)
+    commits = git_walk.walk(built.root, 12)
 
     stored, _ = churn_reads.churn(built.root, now)
 
@@ -320,7 +321,7 @@ def test_bugspots_walks_the_whole_branch(make_repo, oracle):
 
 
 def _mixed_scores(built: repos.Built, merges: bool) -> dict[str, Decimal]:
-    commits = git_walk.walk(built.root, 12, now=specs.MIXED_NOW)
+    commits = git_walk.walk(built.root, 12)
     listed = sorted((c for c in commits if merges or c.paths), key=lambda c: -c.at)
     return bugspots_runner.scores(built.top, commits=[commit.sha for commit in listed])
 

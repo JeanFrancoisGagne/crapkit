@@ -7,13 +7,13 @@
    "over_target": 1
   },
   "native": {
-   "crap_load": 81.0,
+   "crap_load": 78.0,
    "functions": 24,
    "grade": "B",
    "over_target": 1
   },
   "py": {
-   "crap_load": 288.72,
+   "crap_load": 284.72,
    "functions": 48,
    "grade": "F",
    "over_target": 12
@@ -25,7 +25,7 @@
    "over_target": 0
   },
   "vendor": {
-   "crap_load": 1133.0,
+   "crap_load": 1123.0,
    "functions": 303,
    "grade": "B",
    "over_target": 12
@@ -45,8 +45,9 @@
   "vendor": 15
  },
  "commit": "901b727247a28c5d34a593db89a0b9065772919e",
- "crap_load": 1711.21,
+ "crap_load": 1694.21,
  "db": "<root>/repo/.crapkit/crap.sqlite",
+ "excluded": 1,
  "files": 64,
  "functions": 414,
  "grade": "C",
@@ -78,7 +79,7 @@
    "tests_total": 10
   }
  },
- "measured": 68,
+ "measured": 67,
  "no_lane": 2,
  "over_target": 33,
  "run_id": 2,

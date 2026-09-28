@@ -162,7 +162,7 @@
   30
  ],
  "versions": {
-  "analysis_version": 11,
+  "analysis_version": 12,
   "crapkit": "<crapkit>",
   "lizard": "1.24.0",
   "python": "<python>"

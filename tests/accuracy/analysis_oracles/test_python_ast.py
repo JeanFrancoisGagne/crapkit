@@ -65,15 +65,17 @@ def _names(rows: list[tuple]) -> list[tuple]:
 
 # ast's def count over src/crapkit: 2,145 at the program's base commit
 # (901c6986), 2,198 once the runtime guards (invariants.py and its call sites)
-# landed. A src change that adds or drops a def moves it on purpose: recount
-# with py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 2198
+# landed, 2,387 once the fixes to the Rust, Go, Zig and line-end readers, the
+# churn window, the coverage joins and the score arithmetic landed. A src change
+# that adds or drops a def moves it on purpose: recount with
+# py_ast_oracle.functions and change it in the same commit.
+SRC_DEFS = 2387
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
     """Every def ast finds in crapkit's source and in the shapes is one row
     spanning the def line to its body's last line, and no other row exists:
-    2,198 of 2,198 on crapkit's source."""
+    2,387 of 2,387 on crapkit's source."""
     shapes = analysis_shapes.py_shape_files()
     misses = _differences(src_corpus.files, src_inventory, _spans)
     ast_defs = sum(map(len, map(_ast_rows, src_corpus.files.values())))

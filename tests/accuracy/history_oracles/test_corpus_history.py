@@ -98,7 +98,7 @@ def test_this_repo_is_cloned_from_the_top_of_its_checkout(tmp_path, monkeypatch)
 
 
 def _walked(found: History) -> list:
-    return git_walk.walk(found.root, 12, now=found.now)
+    return git_walk.walk(found.root, 12)
 
 
 def _as_tuples(table: dict) -> dict:
@@ -147,7 +147,7 @@ def test_pydriller_walk_matches(history, oracle):
 
     said = _as_tuples(churn_cache.load_churn(history.root, 12))
 
-    assert said == _expected_churn(pydriller_adapter.walk(history.root, history.now, 12))
+    assert said == _expected_churn(pydriller_adapter.walk(history.root, 12))
 
 
 @pytest.mark.parametrize("history", NIGHTLY, indirect=True)

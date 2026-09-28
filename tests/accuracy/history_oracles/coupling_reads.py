@@ -31,9 +31,9 @@ def tracked(root: Path) -> set[str]:
     return {path.decode("utf-8") for path in out.split(b"\0") if path}
 
 
-def expected(root: Path, now: int, months: int = 12, min_support: int = 1,
+def expected(root: Path, months: int = 12, min_support: int = 1,
              min_confidence: Fraction = Fraction(0)) -> list[tuple]:
-    commits = git_walk.walk(root, months, now=now)
+    commits = git_walk.walk(root, months)
     pairs = pair_count.ranked(pair_count.change_sets(commits), tracked(root), min_support,
                               min_confidence)
     return [(pair.files, pair.support, pair.confidence) for pair in pairs]

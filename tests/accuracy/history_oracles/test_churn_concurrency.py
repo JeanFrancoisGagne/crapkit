@@ -52,7 +52,7 @@ def test_commit_during_walk_counts_once(make_repo, monkeypatch):
     churn_cache.load_churn(built.root, 12)
     carried = churn_cache.load_churn(built.root, 12)
 
-    walked = git_walk.churn(git_walk.walk(built.root, 12, now=specs.INJECT_NOW))
+    walked = git_walk.churn(git_walk.walk(built.root, 12))
     assert landed and walked["src/a.py"].commits == 3
     assert _said(carried) == {path: (c.commits, c.authors, c.weight)
                               for path, c in walked.items()}

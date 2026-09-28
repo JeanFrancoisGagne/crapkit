@@ -1,7 +1,7 @@
 {
  "runs": [
   {
-   "avg": 4.1334,
+   "avg": 4.0923,
    "by_scope": {
     "legacy": {
      "crap_load": 32.0,
@@ -10,13 +10,13 @@
      "over_target": 1
     },
     "native": {
-     "crap_load": 81.0,
+     "crap_load": 78.0,
      "functions": 24,
      "grade": "B",
      "over_target": 1
     },
     "py": {
-     "crap_load": 288.72,
+     "crap_load": 284.72,
      "functions": 48,
      "grade": "F",
      "over_target": 12
@@ -28,7 +28,7 @@
      "over_target": 0
     },
     "vendor": {
-     "crap_load": 1133.0,
+     "crap_load": 1123.0,
      "functions": 303,
      "grade": "B",
      "over_target": 12
@@ -41,7 +41,7 @@
     }
    },
    "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
-   "crap_load": 1711.21,
+   "crap_load": 1694.21,
    "created_at": "<created_at>",
    "functions": 414,
    "over_target": 33,

@@ -113,8 +113,9 @@ def _ranked(make_repo, days: int) -> str:
 @rulings.applies("RG5")
 @pytest.mark.process
 def test_rg5_a_fixed_tree_ranks_identically_a_year_later(make_repo):
-    """README "Risk": the window anchors on the newest commit, never on the
-    wall clock, so a fixed tree ranks identically forever."""
+    """README "Risk": the window reaches churn_window_months back from HEAD's
+    commit date, never from the wall clock, so a fixed tree ranks identically
+    forever."""
     assert _ranked(make_repo, 1) == "1 days: 4 active"
     rulings.pin_ruling("RG5", crapkit=_ranked(make_repo, 400), oracle="400 days: 4 active")
 

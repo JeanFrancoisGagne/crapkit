@@ -2,7 +2,7 @@
 
 ## crapkit
 
-414 functions in 64 files, 33 over their ceilings (6; scripts 8, vendor 15), CRAP load 1711.21, grade C.
+414 functions in 64 files, 33 over their ceilings (6; scripts 8, vendor 15), CRAP load 1694.21, grade C.
 
 **verify failed, exit 6: complexity gate.**
 

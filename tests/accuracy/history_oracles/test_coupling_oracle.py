@@ -41,8 +41,8 @@ def test_pairs_match_the_numstat_walk(make_repo):
     every = coupling_reads.said(built.root, NOW, *coupling_reads.ALL)
     default = coupling_reads.said(built.root, NOW)
 
-    assert every == coupling_reads.expected(built.root, NOW)
-    assert default == coupling_reads.expected(built.root, NOW, **DEFAULTS)
+    assert every == coupling_reads.expected(built.root)
+    assert default == coupling_reads.expected(built.root, **DEFAULTS)
 
 
 def test_hand_pairs_match(make_repo):
@@ -76,8 +76,11 @@ def test_non_ascii_paths_with_quotepath(make_repo):
     assert ("src/b.py", specs.UMLAUT) in [files for files, _, _ in said]
 
 
-def _corrupt(cache: Path) -> None:
-    """The stored ranking with a pair whose first path is a number, key kept."""
+def _corrupt(root: Path) -> None:
+    """The stored ranking with a pair whose first path is a number, key kept.
+    README names the file with its format version, which moves with the format
+    (coupling-cache-v1.json up to 0.8.0), so the one file of any version is it."""
+    cache, = (root / ".crapkit").glob("coupling-cache-v*.json")
     doc = json.loads(cache.read_text(encoding="utf-8"))
     doc["pairs"][0][0] = 5
     cache.write_text(json.dumps(doc, sort_keys=True), encoding="utf-8")
@@ -88,15 +91,15 @@ def test_non_string_paths_pair(make_repo):
     file called '5' (R101)."""
     built = make_repo(specs.COUPLED)
     coupling_reads.said(built.root, NOW)
-    _corrupt(built.root / ".crapkit" / "coupling-cache-v1.json")
+    _corrupt(built.root)
 
     said = coupling_reads.said(built.root, NOW)
 
-    assert said == coupling_reads.expected(built.root, NOW, **DEFAULTS)
+    assert said == coupling_reads.expected(built.root, **DEFAULTS)
 
 
 def _walked(built) -> list:
-    return git_walk.walk(built.root, 12, now=NOW)
+    return git_walk.walk(built.root, 12)
 
 
 def _small(commits: list) -> list:

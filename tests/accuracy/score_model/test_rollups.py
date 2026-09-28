@@ -248,7 +248,8 @@ def _summary_model(rows: list[dict], ceiling_of) -> dict:
     counts = model_score.flag_counts(as_model)
     totals = model_score.totals(as_model, ceiling_of)
     return {"functions": totals["functions"], "measured": counts["measured"],
-            "untested": counts["untested"], "no_lane": counts["no-lane"], "cc_only": counts["cc-only"],
+            "untested": counts["untested"], "excluded": counts["excluded"],
+            "no_lane": counts["no-lane"], "cc_only": counts["cc-only"],
             "over_target": totals["over_target"], "grade": totals["grade"],
             "crap_load": float(totals["crap_load"])}
 
@@ -259,7 +260,8 @@ def test_the_coverage_summary_is_the_scored_rows_counted(scored_corpus):
     want = _summary_model(_scored(scored_corpus), _ceiling_of(scored_corpus.root))
 
     assert {key: summary[key] for key in want} == want
-    assert sum(summary[key] for key in ("measured", "untested", "no_lane", "cc_only")) == summary["functions"]
+    flags = ("measured", "untested", "excluded", "no_lane", "cc_only")
+    assert sum(summary[key] for key in flags) == summary["functions"]
 
 
 def _cold_totals(corpus, run_id: int) -> dict:

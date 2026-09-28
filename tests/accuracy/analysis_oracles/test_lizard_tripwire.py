@@ -9,8 +9,8 @@ oracles/lizard_tripwire.py reads the same files through lizard's own API in a
 process that imports no crapkit. The check pairs rows by (path, start,
 long_name):
 
-- C, C++, Objective-C, Java, Go, Swift and Zig: every row and every column
-  (start, end, nloc, params, ccn_std, ccn_mod, nesting) equals stock lizard's.
+- C, C++, Objective-C, Java and Swift: every row and every column (start, end,
+  nloc, params, ccn_std, ccn_mod, nesting) equals stock lizard's.
 - The languages in PATCHES: a difference passes only when the patch covers its
   column and its source shows the patch's construct. Each patch must still
   excuse at least one probe difference, so a patch upstream has made redundant
@@ -37,9 +37,14 @@ pytestmark = pytest.mark.process
 
 ORACLE = Path(__file__).parent / "oracles" / "lizard_tripwire.py"
 COLUMNS = ("start", "end", "nloc", "params", "ccn_std", "ccn_mod", "nesting")
-STOCK_SUFFIXES = (".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".m", ".mm", ".java", ".go",
-                  ".swift", ".zig")
+STOCK_SUFFIXES = (".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".m", ".mm", ".java", ".swift")
 JS_FAMILY = (".js", ".cjs", ".mjs", ".jsx", ".ts", ".tsx", ".vue")
+
+# A construct lizard reads as C where Rust means something else: `?`, an operator
+# with no operand before it, a let-else, a `where`, `loop` or `for`, a signature
+# ending in `;`, a parameter written as a pattern or with a bracketed type.
+RUST_SYNTAX = (r"\?|\|\||&&|\blet\b[^\n]*\belse\b|\bwhere\b|\bloop\b|\bfor\b|\bfn\b[^{]*;|"
+               r"\bfn\s+\w+[^(]*\([^)]*[\[{(]")
 
 
 @dataclass(frozen=True)
@@ -53,7 +58,7 @@ class Patch:
 
 PATCHES = (
     Patch("TRIP-PY", (".py",), None, None,
-          "README.md 'analysis version 11' paragraph; docs/agent-json.md `nesting` row: a "
+          "docs/upgrading.md 'Analysis version 11' section; docs/agent-json.md `nesting` row: a "
           "Python row reads nesting off crapkit's cognitive pass"),
     Patch("TRIP-SHELL", (".sh", ".bash"), None, None,
           "README.md 'Three readers are crapkit's own. lizard ships none for shell or "
@@ -63,6 +68,14 @@ PATCHES = (
           "PowerShell'"),
     Patch("TRIP-RUST-MATCH", (".rs",), ("ccn_std", "ccn_mod"), r"\bmatch\b",
           "README.md 'Its Rust reader scores a 7-arm match as ccn 2 (filed as lizard #494)'"),
+    Patch("TRIP-RUST-SYNTAX", (".rs",), None, RUST_SYNTAX,
+          "README.md 'It also reads a Rust signature, a closure's empty ||, a let-else and a "
+          "for that is no loop the way Rust means them'; docs/configuration.md 'rust, shell "
+          "and powershell run on crapkit's own readers'"),
+    Patch("TRIP-GO-ZIG", (".go", ".zig"), None, None,
+          "README.md 'Go and Zig read through crapkit's subclasses of lizard's readers, which "
+          "end a signature where the language does'; docs/configuration.md 'go and zig run "
+          "on subclasses of lizard's readers'"),
     Patch("TRIP-JS-EXPRESSIONS", JS_FAMILY, None, r"=>|`|\?[^\n]*:",
           "README.md 'Expression arrows in arrays and argument lists are measured "
           "separately'; docs/architecture/2026-09-06/arrow-reader-review.md line 7 (comma, "
@@ -169,6 +182,17 @@ def test_a_match_that_moves_only_ccn_is_excused_and_a_moved_end_is_not():
     assert [(d.column, excused_by(d)) for d in moved] == [("end", None), ("nloc", None)]
 
 
+def test_a_rust_let_else_is_excused_as_rust_syntax_and_a_plain_moved_end_is_not():
+    source = ("fn f(a: Option<i32>) -> i32 {\n    let Some(x) = a else {\n        return 0;\n"
+              "    };\n    x\n}\n")
+    stock = [_hand_row("a.rs", 1, 6, ccn_std=1, ccn_mod=1)]
+    found = differences(stock, [_hand_row("a.rs", 1, 6, ccn_std=2, ccn_mod=2)], {"a.rs": source})
+    assert {excused_by(d) for d in found} == {"TRIP-RUST-SYNTAX"}
+    plain = "fn g(k: i32) -> i32 {\n    k + 1\n}\n"
+    moved = differences([_hand_row("b.rs", 1, 3)], [_hand_row("b.rs", 1, 2)], {"b.rs": plain})
+    assert {excused_by(d) for d in moved} == {None}
+
+
 def test_a_stock_language_excuses_nothing():
     source = "int f(int k) {\n  return k ? 1 : 0;\n}\n"
     found = differences([_hand_row("a.c", 1, 3)], [_hand_row("a.c", 1, 3, ccn_std=2)],
@@ -205,7 +229,7 @@ def test_stock_reader_languages_equal_stock_lizard_on_the_probes(probe_differenc
                                                                  probe_inventory):
     compared = [row for row in probe_inventory.rows if row["path"].endswith(STOCK_SUFFIXES)]
     assert {Path(row["path"]).suffix for row in compared} >= {".c", ".cpp", ".m", ".java",
-                                                               ".go", ".swift", ".zig"}
+                                                               ".swift"}
     assert _unexcused(probe_differences) == []
 
 
@@ -217,7 +241,7 @@ def test_every_patch_still_excuses_a_probe_difference(probe_differences, patch):
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("language", ["go", "java", "c", "cpp", "objc", "swift", "zig"])
+@pytest.mark.parametrize("language", ["java", "c", "cpp", "objc", "swift"])
 def test_stock_reader_languages_equal_stock_lizard_on_the_corpus(oracle, corpus_language,
                                                                  language):
     oracle("lizard")

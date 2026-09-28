@@ -74,7 +74,7 @@ def test_the_coverage_py_reader_keeps_coverage_py_s_own_counts(branches, stateme
     lines = list(range(start, start + statements[1]))
     entry = {"summary": _summary(branches, statements), "start_line": start,
              "executed_lines": lines[:statements[0]], "missing_lines": lines[statements[0]:]}
-    fn = production.load("coverage_py:_fn_coverage")("f", entry)
+    [fn] = production.load("coverage_py:_file_functions")({"functions": {"f": entry}})
     invoked = statements[0] > 0
 
     assert fn.start == start

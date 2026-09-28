@@ -66,7 +66,17 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 11  # A Python def is named by its name token and names each enclosing def once.
+ANALYSIS_VERSION = 12  # CRAP cubes 1 - cov with two products, not pow, so every platform
+#                       computes the same score. The Rust, Go and Zig readers read their
+#                       own syntax: signatures, empty closures, let-else, function types,
+#                       switch prongs and select. A `//` comment ends at its line outside
+#                       C, C++ and Objective-C, a comment counts one line per LF, and the
+#                       shell reader ends a heredoc line at LF only. An istanbul counter
+#                       counts for the function whose span or body holds it by line and
+#                       column, on the reader's lines; a coverage.py region with no
+#                       start_line starts on its def statement; and a function its lane
+#                       was told to leave out scores crap = ccn under the flag excluded.
+# 11: A Python def is named by its name token and names each enclosing def once.
 #                       A Python def whose body sits on its colon line is listed and ends
 #                       with that logical line, so the lines after it go back to its
 #                       parent and a later def no longer carries its name. A file that

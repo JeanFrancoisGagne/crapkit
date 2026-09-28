@@ -5,31 +5,31 @@ sha256, so a docs edit that moves or rewrites one fails the kit contract until
 this model is read against the new text again. No crapkit import: the tests
 compare what crapkit prints with what these functions say it should print.
 
-doc: README.md:879-937 sha256=1e711df8b2917237faf8b8733526e1eb1e18f3921e89ffd7b246677e6119784d
-doc: README.md:939-966 sha256=c4b6125a459c4756ce5538ef5aa5cc4942ce4f3895a68fe6f32c6c8e43ca8941
-doc: README.md:802-802 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
+doc: README.md:901-959 sha256=1e711df8b2917237faf8b8733526e1eb1e18f3921e89ffd7b246677e6119784d
+doc: README.md:961-988 sha256=5bb793ccc1837443b0f3e03ac1eb394e4f6270075d37bfb010dcf1588b874c2d
+doc: README.md:816-816 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
 doc: CONTEXT.md:26-33 sha256=f7baa578e3f82045a5588991a9c2a408ee7995faa7f12e682342b60295ef2987
 doc: CONTEXT.md:58-113 sha256=6201311b450224dbd1988161248f567e6bebe17dc8ba767ef6600a1c04f2c9d3
-doc: docs/ratchet.md:20-59 sha256=646283cb0999c9117af7ea2059fc95d4a36d98e470e56a17ef2fadc827c90683
-doc: docs/ratchet.md:87-111 sha256=db1ea102ffed676e6466cd9b27ec3bb913919b502b87613ea06d284af02536d9
-doc: docs/ratchet.md:156-212 sha256=589d1d1b2f0e3e41e3aaf1f8f98a80f549fac26b44c3c8fea0518e2acd4ed78b
-doc: docs/ratchet.md:296-331 sha256=fa4437223445559ec9104f7516ce66295f9924389029beb4321809fbb8ba02b8
-doc: docs/ratchet.md:405-424 sha256=ba19474ea6c621b62c620d46c5d5813683a1fb0432ad7454a9de9a199f218cbe
-doc: docs/ratchet.md:485-537 sha256=29905e13557ab764061536c724a34ee9373587253d4ded117f612c33d7c9c8d0
-doc: docs/ratchet.md:626-713 sha256=b66be4b259912c338e9bbabc0fe06c76610ac13ae3c92430899001eccf99ba82
-doc: docs/ratchet.md:715-775 sha256=d80dce38a923b4bd4d1fb02bb8436588645d1ba671554250d9a0c3a44802e9b9
-doc: docs/ratchet.md:812-814 sha256=0b0353f91de49806c816e6fbb56a8ce38494cd5d093a357a4feb9420e0c9250e
-doc: docs/agent-json.md:229-247 sha256=184d66636aa2e0f750b4372ca14c787c9f83f6d817dc4abb18dd669c4f95b683
-doc: docs/agent-json.md:795-812 sha256=ff22f69752a742f839d4e2edf54e985f3eab9cf30fce8a3ffd1b44978c1f7118
-doc: docs/configuration.md:90-90 sha256=e6dc43339c7ab96208524957553d2995e11fc3bd1349d4f7d3b7aa6647f33d5f
-doc: docs/lanes.md:1204-1239 sha256=54a0b640914153ce29428d4cd0cad50290962be3cb820f307713cc760688a978
-doc: docs/lanes.md:1352-1365 sha256=16be62f9ef850d1a1a56d4146b97b184f327b4800e25ff968caf555aeef2c13f
-doc: docs/ratchet.md:832-836 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
-doc: docs/agent-json.md:492-512 sha256=64d6cb9b71322533826e0516f0eb3a3646b001c9636575730dc41313cfd76acf
-doc: docs/lanes.md:971-1064 sha256=3c57130ad9b165d9c7fe529e2a608886e4e96fbd3fcb72e04d3efc8e2a8ab234
-doc: docs/lanes.md:1066-1099 sha256=962c85888f0e3ea1c87c13cdedc39fabd7a99ddcd3a65bf18e3d1fd8d0e67ef0
-doc: docs/lanes.md:1503-1598 sha256=bc5c956cef7f1a51e1f067320a3f3625987d4696c141f55b46c1e6c843df3db4
-doc: README.md:830-837 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
+doc: docs/ratchet.md:20-59 sha256=8bf768da55f0a27c6b54afa698e4d57839e6098acff4247915b8edeea9708448
+doc: docs/ratchet.md:88-112 sha256=db1ea102ffed676e6466cd9b27ec3bb913919b502b87613ea06d284af02536d9
+doc: docs/ratchet.md:157-213 sha256=589d1d1b2f0e3e41e3aaf1f8f98a80f549fac26b44c3c8fea0518e2acd4ed78b
+doc: docs/ratchet.md:297-332 sha256=fa4437223445559ec9104f7516ce66295f9924389029beb4321809fbb8ba02b8
+doc: docs/ratchet.md:406-425 sha256=ba19474ea6c621b62c620d46c5d5813683a1fb0432ad7454a9de9a199f218cbe
+doc: docs/ratchet.md:486-538 sha256=29905e13557ab764061536c724a34ee9373587253d4ded117f612c33d7c9c8d0
+doc: docs/ratchet.md:627-714 sha256=b66be4b259912c338e9bbabc0fe06c76610ac13ae3c92430899001eccf99ba82
+doc: docs/ratchet.md:716-776 sha256=d80dce38a923b4bd4d1fb02bb8436588645d1ba671554250d9a0c3a44802e9b9
+doc: docs/ratchet.md:813-815 sha256=0b0353f91de49806c816e6fbb56a8ce38494cd5d093a357a4feb9420e0c9250e
+doc: docs/agent-json.md:236-254 sha256=184d66636aa2e0f750b4372ca14c787c9f83f6d817dc4abb18dd669c4f95b683
+doc: docs/agent-json.md:807-824 sha256=ff22f69752a742f839d4e2edf54e985f3eab9cf30fce8a3ffd1b44978c1f7118
+doc: docs/configuration.md:104-104 sha256=e6dc43339c7ab96208524957553d2995e11fc3bd1349d4f7d3b7aa6647f33d5f
+doc: docs/lanes.md:1310-1345 sha256=54a0b640914153ce29428d4cd0cad50290962be3cb820f307713cc760688a978
+doc: docs/lanes.md:1460-1473 sha256=16be62f9ef850d1a1a56d4146b97b184f327b4800e25ff968caf555aeef2c13f
+doc: docs/ratchet.md:833-837 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
+doc: docs/agent-json.md:499-519 sha256=64d6cb9b71322533826e0516f0eb3a3646b001c9636575730dc41313cfd76acf
+doc: docs/lanes.md:1071-1170 sha256=36500c0de830a94799c272ec8c6b5d670daa947f10d3c34e07276109b302433d
+doc: docs/lanes.md:1172-1205 sha256=962c85888f0e3ea1c87c13cdedc39fabd7a99ddcd3a65bf18e3d1fd8d0e67ef0
+doc: docs/lanes.md:1612-1707 sha256=bc5c956cef7f1a51e1f067320a3f3625987d4696c141f55b46c1e6c843df3db4
+doc: README.md:846-853 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
 doc: docs/portable-records.md:9-24 sha256=e4e06a93b5a1fd4569a93b1673493be0fcdd6e7eb3b04c0d0bc507b5dd3867c9
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ from itertools import chain
 
 from accuracy.kit import exact
 
-# --- runs and the trusted baseline (README.md:879-937, CONTEXT.md:58-73) -------------------
+# --- runs and the trusted baseline (README.md:901-959, CONTEXT.md:58-73) -------------------
 
 COVERAGE, VERIFY, INVENTORY, HOOK, PARTIAL = "coverage", "verify", "inventory", "hook", "partial"
 
@@ -111,7 +111,7 @@ def named_baseline(runs: list[Run], wanted: int) -> tuple[Run | None, str | None
     return (None, reason) if reason else (found, None)
 
 
-# --- verdict exit (README.md:939-966) ----------------------------------------------------
+# --- verdict exit (README.md:961-988) ----------------------------------------------------
 
 EXIT_ORDER = ((6, "gate"), (7, "ratchet"), (8, "failures"), (9, "diff_uncovered"))
 
@@ -138,7 +138,7 @@ class Row:
 def keys(rows: list[Row]) -> dict[Row, tuple[str, str]]:
     """Each row's ratchet key: the first of a file's same-named functions keeps
     the bare name, later ones take #2, #3 counted in file order, (start,
-    occurrence) (docs/ratchet.md:832-836)."""
+    occurrence) (docs/ratchet.md:833-837)."""
     out = {}
     groups: dict[tuple[str, str], list[Row]] = {}
     for row in rows:
@@ -151,7 +151,7 @@ def keys(rows: list[Row]) -> dict[Row, tuple[str, str]]:
 
 
 def bare_name(long_name: str) -> str:
-    """The leading token of the long name, before its parameter list (agent-json.md:497)."""
+    """The leading token of the long name, before its parameter list (agent-json.md:504)."""
     return long_name.split("(")[0].strip().split(" ")[0]
 
 
@@ -240,7 +240,7 @@ def _read_line(line: str, found: dict) -> None:
         found["marks"][(fields[0], fields[1])] = Decimal(fields[2])
 
 
-# The characters a writer encodes (docs/portable-records.md:37-39).
+# The characters a writer encodes (docs/portable-records.md:68-70).
 ENCODED = frozenset("\t\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029")
 
 
@@ -265,7 +265,7 @@ def dump_marks(marks: MarksFile) -> list:
     return head + ["\t".join(HEADER)] + rows
 
 
-# --- remedy (README.md:830-837) --------------------------------------------------------------
+# --- remedy (README.md:846-853) --------------------------------------------------------------
 
 def remedy(ccn: int, crap, ceiling: int, shares_line: bool) -> str:
     """decompose past the ceiling on ccn; ok at or under it on CRAP; else
@@ -278,7 +278,7 @@ def remedy(ccn: int, crap, ceiling: int, shares_line: bool) -> str:
     return "split-lines" if shares_line else "add-tests"
 
 
-# --- the three gates and verify (docs/ratchet.md:87-111, 626-676) --------------------------
+# --- the three gates and verify (docs/ratchet.md:88-112, 627-677) --------------------------
 
 def within_mark(crap, mark: Decimal | None) -> bool:
     """rescore --gate and verify pardon a function at or under its mark,
@@ -317,13 +317,13 @@ def worst_per_key(rows: list[Row]) -> dict:
     return worst
 
 
-# --- tighten and damping (docs/ratchet.md:626-713, configuration.md:90) --------------------
+# --- tighten and damping (docs/ratchet.md:627-714, configuration.md:104) --------------------
 
 JUMP = Fraction(2)
 
 
 def moved_past(before, after, jump=JUMP) -> bool:
-    """configuration.md:90 calls tighten_max_jump a factor, a number >= 1: two
+    """configuration.md:104 calls tighten_max_jump a factor, a number >= 1: two
     measurements further apart than that ratio are the measurement talking."""
     low, high = sorted((Fraction(before), Fraction(after)))
     return low <= 0 or high / low > jump
@@ -352,7 +352,7 @@ def _tightened(key, mark, fresh, ceiling, previous, jump) -> dict:
     return {key: min(mark, mark_value(crap))}
 
 
-# --- seed and prune (docs/ratchet.md:156-212, 405-424) ------------------------------------
+# --- seed and prune (docs/ratchet.md:157-213, 406-425) ------------------------------------
 
 def seed(marks: dict, fresh: dict, ceiling: int) -> tuple[dict, int, int]:
     """Mark every function over its ceiling at its score; a mark only lowers.
@@ -375,7 +375,7 @@ def prune(marks: dict, present: set) -> dict:
 
 
 def follow_renames(marks: dict, present: set, renames: dict) -> dict:
-    """docs/ratchet.md:417-423: a mark moves to the path git renamed its file
+    """docs/ratchet.md:418-424: a mark moves to the path git renamed its file
     to when its function is gone from the recorded path and the same key name
     exists at the destination. `renames` maps old path to new path."""
     out = {}
@@ -385,7 +385,7 @@ def follow_renames(marks: dict, present: set, renames: dict) -> dict:
     return out
 
 
-# --- the metric stamp (docs/ratchet.md:296-331) ----------------------------------------------
+# --- the metric stamp (docs/ratchet.md:297-332) ----------------------------------------------
 
 STAMP_OF_WRITE = {"seed": "run", "prune": "recorded", "move": "recorded", "merge": "recorded",
                   "tighten": "running", "override": "running", "hook-override": "recorded"}
@@ -407,7 +407,7 @@ def stamp_refused(recorded: str | None, running: str) -> bool:
     return recorded is not None and recorded != running
 
 
-# --- the merge driver (docs/ratchet.md:485-537) --------------------------------------------
+# --- the merge driver (docs/ratchet.md:486-538) --------------------------------------------
 
 def merge(base: dict, ours: dict, theirs: dict) -> dict:
     """Per key, the side that changed wins over the side that did not; when both
@@ -434,7 +434,7 @@ def _lower(ours, theirs):
     return min(present) if present else None
 
 
-# --- test failures (CONTEXT.md:76-88, docs/lanes.md:1204-1239) -------------------------------
+# --- test failures (CONTEXT.md:76-88, docs/lanes.md:1310-1345) -------------------------------
 
 @dataclass(frozen=True)
 class Failures:
@@ -474,18 +474,19 @@ def suite_dropped(before: int | None, now: int | None) -> bool:
     return Fraction(before - now, 1) > Fraction(before, 10)
 
 
-# --- lane reuse (docs/lanes.md:971-1099) -------------------------------------------------------
+# --- lane reuse (docs/lanes.md:1071-1205) -------------------------------------------------------
 
 # `--reuse-unchanged` names the first condition that failed, in the order the
 # docs list them. A lane without `inputs` answers for the whole tree, the
 # config and the inherited environment; a lane with `inputs` answers for its
 # own paths, its own lane table and whether its artifact's commit is still
-# behind HEAD.
+# behind HEAD: a commit history rewrote away ("not behind") and a git read of
+# its inputs that failed ("inputs unread") rerun it too.
 REUSE_ORDER = ("no artifact", "wrote none", "no proof", "uncommitted", "head", "crapkit.toml",
-               "lane table", "environment", "inputs", "bytes")
+               "lane table", "environment", "inputs", "not behind", "inputs unread", "bytes")
 WITH_INPUTS = frozenset({"no artifact", "wrote none", "no proof", "head", "lane table", "inputs",
-                         "bytes"})
-WHOLE_TREE = frozenset(REUSE_ORDER) - {"inputs"}
+                         "not behind", "inputs unread", "bytes"})
+WHOLE_TREE = frozenset(REUSE_ORDER) - {"inputs", "not behind", "inputs unread"}
 
 
 def rerun_condition(failed: set, with_inputs: bool = False) -> str | None:
@@ -502,7 +503,7 @@ def _under(path: str, prefix: str) -> bool:
 def lines_stale(scope_paths: tuple, changed: set) -> bool:
     """A lane's dark lines go null once a file under its scopes changed since
     its artifact was written, uncommitted edits included; a change anywhere
-    else leaves them (docs/lanes.md:1062-1064, agent-json.md, uncovered_lines)."""
+    else leaves them (docs/lanes.md:1168-1170, agent-json.md, uncovered_lines)."""
     return reaches(changed, scope_paths)
 
 
@@ -512,7 +513,7 @@ def reaches(paths, scope_paths: tuple) -> bool:
 
 
 def reach_verdict(paths: list[str], root: str, scope_paths: tuple) -> str:
-    """What a lane whose artifact names `paths` gets (docs/lanes.md:1503-1598):
+    """What a lane whose artifact names `paths` gets (docs/lanes.md:1612-1707):
     "ok" when any path reaches a scope (zero overlap is the whole test);
     otherwise "other tree" when any path is outside the root or climbs out of
     it, "absolute" when every such path is absolute under the root, and "warn"
@@ -534,7 +535,7 @@ def _absolute(path: str) -> bool:
     return path.startswith("/") or path[1:3] == ":/"
 
 
-# --- overrides (docs/ratchet.md:715-775, 812-814) --------------------------------------------
+# --- overrides (docs/ratchet.md:716-776, 813-815) --------------------------------------------
 
 def override_refusal(reason: str, alert: bool, regressions: int, new_failures: int) -> str | None:
     """Why `verify --override` grants nothing, or None when it may grant."""
@@ -547,7 +548,7 @@ def override_refusal(reason: str, alert: bool, regressions: int, new_failures: i
     return None
 
 
-# --- retention (README.md:802) -----------------------------------------------------------------
+# --- retention (README.md:816) -----------------------------------------------------------------
 
 def keep_set(runs: list[Run], keep: int, override_runs: set[int], digest_pair: set[int]) -> set[int]:
     """`runs prune --keep N` keeps the newest N trusted runs, the digest pair,
@@ -565,7 +566,7 @@ def keep_set(runs: list[Run], keep: int, override_runs: set[int], digest_pair: s
 def taint_runs(runs: list[Run]) -> set[int]:
     """The runs verify's pick and its taint warning name (README.md, The taint
     rule): the baseline, the newest trusted run the rule passed over, and every
-    failed verify after the baseline. README.md:802 does not list them; a prune
+    failed verify after the baseline. README.md:816 does not list them; a prune
     that dropped them would move the baseline past the findings the rule
     protects, so they are the doc gap ruling V1 records."""
     picked = baseline(runs)
@@ -579,7 +580,7 @@ def _newest_trusted(runs: list[Run], keep: int) -> list[int]:
     return ids[len(ids) - keep:] if keep > 0 else []
 
 
-# --- claims (agent-json.md:229-247) ----------------------------------------------------------
+# --- claims (agent-json.md:236-254) ----------------------------------------------------------
 
 def claim_closes(crap, ceiling: int, commit_in_history: bool) -> bool:
     """verify releases a claim once the function sits at its ceiling or its

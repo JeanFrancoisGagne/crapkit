@@ -6,9 +6,10 @@ assembly routine. A method declaration may omit its body the same way. Go ends
 the declaration at its line, where it inserts a semicolon.
 
 lizard's Go reader waits for a `{` past the end of the line, so the next
-function's body becomes the declaration's: the declaration gets a row that
-runs to the end of the next function and holds its decisions, and the next
-function gets no row. The Rust reader had the same defect for a trait's
+function's body became the declaration's: the declaration got a row that
+ran to the end of the next function and held its decisions, and the next
+function got no row. crapkit's Go reader (crapkit.lizardgolike) ends the
+declaration at its line. The Rust reader had the same defect for a trait's
 required method (tests/unit/test_rust_function_discovery.py).
 """
 import pytest
@@ -25,9 +26,6 @@ func After(n int) int {
 """
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "lizard's Go reader waits for a body past a declaration's line. Drop this "
-    "marker when the Go reader ends a declaration without a body at its line."))
 @pytest.mark.parametrize("declaration", [
     "func add(a, b int) int",
     "func add(a, b int) (int, error)",

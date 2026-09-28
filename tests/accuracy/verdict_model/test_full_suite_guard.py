@@ -442,7 +442,9 @@ SHELL = "cmd" if g.WINDOWS else "sh"
 
 
 def _ruling_marks(ruling_id: str | None) -> list:
-    return [rulings.applies(ruling_id)] if ruling_id else []
+    """A strict-xfail mark while the row is an open defect; none once it reads fixed."""
+    mark = rulings.applies(ruling_id) if ruling_id else None
+    return [mark] if isinstance(mark, pytest.MarkDecorator) else []
 
 
 def _past_the_table() -> list:

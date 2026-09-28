@@ -355,6 +355,19 @@ def test_equal_crap_ranks_by_commits_then_path():
                        else "1-commit file first", oracle="unspecified")
 
 
+
+def test_scores_equal_at_4_places_rank_by_start():
+    """agent-json.md:55-57: CRAP(18, 2/3) is exactly 30 but its float reads a hair
+    above it, and CRAP(5, 0) reads 30.0. The two tie at 4 places, so in one file
+    the function that starts first comes first."""
+    fns = [Fn("src/f.py", "late( x )", 61, 18, 8, "measured"),
+           Fn("src/f.py", "early( x )", 1, 5, 0, "measured")]
+    ranked, _ = crapkit_next({}, fns, 1)
+
+    assert scored_rows(fns)[0].crap != 30.0
+    assert [(r.path, r.start) for r in ranked] == [("src/f.py", 1), ("src/f.py", 61)]
+    assert _model_next({}, scored_rows(fns), 1) == [("src/f.py", 1), ("src/f.py", 61)]
+
 # --- one run for both views (CLI) -----------------------------------------------------------------
 
 TWO_SCOPES = cli_repo.Layout(modules=(

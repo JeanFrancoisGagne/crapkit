@@ -864,20 +864,21 @@ def test_a_cov_cell_is_judged_by_the_counts_table_on_the_written_out_corpus(monk
 
 @pytest.mark.parametrize("row, crap", [
     ({"ccn": "3", "cov": "0.0", "flag": "cc-only"}, "3.0"),
+    ({"ccn": "3", "cov": "0.0", "flag": "excluded"}, "3.0"),
     ({"ccn": "3", "cov": "0.0", "flag": "untested"}, "12.0"),
     ({"ccn": "7", "cov": "0.5", "flag": "measured"}, "13.125"),
     ({"ccn": "7", "cov": "nan?"}, None),
 ])
 def test_the_crap_oracle_follows_the_readme_formula_and_the_cc_only_flag(row, crap):
     """README: CRAP = ccn^2 (1 - cov)^3 + ccn (9 * 1 + 3 = 12, 49 * 0.125 + 7 =
-    13.125), and a cc-only row scores crap = ccn."""
+    13.125), and a cc-only or excluded row scores crap = ccn."""
     assert cc.exact_crap(row, None) == crap
 
 
-def test_an_untested_or_no_lane_row_reads_cov_0_without_the_counts_table(monkeypatch):
+def test_an_untested_excluded_or_no_lane_row_reads_cov_0_without_the_counts_table(monkeypatch):
     monkeypatch.setattr(cc, "counts_module", lambda: pytest.fail("the table was read"))
 
-    for flag in ("untested", "no-lane"):
+    for flag in ("untested", "excluded", "no-lane"):
         assert cc.counts_cov(_tree(BASE), cc.Cell(seeds.SCORED, "src/a.py", "f1", "cov", "", ""),
                              {"start": "14", "flag": flag}) == "0.0"
 

@@ -160,9 +160,9 @@ def _four_places(row: dict, counts: dict, ties: dict) -> tuple[str, str]:
 
 def test_the_crap_column_rounds_half_even_at_four_places(scored_corpus):
     """The exported double, read back, prints the exact CRAP's 4 dp value, bar
-    the exact ties rulings D5 lists."""
+    the exact ties rulings D5 lists and the rows that score crap = ccn."""
     counts, ties = _counts(scored_corpus.root), cases.tie_table()
     printed = {row["long_name"]: _four_places(row, counts, ties) for row in _rows(scored_corpus)
-               if row["flag"] != "cc-only"}
+               if row["flag"] not in model_score.CCN_FLAGS}
 
     assert dict(filter(lambda item: item[1][0] != item[1][1], printed.items())) == {}

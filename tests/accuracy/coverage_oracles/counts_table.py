@@ -11,9 +11,14 @@ behind the counts. Two readers:
   (before 7.13.1) has none.
 - istanbul: one row per fnMap entry. Each branchMap and statementMap counter goes
   to one function, by one of two rules:
-    `line`: the innermost function whose span [decl.start.line, loc.end.line]
-      holds the counter's start line (docs/lanes.md#what-the-istanbul-parser-reads).
-      A tie on span length goes to the later start, then the one listed first.
+    `line`: the rule docs/lanes.md#what-the-istanbul-parser-reads states. A
+      function's span runs from decl.start to loc.end, and its body from
+      loc.start (else decl.start) to loc.end. A branch goes to the innermost
+      function whose span holds its loc.start, a statement to the innermost one
+      whose body holds its start. Positions compare the line, then the column,
+      and a missing column stands for the whole line: the first column at a
+      start, the last at an end. The innermost is the one over the fewest lines,
+      then the one that starts later, then the one listed first.
     `position`: the innermost function whose range, decl.start to loc.end in
       (line, column), holds the counter's range; a counter whose range is the
       function's own (the `const f = () => ...` declaration that runs at import)
@@ -117,6 +122,7 @@ class _Function:
     name: str
     start: tuple
     end: tuple
+    body: tuple  # loc.start, else decl.start
 
     @property
     def lines(self) -> tuple[int, float]:
@@ -128,20 +134,36 @@ class _Function:
 
 
 def _functions(data: dict) -> list[_Function]:
-    found = []
-    for index, entry in data.get("fnMap", {}).items():
-        start = _position(entry["decl"]["start"], 0)
-        end = _position((entry.get("loc") or {}).get("end"), END)
-        end = end if end[0] != END else (start[0], END)
-        found.append(_Function(index, entry.get("name") or "(anonymous)", start, end))
-    return found
+    return [_function(index, entry) for index, entry in data.get("fnMap", {}).items()]
 
 
-def _by_line(functions: list[_Function], start: tuple, end: tuple) -> _Function | None:
-    """The shortest span holding the line; on a tie the one that starts later,
-    then the one listed first."""
-    holders = [fn for fn in functions if fn.lines[0] <= start[0] <= fn.lines[1]]
-    return min(holders, key=lambda fn: (fn.lines[1] - fn.lines[0], -fn.lines[0]), default=None)
+def _function(index: str, entry: dict) -> _Function:
+    """One fnMap entry: it opens at decl.start, its body at loc.start (else
+    decl.start), and it ends at loc.end (else the end of its first line)."""
+    start = _position(entry["decl"]["start"], 0)
+    loc = entry.get("loc") or {}
+    end = _position(loc.get("end"), END)
+    end = end if end[0] != END else (start[0], END)
+    body = _position(loc.get("start"), 0)
+    return _Function(index, entry.get("name") or "(anonymous)", start, end,
+                     body if body[0] else start)
+
+
+def _innermost(holders: list[_Function]) -> _Function | None:
+    """The one over the fewest lines; on a tie the one that starts later, then
+    the one listed first."""
+    return min(holders, key=lambda fn: (fn.lines[1] - fn.lines[0], _negated(fn.start)),
+               default=None)
+
+
+def _by_span(functions: list[_Function], start: tuple, end: tuple) -> _Function | None:
+    """A branch's owner: the innermost function whose span holds its start."""
+    return _innermost([fn for fn in functions if fn.start <= start <= fn.end])
+
+
+def _by_body(functions: list[_Function], start: tuple, end: tuple) -> _Function | None:
+    """A statement's owner: the innermost function whose body holds its start."""
+    return _innermost([fn for fn in functions if fn.body <= start <= fn.end])
 
 
 def _holds(fn: _Function, start: tuple, end: tuple) -> bool:
@@ -158,7 +180,8 @@ def _negated(point: tuple) -> tuple:
     return tuple(-value for value in point)
 
 
-OWNERS = {"line": _by_line, "position": _by_position}
+# rule -> (a branch's owner, a statement's owner)
+OWNERS = {"line": (_by_span, _by_body), "position": (_by_position, _by_position)}
 
 
 def _span(loc: dict) -> tuple[tuple, tuple]:
@@ -199,9 +222,9 @@ def _all_and_hit(owned: list) -> tuple[tuple, tuple]:
 
 def _istanbul_file(path: str, data: dict, rule: str) -> list[Counts]:
     functions = _functions(data)
-    owner = OWNERS[rule]
-    arms = _assign(functions, _branch_arms(data), owner)
-    stmts = _assign(functions, _statements(data), owner)
+    branch_owner, statement_owner = OWNERS[rule]
+    arms = _assign(functions, _branch_arms(data), branch_owner)
+    stmts = _assign(functions, _statements(data), statement_owner)
     calls = data.get("f", {})
     return [Counts(path, fn.name, int(fn.start[0]), fn.last_line, *_all_and_hit(arms[fn.index]),
                    *_all_and_hit(stmts[fn.index]), calls.get(fn.index, 0) > 0)

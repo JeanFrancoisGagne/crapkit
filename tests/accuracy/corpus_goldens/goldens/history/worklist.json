@@ -1051,7 +1051,7 @@
    "weight": 0.0008
   }
  ],
- "active_total": 102,
+ "active_total": 100,
  "churn_window_months": 12,
  "commit": "901b727247a28c5d34a593db89a0b9065772919e",
  "dormant_count": 0,

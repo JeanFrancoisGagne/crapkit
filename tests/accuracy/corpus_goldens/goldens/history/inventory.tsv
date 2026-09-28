@@ -16,11 +16,11 @@ native	src/native/ifdef.c	open_log( const char * path , int append)	17	23	4	4	4	
 native	src/native/ifdef.c	classify( int code)	26	39	5	2	2	14	1	3	1	1
 native	src/native/legacy.cxx	legacy_score( int hits , int misses , bool strict)	2	11	4	4	4	10	3	2	3	1
 native	src/native/list.zig	sumPositive values : [ ] const i32	4	13	3	3	3	10	1	2	3	1
-native	src/native/list.zig	grade score : u8	15	22	5	6	5	8	1	0	2	1
+native	src/native/list.zig	grade score : u8	15	22	4	2	2	8	1	0	1	1
 native	src/native/matcher.rs	weight kind : & str	2	12	7	7	7	11	1	0	1	1
 native	src/native/matcher.rs	first_even values : & [ i64 ]	14	23	4	4	4	10	1	3	6	1
 native	src/native/router.go	(r Route)Matches method , path string	9	14	4	4	4	6	2	2	3	1
-native	src/native/router.go	Describe v interface { }	16	27	4	3	3	12	0	2	3	1
+native	src/native/router.go	Describe v interface { }	16	28	4	3	3	13	1	2	3	1
 native	src/native/shapes.cc	area_sum( const std :: vector<int> & widths , const std :: vector<int> & heights)	4	11	4	4	4	8	2	3	4	1
 native	src/native/shapes.cc	count_if_positive( const std :: vector<int> & values)	13	23	3	3	3	11	1	2	3	1
 native	src/native/util.h	clamp_int( int value , int low , int high)	5	14	3	3	3	10	3	1	2	1
@@ -355,33 +355,33 @@ vendor	vendor/shadcn-ui/pagination.tsx	PaginationLink ( className , isActive , s
 vendor	vendor/shadcn-ui/pagination.tsx	PaginationPrevious ( className , props React ComponentProps )	68	83	1	1	1	16	2	0	0	1
 vendor	vendor/shadcn-ui/pagination.tsx	PaginationNext ( className , props React ComponentProps )	85	100	1	1	1	16	2	0	0	1
 vendor	vendor/shadcn-ui/pagination.tsx	PaginationEllipsis ( className , props React ComponentProps )	102	117	1	1	1	16	2	0	0	1
-vendor	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	96	101	3	4	3	6	1	0	2	1
-vendor	vendor/zig-std/ascii.zig	isAlphabetic c : u8	104	109	3	4	3	6	1	0	2	1
+vendor	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	96	101	2	2	2	6	1	0	1	1
+vendor	vendor/zig-std/ascii.zig	isAlphabetic c : u8	104	109	2	2	2	6	1	0	1	1
 vendor	vendor/zig-std/ascii.zig	isControl c : u8	114	116	2	2	2	3	1	0	1	1
-vendor	vendor/zig-std/ascii.zig	isDigit c : u8	119	124	3	4	3	6	1	0	2	1
-vendor	vendor/zig-std/ascii.zig	isLower c : u8	127	132	3	4	3	6	1	0	2	1
+vendor	vendor/zig-std/ascii.zig	isDigit c : u8	119	124	2	2	2	6	1	0	1	1
+vendor	vendor/zig-std/ascii.zig	isLower c : u8	127	132	2	2	2	6	1	0	1	1
 vendor	vendor/zig-std/ascii.zig	isPrint c : u8	136	138	2	2	2	3	1	0	1	1
-vendor	vendor/zig-std/ascii.zig	isWhitespace c : u8	141	146	3	4	3	6	1	0	2	1
-vendor	vendor/zig-std/ascii.zig	isUpper c : u8	164	169	3	4	3	6	1	0	2	1
-vendor	vendor/zig-std/ascii.zig	isHex c : u8	172	177	3	4	3	6	1	0	2	1
+vendor	vendor/zig-std/ascii.zig	isWhitespace c : u8	141	146	2	2	2	6	1	0	1	1
+vendor	vendor/zig-std/ascii.zig	isUpper c : u8	164	169	2	2	2	6	1	0	1	1
+vendor	vendor/zig-std/ascii.zig	isHex c : u8	172	177	2	2	2	6	1	0	1	1
 vendor	vendor/zig-std/ascii.zig	isAscii c : u8	180	182	1	1	1	3	1	0	0	1
 vendor	vendor/zig-std/ascii.zig	toUpper c : u8	185	188	1	1	1	4	1	0	0	1
 vendor	vendor/zig-std/ascii.zig	toLower c : u8	191	194	1	1	1	4	1	0	0	1
 vendor	vendor/zig-std/ascii.zig	lowerString output : [ ] u8 , ascii_string : [ ] const u8	271	277	2	2	2	7	2	1	1	1
-vendor	vendor/zig-std/ascii.zig	allocLowerString allocator : std . mem . Allocator , ascii_string : [ ] const u8	287	290	2	2	2	4	2	1	0	1
+vendor	vendor/zig-std/ascii.zig	allocLowerString allocator : std . mem . Allocator , ascii_string : [ ] const u8	287	290	2	2	2	4	2	0	0	1
 vendor	vendor/zig-std/ascii.zig	upperString output : [ ] u8 , ascii_string : [ ] const u8	300	306	2	2	2	7	2	1	1	1
-vendor	vendor/zig-std/ascii.zig	allocUpperString allocator : std . mem . Allocator , ascii_string : [ ] const u8	316	319	2	2	2	4	2	1	0	1
+vendor	vendor/zig-std/ascii.zig	allocUpperString allocator : std . mem . Allocator , ascii_string : [ ] const u8	316	319	2	2	2	4	2	0	0	1
 vendor	vendor/zig-std/ascii.zig	eqlIgnoreCase a : [ ] const u8 , b : [ ] const u8	328	334	4	4	4	7	2	3	4	1
 vendor	vendor/zig-std/ascii.zig	startsWithIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	342	344	2	2	2	3	2	1	2	1
 vendor	vendor/zig-std/ascii.zig	endsWithIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	351	353	2	2	2	3	2	1	2	1
-vendor	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	361	363	1	1	1	3	2	1	1	1
-vendor	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	367	384	7	7	7	14	3	4	8	1
-vendor	vendor/zig-std/ascii.zig	indexOfIgnoreCasePosLinear haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	388	395	3	3	3	8	3	2	4	1
+vendor	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	361	363	1	1	1	3	2	0	0	1
+vendor	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	367	384	7	7	7	14	3	5	7	1
+vendor	vendor/zig-std/ascii.zig	indexOfIgnoreCasePosLinear haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	388	395	3	3	3	8	3	2	3	1
 vendor	vendor/zig-std/ascii.zig	boyerMooreHorspoolPreprocessIgnoreCase pattern : [ ] const u8 , table : * [ 256 ] usize	397	408	3	3	3	9	2	1	2	1
-vendor	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	422	433	5	6	5	12	2	1	4	1
+vendor	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	422	433	5	3	3	12	2	1	4	1
 vendor	vendor/zig-std/ascii.zig	lessThanIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	436	438	1	1	1	3	2	0	0	1
-vendor	vendor/zig-std/ascii.zig	format se : HexEscape , w : * std . io . Writer	447	463	5	5	5	15	2	3	4	1
-vendor	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	467	472	3	4	3	6	2	2	1	1
+vendor	vendor/zig-std/ascii.zig	format se : HexEscape , w : * std . io . Writer	447	463	5	5	5	15	2	2	4	1
+vendor	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	467	472	3	2	2	6	2	0	1	1
 vendor	vendor/zod/regexes.ts	nanoidOfLength ( length )	14	19	1	1	1	4	1	0	0	1
 vendor	vendor/zod/regexes.ts	uuid ( version undefined )	32	38	2	2	2	7	1	1	1	1
 web	src/web/Counter.vue	tone ( count )	2	10	3	3	3	9	1	1	2	1

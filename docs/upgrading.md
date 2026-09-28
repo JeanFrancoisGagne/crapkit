@@ -16,8 +16,10 @@ MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-l
 
 ## Measure before changing marks
 
-0.8.0 moves the reader to analysis version 11, so a marks file stamped under 10
-needs one re-seed; [analysis version 11](#analysis-version-11) says what moved.
+The release after 0.8.0 moves the reader to analysis version 12, and 0.8.0 moved it
+to 11, so a marks file stamped under an older version needs one re-seed; [analysis
+version 12](#analysis-version-12) and [analysis version 11](#analysis-version-11) say
+what moved.
 The package upgrade rebuilds the versioned analysis cache automatically, and the
 first `inventory` or `coverage` after it analyzes every file again. That run's
 [twin-key note](ratchet.md#twins-one-name-several-functions) names the first five
@@ -44,15 +46,19 @@ any mark changes.
 | Coverage or JUnit producer | Run a fresh lane and resolve [artifact admission errors](lanes.md#a-junit-that-says-the-run-did-not-finish). |
 | Shared exports or portable baselines | Upgrade readers before writing [encoded records](portable-records.md) for them. |
 
-### Next analysis version: score arithmetic
+### Analysis version 12
 
-The release after 0.8.0 cubes `1 - cov` with two products where it called `** 3`.
-`pow()` differs between C libraries, so Windows and Linux gave some scores different
-last bits. A few scores move at the 4 dp a mark is stored at, so the release raises
-the analysis version and every marks file re-seeds once, with the same three commands
-as [version 11](#analysis-version-11): `crapkit coverage`, `crapkit ratchet prune`,
-then `crapkit ratchet seed`. No function changes its name, so prune drops no mark for
-this change. Commit the marks file.
+The release after 0.8.0 raises the analysis version to 12. Scores move on functions
+nobody edited, so every marks file re-seeds once, with the same three commands as
+[version 11](#analysis-version-11): `crapkit coverage`, `crapkit ratchet prune`, then
+`crapkit ratchet seed`. Prune drops the marks of rows that go away or change key, and
+seed marks the new ones. Commit the marks file. The sections below say what moves.
+
+#### Score arithmetic
+
+CRAP cubes `1 - cov` with two products where it called `** 3`. `pow()` differs between
+C libraries, so Windows and Linux gave some scores different last bits, and a few
+scores move at the 4 dp a mark is stored at. No function changes its name for this.
 
 Over ccn 1 to 60 and every coverage fraction up to 240ths, measured on Windows:
 
@@ -81,11 +87,9 @@ where it read 3. `crap_load` adds the scores exactly and rounds once, so a load 
 stored run again, once; on a store of about a million scored rows that takes a few
 seconds.
 
-### The next analysis version
+#### Coverage lands on the function that owns it
 
-The next release moves the analysis version once more, because coverage now lands on
-the function that owns it. Scores move on functions nobody edited, so every marks file
-re-seeds once, with the same three commands as version 11 below:
+Scores move on functions nobody edited:
 
 - Under an istanbul lane a counter is placed by line and column. A statement counts
   from a function's body on and a branch from its declaration on. The statement
@@ -107,10 +111,9 @@ re-seeds once, with the same three commands as version 11 below:
   counts, should accept `excluded` too. See
   [flags](../README.md#flags-why-a-coverage-number-is-missing).
 
-### Next analysis version: Rust rows
+#### Rust rows
 
-The release after 0.8.0 moves Rust's numbers, so it raises the analysis version and
-every marks file re-seeds once, with the same three commands as version 11 below.
+Rust's numbers move:
 
 - A signature decides nothing. A `where` clause, a `?Sized` bound and a `for<'a>`
   binder no longer add to ccn.
@@ -133,11 +136,10 @@ every marks file re-seeds once, with the same three commands as version 11 below
 - In Python and shell, a name spelled `switch` no longer adds to ccn_mod. The gated
   ccn is unchanged.
 
-### Go, Zig and shell readers, and `//` comments (next analysis version)
+#### Go, Zig and shell readers, and `//` comments
 
-The next release reads Go and Zig signatures to where the language ends them, ends a `//`
-comment at its line in every language but C, C++ and Objective-C, and raises the analysis
-version for it. Here is what moves:
+crapkit reads Go and Zig signatures to where the language ends them and ends a `//`
+comment at its line in every language but C, C++ and Objective-C. Here is what moves:
 
 - Rows appear. A function that had no row is listed: one after a package-level function
   type or a Zig `extern fn` prototype, a Zig function named `@"..."`, a Go method after
@@ -168,15 +170,10 @@ version for it. Here is what moves:
   an optional's `?` and an error-set `||` stop adding to `cognitive`, and `try` and `?`
   stop adding to `nesting`. A shell glob's `?` stops adding to `cognitive`.
 
-Re-seed once: `crapkit coverage`, `crapkit ratchet prune`, then `crapkit ratchet seed`.
-Prune drops the marks of the rows that go away or change key.
+#### Line ends
 
-### Next analysis version: line ends
-
-The release after 0.8.0 moves some shell numbers, the line numbers of functions that sit
-below certain comments, and some JavaScript and TypeScript coverage, so it raises the
-analysis version and every marks file re-seeds once, with the same three commands as
-version 11 below.
+Some shell numbers, the line numbers of functions that sit below certain comments, and
+some JavaScript and TypeScript coverage move:
 
 - The shell reader ends a heredoc line at LF only, as bash does. It used to end one at
   a vertical tab, form feed, `\x1c`-`\x1e`, NEL, U+2028 and U+2029 too. A body line

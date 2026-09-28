@@ -245,7 +245,8 @@ def _step_params():
     for shell in HERE:
         for source in ("next-step", "next-step-space"):
             ruling = DEFECTS.get((shell, source))
-            marks = [rulings.applies(ruling)] if ruling else []
+            mark = rulings.applies(ruling) if ruling else None
+            marks = [mark] if isinstance(mark, pytest.MarkDecorator) else []
             params.append(pytest.param(shell, source, marks=marks, id=f"{source}-{shell}"))
     return params
 

@@ -211,7 +211,7 @@
    "uncovered_lines": null,
    "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/ky/merge.ts",
    "versions": {
-    "analysis_version": 11,
+    "analysis_version": 12,
     "crapkit": "<crapkit>",
     "lizard": "1.24.0",
     "python": "<python>"
@@ -656,7 +656,7 @@
    "uncovered_lines": null,
    "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/cjson/cJSON_Utils.c",
    "versions": {
-    "analysis_version": 11,
+    "analysis_version": 12,
     "crapkit": "<crapkit>",
     "lizard": "1.24.0",
     "python": "<python>"
@@ -806,7 +806,7 @@
     28
    ],
    "versions": {
-    "analysis_version": 11,
+    "analysis_version": 12,
     "crapkit": "<crapkit>",
     "lizard": "1.24.0",
     "python": "<python>"

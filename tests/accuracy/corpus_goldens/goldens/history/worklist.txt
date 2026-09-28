@@ -1,4 +1,4 @@
-worklist @ 901b727247a (run 2, floor ccn>=5, churn 12mo) - 50 of 102 active (worklist_top 50), 0 dormant
+worklist @ 901b727247a (run 2, floor ccn>=5, churn 12mo) - 50 of 100 active (worklist_top 50), 0 dormant
   risk      4.6  ccn   9  crap    19.1  cov  50%    3c/1a  src/py/signatures.py:34  __init__( self , args , bufsize = - 1 , executable = None , stdin = None , stdout = None , stderr = None , preexec_fn = None , close_fds = True , shell = False , cwd = None , env = None , universal_newlines = None , startupinfo = None , creationflags = 0 , restore_signals = True , start_new_session = False , pass_fds = ( )
   risk      4.0  ccn   8  crap    10.4  cov  67%    2c/1a  src/py/grades.py:18  curve( scores , mode , floor , ceiling , skip_none )
   risk      3.5  ccn   7  crap    13.1  cov  50%    1c/1a  src/web/nullish.ts:8  firstSet ( a , b , c )

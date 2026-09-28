@@ -73,7 +73,7 @@ Brief packet fields and regrowth	one-run	ccns=9	regrown=0	docs/agent-json.md#reg
 Run totals and trend rollup	agent-json-rows	craps=56:93219/2000:5/2 scope=calc ceiling=6	functions=3 over_target=2 crap_load=105.11 grade=F	hand: the docs/agent-json.md#worklist and #brief example rows (render 56.0, classify 46.6095, a ccn-2 row at 2.5) summed and rounded half-even to 2 dp
 Digest deltas	identical-lanes	lanes=a|a,b|a	pair=0,2	README.md#subcommands (line 805: the two newest runs with identical lane sets)
 Digest deltas	no-twin	lanes=a|b|c	pair=none	README.md#subcommands (line 805: only identical lane sets compare)
-Coverage run summary	agent-json-coverage	flags=measured,measured,untested	measured=2 untested=1 no-lane=0 cc-only=0 functions=3	docs/agent-json.md#coverage (line 920: the four flags sum to functions)
+Coverage run summary	agent-json-coverage	flags=measured,measured,untested	measured=2 untested=1 excluded=0 no-lane=0 cc-only=0 functions=3	docs/agent-json.md#coverage (line 935: the five flags sum to functions)
 Rescore overlay	renamed	file=src/a.ts baseline=f:1:20:4/5,h:5:8:1/2 fresh=f:1:20,g:5:8	f=4/5:measured g=0:untested	README.md#subcommands (line 800: rescore joins the baseline's coverage by name; h renamed g has no baseline row of its name, though f, which encloses it, still joins)
 Rescore overlay	shifted	file=src/a.ts baseline=f:1:9:2/3,g:11:19:1/4 fresh=f:10:18,g:20:28	f=2/3:measured g=1/4:measured	README.md#subcommands (line 800: joined by name, so nine lines inserted above both functions move neither's coverage)
 Rescore overlay	shared-span	file=src/a.ts baseline=f:3:3:1,g:3:3:1 fresh=f:3:3,g:3:3	f=0:untested g=0:untested	README.md#subcommands (line 800: a function on a line span another one shares scores untested)

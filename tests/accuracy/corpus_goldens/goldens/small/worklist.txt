@@ -1,4 +1,4 @@
-worklist @ fd39664600a (run 2, floor ccn>=5, churn 12mo) - 50 of 94 active (worklist_top 50), 0 dormant
+worklist @ fd39664600a (run 2, floor ccn>=5, churn 12mo) - 50 of 92 active (worklist_top 50), 0 dormant
   risk     38.0  ccn  38  crap    38.0  cov   0%    1c/1a  vendor/ky/merge.ts:207  deepMergeInternal ( isRoot , sources Array )
   risk     37.0  ccn  37  crap    37.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:807  apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)
   risk     29.0  ccn  29  crap    29.0  cov   0%    1c/1a  vendor/gson/ISO8601Utils.java:147  ISO8601Utils::parse( String date , ParsePosition pos)

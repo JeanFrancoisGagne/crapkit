@@ -92,12 +92,12 @@
  "overridden": [],
  "ratchet_changes": null,
  "ratchet_regressions": [],
- "ratchet_sha256": "bfd7e5577f7ff2316082e688d9bb234e8a58eca3af667537ce4ad475342aa348",
+ "ratchet_sha256": "dbae9594d468e74c347b38c14df508c622452078380153671c027eb103a5c1fd",
  "retried_passes": [],
  "run_id": 4,
  "schema": 1,
  "tool_versions": {
-  "analysis_version": "11",
+  "analysis_version": "12",
   "crapkit": "<crapkit>",
   "lizard": "1.24.0"
  },

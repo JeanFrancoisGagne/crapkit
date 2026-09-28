@@ -20,17 +20,17 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .git_walk import Commit
+from .git_walk import Commit, commit_date
 from .history_git import top_and_prefix, under
 
 FAR = datetime(2100, 1, 1, tzinfo=timezone.utc)
 
 
-def since(now: int, months: int) -> datetime:
-    """`months` calendar months before `now`, the window's start."""
+def since(root: Path, months: int) -> datetime:
+    """`months` calendar months before HEAD's commit date, the window's start."""
     from dateutil.relativedelta import relativedelta
 
-    return datetime.fromtimestamp(now, timezone.utc) - relativedelta(months=months)
+    return datetime.fromtimestamp(commit_date(root), timezone.utc) - relativedelta(months=months)
 
 
 def _posix(path: str | None) -> str | None:
@@ -48,27 +48,27 @@ def _commit(commit, prefix: str) -> Commit:
                   tuple(path for path in paths if path is not None))
 
 
-def walk(root: Path, now: int, months: int) -> list[Commit]:
+def walk(root: Path, months: int) -> list[Commit]:
     """The window's commits as PyDriller reads them, their paths cut to `root`."""
     from pydriller import Repository
 
     top, prefix = top_and_prefix(root)
-    repo = Repository(str(top), since=since(now, months), to=FAR - timedelta(days=1))
+    repo = Repository(str(top), since=since(top, months), to=FAR - timedelta(days=1))
     return [_commit(commit, prefix) for commit in repo.traverse_commits()]
 
 
-def _metric(kind, root: Path, now: int, months: int) -> dict[str, int]:
-    counts = kind(str(root), since=since(now, months), to=FAR).count()
+def _metric(kind, root: Path, months: int) -> dict[str, int]:
+    counts = kind(str(root), since=since(root, months), to=FAR).count()
     return {_posix(path): count for path, count in counts.items()}
 
 
-def commits_count(root: Path, now: int, months: int) -> dict[str, int]:
+def commits_count(root: Path, months: int) -> dict[str, int]:
     from pydriller.metrics.process.commits_count import CommitsCount
 
-    return _metric(CommitsCount, root, now, months)
+    return _metric(CommitsCount, root, months)
 
 
-def contributors_count(root: Path, now: int, months: int) -> dict[str, int]:
+def contributors_count(root: Path, months: int) -> dict[str, int]:
     from pydriller.metrics.process.contributors_count import ContributorsCount
 
-    return _metric(ContributorsCount, root, now, months)
+    return _metric(ContributorsCount, root, months)

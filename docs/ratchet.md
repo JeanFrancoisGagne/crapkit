@@ -20,7 +20,7 @@ Commit it.
 ## What a mark is
 
 ```
-# crapkit-analysis=11 lizard=1.24.0
+# crapkit-analysis=12 lizard=1.24.0
 # crapkit-keys=1
 path	long_name	crap
 calc/grade.py	classify( score , attempts , late , bonus )	66.0714
@@ -379,7 +379,7 @@ the identity review below first.
 ### Upgrading to 0.4.5: analysis version 8
 
 This historical transition changed analysis version 7 to 8. The verify refusal quoted
-above belongs to that upgrade; the current reader uses version 11. Follow
+above belongs to that upgrade; the current reader uses version 12. Follow
 [Upgrading](upgrading.md) for current saved-state checks. In the older transition,
 reseeding from a fresh coverage run updated the stamp as follows:
 
@@ -840,7 +840,7 @@ The two stamps answer different questions:
 
 | Stamp | What it records |
 | --- | --- |
-| `# crapkit-analysis=11 lizard=1.24.0` | The reader and metric rules that produced the function set and scores. |
+| `# crapkit-analysis=12 lizard=1.24.0` | The reader and metric rules that produced the function set and scores. |
 | `# crapkit-keys=1` | Ordinals ordered by `(start, occurrence)`. |
 
 A missing key-version comment means the old start-only rule. For unchanged groups
