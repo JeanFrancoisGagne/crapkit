@@ -9,7 +9,7 @@ out: they guard trees a repo may never have (node_modules/, dist/), and a WARN o
 each one would teach every reader to skip the line.
 
 A tracked POSIX file whose name holds `\` is unsupported: crapkit.toml, coverage
-reports and JUnit ids read `\` as a directory separator on every OS (Q18), so
+reports and JUnit ids read `\` as a directory separator on every OS, so
 such a file cannot be measured. doctor names each one.
 """
 from __future__ import annotations

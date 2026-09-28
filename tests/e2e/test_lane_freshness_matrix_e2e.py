@@ -1,4 +1,4 @@
-"""Every lane-freshness reader, through the CLI, over every event the stale-touch hunts tried.
+"""Every lane-freshness reader, through the CLI, over every event that can leave a report stale.
 
 A measured repo (stale_tree's one-lane TypeScript fixture, measured by
 `crapkit coverage`), then one thing done to src/app.ts or to git's view of it,
@@ -13,10 +13,8 @@ its mtime and size: pinned here as silence under core.trustctime=false, and on
 Windows under git's defaults. Linux and macOS give the edit a new change time,
 and there every reader names the file.
 
-The loops these rows port: c01 to c07, c28, shape-1 to shape-3, history-1,
-history-8 and history-9 (lane freshness); c10, c11, c23 and history-3 (a
-failed attempt's leftover) live in test_lane_reuse_refusal_e2e.py and here.
-c25's fold and c29's index race run at their seams in tests/unit.
+A failed attempt's leftover has its rows in test_lane_reuse_refusal_e2e.py and
+here. The fold and the index race run at their seams in tests/unit.
 """
 from __future__ import annotations
 
@@ -66,7 +64,7 @@ def _brief(root: Path) -> dict:
 
 def _folded_git_mv(name: str, root: Path) -> bool:
     """A case-only `git mv` where the filesystem folds case: git now tracks
-    src/App.ts, and a typed path takes the case git tracks the file in (Q18)."""
+    src/App.ts, and a typed path takes the case git tracks the file in."""
     return name == "case-only-git-mv" and (root / REL).exists()
 
 
@@ -164,7 +162,7 @@ def test_reuse_unchanged_reruns_exactly_when_something_the_lane_reads_moved(name
     assert "rerunning:" in line and expected in line, line
 
 
-# --- c07: the hint a partial run prints ------------------------------------------
+# --- the hint a partial run prints -----------------------------------------------
 
 SECOND_LANE = """
 [[lane]]
@@ -201,7 +199,7 @@ def test_a_partial_run_hints_a_dirty_tree_only_when_git_holds_a_change(name, tmp
     assert (DIRTY in hint) == PARTIAL[name], hint
 
 
-# --- c11 and shape-8: a lane command that only touches its old report -------------
+# --- a lane command that only touches its old report ------------------------------
 
 TOUCHING = "import os, time; t = time.time(); os.utime('coverage/coverage-final.json', (t, t))"
 

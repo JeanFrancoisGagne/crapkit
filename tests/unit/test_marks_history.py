@@ -4,7 +4,7 @@ ratchet report and brief read mark ages off the file's commits, and verify
 judges a deleted or emptied marks file against the newest marks a commit since
 the baseline held. Three readers once had three paths into git for these. A
 marks file renamed with `git mv` keeps its history: the reader goes on from
-the old name (Q87).
+the old name.
 
 The git reads under them answer a fact or raise GitError. `blob_at` answered
 None and `commits_touching` answered [] for any git failure, so a clone that
@@ -147,7 +147,7 @@ def test_a_file_no_commit_touched_has_no_history(tmp_path):
     assert marks_history(tmp_path, MARKS) == []
 
 
-# --- a renamed marks file keeps its history (Q87) -------------------------------
+# --- a renamed marks file keeps its history -------------------------------------
 # The log walks no renames, so `git mv` started the history at the rename: every
 # mark entered there, 0 days old, and no earlier repayment counted.
 
@@ -243,7 +243,7 @@ def test_a_depth_one_clone_of_a_renamed_file_reads_its_one_commit(history, tmp_p
     assert len(read) == 1 and report["oldest"][0]["age_days"] == 0
 
 
-# A past revision reads by the marks file's own rule (Q20) and is never refused:
+# A past revision reads by the marks file's own rule and is never refused:
 # the file it came from may be gone, so "save it as UTF-8" names nothing the
 # user can open. The newest revision here holds the 10.0 mark in each encoding.
 PAST_ENCODINGS = [

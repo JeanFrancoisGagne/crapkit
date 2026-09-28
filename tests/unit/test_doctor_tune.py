@@ -318,7 +318,7 @@ def _data_file_lane(name: str, spelled: str) -> Lane:
 ])
 def test_a_quoted_data_file_is_read_as_the_word_the_shell_hands_coverage(monkeypatch, shell_is_cmd,
                                                                           a, b):
-    """PT2: a regex stopped at the first space or quote, so `cov a/.coverage`
+    """A regex stopped at the first space or quote, so `cov a/.coverage`
     and `cov b/.coverage` both read as `cov`, and `doctor --tune` held the
     lane slots at 1 for two lanes that never share a file."""
     monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)

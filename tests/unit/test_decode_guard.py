@@ -6,8 +6,8 @@ Action's steps wrote (git's error, the changed names), so the rule covers it.
 git's free text, a runner's report, an MCP frame, a source file and a name the
 OS hands over can each hold a byte that is not UTF-8. A strict decode of one
 ended a command with a UnicodeDecodeError, or on Windows with an
-AttributeError after the decode failed in subprocess's reader thread; the
-utf8-author hunt found such a read in 30 places. Each kind of source now has
+AttributeError after the decode failed in subprocess's reader thread, and
+30 places held such a read. Each kind of source now has
 one rule, and every rule lives in repotext: a file the repository owns and
 crapkit must read exactly, JSON, the marks file, git's free text and a
 runner's output, a patch or name kept byte for byte, source files and OS text.
@@ -83,20 +83,20 @@ ALLOWED = {
         "base64 output, ASCII by construction",
 }
 
-# The utf8-author rows no input reaches, each held by the scan or named here:
-# shape-33, lanes._still_failed: nothing called it, and it is deleted.
-# shape-34, procs._captured_text under the MCP server's _run_cli: the child is
+# The reads no input reaches, each held by the scan or named here:
+# lanes._still_failed: nothing called it, and it is deleted.
+# procs._captured_text under the MCP server's _run_cli: the child is
 #   crapkit, which writes a pipe in UTF-8 (the MCP frame rows in
 #   tests/e2e/test_outside_files_and_frames_e2e.py run it).
-# shape-35, the owner's JSON channel and `ps`: the two _process_owner entries.
-# shape-36, commit-graph-chain: the cli/admin.py _graph_files entry.
-# shape-37, churn_log._encoded: an encode, not a read, of lines _git_lines
+# The owner's JSON channel and `ps`: the two _process_owner entries.
+# commit-graph-chain: the cli/admin.py _graph_files entry.
+# churn_log._encoded: an encode, not a read, of lines _git_lines
 #   decoded with errors="replace", so no line holds a lone surrogate.
-# shape-38, crapkit's own caches: the analyze, churn, coupling, stamp and pool
+# crapkit's own caches: the analyze, churn, coupling, stamp and pool
 #   receipt entries.
-# shape-39, gitpaths.unquote_path: an encode back to the bytes git quoted, not
+# gitpaths.unquote_path: an encode back to the bytes git quoted, not
 #   a read; tests/unit/test_git_path_bytes.py holds its rule.
-# shape-40, the shell steps (action.yml, git-hooks/pre-commit, the plugin's
+# The shell steps (action.yml, git-hooks/pre-commit, the plugin's
 #   hooks.json and .mcp.json, the Dockerfile): each passes bytes on without a
 #   codec, and the python:3.12-slim image sets LANG=C.UTF-8.
 

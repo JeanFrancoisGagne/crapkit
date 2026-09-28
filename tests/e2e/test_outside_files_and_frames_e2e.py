@@ -9,8 +9,8 @@ answer and a plugin's JSON can each hold bytes crapkit never chose. Each read
 used to assume UTF-8 somewhere, and the reds among these rows ended a command
 with a traceback, or ended an MCP session in silence.
 
-One parametrized test per site, each row a variation the utf8-author hunt ran:
-the red ones with the green controls beside them.
+One parametrized test per site: the inputs a command there once failed on,
+with the green controls beside them.
 """
 from __future__ import annotations
 
@@ -33,10 +33,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # --- a lane's junit report: lanes._results_summary, _retested_passes, doctor --tune
 #
-# utf8-author-shape-10, -11, -12 and -boundary-8. The stand-in lane writes a
-# coverage report and a junit report whose one test is test_café, encoded the
-# way the row's runner would: ISO-8859-1 and UTF-16 each declared in the XML,
-# a UTF-8 BOM, CRLF, plain UTF-8, and test names in CJK and emoji.
+# The stand-in lane writes a coverage report and a junit report whose one
+# test is test_café, encoded the way the row's runner would: ISO-8859-1 and
+# UTF-16 each declared in the XML, a UTF-8 BOM, CRLF, plain UTF-8, and test
+# names in CJK and emoji.
 
 JUNIT_TAIL = '''
 import sys
@@ -80,7 +80,7 @@ def _emit(repo: Path, variant: str) -> None:
 @pytest.mark.parametrize("variant", JUNIT_VARIANTS)
 def test_a_junit_report_in_any_declared_encoding_is_read_as_a_report(tmp_path, variant):
     """coverage, verify --reuse-artifacts and coverage --reuse-artifacts all
-    read the report through _results_summary (utf8-author-shape-10, -boundary-8)."""
+    read the report through _results_summary."""
     fresh = _junit_repo(tmp_path / "fresh", variant)
     answered(run_cli(fresh, "coverage"))
 
@@ -93,8 +93,8 @@ def test_a_junit_report_in_any_declared_encoding_is_read_as_a_report(tmp_path, v
 
 @pytest.mark.parametrize("variant", JUNIT_VARIANTS)
 def test_a_flake_retest_report_in_any_declared_encoding_still_decides_exit_8(tmp_path, variant):
-    """The main run writes UTF-8 and the retest writes the row's encoding
-    (utf8-author-shape-11): the test still fails, so verify exits 8."""
+    """The main run writes UTF-8 and the retest writes the row's encoding:
+    the test still fails, so verify exits 8."""
     repo = _junit_repo(tmp_path / "repo", "utf8", retest=variant)
     answered(run_cli(repo, "coverage"))
     commit(repo, {b"outcome.txt": b"fail\n"}, message=b"break it")
@@ -108,8 +108,8 @@ def test_a_flake_retest_report_in_any_declared_encoding_still_decides_exit_8(tmp
 @pytest.mark.parametrize("stamped", [False, True], ids=["no-lane-stamp", "lane-stamp"])
 @pytest.mark.parametrize("variant", JUNIT_VARIANTS)
 def test_doctor_tune_reads_a_junit_report_in_any_declared_encoding(tmp_path, variant, stamped):
-    """With no stamp doctor --tune costs the lane from the report's own time
-    (utf8-author-shape-12, -boundary-8); with one it never opens the report.
+    """With no stamp doctor --tune costs the lane from the report's own time;
+    with one it never opens the report.
     The stamp comes from a UTF-8 run, and the row's report is written after."""
     repo = _junit_repo(tmp_path / "repo", "utf8")
     if stamped:
@@ -124,10 +124,10 @@ def test_doctor_tune_reads_a_junit_report_in_any_declared_encoding(tmp_path, var
 
 # --- a lane's coverage report: repotext's JSON kind, a chunk at a time ---------
 #
-# utf8-author-shape-13 and -boundary-20. A report crapkit cannot decode is a
-# lane refusal that names the lane, exit 5, never a traceback; a raw UTF-8 key
-# naming src/café.* is a report, and so is one behind a UTF-8 byte-order mark,
-# which the JSON kind reads past as it does for every JSON file.
+# A report crapkit cannot decode is a lane refusal that names the lane,
+# exit 5, never a traceback; a raw UTF-8 key naming src/café.* is a report,
+# and so is one behind a UTF-8 byte-order mark, which the JSON kind reads past
+# as it does for every JSON file.
 
 COV_LANE = b'''import json, os, sys
 from pathlib import Path
@@ -183,10 +183,9 @@ def test_a_coverage_report_crapkit_cannot_decode_is_a_lane_refusal(tmp_path, par
 
 # --- MCP stdin frames: _mcp_stdio._lines ----------------------------------------
 #
-# utf8-author-shape-16, -boundary-14, -history-11 and -shape-34. One frame
-# holding a byte that is not UTF-8 ended the session in silence, and a BOM
-# before the first frame cost `initialize` its reply. Every session here ends
-# with ping 9, so a session the frame ended shows as a missing 9.
+# One frame holding a byte that is not UTF-8 ended the session in silence,
+# and a BOM before the first frame cost `initialize` its reply. Every session
+# here ends with ping 9, so a session the frame ended shows as a missing 9.
 
 def _ping(msg_id: int, note: bytes) -> bytes:
     return b'{"jsonrpc":"2.0","id":%d,"method":"ping","params":{"note":"%s"}}' % (msg_id, note)
@@ -249,10 +248,10 @@ def test_a_frame_in_any_bytes_leaves_the_mcp_session_reading(mcp_repo, first, fr
 
 # --- the Action's changed-file list: tools/action/comment.py ----------------
 #
-# utf8-author-shape-17, -boundary-15 and -history-10. action.yml writes
-# `git diff --name-only "$BASE_SHA...HEAD" -z`, which names each path in the
-# bytes git stores. A name that is not UTF-8 failed the comment step, so the
-# pull request got no comment. The rows assert only that the comment is built.
+# action.yml writes `git diff --name-only "$BASE_SHA...HEAD" -z`, which names
+# each path in the bytes git stores. A name that is not UTF-8 failed the
+# comment step, so the pull request got no comment. The rows assert only that
+# the comment is built.
 
 def _diff_argv(base: str) -> list[str]:
     command = next(line.strip().split(" > ")[0]
@@ -307,10 +306,10 @@ def test_the_action_builds_its_comment_whatever_bytes_a_changed_name_holds(tmp_p
 
 # --- pytest's own config files: config._pytest_text -------------------------
 #
-# utf8-author-shape-23 and -boundary-30. The full-suite guard reads
-# `testpaths` from pytest.ini, pyproject.toml or setup.cfg to decide whether a
-# lane's positional `tests` narrows the suite. Whatever the file's bytes,
-# crapkit must read testpaths the way pytest itself does, and never raise.
+# The full-suite guard reads `testpaths` from pytest.ini, pyproject.toml or
+# setup.cfg to decide whether a lane's positional `tests` narrows the suite.
+# Whatever the file's bytes, crapkit must read testpaths the way pytest itself
+# does, and never raise.
 
 INI = "[pytest]\ntestpaths = tests\n# généré café\n"
 PYPROJECT = '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n# généré café\n'
@@ -360,7 +359,7 @@ def test_the_full_suite_guard_reads_testpaths_as_pytest_does(tmp_path, name, bod
 @pytest.mark.parametrize("body", [INI.encode("cp1252"), b"\xef\xbb\xbf[pytest]\ntestpaths = tests\n", INI.encode()],
                          ids=["cp1252-pytest-ini", "bom-pytest-ini", "utf8-pytest-ini-control"])
 def test_init_reads_a_pytest_ini_in_any_bytes(tmp_path, body):
-    """utf8-author-boundary-30: pytest refuses the first two, so no lane runs on
+    """pytest refuses the first two, so no lane runs on
     them; init still reads each one without a traceback."""
     repo = repository(tmp_path / "repo")
     commit(repo, {b"pytest.ini": body, b"tests/test_a.py": b"def test_a():\n    assert 1\n",
@@ -371,8 +370,8 @@ def test_init_reads_a_pytest_ini_in_any_bytes(tmp_path, body):
 
 # --- the advisory hook's payload: claude_hook._payload ------------------------
 #
-# utf8-author-shape-27 and -boundary-22. A ccn-8 edit must draw the advisory,
-# exit 2 naming the function, whatever the payload or the edited file holds.
+# A ccn-8 edit must draw the advisory, exit 2 naming the function, whatever
+# the payload or the edited file holds.
 
 BREACH = b"def sprawl(n):\n" + b"".join(b"    if n == %d:\n        n += %d\n" % (i, i) for i in range(1, 8)) + b"    return n\n"
 HOOK_TOML = b'[crapkit]\ntarget = 6\n\n[[scope]]\nname = "pkg"\npaths = ["pkg"]\nlanguages = ["python"]\n'
@@ -431,8 +430,8 @@ def test_a_payload_claude_code_never_writes_ends_without_a_traceback(tmp_path, s
 
 # --- an alert command's answer: override._alert_or_refuse --------------------
 #
-# utf8-author-boundary-28. The alert line goes to alert_command on stdin as
-# UTF-8, and what the command prints comes back into the refusal.
+# The alert line goes to alert_command on stdin as UTF-8, and
+# what the command prints comes back into the refusal.
 
 ALERT_OK = b"import sys\nopen('alert.bin', 'wb').write(sys.stdin.buffer.read())\n"
 ALERT_REFUSES = (b"import sys\nsys.stdin.buffer.read()\n"
@@ -462,9 +461,9 @@ def test_an_override_alert_command_answers_in_any_bytes(tmp_path, alert, code):
 
 # --- the plugin's JSON and Claude Code's installed_plugins.json ---------------
 #
-# utf8-author-boundary-29. doctor --plugin-root reads the plugin tree's JSON
-# and, with no path, Claude Code's record of where it installed the plugin.
-# Under a directory named with an accent and CJK the verdict is the same.
+# doctor --plugin-root reads the plugin tree's JSON and, with no path,
+# Claude Code's record of where it installed the plugin. Under a directory
+# named with an accent and CJK the verdict is the same.
 
 def _launcher(bin_dir: Path) -> dict:
     """A `crapkit` on PATH that runs this interpreter's crapkit."""
@@ -504,11 +503,11 @@ def test_doctor_plugin_root_answers_the_same_under_a_non_ascii_directory(tmp_pat
 
 # --- rows no input reaches ------------------------------------------------------
 #
-# utf8-author-shape-17, comment.py's _read_text on the payload, base sha and
+# comment.py's _read_text on the payload, base sha and
 # base reason files: action.yml fills each one with crapkit's own output (ASCII
 # JSON, or the first line of its stderr, which crapkit writes as UTF-8 to a
 # file) or with a sentence and a sha of its own, so no byte a repo holds reaches
 # that read in any other encoding.
-# utf8-author-boundary-8, lanes._still_failed on a Latin-1 or UTF-16 junit
-# report: nothing called it, and it is deleted (utf8-author-shape-33). The
+# lanes._still_failed on a Latin-1 or UTF-16 junit
+# report: nothing called it, and it is deleted. The
 # flake retest reads its report through _retested_passes, in the rows above.

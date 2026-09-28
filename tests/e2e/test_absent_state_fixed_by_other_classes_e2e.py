@@ -205,7 +205,7 @@ def test_a_stamped_lane_names_its_dark_lines(tmp_path: Path):
 
 
 # The cause a missing stamp gets is the lane freshness verdict's, which reads the
-# stamp file's explicit states (lane_stamps, Q33, Q67).
+# stamp file's explicit states (lane_stamps).
 @pytest.mark.parametrize("lose_stamp", [
     pytest.param(reuse_only, id="reuse-only"),
     pytest.param(stamps_deleted, id="stamps-deleted"),

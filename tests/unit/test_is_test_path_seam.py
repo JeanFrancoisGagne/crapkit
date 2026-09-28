@@ -5,7 +5,7 @@ The report named `_is_test_path` (cli/verifying.py): it splits on `/` only, so
 caller from outside git, `_group_files_by_scope`, reads every argument through
 `_repo_relative` first, and its other caller, brief's coupling partners, takes
 paths from `git log`, which writes `/` on every OS. The fold belongs to that
-boundary (Q42), and this file holds both halves: the predicate receives
+boundary, and this file holds both halves: the predicate receives
 `tests/test_a.py` for each spelling the report's loop typed, and called
 directly with a backslash it still answers as the text reads, so a second
 fold inside it shows up here as a failure. The name rules and the cmd.exe
@@ -124,7 +124,7 @@ def test_is_test_path_receives_the_path_git_spells(routed, monkeypatch, which):
 @pytest.mark.parametrize("folded", ["tests/test_a.py", "tests/unit/helpers.py",
                                     "tools/test_tool.py", "src/tests/helpers.py"])
 def test_the_predicate_reads_slashes_only_so_the_fold_stays_at_the_boundary(folded):
-    """Q42: `_is_test_path` reads `/` and nothing else. A backslash reaching it
+    """`_is_test_path` reads `/` and nothing else. A backslash reaching it
     would be a boundary that forgot to fold, and folding here as well would
     hide that boundary's bug from every other reader of the same argument."""
     assert _is_test_path(folded) is True

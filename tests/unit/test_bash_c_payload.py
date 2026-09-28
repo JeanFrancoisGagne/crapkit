@@ -1,5 +1,5 @@
 """A lane that wraps its runner in `bash -c` or `sh -c` is judged by the
-commands the payload holds (PT1, Q40).
+commands the payload holds.
 
 The full-suite guard read `bash -c "..."` as three words and saw no pytest, so
 a lane that narrows its suite loaded with no refusal. Under cmd.exe a
@@ -128,7 +128,7 @@ def test_under_cmd_a_single_quote_outside_any_payload_still_earns_the_hint(monke
 
 
 def test_doctor_warns_that_nothing_inside_an_unsplittable_payload_was_read(repo, capsys):
-    """Q40: the guard cannot see into the payload, and doctor says so."""
+    """The guard cannot see into the payload, and doctor says so."""
     import json
 
     from crapkit.cli import main

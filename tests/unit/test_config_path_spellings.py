@@ -290,7 +290,7 @@ def test_a_lane_artifact_in_any_spelling_opens_the_file_the_lane_wrote(tmp_path,
 
 @only_posix
 def test_a_lane_cwd_folds_its_backslash_even_where_the_tree_holds_that_name(tmp_path):
-    r"""A path crapkit.toml carries separates on every OS (Q18). A POSIX tree
+    r"""A path crapkit.toml carries separates on every OS. A POSIX tree
     that happens to hold a directory named `backend\` does not turn the
     committed `cwd = 'backend\'` back into that literal name: the lane starts in
     backend/, as it does on the Windows machine that wrote the file."""

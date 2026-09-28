@@ -305,7 +305,7 @@ def test_the_mcp_tools_carry_shallow(checkouts, tool, arguments, checkout, shall
     assert result["structuredContent"]["shallow"] is shallow
 
 
-# --- a renamed marks file keeps its history (Q87) ------------------------------
+# --- a renamed marks file keeps its history ------------------------------------
 
 RENAMED_AT = "2026-09-21T12:00:00+00:00"
 

@@ -794,7 +794,7 @@ class SourcePatch:
 def _forced_patch(root: Path, basis: tuple[str, ...], paths: tuple[str, ...]) -> str:
     """The `--text` patch of the source paths git summarized as binary. A UTF-16
     one among them gets its ranges on its text lines: git counts a line at every
-    0A byte, and a character such as 上 (U+4E0A) holds one (PRD U29)."""
+    0A byte, and a character such as 上 (U+4E0A) holds one."""
     utf16 = {path: raw for path, raw in _new_sides(root, basis, paths).items() if utf16_marked(raw)}
     plain = tuple(path for path in paths if path not in utf16)
     return _text_patch(root, basis, plain) + _utf16_patch(root, basis, utf16)

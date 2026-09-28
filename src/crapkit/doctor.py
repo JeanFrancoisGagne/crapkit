@@ -134,8 +134,8 @@ _UNREADABLE_PAYLOAD = (
 
 
 def unreadable_payloads(lanes) -> tuple[Finding, ...]:
-    """One WARN per `bash -c` or `sh -c` step whose payload sh cannot split
-    (Q40). The lane still loads: the shell may read it some other way, and a
+    """One WARN per `bash -c` or `sh -c` step whose payload sh cannot split.
+    The lane still loads: the shell may read it some other way, and a
     refusal would name a problem crapkit only guessed at. What the reader has to
     know is that no check looked inside it."""
     return tuple(Finding("WARN", _UNREADABLE_PAYLOAD.format(name=lane.name, step=step))

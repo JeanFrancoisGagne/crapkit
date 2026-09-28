@@ -40,7 +40,8 @@ def _parsed(name: str, arguments: dict, repo: str = REPO) -> dict:
     return {key: value for key, value in vars(namespace).items() if key != "func"}
 
 
-# history-3's four calls first, then the other places a string reaches argv.
+# First the four calls whose value the CLI once read as a flag, then the other
+# places a string reaches argv.
 VALUE_CASES = {
     "brief path --help": ("get_function_brief", {"path": "--help", "name": "f"},
                           {"path": "--help", "name": "f", "json": True}),

@@ -6,9 +6,8 @@ lines), test_outside_files_and_frames_e2e.py (junit and coverage reports, MCP
 frames, the Action's changed-file list, config and payload files),
 test_os_text_e2e.py (argv, the environment, a host name, a directory name, the
 console) and test_source_and_mutant_bytes_e2e.py (source files, lane output,
-the files crapkit writes). Each row there is a byte shape the utf8-author hunt
-found red, or the green control beside it, fed through the command that reads
-it.
+the files crapkit writes). Each row there is a byte shape a command once failed
+on, or the green control beside it, fed through the command that reads it.
 
 `commit` writes through `git fast-import`, which stores author, committer,
 message, path and blob bytes exactly as given, plus an `encoding` header when a

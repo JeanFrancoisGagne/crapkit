@@ -265,7 +265,7 @@ def test_the_reuse_warning_says_when_git_cannot_answer(repo, capsys):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="the index race needs Windows file sharing rules")
 def test_three_hundred_touches_raise_no_index_race(repo):
-    """boundary-29: after a same-bytes touch the worktree `git diff` writes the
+    """After a same-bytes touch the worktree `git diff` writes the
     refreshed index back, and on Windows a sibling read that opened .git/index
     during that write failed with `index file open failed: Permission denied`
     (9 of 300 touches), which read as a changed file. Slow on purpose: 300 is

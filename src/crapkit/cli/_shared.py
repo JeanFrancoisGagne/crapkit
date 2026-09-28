@@ -177,7 +177,7 @@ def _scored_arguments(files, root: Path, cfg, cwd: Path | None = None) -> list[s
     """The root-relative names a scoring command reads from its file arguments.
 
     A name that is not UTF-8 and that no scope takes is left out with one
-    stderr line (Q17), as a scan leaves such a name out: `rescore --gate`
+    stderr line, as a scan leaves such a name out: `rescore --gate`
     refused it at exit 3, where hook-precommit passes the same staged file.
     A name a scope takes still gets the rename refusal."""
     placed = sorted({_placed(raw, root, cwd) for raw in files})

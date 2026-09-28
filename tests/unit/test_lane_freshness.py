@@ -107,7 +107,7 @@ LEAVES_OUT = {(): "its proof leaves out gitignored files and anything outside th
 
 @pytest.mark.parametrize("row", sorted(LIMITS))
 def test_a_reuse_names_what_its_proof_leaves_out(row, tmp_path, monkeypatch, capsys):
-    """c05, c06, shape-2 ignored-input-edit and h2 ignored-input-changed: the
+    """An ignored file, a tool outside the tree and an inherited variable: the
     change is outside the proof by design, and the line that reuses says so."""
     inputs, act = LIMITS[row]
     monkeypatch.setenv("CRAPKIT_FRESHNESS_TOOL", "a")

@@ -91,7 +91,7 @@ def test_tune_holds_the_slots_for_a_lane_left_on_the_default_file(repo, capsys):
 
 
 def test_tune_reads_a_quoted_data_file_with_a_space_whole(repo, capsys):
-    """PT2: `--data-file="cov a/.coverage"` and `"cov b/.coverage"` read as one
+    """`--data-file="cov a/.coverage"` and `"cov b/.coverage"` read as one
     file `cov`, and `doctor --tune` held the slots at 1 for two lanes that never
     share one. The shell hands coverage the whole quoted path."""
     _coveragepy_lanes(repo, 2)

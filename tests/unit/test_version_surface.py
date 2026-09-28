@@ -82,7 +82,7 @@ def test_building_the_parser_costs_no_distribution_lookup(monkeypatch):
     assert build_parser().prog == "crapkit"
 
 
-# --- the build a crapkit runs from (Q12) ----------------------------------------
+# --- the build a crapkit runs from ----------------------------------------------
 #
 # A crapkit run from a git checkout, a source tree or an editable install, is a
 # build of a commit, and a pasted `--version` or a deploy record has to say
@@ -297,7 +297,7 @@ def test_a_person_at_a_terminal_reads_the_commit_an_installed_build_stamped(monk
 
 def test_a_release_keeps_the_plain_line_and_names_its_commit_as_json(monkeypatch, capsys,
                                                                      tmp_path):
-    """The commit goes on the line of a build that is not a release (Q12); a
+    """The commit goes on the line of a build that is not a release; a
     release's line stays `crapkit X.Y.Z`, as the README shows it."""
     _runs_from(monkeypatch, _installed(tmp_path, json.dumps({"commit": SHA, "dirty": False,
                                                              "release": True})))

@@ -4,7 +4,7 @@ crapkit restarts itself in UTF-8 mode under such a locale, and a lane's own
 Python keeps the locale, as ruled. Its coverage.py names `pkg/café.py` in the
 locale's encoding, so the report keys the file as `pkg/cafÃ©.py`, the UTF-8
 bytes read as Latin-1. The key matched no row, and the file's functions read as
-untested where the UTF-8 locale reads them measured (py314-help boundary-7). The
+untested where the UTF-8 locale reads them measured. The
 adapter now reads such a key back through the locale's codec, when the file it
 then names exists and the key as written does not.
 """

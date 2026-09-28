@@ -59,9 +59,9 @@ def measured(tmp_path_factory) -> Path:
 
 # --- a path argument: cli/_shared._repo_relative under explain and brief ------
 #
-# utf8-author-shape-22 and -boundary-18. The argument names no file crapkit
-# reads, so each command answers with its own sentence for a missing file.
-# rescore, ratchet move and a path that exists are the controls.
+# The argument names no file crapkit reads, so each command answers with
+# its own sentence for a missing file. rescore, ratchet move and a path
+# that exists are the controls.
 
 def _argv_row(row_id, args, code, said, *marks):
     return pytest.param(args, code, said, {}, id=row_id, marks=marks)
@@ -95,7 +95,7 @@ def test_a_path_argument_in_any_bytes_gets_the_commands_own_answer(measured, arg
 @ONLY_LINUX
 @pytest.mark.parametrize("command", ["explain", "brief"])
 def test_a_utf8_argument_under_an_ascii_locale_names_the_file(measured, command):
-    """utf8-author-shape-22: with C-locale coercion and UTF-8 mode off, Python
+    """With C-locale coercion and UTF-8 mode off, Python
     holds each byte of `café` as a surrogate; the bytes it stands for are UTF-8,
     so the argument names src/café.py and the command finds the function."""
     res = spawned(measured, command, "src/café.py", "pick", env_extra=ASCII_LOCALE)
@@ -106,8 +106,8 @@ def test_a_utf8_argument_under_an_ascii_locale_names_the_file(measured, command)
 
 # --- a ref argument: gitio.merge_base under verify --base ----------------------
 #
-# utf8-author-shape-24. git echoes a ref it cannot resolve on stderr, in the
-# bytes it was given; the answer is the exit-4 sentence, not a traceback.
+# git echoes a ref it cannot resolve on stderr, in the bytes it was
+# given; the answer is the exit-4 sentence, not a traceback.
 
 @pytest.mark.parametrize("ref", [LATIN1, pytest.param(WINDOWS_SURROGATE, marks=ONLY_WINDOWS), "café", "nosuchref"],
                          ids=["ref-invalid-utf8", "ref-lone-surrogate", "ref-valid-accent-control",
@@ -121,8 +121,7 @@ def test_verify_base_on_a_ref_no_commit_holds_says_so_in_a_sentence(measured, re
 
 @ONLY_LINUX
 def test_a_branch_named_in_latin1_is_a_base_like_any_other(tmp_path):
-    """HEAD on a branch whose name is not UTF-8, then verify --base naming it
-    (utf8-author-shape-24 head-on-latin1-branch, green on both trees)."""
+    """HEAD on a branch whose name is not UTF-8, then verify --base naming it."""
     repo = scored_repo(tmp_path / "repo")
     git(repo, "checkout", "-q", "-b", LATIN1)
     answered(run_cli(repo, "coverage"))
@@ -133,10 +132,10 @@ def test_a_branch_named_in_latin1_is_a_base_like_any_other(tmp_path):
 
 # --- an override reason: override.record_override ------------------------------
 #
-# utf8-author-shape-25 and -boundary-17. The reason reaches the alert first and
-# the store after; a reason in bytes that are not UTF-8 sent the alert, then
-# failed to store the audit. Every row must grant, alert and record, from
-# CRAPKIT_OVERRIDE_REASON under hook-precommit and from argv under verify.
+# The reason reaches the alert first and the store after; a reason in bytes
+# that are not UTF-8 sent the alert, then failed to store the audit. Every
+# row must grant, alert and record, from CRAPKIT_OVERRIDE_REASON under
+# hook-precommit and from argv under verify.
 
 BREACH = b"def sprawl(n):\n" + b"".join(b"    if n == %d:\n        n += %d\n" % (i, i) for i in range(1, 8)) + b"    return n\n"
 ALERT = b"import sys\nopen('alert.bin', 'ab').write(sys.stdin.buffer.read())\n"
@@ -207,11 +206,11 @@ def test_a_verify_override_reason_in_any_bytes_alerts_and_records(tmp_path, reas
 
 # --- the host name: resources._budget_directory and lanes._output_lock ----------
 #
-# utf8-author-shape-30 and -shape-31. Both hash the host name, doctor to size
-# the worker budget and every lane run to take its output lock. A real host
-# rename needs a user namespace on Linux and admin rights plus a reboot on
-# Windows, so the crapkit process here gets the name through
-# socket.gethostname, in the str Python's own decode of the host's bytes gives.
+# Both hash the host name, doctor to size the worker budget and every lane run
+# to take its output lock. A real host rename needs a user namespace on Linux
+# and admin rights plus a reboot on Windows, so the crapkit process here gets
+# the name through socket.gethostname, in the str Python's own decode of the
+# host's bytes gives.
 
 HOST_SHIM = ("import socket, sys\n"
              "host = sys.argv.pop(1)\n"
@@ -241,12 +240,12 @@ def test_a_host_name_in_any_bytes_sizes_the_budget_and_locks_the_lane_output(tmp
 
 # --- the checkout's own directory: gitio.worktree_root, lanes._output_lock -----
 #
-# utf8-author-shape-9, -shape-31 and -boundary-26. The absolute paths git and
-# the lanes hand back hold the directory's name. Every command answers under
-# an accented, a CJK and emoji, and (Linux) a Latin-1 parent as it does under
-# an ASCII one. A lane that runs coverage.py itself is another matter:
-# coverage.py's own combine step fails under a parent that is not UTF-8, and
-# crapkit reports that as the lane's failure (docs/configuration.md).
+# The absolute paths git and the lanes hand back hold the directory's name.
+# Every command answers under an accented, a CJK and emoji, and (Linux) a
+# Latin-1 parent as it does under an ASCII one. A lane that runs coverage.py
+# itself is another matter: coverage.py's own combine step fails under a
+# parent that is not UTF-8, and crapkit reports that as the lane's failure
+# (docs/configuration.md).
 
 MUT_TOML = b'mutation_command = "python t.py"\nmutation_workers = 2\n'
 MUT_TEST = b"import sys\nsys.path.insert(0, 'src')\nimport app\nassert app.pick('a') == 1\n"
@@ -271,7 +270,7 @@ def _commands_under(parent: Path) -> dict:
                          ids=["dir-invalid-utf8", "dir-valid-accent", "dir-cjk-emoji"])
 def test_every_command_answers_the_same_under_any_directory_name(tmp_path, parent):
     """An absolute path argument under a Latin-1 parent read as outside the
-    repo at exit 3 (utf8-author U20), where the ASCII parent's answer is 0."""
+    repo at exit 3, where the ASCII parent's answer is 0."""
     assert _commands_under(tmp_path / parent) == _commands_under(tmp_path / "ascii")
 
 
@@ -292,7 +291,7 @@ def test_a_pytest_cov_lane_under_a_latin1_directory_names_the_rename(tmp_path, p
     """coverage.py stores every measured path as UTF-8, so under a Latin-1
     parent its combine fails and leaves a shard. crapkit called that shard what
     a killed parallel run leaves and handed over a `coverage combine` that fails
-    the same way (utf8-author shape-31); it now names the directory."""
+    the same way; it now names the directory."""
     pytest.importorskip("pytest_cov")
     repo = repository(tmp_path / parent / "repo")
     commit(repo, {b"crapkit.toml": PYTEST_COV_TOML, b".gitignore": b".crapkit/\ncov.json\n.coverage*\n",
@@ -311,7 +310,6 @@ def test_a_pytest_cov_lane_under_a_latin1_directory_names_the_rename(tmp_path, p
 
 # --- crapkit's own output: cli/parser._reconfigure_streams ---------------------
 #
-# utf8-author-shape-21, -boundary-21 and -history-14, all green on both trees.
 # A pipe gets UTF-8 whatever PYTHONIOENCODING or PYTHONUTF8 says; a console
 # keeps its own code page and prints what it cannot hold as `?`.
 
@@ -388,8 +386,8 @@ def test_a_real_terminal_with_an_ascii_locale_prints_without_a_traceback(wide, a
 
 # --- a command crapkit hands a shell: brief --json `commands.gate` -------------
 #
-# utf8-author-boundary-27. The gate command names a path with an accent and
-# CJK; pasted into PowerShell 5.1, cmd.exe or sh, it must reach that file.
+# The gate command names a path with an accent and CJK; pasted into
+# PowerShell 5.1, cmd.exe or sh, it must reach that file.
 
 def _launcher(bin_dir: Path) -> dict:
     """A `crapkit` first on PATH that runs this interpreter's crapkit."""
@@ -430,11 +428,11 @@ def test_a_pasted_gate_command_reaches_the_file_it_names(tmp_path, shell):
 
 # --- rows no input reaches ------------------------------------------------------
 #
-# utf8-author-shape-21 on a real Windows console: Python writes a console
+# A real Windows console: Python writes a console
 # through WriteConsoleW (PEP 528), so no code page encode happens there; the
 # harness above meets the same object on a pipe.
-# utf8-author-shape-30 on win32 with a renamed host: GetComputerNameExW returns
+# A renamed host on win32: GetComputerNameExW returns
 # UTF-16, and a rename needs admin rights and a reboot. Not run; the
 # hostname-lone-surrogate row feeds the one str a Windows name could produce.
-# utf8-author-shape-31 on win32 under a directory holding a lone surrogate: git
+# A directory holding a lone surrogate on win32: git
 # refuses the path at `git init` (`Invalid path`), before crapkit runs.

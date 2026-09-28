@@ -10,8 +10,8 @@ replacement while the function name beside it read right. A lane prints what
 its runner prints, in any bytes, and crapkit quotes it back. The HTML report,
 SARIF, the TSV export and the marks file carry repo text out to other readers.
 
-One parametrized test per site, each row a variation the utf8-author hunt ran:
-the red ones with the green controls beside them.
+One parametrized test per site: the inputs a command there once failed on,
+with the green controls beside them.
 """
 from __future__ import annotations
 
@@ -29,10 +29,10 @@ run_cli = cli_runner(encoding="utf-8", errors="replace")
 
 # --- a mutant written back: mutate_pool.run_one ----------------------------------
 #
-# utf8-author-shape-19, -boundary-11 and -history-6. The suite checks only the
-# accented constant, never f, so each mutant of f survives in the UTF-8 file.
-# The suite also logs every source it runs against, to show that a mutant
-# changes only its own line and leaves every other byte as the file held it.
+# The suite checks only the accented constant, never f, so each mutant of f
+# survives in the UTF-8 file. The suite also logs every source it runs
+# against, to show that a mutant changes only its own line and leaves every
+# other byte as the file held it.
 
 BODY = "NAME = 'café'\n\n\ndef f(x):\n    return x > 0\n"
 SOURCE_ROWS = [
@@ -83,7 +83,7 @@ def test_a_mutant_changes_only_its_own_line_in_any_source_encoding(tmp_path, sou
 
 
 def test_a_cp1252_python_file_with_no_coding_cookie_is_a_suite_that_fails_unmutated(tmp_path):
-    """utf8-author-history-6, the row no mutant reaches: Python refuses to
+    """The row no mutant reaches: Python refuses to
     compile such a file (Non-UTF-8 code), so the suite fails on the unmutated
     tree, mutate refuses by name before it writes a mutant, and the file keeps
     its bytes."""
@@ -99,8 +99,8 @@ def test_a_cp1252_python_file_with_no_coding_cookie_is_a_suite_that_fails_unmuta
 
 # --- a function's source handed to an agent: brief --json `source` --------------
 #
-# utf8-author-boundary-10. AGENTS.md tells an agent to edit from `source`, so
-# it must read the character the file holds, as long_name beside it does.
+# AGENTS.md tells an agent to edit from `source`, so it must read the
+# character the file holds, as long_name beside it does.
 
 BRIEF_ROWS = [
     pytest.param(APP.replace(b"    return 0\n", b"    return 0  # caf\xe9\n"), id="source-cp1252"),
@@ -134,9 +134,8 @@ def test_brief_hands_an_agent_the_source_the_file_holds(tmp_path, source):
 
 # --- a lane's own output: logs.command_log and lanes._log_lines -----------------
 #
-# utf8-author-shape-26 and -boundary-24, green on both trees. A lane's bytes
-# stay raw in its log; a passing lane is a measured run, and a failing one is a
-# refusal that names the lane.
+# A lane's bytes stay raw in its log; a passing lane is a measured run, and a
+# failing one is a refusal that names the lane.
 
 NOISE = {
     "log-invalid-utf8": b"caf\xe9 \xff\n",
@@ -171,9 +170,9 @@ def test_a_lane_that_prints_any_bytes_is_measured_or_refused_by_name(tmp_path, n
 
 # --- files crapkit writes for other readers ------------------------------------
 #
-# utf8-author-shape-29 and -boundary-25, green on both trees. The HTML report,
-# SARIF, the TSV export and --json all name 李雷Café in src/café.ts, and a
-# `ratchet seed` over a CRLF marks file keeps its endings.
+# The HTML report, SARIF, the TSV export and --json all name 李雷Café in
+# src/café.ts, and a `ratchet seed` over a CRLF marks file keeps its
+# endings.
 
 TS = "export function 李雷Café(kind: number): number {\n  if (kind) { return 1; }\n  return 0;\n}\n".encode()
 TS_TOML = (b'[crapkit]\ntarget = 1\nworklist_floor = 1\n\n'

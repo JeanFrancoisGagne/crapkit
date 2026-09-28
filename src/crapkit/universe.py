@@ -6,7 +6,7 @@ nested node_modules (measured hang).
 
 A name git gives in bytes that are not UTF-8 has no spelling a row can be keyed
 on. It arrives in the list in its surrogateescape spelling (gitpaths), and the
-scope assignment below judges it by claim (Q17). When a scope takes it, the
+scope assignment below judges it by claim. When a scope takes it, the
 assignment refuses with exit 3 and names the rename: left out, a scoped file
 nothing read would pass every gate. Any other such name is left out, and the
 verdict lists it (`Universe.unreadable`) for the command to name once.

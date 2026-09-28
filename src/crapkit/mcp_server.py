@@ -621,7 +621,7 @@ def _unread_name_result(root: Path, rel: str) -> dict:
     reader can key it. A tool that speaks MCP maps that refusal to its own
     protocol, where a tool error reads as a broken tool: the answer is the
     verdict the refusal is. A name no scope takes judges 0 and passes, as any
-    unscoped file does (Q17). A repo the CLI would refuse first (no config, no
+    unscoped file does. A repo the CLI would refuse first (no config, no
     scored run) answers that refusal as the CLI's error object."""
     try:
         payload = _unread_name_verdict(root, rel)

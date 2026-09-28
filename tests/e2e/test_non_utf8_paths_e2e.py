@@ -1,10 +1,8 @@
 """A file git names in bytes that are not UTF-8, driven through the CLI.
 
 One such name, tracked, staged or untracked, ended init, inventory, coverage,
-verify, doctor and the pre-commit gate with a traceback (hunter rows
-utf8-author shape-5, shape-6, shape-7, boundary-2, boundary-4, history-4 and
-history-12; action-null-body shape-21 and boundary-7). Each row now ends one of
-three ways:
+verify, doctor and the pre-commit gate with a traceback. Each row now ends one
+of three ways:
 
 - a name the scope's own assignment takes (scope path, language extension,
   exclude) refuses with exit 3, in one line naming the escaped path and git mv,
@@ -263,7 +261,7 @@ def test_a_command_handed_a_name_that_is_not_utf8_names_the_rename(tmp_path, nam
 @POSIX_NAME
 @pytest.mark.parametrize("command", [("rescore",), ("rescore", "--gate")], ids=["rescore", "rescore-gate"])
 def test_rescore_leaves_out_a_name_no_scope_takes_with_one_line(tmp_path, command):
-    """Q17: hook-precommit leaves such a staged file out, and rescore --gate
+    """hook-precommit leaves such a staged file out, and rescore --gate
     refused the same file at exit 3."""
     repo = _repo(tmp_path)
     assert run_cli(repo, "coverage").returncode == 0
@@ -338,7 +336,7 @@ def test_check_gate_answers_such_a_name_with_a_failed_verdict(tmp_path):
 @pytest.mark.parametrize("name", ["docs/caf\udce9.md", "tools/caf\udce9.py", "src/caf\udce9.txt"],
                          ids=["docs-md", "outside-scope-path-py", "no-scope-language"])
 def test_check_gate_judges_a_name_no_scope_takes_as_any_unscoped_file(tmp_path, name):
-    """Q17 skips a name no scope takes. check_gate failed the gate on it."""
+    """A name no scope takes is skipped. check_gate failed the gate on it."""
     repo = _repo(tmp_path)
     assert run_cli(repo, "coverage").returncode == 0
     (repo / name).parent.mkdir(parents=True, exist_ok=True)
@@ -520,7 +518,7 @@ INPUT_CHANGES = [
 
 @pytest.mark.parametrize("add_input, name", INPUT_CHANGES)
 def test_a_new_file_under_a_lanes_inputs_reruns_the_lane(tmp_path, add_input, name):
-    """PRD U6: the Latin-1 name read as no change, and the lane was reused
+    """The Latin-1 name read as no change, and the lane was reused
     with 'measurement inputs unchanged', where its ASCII and UTF-8 twins rerun."""
     repo = _repo(tmp_path, LANE_CONFIG)
     assert run_cli(repo, "coverage").returncode == 0

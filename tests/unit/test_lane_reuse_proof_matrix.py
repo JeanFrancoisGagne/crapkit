@@ -155,10 +155,11 @@ def test_any_other_inherited_variable_moving_is_named(tmp_path, monkeypatch):
 
 def test_a_switch_from_powershell_to_git_bash_reruns_naming_pathext_alone(tmp_path,
                                                                            monkeypatch):
-    """history-2's shell switch. PSModulePath is PowerShell's own module search
-    and moves with the shell alone, so it is a session variable. PATHEXT is
-    kept on purpose: it decides what cmd.exe starts for a lane's first word,
-    so two shells that disagree on it can run different programs."""
+    """A switch from PowerShell to Git Bash. PSModulePath is PowerShell's own
+    module search and moves with the shell alone, so it is a session
+    variable. PATHEXT is kept on purpose: it decides what cmd.exe starts for a
+    lane's first word, so two shells that disagree on it can run different
+    programs."""
     monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD;.CPL")
     monkeypatch.setenv("PSModulePath", "C:/modules")
     root = stale_tree.measure(stale_tree.build(tmp_path / "repo"))

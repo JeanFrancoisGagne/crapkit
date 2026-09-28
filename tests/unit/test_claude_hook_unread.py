@@ -3,9 +3,10 @@
 A file lizard or a crapkit reader refuses scores as zero functions, so the run
 goes on. The advisory read those zero records as zero breaches and exited 0,
 while a ccn-8 function sat in the same file as the construct the reader
-refused. That is one of the gate sites signal-1 missed: the edit is judged
-nowhere, so the hook says so with exit 2. An unreadable file the edit left
-identical to HEAD stays silent, as it stays unjudged at the commit gate.
+refused. No gate may pass a file it could not read, and this one did: the
+edit is judged nowhere, so the hook says so with exit 2. An unreadable file
+the edit left identical to HEAD stays silent, as it stays unjudged at the
+commit gate.
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ CUT_OFF = BREACH.replace("def sprawl(n):", "def sprawl(n:")
 TS_TOML = ('[crapkit]\ntarget = 6\n\n'
            '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n'
            'coverage_optional = true\n')
-# signal-1's probe: one arrow the TypeScript reader refuses beside a ccn-8 function.
+# One arrow the TypeScript reader refuses beside a ccn-8 function.
 TS_PROBE = ("export const actions = {\n"
             "  supportsAction: ({ action }) => new Set<string>([action]).has(action),\n"
             "};\n"

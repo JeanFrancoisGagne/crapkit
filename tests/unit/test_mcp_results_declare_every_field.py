@@ -172,7 +172,7 @@ def test_the_changelog_names_the_windows_python_that_read_the_name_as_ufffd():
 @pytest.mark.parametrize("name", ["docs/caf\udce9.md", "tools/caf\udce9.ts"],
                          ids=["no-scope-language", "outside-every-scope-path"])
 def test_check_gate_judges_a_name_no_scope_takes_as_any_unscoped_file(scored, name):
-    """Q17: a name no scope takes is skipped, not refused. The server failed the
+    """A name no scope takes is skipped, not refused. The server failed the
     gate on any existing name that is not UTF-8, scoped or not."""
     result = _check_gate_on(scored, name)
 

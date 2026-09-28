@@ -83,7 +83,7 @@ POSIX_NAMES = {
 NAMES = {**COMMON_NAMES, **({} if WINDOWS else POSIX_NAMES)}
 
 
-# --- a flake retest's command line (boundary-10) -------------------------------
+# --- a flake retest's command line ---------------------------------------------
 
 # id -> (JUnit classname, test name). A classname is a path for vitest and for
 # jest-junit's classNameTemplate "{filepath}".
@@ -122,7 +122,7 @@ def test_a_retest_hands_the_runner_the_failed_id_as_written(tmp_path, monkeypatc
     assert argv == ["--files", classname, "--tests", f"{classname}::{name}"]
 
 
-# --- brief's printed gate command (boundary-12) ---------------------------------
+# --- brief's printed gate command -----------------------------------------------
 
 SHELLS = ["cmd.exe", "powershell"] if WINDOWS else ["sh"]
 
@@ -165,7 +165,7 @@ def test_the_printed_gate_command_judges_the_file_brief_opened(tmp_path, monkeyp
     assert pasted.returncode == 6, (gate, pasted.stdout + pasted.stderr)
 
 
-# --- watch's listing of tracked names (boundary-16) -----------------------------
+# --- watch's listing of tracked names -------------------------------------------
 
 @pytest.mark.parametrize("which", NAMES)
 def test_watch_sees_a_tracked_file_change_whatever_its_name(tmp_path, which):
@@ -197,7 +197,7 @@ def _assert_watch_names(root: Path, rel: str, on_disk: Path) -> None:
     assert changed_paths(before, after) == [rel]
 
 
-# --- the committed marks and the SARIF uri (boundary-20, boundary-21) ----------
+# --- the committed marks and the SARIF uri -------------------------------------
 
 @pytest.fixture(scope="module")
 def marked(tmp_path_factory) -> tuple[Path, dict]:
