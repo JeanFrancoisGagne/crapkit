@@ -844,3 +844,27 @@ def test_the_agent_json_page_names_where_each_languages_nesting_comes_from():
                                  "`except`", "`esac`", "`case`", "`&&`", "`?`")
                if word not in rows[0]]
     assert missing == [], rows[0]
+
+
+# (file, source): one `if` whose condition holds `&&` and `||`, or PowerShell's
+# `-and` and `-or`.
+LOGICAL_EXAMPLES = [
+    ("f.ts", "function f(a, b, c) {\n  if (a && b || c) { g(); }\n}\n"),
+    ("f.c", "void f(int a, int b, int c) {\n  if (a && b || c) { g(); }\n}\n"),
+    ("F.java", "class F { void f(boolean a, boolean b, boolean c) {\n"
+     "  if (a && b || c) { g(); }\n} }\n"),
+    ("f.ps1", "function f($a, $b, $c) {\n  if ($a -and $b -or $c) { g }\n}\n"),
+]
+
+
+def test_the_nesting_row_says_a_logical_operator_opens_no_level_in_any_language():
+    """The same condition reads 1 in TypeScript, C, Java and PowerShell: the `if`
+    opens a level and its `&&`, `||`, `-and` and `-or` open none, as the row
+    says. lizard's ND column put a `&&` one level below its `if` and gave each
+    PowerShell operator a level of its own, so one condition read 2 in
+    TypeScript and 3 in PowerShell."""
+    page = (ROOT / "docs" / "agent-json.md").read_text(encoding="utf-8")
+    (row,) = [ln for ln in page.splitlines() if ln.startswith("| `nesting` |")]
+    assert "A logical operator such as `&&`" in row and "open none" in row, row
+    for name, code in LOGICAL_EXAMPLES:
+        assert _nesting(name, code) == 1, name
