@@ -311,14 +311,15 @@ every row that moved.
 **`swift` runs on crapkit's own reader too.** lizard's Swift reader took `super.init(...)`,
 `r.get()`, `Socket(protocol: p)`, `return type` and `#fileID` for a declaration or a
 preprocessor line, so it hid the functions after them and stretched the one holding them
-over its neighbours. crapkit reads each as the name or literal it is. It also counts Swift
-decisions the way the McCabe text does: each `a ?? b` is one, and so is each `?` of an
-optional chain (`a?.b`, `f()?.g`, `c?()`), which adds to `ccn` only, as `?.` does in
-TypeScript. The `case` of `if case`, a keyword argument label such as
-`func value(for name: String)`, and an optional mark (`(any Error)?`, `[Int]?`,
-`Int?.self`, and `Empty?.none` or `Int?.some(1)`, which name a member of the optional
-type) are none. A conditional operator's `?`, which Swift writes with spaces on both
-sides, still counts.
+over its neighbours. crapkit reads each as the name or literal it is, and lists a function
+named by a raw identifier (``func `keeps onboarding if offline`()``, as Swift Testing names
+tests) under that name, backticks included. It also counts Swift decisions the way the
+McCabe text does: each `a ?? b` is one, and so is each `?` of an optional chain (`a?.b`,
+`f()?.g`, `c?()`), which adds to `ccn` only, as `?.` does in TypeScript. The `case` of
+`if case`, a keyword argument label such as `func value(for name: String)`, and an
+optional mark (`(any Error)?`, `[Int]?`, `Int?.self`, and `Empty?.none` or
+`Int?.some(1)`, which name a member of the optional type) are none. A conditional
+operator's `?`, which Swift writes with spaces on both sides, still counts.
 
 ### Scope matching
 

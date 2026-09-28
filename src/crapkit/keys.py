@@ -207,8 +207,9 @@ def claim_holds(claim: dict, key: tuple[str, str]) -> bool:
 
 # --- the naming rules: what a NAME can say and which function it reaches -----
 
-# A Zig identifier spelled as a string (crapkit.lizardgolike reads it as one token).
-_QUOTED_NAME = re.compile(r'@"(?:\\.|[^"\\])*"')
+# A Zig identifier spelled as a string (crapkit.lizardgolike reads it as one token),
+# or a Swift raw identifier between backticks (crapkit.lizardswift reads it as one).
+_QUOTED_NAME = re.compile(r'@"(?:\\.|[^"\\])*"|`[^`]*`')
 
 
 def bare_name(long_name: str) -> str:
@@ -230,7 +231,9 @@ def bare_name(long_name: str) -> str:
     test for anonymity, with no second string to keep in step.
 
     A Zig name written as a string, `@"weird name" x : i32`, is one token whose
-    text holds a space and can hold a `(`, so it is cut whole.
+    text holds a space and can hold a `(`, so it is cut whole. So is a Swift raw
+    identifier, "`keeps onboarding if offline` value : Int": its name runs to its
+    own closing backtick.
     """
     quoted = _QUOTED_NAME.match(long_name)
     if quoted:

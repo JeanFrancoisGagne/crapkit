@@ -32,6 +32,12 @@ it lose their rows:
   * a `{` right after a `,` is a closure argument (`run(1, { x in ... })`).
     lizard read the token after every `,` as a declared name and dropped the
     brace, so the closure's `}` ended the function.
+  * a raw identifier (SE-0451) is any text between backticks, spaces included,
+    as Swift Testing names a test: ``func `keeps onboarding if offline`() {``.
+    lizard read a backtick name only when it is one word (`default`), so the
+    name split into a lone backtick and its words. The function had no row, and
+    an `if`, `for` or `while` among the words counted as a decision wherever the
+    name was called. The whole name, backticks included, is one token now.
 
 Decisions
 ---------
@@ -115,8 +121,13 @@ _PROBE = "crapkit_registration_probe.swift"
 _HASH_TOKENS = (r'|(?P<swift_raw>\#+)".*?"(?P=swift_raw)'
                 r"|\#(?!(?:if|elseif|else|endif|sourceLocation|warning|error)\b)\w+")
 
+# A raw identifier (SE-0451): any text between backticks on one line, spaces included,
+# as Swift Testing names a test. lizard's own pattern takes one word (`default`). A tab
+# is left out, since a name has to fit one field of a tab-separated marks file.
+_RAW_IDENTIFIER = r"`[^`\t\r\n]+`"
+
 _FAILABLE_INITS = frozenset({"init?", "init!"})
-_WORD = re.compile(r"\w+")
+_IDENTIFIER = re.compile(r"\w+|" + _RAW_IDENTIFIER)
 
 # The keywords lizard counts that Swift also accepts as an argument label, and what
 # comes right before the `case` of a case pattern in a condition.
@@ -180,7 +191,7 @@ def _is_code(token: str) -> bool:
 def _names_its_value(after: list[str]) -> bool:
     """`(newValue) {`: a setter or an observer naming the value it receives."""
     return len(after) == 4 and after[0] == "(" and after[2:] == [")", "{"] and bool(
-        _WORD.fullmatch(after[1]))
+        _IDENTIFIER.fullmatch(after[1]))
 
 
 def _opens_accessor(word: str, after: list[str]) -> bool:
@@ -200,7 +211,7 @@ def _accessor_name(word: str, before: str, after: list[str]) -> bool:
 
 def _protocol_name(word: str, before: str, after: list[str]) -> bool:
     """A protocol declaration names the protocol next; `protocol:` and `.protocol` do not."""
-    return before == "." or not (after and _WORD.fullmatch(after[0]))
+    return before == "." or not (after and _IDENTIFIER.fullmatch(after[0]))
 
 
 # The declaration words the reader reads as names where the code around them says so.
@@ -216,7 +227,7 @@ def _is_name(word: str, before: str, after: list[str]) -> bool:
 
 def _is_label(before: str, after: list[str]) -> bool:
     """`(for name:` or `, for:`: a label, followed by its colon or by a name and a colon."""
-    named = after[1:2] == [":"] and bool(_WORD.fullmatch(after[0]))
+    named = after[1:2] == [":"] and bool(_IDENTIFIER.fullmatch(after[0]))
     return before in ("(", ",") and (after[:1] == [":"] or named)
 
 
@@ -416,7 +427,8 @@ class CorrectedSwiftReader(_StockSwiftReader):
 
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):
-        return _StockSwiftReader.generate_tokens(source_code, _HASH_TOKENS + addition, token_class)
+        return _StockSwiftReader.generate_tokens(
+            source_code, _HASH_TOKENS + "|" + _RAW_IDENTIFIER + addition, token_class)
 
     def preprocess(self, tokens):
         return _read_all(super().preprocess(_comparing_less_thans(_optional_marks(tokens))))

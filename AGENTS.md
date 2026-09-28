@@ -811,7 +811,7 @@ Eleven reader modules sit beside the core. `analyze.py` imports each one, all bu
 | `lizardjava.py` | a Java reader under lizard's own class name. It reads an annotation's arguments to their own `)`, keeps the token after a bare annotation, reads enum constant bodies, interface-field anonymous classes and annotation element defaults, counts every declared parameter, and names a method nested in a method once |
 | `lizardshell.py` | a shell reader, because lizard ships none and answers `.sh` with `CLikeReader` instead of an error |
 | `lizardpowershell.py` | a PowerShell reader, same reason, plus a cp1252 decode fallback |
-| `lizardswift.py` | reads a Swift name as a name: `super.init(...)`, `r.get()`, `Socket(protocol: p)`, `return type` and `#fileID` open no function and drop no brace, a failable `init?` is listed, and a closure after a comma keeps its brace |
+| `lizardswift.py` | reads a Swift name as a name: `super.init(...)`, `r.get()`, `Socket(protocol: p)`, `return type` and `#fileID` open no function and drop no brace, a failable `init?` is listed, a raw identifier (`` `a b` ``) is one name, and a closure after a comma keeps its brace |
 | `lizardtypescript.py` | separates JavaScript and TypeScript expression arrows at commas and preserves their source spans; refuses unresolved TypeScript angle syntax; blanks the template-literal characters lizard's tokenizer misreads, such as a nested template's backticks, before a JavaScript-family reader sees the file |
 
 Registration belongs at that module scope and nowhere else. A `ProcessPoolExecutor` child

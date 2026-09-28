@@ -265,6 +265,82 @@ def test_a_closure_after_a_comma_ends_where_its_brace_closes():
     assert _rows(source) == [("each v : [ Int ]", 1, 5)]
 
 
+# --- a raw identifier is one name ----------------------------------------------------------------
+#
+# Swift 6.2 (SE-0451) names a declaration with any text between backticks, and Swift
+# Testing names a test that way. lizard reads one word between backticks (`default`),
+# so a name with a space split into a lone backtick and its words.
+
+RAW_TEST = ("@Test func `keeps onboarding if the gateway is down`() {\n"
+            "        if gatewayUp {\n"
+            "            show(1)\n"
+            "        }\n"
+            "    }\n")
+
+
+def test_a_raw_identifier_names_one_function():
+    """The function named by a raw identifier had no row, and its lines belonged to none."""
+    source = ("struct Checks {\n"
+              f"    {RAW_TEST}"
+              "\n"
+              "    func `default`(`first name` value: String) -> Int {\n"
+              "        return 1\n"
+              "    }\n"
+              "}\n")
+
+    assert _rows(source) == [("`keeps onboarding if the gateway is down`", 2, 6),
+                             ("`default` `first name` value : String", 8, 10)]
+    assert _row(source, "`keeps onboarding if the gateway is down`").ccn == 2
+    assert _row(source, "`default` `first name` value : String").params == 1
+
+
+@pytest.mark.parametrize("name", ["`keeps onboarding if offline`", "`retries while offline`",
+                                  "`checks for updates`", "`case a && b`"])
+def test_the_words_of_a_raw_identifier_decide_nothing(name):
+    """A keyword among a raw identifier's words is part of the name. Read as code, each
+    call to `keeps onboarding if offline` counted an if."""
+    source = f"func runAll() {{\n    {name}()\n    let x = self.{name}\n}}\n"
+
+    assert _counts(source) == (1, 1, 1, 0, 0)
+
+
+@pytest.mark.parametrize("declaration", ["protocol `Named Thing` {", "protocol Named {"])
+def test_a_protocol_named_by_a_raw_identifier_still_lists_no_requirement(declaration):
+    """`protocol` before a raw identifier declares a protocol, as it does before a word."""
+    source = (f"{declaration}\n"
+              "    func rename(to: String)\n"
+              "}\n"
+              "func after() -> Int {\n"
+              "    return 1\n"
+              "}\n")
+
+    assert _rows(source) == [("after", 4, 6)]
+
+
+@pytest.mark.parametrize("line", ["let `my value` = 1", "case `raw case`"])
+def test_a_raw_identifier_declared_by_a_word_keeps_the_function_after_it(line):
+    """After `let` or `case`, a raw identifier is the name declared."""
+    source = ("struct S {\n"
+              f"    {line}\n"
+              "    func after(flag: Bool) {\n"
+              "        if flag {\n"
+              "            show(1)\n"
+              "        }\n"
+              "    }\n"
+              "}\n")
+
+    assert _rows(source) == [("after flag : Bool", 3, 7)]
+    assert _row(source, "after flag : Bool").ccn == 2
+
+
+def test_an_accessor_naming_its_value_by_a_raw_identifier_keeps_its_row():
+    """`set(`new value`) {` names the value a setter receives, as `set(v) {` does."""
+    source = ACCESSORS.replace("set(v)", "set(`new value`)").replace("didSet(old)",
+                                                                      "didSet(`old value`)")
+
+    assert _rows(source) == _rows(ACCESSORS)
+
+
 # --- decisions: what adds 1 to ccn, and what does not --------------------------------------------
 #
 # NIST SP 500-235 sec. 4.1: v(G) = 1 + the binary decisions. A switch adds one per

@@ -357,7 +357,9 @@ Python and Swift read through crapkit's subclasses of lizard's readers too. liza
 reader ends a def at the first `)` of a signature that runs past it, so crapkit reads the
 signature to the body's colon. lizard's Swift reader takes `super.init(...)`, `r.get()` and
 `Socket(protocol: p)` for declarations and `#fileID` for the start of a preprocessor line,
-which hid the functions after them, so crapkit reads each one as the name or literal it is.
+which hid the functions after them, and lists no function named by a raw identifier with a
+space in it (``func `keeps onboarding if offline`()``), so crapkit reads each one as the
+name or literal it is.
 
 C, C++, Objective-C and Java run on lizard's readers with crapkit's fixes on top. lizard
 hid every function after some constructs, named rows after an attribute or a macro, and

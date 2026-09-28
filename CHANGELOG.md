@@ -954,6 +954,14 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   tree-sitter-swift: 52 of the 832 functions it parses had no row and 13 more ended on
   the wrong line; now all 832 start and end where it says. The 51 rows that were made
   up are gone.
+- A function named by a raw identifier, any text between backticks (Swift 6.2,
+  SE-0451), is listed. Swift Testing names tests that way,
+  ``@Test func `keeps onboarding if offline`() {``, and lizard read a backtick name
+  only when it was one word, so each such function had no row and an `if`, `for` or
+  `while` among the words counted as a decision where the name was called. Its long
+  name keeps the backticks, and `brief`, `explain` and the other commands that take a
+  name accept the whole backticked name. Alamofire 5 has none; a large consumer repo
+  gains 3,057 rows.
 - A function that swallowed its neighbours shrinks, and its ccn and cognitive fall
   with them; a function that had no row is listed, and the gate reads it the next time
   its file changes. A function lizard already read whole keeps its long name, so its

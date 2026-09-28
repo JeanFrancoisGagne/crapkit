@@ -288,8 +288,10 @@ Swift:
 - A function that `super.init(...)`, `.init(...)`, `r.get()`, `case .get`,
   `Socket(protocol: p)`, `return type`, a `#fileID` default, `if #available(...) {` or a
   closure after a comma hid is listed, and the function that held it reads only its own
-  lines. A failable `init?` or `init!` is listed as `init`. A newly listed function can
-  be over its ceiling and fails the gate the next time its file changes.
+  lines. A failable `init?` or `init!` is listed as `init`. A function named by a raw
+  identifier, ``func `keeps onboarding if offline`()``, is listed under that name,
+  backticks included; a Swift Testing suite gains a row per such test. A newly listed
+  function can be over its ceiling and fails the gate the next time its file changes.
 - A function listed before keeps its long name, so its mark keeps its key. A row that
   named no function is gone: `init id : id` for a `super.init(id: id)` call, `get` for
   `r.get()`. `ratchet prune` drops its mark.
