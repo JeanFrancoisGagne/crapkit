@@ -54,7 +54,7 @@ promise filesystem read-only execution.
 `crapkit brief --batch N --json` an orchestrator already ran.
 
 Read commands need a run in the store and exit 1 with the command that makes one when
-there is none (`next-item` and `brief` say `no scored run in <root> — run \`crapkit
+there is none (`next-item` and `brief` say `no scored run in <root> - run \`crapkit
 coverage\` first`; `worklist` says `no run with rows`, and every one of them says
 `no snapshot` when `.crapkit/crap.sqlite` does not exist). Run what the message names,
 then retry.

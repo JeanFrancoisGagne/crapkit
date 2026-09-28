@@ -301,8 +301,8 @@ args = ["mcp", "--repo", "/absolute/path/to/your/repo"]
 | Starts in | The directory Copilot runs in (measured, 1.0.88). |
 | Environment | Copilot's own environment (measured). `env` adds variables. |
 | Versions | The deploy suite runs 1.0.88. |
-| Plugin hooks | The advisory hook, after `copilot plugin marketplace add JeanFrancoisGagne/crapkit` and `copilot plugin install crapkit@crapkit`: Copilot keeps each hook's `command`, `matcher` and `timeout`, and one edit of a Python file started `crapkit claude-hook --protocol 1` once (measured, 1.0.88). Copilot shows exit 2's output to the user alone, so the hook hands the advisory to the model as added context ([other harnesses](agent-json.md#other-harnesses)). |
-| After an upgrade | Start a new `copilot` session. |
+| Plugin hooks | The advisory hook, after `copilot plugin marketplace add JeanFrancoisGagne/crapkit` and `copilot plugin install crapkit@crapkit`: Copilot keeps each hook's `command`, `matcher` and `timeout`, and one edit of a Python file started `crapkit claude-hook --protocol 1` once (measured, 1.0.88). Copilot shows exit 2's output to the user alone, so the hook hands the advisory to the model as added context ([other harnesses](agent-json.md#other-harnesses)). On Windows the marketplace add clones the whole repository and stops on `Filename too long` unless git's `core.longpaths` is on: run `git config --global core.longpaths true` first (measured, 1.0.88). |
+| After an upgrade | For the plugin, `copilot plugin marketplace update crapkit`, then `copilot plugin update crapkit@crapkit`, and `crapkit doctor --plugin-root ~/.copilot/installed-plugins/crapkit/crapkit` to compare it with the CLI ([upgrading](upgrading.md#plugin-and-mcp-clients)). Then start a new `copilot` session. |
 
 ## Copilot cloud agent
 

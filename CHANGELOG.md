@@ -46,13 +46,30 @@ each agent, fresh and as an upgrade, and this release fixes what it found.
   `.venv\\Scripts\\python.exe` (as the TOML string spells it) or `.venv/bin/python`, which
   fail every lane on the other OS, or a bare `python`, which fails on an Ubuntu without
   python-is-python3. Swap the venv launcher for `{python:.venv}` and a bare name for
-  `{python}`.
-- Three exit codes change. On Windows a root on a network share exits 3 before any lane
+  `{python}`. 0.8.0 does not know the token and fails every lane that holds one at exit 5
+  (`/bin/sh: 1: {python:.venv}: not found` under sh), so commit the swap only once every
+  clone, the Action's `uses:` pin and the pre-commit `rev` run 0.8.1; the [upgrade
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#a-team-upgrades-every-reader-before-the-re-seed-lands) quotes both
+  shells' lines.
+- Three config-path exit codes change. On Windows a root on a network share exits 3 before any lane
   starts, where every lane ran in `C:\Windows`. A lane whose `cwd` names no directory
   fails as that lane, and a run with no lane left exits 5, where `crapkit coverage` ended
   in a Python traceback at exit 1. A lane with `path_prefix` fed another checkout's
   coverage.py report, or a lane scoped to the root fed another checkout's coverage.py or
   istanbul report, fails the same way, where it exited 0.
+- Many more exit codes move. The upgrade guide lists each with its 0.8.0 and 0.8.1 exit
+  and what to change: [missing values](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#missing-values-that-081-names), [the
+  commit gate](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#the-commit-gate-in-081), [text that is not
+  UTF-8](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#text-that-is-not-utf-8) and [the
+  rest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#other-exit-codes-that-move-in-081). Read them before you move a CI job,
+  an Action pin or a pre-commit `rev`.
+- The commit hook under `pre-commit run --all-files`, the form pre-commit.ci and
+  pre-commit/action run, now judges every tracked file and exits 6 on a function over its
+  ceiling that no mark signs, where 0.8.0 judged the empty staged diff and passed at 0.
+  Seed the marks or decompose those functions before you move the `rev`. A hook at the
+  git top of a monorepo whose `crapkit.toml` sits below, or armed before `crapkit init`,
+  exited 3 on every commit; it now gates each root below that owns a staged file, or
+  passes.
 - crapkit's own messages spell a dash as ` - ` where 0.8.0 printed an em dash, among
   them doctor on a repo with no lane and worklist, brief and digest before the first run.
   A script or a test that matches one of those lines has to match ` - ` now. A path or a
@@ -61,6 +78,10 @@ each agent, fresh and as an upgrade, and this release fixes what it found.
   the UTC date, a commit on the window's first day can move in or out of churn once, and
   worklist and brief can rank a function differently from 0.8.0 on that machine. Scores
   do not move, and it needs no re-seed of its own: the one re-seed above covers it.
+- A partial run's `crap_load` sums only the scopes it measured, so `coverage --json` and
+  the run line report less than 0.8.0 did on a run with a failed or skipped lane: 0.8.0
+  added that lane's functions at the cov-0 stand-in. `by_scope` still carries each
+  unmeasured scope's load.
 - Library API: the suite-drop check moved to `crapkit.lane_results.suite_drops(behind,
   current)`, which walks the trusted runs behind this one. `crapkit.lanes.suite_drops(previous,
   current)` still answers for the last trusted run and raises a DeprecationWarning; it
@@ -79,9 +100,15 @@ each agent, fresh and as an upgrade, and this release fixes what it found.
   withholds every file's lines.
 - Library API: `lanes.uncommitted_changes` raises `GitError` when git cannot say,
   where it returned `[]`.
+- Library API: other module names moved with no warning. `gitio.file_log_patches` and
+  `gitpaths.history_line` are gone, `lanes.SUITE_DROP_FRACTION` is
+  `lane_results.SUITE_DROP_FRACTION`, `mcp_server.build_argv` takes a third argument,
+  `repo`, and `mutate_pool.run_one` and `run_mutants` return `MutantVerdict` where they
+  returned bool. See the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#library-callers).
 - Upgrade the CLI with the installer that owns it; the [upgrade
   table](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) now has
-  rows for pip --user, pipx and uvx.
+  rows for pip --user, pipx, uvx, the Copilot CLI plugin, the Docker image, the
+  pre-commit `rev` and the Action's `uses:` pin.
 - Codex users: Codex refreshes git marketplaces each time it starts, so upgrade the CLI
   before the next Codex start, and the plugin arrives with a `.codex-plugin/plugin.json`
   that keeps Claude Code's hook out of Codex.
@@ -90,7 +117,9 @@ each agent, fresh and as an upgrade, and this release fixes what it found.
 - An MCP client that negotiates `2024-11-05` or `2025-03-26` no longer gets
   `structuredContent`, or an `outputSchema` in `tools/list`, which those revisions do not
   define; the text carries the same object. An answer longer than 7,500 characters carries `truncated`, and its `full`
-  command prints the whole answer from the CLI.
+  command prints the whole answer from the CLI. JSON-RPC codes move too: `params` that
+  are not an object answer `-32602` and a message with an `id` and nothing to do answers
+  `-32600`, each listed in the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#mcp-answers-in-081).
 
 ### A lane with no test results is not a lane that ran 0 tests or failed none
 
@@ -212,7 +241,7 @@ the report gone or unreadable. Every reader of those fields took that absence fo
 
 ### A value nobody measured is named, not printed as a fact
 
-Eleven changes in this release can move an exit code: the gates' refusal of an unread
+Eleven changes that name a missing value can move an exit code: the gates' refusal of an unread
 file and the advisory hook's exit 2, the `verify --reuse-artifacts` refusal of an
 unreadable junit, the shallow-clone refusal below, the refusal of a coverage artifact
 missing a count, the `--reuse-artifacts` refusal while `.crapkit/artifacts.json` cannot be
@@ -533,9 +562,11 @@ version bump under Upgrading from 0.8.0 above.
   gate passed a ccn-8 function in it, and the advisory hook said nothing. An identifier
   holding one of the five bytes cp1252 leaves undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D)
   stays whole: a PowerShell function named with one was not scored, and the pre-commit
-  gate passed it at ccn 8. In Python, TypeScript, C and C# such a function keyed as
-  `\ufffd`, `(anonymous)` or `if`; it now keys by its name, under 0.8.1's analysis
-  version bump. `mutate` writes a mutant back in the file's own encoding: in a cp1252 or
+  gate passed it at ccn 8. In Python, TypeScript and C such a function keyed as
+  `\ufffd`, `(anonymous)` or `if`, and in Go, Java, Rust, Swift, shell and a C function
+  whose `if` has no braces 0.8.0 scored no such function at all, so it is new and meets
+  the gate as a UTF-16 source's functions do. It now keys by its name, under 0.8.1's
+  analysis version bump. `mutate` writes a mutant back in the file's own encoding: in a cp1252 or
   Latin-1 file every accented byte outside the mutated line became EF BF BD, and 2 of 2
   mutants read killed where the UTF-8 twin kills 0. `brief --json`'s `source` reads the
   file the way the scorer does. An edit to a UTF-16 file is judged on the line it is on:
