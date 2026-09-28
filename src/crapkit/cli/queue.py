@@ -18,7 +18,7 @@ from ..invocation import _self
 from ..repopath import Fragment, fragments
 from ..keys import claim_key, key_names, key_of, lookup, position, split_ordinal
 from ..named import first_few
-from ..score import SCORED_COLUMNS
+from ..score import SCORED_COLUMNS, unjoined
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
 from ..worklist import (NO_RATCHET, Marks, RatchetMarks, Worklist, admission, build_worklist,
@@ -1091,15 +1091,18 @@ def _crap_text(crap: float | None) -> str:
     return "      -" if crap is None else f"{crap:>7.1f}"
 
 
-def _cov_text(cov: float | None) -> str:
-    return "   -" if cov is None else f"{cov:>4.0%}"
+def _cov_text(e) -> str:
+    """A dash where no number was measured: an inventory-only run, and a
+    no-lane or cc-only row, whose cov of 0.0 only stands in for one. `brief`
+    and `rescore` say the same; a 0% there read as a measured, untested row."""
+    return "   -" if e.cov is None or unjoined(e.flag) else f"{e.cov:>4.0%}"
 
 
 def _row_text(e) -> str:
     """One printed row: the rank, the two numbers the score is made of, the
     churn, the place, the name. `ccn_std` and `weight` stay in the JSON."""
     return (f"  risk {e.risk:>8.1f}  ccn {e.ccn:>3}  crap {_crap_text(e.crap)}  "
-            f"cov {_cov_text(e.cov)}  {e.commits:>3}c/{e.authors}a  {e.path}:{e.start}  "
+            f"cov {_cov_text(e)}  {e.commits:>3}c/{e.authors}a  {e.path}:{e.start}  "
             f"{e.long_name}{_row_marker(e)}")
 
 

@@ -565,6 +565,37 @@ def test_the_printed_row_shows_the_score_and_the_coverage(repo: Path):
     assert rows[0].endswith("core/alpha.py:1  alpha( a , b )"), rows[0]
 
 
+# A scope that asks for no coverage: its rows score crap = ccn, flag cc-only.
+PLAIN_SCOPE = """
+[[scope]]
+name = "plain"
+paths = ["plain"]
+languages = ["python"]
+coverage_optional = true
+"""
+
+
+def test_a_cc_only_row_prints_a_dash_where_no_coverage_was_measured(repo: Path):
+    """brief said `cov not measured` for a cc-only function while the worklist
+    row printed `cov   0%` beside the cc-only crap of 7.0, which is ccn, not
+    the 0% formula's 56.0."""
+    (repo / "plain").mkdir()
+    (repo / "plain" / "eps.py").write_text(_source("eps", 6), encoding="utf-8")
+    with (repo / "crapkit.toml").open("a", encoding="utf-8") as fh:
+        fh.write(PLAIN_SCOPE)
+    _commit(repo, "a cc-only scope")
+    scored(repo)
+    _, rows = worklist_lines(repo)
+    plain = next(row for row in rows if "  plain/eps.py:1  " in row)
+    alpha = next(row for row in rows if "  core/alpha.py:1  " in row)
+
+    assert "crap     7.0  cov    -  " in plain, plain
+    assert "crap    72.0  cov   0%  " in alpha, "a lane measured this 0%"
+    brief = run_cli(repo, "brief", "plain/eps.py", "eps")
+    assert brief.returncode == 0, brief.stdout + brief.stderr
+    assert "cov not measured" in brief.stdout, brief.stdout
+
+
 def test_the_header_says_how_many_active_rows_the_cap_hid(repo: Path):
     """`50 active` on a repo with 3,980 admitted rows read as 50 in total."""
     scored(repo)
