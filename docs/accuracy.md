@@ -240,6 +240,19 @@ A survivor on neither `suite_strength/mutation/survivors.tsv` nor
 `equivalent.tsv` fails the run, and a capped `diff` run reports `incomplete`,
 never `pass`.
 
+Both commands check out HEAD under `.crapkit/accuracy/mutation/calc-stage` and
+run `tests/unit` and the accuracy tests at the push tier against mutmut's copy
+of the code in its `mutants/` folder. mutmut first runs that suite once to learn
+which tests reach which function, and when one test fails there it judges no
+mutant at all, so every test must pass inside the copy. The copy's `src/` is
+rewritten with trampolines, so the checks that read crapkit's own source as
+data read the stage's `src/crapkit` instead, which the tool names in
+`CRAPKIT_ACCURACY_SOURCE`. A test that cannot pass inside the copy whatever
+mutant is active (it reads a module as text, times a call, or starts an
+interpreter on the copy) goes in `COPY_BOUND` in `tools/accuracy/mutation.py`
+with its reason, and the stage leaves it out, as it leaves out the tests an open
+defect ruling names. CI still runs it on the tree.
+
 ### Release
 
 ```

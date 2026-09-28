@@ -199,6 +199,18 @@ def test_unread_def_net_under_both_readers(reader, measure_set):
     assert [path for path in cuts if measured.in_file(path)] == []
 
 
+def test_the_src_corpus_reads_the_tree_the_source_variable_names(tmp_path, monkeypatch):
+    """The calc mutation stage names its checkout's src/crapkit, since mutmut's
+    copy is rewritten with trampolines; unset, the corpus is this checkout's."""
+    (tmp_path / "cli").mkdir()
+    (tmp_path / "cli" / "a.py").write_bytes(b"def f():\n    return 1\n")
+    monkeypatch.setenv(analysis_corpora.SOURCE_ENV, str(tmp_path))
+
+    assert sorted(analysis_corpora.crapkit_sources().files) == ["crapkit/cli/a.py"]
+    monkeypatch.delenv(analysis_corpora.SOURCE_ENV)
+    assert analysis_corpora.source_root() == analysis_corpora.REPO / "src" / "crapkit"
+
+
 # --- CPython Lib at one pinned tag per Python -------------------------------------------------
 
 def test_stdlib_sources_read_the_running_pythons_member(tmp_path):

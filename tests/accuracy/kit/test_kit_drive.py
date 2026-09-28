@@ -123,6 +123,17 @@ def test_an_mcp_session_runs_the_crapkit_under_test_not_the_tree_s_copy(tmp_path
     assert "no_such_tool" in result["content"][0]["text"]
 
 
+@pytest.mark.nightly
+@pytest.mark.process
+def test_a_module_s_file_is_where_the_spawned_interpreter_loads_it(tmp_path):
+    """Inside mutmut's copy the spawned crapkit is the installed tree, not the
+    copy this process imported, so a check of the code a spawn ran asks the spawn."""
+    (tmp_path / "probe_module.py").write_text("", encoding="utf-8")
+    driver = drive.Driver(tmp_path, spawn=True, env={"PYTHONPATH": str(tmp_path)})
+
+    assert driver.spawned_file("probe_module") == (tmp_path / "probe_module.py").resolve()
+
+
 def test_every_spawn_keeps_the_working_directory_off_the_import_path():
     """`-P` (Python 3.11+): without it `-m` puts the call's cwd first on sys.path."""
     assert drive.crapkit_argv("py", ("-m",), ("inventory",)) == [

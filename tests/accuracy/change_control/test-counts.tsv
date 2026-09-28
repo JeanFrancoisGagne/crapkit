@@ -1,12 +1,12 @@
 packet	tests
-analysis_oracles	257
+analysis_oracles	258
 change_control	150
 corpus_goldens	126
 coverage_oracles	93
 definitions	39
-history_oracles	74
-kit	251
+history_oracles	75
+kit	252
 runtime_guards	19
 score_model	139
-suite_strength	363
+suite_strength	367
 verdict_model	201

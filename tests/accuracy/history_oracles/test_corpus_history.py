@@ -24,7 +24,7 @@ from accuracy.kit import corpus_dir, repos
 from accuracy.history_oracles.oracles import (bugspots_runner, code_maat, git_walk,
                                               mlxtend_adapter, pair_count, pydriller_adapter,
                                               pygit2_renames)
-from accuracy.history_oracles.oracles.history_git import git, text
+from accuracy.history_oracles.oracles.history_git import git, text, top_and_prefix
 from accuracy.history_oracles.repos import history_specs as specs
 from crapkit import churn_cache, churn_log, coupling, gitio
 
@@ -67,7 +67,8 @@ def _synthetic(make_repo, _tmp) -> History:
 
 def _source(name: str):
     if name == "this_repo":  # --shared: borrow the objects, copy none
-        return lambda make_repo, tmp: _clone(str(REPO), tmp / "this_repo", "--shared")
+        return lambda make_repo, tmp: _clone(str(top_and_prefix(REPO)[0]), tmp / "this_repo",
+                                             "--shared")
     if name == "synthetic":
         return _synthetic
     return lambda make_repo, tmp: _clone(name, tmp / Path(name).stem)
@@ -83,6 +84,17 @@ def history(request, make_repo, tmp_path, monkeypatch) -> History:
     found = _source(request.param)(make_repo, tmp_path)
     monkeypatch.setenv("GIT_TEST_DATE_NOW", str(found.now))
     return found
+
+
+def test_this_repo_is_cloned_from_the_top_of_its_checkout(tmp_path, monkeypatch):
+    """mutmut runs this file from its mutants/ copy, a folder inside the stage
+    checkout, which git cannot clone: the history is the checkout's."""
+    head = text(REPO, "rev-parse", "HEAD")
+    monkeypatch.setitem(globals(), "REPO", REPO / "tests")
+
+    found = _source("this_repo")(None, tmp_path)
+
+    assert text(found.root, "rev-parse", "HEAD") == head
 
 
 def _walked(found: History) -> list:

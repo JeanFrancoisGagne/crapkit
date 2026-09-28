@@ -1,7 +1,9 @@
 """The Python file sets the differentials read, as {repo path: bytes}.
 
 - crapkit_sources(): every .py file of crapkit's own source tree at this
-  checkout (2,145 functions at the commit the plan counted);
+  checkout (2,145 functions at the commit the plan counted), or of the tree
+  CRAPKIT_ACCURACY_SOURCE names: the calc mutation stage names its checkout's,
+  since mutmut's copy of src/ under mutants/ is rewritten with trampolines;
 - stdlib_sources(root): CPython's Lib at the tag the full corpus pins for the
   running Python (member cpython-<major>.<minor>, e.g. v3.13.15 for 3.13),
   nightly only. The installed Lib is never read: its patch level and the
@@ -16,13 +18,14 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import sys
 
 from accuracy.kit import corpus_dir
 
 REPO = Path(__file__).resolve().parents[3]
-SOURCE = REPO / "src" / "crapkit"
+SOURCE_ENV = "CRAPKIT_ACCURACY_SOURCE"
 
 
 @dataclass(frozen=True)
@@ -52,8 +55,15 @@ def _collect(root: Path, prefix: str, skip=()) -> Corpus:
     return Corpus(files, tuple(rejected))
 
 
+def source_root() -> Path:
+    """crapkit's source tree as written: the directory SOURCE_ENV names, else
+    this checkout's src/crapkit."""
+    named = os.environ.get(SOURCE_ENV)
+    return Path(named) if named else REPO / "src" / "crapkit"
+
+
 def crapkit_sources() -> Corpus:
-    return _collect(SOURCE, "crapkit")
+    return _collect(source_root(), "crapkit")
 
 
 def corpus_files(suffixes: tuple[str, ...]) -> dict[str, bytes]:

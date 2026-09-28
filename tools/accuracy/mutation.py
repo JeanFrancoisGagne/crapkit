@@ -18,9 +18,12 @@ at its cap, reporting `incomplete`, never `pass`. Both run in a detached
 worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose [tool.mutmut]
 names the modules and the suite, tests/unit and tests/accuracy at the push tier
 with the dependent methods deselected, less each test an open defect row of
-rulings.tsv names as failing on a clean tree (mutmut judges no mutant when its
+rulings.tsv names as failing on a clean tree and each COPY_BOUND test, which
+fails inside mutmut's copy whatever the mutant (mutmut judges no mutant when its
 stats run fails), then write a receipt under .crapkit/accuracy/mutation/ and run
-the gate.
+the gate. The checks that read crapkit's own source as data read the stage's
+src/crapkit, named in CRAPKIT_ACCURACY_SOURCE, since mutmut's copy of it holds
+trampolines.
 
 The gate is a survivor set, not a rate. A survivor is keyed by (module,
 function, sha256 of its mutant diff with line numbers and mutmut's numbering
@@ -837,19 +840,35 @@ def _stage_rows(ours: dict, kept: dict) -> dict:
     return {key: value for key, value in kept.items() if key not in ours} | ours
 
 
-def _stage_table(targets: dict, copies: list[str], kept: dict | None = None) -> str:
+def _stage_table(targets: dict, copies: list[str], kept: dict | None = None,
+                 written: str = "") -> str:
+    """The table: `written` (the repo table's generated blocks) as it stands, then
+    one line per key."""
     rows = _stage_rows(_stage_keys(targets, copies), kept or {})
-    return "\n".join(["[tool.mutmut]", *(f"{key} = {json.dumps(value)}"
-                                          for key, value in rows.items())]) + "\n"
+    lines = [f"{key} = {json.dumps(value)}\n" for key, value in rows.items()]
+    return "".join(["[tool.mutmut]\n", written, *lines])
+
+
+_GENERATED = re.compile(r"^# generated:([\w-]+)\n.*?^# /generated:\1\n", re.M | re.S)
+
+
+def generated_blocks(table: str) -> str:
+    """Every block tools/docs/generate.py writes in `table`, as written: its check
+    (tests/unit/test_generated_guidance.py) runs in mutmut's copy too."""
+    return "".join(match.group(0) for match in _GENERATED.finditer(table))
 
 
 def stage_config(text: str, targets: dict, copies: list[str]) -> str:
     """The repo's pyproject.toml with a [tool.mutmut] table for `targets` in place of
-    its own, copying `copies` beside the mutants."""
+    its own, copying `copies` beside the mutants. The generated blocks of the repo's
+    table stay as written, and the keys they hold are not written twice."""
     head, _, rest = text.partition("[tool.mutmut]")
-    tail = rest[rest.index("\n["):] if "\n[" in rest else ""
-    kept = tomllib.loads(text).get("tool", {}).get("mutmut", {})
-    return f"{head.rstrip()}\n\n{tail.strip()}\n\n{_stage_table(targets, copies, kept)}"
+    body, bracket, after = rest.partition("\n[")
+    written = generated_blocks(body)
+    kept = {key: value for key, value in tomllib.loads(text).get("tool", {}).get("mutmut", {}).items()
+            if key not in tomllib.loads(written)}
+    table = _stage_table(targets, copies, kept, written)
+    return f"{head.rstrip()}\n\n{(bracket + after).strip()}\n\n{table}"
 
 
 def stage_copies(stage: Path) -> list[str]:
@@ -881,6 +900,10 @@ def tools_env(environ: dict) -> dict:
 # names no tests and no marker) never decides the suite the floors count.
 CALC_STAGE = RECEIPTS / "calc-stage"
 CALC_TESTS = ("tests/unit", "tests/accuracy")
+# mutmut's copy of src/ under the stage's mutants/ is rewritten with trampolines,
+# so the checks that read crapkit's own source as data (the analysis src corpus)
+# read the stage checkout's src/crapkit, the same commit as written.
+SOURCE_ENV = "CRAPKIT_ACCURACY_SOURCE"
 
 
 def calc_targets(modules: list[str]) -> dict:
@@ -891,10 +914,12 @@ def calc_targets(modules: list[str]) -> dict:
 def calc_env(environ: dict, deselect: list[str] | tuple = ()) -> dict:
     """The push tier on this platform, less the `deselect` tests: every tier would
     bring in tests marked for another platform, and each of those, like a test an
-    open ruling names, fails mutmut's stats run, which then judges no mutant."""
+    open ruling names, fails mutmut's stats run, which then judges no mutant. The
+    src corpus reads the stage's own source (SOURCE_ENV)."""
     env = {key: value for key, value in environ.items() if key != "CRAPKIT_ACCURACY_COLLECT_ALL"}
     addopts = [env.get("PYTEST_ADDOPTS", ""), *(f"--deselect {node}" for node in deselect)]
     return {**env, "CRAPKIT_ACCURACY_TIER": "push", "PYTHONDONTWRITEBYTECODE": "1",
+            SOURCE_ENV: str(REPO / CALC_STAGE / "src" / "crapkit"),
             "PYTEST_ADDOPTS": " ".join(filter(None, addopts))}
 
 
@@ -915,6 +940,30 @@ def open_failures(rulings: Path | None = None) -> list[str]:
     stage deselects it until its row is fixed."""
     rows = read_table(rulings or TABLES.parent / "rulings.tsv", RULING_COLUMNS)
     return sorted({node for row in rows for node in _failing_tests(row)})
+
+
+# Tests that fail inside mutmut's copy whatever mutant is active, each for a
+# reason the copy itself brings, so in the calc stage they could only stop the
+# stats run (and no mutant is judged) or fail every mutant alike. The calc stage
+# leaves them out with the open defects' tests; CI runs them on the tree.
+COPY_BOUND = {
+    "tests/unit/test_invariants.py::test_no_variable_or_flag_turns_the_checks_off":
+        "reads invariants.py as text, and the copy's text holds mutmut's trampolines",
+    "tests/unit/test_invariants.py::test_every_run_crapkit_stores_passes_the_row_check_first":
+        "reads each module as text, and the copy holds every mutant's body beside the original",
+    "tests/unit/test_cli_lazy_families.py::test_running_a_command_loads_its_family_and_no_other":
+        "starts an interpreter on the copy, whose trampolines look for mutmut's settings in the "
+        "child's working directory during the stats run and stop the child",
+    "tests/accuracy/runtime_guards/test_guard_cost.py::test_the_row_check_over_a_large_repo_s_run":
+        "times the row check against a ceiling, and in the copy every call it makes runs "
+        "through a trampoline first",
+}
+
+
+def stage_deselected() -> list[str]:
+    """What the calc stage leaves out: the tests open defect rulings name, and
+    COPY_BOUND."""
+    return sorted({*open_failures(), *COPY_BOUND})
 
 
 def _prepare_stage(targets: dict, where: Path = TOOLS_STAGE) -> Path:
@@ -987,7 +1036,7 @@ def _print_floor(floor: Floor) -> None:
 def _weekly(args) -> int:
     modules = shard(weekly_modules(), args.shard, args.of)
     globs = calc_globs(modules, calc_functions()) + _canary_globs()
-    deselected = open_failures()
+    deselected = stage_deselected()
     rows, _ = staged_run(CALC_STAGE, calc_targets(modules), globs,
                          calc_env(dict(os.environ), deselected), args.max_children)
     receipt = _receipt("weekly", shard=args.shard, of=args.of, modules=modules,
@@ -1003,7 +1052,7 @@ def _run_changed(changed: list, budget: float) -> tuple[list[Result], bool]:
         return [], True
     targets = calc_targets([path for path, _ in changed])
     return staged_run(CALC_STAGE, targets, [mutmut_glob(*pair) for pair in changed],
-                      calc_env(dict(os.environ), open_failures()), os.cpu_count() or 2, budget)
+                      calc_env(dict(os.environ), stage_deselected()), os.cpu_count() or 2, budget)
 
 
 def _diff_receipt(base: str, changed: list, rows: list[Result], complete: bool) -> dict:

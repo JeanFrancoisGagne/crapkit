@@ -215,7 +215,7 @@ def test_doctor_runs_the_rule_the_model_is_held_to(doctored, tmp_path):
     measured = drive.Driver(doctored[0].root, date_now=repos.EPOCH + 86_400, launch=launch)
 
     assert "all flagged untested" in measured.run("doctor", "--json").stdout
-    doctor_py = Path(DOCTOR.__file__).resolve()
+    doctor_py = measured.spawned_file("crapkit.doctor")
     body = reach.body_lines(doctor_py, "unmeasured_directories")
     assert _ran_lines(tmp_path / "data", rc).get(doctor_py, set()) & set(body)
 

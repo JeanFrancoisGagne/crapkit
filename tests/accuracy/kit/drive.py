@@ -118,6 +118,16 @@ class Driver:
                                         encoding="utf-8", errors="replace",
                                         timeout=hang_guard.HANG_SECONDS)
 
+    def spawned_file(self, module: str) -> Path:
+        """The file `module` loads from in the interpreter a spawned call starts: a
+        retro replay's venv, or inside mutmut's copy the installed tree, where this
+        process imported the copy."""
+        tiers.require_process("the interpreter crapkit runs under")
+        probe = f"import {module}; print({module}.__file__)"
+        done = hang_guard.run([self.python, "-P", "-c", probe], cwd=self.root, env=self.env,
+                              text=True, encoding="utf-8", errors="replace")
+        return Path(done.stdout.strip()).resolve()
+
     def run(self, *args: str, stdin: str | None = None) -> Result:
         done = self._call(tuple(args), stdin)
         if done.returncode == 2 and _USAGE.search(done.stderr):

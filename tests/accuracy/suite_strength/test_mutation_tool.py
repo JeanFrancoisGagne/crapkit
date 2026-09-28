@@ -559,6 +559,36 @@ patch = ["subprocess"]
 """
 
 
+WITH_BLOCK = """\
+[project]
+name = "crapkit"
+
+[tool.mutmut]
+# generated:mutmut-paths
+paths_to_mutate = [
+    "src/crapkit/score.py",
+]
+# /generated:mutmut-paths
+also_copy = ["tests/"]
+
+[tool.coverage.run]
+patch = ["subprocess"]
+"""
+
+
+def test_the_stage_keeps_the_repo_table_s_generated_block_as_written():
+    """tools/docs/generate.py checks pyproject.toml's generated mutmut-paths block,
+    and tests/unit/test_generated_guidance.py runs that check in mutmut's copy
+    too: written back as one line, the block was gone and the stats run stopped."""
+    block = WITH_BLOCK.split("[tool.mutmut]\n")[1].split("also_copy")[0]
+    staged = mutation.stage_config(WITH_BLOCK, {"src/crapkit/digest.py": ("t",)}, ["src"])
+    table = mutation.tomllib.loads(staged)["tool"]["mutmut"]
+
+    assert block in staged
+    assert (table["paths_to_mutate"], table["source_paths"], table["also_copy"]) == (
+        ["src/crapkit/score.py"], ["src/crapkit/digest.py"], ["src"])
+
+
 def test_the_stage_config_replaces_only_the_mutmut_table():
     targets = {"tools/accuracy/retro.py": ("tests/accuracy/suite_strength/test_retro_tool.py",)}
     text = mutation.stage_config(PYPROJECT, targets, ["README.md", "docs", "tests", "tools"])
@@ -636,6 +666,37 @@ def test_the_weekly_suite_runs_the_push_tier_on_this_platform_only():
     assert env["CRAPKIT_ACCURACY_TIER"] == "push"
     assert "CRAPKIT_ACCURACY_COLLECT_ALL" not in env
     assert env["PYTHONDONTWRITEBYTECODE"] == "1"
+
+
+def _defined(node: str) -> bool:
+    """Whether a node id's file defines its test function."""
+    path, _, name = node.partition("::")
+    source = REPO / path
+    return source.is_file() and f"def {name.split('[')[0]}(" in source.read_text(encoding="utf-8")
+
+
+def test_every_copy_bound_test_exists_and_says_why_the_copy_fails_it():
+    assert [node for node in mutation.COPY_BOUND if not _defined(node)] == []
+    assert [node for node, why in mutation.COPY_BOUND.items() if len(why.split()) < 8] == []
+
+
+def test_the_calc_stage_leaves_out_the_copy_bound_tests_and_the_open_defects_tests(monkeypatch):
+    monkeypatch.setattr(mutation, "open_failures", lambda: ["tests/a.py::test_open"])
+
+    assert mutation.stage_deselected() == sorted(["tests/a.py::test_open", *mutation.COPY_BOUND])
+
+
+def test_the_calc_suite_reads_crapkit_source_as_written_from_the_stage_checkout():
+    """mutmut rewrites the stage's mutants/src with trampolines. Read from there,
+    test_spans_match_ast counted 10,599 defs for 2,198 and the stats run stopped,
+    judging none of 1,658 mutants; the stage checkout holds the same commit as
+    written, under the name the analysis src corpus reads."""
+    from accuracy.analysis_oracles import analysis_corpora
+
+    env = mutation.calc_env({})
+
+    assert env[analysis_corpora.SOURCE_ENV] == str(REPO / ".crapkit" / "accuracy" / "mutation"
+                                                   / "calc-stage" / "src" / "crapkit")
 
 
 @pytest.mark.process
@@ -1847,6 +1908,13 @@ def _open_ruling_beside_the_tables(tmp_path: Path, monkeypatch) -> None:
         f"{RULINGS_HEADER}\n{_ruling('A', 'tests/unit/t.py::f')}\n".encode())
 
 
+LEFT_OUT = sorted(["tests/unit/t.py::f", *mutation.COPY_BOUND])
+
+
+def _addopts_leave_out(env: dict, nodes: list[str]) -> bool:
+    return env["PYTEST_ADDOPTS"].endswith(" ".join(f"--deselect {node}" for node in nodes))
+
+
 def test_a_weekly_shard_deselects_the_open_failures_and_its_receipt_names_them(tmp_path, monkeypatch):
     monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
     recorder = _commands_on(tmp_path, monkeypatch, [_crap(KEYS[0], "killed")])
@@ -1854,8 +1922,8 @@ def test_a_weekly_shard_deselects_the_open_failures_and_its_receipt_names_them(t
 
     assert mutation.main(["weekly", "--shard", "1", "--of", "1"]) == 0
 
-    assert recorder.calls[0]["env"]["PYTEST_ADDOPTS"].endswith("--deselect tests/unit/t.py::f")
-    assert _saved("weekly-1.json")["deselected"] == ["tests/unit/t.py::f"]
+    assert _addopts_leave_out(recorder.calls[0]["env"], LEFT_OUT)
+    assert _saved("weekly-1.json")["deselected"] == LEFT_OUT
 
 
 def test_a_diff_run_deselects_the_open_failures(tmp_path, monkeypatch):
@@ -1867,7 +1935,7 @@ def test_a_diff_run_deselects_the_open_failures(tmp_path, monkeypatch):
 
     assert mutation.main(["diff", "--base", "b" * 40]) == 0
 
-    assert recorder.calls[0]["env"]["PYTEST_ADDOPTS"].endswith("--deselect tests/unit/t.py::f")
+    assert _addopts_leave_out(recorder.calls[0]["env"], LEFT_OUT)
 
 
 # --- the calc runs' scope: cli modules at their named functions, tools elsewhere --------------------
