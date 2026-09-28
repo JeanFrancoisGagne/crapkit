@@ -66,10 +66,11 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # ast's def count over src/crapkit: 2,145 at the program's base commit
 # (901c6986), 2,198 once the runtime guards (invariants.py and its call sites)
 # landed, 2,387 once the fixes to the Rust, Go, Zig and line-end readers, the
-# churn window, the coverage joins and the score arithmetic landed. A src change
-# that adds or drops a def moves it on purpose: recount with
+# churn window, the coverage joins and the score arithmetic landed, 2,388 once
+# the cognitive pass read its `?` rule through lizardcognitive._counts_question.
+# A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 2387
+SRC_DEFS = 2388
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
