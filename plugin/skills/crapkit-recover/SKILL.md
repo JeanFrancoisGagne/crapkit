@@ -21,7 +21,7 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 | "crapkit doctor: the plugin at PATH is version X, and the crapkit its hooks spawn (CLI_PATH) is Y", exit 1 | The plugin and the crapkit on PATH ship as separate artifacts and drifted apart; the line names which executable answered | Update whichever is behind: the CLI, or the plugin with your agent's refresh lines, in Claude Code `claude plugin marketplace update crapkit` then `claude plugin update crapkit@crapkit --scope user`, in Codex `codex plugin marketplace remove crapkit`, then the README's `codex plugin marketplace add` line at the CLI's release tag, then `codex plugin add crapkit@crapkit`. A second `claude plugin install` only answers that the plugin is already installed |
 | "crapkit doctor: checking PATH", then nothing | You named a directory above the plugin root and doctor found the install under it. The line says which tree the verdict is about | Nothing. Exit 0 means the plugin and the CLI agree |
 | "WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it", from `crapkit doctor` | The lane measures coverage exactly as before. What it cannot feed are the two checks that read a test-results file | Add the junit flag and `results_artifact` the WARN prints. Until then exit 8 can never fire for that lane's scopes: [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start) |
-| "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping)", from `crapkit verify` | The marks file predates stamping, so nothing can be compared against it | Run `crapkit coverage`, then `crapkit ratchet seed`: seed stamps the metric of the run it reads: [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp) |
+| "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping)", from `crapkit verify` | The marks file predates stamping, so nothing can be compared against it | Run `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`: seed stamps the metric of the run it reads: [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp) |
 | "crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact - add --cov-branch to the lane command to measure branches", from `crapkit coverage` | The lane scored on statements instead of branches, so CRAP is understated on branchy functions. A report carrying neither branches nor statements is still exit 5 | Add `--cov-branch` to the lane command, then rerun `crapkit coverage`: [docs: pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) |
 | "crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) - those files are skipped and the rest of the report is scored", from `crapkit coverage` | A plugin reporter, django or jinja templates, declares no code regions for those files. Every other file in the report scored. A report where NO file carries regions is still exit 5 | Nothing, unless you expected those files measured: [docs: a file the report carries no regions for](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-file-the-report-carries-no-regions-for) |
 | "warning: churn counts read only the commits this clone holds; this shallow clone does not hold every commit: set fetch-depth: 0 on the checkout or run git fetch --unshallow", from `crapkit worklist` or `crapkit next-item` (`brief` and `ratchet report` name mark ages too) | The checkout is a shallow clone, so churn, mark ages and repayments count only the commits it holds: one per file at depth 1. The command answered, and its JSON says `shallow: true` | Nothing blocks. Before trusting the ranking or a mark's age, set `fetch-depth: 0` on the checkout or run `git fetch --unshallow`: [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) |
@@ -91,7 +91,8 @@ Exit 3 fires before any lane runs, so nothing was measured and nothing was writt
 measures [crapkit-analysis=8 lizard=1.24.0]` is an upgrade, not a break. Shell cognitive
 complexity nests since analysis 8, so shell numbers moved and CRAP scores from the two
 versions are not comparable; ccn did not move. Run `crapkit coverage`, then
-`crapkit ratchet seed`: seed stamps the metric of the run it reads, so a seed from a run the
+`crapkit ratchet prune`, then `crapkit ratchet seed`: prune drops a mark whose key the new
+analysis moved, and seed stamps the metric of the run it reads, so a seed from a run the
 older crapkit measured keeps the old stamp and verify keeps refusing. When a failed verify
 pins the baseline, plain seed reads the pinned run. Name the newer one with
 `crapkit ratchet seed --baseline N`: on such a store a plain `crapkit verify` prints N in the
@@ -280,6 +281,14 @@ the driver to the uvx form, and merge again:
 
     git config merge.crapkit-ratchet.driver "uvx crapkit ratchet merge %O %A %B"
 
+An add/add conflict (`git status` shows `AA crapkit-ratchet.tsv`, as when two branches each
+ran a first `crapkit ratchet seed`) with the driver installed means a crapkit older than
+0.8.1 ran it. That driver read git's empty base as a legacy marks file and refused with
+`ratchet key identity versions differ; reconcile the legacy function mapping before merging`,
+which names no problem in either file. Run `git merge --abort`, upgrade crapkit, and merge
+again: 0.8.1 merges the two files as a union, each mark both sides hold at the lower value.
+
 Owner: [docs: the git merge driver](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-git-merge-driver).
 When the driver itself refuses (`marks from different metric versions cannot merge`),
-run `crapkit coverage`, then re-baseline one side with `crapkit ratchet seed`, and merge again.
+run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline one side with
+`crapkit ratchet seed`, and merge again.
