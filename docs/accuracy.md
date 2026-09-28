@@ -277,6 +277,12 @@ one is wrong before changing either:
 A strict xfail that starts passing fails the run: its bug is fixed. Change its
 rulings row to `fixed` with one value on both sides.
 
+A pytest process that ends with exit 1 and no summary had a crapkit call, run
+inside the process, stuck in C code past its bound
+(`tests/e2e/cli_in_process.py`). It ends on purpose, after writing every
+thread's stack to `in-process-hangs.log` under pytest's basetemp
+(`pytest-of-<user>/pytest-<n>/`, or its `popen-gw<N>` folder under xdist).
+
 ## Rulings
 
 Every place an oracle and crapkit read a construct differently has a row in its

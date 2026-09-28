@@ -134,6 +134,17 @@ def test_a_module_s_file_is_where_the_spawned_interpreter_loads_it(tmp_path):
     assert driver.spawned_file("probe_module") == (tmp_path / "probe_module.py").resolve()
 
 
+def test_a_stuck_in_process_call_leaves_its_stack_under_the_session_s_basetemp(tmp_path_factory):
+    """cli_in_process ends the process when a call stays stuck in C code past its
+    bound, after writing every thread's stack to the file log_hangs_to names. Left
+    at stderr, the stack went to the call's own descriptor 2 and died with the
+    process: mutmut's stats run in the calc stage ended with exit 1 and no word of
+    where, three times on one machine."""
+    hang_log = Path(drive._in_process_runner()._HANG_LOG.name)
+
+    assert hang_log == tmp_path_factory.getbasetemp() / "in-process-hangs.log"
+
+
 def test_every_spawn_keeps_the_working_directory_off_the_import_path():
     """`-P` (Python 3.11+): without it `-m` puts the call's cwd first on sys.path."""
     assert drive.crapkit_argv("py", ("-m",), ("inventory",)) == [

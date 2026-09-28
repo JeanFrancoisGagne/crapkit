@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from accuracy.kit import corpus_run, guards, oracles, repos, runlog, tiers
+from accuracy.kit import corpus_run, drive, guards, oracles, repos, runlog, tiers
 
 HERE = Path(__file__).resolve().parent
 _SNAPSHOT = pytest.StashKey[dict]()
@@ -95,6 +95,20 @@ def oracle():
     value from. A missing one fails the test; see kit/oracles.py."""
     tier = tiers.current_tier()
     return lambda name: oracles.require(name, tier)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def in_process_hang_log(tmp_path_factory):
+    """Where an in-process crapkit call stuck in C code past its bound leaves every
+    thread's stack before the process ends (tests/e2e/cli_in_process.py):
+    in-process-hangs.log under the session's basetemp, outside pytest's capture
+    and the call's own descriptor 2, as tests/e2e/conftest.py names it."""
+    runner = drive._in_process_runner()
+    path = tmp_path_factory.getbasetemp() / "in-process-hangs.log"
+    with open(path, "a", encoding="utf-8") as log:
+        runner.log_hangs_to(log)
+        yield path
+    runner.log_hangs_to(sys.__stderr__)
 
 
 @pytest.fixture(scope="session")
