@@ -29,7 +29,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
 
 from .cache import partition_by_cache, updated_cache
 from .errors import ToolError
-from .repotext import source_chars
+from .repotext import source_chars, unmarked_utf16
 from .lizardcognitive import LizardExtension as _Cognitive
 from .merge import FunctionRecord, UnanalyzableFile
 from .keys import bare_name
@@ -467,19 +467,29 @@ def _unread_reason(rel_path: str, unread: list) -> str:
             f"https://github.com/JeanFrancoisGagne/crapkit/issues")
 
 
-def _trusted_records(rel_path: str, functions) -> list[FunctionRecord]:
-    """Records for a file every function of which was read to its body.
+def _unmarked_reason(rel_path: str, order: str) -> str:
+    return (f"{rel_path}: the file reads as {order} with no byte-order mark (a NUL at every "
+            f"other byte), and the scorer reads UTF-16 only behind its mark, so the file is not "
+            f"scored. Save it as UTF-8, or as UTF-16 with its byte-order mark")
+
+
+def _trusted_records(rel_path: str, analysis) -> list[FunctionRecord]:
+    """Records for a file that was read, every function of it to its body.
 
     A file with a def the reader never finished takes the unanalyzable road,
     named on every run and scored as zero functions, not a ccn-1 reading of
     that def: scoring it would pass the gate on a number that means nothing,
     and ending the run over one file is what 0.7.1 stopped (_note_unanalyzable).
-    Every such def in the file is named at once.
+    Every such def in the file is named at once. So does a file `_Analyzer`
+    did not read because it is UTF-16 with no byte-order mark.
     """
-    unread = _unread_defs(functions)
+    order = getattr(analysis, "crapkit_unmarked", None)
+    if order:
+        return UnanalyzableFile(_unmarked_reason(rel_path, order))
+    unread = _unread_defs(analysis.function_list)
     if unread:
         return UnanalyzableFile(_unread_reason(rel_path, unread))
-    return _file_records(rel_path, functions)
+    return _file_records(rel_path, analysis.function_list)
 
 
 # --- how a source file's bytes become text -------------------------------------
@@ -516,6 +526,14 @@ def _trusted_records(rel_path: str, functions) -> list[FunctionRecord]:
 # function with nothing said, and the pre-commit gate passed a ccn-8 function
 # in it that it refused in UTF-8. No mark can name a function in such a file,
 # since none was ever scored, so reading it moves no recorded number.
+#
+# UTF-16 with no mark cannot be told from other bytes by a decode, and read as
+# UTF-8 or cp1252 it is the same NUL-separated text. `repotext.unmarked_utf16`
+# names it from those NULs, and `_Analyzer` hands such a file to no reader: it
+# is an unread file, which every gate fails on, naming it. Read as text, such
+# a file scored no function in any language but Objective-C, whose reader made
+# one garbled row out of the NULs, so no function a developer wrote moves and
+# the analysis version stays.
 #
 # repotext.source_chars holds the rule; this block is why it is the rule.
 
@@ -580,20 +598,32 @@ class _Analyzer(lizard.FileAnalyzer):
 
     Every path into lizard comes through here: a file on disk
     (`FileAnalyzer.__call__` reads it and calls this method), a staged blob and
-    a verified worker input.
+    a verified worker input. Text that is UTF-16 with no byte-order mark goes
+    to no reader: the result carries its byte order for `_trusted_records`.
     """
 
     def analyze_source_code(self, filename, code):
+        order = unmarked_utf16(code)
+        if order:
+            return _unread_utf16(filename, order)
         if reads_templates(lizard.get_reader_for(filename)):
             code = mask_templates(code)
         return super().analyze_source_code(filename, code)
+
+
+def _unread_utf16(filename: str, order: str):
+    """lizard's result for a file it read no function from, marked with the
+    byte order of the UTF-16 it holds with no byte-order mark."""
+    info = lizard.FileInformation(filename, 0, [])
+    info.crapkit_unmarked = order
+    return info
 
 
 def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:
     abs_path, rel_path = args
     try:
         analysis = _Analyzer(_extensions_for(rel_path))(abs_path)
-        return rel_path, _trusted_records(rel_path, analysis.function_list)
+        return rel_path, _trusted_records(rel_path, analysis)
     except Exception as exc:  # loud and counted, never fatal: see _note_unanalyzable
         return rel_path, UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
 
@@ -611,7 +641,7 @@ def analyze_source(rel_path: str, code: str, *, note: bool = True) -> list[Funct
     try:
         analyzer = _Analyzer(_extensions_for(rel_path))
         analysis = analyzer.analyze_source_code(rel_path, code)
-        records = _trusted_records(rel_path, analysis.function_list)
+        records = _trusted_records(rel_path, analysis)
     except Exception as exc:  # per-file, exactly as in analyze_one; the hook keeps going
         records = UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
     if isinstance(records, UnanalyzableFile):
@@ -627,14 +657,16 @@ def content_hash(path: Path) -> str:
 
 
 def fingerprint() -> str:
-    """cache=8: a byte cp1252 leaves undefined reads as a letter, where a cache=7
+    """cache=9: a UTF-16 file with no byte-order mark is an unread file, where a
+    cache=8 record holds it as no function and a warm run would keep it silent.
+    cache=8: a byte cp1252 leaves undefined reads as a letter, where a cache=7
     record read U+FFFD and split the identifier holding it. cache=7: a UTF-16
     file with a byte-order mark is decoded as UTF-16, where a cache=6 record
     holds it as no function. cache=6: a JavaScript-family template literal ends
     at its own closing backtick, which a cache=5 record's reader did not do;
     cache=5 added inline_body."""
     from . import __version__
-    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=8"
+    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=9"
 
 
 def _analysis_key(path: str, digest: str) -> str:
@@ -882,7 +914,7 @@ def _analyze_verified(job: tuple[str, str, str]) -> tuple[str, list[FunctionReco
     try:
         analyzer = _Analyzer(_extensions_for(relative))
         analysis = analyzer.analyze_source_code(relative, decode_source(raw))
-        return relative, _trusted_records(relative, analysis.function_list)
+        return relative, _trusted_records(relative, analysis)
     except Exception as exc:  # a parse refusal, unlike the read and hash above, is per-file
         return relative, UnanalyzableFile(f"lizard failed on {relative}: {exc}")
 

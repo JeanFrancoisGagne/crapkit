@@ -7,6 +7,8 @@ the repo's test directory named unless pytest's testpaths already covers it;
 by the runner package.json names, never by the language, and an npm workspace
 runs its own script. One comment line above each entry names the form chosen.
 """
+import pytest
+
 from crapkit.config import load_config_text
 from crapkit.scaffold import (LaneSpec, NpmPackage, detect_lanes, npm_package,
                               runner_workspaces, starter_toml)
@@ -81,6 +83,28 @@ def test_a_testpath_naming_somewhere_else_does_not_cover_it():
     text = starter_toml(PY, PY_LANES, tracked=LAYOUT, testpaths=("spec",))
 
     assert _entry(text, "pkg") == 'pkg = "python -m pytest tests -q -p no:cacheprovider"'
+
+
+@pytest.mark.parametrize("testpath", [".tests", "../tests", "..\\tests", "tests.", "/tests"])
+def test_a_testpath_spelling_another_directory_does_not_cover_the_test_dir(testpath):
+    """init read testpaths with `strip('./')`, which cuts every dot and slash
+    off both ends, so `.tests` and `../tests` read as tests/. It then wrote the
+    command without the `tests` positional and a comment saying testpaths
+    already collects tests/, which pytest does not."""
+    text = starter_toml(PY, PY_LANES, tracked=LAYOUT, testpaths=(testpath,))
+
+    assert _entry(text, "pkg") == 'pkg = "python -m pytest tests -q -p no:cacheprovider"'
+    assert "testpaths" not in _comment_above(text, "pkg")
+
+
+@pytest.mark.parametrize("testpath", ["./tests", "tests/", ".\\tests\\", "tests\\unit"])
+def test_a_testpath_the_full_suite_guard_reads_as_the_test_dir_covers_it(testpath):
+    """The spelling the full-suite guard compares testpaths in: `/` for `\\`,
+    no leading `./`, no trailing separator."""
+    text = starter_toml(PY, PY_LANES, tracked=LAYOUT, testpaths=(testpath,))
+
+    assert _entry(text, "pkg") == 'pkg = "python -m pytest -q -p no:cacheprovider"'
+    assert "testpaths" in _comment_above(text, "pkg")
 
 
 def test_with_no_tracked_files_known_the_whole_suite_form_names_no_directory():
