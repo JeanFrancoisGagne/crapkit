@@ -1058,13 +1058,16 @@ next time its file changes.
 
 - A `-and`, `-or`, `if` or loop inside a `$( )` subexpression in a double-quoted
   string counts. `"$($a -and $b)"` read ccn 1 and reads 2 now, as `$($a -and $b)`
-  does. The string rule also takes the subexpression whole, so the quotes inside it
-  pair among themselves: `"$(Get-Item "x{")"` ended at its second quote, left a `{`
-  in code, and the function around it had no row. The rule reads eight levels of
-  parens, so `"$(f (g (h ($a -and $b))))"` counts its `-and` and
-  `"$(f (g (h ("x{"))))"` hides no function. On a large consumer repo 6 of 339
-  PowerShell functions rise by 1 and no span moves. It shares the shell changes'
-  analysis-version bump.
+  does, and its cognitive score rises by the same decisions. An `if` or loop there
+  also opens its `nesting` level, as it does outside the string. The string rule
+  takes the subexpression whole, so the quotes inside it pair among themselves:
+  `"$(Get-Item "x{")"` ended at its second quote, left a `{` in code, and the
+  function around it had no row. The rule reads eight levels of parens, so
+  `"$(f (g (h ($a -and $b))))"` counts its `-and` and `"$(f (g (h ("x{"))))"` hides
+  no function. On a large consumer repo 6 of 339 PowerShell functions rise by 1 in
+  ccn and by 1 or 2 in cognitive (an `else` costs 1 too), one reads a level deeper
+  in `nesting`, and no span moves. It shares the shell changes' analysis-version
+  bump.
 
 ## 0.8.0 — 2026-09-23
 

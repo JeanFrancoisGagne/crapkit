@@ -334,9 +334,11 @@ version 11 below.
   went from 68 lines and ccn 26 to 140 lines and ccn 46.
 - A PowerShell expression inside a `$( )` subexpression in a double-quoted string
   counts: `"$($a -and $b)"` reads ccn 2 where it read 1, up to eight levels of
-  parens deep. Quotes inside the subexpression pair among themselves, so a function
-  that held `"$(Get-Item "x{")"` and had no row now has one, and can be over its
-  ceiling.
+  parens deep. Its cognitive score rises by the same decisions, and an `if` or loop
+  there opens a `nesting` level. On a large consumer repo 6 of 339 PowerShell
+  functions rose by 1 in ccn and 1 or 2 in cognitive, and one by a nesting level.
+  Quotes inside the subexpression pair among themselves, so a function that held
+  `"$(Get-Item "x{")"` and had no row now has one, and can be over its ceiling.
 
 ### Analysis version 11
 

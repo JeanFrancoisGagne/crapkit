@@ -423,6 +423,7 @@ SUBEXPRESSIONS = {
     "an -and": ('$x = "$($a -and $b)"', "$x = $($a -and $b)"),
     "text around it": ('$x = "v: $($a -or $b) end"', "$x = $($a -or $b)"),
     "an if": ('$x = "$(if ($a) { 1 })"', "$x = $(if ($a) { 1 })"),
+    "an if and its else": ('$x = "$(if ($a) { 1 } else { 2 })"', "$x = $(if ($a) { 1 } else { 2 })"),
     "one inside another": ('$x = "$(G "$($a -and $b)")"', "$x = $(G $($a -and $b))"),
     "four levels of parens": ('$x = "$(f (g (h ($a -and $b))))"',
                               "$x = $(f (g (h ($a -and $b))))"),
