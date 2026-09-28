@@ -136,6 +136,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tests"))
 
 from accuracy.kit import exact, goldens, oracles, surfaces, tiers  # noqa: E402
+from accuracy.kit import corpus_dir as full_corpus  # noqa: E402
 
 
 TOOL = "python tools/accuracy/change_control.py"
@@ -2120,15 +2121,26 @@ def summary(plan: Plan, now: Running) -> str:
                       *_changelog_lines(plan.request)])
 
 
-def regenerate(root: Path) -> str:
+def regenerate(root: Path, corpus: Path | None = None) -> str:
     """Rewrite the goldens with the corpus packet's regenerator, `python
-    tools/accuracy/regenerate.py goldens`; a note when this tree has none."""
+    tools/accuracy/regenerate.py goldens`, with `--corpus` when a built full
+    corpus is at hand, so goldens/full.tsv is remeasured too; a note when this
+    tree has no regenerator."""
     script = root / REGENERATE
     if not script.is_file():
         return f"{REGENERATE} is not in this tree; the goldens are judged as they are"
-    _process(f"{REGENERATE} goldens", [sys.executable, str(script), "goldens"],
+    full = ["--corpus", str(corpus)] if corpus else []
+    _process(f"{REGENERATE} goldens", [sys.executable, str(script), "goldens", *full],
              GIT_SECONDS * 15, root, _tests_env(root, {}))
     return ""
+
+
+def full_corpus_line(corpus: Path | None) -> str:
+    """What declare did with goldens/full.tsv, the golden only a built full corpus measures."""
+    if corpus:
+        return f"goldens/full.tsv remeasured from the full corpus at {corpus}"
+    return (f"goldens/full.tsv not remeasured ({full_corpus.missing()}). The nightly compares "
+            "it, so fetch the corpus before you declare a change that moves a metric")
 
 
 def worktree_changes(root: Path, base: str) -> frozenset[str]:
@@ -2151,13 +2163,16 @@ def _planned(root: Path, request: Request, base: str, now: Running, regenerated:
 
 
 def declare(root: Path, request: Request, base: str = "HEAD", regenerate_goldens: bool = True,
-            lizard: str | None = None) -> str:
-    """Regenerate, judge and record one change; the summary, or ChangeControlError."""
-    note = regenerate(root) if regenerate_goldens else ""
+            lizard: str | None = None, corpus: Path | None = None) -> str:
+    """Regenerate (goldens/full.tsv too when `corpus` names a built full corpus),
+    judge and record one change; the summary, or ChangeControlError."""
+    note = regenerate(root, corpus) if regenerate_goldens else ""
+    regenerated = regenerate_goldens and not note
     now = running(DirTree(root), lizard)
-    plan = _planned(root, request, base, now, regenerate_goldens and not note)
+    plan = _planned(root, request, base, now, regenerated)
     write_plan(root, plan, now)
-    return "\n".join(filter(None, (note, summary(plan, now))))
+    full = full_corpus_line(corpus) if regenerated else ""
+    return "\n".join(filter(None, (note, summary(plan, now), full)))
 
 
 
@@ -2185,7 +2200,8 @@ def _declare_main(argv: list[str]) -> int:
     calcs = parse_calcs(args.calcs, known_calcs(DirTree(args.repo)))
     request = Request(args.id, args.kind, tuple(calcs), args.reason, tuple(args.against_oracle),
                       _today())
-    print(declare(args.repo, request, args.base, not args.no_regenerate))
+    print(declare(args.repo, request, args.base, not args.no_regenerate,
+                  corpus=full_corpus.locate()))
     return 0
 
 

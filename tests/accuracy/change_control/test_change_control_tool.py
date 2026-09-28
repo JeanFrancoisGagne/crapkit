@@ -639,6 +639,41 @@ def test_declare_without_a_regenerator_says_it_judged_the_goldens_as_they_are(ma
         "an oracle"]
 
 
+def test_regenerate_hands_a_full_corpus_at_hand_to_the_regenerator(tmp_path, monkeypatch):
+    """goldens/full.tsv moves with every metric, and only `regenerate.py goldens
+    --corpus DIR` remeasures it. declare ran the regenerator without --corpus, so
+    the analysis-version-12 declaration left full.tsv on version 11's digests and
+    only the nightly's full-corpus check found out."""
+    (tmp_path / cc.REGENERATE).parent.mkdir(parents=True)
+    (tmp_path / cc.REGENERATE).write_text("", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(cc, "_process", lambda label, argv, *rest: calls.append(argv[2:]) or "")
+
+    assert (cc.regenerate(tmp_path, tmp_path / "corpus"), cc.regenerate(tmp_path)) == ("", "")
+    assert calls == [["goldens", "--corpus", str(tmp_path / "corpus")], ["goldens"]]
+
+
+def test_declare_says_whether_it_remeasured_the_full_corpus(tmp_path):
+    missing = cc.full_corpus_line(None)
+
+    assert cc.full_corpus_line(tmp_path) == (
+        f"goldens/full.tsv remeasured from the full corpus at {tmp_path}")
+    assert missing.startswith("goldens/full.tsv not remeasured (no full corpus: set ")
+    assert missing.endswith("The nightly compares it, so fetch the corpus before you declare "
+                            "a change that moves a metric")
+
+
+def test_the_declare_command_remeasures_the_full_corpus_the_kit_finds(tmp_path, monkeypatch,
+                                                                    capsys):
+    found = {}
+    monkeypatch.setattr(cc.full_corpus, "locate", lambda: tmp_path / "corpus")
+    monkeypatch.setattr(cc, "declare", lambda *args, corpus: found.setdefault("corpus", corpus))
+
+    assert cc.main(["declare", "C9", "--kind", "none", "--reason", "a relock",
+                    "--repo", str(tmp_path)]) == 0
+    assert found == {"corpus": tmp_path / "corpus"}
+
+
 # --- declare in a diff with more than one change -------------------------------------------------
 
 @pytest.mark.nightly

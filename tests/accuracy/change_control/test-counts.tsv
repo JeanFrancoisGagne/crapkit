@@ -1,6 +1,6 @@
 packet	tests
 analysis_oracles	259
-change_control	151
+change_control	154
 corpus_goldens	127
 coverage_oracles	93
 definitions	39

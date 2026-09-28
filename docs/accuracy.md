@@ -946,7 +946,12 @@ oracle, and stops on a move the oracle does not support ("crapkit now says 9,
 radon says 7"); `--against-oracle RULING` accepts one that a rulings row of that
 calc covers. It relocks the files, appends the `CHANGES.tsv` row and prints the
 CHANGELOG line the commit needs. `--no-regenerate` judges the goldens as they
-are, for a change that moves no crapkit output.
+are, for a change that moves no crapkit output. `goldens/full.tsv` pins the full
+corpus's exports, and `declare` remeasures it only when a built full corpus is
+at hand (`CRAPKIT_ACCURACY_CORPUS`, the accuracy image's `/corpus`, or the cache
+`python tools/accuracy/corpus.py fetch` fills). Without one it says so on its
+last line, and the nightly's full-corpus check still compares that file, so
+fetch the corpus before you declare a change that moves a metric.
 
 | Kind | For | The same diff also needs |
 |---|---|---|
