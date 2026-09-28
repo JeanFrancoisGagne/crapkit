@@ -295,6 +295,17 @@ ended at that `if`'s `}`. crapkit ends the comment at its line in `go`, `zig`, `
 `javascript`, `typescript`, `tsx`, `vue`, `swift` and `rust`. C, C++ and Objective-C keep
 the splice, because their preprocessor joins the lines before it reads any comment.
 
+**`cpp`, `objectivec` and `java` run on lizard's readers with crapkit's fixes on top.** A
+file none of the fixes touches reads exactly as lizard reads it. lizard hid every function
+after some constructs: a `<` comparison in a default template argument, a C++20
+requires-clause, a Java annotated local variable or an enum constant with a body. It named
+rows after an attribute, `int run(int a) __attribute__((cold))`, a macro,
+`STRINGLIB(find)(const char *s)`, or a return type, `int (*get(int k))(int)`, and it
+counted neither an unnamed parameter, `f(int*, char)`, nor an array, `f(int a[4])`.
+crapkit lists, names and counts them. The
+[upgrading notes](upgrading.md#next-analysis-version-c-c-objective-c-and-java-rows) list
+every row that moved.
+
 ### Scope matching
 
 **The deepest declared path wins.** Paths are tried longest first, and the first whose path

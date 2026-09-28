@@ -337,11 +337,11 @@ and leaves it off any scope a lane could still measure. So the 60-second start a
 unchanged on a Go, Rust or shell repo: `crapkit coverage` scores it with no lane at all,
 and that run is the baseline `worklist`, `next-item`, `ratchet seed` and `verify` read.
 
-Three readers are crapkit's own. lizard ships none for shell or PowerShell, so crapkit
-counts their functions itself. Its Rust reader scores a 7-arm `match` as ccn 2 (filed as
-lizard #494), so crapkit counts each non-wildcard arm like a C `case`. It also reads a
-Rust signature, a closure's empty `||`, a let-else and a `for` that is no loop the way
-Rust means them (see
+Shell, PowerShell and Rust run on crapkit's own readers. lizard ships none for shell or
+PowerShell, so crapkit counts their functions itself. Its Rust reader scores a 7-arm
+`match` as ccn 2 (filed as lizard #494), so crapkit counts each non-wildcard arm like a C
+`case`. It also reads a Rust signature, a closure's empty `||`, a let-else and a `for`
+that is no loop the way Rust means them (see
 [per-language
 gotchas](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#per-language-gotchas)),
 and retires each correction the day upstream fixes it. The cognitive column charges a
@@ -351,6 +351,12 @@ Go and Zig read through crapkit's subclasses of lizard's readers, which end a si
 where the language does. A function type such as `var cb func(int) error` opens no
 function, a result type's braces are not the body, and a parameter of function type counts
 once.
+
+C, C++, Objective-C and Java run on lizard's readers with crapkit's fixes on top. lizard
+hid every function after some constructs, named rows after an attribute or a macro, and
+left unnamed and array parameters out of `params`; the
+[per-language notes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#per-language-gotchas)
+list what crapkit reads differently.
 
 Expression arrows in arrays and argument lists are measured separately. In TypeScript,
 wrap an arrow body in parentheses when it contains `<` before a comma, such as
