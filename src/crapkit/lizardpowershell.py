@@ -87,20 +87,28 @@ KEYWORDS IN ANY CASE
     `function` for `Function` and `default` for `Default`, and `-or` for
     `-Or`, through `_Spelling`. A keyword word is lower-cased only where it
     starts a statement, because only there does PowerShell read it as a
-    keyword. Where it is a command, an argument or a member it gets a
-    capital, which no rule reads: after a pipe `foreach` is the
-    ForEach-Object alias, after a word or a parameter it is an argument
-    (`git switch main`, `Out-File -Encoding default`), and after a `.` it is
-    a member (`$xs.foreach({ })`). Written in lower case, each of those cost
-    a loop or a cognitive switch the capitalized spelling did not.
+    keyword. Where it is a hashtable key, a command, an argument or a member
+    it gets a capital, which no rule reads: `@{ if = 1 }` is a key, after a
+    pipe `foreach` is the ForEach-Object alias, in a command's arguments it is
+    an argument (`git switch main`, `Out-File -Encoding default`,
+    `Write-Output 'a' if`), and after a `.` it is a member
+    (`$xs.foreach({ })`). Written in lower case, each of those cost a loop or
+    a cognitive switch the capitalized spelling did not.
 
-    `-and`, `-or` and `-xor` come out in lower case wherever they stand, as
-    the operators they almost always are (see KNOWN LIMITS for the one place
-    they are not). They are no nesting
-    structure: an operator opens no level (Sonar Cognitive Complexity, App.
-    B2), so `if ($a -and $b -or $c)` reads nesting 1. As loop words to
-    lizard's ND column, each `-and` and `-or` added a level, and the condition
-    read 3.
+    A pipeline element's first token decides how the rest of it reads
+    (about_Parsing): a name or `&` starts a command, and every token after it
+    up to the element's end is an argument; anything else starts an
+    expression. Parentheses, `$( )`, `@( )` and a script block each hold
+    elements of their own. So in `if (Test-Path $a -or $b)` the `-or` is a
+    parameter name handed to Test-Path, which fails at run time, while in
+    `(Test-Path $a) -or $b` and `$a.Count -or $b` it is the operator.
+
+    `-and`, `-or` and `-xor` come out in lower case wherever they are
+    operators, and with a capital in a command's arguments. They are no
+    nesting structure: an operator opens no level (Sonar Cognitive
+    Complexity, App. B2), so `if ($a -and $b -or $c)` reads nesting 1. As
+    loop words to lizard's ND column, each `-and` and `-or` added a level, and
+    the condition read 3.
 
 TOKENIZER
     The added alternatives are tried ahead of lizard's shared C-family rules,
@@ -153,19 +161,16 @@ KNOWN LIMITS
       ccn 1.
     - A `$( )` inside a `@" "@` here-string is evaluated and counts nothing:
       the whole here-string is one token.
-    - A lower-case keyword word used as a hashtable key (`@{ if = 1 }`)
-      still counts, because a key stands where a statement starts. So does
-      an argument on a line a backtick continues, since the reader does not
-      look past the backtick for the command word before it.
+    - A `}` ends a statement to this reader, so an operator or a keyword word
+      right after a script block argument (`Get-Thing { } -and $b`) still
+      counts, although PowerShell hands it to Get-Thing.
+    - A member name glued to an operator with no space (`$o.Name-and $b`)
+      reads as one hyphenated word, the way `Verb-Noun` does, so the operator
+      counts nothing.
     - A here-string is recognized by `@"` and `"@` alone. PowerShell also
       requires the opener to end its line and the terminator to start one;
       this reader does not check either, so `@"` inside an expression opens a
       body that runs to the next `"@`.
-    - `-and`, `-or` and `-xor` right after a command's name or arguments
-      still count. PowerShell passes them to the command as parameters:
-      `if (Test-Path $a -or $b)` hands `-or` to Test-Path, which fails at run
-      time, while `$x.Count -or $b` and `(Test-Path $a) -or $b` are the
-      operator. The point matches what such a line's author meant.
     - A class's methods get no row, so their complexity is not gated.
 
 REGISTRATION
@@ -244,14 +249,42 @@ _KEYWORDS = frozenset({
     "function", "filter", "workflow", "configuration", "class", "enum"})
 
 # The logical operators spelled as words, as the rules read them: in lower case
-# wherever they stand (KNOWN LIMITS names the one place they are no operator).
+# wherever they are operators, which is anywhere but a command's arguments.
 _OPERATORS = frozenset({"-and", "-or", "-xor"})
 
+# An assignment takes a statement on its right (`$x = switch ...`), and in a
+# hashtable it ends the key: what follows is the entry's value.
+_ASSIGNMENTS = frozenset({"=", "+=", "-=", "*=", "/=", "%=", "??="})
+
 # What a statement can follow on the same line: `(` opens `$(...)` and
-# `@(...)`, an assignment takes a statement on its right (`$x = switch ...`),
-# and `""` is the start of the file.
-_STATEMENT_OPENERS = frozenset({"", ";", "{", "}", "(", "=", "+=", "-=", "*=", "/=",
-                                "%=", "??="})
+# `@(...)`, and `""` is the start of the file.
+_STATEMENT_OPENERS = frozenset({"", ";", "{", "}", "("}) | _ASSIGNMENTS
+
+# What starts the next element of a pipeline: a pipe, and PowerShell 7's chains.
+_PIPES = frozenset({"|", "&&", "||"})
+
+# How the rest of a pipeline element reads, which its first token decides
+# (about_Parsing): a name or the call operator `&` starts a command, and every
+# token after it is an argument; anything else starts an expression.
+_COMMAND = "command"
+_EXPRESSION = "expression"
+_COMMAND_START = re.compile(r"[A-Za-z_]|&\Z")
+
+# Statement words that name no command. `param` takes its block, and after it
+# the line may hold statements. `return`, `throw` and `exit` take a pipeline,
+# so the token after them decides, as the token after a line-ending backtick does.
+_STATEMENT_WORDS = _KEYWORDS | {"param"}
+_BEFORE_A_PIPELINE = frozenset({"return", "throw", "exit", "`"})
+
+# The words that go on with a statement after its `}`: an `else` there belongs
+# to a hashtable value's `if`, and is no key.
+_CONTINUES = frozenset({"else", "elseif", "catch", "finally", "while", "until"})
+
+# Where a keyword or an operator word stands, which decides its spelling.
+_STATEMENT = "statement"   # a statement's first word: a keyword
+_KEY = "key"               # a hashtable key
+_ARGUMENT = "argument"     # in a command's arguments
+_INSIDE = "inside"         # anywhere else
 
 # What keeps the next line in the same statement: a backtick escapes the line
 # break, and a pipe hands the next line to a command.
@@ -295,22 +328,62 @@ def _takes_no_keyword(previous: str) -> bool:
     return _is_name(previous) and previous not in _KEYWORDS
 
 
+class _Frame:
+    """The inside of one open bracket: whether it holds a hashtable's entries,
+    and how its current pipeline element reads (None until a token decides)."""
+
+    __slots__ = ("keys", "mode")
+
+    def __init__(self, keys: bool = False):
+        self.keys = keys
+        self.mode = None
+
+
+def _element_mode(token: str, after_pipe: bool) -> str | None:
+    """How the pipeline element that `token` starts reads on.
+
+    After a pipe any word is a command, `foreach` (ForEach-Object's alias)
+    included; at a statement's start a keyword or `param` is none. None
+    leaves it to the next token.
+    """
+    lower = token.lower()
+    if lower in _BEFORE_A_PIPELINE:
+        return None
+    statement_word = lower in _STATEMENT_WORDS and not after_pipe
+    return _COMMAND if _COMMAND_START.match(token) and not statement_word else _EXPRESSION
+
+
+def _is_key(frame: _Frame, previous: str, word: str) -> bool:
+    """Whether a statement's first word is a hashtable key: in a hashtable,
+    anywhere but an entry's value, and not an `else` or a `catch` going on
+    with the value's statement after its `}`."""
+    if not frame.keys or previous in _ASSIGNMENTS:
+        return False
+    return previous != "}" or word.lower() not in _CONTINUES
+
+
 class _Spelling:
     """The spelling every rule reads: keywords and operators in lower case.
 
     Sees the raw token stream, whitespace and comments included, so a line
     break is a token here. A keyword word that starts a statement is spelled
     in lower case, because only there does PowerShell read it as a keyword.
-    One that is a command, an argument or a member is spelled with a capital,
-    which no rule reads. Anywhere else it keeps the case it is written in:
-    `[switch]` stays as the header parameter list, and so the long name, has
-    always spelled it.
+    One that is a hashtable key, a command, an argument or a member is spelled
+    with a capital, which no rule reads. Anywhere else it keeps the case it is
+    written in: `[switch]` stays as the header parameter list, and so the long
+    name, has always spelled it. An operator word is spelled in lower case,
+    except in a command's arguments, where it is a parameter name.
+
+    A stack of `_Frame`s, one per open bracket, knows which pipeline elements
+    are commands: `Test-Path $a -or $b` inside `if (...)` is one, and
+    `(Test-Path $a) -or $b` is an expression holding one.
     """
 
     def __init__(self):
         self.previous = ""       # the last code token, as spelled
         self.new_line = False    # a line break since then
         self.head = ""           # the current statement's first token, as spelled
+        self.frames = [_Frame()]
 
     def __call__(self, token: str) -> str:
         if token.isspace():
@@ -319,23 +392,51 @@ class _Spelling:
         if token.startswith(_COMMENT_OPENERS):
             return token
         statement = _begins_statement(self.previous, self.new_line)
-        spelled = self._spell(token, statement)
+        spelled = self._spell(token, self._place(token, statement))
         if statement:
             self.head = spelled
+        self._follow(spelled, statement)
         self.previous, self.new_line = spelled, False
         return spelled
 
-    def _spell(self, token: str, statement: bool) -> str:
+    def _place(self, token: str, statement: bool) -> str:
+        frame = self.frames[-1]
+        if statement:
+            return _KEY if _is_key(frame, self.previous, token) else _STATEMENT
+        return _ARGUMENT if frame.mode == _COMMAND else _INSIDE
+
+    def _spell(self, token: str, place: str) -> str:
         lower = token.lower()
         if lower in _OPERATORS:
-            return lower
-        if lower not in _KEYWORDS:
-            return token
-        if statement:
-            return lower
-        if self._names_no_keyword():
-            return token[:1].upper() + token[1:]
+            return token[:2].upper() + token[2:] if place == _ARGUMENT else lower
+        if lower in _KEYWORDS:
+            return self._keyword(token, place)
         return token
+
+    def _keyword(self, token: str, place: str) -> str:
+        if place == _STATEMENT:
+            return token.lower()
+        if place == _INSIDE and not self._names_no_keyword():
+            return token
+        return token[:1].upper() + token[1:]
+
+    def _follow(self, token: str, statement: bool) -> None:
+        """Let an element's first token decide how the element reads, then
+        open or close the bracket the token is."""
+        frame = self.frames[-1]
+        after_pipe = self.previous in _PIPES
+        if statement or after_pipe or frame.mode is None:
+            frame.mode = _element_mode(token, after_pipe)
+        self._nest(token)
+
+    def _nest(self, token: str) -> None:
+        """Open a frame at a bracket, a hashtable's at `@{`, and close one at
+        its closer. A stray closer leaves the outermost frame."""
+        change = _DEPTH_CHANGE.get(token, 0)
+        if change > 0:
+            self.frames.append(_Frame(keys=token == "{" and self.previous == "@"))
+        elif change < 0 and len(self.frames) > 1:
+            self.frames.pop()
 
     def _names_no_keyword(self) -> bool:
         """Whether the keyword word read now is a command, an argument or a

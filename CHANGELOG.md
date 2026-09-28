@@ -1329,6 +1329,14 @@ each marks file re-seed once.
   `Write-Output if`. Written in lower case, each cost a loop, a condition or a
   cognitive switch that the capitalized spelling did not.
 - `-And`, `-OR` and `-Xor` count as their lower-case spelling does.
+- `-and`, `-or` and `-xor` in a command's arguments count nothing, since PowerShell
+  reads them there as parameter names: `if (Test-Path $a -or $b)` hands `-or` to
+  Test-Path, so it costs 1 for the `if` where it cost 2. `(Test-Path $a) -or $b` still
+  counts the operator.
+- A keyword word that is a hashtable key counts nothing: `@{ if = 1; while = 2 }` cost
+  2. Neither does one in a command's arguments after a string, a `)` or a
+  line-continuing backtick (`Write-Output 'a' if`), which only a word, a parameter or a
+  pipe right before it made an argument.
 - PowerShell 7's pipeline chains `&&` and `||` count one decision each. They counted
   nothing.
 - `??` and `??=` count one decision each. `??` read as two `?` ternaries and cost 2.

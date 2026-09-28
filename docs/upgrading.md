@@ -362,8 +362,10 @@ go, and their marks are left under names the run no longer has.
   `"$(Get-Item "x{")"` and had no row now has one, and can be over its ceiling.
 - PowerShell keywords count in any case where a statement starts: a capitalized `IF`,
   `-Or` or `ForEach` now costs what its lower-case spelling costs, and a `Default` arm
-  is free. A keyword word that is a command, an argument or a member costs nothing in
-  any case (`$xs | foreach { }`, `git switch main`), and neither does the `?` in `$?`.
+  is free. A keyword word that is a hashtable key, a command, an argument or a member
+  costs nothing in any case (`@{ if = 1 }`, `$xs | foreach { }`, `git switch main`),
+  and neither does the `?` in `$?`. `-and`, `-or` and `-xor` in a command's arguments
+  are its parameters and cost nothing: `if (Test-Path $a -or $b)` reads 2 where it read 3.
   PowerShell 7's `&&`, `||`, `??`, `?.` and `?[` count once each. Gated `ccn` can rise
   or fall. `-and` and `-or` stop adding a nesting level.
 - A PowerShell switch arm costs one point whatever its pattern or subject holds, and

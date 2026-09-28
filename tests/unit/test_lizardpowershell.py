@@ -615,12 +615,14 @@ def test_a_scoped_or_dotted_name_is_one_function(name):
     "$f = $o.filter",
     "$h = @{ filter = '*.txt'; class = 'x' }",
     "Write-Output function workflow",
+    "Set-Thing { filter = '*.txt'; class = 'x' }",
 ])
 def test_a_declaring_word_that_declares_nothing_opens_nothing(line):
     """A declaring word declares only where it starts a statement and a name
-    follows it. A native option, a member, a hashtable key and a bare argument
-    opened a declaration: the function around the word lost its row, and a
-    phantom row named after a later token could take its place."""
+    follows it. A native option, a member, a hashtable key, a bare argument
+    and a word with no name after it opened a declaration: the function around
+    the word lost its row, and a phantom row named after a later token could
+    take its place."""
     code = ("function Invoke-Build($x) {\n    if ($x) {\n        " + line + "\n    }\n"
             "    return 0\n}\n\nfunction Get-Next($y) {\n    return $y\n}\n")
 
@@ -921,12 +923,85 @@ def test_a_lower_case_keyword_word_that_names_a_command_an_argument_or_a_member_
     ("function Get-A($a) {\n    Write-Output $a\n    foreach ($x in $a) { $x }\n}\n", 2),
 ])
 def test_a_keyword_that_starts_a_statement_after_a_bracket_or_a_backtick_still_counts(code, ccn):
-    """The argument rule reads only a word, a parameter, a pipe or a dot
-    before the keyword. A `)` ending a param() block and a backtick escaping
-    the line break both leave the keyword starting its statement."""
+    """`param` names no command, so a `)` ending its block leaves the keyword
+    after it starting a statement. So does a backtick after an assignment:
+    the token after it starts the value's statement."""
     (record,) = analyze_source("probe.ps1", code)
 
     assert record.ccn_std == ccn
+
+
+def _one_function(body):
+    (record,) = analyze_source("probe.ps1", f"function Get-A($a, $b, $x) {{\n    {body}\n}}\n")
+    return record.ccn_std, record.ccn, record.cognitive
+
+
+# (body, ccn, cognitive). Every ccn is what Windows PowerShell 5.1's parser
+# reads: a CommandParameterAst decides nothing, a BinaryExpressionAst one point.
+OPERATORS_AS_PARAMETERS = [
+    ("if (Test-Path $a -or $b) { 1 }", 2, 1),
+    ("$r = Get-Item $a -and $b", 1, 0),
+    ("Write-Output $a -and $b", 1, 0),
+    ("if (Test-Path (Join-Path $a b) -or $b) { 1 }", 2, 1),
+    ("Get-Item $a -and $b | Out-Null", 1, 0),
+    ("& $x $a -or $b", 1, 0),
+    ("Write-Output $a `\n        -and $b", 1, 0),
+    ("$h = @{ k = Get-Item $a -or $b }", 1, 0),
+    ("if (Test-Path [string]$a -xor $b) { 1 }", 2, 1),
+    ("if ($a) { 1 } elseif (Get-Item $b -or $a) { 2 }", 3, 2),
+    # The operator in all of these, as PowerShell reads them too.
+    ("if ((Test-Path $a) -or $b) { 1 }", 3, 2),
+    ("return $a -and $b", 2, 1),
+    ("throw $a -or $b", 2, 1),
+    ("if ($a.Count -or $b) { 1 }", 3, 2),
+    ("$ok = $a -and $b", 2, 1),
+    ("Write-Output ($a -and $b)", 2, 1),
+    ("Get-Item $a | Where-Object { $_.A -and $_.B }", 2, 1),
+    ("if (1 -and $b) { 1 }", 3, 2),
+    ("if ([string]::IsNullOrEmpty($a) -and $b) { 1 }", 3, 2),
+    ("if (-not (Test-Path $a) -and $b) { 1 }", 3, 2),
+    ("if ((Test-Path $a) -and\n        (Test-Path $b)) { 1 }", 3, 2),
+    ("$y = @(Get-Item $a).Count -gt 0 -and $b", 2, 1),
+]
+
+
+@pytest.mark.parametrize("body, ccn, cognitive", OPERATORS_AS_PARAMETERS)
+def test_an_operator_word_in_a_commands_arguments_is_a_parameter(body, ccn, cognitive):
+    """Once a pipeline element starts with a command's name, PowerShell reads
+    what follows as that command's arguments: `Test-Path $a -or $b` hands
+    `-or` to Test-Path as a parameter name, and the line fails at run time
+    rather than deciding anything. Parentheses, `$( )` and a script block
+    start a new element, so `(Test-Path $a) -or $b` is the operator. Before,
+    every `-and`, `-or` and `-xor` counted wherever it stood."""
+    assert _one_function(body) == (ccn, ccn, cognitive)
+
+
+# (body, ccn, cognitive), ccn as Windows PowerShell 5.1's parser reads it.
+KEYWORDS_AS_KEYS_OR_ARGUMENTS = [
+    ("$h = @{ if = 1; while = 2 }", 1, 0),
+    ("@{\n        foreach = 1\n        default = 2\n    }", 1, 0),
+    ("[ordered]@{ switch = 1; for = 2 }", 1, 0),
+    ("@{ a = @{ catch = 1 } }", 1, 0),
+    ("Write-Output $x `\n        foreach", 1, 0),
+    ("Write-Output 'a' if", 1, 0),
+    ("Write-Output (1) while", 1, 0),
+    # A statement all the same: a hashtable's value, and whatever follows it.
+    ("@{ a = if ($x) { 1 } else { 2 } }", 2, 2),
+    ("$h = @{ a = 1 }; if ($x) { 1 }", 2, 1),
+    ("@{ a = { if ($x) { 1 } } }", 2, 1),
+    ("switch ($x) { a { 1 } default { 2 } }", 2, 1),
+    ("switch ($x) {\n        a { 1 }\n        default { 2 }\n    }", 2, 1),
+]
+
+
+@pytest.mark.parametrize("body, ccn, cognitive", KEYWORDS_AS_KEYS_OR_ARGUMENTS)
+def test_a_keyword_word_that_is_a_hashtable_key_or_an_argument_decides_nothing(body, ccn, cognitive):
+    """A hashtable key stands where a statement would start (after `@{`, `;`
+    or a line break) and is still a key: `@{ if = 1 }` has no `if` statement.
+    In a command's arguments a keyword word is an argument whatever came just
+    before it, a string, a `)` or a backtick that continues the line; only a
+    word, a parameter or a pipe right before it made it one."""
+    assert _one_function(body) == (ccn, ccn, cognitive)
 
 
 def test_a_dotted_function_name_keeps_the_spelling_of_a_keyword_part():

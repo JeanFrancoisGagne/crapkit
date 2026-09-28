@@ -204,7 +204,11 @@ of `for ((;;))` is no case arm.
 switch as 13, not 2. Keywords count in any case, as PowerShell reads them: `If (` is an
 `if` and `Default` is the free arm. A keyword word that is a command, an argument or a
 member is no keyword in any case: `$xs | foreach { }` is the ForEach-Object alias and
-`git switch main` runs git, so neither costs anything.
+`git switch main` runs git, so neither costs anything, and a hashtable key such as
+`@{ if = 1 }` is a key. `-and`, `-or` and `-xor` in a command's arguments are that
+command's parameters, as PowerShell reads them: `if (Test-Path $a -or $b)` hands `-or`
+to Test-Path, which fails at run time, so only the `if` counts. Write
+`(Test-Path $a) -or $b` for the operator.
 
 **`powershell` gives a class's methods no row.** Their decisions count toward no function,
 not toward the function that declares the class, so nothing gates a method's complexity.
