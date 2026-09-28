@@ -144,19 +144,23 @@ def _readme_sentence(fragment: str) -> str:
     return text[text.rfind(". ", 0, start) + 2:text.index(". ", start) + 1]
 
 
-def test_the_readme_names_every_reader_that_gates_each_arm(tmp_path):
+def _columns(tmp_path: Path, name: str, source: str) -> tuple:
+    (rec,) = _records(tmp_path, name, source)
+    return rec.ccn_std, rec.ccn_mod, rec.ccn
+
+
+@pytest.mark.parametrize("lang", sorted(SEVEN_ARMS))
+def test_the_readme_names_every_reader_that_gates_each_arm(tmp_path, lang):
     """README's Languages section names the readers whose arms cost a point in
     the modified column too, with a seven-arm example that gates at 8 where a
     C switch gates at 2. A reader left out reads to a user as lizard -m."""
     sentence = _readme_sentence("in the modified column too")
-    measured = {lang: _records(tmp_path, *case)[0] for lang, case in SEVEN_ARMS.items()}
-    (c,) = _records(tmp_path, "s.c", C_SEVEN_CASES)
 
-    assert {lang: (r.ccn_std, r.ccn_mod, r.ccn) for lang, r in measured.items()} == \
-        dict.fromkeys(SEVEN_ARMS, (8, 8, 8))
-    assert (c.ccn_std, c.ccn_mod, c.ccn) == (8, 2, 2)
-    assert [lang for lang in SEVEN_ARMS if lang not in sentence] == []
-    assert "gates at `ccn` 8" in sentence and "seven cases is 2" in sentence
+    assert _columns(tmp_path, *SEVEN_ARMS[lang]) == (8, 8, 8)
+    assert _columns(tmp_path, "s.c", C_SEVEN_CASES) == (8, 2, 2)
+    assert lang in sentence
+    assert "gates at `ccn` 8" in sentence
+    assert "seven cases is 2" in sentence
 
 
 def test_analyze_one_reads_each_file_in_a_single_lizard_pass(tmp_path, monkeypatch):
