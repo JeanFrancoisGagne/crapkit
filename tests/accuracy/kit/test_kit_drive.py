@@ -97,6 +97,38 @@ def test_the_store_is_read_with_sqlite3_and_never_written(seeded):
         driver.store("delete from functions")
 
 
+def _holding_a_crapkit_package(root: Path) -> Path:
+    """A tree like crapkit's own source measured as a corpus: a crapkit/ package
+    at its top, here one that stops any interpreter that imports it."""
+    package = root / "crapkit"
+    package.mkdir()
+    for name in ("__init__.py", "__main__.py"):
+        (package / name).write_text("raise SystemExit('the tree copy ran')\n", encoding="utf-8")
+    return root
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_a_spawned_call_runs_the_crapkit_under_test_not_the_tree_s_copy(tmp_path):
+    result = drive.Driver(_holding_a_crapkit_package(tmp_path), spawn=True).run("--version")
+
+    assert (result.code, "the tree copy ran" in result.stderr) == (0, False), result.stderr
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_an_mcp_session_runs_the_crapkit_under_test_not_the_tree_s_copy(tmp_path):
+    [result] = drive.Driver(_holding_a_crapkit_package(tmp_path)).mcp([("no_such_tool", {})])
+
+    assert "no_such_tool" in result["content"][0]["text"]
+
+
+def test_every_spawn_keeps_the_working_directory_off_the_import_path():
+    """`-P` (Python 3.11+): without it `-m` puts the call's cwd first on sys.path."""
+    assert drive.crapkit_argv("py", ("-m",), ("inventory",)) == [
+        "py", "-P", "-m", "crapkit", "inventory"]
+
+
 def test_the_driver_refuses_a_test_without_the_process_marker(tmp_path):
     with pytest.raises(AssertionError, match="spawns the crapkit CLI: mark it"):
         drive.Driver(tmp_path).run("--version")

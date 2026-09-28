@@ -83,6 +83,15 @@ def child_env(extra: dict | None = None, python: str = sys.executable) -> dict:
     return env
 
 
+def crapkit_argv(python: str, launch: tuple[str, ...], args: tuple[str, ...]) -> list[str]:
+    """A spawned crapkit call. `-P` (Python 3.11+) keeps the call's cwd off
+    sys.path: the tree under measurement can hold a crapkit/ package, as
+    crapkit's own source does when a check measures it, and `-m` would import
+    that copy in place of the crapkit under test (under mutmut, a copy whose
+    trampolines load mutmut's settings from the tree and stop the child)."""
+    return [python, "-P", *launch, "crapkit", *args]
+
+
 class Driver:
     """`launch` is what a spawned call puts between the interpreter and `crapkit`:
     ("-m",) runs it plainly; ("-m", "coverage", "run", "--rcfile=RC", "-m") runs
@@ -102,7 +111,7 @@ class Driver:
     def _call(self, args: tuple[str, ...], stdin: str | None):
         tiers.require_process("the crapkit CLI")
         if self.spawn:
-            argv = [self.python, *self.launch, "crapkit", *args]
+            argv = crapkit_argv(self.python, self.launch, args)
             return hang_guard.run(argv, cwd=self.root, env=self.env, input=stdin, text=True,
                                   encoding="utf-8", errors="replace")
         return _in_process_runner().run(self.root, args, env=self.env, stdin=stdin,
@@ -128,7 +137,7 @@ class Driver:
                   json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"})]
         frames += [_frame(number, "tools/call", {"name": name, "arguments": arguments})
                    for number, (name, arguments) in enumerate(calls, start=1)]
-        done = mcp_stdio.run([self.python, "-m", "crapkit", "mcp", "--repo", str(self.root)],
+        done = mcp_stdio.run(crapkit_argv(self.python, ("-m",), ("mcp", "--repo", str(self.root))),
                              cwd=self.root, frames="\n".join(frames), env=self.env,
                              encoding="utf-8", errors="replace")
         return _results(done.stdout, len(calls))
