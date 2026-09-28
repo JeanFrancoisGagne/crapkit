@@ -36,9 +36,12 @@ HERE = shells.here()
 ENCODED = "powershell -NoProfile -NonInteractive -EncodedCommand "
 ARGV_SOURCES = ("report", "gate", "scoped")
 STUB = "import json, sys\n\n\ndef main():\n    print(json.dumps(sys.argv[1:]))\n    return 0\n"
-# (shell, printed source) pairs a defect breaks on Windows.
-DEFECTS = {("bash", "next-step"): "CG3", ("powershell", "next-step-space"): "CG4",
-           ("pwsh", "next-step-space"): "CG4"} if sys.platform == "win32" else {}
+# (shell, printed source) pairs whose printed path the shell's own quoting decides:
+# Git Bash reads a bare backslash as an escape (CG3), and PowerShell reads a quoted word
+# that starts a line as a string (CG4). Both broke on Windows, where a ruling pins them.
+QUOTING = {("bash", "next-step"): "CG3", ("powershell", "next-step-space"): "CG4",
+           ("pwsh", "next-step-space"): "CG4"}
+RULED = QUOTING if sys.platform == "win32" else {}
 CHECK_CLEARED = {
     "bash": "export {v}=set; {line}; [ -z \"${{{v}+x}}\" ] && echo UNSET || echo SET",
     "cmd": "set {v}=set& {line}& if defined {v} (echo SET) else (echo UNSET)",
@@ -240,24 +243,38 @@ def test_brief_commands_spell_the_console_script(run, source):
     assert [text for text in brief if not spells_the_console_script(text)] == []
 
 
-def _step_params():
-    params = []
-    for shell in HERE:
-        for source in ("next-step", "next-step-space"):
-            ruling = DEFECTS.get((shell, source))
-            mark = rulings.applies(ruling) if ruling else None
-            marks = [mark] if isinstance(mark, pytest.MarkDecorator) else []
-            params.append(pytest.param(shell, source, marks=marks, id=f"{source}-{shell}"))
-    return params
+def _step_param(shell: str, source: str):
+    ruling = RULED.get((shell, source))
+    mark = rulings.applies(ruling) if ruling else None
+    marks = [mark] if isinstance(mark, pytest.MarkDecorator) else []
+    return pytest.param(shell, source, marks=marks, id=f"{source}-{shell}")
 
 
-@pytest.mark.parametrize("shell, source", _step_params())
+def _step_params(quoting: bool) -> list:
+    """The next-step pairs QUOTING names, or the others, for the shells here."""
+    pairs = [(shell, source) for shell in HERE for source in ("next-step", "next-step-space")]
+    return [_step_param(*pair) for pair in pairs if (pair in QUOTING) == quoting]
+
+
+@pytest.mark.parametrize("shell, source", _step_params(quoting=False))
 def test_the_next_step_a_refusal_prints_runs_in_every_shell(pasted, shell, source):
     """R127: `<python> -m crapkit coverage`, printed when `python -m crapkit` started
     crapkit, runs where it is read and no `crapkit` command is installed: from a
-    plain interpreter path and from one whose directory name holds a space."""
+    plain interpreter path and from one whose directory name holds a space. The
+    pairs whose path the shell's own quoting decides are the next check's, so a
+    replay at R127's fix does not also ask for the CG3 and CG4 fixes that came later."""
     _, result = _only(pasted(shell), source)
-    ruling = DEFECTS.get((shell, source))
+
+    assert (result.code, _argv(result)) == (0, ["coverage"])
+
+
+@pytest.mark.parametrize("shell, source", _step_params(quoting=True))
+def test_the_next_step_survives_the_shell_s_own_quoting(pasted, shell, source):
+    """CG3 and CG4: the next step runs in Git Bash, which reads a bare backslash as an
+    escape, and in PowerShell from an interpreter path that holds a space, where a
+    quoted word that starts a line is a string."""
+    _, result = _only(pasted(shell), source)
+    ruling = RULED.get((shell, source))
     if ruling:
         rulings.pin_ruling(ruling, crapkit=f"exit {result.code}", oracle="exit 0")
 
