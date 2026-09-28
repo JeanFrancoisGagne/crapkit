@@ -538,7 +538,7 @@ def _lane_dir(root: str | os.PathLike | None, cwd: str) -> Path | None:
 _NAME_CHARS = frozenset('<>:"/\\|?*')
 _DEVICE_NAMES = frozenset({"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
                            *(f"{port}{n}" for port in ("COM", "LPT")
-                             for n in (*"0123456789", "¹", "²", "³"))})
+                             for n in (*"0123456789", "\u00b9", "\u00b2", "\u00b3"))})
 
 
 def _lane_name(name: str) -> None:
