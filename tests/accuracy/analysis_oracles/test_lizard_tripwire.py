@@ -9,17 +9,18 @@ oracles/lizard_tripwire.py reads the same files through lizard's own API in a
 process that imports no crapkit. The check pairs rows by (path, start,
 long_name):
 
-- Swift: every row and every column (start, end, nloc, params, ccn_std, ccn_mod,
-  nesting) equals stock lizard's. C, C++, Objective-C and Java run on crapkit's
-  readers (crapkit.lizardclike, crapkit.lizardjava), which find, name and count
-  what stock lizard misses, so they are patches.
-- The languages in PATCHES: a difference passes only when the patch covers its
-  column and its source shows the patch's construct. Each patch must still
-  excuse at least one probe difference, so a patch upstream has made redundant
-  shows up here.
+- Every admitted language now runs on a reader crapkit wrote or corrected, so
+  each is in PATCHES: a difference passes only when a patch covers its column
+  and its source shows the patch's construct. Swift, the C family, Java, Go and
+  Zig run on crapkit's readers, which find, name and count what stock lizard
+  misses, so their patches excuse every column. Rust and the JavaScript family
+  excuse a difference only near the constructs crapkit reads differently.
+- Each patch must still excuse at least one probe difference, so a patch
+  upstream has made redundant shows up here.
+- A language no patch names excuses nothing.
 
-Push reads the probe files; nightly reads the full-corpus members of the
-stock-reader languages.
+Push reads the probe files. The nightly stock-language corpus check went with
+the last stock reader (Swift).
 """
 from __future__ import annotations
 
@@ -39,15 +40,16 @@ pytestmark = pytest.mark.process
 
 ORACLE = Path(__file__).parent / "oracles" / "lizard_tripwire.py"
 COLUMNS = ("start", "end", "nloc", "params", "ccn_std", "ccn_mod", "nesting")
-STOCK_SUFFIXES = (".swift",)
 C_FAMILY = (".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".m", ".mm")
 JS_FAMILY = (".js", ".cjs", ".mjs", ".jsx", ".ts", ".tsx", ".vue")
 
 # A construct lizard reads as C where Rust means something else: `?`, an operator
 # with no operand before it, a let-else, a `where`, `loop` or `for`, a signature
-# ending in `;`, a parameter written as a pattern or with a bracketed type.
+# ending in `;`, a parameter written as a pattern or with a bracketed type, and a
+# `#` (an attribute, a raw string or a raw identifier), which lizard reads as a C
+# preprocessor line.
 RUST_SYNTAX = (r"\?|\|\||&&|\blet\b[^\n]*\belse\b|\bwhere\b|\bloop\b|\bfor\b|\bfn\b[^{]*;|"
-               r"\bfn\s+\w+[^(]*\([^)]*[\[{(]")
+               r"\bfn\s+\w+[^(]*\([^)]*[\[{(]|#")
 
 
 @dataclass(frozen=True)
@@ -83,12 +85,17 @@ PATCHES = (
           "README.md 'Its Rust reader scores a 7-arm match as ccn 2 (filed as lizard #494)'"),
     Patch("TRIP-RUST-SYNTAX", (".rs",), None, RUST_SYNTAX,
           "README.md 'It also reads a Rust signature, a closure's empty ||, a let-else and a "
-          "for that is no loop the way Rust means them'; docs/configuration.md 'rust, shell "
-          "and powershell run on crapkit's own readers'"),
+          "for that is no loop the way Rust means them'; 'It lists #[inline] fn f() { written "
+          "on one line'; docs/configuration.md 'rust, shell and powershell run on crapkit's "
+          "own readers'"),
     Patch("TRIP-GO-ZIG", (".go", ".zig"), None, None,
           "README.md 'Go and Zig read through crapkit's subclasses of lizard's readers, which "
           "end a signature where the language does'; docs/configuration.md 'go and zig run "
           "on subclasses of lizard's readers'"),
+    Patch("TRIP-SWIFT", (".swift",), None, None,
+          "README.md 'Python and Swift read through crapkit's subclasses of lizard's readers "
+          "too'; docs/configuration.md 'swift runs on crapkit's own reader too': rows lizard "
+          "hid or made up, raw identifiers, and the decisions Swift spells with ? and ??"),
     Patch("TRIP-JS-EXPRESSIONS", JS_FAMILY, None, r"=>|`|\?[^\n]*:",
           "README.md 'Expression arrows in arrays and argument lists are measured "
           "separately'; docs/architecture/2026-09-06/arrow-reader-review.md line 7 (comma, "
@@ -207,9 +214,10 @@ def test_a_rust_let_else_is_excused_as_rust_syntax_and_a_plain_moved_end_is_not(
 
 
 def test_a_stock_language_excuses_nothing():
-    source = "func f(k: Int) -> Int {\n    return k > 0 ? 1 : 0\n}\n"
-    found = differences([_hand_row("a.swift", 1, 3)], [_hand_row("a.swift", 1, 3, ccn_std=3)],
-                        {"a.swift": source})
+    """Kotlin, which lizard reads and crapkit does not admit, is named by no patch."""
+    source = "fun f(k: Int): Int {\n    return if (k > 0) 1 else 0\n}\n"
+    found = differences([_hand_row("a.kt", 1, 3)], [_hand_row("a.kt", 1, 3, ccn_std=3)],
+                        {"a.kt": source})
     assert [(d.column, excused_by(d)) for d in found] == [("ccn_std", None)]
 
 
@@ -249,10 +257,7 @@ def probe_differences(oracle, probe_inventory):
     return compare(analysis_tables.probe_files(), probe_inventory)
 
 
-def test_stock_reader_languages_equal_stock_lizard_on_the_probes(probe_differences,
-                                                                 probe_inventory):
-    compared = [row for row in probe_inventory.rows if row["path"].endswith(STOCK_SUFFIXES)]
-    assert {Path(row["path"]).suffix for row in compared} >= {".swift"}
+def test_every_probe_difference_is_excused(probe_differences):
     assert _unexcused(probe_differences) == []
 
 
@@ -261,13 +266,3 @@ def test_every_patch_still_excuses_a_probe_difference(probe_differences, patch):
     assert any(excused_by(d) == patch.id for d in probe_differences), (
         f"{patch.id} excuses nothing: stock lizard now reads these probes as crapkit does; "
         "retire the patch or add a probe that shows it")
-
-
-@pytest.mark.nightly
-@pytest.mark.parametrize("language", ["swift"])
-def test_stock_reader_languages_equal_stock_lizard_on_the_corpus(oracle, corpus_language,
-                                                                 language):
-    oracle("lizard")
-    files, measured = corpus_language(language)
-    assert measured.rows
-    assert _unexcused(compare(files, measured)) == []
