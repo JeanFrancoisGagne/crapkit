@@ -34,9 +34,13 @@ def _platforms(item) -> list[str]:
     return [name for mark in item.iter_markers("platform") for name in mark.args]
 
 
+def _pythons(item) -> list[tuple]:
+    return [tuple(mark.args) for mark in item.iter_markers("python")]
+
+
 def _runs(item, tier: str) -> bool:
     names = [mark.name for mark in item.iter_markers()]
-    return tiers.selected(names, tier, _platforms(item))
+    return tiers.selected(names, tier, _platforms(item), pythons=_pythons(item))
 
 
 def _dropped(items, tier: str) -> list:

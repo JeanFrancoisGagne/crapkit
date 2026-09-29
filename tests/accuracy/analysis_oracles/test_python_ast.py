@@ -27,7 +27,21 @@ from accuracy.analysis_oracles.oracles import py_ast_oracle
 from accuracy.kit import rulings, runlog
 
 pytestmark = pytest.mark.process
-SHAPES = sorted(analysis_shapes.py_shape_files())
+# The first Python whose grammar holds each version-gated shape, from the
+# PEP's Python-Version header: 695 type parameters 3.12, 750 t-strings and
+# 758 unparenthesized except 3.14.
+SHAPE_NEEDS = {"pep695": (3, 12), "pep750_tstring": (3, 14), "pep758_except": (3, 14)}
+
+
+def _shape_param(name: str):
+    """One shape's parameter: a shape newer than the running Python carries the
+    python marker, so that Python deselects it and its node id still exists for
+    the tables that name it (retro.tsv's R38 row names pep695)."""
+    marks = [pytest.mark.python(*SHAPE_NEEDS[name])] if name in SHAPE_NEEDS else []
+    return pytest.param(f"shapes/{name}.py", id=f"shapes/{name}.py", marks=marks)
+
+
+SHAPES = [_shape_param(name) for name in sorted(analysis_shapes.PY_SHAPES)]
 
 
 def _text(data) -> str:
@@ -104,12 +118,6 @@ def test_names_match_ast(path, py_shape_inventory):
 
 def test_qualified_names_match_ast(src_corpus, src_inventory):
     assert _differences(src_corpus.files, src_inventory, _names) == {}
-
-
-# The first Python whose grammar holds each version-gated shape, from the
-# PEP's Python-Version header: 695 type parameters 3.12, 750 t-strings and
-# 758 unparenthesized except 3.14.
-SHAPE_NEEDS = {"pep695": (3, 12), "pep750_tstring": (3, 14), "pep758_except": (3, 14)}
 
 
 def shapes_too_new(version: tuple) -> list[str]:

@@ -47,7 +47,7 @@ def _spans(rows: list[dict], shift: int = 0) -> list[tuple]:
 
 
 def _paths(variant: str) -> list[str]:
-    return sorted(path for path in _files() if V.applies(variant, path))
+    return sorted(path for path, source in _files().items() if V.builds(variant, path, source))
 
 
 SHIFTS = {"blank_above": V.BLANK_LINES, "comment_above": V.COMMENT_LINES}

@@ -42,6 +42,22 @@ def test_a_platform_marker_limits_where_a_test_runs(platforms, platform, runs):
     assert tiers.selected((), "push", platforms, platform) is runs
 
 
+@pytest.mark.parametrize("pythons, version, runs", [
+    ((), (3, 11), True),
+    (((3, 12),), (3, 11), False),
+    (((3, 12),), (3, 12), True),
+    (((3, 12),), (3, 14), True),
+    (((3, 12), (3, 14)), (3, 13), False),
+])
+def test_a_python_marker_limits_which_interpreters_run_a_test(pythons, version, runs):
+    """python(3, 12) marks a test whose input only 3.12 and later can parse, such
+    as a PEP 695 def: an older Python deselects it, and the contract's collect-all
+    run still sees it."""
+    assert tiers.selected((), "push", pythons=pythons, version=version) is runs
+    assert tiers.selected((), "push", pythons=pythons, version=version,
+                          environ={tiers.COLLECT_ALL_ENV: "1"}) is True
+
+
 def test_an_unset_or_empty_tier_is_push():
     assert tiers.current_tier({}) == "push"
     assert tiers.current_tier({tiers.TIER_ENV: ""}) == "push"
@@ -81,6 +97,11 @@ def test_probe_selected_on_no_platform():
     """Exists to be deselected on every platform."""
 
 
+@pytest.mark.python(99, 0)
+def test_probe_selected_on_no_python():
+    """Exists to be deselected on every Python this suite runs on."""
+
+
 def _collected(tier: str) -> str:
     env = {**os.environ, tiers.TIER_ENV: tier, "PYTHONDONTWRITEBYTECODE": "1"}
     argv = [sys.executable, "-m", "pytest", "--collect-only", "-p", "no:randomly",
@@ -97,4 +118,5 @@ def test_the_conftest_deselects_by_tier():
     assert "test_probe_selected_in_nightly_only" not in push
     assert "test_probe_selected_in_nightly_only" in nightly
     assert "test_probe_selected_on_no_platform" not in push + nightly
+    assert "test_probe_selected_on_no_python" not in push + nightly
     assert "test_an_unset_or_empty_tier_is_push" in push

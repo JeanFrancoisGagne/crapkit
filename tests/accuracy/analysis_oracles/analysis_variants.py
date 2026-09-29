@@ -99,16 +99,33 @@ def comment_in_body(path: str, source: str) -> str:
 VARIANTS = {"blank_above": blank_above, "comment_above": comment_above, "append": append,
             "module_after": module_after, "comment_in_body": comment_in_body}
 PYTHON_ONLY = {"module_after", "comment_in_body"}
+# Written from the running Python's ast: a file that Python rejects (a PEP 695
+# def on 3.11) has no body line it can find, so the variant leaves it out.
+NEEDS_AST = {"comment_in_body"}
 
 
 def applies(variant: str, path: str) -> bool:
     return suffix(path) in COMMENT and (variant not in PYTHON_ONLY or suffix(path) == ".py")
 
 
+def _parses(source: str) -> bool:
+    try:
+        ast.parse(source)
+    except SyntaxError:
+        return False
+    return True
+
+
+def builds(variant: str, path: str, source) -> bool:
+    """Whether the variant is written for this file: it applies to the file's
+    language, and a variant read off the ast has a tree to read."""
+    return applies(variant, path) and (variant not in NEEDS_AST or _parses(_text(source)))
+
+
 def _edited(name: str, texts: dict) -> dict[str, str]:
     edit = VARIANTS[name]
     return {f"{name}/{path}": edit(path, text) for path, text in texts.items()
-            if applies(name, path)}
+            if builds(name, path, text)}
 
 
 def variant_files(files: dict) -> dict[str, str]:

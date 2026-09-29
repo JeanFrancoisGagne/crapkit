@@ -21,8 +21,8 @@ import sys
 
 TIERS = ("push", "nightly", "weekly", "release")
 TIER_ENV = "CRAPKIT_ACCURACY_TIER"
-# Set by the contract's collect-only run: every test of every tier and
-# platform is collected, so a node id a table names can be checked to exist.
+# Set by the contract's collect-only run: every test of every tier, platform
+# and Python is collected, so a node id a table names can be checked to exist.
 COLLECT_ALL_ENV = "CRAPKIT_ACCURACY_COLLECT_ALL"
 # Set by test_kit_guards: the guard probes, deselected otherwise, run.
 GUARD_PROBES_ENV = "CRAPKIT_ACCURACY_GUARD_PROBES"
@@ -42,6 +42,7 @@ MARKERS = {
     "change_control": "judges a diff against the change-control rules; not an independent method",
     "cross_surface": "compares two crapkit surfaces; not an independent method",
     "platform(name)": "runs only where sys.platform starts with name (win32, linux, darwin)",
+    "python(major, minor)": "runs only on that Python and later (an input older ones cannot parse)",
     "guard_probe": "breaks a session guard on purpose; runs only under test_kit_guards",
 }
 
@@ -68,15 +69,27 @@ def runs_on_platform(platforms: Iterable[str], platform: str = sys.platform) -> 
     return not wanted or any(platform.startswith(name) for name in wanted)
 
 
+def runs_on_python(pythons: Iterable[tuple], version: tuple = sys.version_info[:2]) -> bool:
+    """Whether the running Python is at least every (major, minor) a python marker names."""
+    return all(tuple(version) >= tuple(minimum) for minimum in pythons)
+
+
 def selected(marker_names: Iterable[str], tier: str, platforms: Iterable[str] = (),
-             platform: str = sys.platform, environ: Mapping[str, str] = os.environ) -> bool:
-    """Whether a test with these markers runs in this tier on this platform."""
+             platform: str = sys.platform, environ: Mapping[str, str] = os.environ,
+             pythons: Iterable[tuple] = (), version: tuple = sys.version_info[:2]) -> bool:
+    """Whether a test with these markers runs in this tier, on this platform and Python."""
     names = frozenset(marker_names)
     if environ.get(COLLECT_ALL_ENV):
         return True
-    if "guard_probe" in names and not environ.get(GUARD_PROBES_ENV):
+    if _probe_held(names, environ):
         return False
-    return bool(tiers_of(names) & RUNS[tier]) and runs_on_platform(platforms, platform)
+    here = runs_on_platform(platforms, platform) and runs_on_python(pythons, version)
+    return bool(tiers_of(names) & RUNS[tier]) and here
+
+
+def _probe_held(names: frozenset[str], environ: Mapping[str, str]) -> bool:
+    """A guard probe runs only under test_kit_guards, which sets GUARD_PROBES_ENV."""
+    return "guard_probe" in names and not environ.get(GUARD_PROBES_ENV)
 
 
 _RUNNING: dict[str, frozenset[str] | None] = {"markers": None}
