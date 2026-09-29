@@ -13,6 +13,7 @@ import json
 import pytest
 
 from crapkit import covstream
+from crapkit.errors import ConfigError
 
 DOCUMENT = {
     "meta": {"branch_coverage": True, "note": 'a "quoted" \\ back {brace} [bracket], comma'},
@@ -110,13 +111,18 @@ def test_a_cut_document_says_where_and_a_cut_character_fails_to_decode():
     def walk(w):
         return covstream.walk_report(w, "files")
 
-    assert failure(b'{"a": 1} ' + b"x" * 100) == "unexpected content at " + repr("} " + "x" * 78)
-    assert failure(b'{"a": 1, "b": ') == "unexpected content at " + repr(', "b": ')
-    assert failure(b"[1]") == "istanbul artifact is not a JSON object"
+    fix = "; " + covstream.REGENERATE
+    assert failure(b'{"a": 1} ' + b"x" * 100) == (
+        "unexpected content at " + repr("} " + "x" * 78) + fix)
+    assert failure(b'{"a": 1, "b": ') == "unexpected content at " + repr(', "b": ') + fix
+    assert failure(b"[1]") == "istanbul artifact is not a JSON object" + fix
     assert [failure(data, walk) for data in (b"[1]", b'{"files": [1]}', b'{"files": {"a": 1')] == [
-        "coverage.py report is not a JSON object", "coverage.py report: 'files' is not a JSON object",
-        "unterminated coverage.py report: 'files' object"]
-    with pytest.raises(UnicodeDecodeError):
+        "coverage.py report is not a JSON object" + fix,
+        "coverage.py report: 'files' is not a JSON object" + fix,
+        "unterminated coverage.py report: 'files' object" + fix]
+    # repotext names the byte and the fix, where a bare UnicodeDecodeError named neither.
+    with pytest.raises(ConfigError, match=r"^the artifact is not UTF-8 \(byte c3 at offset 7\); "
+                                          r"save it as UTF-8$"):
         list(covstream.split_window(window('{"a": "é'.encode("utf-8")[:-1], 4096)))
 
 

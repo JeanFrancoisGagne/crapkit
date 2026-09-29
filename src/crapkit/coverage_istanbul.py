@@ -266,9 +266,11 @@ def _body_start(fn: dict, signature: tuple[int, int]) -> tuple[int, int]:
 
 def _fn_span(fid: str, fn: dict, invoked: bool) -> list:
     """One function's mutable span, its declaration and end lines read (or
-    refused) the way every istanbul reporter writes them."""
-    signature = _position(fn["decl"]["start"], _decl_line(fid, fn), 0)
+    refused) the way every istanbul reporter writes them. The lines are read
+    first: a function with no decl is refused in words, not as a KeyError."""
+    line = _decl_line(fid, fn)
     end = _fn_end(fid, fn)
+    signature = _position(fn["decl"]["start"], line, 0)
     return [_field(fn, "name") or "(anonymous)", signature[0], end, invoked, 0, 0, 0, 0,
             signature, _body_start(fn, signature), _position(fn["loc"]["end"], end, _LINE_END)]
 

@@ -63,7 +63,10 @@ def _coveragepy(root: Path) -> dict:
 
 CONTROLS = {"istanbul": _istanbul, "coveragepy": _coveragepy}
 KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py"}
-ROWS = {"istanbul": [FnCoverage("f", 1, 6, True, 2, 1, 3, 2)],
+# An istanbul entry with statements is an instrumenter's own output, whose fnMap
+# lists every function it measured, so its rows carry full_listing
+# (coverage_istanbul._instrumented; test_coverage_istanbul pins both readings).
+ROWS = {"istanbul": [FnCoverage("f", 1, 6, True, 2, 1, 3, 2, full_listing=True)],
         "coveragepy": [FnCoverage("f", 1, 5, True, 2, 1, 3, 2)]}
 
 
@@ -404,15 +407,15 @@ def test_the_contexts_read_refuses_a_field_of_the_wrong_shape_naming_the_file(tm
 
 # --- what each format reads as it means it -----------------------------------------
 
-def _ist_row(*fields) -> dict:
-    return {"src/app.ts": [FnCoverage(*fields)]}
+def _ist_row(*fields, full_listing: bool = True) -> dict:
+    return {"src/app.ts": [FnCoverage(*fields, full_listing=full_listing)]}
 
 
 READ_AS = [
     ("istanbul", "name-null", lambda d: _ist(d)["fnMap"]["0"].update(name=None),
      _ist_row("(anonymous)", 1, 6, True, 2, 1, 3, 2)),
     ("istanbul", "statementMap-absent", lambda d: _ist(d).pop("statementMap"),
-     _ist_row("f", 1, 6, True, 2, 1, 0, 0)),
+     _ist_row("f", 1, 6, True, 2, 1, 0, 0, full_listing=False)),
     ("istanbul", "end-column-null",
      lambda d: _ist(d)["fnMap"]["0"]["loc"]["end"].update(column=None), None),
     ("istanbul", "path-field-absent", lambda d: _ist(d).pop("path"), None),
