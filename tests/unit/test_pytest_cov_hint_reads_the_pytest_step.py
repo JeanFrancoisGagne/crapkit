@@ -54,12 +54,14 @@ def test_in_a_venv_uv_made_the_hint_names_uv_pip(tmp_path):
     install pytest-cov` this hint printed failed with "No module named pip" and
     the next `crapkit coverage` failed the same way. doctor's own note already
     names `uv pip install --python` there; the lane's refusal now agrees."""
+    from crapkit.invocation import interpreter_word
     from test_doctor_uv_venv_remedy import PYTHON, venv
 
-    venv(tmp_path, uv=True)
+    python = venv(tmp_path, uv=True)
     word = PYTHON.as_posix()
 
     message = _hint(tmp_path, f"{word} -m pytest --cov=src")
 
-    assert (f"the environment `{word}` runs in (`uv pip install --python {word} pytest-cov`)"
+    assert (f"the environment `{word}` runs in "
+            f"(`uv pip install --python {interpreter_word(str(python))} pytest-cov`)"
             in message), message

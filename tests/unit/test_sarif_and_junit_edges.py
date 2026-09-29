@@ -68,7 +68,7 @@ def test_every_session_error_is_named_from_what_it_carries():
 
 @pytest.mark.parametrize("xml, message", [
     ("<testsuite/>",
-     "junit report contains zero testcases — the suite crashed before collecting, not a pass"),
+     "junit report contains zero testcases - the suite crashed before collecting, not a pass"),
     ('<testsuite tests="3"><testcase classname="c" name="a"/></testsuite>',
      "junit test count does not match its cases; the report is incomplete"),
 ])

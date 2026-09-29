@@ -46,12 +46,17 @@ def test_a_python_with_no_venv_around_it_gets_pip(tmp_path):
 
 
 def test_the_missing_pytest_cov_note_names_uv_pip_in_a_venv_uv_made(tmp_path):
-    venv(tmp_path, uv=True)
+    """The install line names the file the lane's word resolves to, spelled as
+    a next step spells an interpreter, so it pastes from any directory."""
+    from crapkit.invocation import interpreter_word
+
+    python = venv(tmp_path, uv=True)
     word = PYTHON.as_posix()
 
     note = admin._missing_pytest_cov_note("py", word, LaunchSpec(tmp_path))
 
-    assert f"run `uv pip install --python {word} pytest-cov` in the environment the suite runs in" in note
+    assert (f"run `uv pip install --python {interpreter_word(str(python))} pytest-cov` in the "
+            "environment the suite runs in") in note
 
 
 def test_the_coverage_floor_names_uv_pip_in_a_venv_uv_made(tmp_path):

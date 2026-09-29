@@ -184,7 +184,8 @@ def test_exactly_five_noted_files_print_no_count_line(capsys):
     err = capsys.readouterr().err
     assert "more file(s)" not in err
     assert err.endswith("crapkit: 5 file(s) could not be tokenized; each is scored as zero functions "
-                        "and stays unranked:\n" + "".join(f"crapkit:   why {i}\n" for i in range(5)))
+                        "and stays unranked, and the commit gate refuses these files when staged:\n"
+                        + "".join(f"crapkit:   why {i}\n" for i in range(5)))
 
 
 def test_a_function_lizard_gave_no_extra_attributes_reads_zero_for_each():

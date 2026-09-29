@@ -50,11 +50,12 @@ def test_regressions_list_the_largest_rise_first_and_ties_by_path():
 
 def test_new_functions_list_the_highest_crap_first_and_ties_by_path():
     """30.45 and 30.4 differ at 4 places and tie at 0; 29.999999999999996 and 30.0
-    are one CRAP at 4 places."""
+    are one CRAP at 4 places. The earlier run scored scope src, so these read
+    "new", not "newly scored"."""
     cur = [row("src/e.py", 30.4), row("src/d.py", 30.45), row("src/c.py", 30.0),
            row("src/b.py", 29.999999999999996), row("src/a.py", 40.0)]
 
-    assert lines([], cur)[1:] == [
+    assert lines([row("src/z.py", 1.0)], cur)[1:] == [
         "new over ceiling: src/a.py f( ) (crap 40.0)",
         "new over ceiling: src/d.py f( ) (crap 30.4)",
         "new over ceiling: src/e.py f( ) (crap 30.4)",

@@ -47,7 +47,7 @@ def test_the_stale_lanes_are_counted_and_listed_with_their_notes():
 
     assert report._stale_lane_reason(lanes) == [
         "<p><b>2 of 3 lanes are stale.</b> One stale lane blacks out line-level coverage "
-        "repo-wide, not just its own scopes. Commit or revert the edits, then rerun "
+        "repo-wide, not just its own scopes. Rerun "
         '<code>crapkit coverage</code>.</p><ul class="lanes"><li><b>a</b>: edited</li>'
         "<li><b>c</b>: moved</li></ul>"]
 

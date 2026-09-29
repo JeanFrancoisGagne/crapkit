@@ -192,7 +192,8 @@ def test_the_changelog_says_a_deepened_clone_rebuilds_the_history_caches():
     section = _prose(_release())
 
     assert "`git fetch --unshallow` or `--deepen` at an unmoved HEAD" in section
-    assert "A cache 0.8.0 wrote reads as a full clone's" in section
+    assert ("Each file 0.4.5 to 0.8.0 wrote holds a window cut at the wall clock" in section
+            and "the first churn read walks the window once" in section)
 
 
 # -- watch judges content ---------------------------------------------------------

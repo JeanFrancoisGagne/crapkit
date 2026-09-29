@@ -44,9 +44,13 @@ def test_each_failed_lane_adds_its_own_clause():
         "lane 'ts' failed: bang.")
 
 
+_NO_SUMMARY = ("it printed no run summary, so it crashed or was killed before scoring; "
+               "its error is in the job log")
+
+
 @pytest.mark.parametrize("coverage, reason", [
-    (None, "no run summary was printed, so every lane failed; the lane errors are in the job log"),
-    ({}, "no run summary was printed, so every lane failed; the lane errors are in the job log"),
+    (None, _NO_SUMMARY),
+    ({}, _NO_SUMMARY),
     ({"functions": 3}, "the summary names no failed lane; read the job log"),
 ])
 def test_a_failed_coverage_names_what_it_can(coverage, reason):
@@ -55,7 +59,7 @@ def test_a_failed_coverage_names_what_it_can(coverage, reason):
 
 def test_a_failed_verify_with_no_findings_listed_reads_zero_of_each():
     assert builder().verdict_line({"ok": False}, 6) == (
-        "**verify failed, exit 6: complexity gate.** Run None against baseline None, "
+        "**verify failed, exit 6: complexity gate.** Run None against the baseline file at ?, "
         "0 changed files: 0 gate violations, 0 ratchet regressions, 0 new test failures, "
         "0 uncovered changed lines.")
 
@@ -142,8 +146,15 @@ def test_a_changed_list_file_reads_windows_separators_as_slashes(tmp_path):
 
 def test_the_options_say_what_each_file_holds(monkeypatch):
     """The parser the action calls, read field by field: what `--help` prints."""
-    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self, argv=None: self)
-    parser = builder()._parse([])
+    parsers = []
+
+    def parse(self, argv=None):
+        parsers.append(self)
+        return argparse.Namespace(out="comment.md", changed_line=False)
+
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", parse)
+    builder()._parse([])
+    (parser,) = parsers
 
     assert parser.description == "Render one pull-request comment out of crapkit's own JSON payloads."
     assert [(a.option_strings[-1], a.default, a.type, a.required, a.help)
@@ -158,8 +169,13 @@ def test_the_options_say_what_each_file_holds(monkeypatch):
         ("--base-reason", None, None, False, "file holding why the base run was not made"),
         ("--worklist", None, None, False, "crapkit worklist --json output"),
         ("--changed", None, None, False, "file holding one changed path per line"),
-        ("--changed-z", None, None, False, "file holding UTF-8, NUL-separated Git paths"),
-        ("--top", 5, int, False, "rows to render (default 5)"),
-        ("--out", None, None, True, "where to write the markdown"),
+        ("--changed-z", None, None, False, "file holding NUL-separated Git paths"),
+        ("--changed-error", None, None, False,
+         "file holding git's error when the base diff failed; empty or missing when it ran"),
+        ("--top", "5", None, False,
+         "rows to render (default 5); a value that is not a whole number warns and renders 5"),
+        ("--out", None, None, False, "where to write the markdown; required unless --changed-line"),
         ("--json-out", None, None, False, "where to write the {\"body\": ...} gh api sends"),
+        ("--changed-line", False, None, False,
+         "print the changed-files step's log line for --changed-z and write nothing"),
     ]
