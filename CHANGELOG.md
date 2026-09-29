@@ -31,7 +31,7 @@ crapkit computes against outside tools and hand tables. This release fixes what 
   reports the rise as a `RATCHET` line at exit 7 on a function the diff never touched. The
   [upgrade
   guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#081-on-coverage-76-to-7130)
-  says how to find each such function before you seed.
+  says how verify names each such function after the seed.
 - `crapkit.toml` reads every path it carries the same way on every OS, and three of those
   readings can change what an existing config scores. They move no analysis version and
   need no re-seed of their own: the one re-seed above covers them. A scope path in
@@ -42,8 +42,9 @@ crapkit computes against outside tools and hand tables. This release fixes what 
   `./src/gen/**`, `/src/gen/**` or `src/gen/` excluded nothing and now exclude. A
   `path_prefix` written `api\`, `./api/`, `.\api\`, `/api/` or, on a case-insensitive
   disk, `API/` scored every function in its scopes untested and now joins the lane's
-  coverage. Run `crapkit doctor` and `crapkit coverage` and compare the per-scope file
-  counts. See the [upgrade
+  coverage. Before upgrading, run `crapkit doctor --show-files > before-doctor.txt` and
+  `crapkit coverage --export before.tsv`; after, run both again and compare the per-scope
+  file counts. See the [upgrade
   guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#config-paths-that-081-reads-on-every-os).
 - A config `crapkit init` wrote under 0.8.0 names the python of the OS it ran on:
   `.venv\\Scripts\\python.exe` (as the TOML string spells it) or `.venv/bin/python`, which
@@ -73,6 +74,12 @@ crapkit computes against outside tools and hand tables. This release fixes what 
   only in case. `unit?` ended `crapkit coverage` in a Python traceback at exit 1, and
   `a:b` wrote the lane's log into an NTFS alternate data stream of `.crapkit/lane-a`.
   Rename the lane.
+- The commit hook scores a staged file whose extension is upper case (`src/MAIN.CPP`,
+  `src/Tool.PY`) and exits 6 on a function over its ceiling there, where 0.8.0 left the
+  file unscored and passed at 0. `test-scoped` refuses a `test_*.py`, `*.test.*` or
+  `*.spec.*` file outside every scope and outside a `test`, `tests` or `__tests__`
+  directory at exit 3, where 0.8.0 ran the scope's template on it at 0. Move such a file
+  under a scope's `paths` or into `tests/`.
 - Many more exit codes move. The upgrade guide lists each with its 0.8.0 and 0.8.1 exit
   and what to change: [missing values](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#missing-values-that-081-names), [the
   commit gate](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#the-commit-gate-in-081), [text that is not
@@ -617,10 +624,10 @@ version bump under Upgrading from 0.8.0 above.
   UTF-8 byte-order mark.
 - A source file that opens with a UTF-16 byte-order mark, as PowerShell 5.1's `Out-File`
   and the ISE save it, scores its functions. inventory read it as empty, the pre-commit
-  gate passed a ccn-8 function in it, and the advisory hook said nothing. An identifier
-  holding one of the five bytes cp1252 leaves undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D)
-  stays whole: a PowerShell function named with one was not scored, and the pre-commit
-  gate passed it at ccn 8. In Python, TypeScript and C such a function keyed as
+  gate passed a ccn-8 function in it, and the advisory hook said nothing. In a source that
+  is not UTF-8, an identifier holding one of the five bytes cp1252 leaves undefined (0x81,
+  0x8D, 0x8F, 0x90, 0x9D) stays whole: a PowerShell function named with one was not
+  scored, and the pre-commit gate passed it at ccn 8. In Python, TypeScript and C such a function keyed as
   `\ufffd`, `(anonymous)` or `if`, and in Go, Java, Rust, Swift, shell and a C function
   whose `if` has no braces 0.8.0 scored no such function at all, so it is new and meets
   the gate as a UTF-16 source's functions do. It now keys by its name, under 0.8.1's

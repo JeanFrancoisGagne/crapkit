@@ -1953,8 +1953,10 @@ The shared runner owns the unit and E2E schedule; use `--unit-workers 1` for ser
 reproduction or `--coverage` for combined branch coverage and JUnit. The `git config`
 line arms the complexity gate on commits and change control on pushes. See
 [CONTRIBUTING.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/CONTRIBUTING.md)
-for development and [the verified implementation report](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/architecture/2026-09-07-implementation/REPORT.md)
-for complete Windows source and Linux wheel results, focused benchmarks and their limits.
+for development, [docs/accuracy.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md)
+for how crapkit checks its own numbers, and
+[tools/deploy/README.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/tools/deploy/README.md)
+for the install tests each release passes.
 
 ## Maintainer and project background
 
