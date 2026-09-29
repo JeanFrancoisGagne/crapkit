@@ -7,6 +7,7 @@ page's push setup is checked against the shells the push tier runs.
 import importlib.util
 from pathlib import Path
 import re
+from types import SimpleNamespace
 import tomllib
 
 from accuracy.corpus_goldens import shells
@@ -48,6 +49,29 @@ def test_every_calc_and_every_ruling_has_a_line():
     assert [row.calc for row in calcs
             if f"| {generate._cell(row.calc)} | `{row.packet}` |" not in blocks["calcs"]] == []
     assert [key for key in rulings if f"\n| {generate._cell(key)} |" not in blocks["rulings"]] == []
+
+
+def _ruling(key: str, support: str):
+    return SimpleNamespace(id=key, calc="nloc", construct="a | b", crapkit_value="3",
+                           oracle="hand", oracle_value="6", ruling="definition",
+                           outside_support=support)
+
+
+def test_the_conventions_table_lists_only_the_rows_whose_support_links_to_it():
+    table = generate._conventions_table([_ruling("A", "docs/accuracy.md#conventions"),
+                                         _ruling("B", "convention_only"),
+                                         _ruling("C", "docs/accuracy.md#add-a-check")])
+
+    assert table.splitlines()[2:] == [r"| A | nloc | a \| b | 3 | hand | 6 | definition |"]
+
+
+def test_a_row_that_links_to_the_conventions_lands_on_their_table():
+    """The anchor a rulings row names is a heading of the page, and the table sits under it."""
+    page = (ROOT / "docs/accuracy.md").read_text(encoding="utf-8")
+    section = page.split("\n## Conventions\n", 1)[-1].split("\n## ", 1)[0]
+
+    assert generate.CONVENTIONS == "docs/accuracy.md#conventions"
+    assert "<!-- generated:conventions -->" in section and section != page
 
 
 def test_the_mutmut_list_is_the_union_of_every_calc_s_modules():

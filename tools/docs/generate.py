@@ -42,7 +42,7 @@ def _test_schedule(root: Path) -> str:
     return "```sh\n" + "\n".join(lines) + "\n```"
 
 
-# --- docs/accuracy.md: the calculations and rulings tables ---------------------------------
+# --- docs/accuracy.md: the calculations, rulings and conventions tables --------------------
 
 ACCURACY_DOC = "docs/accuracy.md"
 RULINGS = ("definition", "defect", "fixed")
@@ -112,6 +112,22 @@ def _rulings_tables(rulings: list) -> str:
     return "\n\n".join(["\n".join(lines), *folded])
 
 
+CONVENTIONS = f"{ACCURACY_DOC}#conventions"
+
+
+def _convention_line(row) -> str:
+    return _row(map(_cell, (row.id, row.calc, row.construct, row.crapkit_value, row.oracle,
+                            row.oracle_value, row.ruling)))
+
+
+def _conventions_table(rulings: list) -> str:
+    """Every row whose outside support is the maintainer's ruling in the page's Conventions."""
+    rows = [row for row in rulings if row.outside_support == CONVENTIONS]
+    header = ["| Row | Calculation | Construct | crapkit | Oracle | Oracle's value | Ruling |",
+              "|---|---|---|---|---|---|---|"]
+    return "\n".join(header + list(map(_convention_line, rows)))
+
+
 def _mutmut_paths(modules: list[str]) -> str:
     return "paths_to_mutate = [\n" + "".join(f'    "{path}",\n' for path in modules) + "]"
 
@@ -126,6 +142,7 @@ def _accuracy_blocks(root: Path) -> list[tuple[str, str, str]]:
     rulings = list(_accuracy_kit(root, "rulings").load(accuracy).values())
     return [(ACCURACY_DOC, "calcs", _calcs_table(rows, rulings)),
             (ACCURACY_DOC, "rulings", _rulings_tables(rulings)),
+            (ACCURACY_DOC, "conventions", _conventions_table(rulings)),
             ("pyproject.toml", "mutmut-paths", _mutmut_paths(calcs.modules(rows)))]
 
 
