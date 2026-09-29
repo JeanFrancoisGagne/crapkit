@@ -1273,9 +1273,19 @@ analysis-version bump, so each marks file re-seeds once
   `nesting` right, so those rows would have lost a level with the move to the
   cognitive pass. Go has no `while`, so there the word is a name, as `do` is: a Go
   variable named `while` cost +1 at each use.
+- Zig's `else =>` is a switch's default prong and opens no level, as a `case` label
+  opens none; it waited for a block and took the prong's `{` for a level. An else
+  with a payload and no braces, `else |err| return err;`, ends at its `;`: the
+  payload's first `|` read as the token after the else, so the else waited on and
+  the next block in the function, a labeled block or a struct literal, took its
+  level. Read past its payload, `else |err| if (...)` is one else-if link that costs
+  +1, as `else if` does, where the `if` paid +1 of its own, and a `switch` after
+  `else |err|` sits in the else's body, as after a plain `else`. In the Zig standard
+  library this rule alone moves `nesting` in 45 of 3,475 functions, 37 down and 8
+  up, and lowers `cognitive` in 12.
 - Measured over 21,099 functions in 20 open-source projects: 1,489 of the 6,465
-  functions outside Python move `nesting`, 1,289 down and 200 up, and 51 move
-  `cognitive`, 33 down and 18 up. No Python row moves `nesting`, 3 move `cognitive`
+  functions outside Python move `nesting`, 1,289 down and 200 up, and 54 move
+  `cognitive`, 36 down and 18 up. No Python row moves `nesting`, 3 move `cognitive`
   (a `while` after a dict literal), and no `ccn` value moves. Against an independent
   tree-sitter reading of Sonar's nesting rules over 3,228 functions in C, C++,
   Objective-C, Java, Go, Rust, Swift, Zig and shell, crapkit agreed on 2,295 before

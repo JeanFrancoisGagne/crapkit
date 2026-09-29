@@ -445,6 +445,13 @@ re-seeds once, with the same three commands as version 11 below.
   literal or a Python dict. The loop read as the tail of a do-while, cost nothing and
   opened no level. 16 of the 21,099 functions in the measuring corpus move
   `cognitive`, 3 of them in Python, and 6 move `nesting`.
+- In Zig, `nesting` goes down in a function whose switch has an `else =>` prong with
+  a block, or where an else with a payload and no braces (`else |err| return err;`)
+  comes before another block. `cognitive` goes down where `else |err| if` links an
+  else-if chain, which now costs +1 as `else if` does. 37 of 3,475 functions in the
+  Zig standard library lose a level and 12 cost less; 8 gain a level, where a
+  `switch` follows `else |err|` and now sits in the else's body as it does after a
+  plain `else`.
 - `nesting` and `cognitive` are reported and never gated, so no verdict moves with
   them. Expect both columns to change in `next-item --json`, exports and `brief` on
   the first run after upgrading; the [`nesting` row](agent-json.md#item-fields) says

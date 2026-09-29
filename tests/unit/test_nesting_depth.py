@@ -385,6 +385,32 @@ LOOP_AFTER_BLOCK = {
                  "\t\twhile = \"y\"\n\t}\n\treturn while\n}\n", (1, 1)),
 }
 
+# Zig's `else =>` is a switch's default prong, which opens no level, as a `case`
+# label opens none; a payload else, `else |err| return err;`, has a body with no
+# braces that ends at its `;`. The pass read `else =>` as an else waiting for its
+# block (nesting 2, 3 and 3 for the first three), and it read the payload's first
+# `|` as the token after the else, so a payload else with no braces waited on and
+# the next block in the function took its level (nesting 2 for the next two).
+_PAYLOAD = ("fn f(x: anyerror!u8, y: bool) !u8 {\n    if (x) |w| {\n        use(w);\n"
+            "    } else |err| return err;\n")
+_LABELED_IF = "blk: {\n        if (y) {\n            break :blk 1;\n        }\n        break :blk 2;\n    }"
+ZIG_ELSE = {
+    "prong.zig": ("fn f(x: u8) void {\n    switch (x) {\n        1 => a(),\n        else => {\n"
+                  "            b();\n        },\n    }\n}\n", 1),
+    "prong-switch.zig": ("fn f(x: u8, y: u8) void {\n    switch (x) {\n        1 => a(),\n"
+                         "        else => switch (y) {\n            1 => b(),\n            else => {\n"
+                         "                c();\n            },\n        },\n    }\n}\n", 2),
+    "prong-if.zig": ("fn f(x: u8, y: bool) void {\n    switch (x) {\n        1 => a(),\n        else => {\n"
+                     "            if (y) {\n                c();\n            }\n        },\n    }\n}\n", 2),
+    "payload-labeled.zig": (_PAYLOAD + "    const n = " + _LABELED_IF + ";\n    return n;\n}\n", 1),
+    "payload-literal.zig": (_PAYLOAD + "    const s = S{ .a = " + _LABELED_IF + " };\n    return s.a;\n}\n",
+                            1),
+    # A payload else with braces holds its block one level down.
+    "payload-block.zig": ("fn f(x: anyerror!u8, y: bool) !void {\n    if (x) |v| {\n        use(v);\n"
+                          "    } else |err| {\n        if (y) {\n            return err;\n        }\n    }\n}\n",
+                          2),
+}
+
 # Shell and PowerShell rows read ND through their readers' own keyword lists,
 # which held the logical operators. Each comment says what ND read.
 SCRIPT_DEPTHS = {
@@ -580,6 +606,36 @@ def test_a_while_after_a_block_is_a_do_while_tail_only_after_a_do(name):
     (record,) = analyze_source(name, source)
 
     assert (record.nesting, record.cognitive) == (nesting, cognitive)
+
+
+@pytest.mark.parametrize("name", sorted(ZIG_ELSE))
+def test_a_zig_default_prong_opens_no_level_and_a_payload_else_ends_at_its_statement(name):
+    source, depth = ZIG_ELSE[name]
+
+    assert _nesting(name, source) == depth
+
+
+def test_the_block_a_leaked_zig_else_took_charges_no_nesting_to_the_if_in_it():
+    """The same leak cost cognitive too: the `if` inside the block that took the
+    payload else's level paid +2, one more than beside the same else in braces."""
+    source = ZIG_ELSE["payload-labeled.zig"][0]
+    braced = source.replace("else |err| return err;", "else |err| {\n        return err;\n    }")
+    (bare,) = analyze_source("payload.zig", source)
+    (block,) = analyze_source("braced.zig", braced)
+
+    assert bare.cognitive == block.cognitive
+
+
+def test_a_zig_payload_else_before_an_if_is_one_else_if_link():
+    """`else |err| if (...)` links an else-if chain: the else pays +1 and the
+    if opens its body without a +1 of its own (Sonar v1.7 App. B1), so the
+    function reads cognitive 2 like `} else if (...)`. The if after the payload
+    used to pay +1 as well."""
+    source = ("pub fn payloadElse(x: anyerror!u8) u8 {\n    if (x) |v| {\n        return v;\n"
+              "    } else |err| if (err != error.Boom) return 1;\n    return 0;\n}\n")
+    (record,) = analyze_source("payload-if.zig", source)
+
+    assert (record.nesting, record.cognitive) == (1, 2)
 
 
 @pytest.mark.parametrize("name", sorted(SCRIPT_DEPTHS))
