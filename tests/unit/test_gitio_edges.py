@@ -5,7 +5,10 @@ option. A rename is two names in a name-only diff and one pair at git's own 50%
 similarity default, whatever diff.renames says. Every refusal names the command
 the caller asked for and what git said, with a byte that is not UTF-8 read as
 U+FFFD, and a missing git says so in four words. Every read runs without
-GIT_DIFF_OPTS, and a pinned variable reaches the one read that pins it.
+GIT_DIFF_OPTS and with GIT_OPTIONAL_LOCKS=0, and a pinned variable reaches the
+one read that pins it. A git that dies (exit 128 or more) is first asked what
+the repository lacks; the fakes below stand in a repository git opens, so the
+refusal names the command.
 """
 import io
 import os
@@ -53,6 +56,11 @@ def repo(tmp_path: Path) -> Path:
                        ("diff.renames", "true"), ("commit.gpgsign", "false")):
         git(root, "config", key, value)
     return root
+
+
+def an_open_repository(monkeypatch) -> None:
+    """The repository probe a failed read makes, answered: nothing is missing."""
+    monkeypatch.setattr(gitio, "_repository_gap", lambda root: None)
 
 
 def fake_popen(monkeypatch, out: bytes = b"", err: bytes = b"", code: int = 0) -> list:
@@ -157,15 +165,15 @@ def test_status_records_keep_two_letters_and_cut_the_prefix():
     assert gitio.status_records(" M sub/b.py\0", "sub/\n") == [(" M", "b.py")]
 
 
-def test_a_status_that_fails_names_the_step_that_failed(repo, tmp_path, monkeypatch):
+def test_a_status_that_fails_names_the_step_that_failed(repo):
+    write(repo, {"a.txt": b"a\n"})
+    commit(repo)
     (repo / ".git" / "index").write_bytes(b"garbage")
     broken = refusal(lambda: gitio._status(repo))
-    monkeypatch.setenv("GIT_DIR", str(tmp_path / "none"))
-    outside = refusal(lambda: gitio._status(tmp_path))
 
-    assert broken.startswith(f"git --no-optional-locks status --porcelain -z -uall --no-renames "
-                             f"failed in {repo}: fatal: ")
-    assert outside.startswith(f"git rev-parse --show-prefix failed in {tmp_path}: fatal: ")
+    assert broken.startswith("git --literal-pathspecs --no-optional-locks status --porcelain -z "
+                             "-uall --no-renames ")
+    assert f" failed in {repo}: fatal: " in broken
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Windows file names hold no CR or LF")
@@ -183,10 +191,12 @@ def test_a_streamed_read_decodes_utf8_by_lf_alone_and_carries_no_diff_opts(monke
     assert list(gitio._git_lines(ROOT, "log")) == ["café\r\n", "x\n"]
     [(argv, kwargs)] = calls
     assert argv == ["git", *gitio._RELATIVE, "log"]
-    assert kwargs["env"] == {key: value for key, value in os.environ.items() if key != "GIT_DIFF_OPTS"}
+    assert kwargs["env"] == {**{key: value for key, value in os.environ.items() if key != "GIT_DIFF_OPTS"},
+                             "GIT_OPTIONAL_LOCKS": "0"}
 
 
 def test_a_failed_streamed_read_yields_what_came_and_then_names_the_command(monkeypatch):
+    an_open_repository(monkeypatch)
     fake_popen(monkeypatch, out=b"a\n", err=b"fatal: bad \xff name\n", code=128)
     lines = []
 
@@ -206,7 +216,7 @@ def test_a_missing_git_is_named_by_every_way_in(monkeypatch):
     assert [refusal(call) for call in (
         lambda: list(gitio._git_lines(ROOT, "log")),
         lambda: gitio._batch_stream(ROOT, b""),
-        lambda: gitio._Started(ROOT, ("log",), text=False, stdin=False),
+        lambda: gitio._Started(ROOT, ("log",), stdin=False),
         lambda: gitio._worktree_git(ROOT, "status", owner=object()),
     )] == ["git executable not found"] * 4
 
@@ -216,6 +226,7 @@ def test_a_failed_batch_read_says_what_git_said(monkeypatch):
         return subprocess.CompletedProcess(argv, 128, b"", b"fatal: bad \xff\n")
 
     monkeypatch.setattr(gitio.subprocess, "run", run)
+    an_open_repository(monkeypatch)
 
     assert refusal(lambda: gitio._batch_stream(ROOT, b"")) == (
         "git cat-file --batch failed in repo: fatal: bad �")
@@ -223,16 +234,19 @@ def test_a_failed_batch_read_says_what_git_said(monkeypatch):
 
 def test_a_failed_read_names_only_what_the_caller_asked(monkeypatch):
     fake_spawn(monkeypatch, 128, b"", b"  fatal: bad \xff name\n")
+    an_open_repository(monkeypatch)
 
-    assert refusal(lambda: gitio._checked(ROOT, ("-c", "x=y", "log", "-1"), ("log", "-1"),
-                                          binary=True)) == "git log -1 failed in repo: fatal: bad � name"
+    assert refusal(lambda: gitio._run(ROOT, ("-c", "x=y", "log", "-1"), ("log", "-1"),
+                                      binary=True)) == "git log -1 failed in repo: fatal: bad � name"
 
 
 def test_a_commit_check_that_fails_says_so(monkeypatch):
     fake_spawn(monkeypatch, 128, "", "fatal: boom\n")
 
-    assert refusal(lambda: gitio._holds_commit(ROOT, "abc")) == (
-        "git rev-parse --verify abc failed in repo: fatal: boom")
+    refused = refusal(lambda: gitio.has_commit(ROOT, "abc"))
+
+    assert refused.startswith("git rev-parse --verify ")
+    assert refused.endswith(" failed in repo: fatal: boom")
 
 
 def test_the_ancestry_reads_ask_with_git_untranslated(monkeypatch):
@@ -258,16 +272,18 @@ def test_an_exit_1_with_an_error_line_is_a_failed_merge_base_not_a_missing_one(m
         "git merge-base main HEAD failed in repo: error: Could not read abc")
     assert [gitio._reports_failure(said) for said in ("error: x", "fatal: y", "warning: z\nhint")] == [
         True, True, False]
-    assert gitio._shallow_fix(ROOT) == ""
+    assert gitio.shallow_fix(ROOT) == ""
 
 
-def test_text_reads_fold_crlf_and_binary_reads_keep_it(repo):
+def test_text_and_binary_reads_keep_the_bytes_git_printed(repo):
+    """git reads are bytes, decoded by gitio and never by subprocess, so no
+    read translates a CRLF the blob holds."""
     write(repo, {"crlf.txt": b"a\r\nb\r\n"})
     commit(repo)
 
-    assert gitio._git(repo, "cat-file", "-p", "HEAD:crlf.txt") == "a\nb\n"
-    assert gitio._git(repo, "cat-file", "-p", "HEAD:crlf.txt", binary=True) == "a\r\nb\r\n"
-    assert gitio._git_unflagged(repo, "cat-file", "-p", "HEAD:crlf.txt") == "a\nb\n"
+    assert gitio._git(repo, "cat-file", "-p", "HEAD:crlf.txt") == "a\r\nb\r\n"
+    assert gitio._git_bytes(repo, "cat-file", "-p", "HEAD:crlf.txt") == b"a\r\nb\r\n"
+    assert gitio._git_unflagged(repo, "cat-file", "-p", "HEAD:crlf.txt") == "a\r\nb\r\n"
 
 
 def test_git_diff_opts_reaches_no_read_but_the_one_that_pins_it(repo, monkeypatch):
@@ -292,24 +308,24 @@ def test_a_started_read_keeps_stderr_empty_on_success_and_text_on_failure(repo):
     commit(repo, "café")
     fine = gitio.start_read(repo, "rev-parse", "HEAD")
     fine.result()
-    failed = gitio._Started(repo, ("rev-parse", "--verify", "nope"), text=True, stdin=False)
+    failed = gitio._Started(repo, ("rev-parse", "--verify", "nope"), stdin=False)
 
     assert fine.stderr == ""
     assert refusal(failed.result).startswith(f"git rev-parse --verify nope failed in {repo}: fatal: ")
     assert failed.stderr.startswith("fatal: ")
-    assert gitio._Started(repo, ("log", "-1", "--format=%s"), text=True, stdin=False).result() == "café\n"
+    assert gitio._Started(repo, ("log", "-1", "--format=%s"), stdin=False).result() == "café\n".encode()
 
 
 def test_a_started_read_reads_stderr_bytes_as_utf8_with_replacements(monkeypatch):
     fake_popen(monkeypatch, err=b"fatal: \xff\n", code=1)
-    read = gitio._Started(ROOT, ("log",), text=False, stdin=False)
+    read = gitio._Started(ROOT, ("log",), stdin=False)
 
     assert refusal(read.result) == "git log failed in repo: fatal: �"
     assert read.stderr == "fatal: �\n"
 
 
 def test_closing_a_read_nobody_collected_stops_it(repo):
-    read = gitio._Started(repo, ("cat-file", "--batch"), text=False, stdin=True)
+    read = gitio._Started(repo, ("cat-file", "--batch"), stdin=True)
 
     read.close()
 
@@ -320,7 +336,7 @@ def test_the_history_and_head_refusals_say_what_is_missing(repo, monkeypatch):
     write(repo, {"a.txt": b"a\n"})
     commit(repo)
     commit_time = refusal(lambda: gitio.commit_time(repo, "HEAD..HEAD"))
-    history = refusal(lambda: gitio._history_patches("junk"))
+    history = refusal(lambda: gitio._log_entries(b"junk"))
     monkeypatch.setattr(gitio, "head_from_refs", lambda root: None)
     monkeypatch.setattr(gitio, "_git", lambda root, *args, binary=False: "\n")
 
@@ -353,8 +369,8 @@ def test_a_path_that_starts_with_a_dash_is_staged(repo):
 
 
 def test_a_binary_record_keeps_its_path_whole():
-    assert gitio._binary_source_path("-\t-\ta\tb.py", (".py",)) == "a\tb.py"
-    assert gitio._binary_source_path("-\t-\t lead.py", (".py",)) == " lead.py"
+    assert gitio._binary_source_path(b"-\t-\ta\tb.py", (".py",)) == "a\tb.py"
+    assert gitio._binary_source_path(b"-\t-\t lead.py", (".py",)) == " lead.py"
 
 
 def test_binary_sources_are_read_without_renames_and_only_for_the_paths_asked(repo):
@@ -417,6 +433,8 @@ def test_a_worktree_failure_that_is_not_the_commondir_scan_is_not_retried(monkey
 
 
 def test_an_owned_worktree_command_honors_a_cancel_and_names_a_failure(repo):
+    write(repo, {"a.txt": b"a\n"})
+    commit(repo)
     with procs.own_processes(()) as owner:
         failed = refusal(lambda: gitio._worktree_git(repo, "rev-parse", "--verify", "nope", owner=owner))
         owner.cancel()

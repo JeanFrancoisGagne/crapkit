@@ -626,9 +626,17 @@ def ancestry(root: Path, commit: str, other: str = "HEAD") -> bool | None:
     not, None when git cannot tell: a commit this clone does not hold, or a
     repository git cannot read (`is_ancestor` names which). git counts a commit
     as its own ancestor, which is what "at or behind" needs; it exits 1 for no
-    and 128 when it cannot read a commit."""
-    res = _spawn(root, ("merge-base", "--is-ancestor", commit, other), binary=True)
-    return {0: True, 1: False}.get(res.returncode)
+    and 128 when it cannot read a commit.
+
+    A read that failed is no answer, and raises GitError by ancestry_answer's
+    rule: git also exits 1 when a commit on its walk cannot be read, and 128
+    for a ref it cannot resolve. It runs with git's words untranslated, so the
+    `error:` that marks such a read is git's own in every locale."""
+    argv = ("merge-base", "--is-ancestor", commit, other)
+    res = _spawn(root, argv, binary=True, pinned=UNTRANSLATED)
+    said = lenient(res.stderr)
+    return _ancestry(root, commit, res.returncode, said,
+                     f"git {' '.join(argv)} failed in {root}: {said.strip()}")
 
 
 def is_ancestor(root: Path, commit: str, other: str = "HEAD") -> bool:
