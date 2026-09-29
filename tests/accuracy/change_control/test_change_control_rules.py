@@ -383,8 +383,12 @@ MORE_FAILING = {
     "metric rows out of order": (_swapped_metric_rows, {"T5", "B1"}),
     "a renamed column in bugs.tsv": (lambda tree: seeds.replace(
         tree, seeds.BUGS, "id\tplatform", "bug\tplatform"), {"B2"}),
-    "a survivor added with no evidence": (lambda tree: seeds.append(
-        tree, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "ab" * 32, ""), {"B3"}),
+    "a survivor added with no reason": (lambda tree: seeds.append(
+        tree, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "ab" * 32, "", "2026-09-29"),
+                                        {"B3"}),
+    "an equivalent added with no evidence": (lambda tree: seeds.append(
+        tree, seeds.EQUIVALENT, "src/crapkit/score.py", "crap", "ef" * 32, "", "st", "2026-09-29"),
+                                             {"B3"}),
     "a hand row relocked under another packet's calc": (_hand_row_under_another_packets_calc,
                                                         {"B5", "B7", "B10"}),
     "a bug with no retro row": (lambda tree: seeds.without_line(
@@ -527,8 +531,12 @@ def _facts(name: str, head: dict) -> list[tuple]:
             "B2", f"{seeds.BUGS} lost or changed 1 row(s) the base had, the first being header id",
             f"restore them from the base (git checkout <base> -- {seeds.BUGS}) and add new rows "
             "below them")],
-        "a survivor added with no evidence": [(
+        "a survivor added with no reason": [(
             "B3", f"{seeds.SURVIVORS}: src/crapkit/score.py/crap/{'ab' * 32} is added with no "
+                  "reason", "fill its reason column: why no test can tell the mutant from the "
+                            "original")],
+        "an equivalent added with no evidence": [(
+            "B3", f"{seeds.EQUIVALENT}: src/crapkit/score.py/crap/{'ef' * 32} is added with no "
                   "evidence", "fill its evidence column from `python tools/accuracy/mutation.py` "
                               "(10,000 examples showing equal outputs)")],
         "a hand row relocked under another packet's calc": [
@@ -705,10 +713,11 @@ def test_before_the_first_lock_only_the_in_tree_rules_hold():
     assert {"B2"} <= pure_rules(BASE, emptied)
 
 
-def test_a_survivor_with_evidence_passes_and_is_printed(capsys):
-
+def test_a_survivor_with_a_reason_passes_and_is_printed(capsys):
+    """survivors.tsv says why in its reason column; only equivalent.tsv has an
+    evidence column, which mutation.py fills from its 10,000 examples."""
     head = seeds.append(BASE, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "cd" * 32,
-                        "10,000 examples equal (mutation.py run 7)")
+                        "no test reads the label a refusal prints", "2026-09-29")
 
     assert pure_rules(BASE, head) == set()
     assert "survivors.tsv adds src/crapkit/score.py/crap/cdcd" in capsys.readouterr().out
@@ -1360,10 +1369,11 @@ def test_a_row_that_appears_moves_from_absent_to_present():
         (seeds.SCORED, "src/a.py", "g", "row", "absent", "present")]
 
 
-def test_a_survivor_the_base_had_without_evidence_is_left_alone():
-    base = seeds.append(BASE, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "ab" * 32, "")
+def test_a_survivor_the_base_had_without_a_reason_is_left_alone():
+    base = seeds.append(BASE, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "ab" * 32, "",
+                        "2026-09-28")
     head = seeds.append(base, seeds.SURVIVORS, "src/crapkit/score.py", "crap", "cd" * 32,
-                        "10,000 examples equal (mutation.py run 7)")
+                        "no test reads the label a refusal prints", "2026-09-29")
 
     assert pure_rules(base, head) == set()
 

@@ -55,8 +55,8 @@ before it only the in-tree rules do, since no change can be declared yet.
   is gone. A bug the base's bugs.tsv marks `open` waits on a fix off main, which
   lands as other commits, so its rows may change or go as long as it keeps a
   bugs.tsv row.
-- B3 no floor drops, no floor key is gone, and each added survivor or equivalent
-  carries evidence. Added ones are printed.
+- B3 no floor drops, no floor key is gone, each added survivor gives its reason
+  and each added equivalent its evidence. Added ones are printed.
 - B4 no packet's test function count drops.
 - B5 a locked file that moved names a fresh change in its lock row, and a fresh
   change of another kind than none names a calc of the file's packet.
@@ -174,8 +174,14 @@ LEDGER = "tests/accuracy/suite_strength/retro/ledger.tsv"
 GROWING = (CHANGES, SEED_CHANGES, BUGS, LEDGER,
            "tests/accuracy/suite_strength/retro/triage.tsv", RETRO)
 FLOORS = "tests/accuracy/**/floors.tsv"
-EVIDENCED = ("tests/accuracy/suite_strength/mutation/survivors.tsv",
-             "tests/accuracy/suite_strength/mutation/equivalent.tsv")
+# Each mutation table, the column an added row must fill and how: a survivor says
+# why no test kills it, an equivalent carries mutation.py's 10,000-example line.
+EVIDENCED = {"tests/accuracy/suite_strength/mutation/survivors.tsv": (
+                 "reason", "fill its reason column: why no test can tell the mutant from the "
+                           "original"),
+             "tests/accuracy/suite_strength/mutation/equivalent.tsv": (
+                 "evidence", "fill its evidence column from `python tools/accuracy/mutation.py` "
+                             "(10,000 examples showing equal outputs)")}
 CHANGE_COLUMNS = goldens.CHANGE_COLUMNS
 KINDS = goldens.CHANGE_KINDS
 LOCK_COLUMNS = goldens.LOCK_COLUMNS
@@ -1378,13 +1384,12 @@ def _added(old: list[str], new: list[tuple[dict, str]]) -> list[dict]:
 
 
 def _evidence_problems(path: str, old: list[str], new: list[tuple[dict, str]]) -> list[Problem]:
+    column, fix = EVIDENCED[path]
     added = _added(old, new)
     for row in added:
         print(f"change control: {path} adds {_label(row)}")
-    return [Problem("B3", f"{path}: {_label(row)} is added with no evidence",
-                    "fill its evidence column from `python tools/accuracy/mutation.py` "
-                    "(10,000 examples showing equal outputs)")
-            for row in added if not row.get("evidence", "").strip()]
+    return [Problem("B3", f"{path}: {_label(row)} is added with no {column}", fix)
+            for row in added if not row.get(column, "").strip()]
 
 
 def _floors(diff: Diff) -> list[Problem]:

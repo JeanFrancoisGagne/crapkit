@@ -36,6 +36,10 @@ SEED_TEST = f"{SCORE}/test_seed_score.py"
 BUGS = "tests/accuracy/suite_strength/retro/bugs.tsv"
 FLOORS = "tests/accuracy/suite_strength/mutation/floors.tsv"
 SURVIVORS = "tests/accuracy/suite_strength/mutation/survivors.tsv"
+EQUIVALENT = "tests/accuracy/suite_strength/mutation/equivalent.tsv"
+# The two tables' columns, as tools/accuracy/mutation.py writes them.
+SURVIVOR_COLUMNS = ("module", "function", "diff_sha256", "reason", "added")
+EQUIVALENT_COLUMNS = ("module", "function", "diff_sha256", "evidence", "strategy", "checked")
 GOLDENS = "tests/accuracy/corpus_goldens/goldens/small"
 SCORED = f"{GOLDENS}/scored.tsv"
 INVENTORY = f"{GOLDENS}/inventory.tsv"
@@ -179,7 +183,8 @@ def base(rows: list[dict] | None = None) -> dict[str, str]:
         BUGS: _tsv(("id", "platform", "before_commit", "fix_commit"),
                    [("R01", "any", "1111111", "2222222")]),
         FLOORS: _tsv(("module", "floor"), [(MODULE, 95), (ANALYZE, 85)]),
-        SURVIVORS: _tsv(("module", "function", "sha256", "evidence"), []),
+        SURVIVORS: _tsv(SURVIVOR_COLUMNS, []),
+        EQUIVALENT: _tsv(EQUIVALENT_COLUMNS, []),
         COUNTS: _tsv(("packet", "tests"), [("score_model", 3)]),
         CHANGES: _tsv(("id", "date", "kind", "calcs", "analysis_version", "lizard_version",
                        "changelog", "reason"),
