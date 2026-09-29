@@ -16,8 +16,10 @@ import io
 import json
 import math
 from pathlib import Path
+import subprocess
 import sys
 import time
+from types import SimpleNamespace
 import zipfile
 
 from hypothesis import given, strategies as st
@@ -278,6 +280,16 @@ def test_xplat_names_the_first_row_and_column_that_differ():
     assert wheel_diff.xplat([_receipt("linux", base), _receipt("windows", far)]) == [
         "linux-3.12 vs windows-3.12: small/scored.tsv src/a.py 'g( x )' #1 ccn: '3' against '4'"]
     assert wheel_diff.xplat([{"exports": {}}]) == ["no receipt noted a corpus export"]
+
+
+def test_xplat_reads_the_receipts_its_command_line_names(tmp_path, capsys):
+    paths = []
+    for os_name in ("linux", "windows"):
+        paths.append(tmp_path / f"{os_name}.json")
+        paths[-1].write_text(json.dumps(_receipt(os_name, _tsv([_BASE_ROW]))), encoding="utf-8")
+
+    assert wheel_diff.main(["xplat", *map(str, paths)]) == 0
+    assert capsys.readouterr().out == "2 receipts agree on 1 export(s)\n"
 
 
 # --- whole runs -------------------------------------------------------------------------
@@ -826,6 +838,38 @@ def test_an_export_one_side_lacks_moves_every_row_it_holds():
 
     assert rows == [wheel_diff.Moved("a.tsv", "src/a.py", "g( x )", "1", "row", "present",
                                      "absent")]
+
+
+def test_an_export_only_the_candidate_holds_moves_every_row_it_holds():
+    rows = wheel_diff.diff_exports({}, {"a.tsv": _tsv([_BASE_ROW])})
+
+    assert rows == [wheel_diff.Moved("a.tsv", "src/a.py", "g( x )", "1", "row", "absent",
+                                     "present")]
+
+
+def test_the_rows_at_a_ref_are_read_from_the_repo_asked_about(tmp_path, monkeypatch):
+    """git show runs in `repo`: run anywhere else, it reads another tree's rows."""
+    changes = tmp_path / wheel_diff.CHANGES
+    changes.parent.mkdir(parents=True)
+    old = CHANGES_HEADER + "C1\t2026-09-01\tfix\tnloc\t11\t1.24.0\t\twhy\n"
+    changes.write_bytes((old + "C2\t2026-09-02\tfix\tCRAP score\t11\t1.24.0\t\twhy\n").encode())
+    asked = []
+
+    def show(argv, cwd, capture_output):
+        asked.append((argv, cwd))
+        return subprocess.CompletedProcess(argv, 0, old.encode(), b"")
+
+    monkeypatch.setattr(wheel_diff, "subprocess", SimpleNamespace(run=show))
+
+    assert wheel_diff.declared_since("v1", tmp_path) == {"CRAP score"}
+    assert asked == [(["git", "show", f"v1:{wheel_diff.CHANGES}"], tmp_path)]
+
+
+def test_the_parser_describes_the_tool_with_its_docstring_s_first_paragraph():
+    description = wheel_diff._parser().description
+
+    assert "\n\n" not in description
+    assert wheel_diff.__doc__.startswith(description + "\n\n")
 
 
 def _moves(count: int) -> list:

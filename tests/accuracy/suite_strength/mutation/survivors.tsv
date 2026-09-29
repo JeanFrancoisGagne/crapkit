@@ -336,3 +336,22 @@ src/crapkit/churn_log.py	_stored_window	8d83bc264dd25c9330a4c59455a20eafd869e671
 src/crapkit/churn_log.py	_tee	137d940474996ab84a66eaaeacca6b98e83a4939a21fd000a830b5220d83bdf9	level 2 deflates the same lines into other bytes, and the key records the size and CRC of the bytes written	2026-09-29
 src/crapkit/churn_log.py	_within	4d563ca96b2ce2f574e13e5375a582dd558ec29adfb17a15ccf9e84ef47fbedb	keep is only truth-tested, and None is false	2026-09-29
 src/crapkit/churn_log.py	_within	6eca0c4025d69f9c814473c9ffdb605f0da783032e7f5680d138eb08264d5d72	every log handed to it opens on a commit header, git log's first line under LOG_FORMAT and so the laid-down log's, which sets keep before any line is yielded	2026-09-29
+tools/accuracy/mutation.py	calc_env	a37e3417a5fe205eb3c2f4a4b8adc1275eea56639d73c63e0d254770afe0b9d8	filter(None, ...) drops a missing PYTEST_ADDOPTS whether it reads as "" or None	2026-09-29
+tools/accuracy/mutation.py	calc_env	2896778bfeea3ad050a975b89e35f7dde668118ad2f5660acff33845759386af	filter(None, ...) drops a missing PYTEST_ADDOPTS whether it reads as "" or None	2026-09-29
+tools/accuracy/mutation.py	calc_functions	13780d2dbd844767260211cbde46e8f7d527f07a715e685d8b988eac80228f1c	a calcs.tsv entry is path:qualified.name, and neither a repo path nor a qualified name holds a colon, so the first colon is the last	2026-09-29
+tools/accuracy/wheel_diff.py	_xplat	4d28fcfc2b9dd61890c9a08395fd866a33f1f1af64f475a427137090482fc39d	run.py writes every receipt with json.dumps, which escapes each non-ASCII character, so a receipt reads the same in any locale encoding	2026-09-29
+tools/accuracy/wheel_diff.py	_xplat	d0e1829f2c2622bd25d74588b32ab07284a751f11176acaeee854020d2752c6c	codec names are case-insensitive, so UTF-8 is utf-8	2026-09-29
+tools/accuracy/wheel_diff.py	changes_text	580719b58f0db61bef19a57e2fe0db8a1ef08ab163e3cedecc581de1534bf99d	codec names are case-insensitive, so UTF-8 is utf-8	2026-09-29
+tools/accuracy/wheel_diff.py	changes_text	ea26c8a21b73215ee36d8543964679eff12ca8703b243a7f79c6ab7c456b442f	codec names are case-insensitive, so UTF-8 is utf-8	2026-09-29
+tools/accuracy/wheel_diff.py	hand_off	ef7873dc2691bff15580ce0d3c6651ca1bd4adc37ef0613418f61798e19fa1c0	codec names are case-insensitive, so UTF-8 is utf-8	2026-09-29
+tools/accuracy/wheel_diff.py	run_commands	e0d4fb5b8ff3f5e6a12c8dd0f6bad189da314d948e20491450d2d9e47c6b5406	codec names are case-insensitive, so UTF-8 is utf-8	2026-09-29
+tools/accuracy/wheel_diff.py	write_out	e0c2caceb4852c2bde3f39dcb2d37dbe21a6ea6c5fcad14baa00ffd687d5997f	codec names are case-insensitive, so UTF-8 is utf-8	2026-09-29
+tools/accuracy/wheel_diff.py	write_out	c91372a1779d31794f7dffdbe53c6c6b13e6cebdceb526a8431c32a2878339ec	codec names are case-insensitive, so UTF-8 is utf-8	2026-09-29
+tools/accuracy/wheel_diff.py	write_out	0e3f6a16fa5e4c914b63db9710f825fb45d62f83c552919a9960eea530b09e61	codec names are case-insensitive, so UTF-8 is utf-8	2026-09-29
+tools/accuracy/wheel_diff.py	changes_text	527601151dd0a25decfa7f87595b2f95916d19b4038ee400b52734d1746ff334	git show prints nothing on stdout when it fails, so the failed read decodes to "" either way	2026-09-29
+tools/accuracy/wheel_diff.py	diff_exports	88cf79bf6a497df6b23bd08af22037c49b9b1e9d5be292a4c480b2269b227545	a text with no line after its header holds no rows, so "XXXX" keys as nothing, as "" does	2026-09-29
+tools/accuracy/wheel_diff.py	diff_exports	59fbd761911a21ad6ec2aa1163be7f64c7eee2dd2ef4177fa2c4405467103fb8	a text with no line after its header holds no rows, so "XXXX" keys as nothing, as "" does	2026-09-29
+tools/accuracy/wheel_diff.py	export_problem	e1538bbe9950e549a95fadfcdf8b2c68b363f3375246f2ed1a392aba528d5a0a	the problem line is built from `name` and the cells, never from the row's export field	2026-09-29
+tools/accuracy/wheel_diff.py	hand_off	f22a7a824c8aaea589be04b86bbf39e0df2be5c93445d59efbbbdb7411a904cb	tools/testing/ci.py writes failure.json with json.dumps, which escapes each non-ASCII character, so it reads the same in any locale encoding	2026-09-29
+tools/accuracy/wheel_diff.py	write_out	b542f35776ea6669cc7bb96d6be6f721fd45c608dd4544206701249533cd776b	json.dumps escapes each non-ASCII character, so summary.json is the same bytes in any locale encoding	2026-09-29
+tools/accuracy/wheel_diff.py	write_out	a8b1358c79d41d06d3e7d2f1165101f77649f56bacf1e4617bdc7fb96ff0312f	json.dumps escapes each non-ASCII character, so summary.json is the same bytes in any locale encoding	2026-09-29

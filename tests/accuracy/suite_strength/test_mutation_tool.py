@@ -1421,6 +1421,57 @@ def test_a_diff_with_no_changed_function_starts_no_mutmut(monkeypatch):
     assert mutation._run_changed([], 60) == ([], True)
 
 
+CLI = "src/crapkit/cli/scoring.py"
+
+
+def _named_cli(monkeypatch) -> None:
+    """A cli module whose calcs rows name one function of it, `_named`."""
+    monkeypatch.setattr(mutation, "calc_modules", lambda: [CLI])
+    monkeypatch.setattr(mutation, "calc_functions", lambda: {CLI: {"_named"}})
+    monkeypatch.setattr(mutation, "changed_functions",
+                        lambda repo, base, modules: [(CLI, "_named"), (CLI, "_other")])
+
+
+def test_a_weekly_shard_mutates_a_cli_module_at_its_named_functions_only(tmp_path, monkeypatch):
+    _named_cli(monkeypatch)
+    recorder = _commands_on(tmp_path, monkeypatch, [_crap(KEYS[0], "killed")])
+
+    mutation.main(["weekly", "--shard", "1", "--of", "1"])
+
+    assert recorder.calls[0]["globs"] == ["crapkit.cli.scoring.x__named__mutmut_*",
+                                          "crapkit.score.x_crap__mutmut_*"]
+
+
+def test_a_diff_run_mutates_a_cli_module_at_its_named_functions_only(tmp_path, monkeypatch):
+    _named_cli(monkeypatch)
+    recorder = _commands_on(tmp_path, monkeypatch, [_crap(KEYS[0], "killed")])
+
+    mutation.main(["diff", "--base", "b" * 40])
+
+    assert recorder.calls[0]["globs"] == ["crapkit.cli.scoring.x__named__mutmut_*"]
+
+
+def test_the_covered_command_asks_only_after_a_cli_module_s_named_functions(
+        tmp_path, monkeypatch, capsys):
+    _named_cli(monkeypatch)
+    weekly = {"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 1}
+
+    assert mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "r", weekly))]) == 1
+    assert capsys.readouterr().out == (
+        f"mutation: {CLI}:_named changed since the weekly run at {HEAD_A[:12]} "
+        "and no complete diff run mutated it\n")
+
+
+def test_a_cli_module_no_calcs_row_names_is_out_of_calc_scope():
+    assert mutation.in_calc_scope([(CLI, "_named")], {}) == []
+
+
+def test_every_generated_block_is_kept_as_written():
+    blocks = "# generated:a\nx = 1\n# /generated:a\n# generated:b\ny = 2\n# /generated:b\n"
+
+    assert mutation.generated_blocks(f"[tool.mutmut]\n{blocks}z = 3\n") == blocks
+
+
 # --- staged_run over a stage whose launcher plays mutmut ------------------------------------------
 
 STAGE_LAUNCHER = FAKE_LAUNCHER.replace(
