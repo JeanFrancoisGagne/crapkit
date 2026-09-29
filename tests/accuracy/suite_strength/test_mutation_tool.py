@@ -21,6 +21,7 @@ from pathlib import Path
 import runpy
 import sys
 import time
+import types
 
 from hypothesis import given, strategies as st
 import pytest
@@ -733,6 +734,26 @@ def test_only_the_targets_whose_source_is_here_are_staged(tmp_path):
     targets = {"tools/accuracy/retro.py": ("t1",), "tools/accuracy/gone.py": ("t2",)}
 
     assert mutation.present(targets, tmp_path) == {"tools/accuracy/retro.py": ("t1",)}
+
+
+def test_the_stats_mode_stays_in_the_launcher_s_process(monkeypatch):
+    """mutmut mirrors the active mode into MUTANT_UNDER_TEST, which every child a
+    test starts inherits. In stats mode a trampoline in that child looks for
+    mutmut's settings in the child's working directory and stops it with
+    FileNotFoundError, so each test that starts an interpreter on the copy
+    (comment.py, tools/testing/run.py, the CLI) failed the stats run, and no
+    mutant was judged. The launcher keeps "stats" in its own process; any other
+    mode reaches children as mutmut sets it."""
+    namespace: dict = {}
+    exec(compile(mutation.LAUNCHER.split("if __name__")[0], "launcher", "exec"), namespace)
+    trampolines, handed = types.SimpleNamespace(_mutant_under_test=None), []
+    namespace.update(_trampolines=trampolines, _set_mutant=handed.append)
+    monkeypatch.setenv("MUTANT_UNDER_TEST", "fail")
+
+    namespace["set_mutant_under_test"]("stats")
+    assert (trampolines._mutant_under_test, "MUTANT_UNDER_TEST" in os.environ) == ("stats", False)
+    namespace["set_mutant_under_test"]("crapkit.score.x_crap__mutmut_3")
+    assert handed == ["crapkit.score.x_crap__mutmut_3"]
 
 
 def test_the_launcher_names_a_module_the_way_its_tests_import_it(tmp_path):

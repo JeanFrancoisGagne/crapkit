@@ -756,6 +756,7 @@ from tests/, and tests load a tool by path under a name of their own, so here
 mutmut gave it.
 """
 import importlib.util
+import os
 from pathlib import Path
 import tomllib
 
@@ -791,6 +792,20 @@ def spec_from_file_location(name, location=None, *args, **kwargs):
     return _spec(canonical(relative) if relative else name, location, *args, **kwargs)
 
 
+def set_mutant_under_test(name):
+    """mutmut's setter, except that stats mode stays in this process. mutmut mirrors
+    the mode into MUTANT_UNDER_TEST, and a child a test starts (comment.py, the
+    test runner, the CLI) inherits it: in stats mode a trampoline there looks for
+    mutmut's settings in the child's working directory and stops the child, and
+    the stats run fails. A child's hits were never recorded, so it runs the
+    original code. A mutant's name still reaches children."""
+    if name == "stats":
+        _trampolines._mutant_under_test = name
+        os.environ.pop("MUTANT_UNDER_TEST", None)
+    else:
+        _set_mutant(name)
+
+
 def diffs():
     """`diffs`: the diff of every mutant named on stdin, one JSON [name, diff] line each."""
     import json
@@ -805,14 +820,17 @@ def diffs():
 
 if __name__ == "__main__":
     import sys
+    import mutmut.mutation.trampoline as _trampolines
     import mutmut.utils.format_utils as names
 
     CONFIG = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["mutmut"]
     SOURCES = set(CONFIG["source_paths"])
     MUTANTS = Path("mutants").resolve()
     _strip, _spec = names.strip_prefix, importlib.util.spec_from_file_location
+    _set_mutant = _trampolines.set_mutant_under_test
     names.strip_prefix = strip_prefix
     importlib.util.spec_from_file_location = spec_from_file_location
+    _trampolines.set_mutant_under_test = set_mutant_under_test
     if sys.argv[1:2] == ["diffs"]:
         diffs()
     else:
