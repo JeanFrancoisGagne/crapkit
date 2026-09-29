@@ -120,9 +120,12 @@ def bare(long_name: str) -> str:
     """The identifier a probe names: the text before the parameter list (a
     parenthesis, or the first space where the long name has no parenthesis, as
     in Go, Rust, Swift, Zig and PowerShell), last component after `::` or `.`.
-    A function lizard could not name reads `(anonymous)`."""
+    A function lizard could not name reads `(anonymous)`. A Swift raw identifier
+    (`keeps onboarding if offline`) holds spaces, so it runs to its own backtick."""
     if long_name.startswith(ANONYMOUS):
         return ANONYMOUS
+    if long_name.startswith("`") and "`" in long_name[1:]:
+        return long_name[:long_name.index("`", 1) + 1]
     head = long_name.split("(")[0].strip()
     head = head.split()[0] if head else head
     return head.replace("::", ".").split(".")[-1].strip()

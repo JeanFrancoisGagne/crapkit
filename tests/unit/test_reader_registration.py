@@ -1,4 +1,4 @@
-"""The three registrations, together, in one process.
+"""The reader registrations, together, in one process.
 
 Wave 2 admitted six languages across two lines of work, and they meet here:
 `analyze` imports three reader modules, two of which rebind
@@ -10,7 +10,9 @@ stamp-based guard the shell reader shipped with, each module stamping its own
 name, one repeat call each leaves `[A, B, A, B]` on the list — a stamp answers
 only for the OUTERMOST wrapper, and the module that registered first cannot see
 its own. Both readers now ask the list whether it already carries them, which is
-what these tests hold them to.
+what these tests hold them to. lizardclike later rebound two more class names,
+CLikeReader and ObjCReader, the way the Rust reader rebinds its own, and
+lizardjava a third, JavaReader.
 
 The chain also has to survive a spawned process, since `analyze_jobs` pools
 past 16 files and a Windows child re-imports everything. That is asserted from
@@ -22,21 +24,29 @@ import sys
 
 import pytest
 
-from crapkit import analyze
+from crapkit import analyze, lizardclike, lizardjava
+from crapkit.lizardclike import register as register_clike
 from crapkit.lizardgolike import CorrectedGoReader, CorrectedZigReader
 from crapkit.lizardgolike import register as register_golike
+from crapkit.lizardjava import register as register_java
 from crapkit.lizardpowershell import PowerShellReader
 from crapkit.lizardpowershell import register as register_powershell
 from crapkit.lizardrust import CorrectedRustReader
 from crapkit.lizardrust import register as register_rust
 from crapkit.lizardshell import ShellReader
 from crapkit.lizardshell import register as register_shell
+from crapkit.lizardswift import CorrectedSwiftReader
+from crapkit.lizardswift import register as register_swift
 from crapkit.universe import LANGUAGE_EXTENSIONS
 
 # The suffix each crapkit-owned reader must answer to, and the reader itself.
 CRAPKIT_READERS = {".rs": CorrectedRustReader, ".sh": ShellReader, ".bash": ShellReader,
                    ".ps1": PowerShellReader, ".psm1": PowerShellReader,
-                   ".go": CorrectedGoReader, ".zig": CorrectedZigReader}
+                   ".go": CorrectedGoReader, ".zig": CorrectedZigReader,
+                   ".c": lizardclike.CLikeReader, ".cpp": lizardclike.CLikeReader,
+                   ".h": lizardclike.CLikeReader, ".m": lizardclike.ObjCReader,
+                   ".mm": lizardclike.ObjCReader, ".java": lizardjava.JavaReader,
+                   ".swift": CorrectedSwiftReader}
 
 
 def _get_reader_for(name: str):
@@ -64,9 +74,12 @@ def test_registering_all_three_again_in_any_order_appends_nothing():
 
     for _ in range(2):
         register_golike()
+        register_java()
+        register_clike()
         register_powershell()
         register_shell()
         register_rust()
+        register_swift()
 
     assert languages() == before
 
@@ -116,10 +129,14 @@ def test_a_spawned_child_importing_analyze_resolves_all_three():
     registrations ride the import rather than this process's history."""
     probe = ("import crapkit.analyze;"
              "from lizard_languages import get_reader_for as g;"
-             "print([g('p' + s).__name__ for s in ('.rs', '.sh', '.ps1', '.go', '.zig')])")
+             "print([g('p' + s).__module__ + '.' + g('p' + s).__name__"
+             " for s in ('.rs', '.sh', '.ps1', '.go', '.zig', '.c', '.m', '.java', '.swift')])")
 
     out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True,
                          check=True).stdout
 
-    assert ("['CorrectedRustReader', 'ShellReader', 'PowerShellReader', "
-            "'CorrectedGoReader', 'CorrectedZigReader']") in out
+    assert ("['crapkit.lizardrust.CorrectedRustReader', 'crapkit.lizardshell.ShellReader', "
+            "'crapkit.lizardpowershell.PowerShellReader', "
+            "'crapkit.lizardgolike.CorrectedGoReader', 'crapkit.lizardgolike.CorrectedZigReader', "
+            "'crapkit.lizardclike.CLikeReader', 'crapkit.lizardclike.ObjCReader', "
+            "'crapkit.lizardjava.JavaReader', 'crapkit.lizardswift.CorrectedSwiftReader']") in out

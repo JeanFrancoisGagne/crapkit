@@ -27,6 +27,7 @@ from pathlib import Path
 import shutil
 import tempfile
 
+import git_env
 import hang_guard
 from . import tiers
 
@@ -80,9 +81,11 @@ class Built:
 
 
 def git(top: Path, *args: str, date: int | None = None, author: tuple = IDENTITY) -> str:
-    """One git command in `top`, with dates pinned when given."""
+    """One git command in `top`, with dates pinned when given. A GIT_DIR the
+    caller inherited (a hook, `git bisect run`) never reaches it: see git_env."""
     tiers.require_process("git")
-    env = {**os.environ, "GIT_AUTHOR_NAME": author[0], "GIT_AUTHOR_EMAIL": author[1],
+    env = {**git_env.without_repo_env(os.environ),
+           "GIT_AUTHOR_NAME": author[0], "GIT_AUTHOR_EMAIL": author[1],
            "GIT_COMMITTER_NAME": author[0], "GIT_COMMITTER_EMAIL": author[1]}
     if date is not None:
         env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = f"@{date} +0000"

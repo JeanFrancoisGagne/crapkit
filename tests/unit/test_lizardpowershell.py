@@ -15,6 +15,7 @@ import lizard_languages
 import pytest
 
 from crapkit.analyze import analyze_source
+from crapkit.keys import bare_name
 from crapkit.lizardpowershell import PowerShellReader, register
 
 # P1: if + 5 elseif + else. Six decision points, base 1.
@@ -323,6 +324,62 @@ def test_a_param_block_costs_nothing_at_all():
     assert _only(code).cyclomatic_complexity == 1
 
 
+def _switch(subject, arms):
+    return f"function f($m, $n) {{\n    switch {subject} {{\n{arms}    }}\n}}\n"
+
+
+TWO_ARMS = "        'a' { return 1 }\n        'b' { return 2 }\n"
+
+
+@pytest.mark.parametrize("subject", ["($m['k'])", "-regex ($m[0])", "($(Get-A; Get-B))",
+                                     "-file $m[0]", "($n)\n   "])
+def test_a_switch_counts_its_arms_whatever_its_subject_holds(subject):
+    """A `]` or a `;` in the flags or subject ended the switch before its body
+    (`switch ($m['k'])` counted neither arm). Only a `;` or a `}` outside the
+    subject's parentheses ends a switch that opened no body now, and the body
+    may start on the next line."""
+    assert _only(_switch(subject, TWO_ARMS)).cyclomatic_complexity == 3
+
+
+@pytest.mark.parametrize("arms, ccn", [
+    ("        { $_ -gt 5 } { 'big' }\n        { $_ -lt 0 } { 'negative' }\n"
+     "        default { 'small' }\n", 3),
+    ("        1 { 'one' }\n        { $_ -gt 5 } { 'big' }\n        'x' { 'x' }\n", 4),
+    ("        1 { 'one' }; default { 'many' }\n", 2),
+    ("        { $_ } { 'truthy' }; { -not $_ } { 'falsy' }\n", 3),
+    ("        (1 + 1) { 'two' }\n        default { 'other' }\n", 2),
+    ("        $m.Max { 'max' }\n        $m.Min { 'min' }\n        default { 'mid' }\n", 3),
+    ("        $m.default { 'the default value' }\n        $m['if'] { 'keyed' }\n", 3),
+    ("        (default) { 'runs a command named default' }\n        default { 'other' }\n", 2),
+])
+def test_an_arm_counts_once_whatever_its_pattern_is(arms, ccn):
+    """An arm is a pattern and the block it runs (about_Switch). A pattern may be
+    a script block, and its own braces opened directly in the switch body like
+    the block's, so a script-block arm counted twice. A pattern of several
+    tokens is one arm, and only its first token can make it the default arm."""
+    assert _only(_switch("($n)", arms)).cyclomatic_complexity == ccn
+
+
+@pytest.mark.parametrize("line", ["git switch main", "Write-Output switch"])
+def test_a_switch_word_that_starts_no_statement_opens_no_body(line):
+    """`git switch main` runs git. Read as a switch statement, the next block
+    became its body and each block opening directly inside it an arm."""
+    code = ("function Update-Branch($x) {\n    " + line + "\n    if ($x) {\n"
+            "        foreach ($y in $x) { $y }\n    }\n}\n")
+
+    assert _only(code).cyclomatic_complexity == 3
+
+
+@pytest.mark.parametrize("statement", [":outer switch ($n) {", "$r = switch ($n) {",
+                                       "return $(switch ($n) {"])
+def test_a_switch_after_a_label_or_an_assignment_still_counts(statement):
+    closer = "})" if statement.endswith("$(switch ($n) {") else "}"
+    code = ("function f($n) {\n    " + statement + "\n        1 { 'a' }\n        2 { 'b' }\n"
+            "        default { 'c' }\n    " + closer + "\n}\n")
+
+    assert _only(code).cyclomatic_complexity == 3
+
+
 # --- hazard: comments ----------------------------------------------------------
 
 def test_keywords_in_a_line_comment_are_not_conditions():
@@ -345,6 +402,129 @@ def test_a_commented_out_function_is_not_a_function():
     code = "function real {\n  return 1\n}\n# function fake { }\n"
 
     assert [fn.name for fn in _functions(code)] == ["real"]
+
+
+# --- hazard: slashes -----------------------------------------------------------
+
+def _rows(code):
+    return [(bare_name(r.long_name), r.start, r.end, r.ccn_std)
+            for r in analyze_source("probe.ps1", code)]
+
+
+# (line, end line). PowerShell has no `//` or `/* */` comment: to Windows
+# PowerShell 5.1's parser `https://h/p`, `a//b`, `a/*` and `*/b` are words, and
+# each function below is 1 + one if or while, so ccn 2.
+SLASHES_IN_A_WORD = [
+    ("Invoke-RestMethod https://h/p ; while ($a) { 1 }", 3),
+    ("Write-Host a//b; if ($a) { 1 }", 3),
+    ("Get-Item a/* ; if ($a) { 1 } ; Get-Item */b", 3),
+    ("Remove-Item C:/tmp/* -Recurse; if ($a) {\n        1\n    }", 5),
+    ("$x = 6 /2 /3; if ($a) { 1 }", 3),
+]
+
+
+@pytest.mark.parametrize("line, end", SLASHES_IN_A_WORD)
+def test_slashes_open_no_c_comment(line, end):
+    """lizard's shared pattern reads `//` as a C++ line comment and `/*` as a C
+    block comment. As one token the `//` took the rest of its line, the while
+    or if and its braces with it, and the `/*` ran on to the next `*/`."""
+    assert _rows(f"function Get-A($a) {{\n    {line}\n}}\n") == [("Get-A", 1, end, 2)]
+
+
+def test_a_glob_and_its_mirror_image_hide_no_function_between_them():
+    code = ("function A {\n    Get-Item a/*\n}\nfunction B($a) {\n    if ($a) { 1 }\n}\n"
+            "function C {\n    Get-Item */b\n}\n")
+
+    assert _rows(code) == [("A", 1, 3, 1), ("B", 4, 6, 2), ("C", 7, 9, 1)]
+
+
+# --- hazard: a # inside a word -------------------------------------------------
+
+def _get_a(body):
+    (record,) = analyze_source("probe.ps1", f"function Get-A($a, $b) {{\n    {body}\n}}\n")
+    return record.ccn_std, record.cognitive, record.end
+
+
+# (body, ccn_std, cognitive, end line). Each ccn_std is what Windows PowerShell
+# 5.1's parser reads (1 + if clauses + loops), and each # below sits inside one
+# Generic token there, so the if, elseif or while after the `;` is a statement.
+HASH_INSIDE_A_WORD = [
+    ("Write-Host a#b; if ($a) {\n        1\n    }", 2, 1, 5),
+    ("Write-Output C#; if ($a) { 1 } elseif ($b) { 2 }", 3, 2, 3),
+    ("Invoke-RestMethod https://h/p#frag ; while ($a) { 1 }", 2, 1, 3),
+    ("Write-Host 1#c; if ($a) { 1 }", 2, 1, 3),
+    ("Write-Host $a#b; if ($a) { 1 }", 2, 1, 3),
+    ("Write-Host -a#b; if ($a) { 1 }", 2, 1, 3),
+    ("Write-Host [int]#c; if ($a) { 1 }", 2, 1, 3),
+    ("Write-Host a[1]#b; if ($a) { 1 }", 2, 1, 3),
+    ('Write-Host a#"b; c" ; if ($a) { 1 }', 2, 1, 3),
+    ("Write-Host a#b`; c; if ($a) { 1 }", 2, 1, 3),
+    ("Write-Host x#-and; if ($a) { 1 }", 2, 1, 3),
+    ("$x = foo#bar; if ($a) { 1 }", 2, 1, 3),
+    ("$h = @{ k = v#w }; if ($a) { 1 }", 2, 1, 3),
+    ("$a | foo#bar; if ($a) { 1 }", 2, 1, 3),
+    ('Write-Host a"b"#c; if ($a) { 1 }', 2, 1, 3),
+    ("Write-Host -a:$b#c; if ($a) { 1 }", 2, 1, 3),
+    # `else#c` is one word, a command name: the if has no else clause.
+    ("if ($a) { 1 } else#c\n    { 2 }", 2, 1, 4),
+]
+
+
+@pytest.mark.parametrize("body, ccn, cognitive, end", HASH_INSIDE_A_WORD)
+def test_a_hash_inside_a_word_opens_no_comment(body, ccn, cognitive, end):
+    """PowerShell opens a comment at a # only where a token starts. A word that
+    starts with a letter, and any word in a command's arguments, reads on
+    through the #, up to a space or one of , | & ; ( ) { }. As a comment the #
+    took the rest of the line: the if after `a#b;` counted nothing, and the
+    `{` it opened was gone, so the function ended at the first `}` after it."""
+    assert _get_a(body) == (ccn, cognitive, end)
+
+
+def test_a_line_of_many_words_that_hold_a_hash_is_read_to_its_end():
+    """Each such word hands the rest of its line to a new token stream. They
+    stack rather than nest, so no line is too long to read."""
+    words = " ".join(f"a{n}#b" for n in range(3000))
+
+    assert _get_a(f"Write-Host {words}; if ($a) {{ 1 }}") == (2, 1, 3)
+
+
+# (body, ccn_std, cognitive, end line). Here PowerShell 5.1 reads a Comment
+# token at the #: after a number, a variable or a member in an expression,
+# after a `)`, a `}` or a closed string, and after a space.
+HASH_OPENING_A_COMMENT = [
+    ("$x = 1#c; if ($a) { 1 }", 1, 0, 3),
+    ("Write-Host $a.b#c; if ($a) { 1 }", 1, 0, 3),
+    ("Write-Host $a[0]#c; if ($a) { 1 }", 1, 0, 3),
+    ("Write-Host (1)#c; if ($a) { 1 }", 1, 0, 3),
+    ('Write-Host "x"#c; if ($a) { 1 }', 1, 0, 3),
+    ("Write-Host 'x'#c; if ($a) { 1 }", 1, 0, 3),
+    ("$h = @{ k = 1 }#c; if ($a) { 1 }", 1, 0, 3),
+    ("1#c; if ($a) { 1 }", 1, 0, 3),
+    ("$a#c; if ($a) { 1 }", 1, 0, 3),
+    ("Write-Host a #c; if ($a) { 1 }", 1, 0, 3),
+]
+
+
+@pytest.mark.parametrize("body, ccn, cognitive, end", HASH_OPENING_A_COMMENT)
+def test_a_hash_where_powershell_reads_a_comment_still_opens_one(body, ccn, cognitive, end):
+    assert _get_a(body) == (ccn, cognitive, end)
+
+
+def test_a_hashtable_key_ends_at_a_hash():
+    """A key is read in expression mode: `@{ a#b = 1 }` is Identifier[a] and
+    Comment[#b = 1 }] to PowerShell 5.1, although a value's `b#c` is one word."""
+    tokens = [t for t in PowerShellReader.generate_tokens("@{ a#b = 1 }") if not t.isspace()]
+
+    assert tokens == ["@", "{", "a", "#b = 1 }"]
+
+
+@pytest.mark.parametrize("keyword", ["function", "filter"])
+def test_a_hash_inside_a_declared_name_keeps_the_name_and_the_body(keyword):
+    """`function Get-A#B { }` declares Get-A#B to PowerShell 5.1. Read as a
+    comment, the # took the body's `{` and the function never opened."""
+    code = f"{keyword} Get-A#B {{\n    if ($a) {{ 1 }}\n}}\n"
+
+    assert _rows(code) == [("Get-A#B", 1, 3, 2)]
 
 
 # --- hazard: here-strings ------------------------------------------------------
@@ -403,6 +583,91 @@ def test_keywords_inside_a_plain_string_are_not_conditions():
     assert _only(code).cyclomatic_complexity == 1
 
 
+def test_quotes_inside_a_subexpression_pair_among_themselves():
+    """`"$(Get-Item "x{")"` is one string. Ended at its second quote, it left
+    `x{` in code, the `{` never closed, and function A had no row at all."""
+    code = ('function A {\n  $v = "$(Get-Item "x{")"\n}\n\n'
+            'function B {\n  if ($x) { 2 }\n}\n')
+
+    assert [(f.name, f.start_line, f.end_line, f.cyclomatic_complexity)
+            for f in _functions(code)] == [("A", 1, 3, 1), ("B", 5, 7, 2)]
+
+
+# --- code inside a string: a $( ) subexpression in "..." -----------------------
+#
+# `"$($a -and $b)"` evaluates `$a -and $b`. The quotes make its value text; they
+# do not make the expression text. Each line holds one decision inside the
+# subexpression and reads what the same expression reads written bare.
+
+SUBEXPRESSIONS = {
+    "an -and": ('$x = "$($a -and $b)"', "$x = $($a -and $b)"),
+    "text around it": ('$x = "v: $($a -or $b) end"', "$x = $($a -or $b)"),
+    "an if": ('$x = "$(if ($a) { 1 })"', "$x = $(if ($a) { 1 })"),
+    "an if and its else": ('$x = "$(if ($a) { 1 } else { 2 })"', "$x = $(if ($a) { 1 } else { 2 })"),
+    "one inside another": ('$x = "$(G "$($a -and $b)")"', "$x = $(G $($a -and $b))"),
+    "four levels of parens": ('$x = "$(f (g (h ($a -and $b))))"',
+                              "$x = $(f (g (h ($a -and $b))))"),
+    "eight levels of parens": ('$x = "$(' + "(" * 7 + "$a -and $b" + ")" * 8 + '"',
+                               "$x = $(" + "(" * 7 + "$a -and $b" + ")" * 8),
+}
+
+
+def _columns(line):
+    (record,) = analyze_source("hole.ps1", "function F {\n  " + line + "\n}\n")
+    return record.ccn_std, record.ccn, record.cognitive, record.nesting
+
+
+@pytest.mark.parametrize("quoted, bare", SUBEXPRESSIONS.values(), ids=SUBEXPRESSIONS.keys())
+def test_a_subexpression_inside_a_string_counts_what_it_counts_bare(quoted, bare):
+    """NIST SP 500-235 sec. 4.1: the decision counts wherever its expression
+    sits, so ccn_std is 2 in both spellings."""
+    assert (_columns(quoted), _columns(quoted)[0]) == (_columns(bare), 2)
+
+
+def test_a_backtick_escaped_subexpression_is_text():
+    """`` "`$($a -and $b)" `` prints `$($a -and $b)` and evaluates nothing."""
+    assert _columns('$x = "`$($a -and $b)"')[:2] == (1, 1)
+
+
+def test_a_subexpression_in_single_quotes_is_text():
+    assert _columns("$x = '$($a -and $b)'")[:2] == (1, 1)
+
+
+def test_a_subexpression_over_two_lines_keeps_every_later_line_number():
+    code = ('function A {\n  $x = "$($a -and\n    $b)"\n}\n\n'
+            'function B {\n  return 1\n}\n')
+    spans = [(r.start, r.end, r.ccn) for r in analyze_source("two.ps1", code)]
+
+    assert spans == [(1, 4, 2), (6, 8, 1)]
+
+
+def test_quotes_four_parens_deep_in_a_subexpression_pair_among_themselves():
+    """The string rule read three levels of parens. At four it did not match,
+    the string ended at `"x{`, and the `{` left in code hid function B."""
+    code = ('function A {\n  $v = "$(f (g (h ("x{"))))"\n}\n\n'
+            'function B {\n  if ($x) { 2 }\n}\n')
+
+    assert [(f.name, f.start_line, f.end_line, f.cyclomatic_complexity)
+            for f in _functions(code)] == [("A", 1, 3, 1), ("B", 5, 7, 2)]
+
+
+def test_parens_nine_levels_deep_are_the_documented_limit():
+    """The string rule reads eight levels of parens inside a subexpression. At
+    nine it does not match, the string ends at its first inner quote, and the
+    `-and` counts nothing."""
+    line = '$x = "$(' + "(" * 8 + "$a -and $b" + ")" * 9 + '"'
+    assert _columns(line)[:2] == (1, 1)
+
+
+def test_an_unpaired_quote_before_many_subexpressions_reads_in_linear_time():
+    """With no closing quote left in the file, the string rule tried every way of
+    reading each `$( )` after it as a subexpression or as text, twice the time
+    per subexpression: 1.8 s for 22 of them. Its loops no longer give back what
+    they matched, so this tokenizes at once; before, it did not finish."""
+    code = 'function F {\n  $x = "' + " $(a)" * 40 + "\n}\n"
+    assert [(f.name, f.end_line) for f in _functions(code)] == [("F", 3)]
+
+
 # --- the declaration spellings -------------------------------------------------
 
 def test_a_function_with_no_parameter_list_is_reported():
@@ -447,6 +712,193 @@ def test_a_function_declared_inside_another_is_reported_separately():
         "Get-P7Outer": 2, "Get-P7Inner": 2}
 
 
+def _rows(code):
+    return [(bare_name(r.long_name), r.start, r.end, r.ccn_std)
+            for r in analyze_source("probe.ps1", code)]
+
+
+IF_BODY = "    if ($x) {\n        return 1\n    }\n    return 0\n"
+AFTER = "\nfunction Get-After($y) {\n    if ($y) {\n        return 2\n    }\n    return 0\n}\n"
+
+
+@pytest.mark.parametrize("name", ["script:Get-Scoped", "global:Get-Scoped",
+                                  "private:Get-Scoped", "Get.Dotted"])
+def test_a_scoped_or_dotted_name_is_one_function(name):
+    """`function [<scope:>]<name>` declares one function (about_Functions), and
+    PowerShell's parser names `function Get.Dotted` Get.Dotted. The name used
+    to end at its colon or dot, the function got no row, and its decisions
+    counted toward none."""
+    code = f"function {name}($x) {{\n{IF_BODY}}}\n" + AFTER
+
+    assert _rows(code) == [(name, 1, 6, 2), ("Get-After", 8, 13, 2)]
+
+
+@pytest.mark.parametrize("line", [
+    "dotnet build --configuration $x.Configuration",
+    "$f = $o.filter",
+    "$h = @{ filter = '*.txt'; class = 'x' }",
+    "Write-Output function workflow",
+    "Set-Thing { filter = '*.txt'; class = 'x' }",
+])
+def test_a_declaring_word_that_declares_nothing_opens_nothing(line):
+    """A declaring word declares only where it starts a statement and a name
+    follows it. A native option, a member, a hashtable key, a bare argument
+    and a word with no name after it opened a declaration: the function around
+    the word lost its row, and a phantom row named after a later token could
+    take its place."""
+    code = ("function Invoke-Build($x) {\n    if ($x) {\n        " + line + "\n    }\n"
+            "    return 0\n}\n\nfunction Get-Next($y) {\n    return $y\n}\n")
+
+    assert _rows(code) == [("Invoke-Build", 1, 6, 2), ("Get-Next", 8, 10, 1)]
+
+
+@pytest.mark.parametrize("statement, ccn", [
+    ("filter status --short", 2),        # a name, then an argument where a body belongs
+    ("configuration Release 'x64'", 2),
+    ("param", 2),                        # no block after it: a command named param
+    ("switch;", 2),                      # a switch that ends before its body
+    ("if ($x) { switch }", 3),
+    ("switch ($x) { 1 { switch } 2 { 'b' } 3 { 'c' } }", 5),
+])
+def test_an_unfinished_declaration_param_or_switch_costs_the_rows_around_it_nothing(statement, ccn):
+    """PowerShell's parser rejects each of these but `param`, which it reads
+    as a command, and crapkit still reads the file: the function around the
+    statement keeps its row, its one parameter and its decisions (the `if`
+    after it, and every arm of an outer switch), and the next function
+    starts where it is written."""
+    code = ("function Invoke-Build($x) {\n    " + statement + "\n    if ($x) {\n        return 1\n"
+            "    }\n    return 0\n}\n\nfunction Get-Next($y) {\n    return $y\n}\n")
+    rows = [(bare_name(r.long_name), r.start, r.end, r.ccn_std, r.params)
+            for r in analyze_source("probe.ps1", code)]
+
+    assert rows == [("Invoke-Build", 1, 7, ccn, 1), ("Get-Next", 9, 11, 1, 1)]
+
+
+CLASS_IN_FUNCTION = """function Get-WithClass($x) {
+    class Holder {
+        [int] Pick([int]$y) {
+            if ($y) {
+                return 1
+            }
+            return 0
+        }
+    }
+    return $x
+}
+"""
+
+
+def test_a_class_method_decides_nothing_for_the_function_declaring_the_class():
+    """The method is a function of its own (about_Classes), not a branch of the
+    function around the class. Its `if` counted toward Get-WithClass in ccn and
+    cognitive. Methods get no row of their own either."""
+    (record,) = analyze_source("probe.ps1", CLASS_IN_FUNCTION)
+
+    assert (bare_name(record.long_name), record.start, record.end, record.ccn_std,
+            record.cognitive) == ("Get-WithClass", 1, 11, 1, 0)
+
+
+@pytest.mark.parametrize("declaration", [
+    "class Holder {\n    [int] Pick([int]$y) {\n        if ($y) { return 1 }\n        return 0\n    }\n}\n",
+    "class Child : Holder {\n    Child() { if ($true) { } }\n}\n",
+    "enum Color {\n    Red\n    Green\n}\n",
+])
+def test_a_type_declared_before_a_function_leaves_it_alone(declaration):
+    code = declaration + "\nfunction Get-Next($x) {\n" + IF_BODY + "}\n"
+    start = declaration.count("\n") + 2
+
+    assert _rows(code) == [("Get-Next", start, start + 5, 2)]
+
+
+# --- the param() block ---------------------------------------------------------
+
+PARAM_BLOCKS = {
+    "attributes and types": (P10_ADVANCED, 2),
+    "comment-based help first": (
+        "function Get-Greeting {\n    <#\n    .SYNOPSIS\n    Says hello.\n    #>\n"
+        "    param([string]$Name, [int]$Count = 1)\n    $Name\n}\n", 2),
+    "an attribute on the same line": (
+        "function Get-Same {\n    [CmdletBinding()] Param(\n"
+        "        [Parameter(Mandatory = $true)][ValidateScript({ $_ -gt 0 })][int]$Count,\n"
+        "        [string[]]$Names = @('a', 'b'),\n        [switch]$Force\n    )\n    $Count\n}\n", 3),
+    "a default that reads a variable": (
+        "function Get-Default {\n    param($Name = $env:USERNAME, $Other)\n    $Name\n}\n", 2),
+    "an empty block": ("function Get-None {\n    param()\n    1\n}\n", 0),
+    "a null-conditional index in a default": (
+        "function Get-Index {\n    param($First = ${xs}?[0], $Second)\n    $First\n}\n", 2),
+    "a script block's own block": (
+        "function Invoke-It {\n    $block = { param($a, $b) $a + $b }\n    & $block 1 2\n}\n", 0),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(PARAM_BLOCKS))
+def test_a_param_block_declares_the_parameters(shape):
+    """`param(...)` opening the body is how an advanced function declares its
+    parameters (about_Functions_Advanced_Parameters), and it read 0. The long
+    name stays the bare function name: it is the ratchet key, and a key that
+    grew the block's parameters would orphan every mark recorded before."""
+    code, count = PARAM_BLOCKS[shape]
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.params, " " in record.long_name) == (count, False)
+
+
+# Each list, the function's long name (its ratchet key, as it read before) and
+# the parameters PowerShell's parser finds in it.
+PARAMETER_LISTS = [
+    ("(${x}, ${y})", "Get-A ${x} , ${y}", 2),
+    ("([int] ${Count} = 3)", "Get-A [ int ] ${Count} = 3", 1),
+    ("([Parameter(Mandatory = $true, Position = 0)] [string] $Name)",
+     "Get-A [ Parameter Mandatory = $true , Position = 0 ] [ string ] $Name", 1),
+    ("($Items = @(1, 2, 3), $Last)", "Get-A $Items = @ 1 , 2 , 3 , $Last", 2),
+    ("([ValidateSet('a', 'b')] $Kind, $Count)", "Get-A [ ValidateSet 'a' , 'b' ] $Kind , $Count", 2),
+    ("($s = { param($p, $q) $p }, $Last)", "Get-A $s = { param $p , $q $p } , $Last", 2),
+    ("()", "Get-A", 0),
+    (" {\n    param([byte[]] ${Pattern}, [byte[]] ${Mask})\n", "Get-A", 2),
+    (" {\n    param(${my var}, $Other)\n", "Get-A", 2),
+    (" {\n    param($ok?)\n", "Get-A", 1),
+]
+
+
+@pytest.mark.parametrize("parameters, long_name, count", PARAMETER_LISTS, ids=[
+    "header braced names", "header typed braced name with default", "header attribute with commas",
+    "header array default", "header validate set", "header script block default", "header empty",
+    "block braced names", "block braced name with a space", "block name with a question mark"])
+def test_a_parameter_counts_once_whatever_its_name_or_value_holds(parameters, long_name, count):
+    """PowerShell's parser reads one parameter per entry of the header list or
+    the param() block. lizard's count split the header at every comma, the ones
+    inside an attribute or a default too, and dropped a name that does not end
+    in a word character, `${Pattern}` or `$ok?`. The long name, the ratchet
+    key, reads as it did."""
+    body = "" if parameters.startswith(" {") else " {\n"
+    code = f"function Get-A{parameters}{body}    1\n}}\n"
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.long_name, record.params) == (long_name, count)
+
+
+# Each header list whose key moved when the reader learned PowerShell's spelling, and
+# the key it reads now. Before, `$?` read `$ ?` and each capital stayed as written.
+RESPELLED_HEADERS = [
+    ("($x = $?)", "Get-A $x = $?"),
+    ("($x = ($a -AND $b))", "Get-A $x = $a -and $b"),
+    ("($x = ($a -Or $b))", "Get-A $x = $a -or $b"),
+    ("([ValidateScript({ IF ($_) { $true } ELSE { $false } })] $x)",
+     "Get-A [ ValidateScript { if $_ { $true } else { $false } } ] $x"),
+]
+
+
+@pytest.mark.parametrize("parameters, long_name", RESPELLED_HEADERS,
+                         ids=["automatic variable", "capital and", "mixed-case or", "capital keywords"])
+def test_a_header_key_spells_each_word_as_it_counts(parameters, long_name):
+    """CHANGELOG and docs/upgrading.md tell users these keys change: `$?` is one
+    variable, and a keyword or operator in capitals reads in lower case, the
+    spelling that counts. A `param(...)` block stays out of the key."""
+    (record,) = analyze_source("probe.ps1", f"function Get-A{parameters} {{\n    1\n}}\n")
+
+    assert record.long_name == long_name
+
+
 # --- only declarations, never top-level code -----------------------------------
 
 def test_top_level_script_code_is_not_reported_as_a_function():
@@ -477,14 +929,306 @@ def test_psm1_files_take_the_same_path_as_ps1_files():
     assert record.ccn == P1_CCN
 
 
-def test_the_modified_column_does_not_refund_the_switch_arms():
+def test_the_modified_column_counts_the_switch_arms_as_the_standard_one_does():
     """crapkit takes min(ccn_std, ccn_mod). lizard's modified rule adds a point
-    for a `switch` opener and subtracts one per arm only when the reader claims
-    `case` as a keyword; this reader does not, so the arms are never refunded and
-    the minimum stays the standard column."""
+    for a `switch` opener and takes one back per `case`, and a PowerShell arm has
+    no `case` to take it back. The opener used to get its point anyway, so every
+    switch read one higher in ccn_mod than in ccn_std. Now it gets none: a
+    PowerShell switch costs its arms in both columns, as a Rust match does."""
     (record,) = analyze_source("probe.ps1", P2_SWITCH)
 
-    assert (record.ccn, record.ccn_std, record.ccn_mod) == (P2_CCN, P2_CCN, P2_CCN + 1)
+    assert (record.ccn, record.ccn_std, record.ccn_mod) == (P2_CCN, P2_CCN, P2_CCN)
+
+
+def test_a_switch_parameter_type_costs_nothing_in_any_column():
+    """`[switch]$Force` declares a boolean parameter. The modified column gave
+    the type name the point it gives a switch statement, and the cognitive
+    column charged it +1 and read the function body as the switch's block."""
+    code = ("function Test-SwitchParam([switch]$Force) {\n    if ($Force) {\n"
+            "        return 1\n    }\n    return 0\n}\n")
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.ccn_std, record.ccn_mod, record.cognitive) == (2, 2, 1)
+
+
+# --- keywords and operators in any case -----------------------------------------
+
+MIXED_CASE = """Function Get-Mixed($a, $b, $xs) {
+    If ($a -And $b) {
+        Return 1
+    } ElseIf ($a -Or $b -XOR $a) {
+        Return 2
+    } Else {
+        ForEach ($x In $xs) {
+            While ($x) { $x-- }
+        }
+    }
+    Do { $a = $b } Until ($a)
+    Switch ($a) {
+        1 { 'one' }
+        Default { 'many' }
+    }
+    Try { Get-Item $a } Catch { Return 3 } Finally { $b = 1 }
+    For ($i = 0; $i -lt 3; $i++) { Trap { Continue } }
+}
+"""
+
+
+def _numbers(record):
+    return (record.start, record.end, record.ccn_std, record.ccn_mod, record.cognitive,
+            record.nesting, record.nloc, record.params)
+
+
+def test_the_case_a_keyword_is_written_in_changes_no_number():
+    """PowerShell keywords and operators are not case-sensitive
+    (about_Language_Keywords). The same function written in lower case is the
+    reference: every keyword this reader or lizard reads appears above in
+    another case."""
+    (mixed,) = analyze_source("probe.ps1", MIXED_CASE)
+    (lower,) = analyze_source("probe.ps1", MIXED_CASE.lower())
+
+    assert _numbers(mixed) == _numbers(lower)
+    assert (mixed.long_name.split()[0], mixed.ccn_std) == ("Get-Mixed", 13)
+
+
+def test_an_upper_case_if_is_a_condition():
+    code = "function Test-UpperCase($a) {\n    IF ($a) {\n        RETURN 1\n    }\n    return 0\n}\n"
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == (2, 1, 1)
+
+
+def test_a_capitalized_or_is_a_short_circuit_condition():
+    code = "function Test-CapitalOr($a, $b) {\n    if ($a -Or $b) {\n        return 1\n    }\n    return 0\n}\n"
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert record.ccn_std == 3
+
+
+def test_a_capitalized_default_arm_is_free():
+    code = ("function Get-CapitalDefault($n) {\n    switch ($n) {\n        1 { return 'one' }\n"
+            "        Default { return 'many' }\n    }\n}\n")
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert record.ccn_std == 2
+
+
+def test_a_capitalized_function_keyword_declares_a_function():
+    code = "Function Get-Capital($x) {\n    if ($x) {\n        return 1\n    }\n    return 0\n}\n"
+
+    assert [(bare_name(r.long_name), r.start, r.end, r.ccn_std)
+            for r in analyze_source("probe.ps1", code)] == [("Get-Capital", 1, 6, 2)]
+
+
+def test_a_capitalized_loop_after_a_label_still_counts():
+    """A label is the statement's first token, and the loop keyword follows it."""
+    code = "function Find-First($xs) {\n    :outer ForEach ($x in $xs) {\n        break outer\n    }\n}\n"
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert record.ccn_std == 2
+
+
+def test_a_keyword_word_that_starts_no_statement_keeps_its_spelling():
+    """Only a statement's first word is a keyword to PowerShell. After a pipe,
+    `ForEach` is the ForEach-Object alias, and after a parameter `Default` is
+    an argument; read as keywords they would cost a loop and take the switch's
+    first arm for its default."""
+    code = ("function Get-Names($xs, $n) {\n    $xs | ForEach { $_.Name }\n"
+            "    switch ($n) {\n        1 { Out-File -Encoding Default -FilePath a }\n    }\n}\n")
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.ccn_std, record.cognitive) == (2, 1)
+
+
+@pytest.mark.parametrize("line", [
+    "$xs | foreach { $_.Name }",
+    "$xs |\n        foreach { $_.Name }",
+    "$xs.foreach({ $_.Name })",
+    "git switch $xs",
+    "Write-Output if while",
+    "Write-Output -InputObject catch",
+    "Get-ChildItem -Filter:foreach",
+    "return if",
+])
+def test_a_lower_case_keyword_word_that_names_a_command_an_argument_or_a_member_decides_nothing(line):
+    """After a pipe a word is a command (`foreach` is the ForEach-Object alias),
+    after a word or a parameter it is an argument, and after a `.` it is a
+    member. PowerShell reads no keyword in any of those places. Written in
+    lower case, each still cost a loop, a condition or a cognitive switch,
+    while the same line with `ForEach` cost nothing."""
+    (record,) = analyze_source("probe.ps1", f"function Get-Names($xs) {{\n    {line}\n}}\n")
+
+    assert (record.ccn_std, record.ccn_mod, record.cognitive, record.nesting) == (1, 1, 0, 0)
+
+
+@pytest.mark.parametrize("code, ccn", [
+    ("function Get-A {\n    param($a) if ($a) { 1 }\n}\n", 2),
+    ("function Get-A($a) {\n    $x = `\n        if ($a) { 1 } else { 2 }\n    $x\n}\n", 2),
+    ("function Get-A($a) {\n    git status; if ($a) { 1 }\n}\n", 2),
+    ("function Get-A($a) {\n    Write-Output $a\n    foreach ($x in $a) { $x }\n}\n", 2),
+])
+def test_a_keyword_that_starts_a_statement_after_a_bracket_or_a_backtick_still_counts(code, ccn):
+    """`param` names no command, so a `)` ending its block leaves the keyword
+    after it starting a statement. So does a backtick after an assignment:
+    the token after it starts the value's statement."""
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert record.ccn_std == ccn
+
+
+def _one_function(body):
+    (record,) = analyze_source("probe.ps1", f"function Get-A($a, $b, $x) {{\n    {body}\n}}\n")
+    return record.ccn_std, record.ccn, record.cognitive
+
+
+# (body, ccn, cognitive). Every ccn is what Windows PowerShell 5.1's parser
+# reads: a CommandParameterAst decides nothing, a BinaryExpressionAst one point.
+OPERATORS_AS_PARAMETERS = [
+    ("if (Test-Path $a -or $b) { 1 }", 2, 1),
+    ("$r = Get-Item $a -and $b", 1, 0),
+    ("Write-Output $a -and $b", 1, 0),
+    ("if (Test-Path (Join-Path $a b) -or $b) { 1 }", 2, 1),
+    ("Get-Item $a -and $b | Out-Null", 1, 0),
+    ("& $x $a -or $b", 1, 0),
+    ("Write-Output $a `\n        -and $b", 1, 0),
+    ("$h = @{ k = Get-Item $a -or $b }", 1, 0),
+    ("if (Test-Path [string]$a -xor $b) { 1 }", 2, 1),
+    ("if ($a) { 1 } elseif (Get-Item $b -or $a) { 2 }", 3, 2),
+    # The operator in all of these, as PowerShell reads them too.
+    ("if ((Test-Path $a) -or $b) { 1 }", 3, 2),
+    ("return $a -and $b", 2, 1),
+    ("throw $a -or $b", 2, 1),
+    ("if ($a.Count -or $b) { 1 }", 3, 2),
+    ("$ok = $a -and $b", 2, 1),
+    ("Write-Output ($a -and $b)", 2, 1),
+    ("Get-Item $a | Where-Object { $_.A -and $_.B }", 2, 1),
+    ("if (1 -and $b) { 1 }", 3, 2),
+    ("if ([string]::IsNullOrEmpty($a) -and $b) { 1 }", 3, 2),
+    ("if (-not (Test-Path $a) -and $b) { 1 }", 3, 2),
+    ("if ((Test-Path $a) -and\n        (Test-Path $b)) { 1 }", 3, 2),
+    ("$y = @(Get-Item $a).Count -gt 0 -and $b", 2, 1),
+]
+
+
+@pytest.mark.parametrize("body, ccn, cognitive", OPERATORS_AS_PARAMETERS)
+def test_an_operator_word_in_a_commands_arguments_is_a_parameter(body, ccn, cognitive):
+    """Once a pipeline element starts with a command's name, PowerShell reads
+    what follows as that command's arguments: `Test-Path $a -or $b` hands
+    `-or` to Test-Path as a parameter name, and the line fails at run time
+    rather than deciding anything. Parentheses, `$( )` and a script block
+    start a new element, so `(Test-Path $a) -or $b` is the operator. Before,
+    every `-and`, `-or` and `-xor` counted wherever it stood."""
+    assert _one_function(body) == (ccn, ccn, cognitive)
+
+
+# (body, ccn, cognitive), ccn as Windows PowerShell 5.1's parser reads it.
+KEYWORDS_AS_KEYS_OR_ARGUMENTS = [
+    ("$h = @{ if = 1; while = 2 }", 1, 0),
+    ("@{\n        foreach = 1\n        default = 2\n    }", 1, 0),
+    ("[ordered]@{ switch = 1; for = 2 }", 1, 0),
+    ("@{ a = @{ catch = 1 } }", 1, 0),
+    ("Write-Output $x `\n        foreach", 1, 0),
+    ("Write-Output 'a' if", 1, 0),
+    ("Write-Output (1) while", 1, 0),
+    # A statement all the same: a hashtable's value, and whatever follows it.
+    ("@{ a = if ($x) { 1 } else { 2 } }", 2, 2),
+    ("$h = @{ a = 1 }; if ($x) { 1 }", 2, 1),
+    ("@{ a = { if ($x) { 1 } } }", 2, 1),
+    ("switch ($x) { a { 1 } default { 2 } }", 2, 1),
+    ("switch ($x) {\n        a { 1 }\n        default { 2 }\n    }", 2, 1),
+]
+
+
+@pytest.mark.parametrize("body, ccn, cognitive", KEYWORDS_AS_KEYS_OR_ARGUMENTS)
+def test_a_keyword_word_that_is_a_hashtable_key_or_an_argument_decides_nothing(body, ccn, cognitive):
+    """A hashtable key stands where a statement would start (after `@{`, `;`
+    or a line break) and is still a key: `@{ if = 1 }` has no `if` statement.
+    In a command's arguments a keyword word is an argument whatever came just
+    before it, a string, a `)` or a backtick that continues the line; only a
+    word, a parameter or a pipe right before it made it one."""
+    assert _one_function(body) == (ccn, ccn, cognitive)
+
+
+def test_a_dotted_function_name_keeps_the_spelling_of_a_keyword_part():
+    """The dot in `function Get.foreach` joins a name, and the name is the
+    ratchet key: the member rule leaves it as written."""
+    assert _rows("function Get.foreach($x) {\n" + IF_BODY + "}\n")[0][:3] == ("Get.foreach", 1, 6)
+
+
+# --- PowerShell 7 operators ------------------------------------------------------
+
+def test_pipeline_chain_operators_are_conditions():
+    """`&&` runs the right pipeline only when the left one succeeded and `||`
+    only when it failed (about_Pipeline_Chain_Operators): one decision each."""
+    code = ("function Test-Chain($p) {\n    Get-Item $p && Write-Output 'found'\n"
+            "    Get-Item $p || Write-Output 'missing'\n}\n")
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert record.ccn_std == 3
+
+
+@pytest.mark.parametrize("line, ccn", [
+    ("return $a ?? 0", 2),
+    ("$a ??= 1", 2),
+    ("return $a ?? $b ?? 0", 3),
+])
+def test_null_coalescing_is_one_decision(line, ccn):
+    """`??` evaluates its right side only when the left is null, and `??=`
+    assigns only then (about_Operators): one decision each, where two `?`
+    tokens read as two ternaries."""
+    (record,) = analyze_source("probe.ps1", f"function Test-Coalesce($a, $b) {{\n    {line}\n}}\n")
+
+    assert record.ccn_std == ccn
+
+
+@pytest.mark.parametrize("line", ["return ${a}?.Name", "return ${a}?[0]"])
+def test_null_conditional_access_is_one_decision_that_opens_nothing(line):
+    """PowerShell 7.1's `?.` and `?[]` read the member only when the braced
+    variable before them is not null (about_Operators): one short-circuit
+    decision, as `??` is, and no structure for the cognitive column. `?[`
+    read as a ternary there and cost a cognitive point."""
+    (record,) = analyze_source("probe.ps1", f"function Get-Safe($a) {{\n    {line}\n}}\n")
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == (2, 0, 0)
+
+
+@pytest.mark.parametrize("body, numbers", [
+    ("git fetch\n    if (-not $?) {\n        exit 1\n    }", (2, 1, 1)),
+    ("git fetch\n    return $?", (1, 0, 0)),
+    ("$ok? = $true\n    return $ok?.ToString()", (1, 0, 0)),
+    ("${if} = 1\n    return ${if}", (1, 0, 0)),
+    ("foreach ($r in @($a, ${env:ProgramFiles(x86)})) {\n        if ($r) {\n"
+     "            return $r\n        }\n    }", (3, 3, 2)),
+])
+def test_a_variable_name_with_a_question_mark_or_braces_is_one_token(body, numbers):
+    """`$?` is the automatic success variable, `?` is a legal character in any
+    variable name (`$ok?`), and `${...}` spells a name with any characters
+    (about_Variables). Split apart, the `?` read as a ternary, a braced
+    keyword as a keyword, and the braces of `${env:ProgramFiles(x86)}` in a
+    loop's condition as the loop's block, so the `if` inside read one level
+    shallower in the cognitive and nesting columns."""
+    (record,) = analyze_source("probe.ps1", f"function Get-Var($a) {{\n    {body}\n}}\n")
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == numbers
+
+
+@pytest.mark.parametrize("condition, ccn", [
+    ("$a -and $b -or $c", 4),
+    ("$a -AND $b -Or $c", 4),
+    ("$a -and $b -and $c -or $d", 5),
+    ("$a -xor $b", 3),
+])
+def test_a_logical_operator_opens_no_nesting_level(condition, ccn):
+    """An operator is no structure, so one `if` reads nesting 1 whatever its
+    condition holds (Sonar Cognitive Complexity v1.7, App. B2), and each
+    operator is one decision. `-and` and `-or` were loop words to lizard's
+    ND column, so `$a -and $b -or $c` read nesting 3; spelled `&&` and `||`
+    it read 2, the first operator in a condition adding a level."""
+    code = (f"function Test-Logic($a, $b, $c, $d) {{\n    if ({condition}) {{\n"
+            "        return 1\n    }\n    return 0\n}\n")
+    (record,) = analyze_source("probe.ps1", code)
+
+    assert (record.nesting, record.ccn_std) == (1, ccn)
 
 
 def test_a_six_branch_elseif_chain_gets_the_sonar_cognitive_score():

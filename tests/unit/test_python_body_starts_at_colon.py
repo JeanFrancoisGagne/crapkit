@@ -77,10 +77,10 @@ def test_a_match_line_opening_the_body_still_counts_its_subject():
     rest of the chain sees its first token, so the body start has to be the
     cognitive pass's own count, not a mark a later extension sets."""
     source = ("def f(a, b):\n"
-              "    match (a or b):\n"  # or +1; a Python match and its arms are free
+              "    match (a or b):\n"  # match +1, or +1; the arms are free
               "        case 1:\n"
               "            return 1\n")
-    assert _read(source) == {"f": (1, 0)}
+    assert _read(source) == {"f": (2, 1)}
 
 
 def test_a_one_line_def_nested_in_another_keeps_its_own_body():

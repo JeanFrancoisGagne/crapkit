@@ -1,7 +1,7 @@
 """What each small-corpus row should read, written from the README, never from crapkit's code.
 
 doc: README.md:28-31 sha256=d1cf4bd000bc592b220e5b4d2998ba9de806fbbbb80dd95bd94124e5aa86ffdd
-doc: README.md:833-866 sha256=dea4a657a1736db7bf826b3392ab2a372077a72b391273862fcc8a3ce652fae3
+doc: README.md:850-883 sha256=dea4a657a1736db7bf826b3392ab2a372077a72b391273862fcc8a3ce652fae3
 doc: docs/lanes.md:247-262 sha256=56a2ed1b561b572ad71b11219467611fd20e8a4b35da929ad51ecca76ee6b8af
 
 The inputs are the corpus's crapkit.toml (scopes, lanes, ceilings), the

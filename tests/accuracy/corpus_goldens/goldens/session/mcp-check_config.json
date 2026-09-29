@@ -2,7 +2,7 @@
  "isError": true,
  "structuredContent": null,
  "text": {
-  "analysis_version": 12,
+  "analysis_version": 13,
   "lanes": [
    {
     "artifact": ".crapkit/cov/py.json",

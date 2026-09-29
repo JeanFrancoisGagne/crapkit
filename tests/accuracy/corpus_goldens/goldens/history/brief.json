@@ -135,7 +135,7 @@
   "end": 17,
   "flag": "measured",
   "long_name": "dispatch ( event )",
-  "nesting": 2,
+  "nesting": 1,
   "nloc": 9,
   "occurrence": 1,
   "params": 1,
@@ -152,7 +152,7 @@
   16
  ],
  "versions": {
-  "analysis_version": 12,
+  "analysis_version": 13,
   "crapkit": "<crapkit>",
   "lizard": "1.24.0",
   "python": "<python>"

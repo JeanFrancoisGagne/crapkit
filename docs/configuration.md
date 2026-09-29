@@ -200,8 +200,23 @@ where bash reads C: there `a ? b : c` counts one in `ccn` and `cognitive`, and t
 of `for ((;;))` is no case arm.
 
 **`powershell` counts one point per `switch` arm**, the way `case` is counted in C, and
-`default` is free. Its keywords are matched case-sensitively as written, so `If (` in code
-counts nothing.
+`default` is free. The arms cost the same in `ccn_mod`, so the gate reads a twelve-arm
+switch as 13, not 2. Keywords count in any case, as PowerShell reads them: `If (` is an
+`if` and `Default` is the free arm. A keyword word that is a command, an argument or a
+member is no keyword in any case: `$xs | foreach { }` is the ForEach-Object alias and
+`git switch main` runs git, so neither costs anything, and a hashtable key such as
+`@{ if = 1 }` is a key. `-and`, `-or` and `-xor` in a command's arguments are that
+command's parameters, as PowerShell reads them: `if (Test-Path $a -or $b)` hands `-or`
+to Test-Path, which fails at run time, so only the `if` counts. Write
+`(Test-Path $a) -or $b` for the operator.
+
+**`powershell` gives a class's methods no row.** Their decisions count toward no function,
+not toward the function that declares the class, so nothing gates a method's complexity.
+Move logic you want gated into a function.
+
+**`shell` reads a keyword only where a command starts**, as the shell does. `echo done`,
+`state=done`, `[ "$s" = done ]`, `m[for]=3`, `arr=(if done)`, `echo $(date) done` and a
+case pattern such as `done)` cost nothing.
 
 **Pester test files need a glob of your own.** Pester names them `Foo.Tests.ps1`, beside the
 source they test, and no default exclude claims that spelling. `**/*.test.*` does not match
@@ -259,7 +274,9 @@ ends in `;`, such
 as a trait's required method or a foreign function, is no function, and neither is a `fn`
 pointer type, `Vec<fn(i32) -> bool>` included. A comma inside a parameter's type or
 pattern parts no parameters, and a parameter that binds a pattern, `[a, b]: [u8; 2]`,
-counts once. Each correction retires the day upstream
+counts once. crapkit also reads a Rust `#` as Rust does: lizard took `#[inline] fn f() {` on
+one line for a C preprocessor line and listed no function, and lost the code after a raw
+string (`r#"..."#`) or a raw identifier (`r#type`). Each correction retires the day upstream
 fixes its defect.
 
 **`go` and `zig` run on subclasses of lizard's readers.** lizard reads a function type as a
@@ -279,13 +296,16 @@ as a string, `fn @"weird name"(x: i32)`, names its function, and its handle is t
 The cognitive column charges a Rust `match` like a `switch`: +1 plus the nesting it sits
 in, arms free. The two columns therefore say different things about one block on purpose.
 The 7-arm match above is ccn 7 and cognitive 1: seven ways through it, one decision to
-read. The rule is Rust's alone, because `match` is a soft keyword in Python and an
-ordinary identifier anywhere else. Rust keeps its own set in both reported columns too:
+read. A Python match statement costs the same. `match` is a soft keyword there, so the
+rule reads the statement, not the word: `match = re.match(p, s)` costs nothing. A guard
+on an arm or a case (`x if x < 0 =>`, `case int() if v < 0:`) costs what an `if` one
+level inside the match costs: +2 in a match at the top of a function. Rust keeps its own
+set in both reported columns too:
 `loop` is charged as a loop and opens a nesting level, `?` is neither an increment nor
 a level (an early return, or the relaxed bound in `?Sized`), and `catch`, `switch`,
-`foreach`, `case` and `def` are names. The nesting column is lizard's, and it still
-reads the `for` of a `for<'a>` binder, and of a trait implemented inside a function, as
-a loop, one level where there is none.
+`foreach`, `case` and `def` are names. The nesting column reads the same pass, so the
+`for` of a `for<'a>` binder, and of a trait implemented inside a function, opens no
+level there either.
 
 **A `//` comment ends at its line, except in `cpp` and `objectivec`.** That holds even when
 the comment ends in a backslash (`// C:\dir\`). lizard read such a comment on into the next
@@ -294,6 +314,32 @@ comment: a function whose signature sat there had no row, and one whose `if` sat
 ended at that `if`'s `}`. crapkit ends the comment at its line in `go`, `zig`, `java`,
 `javascript`, `typescript`, `tsx`, `vue`, `swift` and `rust`. C, C++ and Objective-C keep
 the splice, because their preprocessor joins the lines before it reads any comment.
+
+**`cpp`, `objectivec` and `java` run on lizard's readers with crapkit's fixes on top.** A
+file none of the fixes touches reads exactly as lizard reads it. lizard hid every function
+after some constructs: a `<` comparison in a default template argument, a C++20
+requires-clause, a Java annotated local variable or an enum constant with a body. It named
+rows after an attribute, `int run(int a) __attribute__((cold))`, a macro,
+`STRINGLIB(find)(const char *s)`, or a return type, `int (*get(int k))(int)`, and it
+counted neither an unnamed parameter, `f(int*, char)`, nor an array, `f(int a[4])`.
+crapkit lists, names and counts them. The
+[upgrading notes](upgrading.md#c-c-objective-c-and-java-rows) list
+every row that moved.
+
+**`swift` runs on crapkit's own reader too.** lizard's Swift reader took `super.init(...)`,
+`r.get()`, `Socket(protocol: p)`, `return type` and `#fileID` for a declaration or a
+preprocessor line, so it hid the functions after them and stretched the one holding them
+over its neighbours. crapkit reads each as the name or literal it is, and lists a function
+named by a raw identifier (``func `keeps onboarding if offline`()``, as Swift Testing names
+tests) under that name, backticks included. It also counts Swift decisions the way the
+McCabe text does: each `a ?? b` is one, and so is each `?` of an optional chain (`a?.b`,
+`f()?.g`, `c?()`), which adds to `ccn` only, as `?.` does in TypeScript. The `case` of
+`if case`, a keyword argument label such as `func value(for name: String)`, and an
+optional mark (`(any Error)?`, `[Int]?`, `Int?.self`, and `Empty?.none` or
+`Int?.some(1)`, which name a member of the optional type) are none. A conditional
+operator's `?`, which Swift writes with spaces on both sides, still counts. The
+expression in a string interpolation, `\( )`, is code and counts like any other; the text
+around it, a multi-line string's included, is not.
 
 ### Scope matching
 

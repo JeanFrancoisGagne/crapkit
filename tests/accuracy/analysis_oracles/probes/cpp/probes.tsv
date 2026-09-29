@@ -122,3 +122,6 @@ sc-pick	scoped.cpp	pick	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29)
 sc-pick	scoped.cpp	pick	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; an if and a conditional operator	
 sc-first	scoped.cpp	first	params	2	ISO/IEC 14882:2020 [dcl.fct]: a parameter-declaration may omit its declarator-id; two parameters	AO-C-PARAMS-UNNAMED
 sc-head	scoped.cpp	head	params	1	ISO/IEC 14882:2020 [dcl.fct]: one parameter, a reference to an array	AO-C-PARAMS-ARRAY
+ov-forward	overloads.cpp	starts_with@12	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3 and ISO/IEC 14882:2020 [over.match]: starts_with(View{prefix}) calls the View overload, so no recursion	
+ov-longer	overloads.cpp	depth@18	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3 and ISO/IEC 14882:2020 [over.match]: depth(n, 0) calls the two-parameter overload, so no recursion	
+ov-self	overloads.cpp	depth@23	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, depth(n - 1, acc + 1) calls itself +1 (recursion)	

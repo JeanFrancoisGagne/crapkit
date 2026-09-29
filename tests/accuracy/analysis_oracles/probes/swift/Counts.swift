@@ -55,3 +55,19 @@ func elseComment(a: Bool) {
         show(2)
     }
 }
+
+// An optional chain after a name: one short-circuit decision, no structure.
+func optionalChain(a: String?) -> Int? {
+    return a?.count
+}
+
+// An optional chain after a call: one short-circuit decision, no structure.
+func callChain() -> Int? {
+    return load()?.count
+}
+
+// A member of the optional type itself: `Empty?.none` is the case none of Optional<Empty>
+// and `Int?.some(1)` builds a value of Optional<Int>. No value is read, so no chain.
+func optionalMember() -> [Any] {
+    return [Empty?.none, Int?.some(1)]
+}

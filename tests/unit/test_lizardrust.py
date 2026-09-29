@@ -19,6 +19,7 @@ import lizard_languages
 import pytest
 from lizard_languages.rust import RustReader as StockRustReader
 
+from crapkit import analyze
 from crapkit.lizardrust import CorrectedRustReader, register
 
 # 6 arms that match a value, plus the wildcard. Hand count: 1 + 6 = 7, the same
@@ -311,4 +312,46 @@ def test_register_raises_when_lizard_resolves_something_else(monkeypatch):
 def test_other_languages_keep_their_readers():
     register()
     assert lizard.get_reader_for("a.java").__name__ == "JavaReader"
-    assert lizard.get_reader_for("a.swift").__name__ == "SwiftReader"
+    assert lizard.get_reader_for("a.ts").__name__ == "TypeScriptReader"
+
+
+# --- a `#` construct keeps the rest of its line ------------------------------------------------
+#
+# lizard's tokenizer takes `#` for the start of a C preprocessor line and reads the
+# rest of the line as one token. Rust spells three things with `#`, and none of
+# them runs to the end of its line.
+
+def _rows(code: str) -> list[tuple[str, int, int, int]]:
+    return [(r.long_name.split(" ")[0], r.start, r.end, r.ccn)
+            for r in analyze.analyze_source("sample.rs", code)]
+
+
+@pytest.mark.parametrize("attribute", ["#[inline]", "#[inline(always)] pub", "#[test]",
+                                       "#[cfg(all(unix, not(test)))] pub(crate)"])
+def test_an_attribute_on_the_function_line_keeps_the_function(attribute):
+    """The Rust Reference, Attributes: `#[inline]` applies to the item after it. The
+    `fn` and its `{` after it on the line were lost, and the function had no row."""
+    code = (f"{attribute} fn f(a: i32) -> i32 {{\n    if a > 0 {{ 1 }} else {{ 2 }}\n}}\n"
+            "fn g() -> i32 {\n    3\n}\n")
+
+    assert _rows(code) == [("f", 1, 3, 2), ("g", 4, 6, 1)]
+
+
+@pytest.mark.parametrize("construct", ['let s = r#"a "quoted" b"#;', 'let s = br##"a"#b"##;',
+                                       'let s = r#####"a"####b"#####;', "let r#type = 1;",
+                                       "#[allow(unused)] let x = 1;"])
+def test_a_hash_construct_keeps_the_decision_after_it(construct):
+    """The Rust Reference, Tokens: a raw string and a raw identifier are one token, and
+    an attribute ends at its `]`. The `if` after one on its line was lost."""
+    code = f"fn f(a: i32) -> i32 {{\n    {construct} if a > 0 {{ return 1; }}\n    2\n}}\n"
+
+    assert _rows(code) == [("f", 1, 4, 2)]
+
+
+def test_a_raw_string_over_several_lines_is_one_token():
+    """Nothing inside a raw string is code: its `{` opens no block and its `if` decides
+    nothing."""
+    code = ('fn f(a: i32) -> i32 {\n    let s = r#"\n{ if\n"#;\n    if a > 0 { return 1; }\n    2\n}\n'
+            "fn g() -> i32 {\n    3\n}\n")
+
+    assert _rows(code) == [("f", 1, 7, 2), ("g", 8, 10, 1)]

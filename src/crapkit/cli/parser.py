@@ -442,7 +442,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     dup = sub.add_parser("duplication", help="near-duplicate functions by normalized line shingles")
     dup.add_argument("--repo", **_REPO_FLAG)
-    dup.add_argument("--min-lines", type=int, default=8, help="smallest function considered (default 8)")
+    dup.add_argument("--min-lines", type=int, default=8,
+                     help="fewest code lines of its own a function needs, blank and comment "
+                          "lines left out (default 8)")
     dup.add_argument("--similarity", type=float, default=0.8,
                      help="containment threshold, shared/smaller (default 0.8)")
     dup.add_argument("--top", type=int, default=50, help="cap the pair list (default 50)")

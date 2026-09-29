@@ -21,12 +21,15 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     from lizard_languages import get_reader_for as _lizard_reader_for
     from lizard_languages.python import PythonReader as _PythonReader
 
+    from .lizardclike import register as _register_clike
     from .lizardgolike import register as _register_golike
+    from .lizardjava import register as _register_java
     from .lizardlinecomment import register as _register_line_comments
     from .lizardpowershell import register as _register_powershell
     from .lizardpython import register as _register_python
     from .lizardrust import register as _register_rust
     from .lizardshell import register as _register_shell
+    from .lizardswift import register as _register_swift
     from .lizardtypescript import LizardExtension as _TypeScriptExpressions
     from .lizardtypescript import mask_templates, reads_templates, uses_type_syntax
 
@@ -41,24 +44,34 @@ from .keys import bare_name
 # on it: `.rs` resolves to a reader that counts no `match` arm (lizard #494),
 # `.py` to one that ends a def inside a signature that runs past its first `)`
 # (crapkit #72), `.go` and `.zig` to one that reads a function type as a
-# function, and `.sh` and `.ps1` resolve to nothing at all, which lizard
-# answers with CLikeReader rather than a failure. The Java, Swift and
-# JavaScript-family readers stay lizard's, but their `//` comment runs on into
-# the next line after a backslash, as only C's does. All six registrations
-# belong HERE, at the module scope of the module a ProcessPoolExecutor child
-# imports, or spawned workers measure with the readers lizard shipped and report
-# plausible wrong numbers.
+# function, the C family's suffixes to readers that leave out unnamed and
+# array parameters and every Objective-C argument, `.java` to one that hides
+# the methods after an annotated local variable, `.swift` to one that reads
+# `super.init(...)`, `r.get()` and `#fileID` as declarations and hides the
+# functions after them, and `.sh` and `.ps1` resolve to nothing at all, which
+# lizard answers with CLikeReader rather than a failure. In lizard's Java, Swift
+# and JavaScript-family readers a `//` comment runs on into the next line after
+# a backslash, as only C's does. All nine registrations belong HERE, at the
+# module scope of the module a ProcessPoolExecutor child imports, or spawned
+# workers measure with the readers lizard shipped and report plausible wrong
+# numbers.
 #
 # lizardshell and lizardpowershell already register themselves on import, and
-# lizardrust, lizardpython, lizardgolike and lizardlinecomment deliberately do
-# not (rebinding a name in another package's namespace is not something an
-# import should do quietly). Calling all six keeps the wiring readable in one
-# place and costs nothing: each is idempotent.
+# lizardrust, lizardpython, lizardgolike, lizardclike, lizardjava, lizardswift
+# and lizardlinecomment deliberately do not (rebinding a name in another
+# package's namespace is not something an import should do quietly). Calling all
+# nine keeps the wiring readable in one place and costs nothing: each is
+# idempotent. lizardlinecomment goes last: its probe then checks the Java and
+# Swift readers that lizardjava and lizardswift put in place, which inherit the
+# comment rule from lizard's.
 _register_rust()
 _register_shell()
 _register_powershell()
 _register_python()
 _register_golike()
+_register_clike()
+_register_java()
+_register_swift()
 _register_line_comments()
 
 _POOL_THRESHOLD = 16
@@ -66,7 +79,14 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 12  # CRAP cubes 1 - cov with two products, not pow, so every platform
+ANALYSIS_VERSION = 13  # The nesting column reads crapkit's cognitive pass in every
+#                       language, and that pass charges each language's own structures,
+#                       bodies with no braces included. The C family and Java read on
+#                       readers that list the functions lizard hid and count every
+#                       declared parameter; Swift, shell and PowerShell read their own
+#                       syntax, PowerShell keywords in any case; and a `#` keeps the
+#                       rest of a Rust line.
+# 12: CRAP cubes 1 - cov with two products, not pow, so every platform
 #                       computes the same score. The Rust, Go and Zig readers read their
 #                       own syntax: signatures, empty closures, let-else, function types,
 #                       switch prongs and select. A `//` comment ends at its line outside
@@ -148,13 +168,16 @@ def _switch_delta(token: str, reader, previous) -> int:
     loop in shell and a name in most languages, so it opens a switch only for
     a reader that sets `_keyword_select`. A `=>` is an arm only for a reader that
     counted it in ccn_std, which `previous`, the token before it, decides.
+    A reader whose switch arms carry no `case` sets `_modified_switch = False`,
+    since no arm would take the opener's point back: PowerShell counts its
+    arms by position.
     """
     if token == "case":
         return -int("case" in reader.conditions or getattr(reader, "_keyword_case", False))
     if token == "=>":
         return -_counted_prong(reader, previous)
     if token == "switch":
-        return int(type(reader).__name__ not in _NO_SWITCH_READERS)
+        return _opens_switch(reader)
     return int(getattr(reader, "_keyword_" + token, False))
 
 
@@ -162,6 +185,13 @@ def _counted_prong(reader, previous) -> int:
     """1 when the reader counted this `=>` as a prong in ccn_std (crapkit.lizardgolike)."""
     counts = getattr(reader, "counts_prong", None)
     return int(counts is not None and counts(previous))
+
+
+def _opens_switch(reader) -> int:
+    """1 when `switch` adds the point its arms each take back: not in a language
+    with no switch statement, nor in one whose arms carry no `case`."""
+    return int(type(reader).__name__ not in _NO_SWITCH_READERS
+               and getattr(reader, "_modified_switch", True))
 
 
 class _ModifiedDelta:
@@ -397,8 +427,12 @@ def _chain(cognitive_index: int) -> list:
     of 10. The delta comes last either way, where the modified pass used to sit.
     lizard's comment_counter goes behind `_LineEndComments`; `index` raises on a
     lizard that no longer lists it.
+
+    lizard's ND extension is not in it: the `nesting` column is the depth the
+    cognitive pass measures (see lizardcognitive), and ND's own count read
+    three nested loops as 2 and a Go condition with three operators as 4.
     """
-    extensions = lizard.get_extensions(["ND"])
+    extensions = lizard.get_extensions([])
     extensions[extensions.index(lizard.comment_counter)] = _comment_counter
     extensions.insert(cognitive_index, _Cognitive())
     return [_TypeScriptExpressions(), _ReaderLookahead(), *extensions, _ModifiedDelta(), _PythonBodies(),
@@ -427,20 +461,11 @@ def _extensions_for(rel_path: str) -> list:
     return _EXTENSIONS
 
 
-# The suffix lizard routes to PythonReader (`PythonReader.ext`), and the one
-# language whose `nesting` is not lizard's. lizard's ND extension counts
-# nesting STRUCTURES for Python rather than depth: a flat function of seven
-# `if`s read 7 and a three-deep one read 3, the same number for opposite
-# shapes. The cognitive pass keeps a per-function stack of open blocks for the
-# Sonar nesting increment, and the deepest it gets is the depth. Brace
-# languages keep lizard's column, which reads their braces.
-_PYTHON_SUFFIXES = (".py",)
-
-
-def _nesting_depth(rel_path: str, fn) -> int:
-    if rel_path.lower().endswith(_PYTHON_SUFFIXES):
-        return getattr(fn, "cognitive_nesting", 0) or 0
-    return getattr(fn, "max_nesting_depth", 0) or 0
+def _parameter_count(fn) -> int:
+    """The count a crapkit reader kept (lizardclike's `crapkit_params`), else one
+    per parameter name lizard read."""
+    count = getattr(fn, "crapkit_params", None)
+    return len(fn.parameters) if count is None else count
 
 
 def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
@@ -457,8 +482,8 @@ def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
         ccn_mod=mod,
         ccn=min(std, mod),
         nloc=fn.nloc,
-        params=len(fn.parameters),
-        nesting=_nesting_depth(rel_path, fn),
+        params=_parameter_count(fn),
+        nesting=getattr(fn, "cognitive_nesting", 0) or 0,
         cognitive=getattr(fn, "cognitive_complexity", 0) or 0,
         occurrence=occurrence,
         inline_body=int(getattr(fn, "crapkit_inline_body", False)),

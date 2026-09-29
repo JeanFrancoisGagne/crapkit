@@ -182,11 +182,17 @@ def test_every_command_passes_every_check_on_the_untouched_repo(repo: Path):
 
 
 def test_a_record_read_at_negative_nesting_stops_the_run(repo: Path, monkeypatch):
-    from crapkit import analyze
+    from crapkit import lizardcognitive
+
+    step = lizardcognitive._step
+
+    def below_zero(state, token, is_python):
+        step(state, token, is_python)
+        state.max_depth = -1  # the depth the nesting column reads
 
     before = runs(repo), marks(repo)
     write(repo, "src/calc.py", CALC + "\n\n" + decisions("fresh", 1))  # a cache miss
-    monkeypatch.setattr(analyze, "_nesting_depth", lambda rel_path, fn: -1)
+    monkeypatch.setattr(lizardcognitive, "_step", below_zero)
     done = run_cli(repo, "coverage", "--json")
     stopped(done, "cognitive, nesting, params and occurrence must each be at least 0")
     error_object(done)

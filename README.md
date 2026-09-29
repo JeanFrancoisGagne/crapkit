@@ -196,9 +196,9 @@ where the flag goes.
 
 Keep the CLI and plugin versions aligned, measure fresh coverage after upgrading,
 and review any ratchet identity refusal before reseeding. The current reader is
-analysis version 12. It moves Rust, Go, Zig and shell numbers, puts JavaScript,
-TypeScript and nested Python coverage on the function that owns it, and computes CRAP
-alike on every platform; `crapkit ratchet prune` drops the marks left under old names.
+analysis version 13. It moves numbers in every language but Python and some of
+Python's `cognitive` and `nesting`, puts JavaScript, TypeScript and nested Python
+coverage on the function that owns it, and computes CRAP alike on every platform; `crapkit ratchet prune` drops the marks left under old names.
 Older JavaScript and TypeScript callback marks can require a reviewed mapping.
 Follow the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
 for saved state, portable records and Windows launcher locks.
@@ -337,20 +337,37 @@ and leaves it off any scope a lane could still measure. So the 60-second start a
 unchanged on a Go, Rust or shell repo: `crapkit coverage` scores it with no lane at all,
 and that run is the baseline `worklist`, `next-item`, `ratchet seed` and `verify` read.
 
-Three readers are crapkit's own. lizard ships none for shell or PowerShell, so crapkit
-counts their functions itself. Its Rust reader scores a 7-arm `match` as ccn 2 (filed as
-lizard #494), so crapkit counts each non-wildcard arm like a C `case`. It also reads a
-Rust signature, a closure's empty `||`, a let-else and a `for` that is no loop the way
-Rust means them (see
+Shell, PowerShell and Rust run on crapkit's own readers. lizard ships none for shell or
+PowerShell, so crapkit counts their functions itself, and reads the command inside a
+quoted `"$(...)"` as code: its `&&`, `||`, `-and` and `-or` count as they do written
+bare. lizard's Rust reader scores a 7-arm `match` as ccn 2 (filed as lizard #494), so crapkit counts each non-wildcard arm like a C
+`case`. It also reads a Rust signature, a closure's empty `||`, a let-else and a `for`
+that is no loop the way Rust means them (see
 [per-language
 gotchas](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#per-language-gotchas)),
-and retires each correction the day upstream fixes it. The cognitive column charges a
-`match` once, the way Sonar charges a `switch`. The Rust and shell readers count each `match` or `case` arm in the modified column too, so both columns agree and the arms are gated: a seven-arm `match` gates at `ccn` 8, where lizard's modified count, and so the gated `ccn`, of a C `switch` with seven cases is 2.
+and retires each correction the day upstream fixes it. It lists `#[inline] fn f() {`
+written on one line, which lizard took for a C preprocessor line. The cognitive column charges a
+`match` once, the way Sonar charges a `switch`. The Rust, shell and PowerShell readers count each `match`, `case` or `switch` arm in the modified column too, so both columns agree and the arms are gated: a seven-arm `match` gates at `ccn` 8, where lizard's modified count, and so the gated `ccn`, of a C `switch` with seven cases is 2.
 
 Go and Zig read through crapkit's subclasses of lizard's readers, which end a signature
 where the language does. A function type such as `var cb func(int) error` opens no
 function, a result type's braces are not the body, and a parameter of function type counts
 once.
+
+Python and Swift read through crapkit's subclasses of lizard's readers too. lizard's Python
+reader ends a def at the first `)` of a signature that runs past it, so crapkit reads the
+signature to the body's colon. lizard's Swift reader takes `super.init(...)`, `r.get()` and
+`Socket(protocol: p)` for declarations and `#fileID` for the start of a preprocessor line,
+which hid the functions after them, and lists no function named by a raw identifier with a
+space in it (``func `keeps onboarding if offline`()``), so crapkit reads each one as the
+name or literal it is. It also reads the expression in a string's `\( )` as code, which
+lizard read as part of the string.
+
+C, C++, Objective-C and Java run on lizard's readers with crapkit's fixes on top. lizard
+hid every function after some constructs, named rows after an attribute or a macro, and
+left unnamed and array parameters out of `params`; the
+[per-language notes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#per-language-gotchas)
+list what crapkit reads differently.
 
 Expression arrows in arrays and argument lists are measured separately. In TypeScript,
 wrap an arrow body in parentheses when it contains `<` before a comma, such as
@@ -818,7 +835,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `trend [--json]` | Totals per trusted run: functions, over-target count, CRAP load, average, per-scope rollup. It reads a per-run rollup table rather than rescanning every scored row, and fills that table for any run missing one, so it writes to the store (best effort: a read-only `.crapkit/` costs the speed, not the command). |
 | `digest [--alert]` | The delta between the two newest runs with identical lane sets. Silent when nothing changed. Past the totals line it names up to five functions of each kind: those whose CRAP rose by more than 0.01, largest rise first; new functions over their ceiling, highest CRAP first; and functions that were over their ceiling and dropped by more than 0.01, largest drop first. Moves and scores equal to 4 decimal places list by path. `--alert` pipes the body to `alert_command` on stdin. Plain lines, never JSON. |
 | `report [--out PATH]` | One self-contained HTML page written to `.crapkit/report.html` (or `--out PATH`, repo-relative, or an absolute path you name), with the path printed on stdout. It renders what `worklist --json` and `trend --json` already answer at their defaults: the ranked worklist capped at `worklist_top`, the per-scope grades off the newest run, the trend series, and a banner naming every stale lane. It measures nothing and opens no network connection. Every row carries the function's CRAP and coverage, and prints the `crapkit explain` call for the rest: dark lines, history, the mark. It reads the same per-run rollups `trend` does, and writes them on the same terms. |
-| `duplication [--min-lines N] [--similarity F] [--top N] [--json]` | Near-duplicate functions by normalized line shingles with containment scoring. Defaults: `--min-lines 8`, `--similarity 0.8`, `--top 50`. Ties have a stable order across hash seeds. A positive `--top` bounds retained candidates and output; dense inputs still require pair comparisons. A function and its nested closure never pair. |
+| `duplication [--min-lines N] [--similarity F] [--top N] [--json]` | Near-duplicate functions by normalized line shingles with containment scoring. Defaults: `--min-lines 8`, `--similarity 0.8`, `--top 50`. Ties have a stable order across hash seeds. A positive `--top` bounds retained candidates and output; dense inputs still require pair comparisons. Each function is shingled from its own lines: the lines of a function nested in it, past that function's first line, are the nested function's, so a clone of a closure pairs once and never through the factory around it. A function and its nested closure never pair. Blank lines and comment lines stay out. A comment line starts with a comment marker of the file's language or lies inside a block comment: `#` in Python and shell, `#` and `<# #>` in PowerShell, `//` in Zig, `//` and `/* */` in every other language. A line that holds code after a block comment's closer is code, whether the comment opened on that line or above it. So `**options`, `*out = x;`, `/* tag */ acc += 1;` and `*/ x = a` are code lines, and a code line enters the shingles whole, its comments included. Python also leaves out a line starting with three quotes, a one-line docstring or a docstring's first or last line, and keeps the docstring's other lines. A block comment opens at a line's start, or after code and a space when no string, character literal or comment is open there, the line read from its start, and counts only when its own line or a later line of the function closes it. So `s = "http://x"; /* note` opens one and `x = 1; // see /* here` does not. A `'` opens a string in JavaScript, TypeScript, Vue and PowerShell and a one-character literal elsewhere, so a Rust lifetime opens nothing. The reader knows plain strings and character literals and no other literal, so a few lines read wrongly. A raw string that ends in a backslash or holds one quote, and a regex literal that holds one, leave a string open, so a block opener after them opens nothing: Rust `r"C:\"` and `r#"a"b"#`, C++ `R"(a"b)"`, JavaScript `/"/`. A `/*` after a space inside a regex literal opens a block comment, so `re = /a /* b/;` hides the lines up to the next `*/`. In PowerShell a `#` inside a word starts a line comment, so `echo a#b <# note` opens nothing. A block comment ends at its first closer, in Rust and Swift too, where block comments nest. Strings are read only on a code line that holds a block opener, so a line inside a multi-line string that starts with a comment marker stays out as well. |
 | `coupling [--min-support N] [--min-confidence F] [--top N] [--json]` | File pairs that keep landing in the same commits. Defaults: `--min-support 5` shared commits, `--min-confidence 0.5` max-direction ratio, `--top 50`. Bulk commits never couple pairs, and a young repo returns nothing at the default support. Pairs rank by support times confidence, highest first, and pairs that tie rank by their paths. The ranked pairs are cached in `.crapkit/coupling-cache-v2.json`, keyed on HEAD, the churn window, today's UTC date, the path format and a digest of the tracked set, and shared with `brief` and `worklist --batches` (warm: 1.05 s to 0.11 s on a 72k-commit repo). The date is part of that key, so the first run after midnight UTC rebuilds the pairs on an unchanged HEAD, and gets the same pairs: the window ends at HEAD's commit date, not today's. `--top` reads the cache, because it truncates that same order; `--min-support` or `--min-confidence` off their defaults ask a wider question than the file answers, so they bypass it and recompute. |
 | `mutate [--files F ...] [--max-mutants N] [--drop-pool] [--json]` | Diff-scoped mutation testing: flips comparisons, boundary shifts, boolean connectives and boolean literals on changed lines, runs `mutation_command` per mutant, lists survivors. `--files` replaces diff scope with the whole file. Both lists pass through the scored corpus first, the same predicate `coverage` uses (scopes, excludes, the test-file cut, `max_file_bytes`): a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims is named on stderr and never mutated, `--json` lists it under `outside_corpus`, and when nothing is left stdout says `nothing to mutate` at exit 0 without starting the suite. `--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so `mutants` in `--json` is the capped count. Shell and PowerShell files are refused by name on stderr rather than mutated: `<` and `>` are redirections there, not comparisons. Zig's connectives are `and` and `or`, and its error-set merge `A \|\| B` never mutates. Swift's unspaced `a<b` makes no mutant, because `Foo<Bar>` is spelled the same way; `a < b` does. An operator the language reads as one token makes no mutant, so a piece of it is never flipped as a comparison: Go's `<-`, the `>>>` and `>>>=` of JavaScript, TypeScript and Java, C++'s `<=>` and a Swift operator such as `\|>`. Neither does a `&&` or `\|\|` that joins no two operands, such as Rust's closure `\|\| 0` or borrow `&&x` and C++'s references `auto&& x` and `Foo&& x`, nor the name in `bool operator<(...)` or the type in `static_cast<T&&>(x)`. `mutate` cannot tell a type name from any other name, so in C, C++ and Objective-C files the layout decides after a name: a `&&` hugged to one side, `Foo&& x` or `ok&& ready`, makes no mutant, and one spaced on both sides, `Foo && x` or `ok && ready`, does. The C family's `--` is one token too, so `n-->0` reads as `n-- > 0` and its `>` mutates. Every worker uses a kept worktree, including one; see [mutation worktrees](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees). `--drop-pool` removes them and exits. |
 | `test-scoped FILE ...` | Runs each owning scope's `[crapkit.scoped_tests]` template on the files (quoted, longest-prefix scope wins). A file outside every scope runs only from a `test`, `tests` or `__tests__` directory, under the one scope that declares a template. A template with no `{files}` runs as written, which is how a scope whose tests live outside its own paths runs its whole suite. Exit code only; a nonzero runner exits 1. |

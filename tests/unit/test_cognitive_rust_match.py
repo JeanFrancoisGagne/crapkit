@@ -1,7 +1,7 @@
 """A Rust `match` costs cognitive complexity, the way a `switch` always has.
 
 The construct crapkit built a whole corrected reader for was invisible in the
-second column. `_COUNTING` holds `switch` and not `match`, so a five-arm
+second column. `_COUNTING` held `switch` and not `match`, so a five-arm
 dispatch scored 0 cognitive while the if/else-if chain doing the same work
 scored 6, and a Rust worklist sorted by readability read the dispatch table as
 the simplest function in the file.
@@ -10,10 +10,10 @@ Sonar's rule for a switch is +1 plus the nesting it sits in, with the arms
 free — one decision, however many ways it goes — and nesting rises inside it.
 That is the rule applied here, so a match and a switch cost the same thing.
 
-Rust only. `match` is a soft keyword in Python: the same spelling is an
-identifier anywhere else, and a rule that read it everywhere would move Python
-scores off a variable named `match`. The reader is the discriminator, exactly as
-it is for the C++ rvalue-reference rule next to it.
+`match` is a soft keyword in Python: the same spelling is an identifier
+anywhere else, so there it counts only where a match statement stands, and a
+variable named `match` costs nothing. The reader is the discriminator, exactly
+as it is for the C++ rvalue-reference rule next to it.
 """
 from crapkit.analyze import ANALYSIS_VERSION, analyze_source
 
@@ -149,11 +149,11 @@ def test_the_six_branch_probe_is_untouched():
     assert (record.cognitive, record.ccn) == (10, 6)
 
 
-def test_a_python_match_statement_is_untouched():
-    """`match` is a soft keyword in Python and the rule is keyed on the reader,
-    so Python's number is what it was. Widening `_COUNTING` instead would have
-    moved every Python file holding a variable called `match`."""
-    assert cognitive("app.py", PY_MATCH) == 0
+def test_a_python_match_statement_costs_what_the_rust_one_does():
+    """A Python match statement is a switch too, +1 with the arms free. The
+    rule reads the statement, not the word, so a variable called `match` still
+    costs nothing (tests/unit/test_cognitive_keywords.py)."""
+    assert cognitive("app.py", PY_MATCH) == 1
 
 
 def test_analysis_version_invalidates_the_cached_rust_cognitive_column():

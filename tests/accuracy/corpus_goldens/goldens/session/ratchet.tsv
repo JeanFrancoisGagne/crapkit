@@ -1,4 +1,4 @@
-# crapkit-analysis=12 lizard=1.24.0
+# crapkit-analysis=13 lizard=1.24.0
 # crapkit-keys=1
 path	long_name	crap
 src/native/matcher.rs	weight kind : & str	7.0000

@@ -16,9 +16,9 @@ MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-l
 
 ## Measure before changing marks
 
-The release after 0.8.0 moves the reader to analysis version 12, and 0.8.0 moved it
+The release after 0.8.0 moves the reader to analysis version 13, and 0.8.0 moved it
 to 11, so a marks file stamped under an older version needs one re-seed; [analysis
-version 12](#analysis-version-12) and [analysis version 11](#analysis-version-11) say
+version 13](#analysis-version-13) and [analysis version 11](#analysis-version-11) say
 what moved.
 The package upgrade rebuilds the versioned analysis cache automatically, and the
 first `inventory` or `coverage` after it analyzes every file again. That run's
@@ -46,9 +46,9 @@ any mark changes.
 | Coverage or JUnit producer | Run a fresh lane and resolve [artifact admission errors](lanes.md#a-junit-that-says-the-run-did-not-finish). |
 | Shared exports or portable baselines | Upgrade readers before writing [encoded records](portable-records.md) for them. |
 
-### Analysis version 12
+### Analysis version 13
 
-The release after 0.8.0 raises the analysis version to 12. Scores move on functions
+The release after 0.8.0 raises the analysis version to 13. Scores move on functions
 nobody edited, so every marks file re-seeds once, with the same three commands as
 [version 11](#analysis-version-11): `crapkit coverage`, `crapkit ratchet prune`, then
 `crapkit ratchet seed`. Prune drops the marks of rows that go away or change key, and
@@ -198,6 +198,283 @@ some JavaScript and TypeScript coverage move:
   `verify` checks a diff against move for JavaScript and TypeScript functions in such
   files. A function that reads less covered now can go over its ceiling.
 
+#### C, C++, Objective-C and Java rows
+
+- `params` counts each declaration in a C, C++, Objective-C or Java parameter list,
+  named or not: `f(int*, char)` reads 2, `f(const int arr[4])` and Java's
+  `main(String args[])` read 1, and an Objective-C method counts its arguments.
+  `params` is reported and never gated.
+- Functions that had no row get one: those after a `<` comparison in a default
+  template argument or a member initializer, which lizard read as a template bracket,
+  a function returning a function pointer after a return type that ends in `*` or
+  `&`, `char *(*get(void))(void)`, a C++20 function with a trailing requires-clause,
+  `void f(T t) requires C<T>`, the functions of a namespace whose head holds a macro
+  or an attribute, `namespace std _GLIBCXX_VISIBILITY(default)` in every libstdc++
+  header, a constructor with a function-try-block, `S::S(int a) try : x(a) {`, the
+  function after a constructor whose member initializer list ends in a pack
+  expansion, `S(B... b) : B(b)... {`, and the member functions of a class defined
+  inside a function. The function around such
+  a class no longer pays for its members' decisions, so its `ccn` and `cognitive`
+  fall. In Java, methods get rows after an
+  annotated local variable, an enum constant with a body or an annotation element
+  with a default, and inside a constant's body, an interface field's anonymous class,
+  or a record or interface declared in a method, whose `ccn` falls the same way. A
+  method whose anonymous or local class ended on a field or an abstract method gets
+  its row back under its own name, with the class's field lines in its `nloc`. A Java
+  text block is one string, so a `{` or an `&&` between two quotes in its text is no
+  longer code that hides the next method or adds to `ccn`. A newly listed function
+  over its ceiling fails the gate the next time its file changes, and `ratchet seed`
+  marks it.
+- Rows that were not functions go: a declaration whose trailing return type holds
+  braces, an Objective-C instance-variable block, a C++20 concept's requires-expression
+  (`requires( T a)`), a row named after the first statement of a function with a
+  requires-clause (`if( t)`), a namespace read as one function named after its
+  head's macro (`_GLIBCXX_VISIBILITY( default)`), each handler of a function-try-block
+  (`catch( ...)`), a constructor's first member initializer read as the constructor
+  (`x( a)`), a Java enum constant, an annotation element with a braced default, a Java
+  field's anonymous class, and a Java record declared first in a class or interface
+  body, which read as a method named after it.
+- Rows named after an attribute take the function's name: `__attribute__((noinline))`,
+  `API_AVAILABLE( ios(10))`, `LOCKS_EXCLUDED( mu)` after a constructor or destructor,
+  or `)` for an Objective-C method, and Java rows named
+  after an annotation with arguments, `InlineMe( replacement = ...)`. A member of a
+  class declared with an export macro or an attribute, `class Q_CORE_EXPORT QString`
+  or `class __declspec(dllexport) Foo`, reads `QString::size`, where it read
+  `Q_CORE_EXPORTQString::size`, or had no class in its name, and a member of `namespace
+  ns ABI_TAG` or `namespace a::inline b` reads `ns::f` or `a::b::f`, where it read
+  `nsABI_TAG::f` or `a::inlineb::f`. A C-family function whose
+  declarator sits in parentheses takes its own name: `int (*get(int k))(int)` reads
+  `get( int k)`, where it read `int( * get(int k))( int)`, `static constexpr T
+  (max)()` reads `max()`, where it read `T( max)()`, and a name a macro builds,
+  `STRINGLIB(find)(...)`, reads `find(...)`. A Java method
+  inside a method's anonymous or local class reads `A::go.run()`, where it read
+  `A::A::go.run()` or took the name of a class declared before the method. A Java
+  method inside an enum, an interface or a record carries its name, `A::F::g()` where
+  it read `A::g()`, and a sealed class's methods read `Shape::area()`, where they read
+  `ShapepermitsCircle::area()`. The name is a new ratchet key, and so is the long name of a
+  function after one whose default argument holds a parenthesized `<`:
+  `g( int a , int c)` where it read `g(int a,int c)`.
+  `ratchet prune` drops the old mark and `ratchet seed` marks the function under its
+  new name if it is over its ceiling.
+- A C++ `&&` that declares a reference costs nothing: `for (auto&& x : r)`,
+  `static_cast<T&&>(v)`, `auto&& w = f();` and a lambda taking `auto&&` lose the `ccn`,
+  `cognitive` or `nesting` point it cost, so marks can tighten on the next seed. A
+  logical `&&` followed by an assignment in the same condition, `while (n > 0 && (p =
+  next(p)) != 0)`, counts in `ccn` again, which can put a function over its ceiling
+  and fail the gate the next time its file changes. A function whose parameter list
+  held a `&&` can read one `nesting` level deeper, the depth the same body reads
+  without it; `nesting` is never gated.
+- A function with a function-try-block, `int main() try { ... } catch (...) { ... }`,
+  counts its handlers: each `catch` adds 1 to `ccn` and 1 to `cognitive`, as it does
+  in a try statement, which can put the function over its ceiling and fail the gate
+  the next time its file changes.
+- A constructor whose member initializer list ends in a pack expansion, `S(B... b) :
+  B(b)... {`, counts its body's decisions, where it read `ccn` 1, which can put it
+  over its ceiling and fail the gate the next time its file changes.
+
+#### The Swift and Rust readers
+
+Swift:
+
+- A function that `super.init(...)`, `.init(...)`, `r.get()`, `case .get`,
+  `Socket(protocol: p)`, `return type`, a `#fileID` default, `if #available(...) {` or a
+  closure after a comma hid is listed, and the function that held it reads only its own
+  lines. A failable `init?` or `init!` is listed as `init`. A function named by a raw
+  identifier, ``func `keeps onboarding if offline`()``, is listed under that name,
+  backticks included; a Swift Testing suite gains a row per such test. A newly listed
+  function can be over its ceiling and fails the gate the next time its file changes.
+- A function listed before keeps its long name, so its mark keeps its key. A row that
+  named no function is gone: `init id : id` for a `super.init(id: id)` call, `get` for
+  `r.get()`. `ratchet prune` drops its mark.
+- ccn falls where the `case` of `if case`, a keyword argument label (`for name:`) or an
+  optional mark (`(any Error)?`) counted. It rises by 1 for each `??` and for each `?`
+  of an optional chain after a name (`a?.b`, `self?.done()`), which counted nothing.
+  `Empty?.none` and `Int?.some(1)` name a member of the optional type and chain
+  nothing. A chain after `)` or `]` (`f()?.g`) keeps its 1 and loses the nesting level
+  it opened. `params` and `nesting` fall where a comma inside one parameter or a `try`
+  counted; neither is in the score.
+- A function whose string interpolation holds a string with a brace in it,
+  `"\(f("{"))"`, is listed; it had no row. A `&&`, `||`, `??` or `?:` inside `\( )`
+  now counts in ccn and cognitive, and an `if` or `for` in the text of a multi-line
+  string no longer does.
+
+Rust:
+
+- A function with an attribute on the same line as its `fn`, `#[inline] fn f() {`, is
+  listed; it had no row. A decision or a brace after a raw string (`r#"..."#`), a raw
+  identifier (`r#type`) or an attribute on the same line now counts.
+
+#### Shell and PowerShell rows
+
+Prune matters here: some rows are renamed and some phantom rows go, and their marks
+are left under names the run no longer has.
+
+- A shell function's `nesting` reads how deep its blocks go. lizard's ND column closed
+  a level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
+  `done` and `esac`, so every block leaked a level: seven ifs side by side read 6, four
+  nested read 3, and a `case` read 0. They read 1, 4 and 1 now, and `&&` or `||` opens
+  no level. `nesting` is reported and never gated, so no verdict moves with it.
+- A command inside a quoted substitution counts: `x="$(cmd || true)"` reads ccn 2
+  where it read 1, as `x=$(cmd || true)` always did. Backticks inside quotes, `$(( ))`
+  and a substitution inside `${v:-...}` count the same way. A heredoc opened inside a
+  quoted substitution, as in `v="$(node - "$f" <<'JS'`, is a body, so its program adds
+  no ccn and no NLOC, and so is one opened on the line that closes a multi-line
+  quoted substitution. On a large consumer repo 146 of 1,613 shell functions rose by 1
+  to 20, with this and the `#` change below, and 2 fell, by 1 and 23. A function the
+  rise puts over its ceiling fails the gate the next time its file changes.
+- A case statement inside a quoted substitution counts its arms, and a function whose
+  body is a subshell, `f() ( case ... esac )`, ends at its own `)` rather than at the
+  first pattern's. Such a function can gain lines and ccn: one on a large consumer repo
+  went from 68 lines and ccn 26 to 140 lines and ccn 46.
+- A shell reserved word counts only where shell reads one, so `echo done`,
+  `git for-each-ref`, `done=1` and a `--exit-if-exists)` pattern no longer add a
+  decision or open or close a block, and a `;;` in `for ((;;))` is no case arm. These
+  only lower numbers: on a large consumer repo 3 functions fell, by up to 1 in ccn and
+  2 to 24 in cognitive.
+- A `#` inside a word, as in `(( 8#$mode ))` or a regex's `[#/]`, is part of the word
+  and opens no comment. The rest of such a line had counted nothing, so a function
+  with an `&&` after it rises in ccn (5 on a large consumer repo, by 1 to 5), and a
+  `))` or `then` hidden there had left the function open to the end of its file. A
+  file like that gains every function after it: one script went from 16 rows to 101,
+  and a new row can be over its ceiling.
+- A shell `?` outside arithmetic, as in `ls a?b` or a `=~` regex, no longer costs a
+  ternary's cognitive +1 and its nesting, nor do the words of `echo break 2`, an array
+  literal's words on later lines, or `goto`. These only lower numbers (on a large
+  consumer repo 14 functions fell in cognitive, by 1 to 4), except that a `?:` inside
+  `$(( ))` or `(( ))` now adds 1 to ccn, as a C ternary does.
+- A PowerShell expression inside a `$( )` subexpression in a double-quoted string
+  counts: `"$($a -and $b)"` reads ccn 2 where it read 1, up to eight levels of
+  parens deep. Its cognitive score rises by the same decisions, and an `if` or loop
+  there opens a `nesting` level. On a large consumer repo 6 of 339 PowerShell
+  functions rose by 1 in ccn and 1 or 2 in cognitive, and one by a nesting level.
+  Quotes inside the subexpression pair among themselves, so a function that held
+  `"$(Get-Item "x{")"` and had no row now has one, and can be over its ceiling.
+- PowerShell keywords count in any case where a statement starts: a capitalized `IF`,
+  `-Or` or `ForEach` now costs what its lower-case spelling costs, and a `Default` arm
+  is free. A keyword word that is a hashtable key, a command, an argument or a member
+  costs nothing in any case (`@{ if = 1 }`, `$xs | foreach { }`, `git switch main`),
+  and neither does the `?` in `$?`. `-and`, `-or` and `-xor` in a command's arguments
+  are its parameters and cost nothing: `if (Test-Path $a -or $b)` reads 2 where it read 3.
+  PowerShell 7's `&&`, `||`, `??`, `?.` and `?[` count once each. Gated `ccn` can rise
+  or fall. `-and` and `-or` stop adding a nesting level.
+- A PowerShell switch arm costs one point whatever its pattern or subject holds, and
+  `ccn_mod` no longer reads one above `ccn_std` for each switch. The arms still cost
+  their points in both columns, so the gate reads a twelve-arm switch as 13, as before.
+- PowerShell rows appear for `Function Name`, `function script:Name`, `function
+  Get.Name` and a function that followed a stray `configuration` or `filter` word, and
+  the phantom rows those words opened go. A function whose header list writes a
+  parameter in braces changes its key: `function A(${x})` reads `A ${x}` where it read
+  `A $ { x }`. So does one whose header list holds `$?` (`A $x = $?` where it read
+  `A $x = $ ?`) or a keyword or operator in capitals (`-AND`, `-Or`, `IF` and `ELSE`
+  read in lower case). A `param(...)` block moves no key. A class method's decisions leave the function that declares the class.
+  An unquoted URL's `//`, a glob's `/*` and a `#` inside a word (`a#b`, `C#`) no
+  longer hide the code after them, so a function on the same line or between `a/*`
+  and a later `*/` can gain decisions or a row, and `function Get-A#B` gets a row
+  under that name. A function that gains a row, or keeps one and gains decisions, can
+  be over its ceiling and fails the gate the next time its file changes.
+- A shell function whose name holds `-`, `.` or `:` keeps the whole name: `do-thing`
+  read `thing`, and `function log::info` had no row. A keyword inside a longer word,
+  such as `select` in `xcode-select`, counts nothing, so some cognitive scores fall
+  sharply.
+
+See [the per-language gotchas](configuration.md#per-language-gotchas) for what each
+reader counts.
+
+#### Cognitive complexity per language
+
+`cognitive` reads each language's own rules. `ccn`, coverage and every function's name
+stay as they were, so this moves no mark and no gate verdict.
+
+Expect the `cognitive` column to change in `next-item --json`, `brief`, exports and
+the MCP tools on the first run after upgrading, most often by 1:
+
+- It drops where the pass charged recursion that was not there, the common case in
+  Python: a method that calls another object's method of the same name, as an
+  `__init__` calls `super().__init__()`, a method that wraps the module function it
+  is named after, a local variable or import named like its function, or a C++, Java
+  or Swift overload that forwards to another overload of its name.
+  It rises in Go, shell, PowerShell, Java and C++ functions that call themselves,
+  which cost nothing before, and in a Rust, Swift or Zig function that calls itself
+  through its type's name (`R::spin(n - 1)`).
+- A sequence of logical operators continued on the next line, or split by a comma in a
+  call's arguments, costs +1 once where it cost 2. A negated group such as
+  `a && !(b && c)` costs its own +1, and `??` costs nothing. Each operand of a
+  conditional expression holds a sequence of its own, so `x && y ? a && b : c && d`
+  costs 4 where it cost 2, and so does a group compared: `a && (b && c) == d && e`
+  costs 2 where it cost 1.
+- Swift's `repeat` and `guard`, Rust's `loop`, Go's `select`, PowerShell's `trap` and
+  a Python `match` statement cost what a loop, an `if` or a `switch` costs; they cost
+  nothing before. Words that are a keyword in another language, such as Python's
+  `c.do(1)` or JavaScript's `p.then(g).catch(h)`, cost nothing.
+- A structure inside a braceless body (`for (...) if (x) visit(x);`) costs one more in
+  C, C++, Objective-C, Java, JavaScript, TypeScript and Zig. A structure after a block
+  that holds a JavaScript or TypeScript arrow with a block body costs one less.
+
+In Python the same pass measures `nesting`, which moves too: a comprehension's level
+closes with its bracket, so `[p for p in a] + [q for q in b]` reads 1 where it read 2,
+and a `match` statement opens a level. The other languages keep lizard's `nesting`.
+Over 12,432 functions in 20 open-source projects, 1,082 move `cognitive`, 851 of
+them by 1 and 1,014 by 3 or less, and 69 Python rows move `nesting`. The
+[changelog](../CHANGELOG.md) lists every rule with an example.
+
+#### Nesting in every language
+
+`nesting` moves outside Python, and `cognitive` in a few functions in every language.
+
+- A function's `nesting` in C, C++, Objective-C, Java, JavaScript, TypeScript, Go,
+  Rust, Swift, Zig, PowerShell and shell reads the depth crapkit's cognitive pass
+  measures, the way Python has since 0.5.0. lizard's ND column, which those rows read
+  before, opened a level for `&&`, `||`, `case` and `try` (PowerShell's `-and` and
+  `-or` too) and lost one at a `}` or a `;`, so most rows that move go down: a switch
+  reads 1 whatever its case count, a condition's operators add nothing, and a shell
+  line such as `[ "$a" ] && [ "$b" ] || echo no` opens no level. Rows go up where ND
+  lost a level, as with nested loops, an `if` inside an `else`, a Rust `match`, or a
+  shell or PowerShell `case`/`switch`, which ND read as no level.
+- `cognitive` drops in a function where a guard without braces (`if (a) return;`)
+  comes before a block that is not a structure's, such as a bare `{`,
+  `synchronized`, `@autoreleasepool` or a lambda's body: the structures inside that
+  block no longer pay a level of nesting for the guard. 9 of 21,099 functions in the
+  measuring corpus move.
+- Both columns go up where a structure's header holds a `{` of its own, a literal or
+  a lambda's: Go's `for _, x := range []string{"a", "b"} {` and table-driven tests,
+  C++ initializer lists, Java array initializers, destructuring in a `for`. The body
+  after that header now counts as the structure's, so the structures inside it read
+  one level deeper and cost one more. In Go code expect about 1 function in 100 to
+  cost more; 264 of 24,540 did in the Go standard library and actionlint. Both
+  columns go down in a Swift function with an argument label spelled `for`, whose
+  body no longer reads as a level. In a PowerShell function with a `[switch]`
+  parameter only `cognitive` goes down: lizard's ND never read the word, so its
+  `nesting` stays.
+- `cognitive` goes down where a word spelled like a structure keyword is a name: a
+  `do` in Go and Zig, which have no do-while (`do(n)`, a method or closure named
+  `do`), a `do` after a `.` in any language but Python (`obs.do(fn)`), and an `if`,
+  loop, `switch` or `catch` followed by a `:`, such as an object's key `{if: 1}` or a
+  Swift argument label `g(for: x)`. The word no longer costs +1, and in Go the
+  structures inside a method named `do` no longer pay a level of nesting for it. 6
+  of the 24,540 Go functions moved, one of them from 45 to 9. A keyword key inside a
+  function also stops opening a `nesting` level per key. A Go variable named `while`
+  stops costing +1 at each use, since Go has no `while` loop.
+- Both columns go up, in every language, where a `while` loop comes right after a
+  `}` that closed anything but a do-while's block, such as an `if` block, an object
+  literal or a Python dict. The loop read as the tail of a do-while, cost nothing and
+  opened no level. 16 of the 21,099 functions in the measuring corpus move
+  `cognitive`, 3 of them in Python, and 6 move `nesting`.
+- In Zig, `nesting` goes down in a function whose switch has an `else =>` prong with
+  a block, or where an else with a payload and no braces (`else |err| return err;`)
+  comes before another block. `cognitive` goes down where `else |err| if` links an
+  else-if chain, which now costs +1 as `else if` does. 37 of 3,475 functions in the
+  Zig standard library lose a level and 12 cost less; 8 gain a level, where a
+  `switch` follows `else |err|` and now sits in the else's body as it does after a
+  plain `else`.
+- In Zig both columns go down in a function whose return type holds an `if`
+  (`fn f(x: anytype) if (A) u8 else u16 {`), whose whole body read one level deep,
+  as it did in 0.8.0. 3 of the 3,487 Zig standard library functions lose a level
+  and cost less.
+- `nesting` and `cognitive` are reported and never gated, so no verdict moves with
+  them. Expect both columns to change in `next-item --json`, exports and `brief` on
+  the first run after upgrading; the [`nesting` row](agent-json.md#item-fields) says
+  what opens a level.
+
 ### Analysis version 11
 
 0.8.0 reads Python defs in five new ways. Each one changes some functions' names or
@@ -323,6 +600,12 @@ Re-emit a committed baseline file once on the default branch. Until then it
 forgives no failure, as before, and verify warns when it reports a new failure
 against it. [The portable baseline's first
 line](portable-records.md#the-portable-baselines-first-line) gives the format.
+
+Each run keeps the shingle index `duplication` and `brief` read. When an upgrade changes
+how functions are shingled, the stored index no longer matches and the first
+`duplication` or `brief` after upgrading rebuilds it for the newest run, which takes
+seconds on a large repo. The pairs and twins it lists can change; no score or mark does,
+so nothing needs re-seeding.
 
 Git filenames retain their literal identity through scoring and output. Coverage
 paths still have to name the measured tree. Use the documented

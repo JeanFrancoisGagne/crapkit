@@ -154,9 +154,20 @@ def _after_close(node, context) -> bool:
 
 def optional_mark(fn, context) -> bool:
     """A `?` right after `)`, `]` or `>`: an optional type such as `(any Error)?`
-    or `[Int]?`, or an optional chain such as `f()?.g`, in fn's signature or body."""
+    or `[Int]?`, or an optional chain such as `f()?.g`, in fn's signature or body.
+    An optional chain after a call also holds AO-SWIFT-OPTIONAL-CHAIN's shape."""
     return any(node.type == "?" and node.parent.type != "ternary_expression"
                and _after_close(node, context) and not _in_string(node)
+               for node in counters.own_nodes(fn, context.spec))
+
+
+# --- AO-SWIFT-OPTIONAL-CHAIN (calc-bug analysis-oracles-162) -----------------------------------
+
+def optional_chain(fn, context) -> bool:
+    """An optional chain (`a?.b`, `f()?.g`, `c?()`) in fn: the counters count each `?`
+    as a decision; the reader counts none after a name and opens a nesting level after
+    `)` or `]`."""
+    return any(counters.optional_chains(node, context.spec, context.data)
                for node in counters.own_nodes(fn, context.spec))
 
 
@@ -348,6 +359,8 @@ RULES = [
     ("AO-SWIFT-OPTIONAL-MARK", CCN, optional_mark),
     ("AO-SWIFT-OPTIONAL-MARK-COG", COGNITIVE, optional_mark),
     ("AO-SWIFT-OPTIONAL-MARK-ND", NESTING, optional_mark),
+    ("AO-SWIFT-OPTIONAL-CHAIN", CCN, optional_chain),
+    ("AO-SWIFT-OPTIONAL-CHAIN-ND", NESTING, optional_chain),
     ("AO-SWIFT-ACCESSOR-WORD", EVERY, near_accessor_word),
     ("AO-SWIFT-PROTOCOL-WORD", EVERY, after_protocol_word),
     ("AO-SWIFT-FAILABLE-INIT", EVERY, failable_init),

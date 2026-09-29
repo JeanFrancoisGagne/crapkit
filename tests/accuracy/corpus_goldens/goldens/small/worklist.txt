@@ -31,9 +31,9 @@ worklist @ fd39664600a (run 2, floor ccn>=5, churn 12mo) - 50 of 92 active (work
   risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/click/parser.py:430  _get_value_from_state( self , option_name : str , option : _Option , state : _ParsingState )  ok
   risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/gson/ISO8601Utils.java:332  ISO8601Utils::parseInt( String value , int beginIndex , int endIndex)  ok
   risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/nvm/install.sh:71  nvm_source()  ok
+  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/posh-git/Utils.ps1:351  Get-FileEncoding $Path  ok
   risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/requests/cookies.py:164  remove_cookie_by_name( cookiejar : CookieJar , name : str , domain : str | None = None , path : str | None = None )  ok
   risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  src/native/matcher.rs:2  weight kind : & str
-  risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  src/scripts/switch.ps1:2  Get-Size  ok
   risk      7.0  ccn   7  crap    13.1  cov  50%    1c/1a  src/web/nullish.ts:8  firstSet ( a , b , c )
   risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:83  compare_strings( const unsigned char * string1 , const unsigned char * string2 , const cJSON_bool case_sensitive)  ok
   risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:430  detach_path( cJSON * object , const unsigned char * path , const cJSON_bool case_sensitive)  ok

@@ -19,14 +19,14 @@
    "over_target": 12
   },
   "scripts": {
-   "crap_load": 34.0,
+   "crap_load": 31.0,
    "functions": 8,
    "grade": "A+",
    "over_target": 0
   },
   "vendor": {
-   "crap_load": 1123.0,
-   "functions": 303,
+   "crap_load": 1134.0,
+   "functions": 304,
    "grade": "B",
    "over_target": 12
   },
@@ -38,18 +38,18 @@
   }
  },
  "cache_hits": 64,
- "cc_only": 337,
+ "cc_only": 338,
  "ceilings": {
   "default": 6,
   "scripts": 8,
   "vendor": 15
  },
  "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
- "crap_load": 1668.21,
+ "crap_load": 1676.21,
  "db": "<root>/repo/.crapkit/crap.sqlite",
  "excluded": 1,
  "files": 64,
- "functions": 414,
+ "functions": 415,
  "grade": "C",
  "kind": "coverage",
  "lane_failures": {},

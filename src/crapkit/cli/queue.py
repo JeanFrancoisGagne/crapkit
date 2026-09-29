@@ -535,7 +535,8 @@ def _brief_coupling(ranked: list, path: str) -> list[dict]:
 def _brief_twins(loader, row) -> list[dict]:
     from ..dup import twins_in
 
-    return packet.with_contained(twins_in(loader.twin_index(), row, loader.source(row.path)))
+    return packet.with_contained(twins_in(loader.twin_index(), row, loader.source(row.path),
+                                          loader.scored_file(row.path)))
 
 
 class _BriefLoader:

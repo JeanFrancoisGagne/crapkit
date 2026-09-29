@@ -9,8 +9,10 @@ WHAT IS REPORTED
     that is the intended answer, not a parse failure.
 
 CCN CONVENTION
-    Conditions counted: `if`, `elif`, `while`, `until`, `for`, `&&`, `||`, and
-    `;;`. Pipes (`|`) are data flow, not branches, and are not counted.
+    Conditions counted: `if`, `elif`, `while`, `until`, `for`, `&&`, `||`, `;;`,
+    and the `?` of arithmetic's `a ? b : c`, which is C's conditional operator and
+    counts as a C ternary does. Pipes (`|`) are data flow, not branches, and are
+    not counted.
 
     Inside arithmetic, `(( ))` and `$(( ))`, bash reads C: the `?` of `a ? b : c`
     counts as C's does, and the `;;` of `for ((;;))` is no case arm. Outside it
@@ -31,6 +33,26 @@ CCN CONVENTION
         tokenizes as `;;` then `&`).
       - the `case` keyword itself adds nothing, so a one-arm case costs the same 1
         as an `if`.
+    A `;;` with no case open, as in `for ((;;))`, ends no arm and counts nothing.
+
+RESERVED WORDS
+    Shell reads `if`, `done` and the rest as reserved only first in a command,
+    straight after another reserved word, as the `do` after a for's name and as
+    the `esac` where a case pattern would start, and only when a blank or an
+    operator ends the word (POSIX XCU 2.4). Anywhere else each is an ordinary
+    word, and it reaches the counters as text (_CommandWords): `echo done` closes
+    no loop, the `for` of `git for-each-ref` and the `select` of `xcode-select`
+    open no block, `done=1` assigns a variable, and a case pattern such as
+    `--exit-if-exists)` or `(done|fi)` is a pattern. An array literal's words
+    are words over every line they span, `arr=(\\n if\\n done\\n)` included.
+
+    Three more words the counters read follow the same rule. `break` and
+    `continue` are built-in commands, and `break 2` pays the cognitive +1 of a
+    jump past the nearest loop only as a command, not as the words of
+    `echo break 2`. A `?` is a decision only inside arithmetic: `$(( ))`,
+    `(( ))` and `for (( ))`, found as two `(` with nothing between them.
+    Anywhere else it matches one character, as in `ls a?b`, `-[PUGOF]?*)` or a
+    `=~` regex, and is text. Shell has no `goto`, so the word is always text.
 
 HEREDOCS
     A heredoc body is data, so it is blanked out of the source before tokenizing:
@@ -49,9 +71,14 @@ HEREDOCS
     extension at index 0.
 
     `<<EOF`, `<<-EOF`, `<<'EOF'`, `<<"EOF"` and `<<\\EOF` open a body; `<<<`
-    (herestring) does not; a `<<` inside `$(( ))` reads as a bit shift; and an
-    opener whose terminator never appears is ignored, so a misread `<<` costs
-    nothing instead of blanking the rest of the file.
+    (herestring) does not; a `<<` inside `$(( ))` reads as a bit shift; a `<<`
+    inside a string or a comment is text. What a `<<` sits in is read across
+    lines (_Context): each code line starts inside whatever the lines above left
+    open, so `v="$(node - "$f" <<'JS'` opens a body, a `<<'JS'` on the line that
+    closes a multi-line `X="$(...)"` opens one too, and a `<<` in the second line
+    of a string or of a multi-line single-quoted program opens none. An opener
+    whose terminator never appears is ignored, so a misread `<<` costs nothing
+    instead of blanking the rest of the file.
 
     A line ends where bash ends it, at LF (the source arrives with CRLF and a lone
     CR already read as LF), never at a form feed or another character
@@ -59,7 +86,7 @@ HEREDOCS
     end the body, and code after a form feed on the opener line is still code.
 
 TOKENIZER REPAIRS
-    lizard's shared token pattern is the C family's, and three of its rules read
+    lizard's shared token pattern is the C family's, and four of its rules read
     ordinary shell as something else. Each repair below was found by running this
     reader over the consumer repo's 97 scripts, which hold 475 function headers and
     report 462 (the rest are defined inside heredoc bodies). Each is pinned by a
@@ -73,17 +100,55 @@ TOKENIZER REPAIRS
       - a double-quoted run holding a command substitution that holds quotes ends
         at the wrong quote, and every quote after it pairs off by one (install.sh:
         18 of 153 functions hidden).
+      - a word holding `-`, `.` or `:` splits there. A function named
+        `do-thing`, `log::info` or `lib.util` was reported under its last part,
+        or under no row at all after `function`; and the keyword inside
+        `xcode-select`, `wait-for-device` or `snapshot-switch` counted as a
+        `select` loop, a `for` condition or a switch. An added word token keeps
+        each one whole, as the shell reads it.
     `//` gets an added token for the same reason as `\\x`: it is the `//` of a URL,
     not a C++ line comment.
 
+    A `#` opens a comment only where a word starts (POSIX XCU 2.3); inside a word,
+    as in `8#$mode` or a regex's `[#/]`, it is part of the word. The comment rule
+    lizard's script languages share takes any `#`, and a lone `#` token is a C
+    directive to lizard, which joins the rest of the line to it, so this reader
+    brings its own rule and a token for a word holding a `#`. One 3,500-line script
+    reported 16 of its 101 functions before, its `elif (( (8#$mode & 0111) ...))`
+    having hidden the `))` and `then` that close it.
+
+SUBSTITUTIONS INSIDE STRINGS
+    `x="$(cmd || true)"` runs `cmd || true`: the quotes keep the output one word,
+    they do not make the command text. The string rule above matches the whole
+    run, so its inner quotes pair with each other, and then every `$( )`, `$(( ))`
+    and backtick substitution inside a double-quoted token or a `${...}` expansion
+    is tokenized again as code. Its `&&`, `||`, `if` and `;;` count the way they
+    count written bare, at any depth: `"$(a "$(b || c)")"` reaches the `||`. The
+    text around a substitution stays one string token, so the `}` that ends
+    `${v:-$(cmd)}` closes nothing. A `$(` after a backslash, or inside single
+    quotes, is text and stays in its string. A case statement inside a
+    substitution is matched whole, from `case WORD in PATTERN)` to its `esac`,
+    because each pattern ends in a bare `)` that does not close the substitution:
+    `"$(case $os in Linux) echo l;; esac)"` counts its arm and opens and closes
+    one level.
+
 KNOWN LIMITS
-    - Conditions inside `"$( ... )"` are invisible: the whole double-quoted run is
-      one string token. `x="$(cmd || true)"` counts 0.
+    - The string rule reads eight levels of parens inside a substitution, the
+      `$(` included, and a case in it only when its subject is one word and its
+      first pattern follows `in` with no comment between. Past either, the
+      string ends at its first inner quote, as lizard's own rule ends it, and
+      the command counts nothing.
+    - A substitution in a heredoc body runs when the delimiter is unquoted
+      (`<<EOF`, not `<<'EOF'`), and it counts nothing: the whole body is blanked.
+    - What a line leaves open carries to the next, so a quote the heredoc reader
+      misreads stays open: a heredoc after it reads as text and its body counts
+      as shell. Only a script shell itself rejects, such as an unpaired `'` in a
+      bare word, leaves one open. A case opens a context only when `case WORD
+      in` sits on one line.
+    - `$[ ]`, bash's old spelling of `$(( ))`, is not read as arithmetic, so a
+      `?:` in it counts nothing.
     - A function defined inside another function's body is not reported; its braces
       are counted, so the outer function still closes on the right `}`.
-    - A name containing `-` or `.` reaches the reader split into several tokens, so
-      `do-thing() {` is reported under the name `thing`. It is still one function
-      with the right span and ccn.
     - Cognitive complexity for shell is computed by crapkit's language-agnostic
       extension, which reads a block by its words rather than its braces: `if`,
       `case` and the loop keywords open a nesting level, `fi`/`done`/`esac` close
@@ -91,6 +156,14 @@ KNOWN LIMITS
     - Arithmetic is read inside `(( ))` and `$(( ))` only. A `?:` in `let "..."`,
       in an array subscript (`a[i ? 1 : 0]=x`) or in the old `$[ ]` form counts
       nothing.
+
+NESTING DEPTH
+    A shell row's `nesting` is the deepest that same extension's block stack
+    gets, as every row's is, not lizard's ND column. ND closes a level on a
+    `}` or at a `;`, and shell closes a block with a word, so every block leaked
+    a level: seven ifs side by side read 6, four nested read 3, and a `case` read
+    0. Read off the stack, the seven read 1, the four read 4, and a `case` opens
+    one level its arms share, the way Sonar's switch does. `&&` and `||` open none.
 
 REGISTRATION
     lizard resolves a filename through `lizard_languages.get_reader_for`, which
@@ -119,11 +192,55 @@ from crapkit.sourcelines import source_lines
 # hold quotes of its own: `v="$(node -e 'require("fs")' "$f")"`. lizard's shared
 # rule ends the string at the first inner quote, and every quote after it pairs off
 # by one until some brace lands inside a string. This alternative fires at the same
-# '"' and wins, because a reader's additions are tried ahead of it. It allows three
-# levels of parens inside the substitution; deeper, or unbalanced inside its own
-# quotes, and it simply does not match, which leaves lizard's rule as it was.
-_COMMAND_SUB = r"\$\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"
-_DQ_STRING = r'"(?:\\.|' + _COMMAND_SUB + r'|[^"\\])*"'
+# '"' and wins, because a reader's additions are tried ahead of it. It allows
+# _PAREN_LEVELS levels of parens inside the substitution; deeper, or unbalanced
+# inside its own quotes, and it simply does not match, which leaves lizard's rule
+# as it was.
+#
+# A case statement inside the substitution is taken whole, from `case WORD in
+# PATTERN)` to its first `esac`, because each pattern ends in a bare `)`. Read as
+# the substitution's close, it cut `"$(case $os in Linux) echo l;; esac)"` at
+# `Linux)`: `case` reached the counters and `esac` stayed in the string.
+#
+# No loop gives back what it matched. A string with no closing quote after it
+# made the backtracking version try each `$( )` both as a substitution and as
+# text, twice the time per substitution. A loop that holds a negative lookahead,
+# at any depth, is an atomic group around a greedy loop (_loop) and every other
+# loop is possessive (`*+`, `++`). The two spellings mean the same, but on
+# CPython 3.11.2 (gh-100061) a lookahead that fires inside a possessive loop
+# keeps the text it looked at, and the case rule read nothing right there.
+# tests/unit/test_reader_regex_portability.py holds every reader to this.
+_PAREN_LEVELS = 8
+_CASE_START = (r"\bcase\s++(?:\"[^\"]*+\"|[^\s\"])++\s++in\s++\(?+"
+               r"(?:\"[^\"]*+\"|'[^']*+'|[^\s\"'()])++\)")
+_CASE_BLOCK = _CASE_START + r"(?>[\s\S]*?\besac\b)"
+
+
+def _loop(body: str) -> str:
+    """BODY any number of times, giving back nothing: `(?:BODY)*+`, in the
+    spelling CPython 3.11.2 matches right when BODY holds a lookahead."""
+    return r"(?>(?:" + body + r")*)"
+
+
+def _parens(levels: int) -> str:
+    """What may sit between a `(` and its `)`, LEVELS levels of parens deep."""
+    content = _run("")
+    for _ in range(levels - 1):
+        content = _run(r"|\(" + content + r"\)")
+    return content
+
+
+def _run(nested: str) -> str:
+    return _loop(_CASE_BLOCK + r"|(?!" + _CASE_START + r")[^()]" + nested)
+
+
+_COMMAND_SUB = r"\$\(" + _parens(_PAREN_LEVELS) + r"\)"
+_DQ_STRING = r'"' + _loop(r"\\.|" + _COMMAND_SUB + r'|[^"\\]') + r'"'
+
+# The start of a word: nothing before it but a blank, an operator or the file's
+# start. Only there does `#` open a comment (POSIX XCU 2.3 rule 9) and `case`
+# start a case.
+_AT_WORD = r"(?<![^\s;&|()])"
 
 # Extra alternatives for lizard's shared token pattern. Order matters only among
 # alternatives that can start at the same character.
@@ -136,6 +253,17 @@ _DQ_STRING = r'"(?:\\.|' + _COMMAND_SUB + r'|[^"\\])*"'
 #   \x      an unquoted backslash escapes the next character in shell, so '\"' is
 #           a literal quote. Left to open a string it runs to the next real quote,
 #           taking whatever braces lie between with it.
+#   #...    a comment, where a word starts.
+#   a#b     a word holding a `#`, as `10#$n`, `a#b` and a URL's `x#top` do: the
+#           `#` is part of the word, so the token runs from the word's start.
+#           The rule ScriptLanguageMixIn adds opens a comment at any `#`, and a
+#           lone `#` token is a C directive to lizard, which joins the rest of the
+#           line to it. Either way the line was gone: the `))` of
+#           `(( 10#$n < 1 ))` and any `&&` after it. _tokens calls lizard
+#           without the mixin's rule.
+#   a-b.c:d one word with a '-', '.' or ':' inside it, as the shell reads it: the
+#           function name `do-thing` or `log::info`, the argument `if-then`.
+_WORD = r"[A-Za-z_][\w.:-]*\w"
 _TOKEN_ADDITION = (
     "|" + _DQ_STRING +
     r"|\$\{(?:[^{}]|\{[^}]*\})*\}"
@@ -143,14 +271,49 @@ _TOKEN_ADDITION = (
     r"|;;"
     r"|//"
     r"|\\."
+    r"|" + _AT_WORD + r"\#[^\n]*"
+    r"|\w*+\#[^\s;&|()<>\"'`$\\]*+"
+    "|" + _WORD
 )
+
+# A substitution inside a token lizard keeps as text: a double-quoted string or a
+# ${...} expansion. The escape comes first, so `\$(` and `\`` stay text, as the
+# string rule above spent them.
+_BACKTICK_SUB = r"`(?:\\.|[^`\\])*`"
+_HOLE = re.compile(r"\\.|(" + _COMMAND_SUB + "|" + _BACKTICK_SUB + ")", re.S)
 
 # `<<` or `<<-`, then an optionally quoted delimiter word. '<<<' is excluded from
 # both sides so a herestring never reads as a heredoc.
 _HEREDOC = re.compile(
     r"(?<!<)<<(?!<)(-?)\s*(?:(['\"])([A-Za-z_]\w*)\2|\\?([A-Za-z_]\w*))")
 
-_NAME = re.compile(r"[A-Za-z_]\w*")
+# What each context of a line reads next, for _Context. `code` serves top-level
+# code and everything that holds code: `$( )`, `( )`, backticks and a case. A
+# lexeme is matched only where its context can hold it: a `'` opens a string in
+# code and is a letter inside "...", and a `)` closes a `$(` but not a case
+# pattern. At _AT_WORD, `#` opens a comment and `case` is a keyword.
+_CODE = "code"
+_INTO = r"|(?P<arith>\$\(\()|(?P<sub>\$\()|(?P<param>\$\{)|(?P<backtick>`)"
+_LEXEMES = {
+    _CODE: re.compile(
+        r"(?P<skip>\\.|<<<)|(?P<comment>" + _AT_WORD + r"\#[^\n]*)|(?P<heredoc><<)"
+        r"|(?P<ansi>\$')|(?P<single>')|(?P<double>\")"
+        r"|(?P<arith_command>" + _AT_WORD + r"\(\()" + _INTO + r"|(?P<paren>\()|(?P<close>\))"
+        r"|(?P<case>" + _AT_WORD + r"case\s+(?:\"[^\"]*\"|'[^']*'|[^\s\"'])+\s+in\b)"
+        r"|(?P<esac>" + _AT_WORD + r"esac\b)", re.S),
+    '"': re.compile(r"(?P<skip>\\.)|(?P<pop>\")" + _INTO, re.S),
+    "'": re.compile(r"(?P<pop>')"),
+    "$'": re.compile(r"(?P<skip>\\.)|(?P<pop>')", re.S),
+    "${": re.compile(r"(?P<skip>\\.)|(?P<pop>\})|(?P<double>\")" + _INTO, re.S),
+    "((": re.compile(r"(?P<pop>\)\))|(?P<aparen>\()" + _INTO),
+    "a(": re.compile(r"(?P<pop>\))|(?P<aparen>\()" + _INTO),
+}
+# The context each opening lexeme enters. "a(" is a paren inside arithmetic.
+_OPENS = {"ansi": "$'", "single": "'", "double": '"', "arith": "((",
+          "arith_command": "((", "sub": "$(", "param": "${", "paren": "(",
+          "aparen": "a(", "case": "case"}
+
+_NAME = re.compile(_WORD + r"|[A-Za-z_]")
 
 # Words that can never name a function, so that `if (cmd); then` and
 # `case $x in (a)` cannot look like one.
@@ -166,24 +329,81 @@ def _is_name(token) -> bool:
 
 # --- heredoc bodies, removed from the source ----------------------------------
 
-def _quoted(line: str, position: int) -> bool:
-    """True when an odd number of quotes precedes this '<<' on its line, which
-    puts it inside a string: `echo "pipe it <<EOF"` opens nothing."""
-    head = line[:position]
-    return head.count('"') % 2 == 1 or head.count("'") % 2 == 1
+class _Context:
+    """What is open at the end of the code lines read so far, innermost last:
+    quotes, `$( )`, `( )`, backticks, `${ }`, arithmetic and case statements.
+
+    A `<<` opens a heredoc only in code, and a line can start inside something
+    an earlier line opened:
+
+        X="$(
+          printf x
+        )" node - "$p" <<'JS'
+
+    Counted on the last line alone, three quotes precede its `<<` and it read
+    as quoted. Carried from line 2, the `"` closes the string and the `<<` sits
+    in code. The same stack puts `v="$(node - "$f" <<'JS'` in code, a `<<` in
+    `$(( 1 << bits ))` in arithmetic, where it is a shift, and a case pattern's
+    `)` in the case rather than at the close of its `$(`.
+    """
+
+    def __init__(self) -> None:
+        self.stack: list = []
+        self._actions = {"pop": self.stack.pop, "close": self._close,
+                         "backtick": self._backtick, "esac": self._esac}
+
+    def openers(self, line: str) -> list:
+        """(delimiter, dashed) for every heredoc LINE opens in code, reading the
+        line to its end so the next one starts where this one leaves off."""
+        found: list = []
+        match = self._next(line, 0)
+        while match:
+            match = self._next(line, self._read(line, match, found))
+        return found
+
+    def _next(self, line: str, position: int):
+        top = self.stack[-1] if self.stack else _CODE
+        return _LEXEMES.get(top, _LEXEMES[_CODE]).search(line, position)
+
+    def _read(self, line: str, match, found: list) -> int:
+        """Act on one lexeme; return where the next search starts."""
+        if match.lastgroup == "heredoc":
+            return _heredoc(line, match, found)
+        opens = _OPENS.get(match.lastgroup)
+        if opens:
+            self.stack.append(opens)
+        else:
+            self._actions.get(match.lastgroup, _nothing)()
+        return match.end()
+
+    def _close(self) -> None:
+        """A `)` closes a `$(` or a `(`. After a case pattern it closes nothing."""
+        if self.stack and self.stack[-1] in ("$(", "("):
+            self.stack.pop()
+
+    def _backtick(self) -> None:
+        if self.stack and self.stack[-1] == "`":
+            self.stack.pop()
+        else:
+            self.stack.append("`")
+
+    def _esac(self) -> None:
+        if self.stack and self.stack[-1] == "case":
+            self.stack.pop()
 
 
-def _shifted(line: str, position: int) -> bool:
-    """True when this '<<' sits inside arithmetic, where it is a bit shift:
-    `$(( 1 << bits ))` puts a bare word exactly where a delimiter would go."""
-    return line.count("((", 0, position) > line.count("))", 0, position)
+def _nothing() -> None:
+    """A lexeme read only so the search moves past it: an escape, a comment."""
 
 
-def _openers(line: str) -> list:
-    """(delimiter, dashed) for every heredoc this line opens."""
-    return [(match.group(3) or match.group(4), bool(match.group(1)))
-            for match in _HEREDOC.finditer(line)
-            if not _quoted(line, match.start()) and not _shifted(line, match.start())]
+def _heredoc(line: str, match, found: list) -> int:
+    """Record the heredoc whose `<<` MATCH found, and skip its delimiter word, so
+    the quotes of `<<'JS'` open nothing."""
+    opener = _HEREDOC.match(line, match.start())
+    if not opener:
+        return match.end()
+    found.append((opener.group(3) or opener.group(4), bool(opener.group(1))))
+    return opener.end()
 
 
 def _terminates(line: str, opener) -> bool:
@@ -208,6 +428,7 @@ class _HeredocStripper:
     def __init__(self) -> None:
         self.pending: list = []   # delimiters opened on one line, bodies not started
         self.active = None        # the delimiter whose body we are inside
+        self.context = _Context()  # what the code lines so far leave open
 
     def strip(self, source: str) -> str:
         lines = source_lines(source, keepends=True)
@@ -218,7 +439,8 @@ class _HeredocStripper:
         if self.active is not None:
             return self._body_line(line)
         # The opener line is code and stays whole; the body starts on the next one.
-        self.pending = [o for o in _openers(line) if _terminated(o, lines, index)]
+        self.pending = [o for o in self.context.openers(line)
+                        if _terminated(o, lines, index)]
         self._next_body()
         return line
 
@@ -291,6 +513,217 @@ class _Arithmetic:
         self._conditions.discard(free)
 
 
+# --- substitutions inside strings, read as code --------------------------------
+
+def _tokens(source: str, addition: str, token_class):
+    """lizard's shared tokenizer with shell's tokens, every substitution opened.
+
+    CodeReader's and not ScriptLanguageMixIn's: the mixin puts a comment rule
+    for any `#` ahead of these tokens, and _TOKEN_ADDITION holds shell's own."""
+    return _open_holes(CodeReader.generate_tokens(
+        source, _TOKEN_ADDITION + addition, token_class), addition, token_class)
+
+
+def _open_holes(tokens, addition: str, token_class):
+    for token in tokens:
+        if _may_hold_code(token):
+            yield from _hole_tokens(token, addition, token_class)
+        else:
+            yield token
+
+
+def _may_hold_code(token: str) -> bool:
+    """A double-quoted string or a ${...} expansion with a `$(` or a backtick in it."""
+    return (token[:1] == '"' or token[:2] == "${") and ("$(" in token or "`" in token)
+
+
+def _hole_tokens(token: str, addition: str, token_class):
+    """TOKEN's substitutions as code, and the text around each as a string token.
+
+    The text is quoted again so none of it reads as a word, a brace or a comment,
+    and it keeps every newline it held, so lizard's line count sees each one.
+    """
+    start = 0
+    for hole in _HOLE.finditer(token):
+        if hole.group(1):
+            yield '"' + token[start:hole.start()].strip('"') + '"'
+            yield from _tokens(hole.group(1), addition, token_class)
+            start = hole.end()
+    yield '"' + token[start:].strip('"') + '"'
+
+
+# --- reserved words, read only where shell reads them --------------------------
+#
+# Shell reads `if`, `done` and the rest as reserved only first in a command,
+# straight after another reserved word, as the `do` after a for's name and as the
+# `esac` where a case pattern would start, and only when a blank or an operator
+# ends the word (POSIX XCU 2.4). Anywhere else each is an ordinary word. Every
+# counter matches these words by their text, so one that stands anywhere else is
+# handed on quoted, as text.
+
+# Where the next word stands.
+_COMMAND, _ARGUMENT, _PATTERN, _SUBJECT, _LOOP_NAME, _AFTER_NAME = range(6)
+
+# The words a counter reads (ccn, the cognitive pass, ShellStates), and `time`,
+# which a command follows. `in` stays as it is: nothing counts it, and
+# ShellStates finds a case's `in` by it. `break` and `continue` are built-in
+# commands, not reserved words, and the cognitive pass reads them for the +1 of
+# `break 2`; like a reserved word, each is one only where a command starts.
+_RESERVED = frozenset({"if", "then", "elif", "else", "fi", "for", "select", "while",
+                       "until", "do", "done", "case", "esac", "function", "time",
+                       "break", "continue"})
+# Where a reserved word leaves the next word; one not listed leaves a command.
+_RESERVED_NEXT = {"case": _SUBJECT, "for": _LOOP_NAME, "select": _LOOP_NAME,
+                  "function": _ARGUMENT, "break": _ARGUMENT, "continue": _ARGUMENT}
+# The two reserved words shell reads where no command starts.
+_RESERVED_ELSEWHERE = {("do", _AFTER_NAME), ("esac", _PATTERN)}
+# Where an operator leaves the next word. A redirection sign is followed by a file.
+_OPERATOR_NEXT = {";": _COMMAND, "&&": _COMMAND, "||": _COMMAND, "|": _COMMAND,
+                  "!": _COMMAND, "{": _COMMAND, "}": _ARGUMENT, "<": _ARGUMENT,
+                  ">": _ARGUMENT}
+# Where an ordinary word leaves the next: a loop's name is followed by `in` or
+# `do`, and a case's subject runs to its `in`.
+_WORD_NEXT = {_LOOP_NAME: _AFTER_NAME, _SUBJECT: _SUBJECT}
+# After `in`, a case reads patterns and a loop reads its words.
+_IN_NEXT = {_SUBJECT: _PATTERN, _AFTER_NAME: _ARGUMENT}
+# What an open `(` holds: commands (a subshell, `$(`, a function's `()`), an
+# array's words (after `=` or `+=`), or arithmetic (`((`, `$((`, `for ((`).
+_COMMANDS, _WORDS, _ARITHMETIC = range(3)
+
+
+def _with_next(tokens):
+    """Each token with the one after it, and "" after the last."""
+    tokens = iter(tokens)
+    current = next(tokens, None)
+    for following in tokens:
+        yield current, following
+        current = following
+    if current is not None:
+        yield current, ""
+
+
+def _blank(token: str) -> bool:
+    """Whitespace, a comment, or a backslash that continues the line."""
+    return token.isspace() or token[:1] == "#" or token[:2] in ("\\\n", "\\\r")
+
+
+def _delimited(following: str) -> bool:
+    """Whether the token after a word ends it. `done=1` and `do-thing` are one
+    word each in shell, which lizard's tokenizer splits."""
+    return not following or following.isspace() or following[0] in ";&|()<>"
+
+
+class _CommandWords:
+    """Reads the token stream the way shell finds where each command starts, and
+    quotes each reserved word that stands anywhere else, and each `?` outside
+    arithmetic."""
+
+    def __init__(self) -> None:
+        self._at = _COMMAND
+        # for each open `(`: where it leaves the word after its `)`, and what it holds
+        self._closes: list = []
+        self._cases = 0          # open cases, so `;;` in `for ((;;))` starts no pattern
+        self._last = ""          # the last token that was not blank
+
+    def read(self, tokens):
+        for token, following in _with_next(tokens):
+            yield self._word(token, following)
+
+    def _word(self, token: str, following: str) -> str:
+        if _blank(token):
+            self._line_end(token)
+            return token
+        recognized = self._recognizes(token, following)
+        text = self._is_text(token, recognized)
+        self._at = self._next(token, recognized, following)
+        self._last = token
+        return '"' + token + '"' if text else token
+
+    def _is_text(self, token: str, recognized: bool) -> bool:
+        """A reserved word where shell reads none; a `;;` with no case open, as in
+        `for ((;;))`, where it ends no arm; a `?` outside arithmetic, which
+        matches one character of a file name or pattern; and `goto`, which shell
+        does not have."""
+        if token in _RESERVED:
+            return not recognized
+        if token == ";;":
+            return not self._cases
+        if token == "?":
+            return self._inside() != _ARITHMETIC
+        return token == "goto"
+
+    def _line_end(self, token: str) -> None:
+        """A newline ends a command, but not a case's subject or its patterns,
+        nor an array's words."""
+        if "\n" in token and token.isspace() and not self._reads_words():
+            self._at = _COMMAND
+
+    def _reads_words(self) -> bool:
+        return self._at in (_PATTERN, _SUBJECT) or self._inside() == _WORDS
+
+    def _inside(self):
+        """What the innermost open `(` holds; commands at the top level."""
+        return self._closes[-1][1] if self._closes else _COMMANDS
+
+    def _recognizes(self, token: str, following: str) -> bool:
+        return (token in _RESERVED and _delimited(following)
+                and (self._at == _COMMAND or (token, self._at) in _RESERVED_ELSEWHERE))
+
+    def _next(self, token: str, recognized: bool, following: str):
+        if self._at == _PATTERN:
+            return self._in_pattern(token, recognized)
+        if token in ("(", ")"):
+            return self._paren(token, following)
+        if recognized:
+            return self._reserved(token)
+        return self._plain(token)
+
+    def _in_pattern(self, token: str, recognized: bool):
+        """A pattern runs to its `)`, through any `(`, `|` or word; an `esac`
+        in its place ends the case."""
+        if recognized:
+            return self._reserved(token)
+        return _COMMAND if token == ")" else _PATTERN
+
+    def _reserved(self, token: str):
+        self._cases = max(0, self._cases + {"case": 1, "esac": -1}.get(token, 0))
+        return _RESERVED_NEXT.get(token, _COMMAND)
+
+    def _paren(self, token: str, following: str):
+        """A `(` opens commands, an array's words or arithmetic; its `)` returns
+        to where a word in the `(`'s place would have left the next one."""
+        if token == ")":
+            return self._closes.pop()[0] if self._closes else _ARGUMENT
+        holds = self._holds(following)
+        self._closes.append((_WORD_NEXT.get(self._at, _ARGUMENT), holds))
+        return _ARGUMENT if holds == _WORDS else _COMMAND
+
+    def _holds(self, following: str):
+        """`((` with nothing between the two opens arithmetic, and so does every
+        `(` inside it but a `$(`, which holds commands again. After `=` or `+=` a
+        `(` holds an array's words."""
+        if following == "(" or (self._inside() == _ARITHMETIC and self._last != "$"):
+            return _ARITHMETIC
+        return _WORDS if self._last in ("=", "+=") else _COMMANDS
+
+    def _plain(self, token: str):
+        if token in _OPERATOR_NEXT:
+            return _OPERATOR_NEXT[token]
+        if token in ("&", ";;"):
+            return self._separator(token)
+        if token == "in":
+            return _IN_NEXT.get(self._at, _ARGUMENT)
+        return _WORD_NEXT.get(self._at, _ARGUMENT)
+
+    def _separator(self, token: str):
+        """`;;` ends a case arm, and so does `&` after `;` or `;;` (`;&`, `;;&`).
+        After a redirection sign `&` names a descriptor (`2>&1`); anywhere else it
+        ends a command."""
+        if token == ";;" or self._last in (";", ";;"):
+            return _PATTERN if self._cases else _COMMAND
+        return self._at if self._last in ("<", ">") else _COMMAND
+
+
 # --- function detection --------------------------------------------------------
 
 class ShellStates(CodeStateMachine):
@@ -301,6 +734,10 @@ class ShellStates(CodeStateMachine):
     lizard's whitespace-stripping `preprocessing` is an extension a caller can
     reorder or omit (crapkit's analyze.py builds two different chains). Dropping
     newlines too is what lets a `foo()` header sit a line above its `{`.
+
+    A body that is a subshell, `f() ( ... )`, ends at its own `)`, and a case
+    pattern's bare `)` inside it is skipped: read as the close, the first
+    pattern of a consumer repo's 140-line function ended it 72 lines early.
     """
 
     def __init__(self, context):
@@ -310,6 +747,8 @@ class ShellStates(CodeStateMachine):
         self._opener = "{"
         self._closer = "}"
         self._depth = 0
+        self._cases: list = []     # the depth each open `case ... in` sits at
+        self._subject_left = 0     # tokens a `case` may still wait for its `in`
 
     def __call__(self, token, reader=None):
         if token.isspace():
@@ -360,15 +799,42 @@ class ShellStates(CodeStateMachine):
         self._opener = opener
         self._closer = ")" if opener == "(" else "}"
         self._depth = 1
+        self._cases = []
         self._state = self._body
 
     def _body(self, token):
         if token == self._opener:
             self._depth += 1
-        elif token == self._closer:
-            self._depth -= 1
-            if not self._depth:
-                self._end()
+        elif token == self._closer and not self._ends_pattern(token):
+            self._close()
+        else:
+            self._read_case(token)
+
+    def _close(self):
+        self._depth -= 1
+        if not self._depth:
+            self._end()
+
+    def _ends_pattern(self, token) -> bool:
+        """A `)` that ends a case pattern, not a subshell: `a)` in `case $v in a)`.
+        It matters only in a body that is itself a subshell, `f() ( ... )`."""
+        return token == ")" and self._case_here()
+
+    def _case_here(self) -> bool:
+        return bool(self._cases) and self._cases[-1] == self._depth
+
+    def _read_case(self, token):
+        """A case opens at its `in`, when at most two tokens sit between it and
+        `case` (`$v` is two: `$` and `v`), and closes at its `esac`. A `case` word
+        no `in` follows, as in `echo case`, opens nothing."""
+        if token == "in" and self._subject_left > 0:
+            self._cases.append(self._depth)
+        elif token == "esac" and self._case_here():
+            self._cases.pop()
+        self._count_subject(token)
+
+    def _count_subject(self, token):
+        self._subject_left = 3 if token == "case" else self._subject_left - 1
 
     def _end(self):
         self.context.end_of_function()
@@ -390,11 +856,7 @@ class ShellReader(CodeReader, ScriptLanguageMixIn):
     _control_flow_keywords = {"if", "elif", "for", "while", "until", ";;"}
     _logical_operators = {"&&", "||"}
     _case_keywords = set()      # arms are counted as ';;', see the module docstring
-    _ternary_operators = set()  # '?' decides only inside (( )), see _Arithmetic
-
-    # What lizard's ND extension treats as a nesting structure; its default set is
-    # the C family's and mentions neither `elif` nor `until`.
-    loops = {"if", "elif", "for", "while", "until", "&&", "||"}
+    _ternary_operators = {"?"}  # arithmetic's `?:`; outside (( )) a `?` arrives quoted
 
     def __init__(self, context):
         super().__init__(context)
@@ -413,17 +875,18 @@ class ShellReader(CodeReader, ScriptLanguageMixIn):
 
     @staticmethod
     def generate_tokens(source_code, addition="", token_class=None):
-        """lizard's shared tokenizer, minus heredoc bodies, plus shell's tokens.
+        """lizard's shared tokenizer, minus heredoc bodies, plus shell's tokens,
+        with the command inside a quoted substitution read as code.
 
-        ScriptLanguageMixIn supplies the '#' comment rule (PythonReader uses the
-        same one), so comment handling is not written here. Both repairs are made
-        to the source, so the token stage stays the single generator lizard built:
-        it yields as it reads, and nothing ahead of it in the extension chain is
-        starved.
+        The '#' comment rule is shell's own, in _TOKEN_ADDITION: a comment starts
+        only where a word does. ScriptLanguageMixIn still reads each comment token
+        for lizard's forgive directives. Both repairs are made to the source, and
+        the substitutions are opened by a generator over
+        lizard's, so the token stage still yields as it reads and nothing ahead
+        of it in the extension chain is starved.
         """
         source = _defuse_block_comments(_HeredocStripper().strip(source_code))
-        return ScriptLanguageMixIn.generate_common_tokens(
-            source, _TOKEN_ADDITION + addition, token_class)
+        return _CommandWords().read(_tokens(source, addition, token_class))
 
 
 # Captured before register() wraps it, so a test can ask what lizard shipped.

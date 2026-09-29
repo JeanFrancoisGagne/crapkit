@@ -42,7 +42,7 @@ def replaced(tmp_path):
 
     store.twin_index(first, build)
     held = SnapshotStore(tmp_path / "crap.sqlite").twin_index(first, build)
-    assert twins_in(held, ROWS[0], SOURCES["src/a.py"]) == find_twins(ROWS[0], ROWS, SOURCES)
+    assert twins_in(held, ROWS[0], SOURCES["src/a.py"], ROWS) == find_twins(ROWS[0], ROWS, SOURCES)
     SnapshotStore(tmp_path / "crap.sqlite").twin_index(second, lambda: function_index(ROWS, SOURCES))
     builds.clear()
     return held, builds
@@ -52,7 +52,7 @@ def test_twins_looked_up_after_the_index_was_replaced_are_all_there(replaced):
     held, builds = replaced
 
     for target in ROWS:
-        assert twins_in(held, target, SOURCES[target.path]) == find_twins(target, ROWS, SOURCES)
+        assert twins_in(held, target, SOURCES[target.path], ROWS) == find_twins(target, ROWS, SOURCES)
     assert len(find_twins(ROWS[1], ROWS, SOURCES)) == 2
     assert builds == [1], "one rebuild answers every later lookup"
 

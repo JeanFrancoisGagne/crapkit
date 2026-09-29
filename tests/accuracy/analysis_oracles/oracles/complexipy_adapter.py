@@ -8,9 +8,15 @@ own, each a rulings.tsv row with a hand case (test_cognitive_oracles):
   comprehension's level (`[b for a in x for b in a]` reads 2; the paper nests
   a loop in a loop, B2);
 - AO-CXP-LOOP-ELSE: a loop's or a try's else adds nothing (B1 lists else);
+- AO-CXP-RECURSION-NAME: any call spelled like the def is recursion, one
+  through a parameter or an import of that name, and a method's call to the
+  module function of its name, too (the paper counts a call that reaches the
+  def: the counter's recursion_scopes);
 - AO-CXP-CONDITION, AO-CXP-LAMBDA, AO-CXP-TERNARY: a comprehension in an if's
   condition sits at the if's level, and a lambda and a conditional expression
   raise the level (the paper's reading; crapkit's documented readings differ).
+- AO-CXP-GUARD: a match case's guard adds nothing of its own, as the paper
+  reads it (crapkit's documented reading charges it as an if; AO-COG-GUARD).
 
 Two more are places complexipy reads nothing or reads another level, so a
 function holding them is left out of the comparison and counted, never
@@ -37,7 +43,8 @@ FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 COUNTED = (ast.BoolOp, ast.IfExp, ast.Lambda, *py_sonar.COMPREHENSIONS)
 # The Sonar counter's choices that reproduce complexipy's reading.
 COMPLEXIPY = py_sonar.Choices(for_nests=False, filter_nests=False, filter_increment=False,
-                              loop_else_counts=False, condition_nests=False)
+                              loop_else_counts=False, condition_nests=False,
+                              recursion_scopes=False)
 
 
 def values(source: str) -> dict[int, int]:

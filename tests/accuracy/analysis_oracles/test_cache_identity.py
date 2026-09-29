@@ -74,8 +74,12 @@ class Warm:
         assert measured.code == 0, measured.stderr
         return measured
 
+    def inventory(self) -> dict:
+        """`inventory --json`: the files it analyzed and how many came from the cache."""
+        return json.loads(drive.Driver(self.root).run("inventory", "--json").stdout)
+
     def cache_hits(self) -> int:
-        return json.loads(drive.Driver(self.root).run("inventory", "--json").stdout)["cache_hits"]
+        return self.inventory()["cache_hits"]
 
 
 def cold(files: dict, work: Path, spawn: bool = False):
@@ -115,7 +119,10 @@ def test_warm_equals_cold_on_every_probe_file(probe_files, tmp_path):
     warm = Warm(probe_files, tmp_path / "warm", spawn=True)
     first = warm.run()
     second = warm.run()
-    assert warm.cache_hits() == len({row["path"] for row in second.rows})
+    # Every file the run analyzed comes from the cache, one that defines no
+    # function included: java/Element.java's annotation element has no row.
+    report = warm.inventory()
+    assert report["cache_hits"] == report["files"] >= len({row["path"] for row in second.rows})
     assert second.rows == first.rows == _cold_of(warm, tmp_path / "cold").rows
 
 

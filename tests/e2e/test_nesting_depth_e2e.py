@@ -4,7 +4,8 @@ Until 0.5.0 a Python row read lizard's ND count, which counts structures rather
 than depth: a flat function of seven `if`s read `nesting: 7`, and two personas
 in the 0.4.15 review took that for seven levels deep. Spec item 15 derives the
 Python value from crapkit's own cognitive pass, whose per-function stack is a
-depth, and leaves brace languages on lizard's column.
+depth. Brace languages read the same pass now too: ND opened a level for a
+condition's `&&` and lost levels at `}` and `;`.
 """
 import re
 from pathlib import Path
@@ -38,8 +39,8 @@ DEEP = """def deep(a, b, c):
     return 0
 """
 
-# lizard's ND reads 3 here: the `for`, the `if`, and the first `&&` of a
-# condition each add a level. That is the number brace languages keep.
+# lizard's ND read 3 here: the `for`, the `if`, and the first `&&` of a
+# condition each added a level. The `&&` opens none, so the depth is 2.
 TS = """export function f(a: number, b: number) {
   for (const x of [a, b]) {
     if (x > 0 && x < 9) { return x; }
@@ -82,10 +83,10 @@ def test_a_flat_python_function_reads_depth_one_and_a_three_deep_one_reads_three
     assert nesting["deep"] == 3
 
 
-def test_a_brace_language_row_keeps_lizards_depth(tmp_path):
+def test_a_brace_language_row_reads_the_depth_of_its_blocks(tmp_path):
     nesting = _nesting_by_name(_repo(tmp_path))
 
-    assert nesting["f"] == 3
+    assert nesting["f"] == 2
 
 
 def test_a_cache_written_before_the_depth_misses_once_then_hits_again(tmp_path):

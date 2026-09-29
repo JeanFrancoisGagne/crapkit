@@ -63,6 +63,19 @@ PY_SHAPES = {
                                "    def moved(self, dx):\n        return Point(self.x + dx)\n"),
     "nested_after_body": ("def parent(a):\n    def helper(b): return b\n    if a:\n"
                           "        return helper(a)\n    return 0\n"),
+    # calc-bug analysis-oracles-3: recursion is a call that reaches the def. A
+    # method's bare name is the module's, a parameter or an import of the name
+    # hides the def, and a class name reaches a static method.
+    "recursion_scopes": ("class Walker:\n"
+                         "    def open(self):\n        return open(self.path)\n\n"
+                         "    def walk(self, n):\n        return self.walk(n - 1) if n else 0\n\n"
+                         "    @staticmethod\n    def spin(n):\n"
+                         "        return Walker.spin(n - 1) if n else 0\n\n\n"
+                         "def apply(x, apply):\n    return apply(x)\n\n\n"
+                         "def dumps(obj):\n    from json import dumps\n    return dumps(obj)\n\n\n"
+                         "def countdown(n):\n    if n:\n        countdown(n - 1)\n\n\n"
+                         "def outer(n):\n    def inner(m):\n        return inner(m - 1)\n"
+                         "    return inner(n)\n"),
     # PEP 758 (3.14): except without parentheses; PEP 750 (3.14): a t-string.
     "pep758_except": ("def guarded(f):\n    try:\n        return f()\n"
                       "    except ValueError, TypeError:\n        return None\n"),

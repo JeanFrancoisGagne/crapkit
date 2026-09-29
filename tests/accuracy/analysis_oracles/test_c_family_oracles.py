@@ -31,6 +31,7 @@ from accuracy.analysis_oracles import analysis_tooldiff as tooldiff
 from accuracy.analysis_oracles.analysis_tooldiff import Tool
 from accuracy.analysis_oracles.oracles import clang_adapters as adapter
 from accuracy.analysis_oracles.oracles import go_adapters
+from accuracy.analysis_oracles.oracles import treesitter_cognitive
 from accuracy.analysis_oracles.oracles import treesitter_counters as counters
 from accuracy.kit import rulings, runlog
 
@@ -104,17 +105,12 @@ def body_block(fn, context) -> int:
     return -1
 
 
-def _calls_itself(call, name: bytes, data: bytes) -> bool:
-    callee = call.child_by_field_name("function")
-    return callee is not None and data[callee.start_byte:callee.end_byte] == name
-
-
 def recursion(fn, context) -> int:
     """AO-TIDY-RECURSION: clang-tidy leaves out the paper's +1 for a function in a
-    recursion cycle; a direct call to itself by name gets it back."""
-    name = counters.name(fn, context.data).encode()
-    return int(any(_calls_itself(call, name, context.data)
-                   for call in tooldiff.below(fn, {"call_expression"})))
+    recursion cycle; a call that reaches the function gets it back, read as the
+    tree-sitter counter reads one (an overload with another arity is not it, and
+    a call another overload of the name takes too is neither one's)."""
+    return int(treesitter_cognitive.measure(fn, context.spec, context.data).recursed)
 
 
 # Function-like macros of every file measured, by name: both tools read the code

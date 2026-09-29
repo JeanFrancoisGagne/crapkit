@@ -19,7 +19,7 @@ parenthesis, so an empty bare name is still the one test for it.
 import pytest
 
 from crapkit.analyze import analyze_source
-from crapkit.keys import ANONYMOUS, anonymous_positions, bare_name, handles
+from crapkit.keys import ANONYMOUS, anonymous_positions, bare_name, handles, named_by
 from crapkit.score import ScoredRow
 
 # One named function per language, at the spelling its lizard reader actually
@@ -100,6 +100,30 @@ def test_a_zig_string_names_handle_is_its_whole_name():
     (record,) = analyze_source("app.zig", 'fn @"weird name"(x: i32) i32 {\n    return x;\n}\n')
 
     assert handles([row(record.long_name)]) == {("app.rs", record.long_name, 1, 0): '@"weird name"'}
+
+
+def test_a_swift_raw_identifier_is_the_whole_name_between_its_backticks():
+    """Swift 6.2 names a function with any text between backticks (SE-0451), spaces
+    included, and Swift Testing names its tests that way. The leading token of that
+    long name is only "`keeps", which no command would accept back."""
+    source = "func `keeps onboarding if offline`(value: Int) {\n    show(value)\n}\n"
+    (record,) = analyze_source("app.swift", source)
+
+    assert record.long_name == "`keeps onboarding if offline` value : Int"
+    assert bare_name(record.long_name) == "`keeps onboarding if offline`"
+    assert named_by(record.long_name, "`keeps onboarding if offline`")
+    assert not named_by(record.long_name, "`keeps")
+
+
+@pytest.mark.parametrize("long_name,expected", [
+    ("`default` x : Int", "`default`"),
+    ("`sorts (a, b) pairs`", "`sorts (a, b) pairs`"),
+    ("`", "`"),
+])
+def test_a_backtick_name_ends_at_its_own_backtick(long_name: str, expected: str):
+    """A `(` or a space inside the backticks is part of the name; a lone backtick
+    falls back to the leading-token rule."""
+    assert bare_name(long_name) == expected
 
 
 def test_an_anonymous_function_still_has_no_bare_name():

@@ -29,8 +29,11 @@ def test_rescore_json_keeps_same_line_identity(capsys):
 
 
 def test_same_start_nested_function_is_a_contained_twin_not_self():
-    source = "function outer() { return function inner() {\n" + "\n".join(
-        f"const value{i} = {i};" for i in range(8)) + "\nreturn value7;\n};\n}\n"
+    """outer and inner start on one line. inner's lines are its own, so outer's
+    own tail repeats inner's body to be a twin of it at all."""
+    body = "\n".join(f"const value{i} = {i};" for i in range(12))
+    source = ("function outer() { const inner = function inner() {\n" + body
+              + "\nreturn value11;\n};\n" + body + "\nreturn inner;\n}\n")
     rows = build_inventory_rows({"src": analyze_source("a.ts", source)})
     twins = find_twins(rows[0], rows, {"a.ts": source})
     assert len(twins) == 1

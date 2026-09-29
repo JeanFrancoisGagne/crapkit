@@ -17,8 +17,9 @@ import pytest
 
 from accuracy.analysis_oracles import analysis_pydiff, py_line_shapes
 from accuracy.analysis_oracles.oracles import py_ast_oracle, tokenize_nloc
-from accuracy.analysis_oracles import analysis_tables, analysis_tstests
-from accuracy.kit import runlog
+from accuracy.analysis_oracles import analysis_tables, analysis_treesitter, analysis_tstests
+from accuracy.analysis_oracles.oracles import treesitter_counters as counters
+from accuracy.kit import rulings, runlog
 
 pytestmark = pytest.mark.process
 
@@ -172,3 +173,22 @@ def test_sizes_match_the_treesitter_counters_on_the_corpus(language, corpus_lang
 
     outcome = analysis_tstests.check(files, measured, "sizes", language)
     assert outcome.compared > 0
+
+
+# --- a comparison in a C++ default argument (calc-bug analysis-oracles-161) ------------------------
+
+DEFAULT_LESS = "int f(bool a = x < 0, int b = 1) {\n  return b;\n}\n"
+
+
+@rulings.applies("AO-CPP-DEFAULT-LESS-THAN")
+def test_a_comparison_in_a_cpp_default_argument_ends_no_parameter(measure_set):
+    """ISO/IEC 14882:2020 [dcl.fct.default]: `x < 0` is the first parameter's default
+    argument, a relational expression, and `int b = 1` is a second parameter."""
+    path = "cases/default_less.cpp"
+    data = DEFAULT_LESS.encode()
+    (row,) = measure_set({path: data}).in_file(path)
+    context = analysis_treesitter.file_context(path, data)
+    (fn,) = counters.functions(context.tree, context.spec)
+
+    rulings.pin_ruling("AO-CPP-DEFAULT-LESS-THAN", crapkit=row["params"],
+                       oracle=counters.params(fn, context.spec, data))
