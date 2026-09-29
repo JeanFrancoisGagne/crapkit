@@ -927,6 +927,14 @@ page = "README.md"
 headings = ["Development"]
 cells = ["lin-local-checkout"]
 
+# The accuracy tiers' contributor installs. lin-local-checkout runs the Push
+# line, README's Development line, from a clone; the Nightly line's
+# `accuracy` extra runs in accuracy.yml's nightly job, not in a deploy cell.
+[[doc]]
+page = "docs/accuracy.md"
+headings = ["Push", "Nightly"]
+cells = ["lin-local-checkout"]
+
 [[doc]]
 page = "docs/adoption.md"
 headings = ["Install the agent surface last"]
