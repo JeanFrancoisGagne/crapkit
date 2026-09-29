@@ -20,11 +20,13 @@ MODULE = "accuracy_wheel_diff"
 
 
 def wheel_diff():
-    """tools/accuracy/wheel_diff.py, loaded once by path."""
+    """tools/accuracy/wheel_diff.py, loaded once by path. It is registered under the
+    name its spec carries too: the mutation tools stage renames a mutated file's
+    spec, and a dataclass finds its module in sys.modules by that name."""
     if MODULE not in sys.modules:
         spec = importlib.util.spec_from_file_location(MODULE, TOOL)
         module = importlib.util.module_from_spec(spec)
-        sys.modules[MODULE] = module
+        sys.modules[spec.name] = sys.modules[MODULE] = module
         spec.loader.exec_module(module)
     return sys.modules[MODULE]
 

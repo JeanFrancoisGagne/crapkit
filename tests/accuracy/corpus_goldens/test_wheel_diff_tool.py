@@ -15,6 +15,7 @@ import io
 import json
 import math
 from pathlib import Path
+import sys
 import time
 import zipfile
 
@@ -52,6 +53,23 @@ TINY = {
 
 wheel_diff = releases.wheel_diff()
 COLUMNS = ("path", "long_name", "occurrence", "ccn", "crap", "remedy")
+
+
+def test_the_tool_loads_under_the_name_its_spec_carries(monkeypatch):
+    """The mutation tools stage names a mutated file by its path (see LAUNCHER in
+    tools/accuracy/mutation.py: tools.accuracy.wheel_diff), and a dataclass finds its
+    module in sys.modules by that name, so the loader must register the name the
+    spec carries. Here the spec is renamed as the stage renames it."""
+    real = releases.importlib.util.spec_from_file_location
+    monkeypatch.setattr(releases.importlib.util, "spec_from_file_location",
+                        lambda name, location: real("renamed_wheel_diff", location))
+    for name in (releases.MODULE, "renamed_wheel_diff", "tools.accuracy.wheel_diff"):
+        monkeypatch.setitem(sys.modules, name, None)
+        del sys.modules[name]
+
+    tool = releases.wheel_diff()
+
+    assert sys.modules[tool.__name__] is tool is sys.modules[releases.MODULE]
 
 
 # --- the map against a csv diff ------------------------------------------------------
