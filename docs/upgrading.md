@@ -375,7 +375,8 @@ the MCP tools on the first run after upgrading, most often by 1:
 - It drops where the pass charged recursion that was not there, the common case in
   Python: a method that calls another object's method of the same name, as an
   `__init__` calls `super().__init__()`, a method that wraps the module function it
-  is named after, or a local variable or import named like its function.
+  is named after, a local variable or import named like its function, or a C++, Java
+  or Swift overload that forwards to another overload of its name.
   It rises in Go, shell, PowerShell, Java and C++ functions that call themselves,
   which cost nothing before, and in a Rust, Swift or Zig function that calls itself
   through its type's name (`R::spin(n - 1)`).
@@ -396,8 +397,8 @@ the MCP tools on the first run after upgrading, most often by 1:
 In Python the same pass measures `nesting`, which moves too: a comprehension's level
 closes with its bracket, so `[p for p in a] + [q for q in b]` reads 1 where it read 2,
 and a `match` statement opens a level. The other languages keep lizard's `nesting`.
-Over 12,433 functions in 20 open-source projects, 1,127 moved `cognitive`, 894 of
-them by 1 and 1,058 by 3 or less, and 69 Python rows moved `nesting`. The
+Over 12,432 functions in 20 open-source projects, 1,082 move `cognitive`, 851 of
+them by 1 and 1,014 by 3 or less, and 69 Python rows move `nesting`. The
 [changelog](../CHANGELOG.md) lists every rule with an example.
 
 ### Analysis version 11

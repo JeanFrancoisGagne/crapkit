@@ -1193,7 +1193,8 @@ and missed some that were. Each rule now reads the language it is in:
 - The block around a JavaScript or TypeScript arrow with a block body closes at its `}`.
   lizard gives the arrow's `{` to the function around it, so that block never closed
   its level and every structure after it sat one level deeper: a zod parser with many
-  `.then((r) => { ... })` calls read 133 and reads 109.
+  `.then((r) => { ... })` calls read 159 in 0.8.0 and reads 109, 24 of the 50 through
+  this rule.
 - A Python comprehension's level closes with its bracket, so
   `[p for p in a] + [q for q in b]` reads `cognitive` 2 and `nesting` 1 where it read 3
   and 2. A line that continues a bracket starts no statement, so a conditional
@@ -1201,12 +1202,12 @@ and missed some that were. Each rule now reads the language it is in:
   it costs on one line.
 - A Zig `else |err| if (...)` is an else-if and costs the flat +1 an else-if costs.
 
-Measured over 12,433 functions in 20 open-source projects: 1,110 move `cognitive`, 954
-down and 156 up. Python moves most, 627 of 5,967 rows; 473 of its 582 drops are the
+Measured over 12,432 functions in 20 open-source projects: 1,082 move `cognitive`, 953
+down and 129 up. Python moves most, 621 of 5,967 rows; 473 of its 576 drops are the
 recursion rule, most of them a method that calls another object's method of the same
 name, as an `__init__` calls `super().__init__()` or a `close` calls
-`self.x.close()`. TypeScript moves 185 of 1,948, Swift 106 of 871
-and Objective-C 62 of 288; every other language moves fewer than 40. Python `nesting`
+`self.x.close()`. TypeScript moves 185 of 1,948, Swift 90 of 871, Objective-C 62 of
+288, and C and C++ 49 of 1,344; every other language moves fewer than 25. Python `nesting`
 comes from this pass and moves in 69 rows, 68 of them through the comprehension and
 continuation-line rules; a `match` statement and a loop after a dict literal now open
 a level. The other languages read `nesting` from lizard, so theirs does not move, and
