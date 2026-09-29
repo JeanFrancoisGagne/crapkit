@@ -51,11 +51,12 @@ def test_a_function_of_exactly_min_lines_lines_is_shingled():
 
 
 def test_twins_cut_at_10_by_default_and_at_top():
+    """twins_in takes the target file's rows, here every row, since a.py holds them all."""
     rows, sources = build({"a.py": [body("x", 10)] * 12})
     index = function_index(rows, sources)
 
     assert (len(twins_of(rows, sources)), len(twins_of(rows, sources, top=11)),
-            len(twins_in(index, rows[0], sources["a.py"]))) == (10, 11, 10)
+            len(twins_in(index, rows[0], sources["a.py"], rows))) == (10, 11, 10)
 
 
 def test_a_threshold_other_than_the_index_s_rebuilds_it():
