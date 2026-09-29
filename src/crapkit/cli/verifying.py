@@ -1545,16 +1545,32 @@ def _print_staged_violations(root: Path, cfg, gate, violations: list, shown: str
 
 
 def _print_breaches(violations: list, target: int, shown: str, judged: str) -> None:
-    print(f"crapkit gate: {len(violations)} {judged} function(s) exceed the complexity ceiling of {target}:")
-    for v in violations:
-        print(f"  ccn {v.ccn:>3}  {shown}{v.path}:{v.start}  {v.long_name}")
+    """The refusal's head line names the ceiling the breaches were judged
+    against, a scope's own `target` included. Breaches under scopes with
+    different ceilings each name theirs on the row, `ccn   6 > 5`. `target`
+    stands in for a violation built without a ceiling."""
+    ceilings = [_judged_ceiling(v, target) for v in violations]
+    shared = len(set(ceilings)) == 1
+    head = f"of {ceilings[0]}" if shared else "of their scope"
+    print(f"crapkit gate: {len(violations)} {judged} function(s) exceed the complexity ceiling {head}:")
+    for v, ceiling in zip(violations, ceilings):
+        over = "" if shared else f" > {ceiling}"
+        print(f"  ccn {v.ccn:>3}{over}  {shown}{v.path}:{v.start}  {v.long_name}")
+
+
+def _judged_ceiling(violation, target: int) -> int:
+    return target if violation.ceiling is None else violation.ceiling
 
 
 def _refuse_tracked() -> int:
     """No commit to refuse or grant: the breach is already committed, and on a
-    first hand run it is the debt the repo adopts through `ratchet seed`."""
+    first hand run it is the debt the repo adopts through `ratchet seed`.
+
+    Seed marks what the stored run scored, so a function committed after the
+    last `coverage` got no mark from seed alone and the hook refused again;
+    the refusal names the run that seed reads first."""
     print("decompose them and commit the split (coverage cannot save a function above the target), "
-          f"or record existing debt with `{_self()} ratchet seed`.")
+          f"or record existing debt with `{_self()} coverage`, then `{_self()} ratchet seed`.")
     return 6
 
 
