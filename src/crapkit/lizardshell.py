@@ -31,6 +31,17 @@ CCN CONVENTION
         tokenizes as `;;` then `&`).
       - the `case` keyword itself adds nothing, so a one-arm case costs the same 1
         as an `if`.
+    A `;;` with no case open, as in `for ((;;))`, ends no arm and counts nothing.
+
+RESERVED WORDS
+    Shell reads `if`, `done` and the rest as reserved only first in a command,
+    straight after another reserved word, as the `do` after a for's name and as
+    the `esac` where a case pattern would start, and only when a blank or an
+    operator ends the word (POSIX XCU 2.4). Anywhere else each is an ordinary
+    word, and it reaches the counters as text (_CommandWords): `echo done` closes
+    no loop, the `for` of `git for-each-ref` and the `select` of `xcode-select`
+    open no block, `done=1` assigns a variable, and a case pattern such as
+    `--exit-if-exists)` or `(done|fi)` is a pattern.
 
 HEREDOCS
     A heredoc body is data, so it is blanked out of the source before tokenizing:
@@ -487,6 +498,145 @@ def _hole_tokens(token: str, addition: str, token_class):
     yield '"' + token[start:].strip('"') + '"'
 
 
+# --- reserved words, read only where shell reads them --------------------------
+#
+# Shell reads `if`, `done` and the rest as reserved only first in a command,
+# straight after another reserved word, as the `do` after a for's name and as the
+# `esac` where a case pattern would start, and only when a blank or an operator
+# ends the word (POSIX XCU 2.4). Anywhere else each is an ordinary word. Every
+# counter matches these words by their text, so one that stands anywhere else is
+# handed on quoted, as text.
+
+# Where the next word stands.
+_COMMAND, _ARGUMENT, _PATTERN, _SUBJECT, _LOOP_NAME, _AFTER_NAME = range(6)
+
+# The words a counter reads (ccn, the cognitive pass, ShellStates), and `time`,
+# which a command follows. `in` stays as it is: nothing counts it, and
+# ShellStates finds a case's `in` by it.
+_RESERVED = frozenset({"if", "then", "elif", "else", "fi", "for", "select", "while",
+                       "until", "do", "done", "case", "esac", "function", "time"})
+# Where a reserved word leaves the next word; one not listed leaves a command.
+_RESERVED_NEXT = {"case": _SUBJECT, "for": _LOOP_NAME, "select": _LOOP_NAME,
+                  "function": _ARGUMENT}
+# The two reserved words shell reads where no command starts.
+_RESERVED_ELSEWHERE = {("do", _AFTER_NAME), ("esac", _PATTERN)}
+# Where an operator leaves the next word. A redirection sign is followed by a file.
+_OPERATOR_NEXT = {";": _COMMAND, "&&": _COMMAND, "||": _COMMAND, "|": _COMMAND,
+                  "!": _COMMAND, "{": _COMMAND, "}": _ARGUMENT, "<": _ARGUMENT,
+                  ">": _ARGUMENT}
+# Where an ordinary word leaves the next: a loop's name is followed by `in` or
+# `do`, and a case's subject runs to its `in`.
+_WORD_NEXT = {_LOOP_NAME: _AFTER_NAME, _SUBJECT: _SUBJECT}
+# After `in`, a case reads patterns and a loop reads its words.
+_IN_NEXT = {_SUBJECT: _PATTERN, _AFTER_NAME: _ARGUMENT}
+
+
+def _with_next(tokens):
+    """Each token with the one after it, and "" after the last."""
+    tokens = iter(tokens)
+    current = next(tokens, None)
+    for following in tokens:
+        yield current, following
+        current = following
+    if current is not None:
+        yield current, ""
+
+
+def _blank(token: str) -> bool:
+    """Whitespace, a comment, or a backslash that continues the line."""
+    return token.isspace() or token[:1] == "#" or token[:2] in ("\\\n", "\\\r")
+
+
+def _delimited(following: str) -> bool:
+    """Whether the token after a word ends it. `done=1` and `do-thing` are one
+    word each in shell, which lizard's tokenizer splits."""
+    return not following or following.isspace() or following[0] in ";&|()<>"
+
+
+class _CommandWords:
+    """Reads the token stream the way shell finds where each command starts, and
+    quotes each reserved word that stands anywhere else."""
+
+    def __init__(self) -> None:
+        self._at = _COMMAND
+        self._closes: list = []  # where each open `(` leaves the word after its `)`
+        self._cases = 0          # open cases, so `;;` in `for ((;;))` starts no pattern
+        self._last = ""          # the last token that was not blank
+
+    def read(self, tokens):
+        for token, following in _with_next(tokens):
+            yield self._word(token, following)
+
+    def _word(self, token: str, following: str) -> str:
+        if _blank(token):
+            self._line_end(token)
+            return token
+        recognized = self._recognizes(token, following)
+        text = self._is_text(token, recognized)
+        self._at = self._next(token, recognized)
+        self._last = token
+        return '"' + token + '"' if text else token
+
+    def _is_text(self, token: str, recognized: bool) -> bool:
+        """A reserved word where shell reads none, and a `;;` with no case open, as
+        in `for ((;;))`, where it ends no arm."""
+        return (token in _RESERVED and not recognized) or (token == ";;" and not self._cases)
+
+    def _line_end(self, token: str) -> None:
+        """A newline ends a command, but not a case's subject or its patterns."""
+        if "\n" in token and token.isspace() and self._at not in (_PATTERN, _SUBJECT):
+            self._at = _COMMAND
+
+    def _recognizes(self, token: str, following: str) -> bool:
+        return (token in _RESERVED and _delimited(following)
+                and (self._at == _COMMAND or (token, self._at) in _RESERVED_ELSEWHERE))
+
+    def _next(self, token: str, recognized: bool):
+        if self._at == _PATTERN:
+            return self._in_pattern(token, recognized)
+        if token in ("(", ")"):
+            return self._paren(token)
+        if recognized:
+            return self._reserved(token)
+        return self._plain(token)
+
+    def _in_pattern(self, token: str, recognized: bool):
+        """A pattern runs to its `)`, through any `(`, `|` or word; an `esac`
+        in its place ends the case."""
+        if recognized:
+            return self._reserved(token)
+        return _COMMAND if token == ")" else _PATTERN
+
+    def _reserved(self, token: str):
+        self._cases = max(0, self._cases + {"case": 1, "esac": -1}.get(token, 0))
+        return _RESERVED_NEXT.get(token, _COMMAND)
+
+    def _paren(self, token: str):
+        """A `(` opens commands, or an array's words after `=`; its `)` returns to
+        where a word in the `(`'s place would have left the next one."""
+        if token == ")":
+            return self._closes.pop() if self._closes else _ARGUMENT
+        self._closes.append(_WORD_NEXT.get(self._at, _ARGUMENT))
+        return _ARGUMENT if self._last in ("=", "+=") else _COMMAND
+
+    def _plain(self, token: str):
+        if token in _OPERATOR_NEXT:
+            return _OPERATOR_NEXT[token]
+        if token in ("&", ";;"):
+            return self._separator(token)
+        if token == "in":
+            return _IN_NEXT.get(self._at, _ARGUMENT)
+        return _WORD_NEXT.get(self._at, _ARGUMENT)
+
+    def _separator(self, token: str):
+        """`;;` ends a case arm, and so does `&` after `;` or `;;` (`;&`, `;;&`).
+        After a redirection sign `&` names a descriptor (`2>&1`); anywhere else it
+        ends a command."""
+        if token == ";;" or self._last in (";", ";;"):
+            return _PATTERN if self._cases else _COMMAND
+        return self._at if self._last in ("<", ">") else _COMMAND
+
+
 # --- function detection --------------------------------------------------------
 
 class ShellStates(CodeStateMachine):
@@ -648,7 +798,7 @@ class ShellReader(CodeReader, ScriptLanguageMixIn):
         of it in the extension chain is starved.
         """
         source = _defuse_block_comments(_HeredocStripper().strip(source_code))
-        return _tokens(source, addition, token_class)
+        return _CommandWords().read(_tokens(source, addition, token_class))
 
 
 # Captured before register() wraps it, so a test can ask what lizard shipped.

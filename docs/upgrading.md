@@ -325,13 +325,18 @@ version 11 below.
   and a substitution inside `${v:-...}` count the same way. A heredoc opened inside a
   quoted substitution, as in `v="$(node - "$f" <<'JS'`, is a body, so its program adds
   no ccn and no NLOC, and so is one opened on the line that closes a multi-line
-  quoted substitution. On a large consumer repo 142 of 1,613 shell functions rose by 1
+  quoted substitution. On a large consumer repo 141 of 1,613 shell functions rose by 1
   to 20 and 2 fell, by 1 and 23. A function the rise puts over its ceiling fails the
   gate the next time its file changes.
 - A case statement inside a quoted substitution counts its arms, and a function whose
   body is a subshell, `f() ( case ... esac )`, ends at its own `)` rather than at the
   first pattern's. Such a function can gain lines and ccn: one on a large consumer repo
   went from 68 lines and ccn 26 to 140 lines and ccn 46.
+- A shell reserved word counts only where shell reads one, so `echo done`,
+  `git for-each-ref`, `done=1` and a `--exit-if-exists)` pattern no longer add a
+  decision or open or close a block, and a `;;` in `for ((;;))` is no case arm. These
+  only lower numbers: on a large consumer repo 3 functions fell, by up to 1 in ccn and
+  2 to 24 in cognitive.
 - A PowerShell expression inside a `$( )` subexpression in a double-quoted string
   counts: `"$($a -and $b)"` reads ccn 2 where it read 1, up to eight levels of
   parens deep. Its cognitive score rises by the same decisions, and an `if` or loop

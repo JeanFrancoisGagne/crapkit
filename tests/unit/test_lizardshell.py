@@ -584,6 +584,96 @@ def test_an_unpaired_quote_before_many_substitutions_reads_in_linear_time():
     assert [(f.name, f.end_line) for f in _functions(code)] == [("f", 3)]
 
 
+# --- a reserved word is one only where a command starts ------------------------
+#
+# POSIX XCU 2.4: shell reads `if`, `done` and the other reserved words as reserved
+# only first in a command, straight after another reserved word, as the `do` after
+# a for's name and as the `esac` where a case pattern would start, and only when a
+# blank or an operator ends them. Anywhere else they are words: `echo done` prints
+# "done". Each line below sits in a loop ahead of an if, so the function reads
+# ccn_std 3 (for, if), cognitive 3 (for +1, if +1 and +1 for its nesting) and
+# nesting 2 whatever the line holds (Sonar B2).
+
+IN_A_LOOP = ('f() {{\n  for x in a b; do\n    {line}\n    if [ -n "$x" ]; then\n'
+             '      echo "$x"\n    fi\n  done\n}}\n')
+
+ARGUMENTS = {
+    "a done argument": "echo done",
+    "closers": "echo fi esac",
+    "openers": "echo if case for while until select",
+    "a case and its in": "echo case x in y",
+    "a for inside a word": "git for-each-ref",
+    "a do inside a command's own name": "do-thing",
+    "an assignment": "done=1",
+    "a variable": "echo $done",
+    "a test operand": '[ "$a" = done ]',
+    "an array": "arr=(if then done)",
+    "a continued line": "cmd \\\n      done",
+    "after a redirection": "cmd 2>&1 >/dev/null done",
+}
+
+
+@pytest.mark.parametrize("line", ARGUMENTS.values(), ids=ARGUMENTS.keys())
+def test_a_reserved_word_that_starts_no_command_is_a_word(line):
+    """`echo done` closed the loop, so the if after it paid no nesting;
+    `echo if` and `git for-each-ref` each added a decision and a block."""
+    (record,) = analyze_source("words.sh", IN_A_LOOP.format(line=line))
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == (3, 3, 2)
+
+
+# Each body holds reserved words in a place where shell reads them as reserved.
+# Hand values (ccn_std, cognitive, nesting), cognitive by Sonar B2.
+COMMAND_STARTS = {
+    # && if || while until for = 7; each +1 at nesting 0 = 6
+    "after an operator": ("a && if b; then :; fi\n  c || while d; do :; done\n"
+                          "  e | until g; do :; done\n  ! for x in y; do :; done", (7, 6, 1)),
+    # if, while, until = 4; each +1 = 3
+    "in a substitution, a subshell and a group": (
+        "x=$(if a; then b; fi)\n  (while c; do :; done)\n  { until d; do :; done; }", (4, 3, 1)),
+    # if if while for = 5; if 1, inner if 2, else 1, while 2, for 3 = 9
+    "after then, else and do": ("if a; then if b; then :; fi; else while c; do "
+                                "for x in y; do :; done; done; fi", (5, 9, 3)),
+    # for if if = 4; for 1, inner if 2, if 1 = 4
+    "a for with no in": ("for x do if a; then :; fi; done\n  if b; then :; fi", (4, 4, 2)),
+    # for if = 3; for 1, if 2 = 3
+    "an arithmetic for": ("for ((i = 0; i < 3; i++)) do if a; then :; fi; done", (3, 3, 2)),
+    # for if = 3; for 1, if 2 = 3
+    "after time": ("time for x in y; do if a; then :; fi; done", (3, 3, 2)),
+    # two arms and two ifs = 5; case 1, if in an arm 2, if 1 = 4
+    "patterns spelled like reserved words": (
+        "case $1 in\n    (done|fi) if a; then :; fi ;;\n    *) b ;;\n  esac\n"
+        "  if c; then :; fi", (5, 4, 2)),
+    # if = 2; if 1
+    "after a background &": ("a & if b; then :; fi", (2, 1, 1)),
+    # `;&` falls through and ends no counted arm: one `;;` and the if = 3; case 1, if 2 = 3
+    "a pattern after a fallthrough arm": (
+        "case $1 in\n    a) if b; then :; fi ;&\n    done) c ;;\n  esac", (3, 3, 2)),
+    # for, if = 3: the `;;` of `((;;))` ends no case arm; for 1, if 2 = 3
+    "an arithmetic for with no condition": (
+        "for ((;;)); do if a; then break; fi; done", (3, 3, 2)),
+}
+
+
+@pytest.mark.parametrize("body, expected", COMMAND_STARTS.values(), ids=COMMAND_STARTS.keys())
+def test_a_reserved_word_where_a_command_starts_still_counts(body, expected):
+    (record,) = analyze_source("starts.sh", "f() {\n  " + body + "\n}\n")
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == expected
+
+
+def test_a_stray_close_paren_breaks_nothing_after_its_line():
+    """Shell rejects `echo a )`; the reader reads past it, and the if on the next
+    line still starts a command."""
+    (record,) = analyze_source("stray.sh", "f() {\n  echo a )\n  if b; then :; fi\n}\n")
+
+    assert (record.ccn_std, record.cognitive, record.nesting) == (2, 1, 1)
+
+
+def test_an_empty_file_yields_no_token():
+    assert list(ShellReader.generate_tokens("")) == []
+
+
 # --- through crapkit's own analysis path ---------------------------------------
 
 # base 1, + if, &&, for, inner if, while

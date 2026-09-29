@@ -1044,11 +1044,20 @@ re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-shell-and-powe
   early, and now spans its 140 lines and reads ccn 46 where it read 26.
 - A quoted substitution reads eight levels of parens, up from three, so the `|| true`
   after a `node -e '...'` program with five levels of calls in it counts.
+- A reserved word counts only where shell reads one: first in a command, straight
+  after another reserved word, as a for's `do` and as a case's `esac` (POSIX XCU
+  2.4). `echo done` closed the loop around it, so an if after it in the loop paid no
+  nesting. The `for` of `git for-each-ref`, the `select` of `xcode-select` and the
+  `if` of a `--exit-if-exists)` pattern each counted a decision or opened a block
+  that never closed, and the `done` of `done=1` closed one. A `;;` outside a case,
+  as in `for ((;;))`, no longer counts as an arm. On a large consumer repo 3
+  functions fall, by up to 1 in ccn and 2 to 24 in cognitive; of the 2,826 functions
+  in Ubuntu's bash-completion scripts 18 fall and none rise.
 - An unpaired double quote before many substitutions no longer stalls the shell
   reader. With no closing quote left in the file, the string rule tried every way of
   reading each `$( )` after it, twice the time per substitution: 7 s for 24 of them.
 
-Measured on a large consumer repo's 1,613 shell functions: 142 rise in ccn, by 1 to
+Measured on a large consumer repo's 1,613 shell functions: 141 rise in ccn, by 1 to
 20; 2 fall, by 1 and 23, where a heredoc body had counted as shell; 6 lose 4 to 39
 NLOC of heredoc body; and the subshell-bodied function above gains 71. No function
 appears or disappears. A function the rise puts over its ceiling fails the gate the
