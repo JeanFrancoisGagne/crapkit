@@ -481,11 +481,13 @@ Both were run against the same repo through the same crapkit lane and produced t
 scores (`4 measured, 0 over ceiling 6, CRAP load 12.0, grade A+`). Pick on your
 project's grounds, not on crapkit's.
 
-The provider version must match your vitest **major**, or npm refuses the install
-(`peer vitest@"4.x" from @vitest/coverage-v8@4.x`). On vitest 2:
+The provider version must match your vitest **major**, or npm refuses the install with
+`ERESOLVE unable to resolve dependency tree`, naming the vitest peer the provider wants.
+Read your vitest major with `npm ls vitest`, then install the provider at that major. On
+vitest 5, the major `npm i -D vitest` installs today:
 
 ```
-npm i -D "@vitest/coverage-v8@2"
+npm i -D "@vitest/coverage-v8@5"
 ```
 
 ### The json reporter
@@ -1123,7 +1125,7 @@ week. If you see that, check the version before you check your config. The churn
 moved to new file names, so a map laid down with top-relative paths is ignored rather than
 reused, and a 0.4.3 sharing the repo keeps its own.
 
-### The gate gates below the top since 0.4.5
+### The gate reads paths from the crapkit root
 
 0.4.4 fixed churn and left the pre-commit gate reading `git diff --cached`, which answers
 from the git top whatever the root is. Those paths matched no scope under a nested root, so

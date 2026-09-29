@@ -450,7 +450,7 @@ EXIT=3
 Reseeding from a fresh run can update compatible marks; changed function membership needs
 the identity review below first.
 
-### Upgrading to 0.4.5: analysis version 8
+### Analysis version 8: a re-seed that only restamps
 
 This historical transition changed analysis version 7 to 8. The verify refusal quoted
 above belongs to that upgrade; the current reader uses version 13. Follow

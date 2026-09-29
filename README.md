@@ -120,7 +120,8 @@ the repo can get better and never worse while you burn it down.
 out to your own test runner, and the runner needs its coverage package installed:
 `pytest-cov` for pytest, `@vitest/coverage-v8` (pinned to your vitest major) for vitest.
 Without it the lane produces no artifact and `coverage` exits 5 quoting the runner's own
-error. For pytest, `init` probes the python its lane will run and prints the install
+error. A pytest lane also needs coverage.py 7.13.1 or newer, which writes the function
+start lines crapkit reads; an older one fails the lane at exit 5. For pytest, `init` probes the python its lane will run and prints the install
 command when `pytest_cov` is missing; `pip install "crapkit[py]"` pulls the plugin
 alongside crapkit when the two share a venv. On a Windows PATH holding only the `py`
 launcher it writes `py`, not a `python3` the lane could never run, and when cmd.exe cannot
@@ -310,21 +311,33 @@ Older JavaScript and TypeScript callback marks can require a reviewed mapping.
 Follow the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
 for the upgrade line each installer takes (pip, pip --user, pipx, uv tool, uvx and a git
 install), saved state, portable records and Windows launcher locks.
+[CHANGELOG.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/CHANGELOG.md) says
+what each release changed.
 
-### Upgrading from 0.4.4
+### Upgrading from 0.8.0 to 0.8.1
 
-This historical example describes the 0.4.4 to 0.4.5 transition, from analysis
-version 7 to 8. It is retained to explain the refusal, quoted as crapkit prints it
-today:
+1. Install coverage.py 7.13.1 or newer where each Python lane runs:
+   `pip install -U "coverage>=7.13.1"`, or `pip install -U "crapkit[py]"` when crapkit
+   shares the suite's venv.
+2. Upgrade crapkit in every clone, then re-seed each repo once: `crapkit coverage`,
+   `crapkit ratchet prune`, `crapkit ratchet seed`. When a failed verify pins the baseline,
+   pass `--baseline N` to prune and to seed.
+3. Commit the re-seed together with every pin that runs crapkit: the CI install pin, the
+   Action's `uses:` pin and the pre-commit `rev`. 0.8.1's `verify` refuses marks stamped
+   with analysis version 11, and 0.8.0's refuses marks stamped 13.
+4. Keep `{python}` and `{python:DIR}` out of a committed `crapkit.toml` until every clone
+   runs 0.8.1: 0.8.0 hands the token to the shell as written, and the lane fails.
 
-```
-$ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`
-```
+Until the re-seed, `crapkit verify` refuses the marks 0.8.0 stamped, at exit 3:
 
-That transition changed cognitive complexity, not `ccn` or the CRAP formula.
-Later reader changes also affect function identity. Use the current upgrade guide
-when moving from any older release to today's reader.
+    crapkit: ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] but this run measures [crapkit-analysis=13 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`
+
+The upgrade guide lists [every step in
+order](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#080-to-081-in-order),
+and [analysis version
+13](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-13)
+says what moves. A metric-stamp refusal from an older upgrade is quoted under [analysis
+version 8](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-8).
 
 ### The exe lock on Windows
 
@@ -380,9 +393,9 @@ deny, a message for the user alone, or a blocking error, so there the hook exits
 hands the model the same lines as added context
 ([other harnesses](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#other-harnesses)).
 
-`--sparse .claude-plugin plugin` checks out the two directories the plugin ships from,
-0.8 MB. Without it Claude Code clones the whole repository, 61 MB, under a 120-second
-clone timeout that one measured add ran out of. A marketplace added without `--sparse`
+`--sparse .claude-plugin plugin` checks out the two small directories the plugin ships
+from. Without it Claude Code clones the whole repository under a 120-second clone
+timeout, which one measured add ran out of. A marketplace added without `--sparse`
 keeps that full clone; `claude plugin marketplace remove crapkit` drops it and uninstalls
 the plugin, and the two lines above put both back.
 
@@ -473,8 +486,8 @@ PostToolUse hooks that run a bare `crapkit`, and they should stay untrusted.
 it to the tag it cuts. Codex 0.156.1 checks every Git marketplace each time it starts
 and reinstalls the marketplace's plugins when it moved. Added without a ref, the marketplace
 follows main, and a push to main moves the plugin past the CLI you installed from PyPI
-with no command from you. `--sparse` keeps the clone at 1.9 MB, where the whole
-repository is 69 MB.
+with no command from you. `--sparse` fetches the two small directories the plugin ships
+from rather than the whole repository.
 
 A marketplace added at a tag stays there: `codex plugin marketplace upgrade` keeps it
 at that tag. After upgrading the CLI, remove the marketplace, add it at the new tag,
@@ -887,7 +900,7 @@ from another clone or from a CI cache keyed on a branch, says so and names the f
 
 ```
 $ crapkit verify
-crapkit: baseline commit a74260f321f is not in this clone, so git cannot say whether it is behind HEAD; fetch it with `git fetch origin a74260f321f4e0b9d2c61a8f3e57d0c1b2a9e8f7d6c5`, or run `crapkit coverage` here for a baseline this clone holds
+crapkit: baseline commit a74260f321f is not in this clone, so git cannot say whether it is behind HEAD; fetch it with `git fetch origin a74260f321f4e0b9d2c61a8f3e57d0c1b2a9e8f7`, or run `crapkit coverage` here for a baseline this clone holds
 ```
 
 `verify --base` and `hook-precommit --base` look up the fork point with `git merge-base`,
@@ -921,7 +934,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install crapkit
+      - run: pip install "crapkit==0.8.0"
       - run: pip install -e ".[dev]"   # your own test dependencies
       - run: crapkit verify --baseline-tsv crapkit-baseline.tsv --github
 ```
@@ -971,7 +984,8 @@ jobs:
   crapkit:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write             # the comment, and nothing else
+      contents: read                   # actions/checkout clones the repository
+      pull-requests: write             # the comment
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1213,9 +1227,11 @@ crapkit-baseline.tsv` in a step of your own. It needs no second lane run, and it
 someone to keep that file current.
 
 The comment is posted with `gh api` and the job's own `GITHUB_TOKEN`, which needs
-`pull-requests: write`. Two things it cannot do: a pull request from a fork gets a
-read-only token, so the POST is a 403 there, and a self-hosted runner without the `gh` CLI
-on PATH fails that step. Both leave the rendered text in the job log.
+`pull-requests: write`, and `contents: read` for the checkout once the job names any
+permission: naming one sets every other to none. Two things it cannot do: a pull request
+from a fork gets a read-only token, so the POST is a 403 there, and a self-hosted runner
+without the `gh` CLI on PATH posts nothing. In both cases the step stays green, logs gh's
+exit code, and leaves the rendered text in the job log.
 
 ## Subcommands
 
@@ -1458,7 +1474,7 @@ crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve a
 | 0 | OK. For `verify` and `hook-precommit`: the gate passed. |
 | 1 | **Overloaded.** Three unrelated things, listed below the table. |
 | 2 | Usage error from argparse: unknown flag, missing positional. Raised before crapkit's own error handling. |
-| 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a lane command the shell that runs it reads as a narrowed suite, a ratchet metric-stamp mismatch ([Upgrading from 0.4.4](#upgrading-from-044)), a `test-scoped` file under no scope or under a scope with no template, a scoped file whose name is not UTF-8 or a path argument naming a file whose name is not UTF-8 (both end `rename it (git mv) to a UTF-8 name`), a root `package.json` that `init` cannot read as one UTF-8 JSON object (`init wrote no file: ...`, before it writes any file), a root on a Windows network share (the line gives the `net use` command that maps it to a drive letter). |
+| 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a lane command the shell that runs it reads as a narrowed suite, a ratchet metric-stamp mismatch ([Upgrading](#upgrading)), a `test-scoped` file under no scope or under a scope with no template, a scoped file whose name is not UTF-8 or a path argument naming a file whose name is not UTF-8 (both end `rename it (git mv) to a UTF-8 name`), a root `package.json` that `init` cannot read as one UTF-8 JSON object (`init wrote no file: ...`, before it writes any file), a root on a Windows network share (the line gives the `net use` command that maps it to a drive letter). |
 | 4 | Git error: not a repository, a repository with no commit yet, one git refuses to open (the refusal quotes git's own fix, such as a `safe.directory` exception), a baseline commit rewritten out of the history, made on a branch HEAD does not contain or missing from this clone, a baseline commit or fork point a shallow clone does not hold, `ratchet report --enforce` with a debt key set in a shallow clone (mark ages and repayments need the whole history), a `ratchet prune` that cannot tell whether a marked file was renamed because this clone lacks the commit its renames start from. The shallow refusals end with `set fetch-depth: 0 on the checkout or run git fetch --unshallow`. |
 | 5 | Tool error: lizard not importable, a lane that produced no artifact, one that measured a different tree, one that measured this tree and reported it in absolute paths (the join is root-relative, so those match nothing either; the refusal names the runner's own switch, `relative_files = true` under `[tool.coverage.run]` for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one), a lane that timed out past its retries, `verify --reuse-artifacts` over a lane whose declared `results_artifact` is missing or unreadable (it stores no run), an override alert command that failed, a process with no home directory (`USERPROFILE` on Windows or `HOME` on POSIX unset, and the operating system names none; the message names the variable to set). A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
 | 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. All three also refuse a changed file no reader could read (`UNREAD` lines), since they judged none of its functions. |
@@ -1488,8 +1504,12 @@ crapkit reads `git ls-files`. Install the coverage plugin first, because the lan
 writes runs `pytest --cov` and those flags come from `pytest-cov`:
 
 ```
-pip install pytest-cov
+pip install pytest-cov "coverage>=7.13.1"
 ```
+
+Quote the coverage requirement, or the shell reads `>` as a redirect. Without it, pip
+keeps an older coverage.py the venv already holds, since pytest-cov accepts it, and the
+lane fails at exit 5 on its report.
 
 (`pip install "crapkit[py]"` pulls both at once when crapkit shares the suite's venv.)
 
@@ -1754,11 +1774,17 @@ exit 5:
 $ crapkit coverage
 crapkit: lane 'js' FAILED: lane 'js' produced no artifact at .crapkit/cov/js/coverage-final.json (command exit 1); lane log: /repo/.crapkit/lane-js.log; last output: $ npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js --coverage.reportOnFailure --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml
 
+> app@1.0.0 test
+> vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/js --coverage.reportOnFailure --reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml
+
  MISSING DEPENDENCY  Cannot find dependency '@vitest/coverage-v8'
 
 (exit 1)
 crapkit: every lane failed (1 of 1); the errors are above
 ```
+
+The two `>` lines are npm's banner: `> <name>@<version> test` from your package.json (`> test`
+when it has no name or version), then the command the `test` script runs.
 
 That failure **writes no run**. Every lane failed, so `coverage` exits before it opens a
 store: there is no `.crapkit/crap.sqlite` yet and the run ids below still start at 1.
@@ -1774,7 +1800,7 @@ npm i -D "@vitest/coverage-v8@<your vitest major>"
 |---|---|
 | Which provider? | Either works. `@vitest/coverage-v8` is vitest's default and needs no config. `@vitest/coverage-istanbul` also works and needs `coverage.provider = "istanbul"` in your vitest config. |
 | Which crapkit parser? | Both feed `parser = "istanbul"`. The provider name and the parser name are unrelated: v8 output is remapped to the istanbul JSON schema before it is written. |
-| Which version? | The provider's major has to match vitest's. On vitest 2 that is `npm i -D "@vitest/coverage-v8@2"`, on vitest 3 `npm i -D "@vitest/coverage-v8@3"`. Drop the pin and npm answers `ERESOLVE unable to resolve dependency tree`, naming the peer it could not satisfy. |
+| Which version? | The provider's major has to match vitest's. Read your vitest major with `npm ls vitest`, then install the provider at that major: on vitest 5, `npm i -D "@vitest/coverage-v8@5"`. Drop the pin and npm answers `ERESOLVE unable to resolve dependency tree`, naming the peer it could not satisfy. |
 
 The artifact crapkit wants is `coverage-final.json`, written by vitest's `json` coverage
 reporter, which is on by default. If your vitest config sets `coverage.reporter`
@@ -1876,17 +1902,21 @@ $ npx vitest run
       Tests  21 passed (21)
 ```
 
-Skip this step and step 7 fails rather than passes. Run on a copy of this repo with step 6
-left out, `verify` reruns the lanes against the real tree and three functions the old
-suite never called come back over the ceiling:
+Skip this step and step 7 fails rather than passes. Run on a copy of this repo with steps
+1 to 5 as written, step 5 left uncommitted and step 6 left out, `verify` reruns the lanes
+against the real tree and three functions the old suite never called come back over the
+ceiling. Each GATE line ends `[dirty]` because the edit is not committed, and the last line
+counts the findings that way. The block leaves out the two warnings verify prints above its
+verdict, one for changed lines no test covers and one for debt no mark signs:
 
 ```
 $ crapkit verify
-verify FAILED @ 0296156ff21 vs baseline 0e646697946 (1 changed files)
-  changed files: src/grade.ts
-  GATE  crap     17.8  ccn   5 cov 20%  src/grade.ts:38  demote ( letter , row Row )  -> add-tests
-  GATE  crap     12.4  ccn   5 cov 33%  src/grade.ts:22  band ( score )  -> add-tests
-  GATE  crap     10.8  ccn   4 cov 25%  src/grade.ts:8  penalty ( attempts , late )  -> add-tests
+verify FAILED @ 0296156ff21 vs baseline 8bfbe613fcd (6 changed files)
+  changed files: src/grade.ts, .gitignore, crapkit-ratchet.tsv and 3 more
+  GATE  crap     17.8  ccn   5 cov 20%  src/grade.ts:38  demote ( letter , row Row )  -> add-tests  [dirty]
+  GATE  crap     12.4  ccn   5 cov 33%  src/grade.ts:22  band ( score )  -> add-tests  [dirty]
+  GATE  crap     10.8  ccn   4 cov 25%  src/grade.ts:8  penalty ( attempts , late )  -> add-tests  [dirty]
+  findings: 0 committed / 3 dirty (uncommitted edits and untracked files)
 ```
 
 ### 7. Verify
@@ -1922,7 +1952,7 @@ with no debt.
 
 | Page | Covers |
 |---|---|
-| [The handbook](https://www.jfgagne.com/crapkit/handbook.html) | **Start here for anything deeper.** The illustrated handbook: what crapkit is, how every piece works, and where each command earns its keep. Also at [docs/handbook.html](https://www.jfgagne.com/crapkit/handbook.html), self-contained, so it opens straight from a clone. |
+| [The handbook](https://www.jfgagne.com/crapkit/handbook.html) | **Start here for anything deeper.** The illustrated handbook: what crapkit is, how every piece works, and where each command earns its keep. The same page ships in the repository as `docs/handbook.html`, self-contained, so it opens straight from a clone. |
 | [docs/adoption.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/adoption.md) | The judgment layer over the quickstarts: scope granularity, exclude vs lane, scoped_tests wiring, the first-verify taint hazard. |
 | [docs/configuration.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | Every `crapkit.toml` key: type, default, and what it does. |
 | [docs/lanes.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md) | The lane model, vitest and jest and pytest recipes, artifact reuse, flake retest, containers. |
@@ -1931,9 +1961,11 @@ with no debt.
 | [docs/upgrading.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) | Existing installations: analysis and key versions, saved state, plugin alignment and Windows upgrades. |
 | [docs/portable-records.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/portable-records.md) | Lossless exports, portable baselines and ratchets, including filenames with delimiters. |
 | [docs/agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md) | The machine surface: `schema`, every payload field, real captured examples. |
+| [docs/harnesses.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md) | Wiring crapkit into 27 agents: each one's MCP config, whether it runs the advisory hook, and how it restarts after an upgrade. |
 | [docs/comparison.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/comparison.md) | Where crapkit sits next to radon, xenon, wily, coverage.py and SonarQube, and how they run together. |
 | [docs/accuracy.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md) | How crapkit checks its own numbers: each calculation against outside tools, hand tables and models, the tiers that run the checks, and every place crapkit reads a construct differently from an oracle on purpose. |
 | [AGENTS.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md) | The burn-down loop an agent runs, and the rules for changing crapkit itself. |
+| [CHANGELOG.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/CHANGELOG.md) | What each release changed and how to upgrade to it. |
 | [plugin/](https://github.com/JeanFrancoisGagne/crapkit/tree/main/plugin) | Three skills and the MCP server for Claude Code and Codex, and the advisory PostToolUse hook that Claude Code, Cursor, Copilot CLI and VS Code run. |
 
 [crapkit.schema.json](https://github.com/JeanFrancoisGagne/crapkit/blob/main/crapkit.schema.json) is the authority on the config file shape.

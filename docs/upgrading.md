@@ -830,8 +830,8 @@ shell, a git hook, the plugin's hooks and an MCP client each run the first their
 lists, so an upgrade has to reach each of them.
 
 A Claude Code marketplace added without `--sparse` is a clone of the whole repository,
-61 MB, where the plugin needs 0.8 MB. Removing it also uninstalls the plugin, so add
-it back sparse and install again:
+where the plugin needs two small directories of it. Removing it also uninstalls the
+plugin, so add it back sparse and install again:
 
 ```sh
 claude plugin marketplace remove crapkit
@@ -1613,6 +1613,22 @@ without current reader proof require the procedure in
 without that proof continue to hold their whole name group until released,
 removed by an explicit `runs prune` under its age rule, or the whole group becomes
 healthy. Ordinary queue reads do not expire claims.
+
+### Analysis version 8
+
+0.4.5 moved the reader from analysis version 7 to 8. Shell cognitive complexity nests
+since then: `fi`, `done` and `esac` close the level `if`, a loop or `case` opened. The
+first `verify` after that upgrade refused the marks, quoted here as crapkit prints it
+today:
+
+```
+$ crapkit verify
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`
+```
+
+That transition changed cognitive complexity, not `ccn` or the CRAP formula. Later
+analysis versions also move function names, so a repo on a release that old follows the
+steps at the top of this page, which re-seed once under the current reader.
 
 ## Release evidence
 

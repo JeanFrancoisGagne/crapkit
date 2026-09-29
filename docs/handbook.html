@@ -491,22 +491,22 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <p>PostToolUse runs <em>after</em> the write. The edit is already on disk, so a hook that claimed to block would be lying. It says the opposite outright: the head line ends <code>(the edit landed; nothing was blocked)</code>.</p>
 <p>Silence everywhere else is the other half of the design. This hook is installed once per user and then fires on every edit that user makes, anywhere. 47.5% of the edits it was measured against land in repos with no <code>crapkit.toml</code>. A hook that spoke there would be unbearable within a day, so an unmeasured repo costs one <code>stat</code> and an exit 0.</p>
 
-<h3>What changed in 0.4.0</h3>
-<p>Before this release the two disagreed. The advisory pardoned ratchet-marked functions and the commit gate did not, so touching signed debt produced a wall: green advisories all session, then a refused commit. <strong>The commit gate now exempts marked functions too</strong>, on mark existence, and prints one line saying how many. <code>crapkit verify</code> keeps the numeric check and is what fails a mark that actually rises.</p>
+<h3>The commit gate pardons marked functions</h3>
+<p>Before 0.4.0 the two disagreed. The advisory pardoned ratchet-marked functions and the commit gate did not, so touching signed debt produced a wall: green advisories all session, then a refused commit. <strong>The commit gate exempts marked functions too</strong>, on mark existence, and prints one line saying how many. <code>crapkit verify</code> keeps the numeric check and is what fails a mark that actually rises.</p>
 <p class="xanno">Existence, not the numeric rule, because the gate judges staged blobs. A blob carries no coverage, so there is no CRAP to compare against a mark. The only question the gate can answer is the one it asks: did the repo already sign for this function?</p>
 
-<h3>What changed in 0.4.5</h3>
-<p>The third reader joined them. <code>crapkit verify</code> now reads a mark the way <code>rescore --gate</code> always did: a touched function whose fresh CRAP sits <em>at or under</em> its mark is exempt, not a gate violation. Before this, an edit inside signed debt passed the advisory, passed the commit gate, and then met exit 6 at merge, which was the last place the three readers could still disagree about one function.</p>
+<h3>verify pardons a function at or under its mark</h3>
+<p>Since 0.4.5 the third reader agrees with them. <code>crapkit verify</code> reads a mark the way <code>rescore --gate</code> always did: a touched function whose fresh CRAP sits <em>at or under</em> its mark is exempt, not a gate violation. Before this, an edit inside signed debt passed the advisory, passed the commit gate, and then met exit 6 at merge, which was the last place the three readers could still disagree about one function.</p>
 <p>Exit 7 is untouched. A mark that rises is still a ratchet regression, and it is still reported on functions the diff never named, which is where coverage rot shows up.</p>
 
-<h3>What changed in 0.4.7</h3>
-<p>The advisory now answers <code>Bash</code> events too. A <code>Bash</code> payload carries the command and no file path, so source written through a shell heredoc or <code>python - &lt;&lt;'PY'</code> named no file for the hook to judge, and every breach written that way landed unadvised. It reads the working tree instead: the <code>*.py</code> files git reports dirty or untracked, whose mtime falls inside a <strong>12-second</strong> window, at most <strong>25</strong> of them, each through the same per-file ladder an <code>Edit</code> takes. Exit 2 still means the one thing it has always meant. A clean tree, a file that went stale, a command run outside any git repo: silence, as before.</p>
+<h3>The advisory judges what a shell command wrote</h3>
+<p>Since 0.4.7 the advisory answers <code>Bash</code> events too. A <code>Bash</code> payload carries the command and no file path, so source written through a shell heredoc or <code>python - &lt;&lt;'PY'</code> named no file for the hook to judge, and every breach written that way landed unadvised. It reads the working tree instead: the <code>*.py</code> files git reports dirty or untracked, whose mtime falls inside a <strong>12-second</strong> window, at most <strong>25</strong> of them, each through the same per-file ladder an <code>Edit</code> takes. Exit 2 still means the one thing it has always meant. A clean tree, a file that went stale, a command run outside any git repo: silence, as before.</p>
 <p>The window is what stops the first dirty file from drawing the same advisory again on every later <code>ls</code>, and the cap is there because PostToolUse waits this process out, so a large dirty tree would be a stall rather than a reason to judge all of it. Only Python is judged. Every other language stays the commit gate's business, which is what keeps a check that runs on every shell call cheap enough to run.</p>
 <p class="xanno">The shipped plugin still registers <code>Edit|Write</code> only, so nothing above fires until you ask for it. A <code>Bash</code> matcher is a second entry in your own settings hooks, same command, and it costs one <code>git rev-parse</code> and one <code>git status</code> per shell call in any git repo, measured or not. Add it when your harness writes source through the shell; skip it when every write arrives as an <code>Edit</code>.</p>
 <p>The protocol check also moved to the front of the ladder. It used to run after the walk for a <code>crapkit.toml</code> and the mid-rebase test; it now runs before the event is even shaped, so a payload asking for a protocol this CLI does not answer costs the read of stdin and nothing else. Same silences, and it matters more than it used to: the working-tree fallback is the first thing this hook does that spawns git, and a wrong protocol never reaches it.</p>
 
-<h3>What changed in 0.8.1</h3>
-<p>The <code>Bash</code> half remembers what it judged. Each judgement records the sha256 of the bytes it read, per Claude Code session and per file, under <code>.git/crapkit/claude-hook/&lt;session_id&gt;/</code>, and a recent file whose bytes match that record is skipped. A <code>touch</code>, an editor saving the same bytes, or a test run right after an <code>Edit</code> used to move an mtime into the window and repeat an advisory the session had already read. The window and the cap stay as they were. A session idle for a week is pruned when another one starts, and an <code>Edit</code> is always judged, since it names its file.</p>
+<h3>The shell half remembers what it judged</h3>
+<p>Since 0.8.1 the <code>Bash</code> half remembers what it judged. Each judgement records the sha256 of the bytes it read, per Claude Code session and per file, under <code>.git/crapkit/claude-hook/&lt;session_id&gt;/</code>, and a recent file whose bytes match that record is skipped. A <code>touch</code>, an editor saving the same bytes, or a test run right after an <code>Edit</code> used to move an mtime into the window and repeat an advisory the session had already read. The window and the cap stay as they were. A session idle for a week is pruned when another one starts, and an <code>Edit</code> is always judged, since it names its file.</p>
 <p>What the memory cannot fix is content that arrives with an old mtime: a file moved or copied in (<code>mv</code>, <code>cp -p</code>, an unpacked archive), or one a long command wrote well before it returned. The <code>Bash</code> half never judges those, and the commit gate still does.</p>
 <p>Two failures stopped reading as answers. Before a repo's first commit, <code>git diff HEAD</code> fails, and the hook read that as an empty diff, so a staged breach drew silence while the same file unstaged drew the advisory; with no commit to diff against, the file is now judged whole. When git fails for another reason, a corrupt index for one, the hook no longer reads the failure as "untracked" and lists every legacy function in the file: the head line says git could not report what changed, the next line quotes git's error, and no function is listed.</p>
 <p class="xanno">A changed file no reader could parse scored as zero functions, and zero records read as zero breaches, so a ccn-8 function beside one refused construct passed unjudged. The hook now exits 2 on it, naming the file and the reader's reason. A file the edit left as HEAD has it stays silent, as the commit gate never judges an untouched file.</p>
@@ -532,7 +532,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   <tr><td class="mono">1</td><td>Overloaded: no data yet, a <code>doctor</code> FAIL, or a debt-policy breach</td><td>Read the message. It names the command that creates the missing run, or the FAIL line.</td></tr>
   <tr><td class="mono">2</td><td>Usage error</td><td>argparse refused. Check the flag spelling and order.</td></tr>
   <tr><td class="mono">3</td><td>Config gap</td><td>A scope without a template, a metric-stamp mismatch. Fix <code>crapkit.toml</code> or restamp.</td></tr>
-  <tr><td class="mono">4</td><td>Git error: not a repository, no commit yet, a repository git refuses to open, or a baseline commit a force-push rewrote out of history</td><td>The refusal names the fix. Run inside a checkout, make the first commit, run the <code>safe.directory</code> line git printed, or take a fresh baseline with <code>crapkit coverage</code>.</td></tr>
+  <tr><td class="mono">4</td><td>Git error: not a repository, no commit yet, a repository git refuses to open, a baseline commit or fork point a shallow clone does not hold, or a baseline commit a force-push rewrote out of history</td><td>The refusal names the fix. Run inside a checkout, make the first commit, or run the <code>safe.directory</code> line git printed. In a shallow clone, set <code>fetch-depth: 0</code> on the checkout or run <code>git fetch --unshallow</code>. Only for history a rebase or force-push rewrote, outside CI, take a fresh baseline with <code>crapkit coverage</code>.</td></tr>
   <tr><td class="mono">5</td><td>Tool error: lizard missing, a lane produced no artifact (or one measuring a different tree, or one measuring this tree in absolute paths) or timed out past retries, an alert command failed</td><td>For the artifact cases: fix the lane, not the code. The refusal names the lane log in full. Seven root causes, triaged in <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">docs/lanes.md</a>.</td></tr>
   <tr><td class="mono">6</td><td>Gate: touched function over its ceiling</td><td>Decompose until every piece fits.</td></tr>
   <tr><td class="mono">7</td><td>Ratchet regression</td><td>A standing mark got worse. On a function you never edited, suspect test rot first.</td></tr>
@@ -572,11 +572,15 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 
 <p>A mark does three jobs at once. It pardons the commit gate (<a href="#twogates">§06</a>), it silences the per-edit advisory, and it sets the high-water line <code>verify</code> refuses to let rise. Marks carry a <strong>metric-version stamp</strong>: if a future crapkit changes how ccn is counted, <code>verify</code> refuses to compare across metrics instead of silently re-judging old pardons with new math. Optional policy knobs add expiring debt and repayment quotas for teams that want the screw to turn on a schedule.</p>
 
-<h3>0.4.5 is one of those bumps</h3>
-<p>Shell cognitive complexity now nests: <code>fi</code>, <code>done</code> and <code>esac</code> close the level <code>if</code>, a loop keyword or <code>case</code> opened, so a 4-deep shell <code>if</code> reads 10 like every other language instead of 4. That is analysis version 8, so the first command you run after the upgrade refuses the marks the old version signed:</p>
+<h3>Analysis version 8 was one of those bumps</h3>
+<p>In 0.4.5 shell cognitive complexity started to nest: <code>fi</code>, <code>done</code> and <code>esac</code> close the level <code>if</code>, a loop keyword or <code>case</code> opened, so a 4-deep shell <code>if</code> reads 10 like every other language instead of 4. That is analysis version 8, so the first command you run after the upgrade refuses the marks the old version signed:</p>
 <pre><code>$ crapkit verify
 crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`</code></pre>
-<p>Do what it says: a fresh coverage run, a prune, then the seed. Re-seeding brings the same marks back: only shell's cognitive column moved, ccn is untouched in every language, and no mark, gate or CRAP score reads the cognitive column at all (<a href="#score">§02</a>).</p>
+<p>Do what it says: a fresh coverage run, a prune, then the seed. Re-seeding brought the same marks back: that bump moved only shell's cognitive column, ccn did not move in any language, and no mark, gate or CRAP score reads the cognitive column at all (<a href="#score">§02</a>).</p>
+
+<h3>Analysis version 13, in 0.8.1, is another</h3>
+<p>0.8.1 moves the reader from analysis version 11 to 13, and this one moves scores: <code>ccn</code> and names move in every language but Python, some of Python's <code>cognitive</code> and <code>nesting</code> move, and a coverage.py function now scores its own region. Every marks file re-seeds once, with the same three commands: <code>crapkit coverage</code>, then <code>crapkit ratchet prune</code>, then <code>crapkit ratchet seed</code>.</p>
+<p>When a failed <code>verify</code> pinned the baseline, plain prune and plain seed both read the pinned run: pass the new run to each, <code>crapkit ratchet prune --baseline N</code> then <code>crapkit ratchet seed --baseline N</code>. Commit the re-seed with every pin that runs crapkit, since a 0.8.0 reader refuses marks stamped 13. <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-13">Analysis version 13</a> in the upgrade guide says what moved, language by language.</p>
 
 <p><strong>Tightening is damped, because a tighten claims the code improved and one commit measured twice cannot have.</strong> Some suites measure the same bytes two ways: a coverage attribution that races a subprocess reported one function at CRAP 20.0 on one run of a commit and 72.0 on the next. Tighten on the lucky half of that and the unlucky half fails the mark, so the gate becomes a coin flip on an unchanged tree and the marks file churns 20 to 72 and back in commits. So <code>verify</code> compares each marked function against the same commit's previous <em>trusted</em> run — the same word <code>ratchet seed</code> uses, so a failed verify and a partial run are invisible to both — and holds any mark whose score moved by more than <code>tighten_max_jump</code> (default 2x), naming the function and both values on stderr. Real work moves a score by less than a measurement race does, so a stable improvement still tightens in full; <code>verify --no-tighten</code> holds the whole file when you want the verdict without the rewrite.</p>
 
@@ -822,18 +826,20 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
   <div class="card"><h3><code>overrides</code>: who granted what?</h3><p>The audit trail behind every gate override: who, when, why, and the debt it staged.</p></div>
 </div>
 
-<h3>What 0.4.5 caches, and where it lives</h3>
-<p>These are the commands people run over and over, so three of them stopped redoing work. <code>coupling</code>, <code>brief</code> and <code>worklist --batches</code> share a ranked-pairs file, <code>.crapkit/coupling-cache-v1.json</code>, beside the churn caches. Its key is HEAD, the churn window, the UTC date, the path format, the clone's history depth and a digest of the tracked set, so it cannot answer for a tree it did not see, and <code>git fetch --unshallow</code> rebuilds it the same day; <code>--min-support</code> or <code>--min-confidence</code> off their defaults bypass it rather than poison it, and <code>--top</code> reads it. On crapkit's own repo, 337 tracked files over 220 commits:</p>
+<h3>What crapkit caches, and where it lives</h3>
+<p>These are the commands people run over and over, so three of them do not redo work. <code>coupling</code>, <code>brief</code> and <code>worklist --batches</code> share a ranked-pairs file, <code>.crapkit/coupling-cache-v2.json</code>, beside the churn caches. Its key is HEAD, the churn window, the UTC date, the path format, the clone's history depth and a digest of the tracked set, so it cannot answer for a tree it did not see, and <code>git fetch --unshallow</code> rebuilds it the same day; <code>--min-support</code> or <code>--min-confidence</code> off their defaults bypass it rather than poison it, and <code>--top</code> reads it. After <code>coverage</code>, <code>coupling --top 5</code> and <code>worklist --batches</code>, 0.8.1 has written:</p>
 <pre><code>$ ls -1 .crapkit/*.json .crapkit/*.z
+.crapkit/artifacts.json
 .crapkit/cache.json
-.crapkit/churn-cache-v2.json
-.crapkit/churn-log-v2.json
-.crapkit/churn-log-v2.z
-.crapkit/coupling-cache-v1.json
+.crapkit/churn-cache-v3.json
+.crapkit/churn-commits-v1.json
+.crapkit/churn-log-v3.json
+.crapkit/churn-log-v3.z
+.crapkit/coupling-cache-v2.json
 .crapkit/stat-stamps.json
 
-$ crapkit coupling --top 5      # cold, caches deleted: 0.53 s
-$ crapkit coupling --top 5      # warm: 0.09 s</code></pre>
+$ crapkit coupling --top 5      # cold: walks the churn window once
+$ crapkit coupling --top 5      # warm: reads the ranked pairs from the file</code></pre>
 <p>Each name carries its format version, so an upgrade that changes a format writes a new file. The window those files describe ends at HEAD's commit date, never today's, so a repo nobody has committed to in a year still ranks the year before its last commit. <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-else-lives-in-crapkit">What else lives in .crapkit/</a> lists the names the current version writes.</p>
 <p><code>trend</code> and <code>report</code> read a rollup row written once per run and pruned with that run, instead of rescanning every scored row the store holds. Both now write to the store on a best-effort basis, which is new for two commands that used to be pure readers.</p>
 <p>Every mutation worker uses a kept worktree, including the default of one. See <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees">mutation worktrees</a> for preparation, concurrent runs and cleanup. Reclaim the checkouts with:</p>
@@ -856,7 +862,9 @@ crapkit coverage    # runs the lanes, joins coverage, writes the first scored ru
 
 <h3>The one dependency crapkit cannot install for you</h3>
 <p>The python lane <code>init</code> writes runs <code>pytest --cov</code>, and those flags come from pytest-cov, a package of <em>your suite's</em> interpreter. A pipx or uv-tool install of crapkit shares no venv with that suite, so no dependency of crapkit's could ever guarantee it. <code>init</code> probes the python its lane will run and prints the fix when the import fails: install pytest-cov where the suite runs, or, when crapkit lives in that same environment, <code>pip install "crapkit[py]"</code>.</p>
+<p>The lane also needs coverage.py 7.13.1 or newer, which writes the function start lines crapkit reads. An older one fails the lane at exit 5, and <code>crapkit doctor</code> FAILs it first with the install line for that interpreter. <code>pip install "crapkit[py]"</code> pulls both; <code>pip install -U "coverage&gt;=7.13.1"</code> moves an older coverage.py the suite's venv already holds.</p>
 <p>The double quotes are not decoration. cmd.exe passes <code>'</code> through as an ordinary character, so the single-quoted form reaches pip as a requirement it rejects; double quotes are the one spelling cmd, PowerShell, bash and zsh all read the same way, and the bare form still breaks zsh's globbing.</p>
+<p>Where it can, <code>init</code> writes the lane's interpreter as a launcher token, <code>{python}</code> or <code>{python:.venv}</code>, which the loader reads as each OS's own spelling, so one committed line runs on Windows and Linux alike (<a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#the-launcher-token">the launcher token</a>). A release before 0.8.1 cannot read the token, so commit it once every clone runs 0.8.1.</p>
 <p>Two Windows cases get their own notes since 0.4.5. On a PATH carrying only the <code>py</code> launcher, the lane is written <code>py -m pytest</code>: the chain is <code>python</code>, then <code>python3</code>, then <code>py</code>, and <code>py</code> is last because it exists on no other operating system. And when cmd.exe cannot start the interpreter at all, which is what the Windows Store <code>python.exe</code> alias does with no Store app behind it (exit 9009, "Python was not found"), <code>init</code> says that instead of talking about pytest-cov, and <code>doctor</code> FAILs the lane rather than calling the repo clean. Nothing ran, so nothing about pytest-cov was learned.</p>
 
 <h3>Upgrading on Windows</h3>
@@ -868,7 +876,7 @@ python -m pip install --upgrade crapkit   # in the environment holding a pip ins
 <h3>Claude Code: two commands, once per user, zero files per repo</h3>
 <pre><code>claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin
 claude plugin install crapkit@crapkit</code></pre>
-<p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a user-scope install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit. <code>--sparse</code> checks out the two directories the plugin ships from, 0.8 MB, where a clone of the whole repository is 61 MB and one measured add ran out of Claude Code's 120-second clone timeout.</p>
+<p>That installs three skills, the MCP server, and the per-edit advisory hook as one artifact whose version tracks the CLI's. It is a user-scope install and it changes nothing inside any repo. A repo with a <code>crapkit.toml</code> gets the full ladder; a repo without one gets a silent no-op per edit. <code>--sparse</code> checks out the two small directories the plugin ships from; a clone of the whole repository can outrun Claude Code's 120-second clone timeout, as one measured add did.</p>
 <p>A CLI installed from a clone wants its plugin from that same clone. <code>claude plugin marketplace add</code> takes a path as well as a GitHub slug, and the clone root already carries the <code>.claude-plugin/marketplace.json</code> that names <code>./plugin</code> as its source, so the same pair of commands installs the plugin sitting beside the CLI:</p>
 <pre><code>claude plugin marketplace add /path/to/your/crapkit-clone
 claude plugin install crapkit@crapkit</code></pre>
@@ -880,6 +888,7 @@ claude plugin install crapkit@crapkit</code></pre>
 <pre><code>codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit</code></pre>
 <p>Codex uses its own plugin manager with the same repository marketplace, and the two lines need Codex 0.131.0 or newer. Use its three skills and MCP server in Codex. The advisory hook instructions here configure Claude Code's PostToolUse event. <code>--ref</code> pins the marketplace to the release's tag, and the release step rewrites it. Without it the marketplace follows main: Codex 0.156.1 checks it at every start and reinstalls the plugin once main moved, which takes the plugin past the CLI with no command from you.</p>
+<p>Every other agent takes the MCP server from its own config file. <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md">Wiring crapkit into your agent</a> gives the block for each of 27 agents, says which of them run the advisory hook, and how each restarts its server after an upgrade.</p>
 
 <h3>Update installed plugins after the CLI</h3>
 <pre><code>claude plugin marketplace update crapkit
@@ -960,7 +969,7 @@ WARN scope 'ui' has a lane but no [crapkit.scoped_tests] template - `crapkit tes
 doctor: no problems found, 1 warning above
 
 $ crapkit inventory                    # complexity alone, no lanes needed
-run 1 @ 8da79a04d51: 4 functions in 4 files (0 cached)
+run 1 @ 8da79a04d51: 4 functions in 4 files (0 cached) -&gt; /repo/.crapkit/crap.sqlite
 
 $ crapkit worklist
 worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) - 4 of 4 active (worklist_top 50), 0 dormant
@@ -982,6 +991,8 @@ $ crapkit verify --emit-baseline crapkit-baseline.tsv
 
 # in the PR job, against the committed baseline
 $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
+<p><code>actions/checkout</code> clones one commit by default, and <code>verify</code> reads the diff from the baseline's commit, so the checkout step needs <code>fetch-depth: 0</code>. In a depth-1 clone <code>verify --baseline-tsv</code> exits 4 and names that fix. <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#route-4-ci">README: Route 4</a> has the whole job.</p>
+<p>Or add the Action after a checkout with <code>fetch-depth: 0</code>: <code>uses: JeanFrancoisGagne/crapkit@v0.8.0</code>. It scores the fork point and the checkout and comments the verdict on the pull request; set its <code>working-directory</code> input when <code>crapkit.toml</code> sits below the repository top. <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#the-github-action">README: The GitHub Action</a> has its inputs.</p>
 <p><code>--github</code> emits annotations that land on the pull request diff; <code>--sarif PATH</code> writes SARIF 2.1.0 for code-scanning upload. Refresh the committed baseline whenever the default branch's verify passes. Branch on the exit code: 6 is complexity, 7 is a ratchet regression, 8 is new test failures, 9 is uncovered changed lines.</p>
 
 <h3>5 · Showing someone who will not open a terminal</h3>

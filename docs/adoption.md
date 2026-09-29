@@ -228,8 +228,8 @@ claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin 
 claude plugin install crapkit@crapkit
 ```
 
-`--sparse` checks out the two directories the plugin ships from, 0.8 MB of a 61 MB
-repository.
+`--sparse` checks out the two small directories the plugin ships from, where a clone of
+the whole repository can outrun Claude Code's 120-second clone timeout.
 
 It carries three skills, the read-side MCP server, and one advisory PostToolUse hook that
 names functions an edit pushed over their ceiling. The hook never blocks; the commit gate
