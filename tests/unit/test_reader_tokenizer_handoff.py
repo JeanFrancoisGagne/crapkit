@@ -23,8 +23,7 @@ def _recording(handed: list):
 
 
 @pytest.mark.parametrize("reader, owner, stock, added", [
-    (lizardshell.ShellReader, ScriptLanguageMixIn, "generate_common_tokens",
-     lizardshell._TOKEN_ADDITION),
+    (lizardshell.ShellReader, CodeReader, "generate_tokens", lizardshell._TOKEN_ADDITION),
     (lizardpowershell.PowerShellReader, ScriptLanguageMixIn, "generate_common_tokens",
      lizardpowershell._TOKEN_ADDITION),
     (lizardgolike.CorrectedGoReader, GoReader, "generate_tokens", lizardlinecomment.LINE_COMMENT),
