@@ -118,6 +118,30 @@ def test_the_windows_nightly_cell_replays_the_past_bugs_the_image_cannot():
     assert setup["if"] == step(windows, "run", "python tools/accuracy/retro.py")["if"]
 
 
+def _nightly_npm_prefixes() -> list[str]:
+    """The Node tool sets docs/accuracy.md's nightly recipe installs, in its order."""
+    text = (ROOT / "docs" / "accuracy.md").read_text(encoding="utf-8")
+    section = text.split("### Nightly", 1)[1].split("\n### ", 1)[0]
+    return [line.split("--prefix ", 1)[1].split()[0] for line in section.splitlines()
+            if line.startswith("npm ci --prefix ")]
+
+
+def test_the_windows_cell_installs_the_node_tools_the_nightly_recipe_names():
+    """The Windows cell runs the nightly tier natively, outside the image that
+    carries both Node tool sets: without tools/accuracy/node/nightly the
+    istanbul-lib and crap-typescript check cannot load istanbul-lib-instrument
+    and fails, and the producer reruns and Stryker end as infra misses."""
+    windows = _jobs("accuracy.yml")["windows"]
+    prefixes = _nightly_npm_prefixes()
+
+    assert prefixes == ["tools/accuracy/node/push", "tools/accuracy/node/nightly"]
+    for prefix in prefixes:
+        install = step(windows, "run", f"npm ci --prefix {prefix} ")
+        assert windows["steps"].index(install) < _tier_index(windows), prefix
+        assert install.get("if", "needs.plan.outputs.tier == 'nightly'") == (
+            "needs.plan.outputs.tier == 'nightly'"), prefix
+
+
 def test_the_oracle_cells_reach_pypi_and_the_mutation_cells_do_not():
     """The nightly corpus and coverage shards list crapkit's releases and install
     the recorded coverage producers from PyPI; offline, each of those checks

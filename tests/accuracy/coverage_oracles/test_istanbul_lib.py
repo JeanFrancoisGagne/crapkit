@@ -209,9 +209,13 @@ SIBLING_ARMS = {"called": 1.0, "idle": 0.0}
 
 
 @pytest.fixture(scope="module")
-def siblings(tmp_path_factory):
+def siblings(tmp_path_factory, oracle):
     """(crap-typescript's methods by name, crapkit's scored rows) over the
-    coverage istanbul-lib-instrument records for SIBLINGS and SIBLING_CALLS."""
+    coverage istanbul-lib-instrument records for SIBLINGS and SIBLING_CALLS.
+    istanbul-lib-instrument comes with crap-typescript in the nightly Node tools
+    (npm ci --prefix tools/accuracy/node/nightly), so a machine without them ends
+    here as an infra miss, before node runs."""
+    oracle("@barney-media/crap-typescript-core")
     work = tmp_path_factory.mktemp("siblings")
     source = work / "shared.ts"
     source.write_text(SIBLINGS, encoding="utf-8", newline="\n")

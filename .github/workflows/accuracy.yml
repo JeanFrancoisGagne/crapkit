@@ -279,6 +279,16 @@ jobs:
       - run: pip install --require-hashes --no-deps -r tools/accuracy/requirements-nightly.txt
       - run: pip install --no-deps -e .
       - run: npm ci --prefix tools/accuracy/node/push --ignore-scripts --no-audit --no-fund
+      # The nightly tier's Node checks (istanbul-lib, crap-typescript, the producer
+      # reruns, Stryker) read tools/accuracy/node/nightly, which the image carries
+      # and a native cell installs, as docs/accuracy.md's nightly recipe does.
+      - uses: actions/cache@v4
+        if: needs.plan.outputs.tier == 'nightly'
+        with:
+          path: tools/accuracy/node/nightly/node_modules
+          key: node-nightly-${{ runner.os }}-${{ hashFiles('tools/accuracy/node/nightly/package-lock.json') }}
+      - if: needs.plan.outputs.tier == 'nightly'
+        run: npm ci --prefix tools/accuracy/node/nightly --ignore-scripts --no-audit --no-fund
       - uses: actions/cache@v4
         with:
           path: .crapkit/corpus
