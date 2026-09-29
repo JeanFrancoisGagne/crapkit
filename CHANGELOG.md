@@ -1053,11 +1053,18 @@ re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-shell-and-powe
   as in `for ((;;))`, no longer counts as an arm. On a large consumer repo 3
   functions fall, by up to 1 in ccn and 2 to 24 in cognitive; of the 2,826 functions
   in Ubuntu's bash-completion scripts 18 fall and none rise.
+- A `#` inside a word is part of the word, not a comment (POSIX XCU 2.3). The reader
+  opened a comment at every `#`, so the rest of the line was lost: the `&&` after a
+  regex holding `[#/]` counted nothing, and `elif (( (8#$mode & 0111) == 0111 ))`
+  hid its own `))` and `then`, which left the function open to the end of its file.
+  One 3,500-line script in a branch of a large consumer repo reported 16 of its 101
+  functions and reports all 101 now; on the repo's main line 5 functions rise in
+  ccn, by 1 to 5.
 - An unpaired double quote before many substitutions no longer stalls the shell
   reader. With no closing quote left in the file, the string rule tried every way of
   reading each `$( )` after it, twice the time per substitution: 7 s for 24 of them.
 
-Measured on a large consumer repo's 1,613 shell functions: 141 rise in ccn, by 1 to
+Measured on a large consumer repo's 1,613 shell functions: 146 rise in ccn, by 1 to
 20; 2 fall, by 1 and 23, where a heredoc body had counted as shell; 6 lose 4 to 39
 NLOC of heredoc body; and the subshell-bodied function above gains 71. No function
 appears or disappears. A function the rise puts over its ceiling fails the gate the

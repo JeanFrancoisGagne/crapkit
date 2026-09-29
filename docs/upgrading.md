@@ -325,9 +325,9 @@ version 11 below.
   and a substitution inside `${v:-...}` count the same way. A heredoc opened inside a
   quoted substitution, as in `v="$(node - "$f" <<'JS'`, is a body, so its program adds
   no ccn and no NLOC, and so is one opened on the line that closes a multi-line
-  quoted substitution. On a large consumer repo 141 of 1,613 shell functions rose by 1
-  to 20 and 2 fell, by 1 and 23. A function the rise puts over its ceiling fails the
-  gate the next time its file changes.
+  quoted substitution. On a large consumer repo 146 of 1,613 shell functions rose by 1
+  to 20, with this and the `#` change below, and 2 fell, by 1 and 23. A function the
+  rise puts over its ceiling fails the gate the next time its file changes.
 - A case statement inside a quoted substitution counts its arms, and a function whose
   body is a subshell, `f() ( case ... esac )`, ends at its own `)` rather than at the
   first pattern's. Such a function can gain lines and ccn: one on a large consumer repo
@@ -337,6 +337,12 @@ version 11 below.
   decision or open or close a block, and a `;;` in `for ((;;))` is no case arm. These
   only lower numbers: on a large consumer repo 3 functions fell, by up to 1 in ccn and
   2 to 24 in cognitive.
+- A `#` inside a word, as in `(( 8#$mode ))` or a regex's `[#/]`, is part of the word
+  and opens no comment. The rest of such a line had counted nothing, so a function
+  with an `&&` after it rises in ccn (5 on a large consumer repo, by 1 to 5), and a
+  `))` or `then` hidden there had left the function open to the end of its file. A
+  file like that gains every function after it: one script went from 16 rows to 101,
+  and a new row can be over its ceiling.
 - A PowerShell expression inside a `$( )` subexpression in a double-quoted string
   counts: `"$($a -and $b)"` reads ccn 2 where it read 1, up to eight levels of
   parens deep. Its cognitive score rises by the same decisions, and an `if` or loop

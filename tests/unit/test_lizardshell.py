@@ -300,6 +300,28 @@ def test_a_parameter_expansion_hash_does_not_start_a_comment():
         ("trim", 2), ("later", 1)]
 
 
+MID_WORD_HASH = {
+    "a base-10 number": "(( 10#$n < 1 )) && echo low",
+    "a hash in a word": "echo a#b && echo c",
+    "a URL fragment": "open https://example.com/x#top && echo ok",
+    "a hash after a variable": "echo $x#y && echo c",
+}
+
+
+@pytest.mark.parametrize("line", MID_WORD_HASH.values(), ids=MID_WORD_HASH.keys())
+def test_a_hash_inside_a_word_starts_no_comment(line):
+    """POSIX XCU 2.3 rule 9: `#` opens a comment only where a word would start.
+    Inside `10#$n` or `a#b` it is part of the word. Read as a comment it hid the
+    rest of the line, so the `&&` after it counted nothing."""
+    assert _only("f() {\n  " + line + "\n}\n").cyclomatic_complexity == 2
+
+
+@pytest.mark.parametrize("line", [
+    "echo a # && echo b", "echo a;# && echo b", "(echo a)# && echo b", "#!/bin/sh && x"])
+def test_a_hash_where_a_word_starts_opens_a_comment(line):
+    assert _only("f() {\n  " + line + "\n}\n").cyclomatic_complexity == 1
+
+
 # --- hazard: parens and braces that are not function syntax ---------------------
 
 def test_command_substitution_does_not_open_a_function():

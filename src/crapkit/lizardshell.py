@@ -92,6 +92,14 @@ TOKENIZER REPAIRS
     `//` gets an added token for the same reason as `\\x`: it is the `//` of a URL,
     not a C++ line comment.
 
+    A `#` opens a comment only where a word starts (POSIX XCU 2.3); inside a word,
+    as in `8#$mode` or a regex's `[#/]`, it is part of the word. The comment rule
+    lizard's script languages share takes any `#`, and a lone `#` token is a C
+    directive to lizard, which joins the rest of the line to it, so this reader
+    brings its own rule and a token for a word holding a `#`. One 3,500-line script
+    reported 16 of its 101 functions before, its `elif (( (8#$mode & 0111) ...))`
+    having hidden the `))` and `then` that close it.
+
 SUBSTITUTIONS INSIDE STRINGS
     `x="$(cmd || true)"` runs `cmd || true`: the quotes keep the output one word,
     they do not make the command text. The string rule above matches the whole
@@ -213,6 +221,11 @@ def _run(nested: str) -> str:
 _COMMAND_SUB = r"\$\(" + _parens(_PAREN_LEVELS) + r"\)"
 _DQ_STRING = r'"' + _loop(r"\\.|" + _COMMAND_SUB + r'|[^"\\]') + r'"'
 
+# The start of a word: nothing before it but a blank, an operator or the file's
+# start. Only there does `#` open a comment (POSIX XCU 2.3 rule 9) and `case`
+# start a case.
+_AT_WORD = r"(?<![^\s;&|()])"
+
 # Extra alternatives for lizard's shared token pattern. Order matters only among
 # alternatives that can start at the same character.
 #   "..."   the command-substitution-aware string above.
@@ -224,6 +237,14 @@ _DQ_STRING = r'"' + _loop(r"\\.|" + _COMMAND_SUB + r'|[^"\\]') + r'"'
 #   \x      an unquoted backslash escapes the next character in shell, so '\"' is
 #           a literal quote. Left to open a string it runs to the next real quote,
 #           taking whatever braces lie between with it.
+#   #...    a comment, where a word starts.
+#   a#b     a word holding a `#`, as `10#$n`, `a#b` and a URL's `x#top` do: the
+#           `#` is part of the word, so the token runs from the word's start.
+#           The rule ScriptLanguageMixIn adds opens a comment at any `#`, and a
+#           lone `#` token is a C directive to lizard, which joins the rest of the
+#           line to it. Either way the line was gone: the `))` of
+#           `(( 10#$n < 1 ))` and any `&&` after it. _tokens calls lizard
+#           without the mixin's rule.
 _TOKEN_ADDITION = (
     "|" + _DQ_STRING +
     r"|\$\{(?:[^{}]|\{[^}]*\})*\}"
@@ -231,6 +252,8 @@ _TOKEN_ADDITION = (
     r"|;;"
     r"|//"
     r"|\\."
+    r"|" + _AT_WORD + r"\#[^\n]*"
+    r"|\w*+\#[^\s;&|()<>\"'`$\\]*+"
 )
 
 # A substitution inside a token lizard keeps as text: a double-quoted string or a
@@ -248,10 +271,8 @@ _HEREDOC = re.compile(
 # code and everything that holds code: `$( )`, `( )`, backticks and a case. A
 # lexeme is matched only where its context can hold it: a `'` opens a string in
 # code and is a letter inside "...", and a `)` closes a `$(` but not a case
-# pattern. _AT_WORD is the start of a word, where `#` opens a comment and `case`
-# is a keyword.
+# pattern. At _AT_WORD, `#` opens a comment and `case` is a keyword.
 _CODE = "code"
-_AT_WORD = r"(?<![^\s;&|()])"
 _INTO = r"|(?P<arith>\$\(\()|(?P<sub>\$\()|(?P<param>\$\{)|(?P<backtick>`)"
 _LEXEMES = {
     _CODE: re.compile(
@@ -475,8 +496,11 @@ class _Arithmetic:
 # --- substitutions inside strings, read as code --------------------------------
 
 def _tokens(source: str, addition: str, token_class):
-    """lizard's shared tokenizer with shell's tokens, every substitution opened."""
-    return _open_holes(ScriptLanguageMixIn.generate_common_tokens(
+    """lizard's shared tokenizer with shell's tokens, every substitution opened.
+
+    CodeReader's and not ScriptLanguageMixIn's: the mixin puts a comment rule
+    for any `#` ahead of these tokens, and _TOKEN_ADDITION holds shell's own."""
+    return _open_holes(CodeReader.generate_tokens(
         source, _TOKEN_ADDITION + addition, token_class), addition, token_class)
 
 
@@ -801,9 +825,10 @@ class ShellReader(CodeReader, ScriptLanguageMixIn):
         """lizard's shared tokenizer, minus heredoc bodies, plus shell's tokens,
         with the command inside a quoted substitution read as code.
 
-        ScriptLanguageMixIn supplies the '#' comment rule (PythonReader uses the
-        same one), so comment handling is not written here. Both repairs are made
-        to the source, and the substitutions are opened by a generator over
+        The '#' comment rule is shell's own, in _TOKEN_ADDITION: a comment starts
+        only where a word does. ScriptLanguageMixIn still reads each comment token
+        for lizard's forgive directives. Both repairs are made to the source, and
+        the substitutions are opened by a generator over
         lizard's, so the token stage still yields as it reads and nothing ahead
         of it in the extension chain is starved.
         """
