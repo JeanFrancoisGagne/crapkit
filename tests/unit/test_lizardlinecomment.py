@@ -201,3 +201,31 @@ def test_a_spawned_child_importing_analyze_ends_comments_at_the_line():
                          check=True).stdout
 
     assert out.strip() == "True"
+
+
+def test_the_wrapper_puts_the_line_comment_ahead_of_every_addition():
+    """What the stock tokenizer is handed: the source, LINE_COMMENT ahead of the
+    caller's additions, and the caller's token class."""
+    handed = []
+
+    def stock(source_code, addition="", token_class=None):
+        handed.append((source_code, addition, token_class))
+        return iter(("t",))
+
+    wrapped = lizardlinecomment._ending_line_comments(stock).__func__
+
+    assert (list(wrapped("s", "|x", int)), list(wrapped("s"))) == (["t"], ["t"])
+    assert handed == [("s", lizardlinecomment.LINE_COMMENT + "|x", int),
+                      ("s", lizardlinecomment.LINE_COMMENT, None)]
+    assert wrapped.crapkit_stock is stock
+
+
+def test_registering_wraps_a_stock_tokenizer_that_lost_its_wrapper(monkeypatch):
+    from lizard_languages.java import JavaReader
+    stock = JavaReader.generate_tokens.crapkit_stock
+    monkeypatch.setattr(JavaReader, "generate_tokens", staticmethod(stock))
+
+    lizardlinecomment.register()
+
+    assert JavaReader.generate_tokens.crapkit_stock is stock
+    assert "b" in list(JavaReader.generate_tokens("// a\\\nb\n"))
