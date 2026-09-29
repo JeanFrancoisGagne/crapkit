@@ -164,7 +164,8 @@ def test_only_the_ancestry_read_asks_for_git_s_own_words(repo, monkeypatch):
 
     assert set(started) == {(True, "--literal-pathspecs", gitio.UNTRANSLATED),
                             (False, "--literal-pathspecs", ())}
-    assert len(started) == 4
+    # merge-base, the diff since the commit, the flag listing, rev-parse and status
+    assert len(started) == 5
 
 
 def test_each_commit_gets_its_own_ancestry_answer(repo):

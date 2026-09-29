@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 
 from crapkit.cli.claude_hook import _diff_proc, _porcelain
-from crapkit.gitio import diff_since, status_names, unstaged_paths
+from crapkit.gitio import diff_since, status_names, unstaged_paths, worktree_changes
 from crapkit.lane_changes import ChangeReads
 from hang_guard import HANG_SECONDS
 
@@ -54,6 +54,7 @@ def _scoped(root: Path) -> tuple:
 
 READERS = {"status_names": lambda root: tuple(status_names(root)),
            "unstaged_paths": lambda root: tuple(sorted(unstaged_paths(root))),
+           "worktree_changes": lambda root: tuple(worktree_changes(root)),
            "ChangeReads": _scoped}
 
 
@@ -88,6 +89,40 @@ def test_an_edit_is_still_a_change(repo, reader):
     (repo / "src" / "a.ts").write_bytes(b"export const a = 2;\r\n")
 
     assert READERS[reader](repo) == ("src/a.ts",)
+
+
+def _lf_blob_under_autocrlf_input(root: Path) -> Path:
+    """One LF file committed, then core.autocrlf=input: `git add` turns CRLF
+    into LF, so CRLF bytes written over the file store the same blob."""
+    _git(root, "init", "-q", "-b", "main")
+    (root / "src").mkdir()
+    source = root / "src" / "a.ts"
+    source.write_bytes(b"export const a = 1;\n")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
+    _git(root, "config", "core.autocrlf", "input")
+    return source
+
+
+@pytest.mark.parametrize("reader", sorted(READERS))
+def test_crlf_bytes_over_an_lf_blob_under_autocrlf_input_are_no_change(tmp_path, reader):
+    """git status calls a file whose size moved modified without reading it,
+    and these bytes are the blob the index holds once git's filters run."""
+    _lf_blob_under_autocrlf_input(tmp_path).write_bytes(b"export const a = 1;\r\n")
+
+    assert READERS[reader](tmp_path) == ()
+
+
+def test_a_staged_file_rewritten_as_crlf_under_autocrlf_input_is_staged_only(tmp_path):
+    """The hook's re-stage note reads the worktree half: the working copy
+    holds the staged blob, so only the staged change is left."""
+    source = _lf_blob_under_autocrlf_input(tmp_path)
+    source.write_bytes(b"export const a = 2;\n")
+    _git(tmp_path, "add", "src/a.ts")
+    source.write_bytes(b"export const a = 2;\r\n")
+
+    assert (status_names(tmp_path), unstaged_paths(tmp_path)) == (["src/a.ts"], set())
+    assert (_scoped(tmp_path), worktree_changes(tmp_path)) == (("src/a.ts",), [])
 
 
 def _index_state(root: Path) -> tuple:

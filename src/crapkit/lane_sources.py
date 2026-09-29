@@ -14,7 +14,7 @@ run leaves them (`blobs`), and freshness compares blob ids. A blob id is what
 under core.autocrlf=true and an expanded `$Id$` hold their blob's id, while a
 CRLF rewrite under core.autocrlf=false, or a pending renormalization, does not.
 
-git's index is the fast path. A tracked file that git's worktree diff calls
+git's index is the fast path. A tracked file that `git status` calls
 unchanged holds the id the index records, so only a file git calls changed,
 one it does not track, and one flagged skip-worktree or assume-unchanged is
 hashed. The trade: git decides "unchanged" from the index's stat cache, so a
@@ -51,7 +51,7 @@ def record(root: Path, paths, within=()) -> dict[str, str]:
 
 
 def _held(root: Path, wanted: set, spec: tuple) -> dict[str, str]:
-    """The index's id for each wanted path git's worktree diff calls unchanged."""
+    """The index's id for each wanted path `git status` calls unchanged."""
     changed = set(worktree_changes(root, spec))
     return {path: blob for path, blob in index_blobs(root, spec).items()
             if path in wanted and path not in changed}

@@ -435,9 +435,43 @@ def status_records(out: str, prefix: str) -> list[tuple[str, str]]:
 def _status(root: Path, paths: tuple[str, ...] = ()) -> list[tuple[str, str]]:
     """The status records under `paths` (the root when none), each path named
     from the root and each name that is not UTF-8 in its surrogateescape
-    spelling (gitpaths.repo_path)."""
+    spelling (gitpaths.repo_path), once `compared` has read their content."""
     out = _git_bytes(root, "--literal-pathspecs", *STATUS, "--", *(paths or (".",)))
-    return status_records(escaped(out), _show_prefix(root))
+    return compared(root, status_records(escaped(out), _show_prefix(root)))
+
+
+def compared(root: Path, records: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """The status records once each file status calls modified in the
+    worktree has been hashed through the repo's filters.
+
+    status compares a stat-dirty file's content only while its size matches
+    the index, and calls a file whose size moved modified without reading it.
+    CRLF bytes written over an LF blob under core.autocrlf=input are such a
+    file, and `git add` stores them as the same blob: lane reuse reran the
+    lane, verify called the finding dirty and the hook asked for a re-stage.
+    A file whose bytes hash to the index's blob loses its worktree letter,
+    and a record left with no letter is dropped."""
+    same = _index_bytes(root, records)
+    settled = [_settled(record, same) for record in records]
+    return [record for record in settled if record[0] != "  "]
+
+
+def _settled(record: tuple[str, str], same: set[str]) -> tuple[str, str]:
+    """The record without its worktree letter when its file is in `same`."""
+    letters, path = record
+    return (letters[0] + " ", path) if path in same else record
+
+
+def _index_bytes(root: Path, records: list[tuple[str, str]]) -> set[str]:
+    """The regular files status calls modified in the worktree whose bytes on
+    disk hash to the blob the index holds. A symlink or a submodule keeps
+    git's answer."""
+    files = [path for letters, path in records if letters[1] == "M" and _regular(root / path)]
+    return set(files) - set(_moved(root, files))
+
+
+def _regular(path: Path) -> bool:
+    return path.is_file() and not path.is_symlink()
 
 
 def _unstaged(records: list[tuple[str, str]]) -> set[str]:
@@ -468,12 +502,16 @@ def flagged_edits(root: Path, records: list[str]) -> list[str]:
     """The files among `ls-files -v` records (FLAGS) that are flagged, on disk,
     and hold other content than the index: hidden_edits once the listing is
     read, for a caller that started it beside its other reads."""
-    flagged = _on_disk(root, _flagged(records))
-    if not flagged:
+    return _moved(root, _on_disk(root, _flagged(records)))
+
+
+def _moved(root: Path, paths: list[str]) -> list[str]:
+    """The files among `paths` whose bytes on disk, hashed through the repo's
+    filters (worktree_blobs), are not the blob the index holds."""
+    if not paths:
         return []
-    index = index_blobs(root, flagged)
-    return [path for path, blob in worktree_blobs(root, flagged).items()
-            if blob != index.get(path)]
+    index = index_blobs(root, paths)
+    return [path for path, blob in worktree_blobs(root, paths).items() if blob != index.get(path)]
 
 
 def worktree_changes(root: Path, paths: tuple[str, ...] = ()) -> list[str]:

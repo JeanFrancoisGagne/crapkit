@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit import gitio, lane_changes
+from crapkit import gitio
 from crapkit.gitio import status_names
 from crapkit.lane_changes import ChangeReads
 from hang_guard import HANG_SECONDS
@@ -100,31 +100,3 @@ def test_an_edit_inside_a_submodule_set_to_ignore_dirty_is_a_change(tmp_path):
 
     assert _git(root, "diff", "--name-only") == ""
     assert (status_names(root), _scoped(root, "src", "sub")) == (["sub"], ("sub",))
-
-
-def test_the_index_reads_start_once_the_worktree_diff_is_collected(repo, monkeypatch):
-    """The worktree diff rewrites .git/index when it refreshes a stat-dirty
-    entry. On Windows a read that opened the index during that swap failed
-    with `index file open failed: Permission denied`, and the failure read as
-    a changed file: 7 to 12 of 300 same-bytes touches on a default config."""
-    events = []
-    real = lane_changes._start
-
-    class _Logged:
-        def __init__(self, read, name):
-            self._read, self._name = read, name
-
-        def result(self, *payload):
-            events.append(("collect", self._name))
-            return self._read.result(*payload)
-
-    def start(root, *args):
-        name = " ".join(arg for arg in args if arg in ("diff", "--cached", "ls-files"))
-        events.append(("start", name))
-        return _Logged(real(root, *args), name)
-
-    monkeypatch.setattr(lane_changes, "_start", start)
-
-    assert _scoped(repo, "src") == ()
-    assert events[:2] == [("start", "diff"), ("collect", "diff")]
-    assert {name for kind, name in events[2:] if kind == "start"} == {"diff --cached", "ls-files"}

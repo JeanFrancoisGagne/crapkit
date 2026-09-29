@@ -934,9 +934,12 @@ The exit codes, the lane environment and the files that change on upgrade are in
   sets `diff.autoRefreshIndex=false`, git named every file whose modification time moved,
   so a reused lane printed "1 file(s) in its scopes changed", `next-item` and `brief`
   withheld its dark lines, `--reuse-unchanged` reran it and `verify` counted the file
-  dirty. crapkit's git reads now set `diff.autoRefreshIndex=true`, so git compares the
-  content through the repo's filters, and a CRLF checkout under `core.autocrlf=true`
-  still matches its LF blob.
+  dirty. crapkit now reads the uncommitted set with `git status`, which compares the
+  content through the repo's filters whatever `diff.autoRefreshIndex` says, and hashes
+  each file status calls modified through the same filters, since status skips that
+  comparison for a file whose size moved. A CRLF checkout under `core.autocrlf=true`,
+  and CRLF bytes written over an LF blob under `core.autocrlf=input`, still match their
+  LF blob.
 - A lane's line numbers go stale when the bytes they point into change, and only then.
   Each run's stamp now records the git blob id of every file under the lane's scopes
   (`blobs` in `.crapkit/artifacts.json`), the id `git add` would store, and the
@@ -1029,8 +1032,9 @@ The exit codes, the lane environment and the files that change on upgrade are in
   calc/report.py`.
 - On Windows a same-bytes touch could make a lane's change read fail with `index file
   open failed: Permission denied`, which read as a changed file: 7 to 12 of 300 touches
-  on git's default config. The staged diff and the untracked listing now start after
-  the worktree diff, which can rewrite the index, has finished.
+  on git's default config. The worktree diff among those reads rewrote the index. The
+  staged, unstaged and untracked files now come from one `git --no-optional-locks
+  status`, which leaves `.git/index` as it found it.
 - Every git process crapkit starts sets `GIT_OPTIONAL_LOCKS=0`, so `git status` and the
   other reads that honor it compare a file whose stat data moved without writing the
   refreshed entry back to `.git/index`, and crapkit's reads leave the index alone while

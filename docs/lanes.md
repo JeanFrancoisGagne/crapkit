@@ -1352,7 +1352,7 @@ renormalizes a file, an edit inside a submodule, and an edit reverted after the 
 measured it. A file the lane itself writes under its scopes while it runs, such as
 `src/__pycache__`, is recorded as the run left it and is not a move.
 
-git's index is the fast path: a tracked file its worktree diff calls unchanged holds the
+git's index is the fast path: a tracked file `git status` calls unchanged holds the
 id the index records, and only the rest is hashed. So a same-size edit whose old
 modification time was put back keeps the index's id and is not seen: the same named
 limit as reuse, on the same OSes and settings, until hashing every file is measured.

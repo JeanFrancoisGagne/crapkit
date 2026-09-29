@@ -21,7 +21,7 @@ from pathlib import Path
 
 from .errors import GitError
 from .gitpaths import nul_paths
-from .gitio import FLAGS, SHOW_PREFIX, STATUS, UNTRANSLATED, ancestry_answer, status_records
+from .gitio import FLAGS, SHOW_PREFIX, STATUS, UNTRANSLATED, ancestry_answer, compared, status_records
 from .repotext import escaped
 
 _NAMES = ("--name-only", "--no-renames", "--ignore-submodules=none", "-z")
@@ -140,12 +140,14 @@ class ChangeReads:
         return self._once("status", self._status_names)
 
     def _status_names(self) -> tuple[str, ...]:
-        """Staged, unstaged and untracked from the one status read, and the
-        edits git never compares (`hidden_edits`)."""
+        """Staged, unstaged and untracked from the one status read, with each
+        worktree edit's content read (gitio.compared), and the edits git never
+        compares (`hidden_edits`)."""
         if not self._status:
             return ()
         prefix, out = (escaped(self._collect(read)) for read in self._status)
-        return tuple(sorted({path for _, path in status_records(out, prefix)} | self._hidden()))
+        records = compared(self._root, status_records(out, prefix))
+        return tuple(sorted({path for _, path in records} | self._hidden()))
 
     def _hidden(self) -> set[str]:
         """Read from the flag listing started with the status read: the files
