@@ -81,6 +81,6 @@ def test_a_breached_changed_line_ceiling_keeps_each_line_and_whether_it_is_dirty
 
 
 def test_a_baseline_stamp_value_keeps_every_equals_sign_after_the_first():
-    parsed = parse_baseline_tsv("# commit=abc run_kind=verify failures=t::a=b\n")
+    parsed = parse_baseline_tsv('# commit=abc run_kind=verify results={"u":{"failures":["t::a=b"]}}\n')
 
-    assert (parsed.commit, parsed.failures) == ("abc", frozenset({"t::a=b"}))
+    assert (parsed.commit, parsed.lanes) == ("abc", {"u": {"failures": ["t::a=b"]}})

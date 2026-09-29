@@ -26,7 +26,7 @@ from crapkit.cli import verifying
 from crapkit.invocation import _self
 from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
 from crapkit.store import SnapshotStore
-from crapkit.verify import GateViolation, RatchetRegression, Verdict
+from crapkit.verify import GateViolation, RatchetRegression, Verdict, parse_baseline_tsv
 
 MARKS = "crapkit-ratchet.tsv"
 
@@ -255,41 +255,46 @@ def test_a_failure_the_baseline_had_is_forgiven_under_its_portable_record(failin
     assert payload["forgiven_failures"] == ["src/app.test.ts::renders"]
 
 
-def _drop_failures_field(record) -> None:
-    """The record as crapkit 0.8.0 and older wrote it: a stamp with no failures=."""
+def _drop_results_field(record) -> None:
+    """The record as crapkit 0.8.0 and older wrote it: a stamp with no results=."""
     stamp, _, body = record.read_bytes().decode("utf-8").partition("\n")
-    kept = " ".join(part for part in stamp.split(" ") if not part.startswith("failures="))
+    kept = " ".join(part for part in stamp.split(" ") if not part.startswith("results="))
     record.write_bytes(f"{kept}\n{body}".encode("utf-8"))
+
+
+def _named_failures(record: bytes) -> list[str]:
+    lanes = parse_baseline_tsv(record.decode("utf-8")).lanes
+    return [test for lane in lanes.values() for test in lane.get("failures", [])]
 
 
 def test_a_record_that_cannot_name_its_failures_says_why_a_failure_reads_as_new(
         failing_record, capsys, monkeypatch):
-    """An older record forgives nothing, which is what it always did. The line
-    says so only when a new failure can be one that run already had."""
+    """An older record forgives nothing, which is what it always did, and the
+    line says why a failure that run already had reads as new."""
     monkeypatch.setattr(sys, "argv", ["/usr/local/bin/crapkit", "verify"])
-    _drop_failures_field(failing_record / ".crapkit" / "base.tsv")
+    _drop_results_field(failing_record / ".crapkit" / "base.tsv")
 
     code, out, err = run(["verify", "--reuse-artifacts", "--baseline-tsv", ".crapkit/base.tsv"],
                          failing_record, capsys)
 
     assert code == 8
     assert "NEW FAILURE  src/app.test.ts::renders" in out, out
-    assert ("warning: .crapkit/base.tsv does not name the tests its baseline run failed "
-            "(crapkit 0.8.0 and older wrote no failures= field), so each of the 1 new failure(s) "
-            "may be one that run already had; re-emit the file on the default branch with "
-            "`crapkit verify --emit-baseline .crapkit/base.tsv`") in err, err
+    assert ("warning: the baseline file .crapkit/base.tsv holds no test results, so every "
+            "test failure counts as new and no suite size is compared; write it again with "
+            f"`{_self()} verify --emit-baseline .crapkit/base.tsv` to carry them") in err, err
 
 
-def test_a_record_that_cannot_name_its_failures_stays_silent_on_a_green_suite(
-        failing_record, capsys):
-    _drop_failures_field(failing_record / ".crapkit" / "base.tsv")
+def test_a_record_that_cannot_name_its_failures_passes_a_green_suite(failing_record, capsys):
+    """A green suite has no failure to forgive, so an older record still
+    passes; the line stays, since no suite size is compared either."""
+    _drop_results_field(failing_record / ".crapkit" / "base.tsv")
     _junit(failing_record, failing=False)
 
     code, _, err = run(["verify", "--reuse-artifacts", "--baseline-tsv", ".crapkit/base.tsv"],
                        failing_record, capsys)
 
     assert code == 0
-    assert "failures= field" not in err, err
+    assert "holds no test results" in err and "no suite size is compared" in err, err
 
 
 @pytest.mark.parametrize("field", [True, False], ids=["named", "older"])
@@ -299,14 +304,14 @@ def test_re_emitting_a_record_keeps_what_it_knew_about_failures(failing_record, 
     field stays missing rather than turning into a claim that nothing failed."""
     record = failing_record / ".crapkit" / "base.tsv"
     if not field:
-        _drop_failures_field(record)
+        _drop_results_field(record)
 
     run(["verify", "--reuse-artifacts", "--baseline-tsv", ".crapkit/base.tsv",
          "--emit-baseline", ".crapkit/again.tsv"], failing_record, capsys)
 
     again = (failing_record / ".crapkit" / "again.tsv").read_bytes()
     assert again == record.read_bytes()
-    assert (b" failures=src/app.test.ts::renders\n" in again) is field
+    assert (_named_failures(again) == ["src/app.test.ts::renders"]) is field
 
 
 def test_a_missing_baseline_file_names_the_flag_that_writes_one(baselined, capsys):
