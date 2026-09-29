@@ -11,6 +11,10 @@ function and a pytest lane that writes coverage.py JSON and JUnit, runs
 `verify` must fail (if it passes, the probe cannot tell anything and stops with a
 RuntimeError). The second `verify`, on the same tree, must fail with the same
 exit code.
+
+Both commits refuse a coverage.py lane inside a container unless the lane says
+`container_ok = true` (lanes.py at both: the host-only guard, which reads
+/.dockerenv), and the retro job replays in the accuracy image, so the lane says it.
 """
 # requires: pytest==9.1.1 pytest-cov==7.1.0 coverage==7.16.1
 # source: README "The trusted baseline": a failed verify is not the baseline, verify keeps measuring against the run before it "so those findings stay visible"; and verify judges the working tree against a baseline, so a second verify on a tree nothing touched sees the same new failing test (a judgement that reads the same inputs gives the same verdict)
@@ -43,6 +47,7 @@ artifact = "coverage-py.json"
 parser = "coveragepy"
 scopes = ["py"]
 full_suite = false
+container_ok = true
 results_artifact = "junit.xml"
 """
 

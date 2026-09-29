@@ -12,9 +12,12 @@ inherits depends on how the interpreter lays out memory, so a whole file can
 read right in one venv and wrong in another. This probe makes the reuse happen
 on purpose, below the CLI: it drives crapkit.lizardcognitive.LizardExtension,
 which both commits have, over lizard FunctionInfo objects. `a` holds one `if`;
-`b` follows it, which frees `a` where nothing else holds it; new functions are
-then made until one lands at a's address (at most 10,000; the fix holds `a`,
-so there it never frees), and that one, `c`, holds no structure. c must read 0.
+`b` follows it. The probe holds `a` through b's tokens and drops it just before
+it makes `c`, so no other object takes a's freed block first: CPython's allocator
+hands the block it freed last to the next object of its size, and c lands at a's
+address on the first try in the Linux image as on Windows (at most 10,000 tries;
+the fix keeps its own reference to `a`, so there it never frees). c holds no
+structure and must read 0.
 """
 # source: SonarSource "Cognitive Complexity" (G. Ann Campbell, 2023), B1: only structures add to the score, so a function whose tokens are a line break and `return` reads 0
 from __future__ import annotations
@@ -48,12 +51,14 @@ def _at_address(address: int, kept: list):
 def _tokens(reader: PythonReader, seen: dict):
     from lizard import FunctionInfo
 
-    reader.context.current_function = FunctionInfo("a", "m.py")
-    address = id(reader.context.current_function)
+    reader.context.current_function = seen["a"] = FunctionInfo("a", "m.py")
+    address = id(seen["a"])
     yield from ("\n", "    ", "if", "x", ":", "\n", "        ", "return")
     reader.context.current_function = FunctionInfo("b", "m.py")
     yield from ("\n", "    ", "return")
-    reader.context.current_function = seen["c"] = _at_address(address, seen.setdefault("kept", []))
+    kept = seen.setdefault("kept", [])
+    del seen["a"]
+    reader.context.current_function = seen["c"] = _at_address(address, kept)
     yield from ("\n", "    ", "return")
 
 
