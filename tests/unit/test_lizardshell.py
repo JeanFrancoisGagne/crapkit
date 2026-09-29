@@ -273,6 +273,31 @@ def test_a_quote_that_opens_nothing_leaves_the_next_heredoc_alone(line):
     assert _only(code).cyclomatic_complexity == 1
 
 
+# The same quotes on the heredoc's own line, before its `<<`: a quote inside a
+# string of the other kind, or escaped by a backslash, is no quote, and a `#`
+# that starts a word opens a comment. Counted by parity, `"it's"` left a quote
+# open, so the `<<EOF` read as quoted and the body's `if` and `&&` counted.
+HEREDOC_BODY = 'if true; then\n  echo "$x" && echo more\nfi\nEOF\n  echo done\n}\n'
+
+
+@pytest.mark.parametrize("line", [
+    'echo "it\'s" | cat - <<EOF', "printf '%s \"' x | cat - <<EOF", 'echo \\" | cat - <<EOF',
+    'v="$(echo \'a"b\')"; cat <<EOF', 'n=$#; cat <<EOF', 'echo a#b | cat - <<EOF'])
+def test_a_heredoc_after_closed_quotes_on_its_own_line_is_a_body(line):
+    """Base 1: the body, lines 3 to 5, and its terminator count nothing, where
+    the parity reading gave 3. The function ends on line 8."""
+    fn = _only('emit() {\n  ' + line + '\n' + HEREDOC_BODY)
+    assert (fn.name, fn.cyclomatic_complexity, fn.end_line) == ("emit", 1, 8)
+
+
+@pytest.mark.parametrize("line", ['echo hi # then cat <<EOF', 'echo "a" # it\'s cat <<EOF'])
+def test_a_heredoc_opener_in_a_comment_opens_no_body(line):
+    """The `<<` sits in a comment, so the `EOF` line below ends nothing and the
+    `if` between them counts: base 1 + if = 2. Read as a body, it counted 0."""
+    code = 'emit() {\n  ' + line + '\n  if a; then b; fi\nEOF\n}\n'
+    assert _only(code).cyclomatic_complexity == 2
+
+
 # --- hazard: quotes and comments -----------------------------------------------
 
 def test_keywords_inside_quotes_are_not_conditions():
