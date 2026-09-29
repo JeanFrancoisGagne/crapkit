@@ -157,7 +157,6 @@ COG = ("cognitive",)
 SHAPES = (
     Shape("D12", ("params",), lambda fn, unit=None: bool(fn["block_params"])),
     Shape("D3", CCN, counted("script_block_arms")),
-    Shape("AO-PS-SWITCH-MOD", ("ccn_mod",), counted("switches")),
     Shape("D2e", CCN, counted("coalesces")),
     Shape("D2f", COG, counted("coalesces")),
     Shape("AO-PS-KEYWORD-CASE", CCN + COG, counted("upper_decisions")),
@@ -204,9 +203,16 @@ def construct_points(construct: str):
     return lambda fn, unit: -pscx.by_construct(unit, construct)
 
 
+def per_arm(fn: dict, unit) -> int:
+    """AO-PS-SWITCH-MOD, a definition: crapkit counts each switch arm in ccn_mod
+    as in ccn_std, so the parser's modified count moves up to its standard one."""
+    return fn["ccn_std"] - fn["ccn_mod"]
+
+
 AST = Tool(AST_COLUMNS, {
     "AO-PSAST-XOR": (CCN, by_count("xor")),
     "AO-PSAST-WHERE-ALIAS": (CCN, by_count("question_commands")),
+    "AO-PS-SWITCH-MOD": (("ccn_mod",), per_arm),
 })
 PSCX = Tool(PSCX_COLUMNS, {
     "AO-PSCX-FLOW-COMMAND": (("ccn_std",), by_count("flow_commands", -1)),
