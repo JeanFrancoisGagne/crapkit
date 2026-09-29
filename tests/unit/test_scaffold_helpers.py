@@ -4,13 +4,21 @@ scaffold.py: a new block goes under its own `# crapkit` heading after what a
 file held; a lane's artifact inside a directory ignores the directory; a
 testpath becomes a lane name a filename can hold; a dot-directory is never a
 scope; a scoped-test entry says which form it chose and why, live only where
-the repo's files prove the command; and a package.json that is not an object
-reads as an empty one.
+the repo's files prove the command; and a package.json field that is not the
+shape npm reads names nothing. init parses each package.json once (cli.admin)
+into those fields, and refuses a root one that is not an object.
 """
+import json
+
 import pytest
 
 from crapkit import scaffold
-from crapkit.scaffold import ScopedEntry, _ScopedFacts
+from crapkit.scaffold import NO_PACKAGE, ScopedEntry, _ScopedFacts, npm_package
+
+
+def packages(raw: dict[str, str]) -> dict:
+    """package.json text by directory, read into the fields init reads."""
+    return {directory: npm_package(json.loads(text)) for directory, text in raw.items()}
 
 
 @pytest.mark.parametrize("current, written", [
@@ -45,14 +53,14 @@ def test_a_testpath_becomes_a_lane_name_a_filename_can_hold():
     assert scaffold._testpath_slug("./Xtests\\unit/a_b c\\") == "Xtests-unit-a_b-c"
 
 
-@pytest.mark.parametrize("text, data", [("[1]", {}), ("", {}), ('{"a": 1}', {"a": 1})])
-def test_a_package_json_that_is_no_object_reads_empty(text, data):
-    assert scaffold._load_json(text) == data
+@pytest.mark.parametrize("data", [{"scripts": [1], "devDependencies": ""}, {"scripts": None}, {"a": 1}])
+def test_a_package_json_field_that_is_no_object_reads_empty(data):
+    assert npm_package(data) == NO_PACKAGE
 
 
 def test_a_workspace_with_no_dev_dependencies_names_no_runner():
-    assert scaffold._runner_workspaces({"": "{}", "web": "{}",
-                                        "app": '{"devDependencies": {"vitest": "1"}}'}) == [
+    assert scaffold._runner_workspaces(packages({"": "{}", "web": "{}",
+                                                 "app": '{"devDependencies": {"vitest": "1"}}'})) == [
         ("app", "vitest")]
 
 
@@ -65,8 +73,8 @@ def test_a_test_file_s_top_directory_is_its_first_path_part():
     assert scaffold._test_top("tests/unit/test_a.py") == "tests"
 
 
-def facts(packages: dict, tested=frozenset(), confirmed=frozenset()) -> _ScopedFacts:
-    return _ScopedFacts("python", frozenset(confirmed), frozenset(tested), "", False, packages)
+def facts(raw: dict, tested=frozenset(), confirmed=frozenset()) -> _ScopedFacts:
+    return _ScopedFacts("python", frozenset(confirmed), frozenset(tested), "", False, packages(raw))
 
 
 @pytest.mark.parametrize("packages, entry", [

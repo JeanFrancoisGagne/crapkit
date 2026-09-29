@@ -12,11 +12,10 @@ import codecs
 
 import pytest
 
-from crapkit.cli.admin import _junit_seconds
 from crapkit.config import Lane
 from crapkit.errors import ToolError
 from crapkit.junitparse import failed_test_ids, passed_test_ids, suite_seconds, suite_summary
-from crapkit.lanes import _results_provenance, _results_summary, _retested_passes
+from crapkit.lanes import _junit_seconds, _results_provenance, _results_summary, _retested_passes
 
 BODY = ('<testsuites><testsuite name="py" tests="2" failures="1" time="1.5">'
         '<testcase classname="t" name="test_café" time="1.0"/>'

@@ -1,17 +1,18 @@
-r"""test-scoped hands `_is_test_path` the path git spells, whatever the shell typed.
+r"""test-scoped hands its test-directory predicate the path git spells, whatever the shell typed.
 
-The report named `_is_test_path` (cli/verifying.py): it splits on `/` only, so
-`tests\test_a.py` would read as no test file at all. It never receives one. Its
-caller from outside git, `_group_files_by_scope`, reads every argument through
-`_repo_relative` first, and its other caller, brief's coupling partners, takes
-paths from `git log`, which writes `/` on every OS. The fold belongs to that
-boundary, and this file holds both halves: the predicate receives
-`tests/test_a.py` for each spelling the report's loop typed, and called
-directly with a backslash it still answers as the text reads, so a second
-fold inside it shows up here as a failure. The name rules and the cmd.exe
-`{files}` rows ride along: a test file outside every scope reaches the one
-template, and the runner gets its name as git spells it, metacharacters and
-all.
+The report named `_is_test_path` (cli/verifying.py): it split on `/` only, so
+`tests\test_a.py` would read as no test file at all. It never received one.
+test-scoped now routes a file outside every scope by `universe.in_test_dir`,
+the rule the scored corpus drops tests by, and that predicate reads `/` only
+too. Its caller from outside git, `_group_files_by_scope`, reads every argument
+through `_repo_relative` first. The fold belongs to that boundary, and this
+file holds both halves: the predicate receives `tests/test_a.py` for each
+spelling the report's loop typed, and called directly with a backslash it
+still answers as the text reads, so a second fold inside it shows up here as a
+failure. The directory rules and the cmd.exe `{files}` rows ride along: a file
+in a test directory outside every scope reaches the one template, and the
+runner gets its name as git spells it, metacharacters and all. A test name
+outside a test directory is source, and routes nowhere.
 """
 from __future__ import annotations
 
@@ -24,13 +25,14 @@ import pytest
 
 from cli_inproc_repo import git
 from crapkit.cli import main, verifying
-from crapkit.cli.verifying import _is_test_path
+from crapkit.universe import in_test_dir
 
 from path_spellings import WINDOWS, linked_checkout, need_case_insensitive, only_posix
 
 # Test files outside every scope whose names carry what cmd.exe and sh would
-# otherwise read: a space, non-ASCII, a quote, %x%, & ^ and !.
-METACHARACTERS = ["my tests/test_c.py", "tests/tést_é.py", "tests/test_it's.py",
+# otherwise read: a space, non-ASCII, a quote, %x%, & ^ and !. Each sits in a
+# test directory, the only place a file outside every scope routes from.
+METACHARACTERS = ["tests/my test_c.py", "tests/tést_é.py", "tests/test_it's.py",
                   "tests/test_100%x%.py", "tests/test_a&b^c.py", "tests/test_wow!.py"]
 FILES = ["src/a.py", "tests/test_a.py", "tests/unit/test_b.py", "web/__tests__/a.test.ts",
          "tools/test_tool.py", "tools/x.spec.ts", *METACHARACTERS]
@@ -56,15 +58,15 @@ def routed(tmp_path: Path) -> Path:
 
 
 def _spy(monkeypatch) -> list[str]:
-    """Every path `_is_test_path` is asked about, in order."""
+    """Every path test-scoped's `in_test_dir` is asked about, in order."""
     seen: list[str] = []
-    real = verifying._is_test_path
+    real = verifying.in_test_dir
 
     def spy(path: str) -> bool:
         seen.append(path)
         return real(path)
 
-    monkeypatch.setattr(verifying, "_is_test_path", spy)
+    monkeypatch.setattr(verifying, "in_test_dir", spy)
     return seen
 
 
@@ -122,30 +124,40 @@ def test_is_test_path_receives_the_path_git_spells(routed, monkeypatch, which):
 
 
 @pytest.mark.parametrize("folded", ["tests/test_a.py", "tests/unit/helpers.py",
-                                    "tools/test_tool.py", "src/tests/helpers.py"])
+                                    "web/__tests__/a.test.ts", "src/tests/helpers.py"])
 def test_the_predicate_reads_slashes_only_so_the_fold_stays_at_the_boundary(folded):
-    """`_is_test_path` reads `/` and nothing else. A backslash reaching it
+    """`in_test_dir` reads `/` and nothing else. A backslash reaching it
     would be a boundary that forgot to fold, and folding here as well would
     hide that boundary's bug from every other reader of the same argument."""
-    assert _is_test_path(folded) is True
-    assert _is_test_path(folded.replace("/", "\\")) is False
+    assert in_test_dir(folded) is True
+    assert in_test_dir(folded.replace("/", "\\")) is False
 
 
-# id -> the file git spells; typed with this OS's separator (a backslash on
-# Windows, where the rule is a name rule and not a directory).
-NAME_RULES = {
+# id -> the file git spells; typed with this OS's separator.
+DIRECTORY_RULES = {
     "__tests__ directory": "web/__tests__/a.test.ts",
+    "nested tests directory": "tests/unit/test_b.py",
+}
+# A test name outside a test directory is source to the scored corpus.
+NAME_RULES = {
     "test_ prefix": "tools/test_tool.py",
     ".spec. infix": "tools/x.spec.ts",
-    "nested tests directory": "tests/unit/test_b.py",
 }
 
 
-@pytest.mark.parametrize("which", NAME_RULES)
-def test_a_test_file_named_by_each_rule_reaches_the_template(routed, monkeypatch, which):
-    spelled = NAME_RULES[which]
+@pytest.mark.parametrize("which", DIRECTORY_RULES)
+def test_a_file_in_each_test_directory_reaches_the_template(routed, monkeypatch, which):
+    spelled = DIRECTORY_RULES[which]
 
     assert _scoped(routed, monkeypatch, spelled.replace("/", os.sep)) == [spelled]
+
+
+@pytest.mark.parametrize("which", NAME_RULES)
+def test_a_test_name_outside_a_test_directory_routes_nowhere(routed, monkeypatch, capsys, which):
+    monkeypatch.chdir(routed)
+
+    assert main(["test-scoped", NAME_RULES[which].replace("/", os.sep)]) == 3
+    assert "only a file under a test, tests or __tests__ directory" in capsys.readouterr().err
 
 
 @pytest.mark.skipif(not WINDOWS, reason="needs Windows path rules")

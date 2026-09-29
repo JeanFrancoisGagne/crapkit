@@ -1,15 +1,15 @@
-"""coverage.py's own reports over one probe file: a report that names no
-start_line scores each function as a report that names it does.
+"""coverage.py's own reports over one probe file: a report that names each
+start_line scores every function, and one that names none is refused by name.
 
 coverage.py 7.10.6 and 7.16.1 measured the same run of
 tests/fixtures/recorded/coveragepy_regions/probe.py. 7.16.1 writes each
-region's start_line, so its scores are the oracle. 7.10.6 writes none, so the
-reader finds every def statement from the lines alone. The probe holds the
+region's start_line. 7.10.6 writes none, and no line inside a region is its
+def's, so the reader refuses the report and names the coverage.py release
+that writes one (the py extra's floor, coverage>=7.13.1). The probe holds the
 shapes that can go wrong: one-line defs at module level, nested, opening a
 body, after a statement, in a class, under a decorator and under `# pragma: no
 cover`; defs whose body is one statement; defs whose body is one-line defs;
-and defs with nothing but a docstring. The branch reports list the arcs a
-one-line def returns by, and the statement reports list none.
+and defs with nothing but a docstring.
 """
 from pathlib import Path
 
@@ -17,6 +17,7 @@ import pytest
 
 from crapkit.analyze import analyze_source
 from crapkit.coverage_py import parse_coveragepy_both_file
+from crapkit.errors import ToolError
 from crapkit.score import score_rows
 from crapkit.snapshot import build_inventory_rows
 
@@ -32,19 +33,14 @@ def _scores(version: str, mode: str) -> dict[str, tuple]:
             for row in score_rows(rows, per_file, lane_scopes={"s"})}
 
 
-def _differ(named: dict, found: dict, part: int) -> set[str]:
-    return {name for name in named if found[name][part] != named[name][part]}
+@pytest.mark.parametrize("mode", ["branch", "statement"])
+def test_a_report_that_names_each_start_line_scores_every_function(mode):
+    assert len(_scores("7.16.1", mode)) == 53
 
 
 @pytest.mark.parametrize("mode", ["branch", "statement"])
-def test_a_report_with_no_start_line_scores_each_function_as_one_that_names_it(mode):
-    """A def with nothing but a docstring holds no line, so 7.10.6 does not
-    place it. At module level it reads untested at the number its region
-    holds, cov 0. Nested, it takes a neighbour's number, which its ccn of 1
-    keeps between crap 1 and 2. Every other function scores as under 7.16.1."""
-    named, found = _scores("7.16.1", mode), _scores("7.10.6", mode)
+def test_a_report_with_no_start_line_is_refused_by_name(mode):
+    with pytest.raises(ToolError) as refused:
+        _scores("7.10.6", mode)
 
-    assert len(named) == 53
-    assert _differ(named, found, 0) == {"nested_doc_then_one.doc_only( )"}
-    assert _differ(named, found, 1) == {"only_doc( )"}
-    assert (found["only_doc( )"][1], named["only_doc( )"][1]) == ("untested", "measured")
+    assert "no start_line; coverage.py writes it on every function from 7.13.1" in str(refused.value)

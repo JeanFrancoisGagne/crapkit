@@ -26,7 +26,7 @@ from crapkit.cli import main
 from crapkit.cli.analyses import _mutation_targets
 from crapkit.cli.claude_hook import _advise
 from crapkit.cli.reports import _function_commits
-from crapkit.cli.scoring import _gate_candidates
+from crapkit.cli.scoring import _changed_since_head, _gate_candidates
 from crapkit.config import load_config_text
 from crapkit.hook import gate_staged
 from crapkit.score import ScoredRow
@@ -92,7 +92,9 @@ def test_rescore_gate_judges_an_edit_below_a_lone_cr(tmp_path):
     (repo / "m.py").write_bytes(EDITED)
     rows = [row("first( a )", 3, 6), row("target( b , c = 0 )", 9, 12)]
 
-    assert [r.long_name for r in _gate_candidates(repo, rows)] == ["target( b , c = 0 )"]
+    candidates = _gate_candidates(rows, _changed_since_head(repo), set())
+
+    assert [r.long_name for r in candidates] == ["target( b , c = 0 )"]
 
 
 def test_verify_gates_an_edit_below_a_lone_cr(tmp_path, capsys):

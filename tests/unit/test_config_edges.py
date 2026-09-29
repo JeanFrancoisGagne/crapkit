@@ -9,8 +9,10 @@ Command Language 2.3, rule 10).
 """
 import pytest
 
-from crapkit import config
+from crapkit import config, repopath
 from crapkit.config import ConfigError, load_config_text, shell_segments, shell_words
+
+INPUT = "lane 'py': inputs entry "
 
 SCOPE = '[[scope]]\nname = "s"\npaths = ["src"]\nlanguages = ["python", "typescript"]\n'
 
@@ -86,7 +88,7 @@ def test_every_shape_a_pytest_positional_takes_is_a_path():
 def test_the_single_quote_hint_is_for_cmd_exe_only(monkeypatch, shell_is_cmd, command, hint):
     monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
 
-    assert config._quote_hint(command) == hint
+    assert config._quote_hint(config.command_steps(command).steps[0]) == hint
 
 
 def test_a_narrowing_refusal_under_cmd_exe_carries_the_single_quote_hint(monkeypatch):
@@ -103,26 +105,29 @@ def test_a_testpath_is_spelled_with_slashes_and_no_trailing_one():
 
 
 def test_a_backslashed_climb_is_outside_the_root():
-    assert config._outside_root("..\\shared") is True
+    with pytest.raises(ConfigError) as outside:
+        config._path("lane.inputs", "..\\shared", None, INPUT)
+
+    assert "is not a path inside the root" in str(outside.value)
 
 
 def test_a_scope_path_keeps_every_character_but_its_separators():
-    assert [config._unrooted(raw) for raw in ["srcX/", "/Xa"]] == ["srcX", "Xa"]
+    assert [repopath._unrooted(raw) for raw in ["srcX/", "/Xa"]] == ["srcX", "Xa"]
 
 
 def test_an_input_that_names_the_root_is_the_root():
-    assert config._lane_input("py", "./") == "."
+    assert config._path("lane.inputs", "./", None, INPUT) == "."
 
 
 def test_an_input_outside_the_root_and_a_scope_path_that_climbs_are_refused_in_words():
     with pytest.raises(ConfigError) as outside:
-        config._lane_input("py", "../x")
+        config._path("lane.inputs", "../x", None, INPUT)
     with pytest.raises(ConfigError) as climbing:
-        config._scope_path("s", "../x")
+        config._path("scope.paths", "../x", None, "scope 's': path ")
 
     assert str(outside.value) == ("lane 'py': inputs entry '../x' is not a path inside the root; "
                                   "list paths relative to crapkit.toml, without '..'")
-    assert str(climbing.value) == ("scope 's': path '../x' can never match a tracked file — "
+    assert str(climbing.value) == ("scope 's': path '../x' can never match a tracked file - "
                                    "scope paths are repo-relative, with no drive and no `..` "
                                    "(docs/configuration.md)")
 

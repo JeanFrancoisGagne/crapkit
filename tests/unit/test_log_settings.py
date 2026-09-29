@@ -24,7 +24,7 @@ import pytest
 
 from crapkit import churn_cache
 from crapkit.cli.reports import _function_commits
-from crapkit.gitio import file_log_patches
+from crapkit.marks_history import marks_history
 from crapkit.ratchet_report import mark_events, report_from_events
 
 DAY = 86400
@@ -103,7 +103,7 @@ def cold_churn(repo: Path) -> dict:
 
 
 def ratchet_report(repo: Path) -> dict:
-    return report_from_events(mark_events(file_log_patches(repo, RATCHET)))
+    return report_from_events(mark_events(marks_history(repo, RATCHET)))
 
 
 @pytest.fixture(params=[True, False], ids=["verifiable", "unverifiable"])
@@ -135,9 +135,9 @@ def test_churn_counts_the_paths_a_signed_commit_changed_and_nothing_else(signed)
 
 
 def test_a_signed_commit_s_ratchet_patch_holds_its_patch_alone(signed):
-    seen = under(signed, "log.showSignature", "true", lambda repo: file_log_patches(repo, RATCHET))
+    seen = under(signed, "log.showSignature", "true", lambda repo: marks_history(repo, RATCHET))
 
-    assert seen == file_log_patches(signed, RATCHET)
+    assert seen == marks_history(signed, RATCHET)
     assert [patch.splitlines()[-1] for _, patch in seen] == ["+src/e.py\tf( )\t31.0000",
                                                             "+src/e.py\tg( )\t31.0000"]
 

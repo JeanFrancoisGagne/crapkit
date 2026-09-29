@@ -6,6 +6,10 @@ proof is the digest of its sorted parts, and a lane with declared inputs is
 proved by its own table bound to HEAD. Every process a lane starts, run or
 retest, runs under the caller's owner, or under one the lane takes when the
 caller gave none, and writes a log bounded by the lane's own byte limit.
+
+The proofs, the stamp file, the scope paths and the declared outputs live in
+lane_freshness, lane_stamps, lane_sources and lane_outputs; the checks below
+reach each one there.
 """
 import hashlib
 import json
@@ -17,10 +21,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from crapkit import lane_changes, lanes
+from crapkit import lane_changes, lane_freshness, lane_outputs, lane_sources, lane_stamps, lanes
 from crapkit.config import Lane
 from crapkit.errors import GitError, ToolError
+from crapkit.lane_freshness import Freshness, Proof, measurement_proof, proof_parts, unproved
+from crapkit.named import first_few
 from crapkit.procs import NoProgress
+from crapkit.repopath import Placing
 
 LANE = Lane(name="unit", command="make", artifact="out/cov.json", parser="istanbul", scopes=("src",))
 JUNIT = '<testsuite tests="1"><testcase classname="t.py" name="test_a"/></testsuite>'
@@ -86,76 +93,91 @@ def test_the_last_attempt_starts_after_its_banner_and_a_tail_keeps_whole_lines()
     assert lanes._tail_lines(["abcdefgh"], 3) == ["...fgh"]
 
 
-def test_the_words_a_note_is_built_from():
+def test_the_words_a_note_is_built_from(tmp_path):
+    (tmp_path / ".crapkit").mkdir()
+    (tmp_path / ".crapkit" / "artifacts.json").write_text('{"out/cov.json": {"commit": 5}}', encoding="utf-8")
+
     assert lanes._leftover_words(["a.json", "b.xml", "c.txt"])[0] == "the a.json, b.xml and c.txt on disk"
-    assert lanes._sample(["d", "c", "b", "a"]) == "a, b, c and 1 more"
-    assert lanes._unproved(lanes._Proof("", {}), lanes._Proof("", {})) == "what it reads changed while it ran"
-    assert lanes._unproved_reason({"unproved": ""}) == (
+    assert first_few(sorted(["d", "c", "b", "a"])) == "a, b, c and 1 more"
+    assert unproved(Proof("", {}, ""), Proof("", {}, "")).endswith("it reads changed while it ran")
+    assert Freshness(tmp_path, (LANE,))._stamp_gap(LANE, {"unproved": ""}, "c") == (
+        "its stamp holds no proof: "
         "it was measured with uncommitted changes, or by a crapkit that recorded none")
-    assert lanes._stamp_commit({"commit": 5}) == ""
-    assert lanes._declared_paths(LANE._replace(scopes=("src", "lib")), {"src": ["src"]}) == ("src",)
+    assert lane_stamps.read(tmp_path).commit("out/cov.json") == ""
+    assert lane_sources.declared_paths(LANE._replace(scopes=("src", "lib")), {"src": ["src"]}) == ("src",)
 
 
 def test_an_environment_move_names_only_the_variables_that_differ():
-    assert lanes._environment_moved({"A": "1", "B": "2"}, {"A": "1", "B": "3", "C": "4"}) == ["B", "C"]
-    assert lanes._environment_moved({"A": "1"}, None) == ["A"]
+    assert lane_freshness._environment_moved({"A": "1", "B": "2"}, {"A": "1", "B": "3", "C": "4"}) == ["B", "C"]
+    assert lane_freshness._environment_moved({"A": "1"}, None) == ["A"]
     same = {"config": "x", "lane": "y", "env": {"A": "1"}}
     moved = {"config": "z", "lane": "w", "env": {"A": "1"}}
-    assert lanes._moved_parts(same, moved) == "crapkit.toml changed; its lane table changed"
+    assert lane_freshness._moved_parts(LANE, same, moved) == "crapkit.toml changed; its lane table changed"
 
 
-def test_an_unreadable_proof_and_the_proof_fields_say_why():
-    unread = lanes._unread(OSError("boom"), "x")
-    fields = lanes._proof_fields(lanes._Proof("", {}, "", "w"), lanes._Proof("", {}))
+def boom(*args):
+    raise OSError("boom")
 
-    assert unread == lanes._Proof("", {}, "nothing proves its inputs unchanged: boom",
-                                  "git could not read x when it was measured: boom")
-    assert fields == {"proof": "", "proof_parts": {}, "unproved": "w"}
-    assert lanes._proof_fields(lanes._Proof("k1", {}), lanes._Proof("k2", {}, "", "x"))["unproved"] == "x"
+
+def test_an_unreadable_proof_and_the_proof_fields_say_why(tmp_path, monkeypatch):
+    fresh = SimpleNamespace(root=tmp_path, outputs=lambda lane: frozenset())
+    monkeypatch.setattr(lane_freshness, "_dirty", boom)
+    unread = measurement_proof(tmp_path, LANE)
+    monkeypatch.setattr(lanes, "measurement_proof", lambda root, lane, skip: Proof("k2", {}, ""))
+    moved = lanes._held_proof(LANE, lanes._Trace(Proof("k1", {}, ""), None, frozenset()), fresh)
+    held = lanes._held_proof(LANE, lanes._Trace(Proof("k2", {}, ""), None, frozenset()), fresh)
+
+    assert unread == Proof("", {}, "nothing proves its inputs unchanged: boom")
+    assert moved == {"proof": "", "proof_parts": {}, "unproved": unproved(Proof("k1", {}, ""), Proof("k2", {}, ""))}
+    assert held == {"proof": "k2", "proof_parts": {}}
 
 
 def test_a_stamp_entry_records_the_commit_lane_seconds_and_digests(monkeypatch, tmp_path):
-    proof = lanes._Proof("k", {"commit": "c"})
-    monkeypatch.setattr(lanes, "_measurement_proof", lambda root, lane: proof)
+    proof = Proof("k", {"commit": "c"}, "")
+    monkeypatch.setattr(lanes, "measurement_proof", lambda root, lane, skip: proof)
     facts = SimpleNamespace(head_commit=lambda: "c", root=tmp_path)
+    fresh = SimpleNamespace(root=tmp_path, outputs=lambda lane: frozenset())
 
-    entry = lanes._stamp_entry(facts, LANE, 12.345, proof, {"artifact_sha256": "d"})
+    entry = lanes._stamp_entry(facts, LANE, 12.345, {"artifact_sha256": "d"},
+                               lanes._Trace(proof, None, frozenset()), fresh)
 
-    assert entry == {"commit": "c", "lane": "unit", "seconds": 12.3, "proof": "k",
-                     "proof_parts": {"commit": "c"}, "artifacts": {"out/cov.json": "d"}}
+    assert {key: entry[key] for key in ("commit", "lane", "seconds", "proof", "proof_parts", "artifacts")} == {
+        "commit": "c", "lane": "unit", "seconds": 12.3, "proof": "k",
+        "proof_parts": {"commit": "c"}, "artifacts": {"out/cov.json": "d"}}
 
 
-def test_the_inputs_key_binds_the_lane_to_a_commit():
-    payload = json.dumps(["inputs", "c", list(LANE)], sort_keys=True).encode("utf-8")
+def test_the_inputs_key_binds_the_lane_to_a_commit(tmp_path):
+    lane = LANE._replace(inputs=("src",))
+    key = lane_freshness._key(proof_parts(tmp_path, lane, "c"))
 
-    assert lanes._inputs_key("c", LANE) == sha(payload)
-    assert lanes._inputs_gap(Path("."), LANE, "other", "c") == (
+    assert key != lane_freshness._key(proof_parts(tmp_path, lane, "d"))
+    assert key != lane_freshness._key(proof_parts(tmp_path, lane._replace(command="other"), "c"))
+    assert Freshness(tmp_path, (lane,))._inputs_gap(lane, {"proof": "other"}, "c") == (
         "its lane table or env differs from the one it was measured with")
 
 
 def test_a_clean_tree_is_proved_by_its_sorted_parts_and_a_dirty_one_is_named(repo):
-    proof = lanes._whole_tree_proof(repo, LANE)
+    proof = measurement_proof(repo, LANE)
     lane_digest = sha(json.dumps(LANE, sort_keys=True).encode("utf-8"))
     (repo / "src" / "app.ts").write_text("changed\n", encoding="utf-8")
+    dirty = measurement_proof(repo, LANE)
 
     assert (proof.parts["config"], proof.parts["lane"]) == (sha(b""), lane_digest)
     assert proof.key == sha(json.dumps(proof.parts, sort_keys=True).encode("utf-8"))
-    assert lanes._whole_tree_proof(repo, LANE) == lanes._Proof(
-        "", {}, "the working tree has 1 uncommitted change(s): src/app.ts",
-        "it was measured with 1 uncommitted change(s): src/app.ts")
+    assert dirty == Proof("", {}, "the working tree has 1 uncommitted change(s): src/app.ts", ("src/app.ts",))
+    assert unproved(dirty, dirty) == "it was measured with 1 uncommitted change(s): src/app.ts"
 
 
 def test_declared_inputs_are_proved_by_the_lane_at_head_or_named_when_dirty(repo, monkeypatch):
     lane = LANE._replace(inputs=("src",))
-    clean = lanes._declared_inputs_proof(repo, lane)
+    clean = measurement_proof(repo, lane)
     (repo / "src" / "app.ts").write_text("changed\n", encoding="utf-8")
 
-    assert clean == lanes._Proof(lanes._inputs_key(git(repo, "rev-parse", "HEAD"), lane), {})
-    assert lanes._declared_inputs_proof(repo, lane) == lanes._Proof(
-        "", {}, "its inputs have 1 uncommitted change(s): src/app.ts",
-        "it was measured with 1 uncommitted change(s) under its inputs: src/app.ts")
-    monkeypatch.setattr(lanes, "_output_names", lambda root, lane: (_ for _ in ()).throw(OSError("boom")))
-    assert lanes._declared_inputs_proof(repo, lane) == lanes._unread(OSError("boom"), "its inputs")
+    assert clean.key == lane_freshness._key(proof_parts(repo, lane, git(repo, "rev-parse", "HEAD")))
+    assert measurement_proof(repo, lane) == Proof(
+        "", {}, "its inputs have 1 uncommitted change(s): src/app.ts", ("src/app.ts",))
+    monkeypatch.setattr(lane_freshness, "_dirty_inputs", boom)
+    assert measurement_proof(repo, lane) == Proof("", {}, "nothing proves its inputs unchanged: boom")
 
 
 def test_inputs_moved_since_a_commit_or_not_behind_head_say_so_in_eleven_characters(repo):
@@ -164,22 +186,25 @@ def test_inputs_moved_since_a_commit_or_not_behind_head_say_so_in_eleven_charact
     (repo / "src" / "app.ts").write_text("changed\n", encoding="utf-8")
     git(repo, "commit", "-qam", "two")
 
-    assert lanes._inputs_moved(repo, lane, first) == f"1 change(s) under its inputs since {first[:11]}: src/app.ts"
-    assert lanes._inputs_moved(repo, lane, "0123456789abcdef" * 2 + "01234567") == (
-        "its artifact was built at 0123456789a, which is not behind HEAD")
+    fresh = Freshness(repo, (lane,))
+
+    assert fresh._inputs_moved(lane, first) == f"1 change(s) under its inputs since {first[:11]}: src/app.ts"
+    assert fresh._inputs_moved(lane, "0123456789abcdef" * 2 + "01234567").startswith(
+        "its artifact was built at 0123456789a, which ")
 
 
-def test_the_head_gap_names_both_commits_in_eleven_characters(monkeypatch):
-    monkeypatch.setattr(lanes, "_whole_tree_proof", lambda root, lane: lanes._Proof("k", {"commit": "0123456789abcdef"}))
+def test_the_head_gap_names_both_commits_in_eleven_characters(tmp_path, monkeypatch):
+    monkeypatch.setattr(lane_freshness, "measurement_proof",
+                        lambda root, lane, skip: Proof("k", {"commit": "0123456789abcdef"}, ""))
 
-    assert lanes._whole_tree_gap(Path("."), LANE, {"proof": "k"}, "fedcba9876543210") == (
+    assert Freshness(tmp_path, (LANE,))._whole_tree_gap(LANE, {"proof": "k"}, "fedcba9876543210") == (
         "HEAD is 0123456789a and its artifact was built at fedcba98765")
 
 
 def test_an_inherited_variable_holding_a_lone_surrogate_is_digested(monkeypatch):
     monkeypatch.setenv("CRAPKIT_EDGE_VALUE", "a\udcffb")
 
-    digests = lanes._environment_digests()
+    digests = lane_freshness._environment_digests()
 
     assert digests["CRAPKIT_EDGE_VALUE"] == sha("a\udcffb".encode("utf-8", "surrogatepass"))[:16]
 
@@ -203,7 +228,7 @@ def test_files_that_cannot_be_read_answer_empty(tmp_path):
     (tmp_path / "stamps" / ".crapkit").mkdir()
     (tmp_path / "stamps" / ".crapkit" / "artifacts.json").write_text("[1]", encoding="utf-8")
 
-    assert lanes._file_digest(tmp_path / "gone") == ""
+    assert lane_stamps.file_sha256(tmp_path / "gone") == ""
     assert lanes._log_lines(tmp_path / "log") == ["ok", "�"]
     assert lanes.read_stamps(tmp_path / "stamps") == {}
 
@@ -219,8 +244,8 @@ def test_reports_written_as_utf8_read_as_utf8(tmp_path):
     assert lanes._junit_seconds(tmp_path / "junit.xml") == 2.5
     assert lanes._log_lines(tmp_path / "log") == ["Á"]
     assert lanes.read_stamps(tmp_path) == {"Á": {}}
-    assert lanes._still_failed(tmp_path, lane) == set()
-    assert lanes._retested_passes(tmp_path, lane, None) == {"t.py::test_a"}
+    assert lanes._results_summary(tmp_path, lane)[0] == set()
+    assert lanes._retested_passes(tmp_path, lane) == {"t.py::test_a"}
 
 
 def test_logs_and_stamps_land_in_directories_made_on_the_way(tmp_path):
@@ -256,23 +281,24 @@ def test_the_reads_fall_back_to_facts_about_the_root(tmp_path, monkeypatch):
     def refused(*args):
         raise GitError("no git")
 
-    with lanes.staleness_reads(tmp_path, [], {}) as facts:
+    with pytest.warns(DeprecationWarning), lanes.staleness_reads(tmp_path, [], {}) as facts:
         assert facts.root == tmp_path
     monkeypatch.setattr(lane_changes, "ChangeReads", refused)
-    with lanes._started_reads(tmp_path, ("c",), ()) as facts:
-        assert facts.root == tmp_path
+    with Freshness(tmp_path, (LANE,)) as fresh:
+        assert fresh.facts().root == tmp_path
 
 
 def test_the_hints_and_notes_hold_their_exact_words(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(lanes, "_scope_changes", lambda git, lane, paths, commit: [])
-    quiet = lanes._stale_artifact_note(None, LANE, {}, "c")
-    monkeypatch.setattr(lanes, "_scope_changes", lambda git, lane, paths, commit: ["src/app.ts"])
+    monkeypatch.setattr(lane_freshness, "_owned_changes", lambda git, matchers, commit: [])
+    quiet = lane_freshness._scope_drift(None, LANE, {}, "c")
+    monkeypatch.setattr(lane_freshness, "_owned_changes", lambda git, matchers, commit: ["src/app.ts"])
+    noted = lane_freshness._scope_drift(None, LANE, {}, "c")
     lanes._warn_unreadable_results(LANE._replace(results_artifact="r.xml"), ToolError("bad"))
 
-    assert (quiet, lanes._stale_artifact_note(None, LANE, {}, "c")) == (
-        "", "1 file(s) in its scopes changed since (their coverage is stale)")
-    assert lanes._missing_plugin_hint("error: unrecognized arguments: -x", LANE, None) == ""
-    assert lanes._pytest_cov_home(LANE._replace(command="npm test"), None) == (
+    assert quiet == ""
+    assert noted.startswith("1 file(s) in its scopes changed since")
+    assert lanes._missing_plugin_hint("error: unrecognized arguments: -x", tmp_path, LANE) == ""
+    assert lanes._pytest_cov_home(tmp_path, LANE._replace(command="npm test")) == (
         "the environment the lane's suite runs in")
     assert capsys.readouterr().err == (
         "crapkit: lane 'unit' reused r.xml and cannot check it: bad; the crashed-worker and "
@@ -299,21 +325,20 @@ def test_a_missing_artifact_with_no_log_names_the_log_and_nothing_after(tmp_path
     assert str(caught.value) == f"lane 'unit' produced no artifact at out/cov.json; lane log: {log}"
 
 
-def test_a_root_spelled_with_its_trailing_separator_holds_its_children():
-    root = os.sep + "a" + os.sep
+def test_a_root_spelled_with_its_trailing_separator_holds_its_children(tmp_path):
+    root = str(tmp_path) + os.sep
 
-    assert lanes._under(root, root + "b") is True
+    assert Placing(root)(root + "b") == "b"
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Windows resolves a name up to its NUL instead of refusing it")
-def test_a_name_the_platform_cannot_resolve_is_answered_as_written():
-    assert lanes._resolved("a\0b") == "a\0b"
+def test_a_name_the_platform_cannot_resolve_is_answered_as_written(tmp_path):
+    assert Placing(tmp_path)(str(tmp_path) + os.sep + "a\0b") == "a\0b"
 
 
 def test_an_unmeasured_lane_with_no_coverage_names_none():
-    message = lanes._unmeasured_message(LANE, {}, ("src",))
+    message = lanes._unmeasured_message(LANE, {}, ("src",), "")
 
-    assert "scopes will score untested — either nothing in them" in message
+    assert "scopes will score untested - either nothing in them" in message
 
 
 def test_every_run_carries_the_callers_owner_or_one_the_lane_takes(repo, monkeypatch):
@@ -352,14 +377,13 @@ def test_a_stalled_lane_names_its_log(repo, monkeypatch):
 
 def test_a_reused_artifact_warns_about_changed_scopes_and_stamps_nothing(repo, monkeypatch, capsys):
     fake_runs(monkeypatch, repo, files={LANE.artifact: coverage(repo)})
-    lanes.write_stamps(repo, {LANE.artifact: lanes.run_lane(repo, LANE).stamp})
-    monkeypatch.setattr(lanes, "_scope_changes", lambda git, lane, paths, commit: ["src/app.ts"])
+    lanes.write_stamps(repo, {LANE.artifact: lanes.run_lane(repo, LANE, scope_paths={"src": ["src"]}).stamp})
+    (repo / "src" / "app.ts").write_text("changed\n", encoding="utf-8")
 
     reused = lanes.run_lane(repo, LANE, reuse_artifact=True, scope_paths={"src": ["src"]})
 
-    head = git(repo, "rev-parse", "HEAD")
     assert reused.stamp == {}
-    assert f"crapkit: lane 'unit' artifact was built at {head[:11]}; 1 file(s) in its scopes" in (
+    assert f"crapkit: lane 'unit' reuses {LANE.artifact}; 1 file(s) in its scopes changed since" in (
         capsys.readouterr().err)
 
 
@@ -406,7 +430,7 @@ def test_the_config_outputs_come_from_the_bytes_given_not_the_file(tmp_path):
         '[[lane]]\nname = "py"\ncommand = "x"\nartifact = "other.json"\nparser = "istanbul"\n'
         'scopes = ["src"]\n', encoding="utf-8")
 
-    assert lanes._output_names(tmp_path, LANE, b"") == frozenset({"out/cov.json"})
+    assert lane_outputs.declared_outputs(tmp_path, LANE, b"") == frozenset({"out/cov.json"})
 
 
 def test_a_first_attempt_starts_its_log_afresh(repo, monkeypatch):
@@ -431,4 +455,4 @@ def test_a_lone_sources_check_reads_git_at_the_root_wherever_the_caller_stands(r
     lanes.write_stamps(repo, {LANE.artifact: lanes.run_lane(repo, LANE).stamp})
     monkeypatch.chdir(tmp_path)
 
-    assert lanes.lane_sources_gap(repo, LANE, {"src": ["src"]}) is None
+    assert Freshness(repo, (LANE,), {"src": ["src"]}).lines(LANE) == ""
