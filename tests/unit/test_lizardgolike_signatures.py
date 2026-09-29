@@ -59,6 +59,18 @@ CASES = {
     "union.zig": ("fn f(x: u8) union(enum) { a: u8, b: void } {\n    if (x > 0) {\n"
                   "        return .{ .a = x };\n    }\n    return .{ .b = {} };\n}\n",
                   [("f x : u8", 1, 6, 2, 1)]),
+    # Go inserts no semicolon after `*` or `chan`, so the result type goes on to the next line
+    "pointer.go": ("package p\n\nfunc f(a int) *\n\tint {\n\tif a > 0 {\n\t\treturn nil\n\t}\n"
+                   "\treturn nil\n}\n", [("f a int", 3, 9, 2, 1)]),
+    "chan.go": ("package p\n\nfunc f(a int) chan\n\tint {\n\tif a > 0 {\n\t\treturn nil\n\t}\n"
+                "\treturn nil\n}\n", [("f a int", 3, 9, 2, 1)]),
+    # a struct result over lines: its line breaks sit inside its braces, where none ends anything
+    "structlines.go": ("package p\n\nfunc f(a int) struct {\n\tb int\n} {\n\tif a > 0 {\n"
+                       "\t\treturn struct{ b int }{1}\n\t}\n\treturn struct{ b int }{0}\n}\n",
+                       [("f a int", 3, 10, 2, 1)]),
+    # a literal's two parameters, the first an interface type with a method in its braces
+    "iface.go": ("package p\n\nvar f = func(v interface{ M() }, n int) {\n\tif n > 0 {\n"
+                 "\t\treturn\n\t}\n}\n", [("(v interface{M()},n int)", 3, 7, 2, 2)]),
 }
 
 
