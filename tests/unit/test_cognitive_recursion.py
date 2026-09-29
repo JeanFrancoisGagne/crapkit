@@ -168,3 +168,127 @@ def test_a_go_method_calls_itself_through_its_receiver():
               "func (c *Command) Name() string {\n\treturn c.parent.Name()\n}\n")
     rows = [r.cognitive for r in analyze_source("a.go", source, note=False)]
     assert rows == [2, 0]
+
+
+# A method is reached through its object or its class. In Python, JavaScript and
+# TypeScript a bare name in a method's body is looked up outside the class, and in
+# Go outside the receiver's methods, so a bare call there reaches another
+# function: the builtin, the module function or the imported helper the method
+# wraps. The class's own name reaches it, as `self`, `this` and `cls` do.
+METHODS = [  # (label, path, source, name, Sonar value)
+    ("Python method calls the builtin it shadows", "a.py",
+     "class A:\n    def open(self):\n        return open(self.path)\n", "open", 0),
+    ("Python method calls the module function it wraps", "a.py",
+     "class Repo:\n    def staged_diff(self):\n        return staged_diff(self.root)\n", "staged_diff", 0),
+    ("Python method under a decorator", "a.py",
+     "class A:\n    @property\n    def size(self):\n        return size(self.items)\n", "size", 0),
+    ("Python static method through its class", "a.py",
+     "class T:\n    @staticmethod\n    def walk(n):\n        if n:\n            T.walk(n - 1)\n", "walk", 2),
+    ("Python class method through cls", "a.py",
+     "class T:\n    @classmethod\n    def walk(cls, n):\n        return cls.walk(n - 1)\n", "walk", 1),
+    ("Python async method", "a.py",
+     "class A:\n    async def fetch(self, url):\n        return await fetch(url)\n", "fetch", 0),
+    ("Python function after a class", "a.py",
+     "class A:\n    def m(self):\n        return 1\n\n\ndef walk(n):\n    return walk(n - 1)\n", "walk", 1),
+    ("Python function nested in a method", "a.py",
+     "class A:\n    def m(self):\n        def helper(k):\n            return helper(k - 1)\n"
+     "        return helper(3)\n", "m.helper", 1),
+    ("JavaScript method calls the function it wraps", "a.js",
+     "class A {\n  map(f) {\n    return map(this.xs, f);\n  }\n}\n", "map", 0),
+    ("TypeScript method calls the function it wraps", "a.ts",
+     "class A {\n  map(f: F): X[] {\n    return map(this.xs, f);\n  }\n}\n", "map", 0),
+    ("JavaScript static method through its class", "a.js",
+     "class A {\n  static walk(n) {\n    return n ? A.walk(n - 1) : 0;\n  }\n}\n", "walk", 2),
+    ("JavaScript field holding an arrow", "a.js",
+     "class A {\n  walk = (n) => {\n    return walk(n - 1);\n  };\n}\n", "walk", 0),
+    ("JavaScript object method", "a.js",
+     "const helpers = {\n  format(d) {\n    return format(d);\n  },\n};\n", "format", 0),
+    ("JavaScript named function expression in an object", "a.js",
+     "const o = {\n  walk: function walk(n) {\n    return walk(n - 1);\n  },\n};\n", "walk", 1),
+    ("JavaScript property assigned a function", "a.js",
+     "res.vary = function(field) {\n  vary(this, field);\n};\n", "res.vary", 0),
+    ("JavaScript generator declaration", "a.js",
+     "function* walk(node) {\n  yield node;\n  for (const c of node.kids) yield* walk(c);\n}\n", "walk", 2),
+    ("TypeScript arrow after JSX whose braces lizard swallows", "a.tsx",
+     "const Item = ({ value, ...props }) => {\n  return (\n    <Ctx.Provider value={{ value }}>\n"
+     "      <Row onClick={() => pick(value)} {...props} />\n    </Ctx.Provider>\n  )\n}\n\n"
+     "const walk = (node) => {\n  return node ? walk(node.next) : 0\n}\n", "walk", 2),
+    ("JavaScript function declared in a method", "a.js",
+     "class A {\n  m() {\n    function walk(n) {\n      return walk(n - 1);\n    }\n    return walk;\n  }\n}\n",
+     "walk", 1),
+    ("Go method calls the package function", "a.go",
+     "package p\n\nfunc (c *C) Walk(n int) int {\n\treturn Walk(n)\n}\n", "(c*C)Walk", 0),
+]
+
+
+@pytest.mark.parametrize("label,path,source,name,want", METHODS, ids=[c[0] for c in METHODS])
+def test_a_method_calls_itself_only_through_its_object_or_its_class(label, path, source, name, want):
+    assert _cognitive(path, source, name) == want
+
+
+# A parameter, an import or an assignment spelled like the function binds the
+# name in its body, where Python and JavaScript look it up first, so a call to it
+# reaches that value. Python makes the name local to the whole body wherever the
+# binding stands; a JavaScript `const` or `let` shadows from the start of its
+# block. A keyword argument or an attribute spelled the same way binds nothing.
+BINDINGS = [  # (label, path, source, name, Sonar value)
+    ("Python parameter", "a.py", "def apply(x, apply):\n    return apply(x)\n", "apply", 0),
+    ("Python import", "a.py",
+     "def dumps(obj):\n    from json import dumps\n    return dumps(obj)\n", "dumps", 0),
+    ("Python import list", "a.py",
+     "def dumps(obj):\n    from json import loads, dumps\n    return dumps(obj)\n", "dumps", 0),
+    ("Python import alias", "a.py",
+     "def fetch(url):\n    from requests import get as fetch\n    return fetch(url)\n", "fetch", 0),
+    ("Python assignment after the call", "a.py",
+     "def run(cmd):\n    out = run(cmd)\n    run = None\n    return out\n", "run", 0),
+    ("Python walrus", "a.py",
+     "def fetch(url):\n    if (fetch := cache.get(url)):\n        return fetch(url)\n", "fetch", 1),
+    ("Python keyword argument", "a.py",
+     "def dumps(obj):\n    return dumps(obj, dumps=1)\n", "dumps", 1),
+    ("Python attribute", "a.py",
+     "def walk(node):\n    node.walk = None\n    return walk(node.next)\n", "walk", 1),
+    ("JavaScript const", "a.js",
+     "function route(app) {\n  const route = app.route;\n  return route('/x');\n}\n", "route", 0),
+    ("JavaScript parameter", "a.js", "function apply(x, apply) {\n  return apply(x);\n}\n", "apply", 0),
+    ("Go short declaration", "a.go",
+     "package p\n\nfunc walk(n int) int {\n\twalk := next\n\treturn walk(n)\n}\n", "walk", 0),
+    ("Go parameter", "a.go",
+     "package p\n\nfunc apply(x int, apply func(int) int) int {\n\treturn apply(x)\n}\n", "apply", 0),
+    ("Rust let", "a.rs",
+     "fn walk(n: u32) -> u32 {\n    let walk = |k: u32| k + 1;\n    walk(n)\n}\n", "walk", 0),
+    ("Rust let mut", "a.rs",
+     "fn walk(n: u32) -> u32 {\n    let mut walk = step;\n    walk(n)\n}\n", "walk", 0),
+    ("Rust use", "a.rs",
+     "fn symlink(src: &Path, dst: &Path) {\n    use std::os::unix::fs::symlink;\n"
+     "    symlink(src, dst).unwrap();\n}\n", "symlink", 0),
+    ("Rust use list", "a.rs",
+     "fn escape() {\n    use super::{escape, glob};\n    assert_eq!(\"a\", escape(\"a\"));\n}\n", "escape", 0),
+    ("Rust use ends at its semicolon", "a.rs",
+     "fn walk(n: u32) -> u32 {\n    use std::fs;\n    if n == 0 {\n        return 0;\n    }\n"
+     "    walk(n - 1)\n}\n", "walk", 2),
+    ("Swift parameter", "a.swift",
+     "func apply(_ x: Int, apply: (Int) -> Int) -> Int {\n    return apply(x)\n}\n", "apply", 0),
+    ("Swift let", "a.swift",
+     "func sort(_ xs: [Int]) -> [Int] {\n    let sort = Sorter()\n    return sort(xs)\n}\n", "sort", 0),
+    ("JavaScript use is a name", "a.js",
+     "function use(p) {\n  return p ? use(p.next) : 0;\n}\n", "use", 2),
+    ("Java parameter is looked up apart", "K.java",
+     "class K {\n    static int walk(Walker walk, int n) {\n        return walk(walk, n - 1);\n    }\n}\n",
+     "K::walk", 1),
+]
+
+
+@pytest.mark.parametrize("label,path,source,name,want", BINDINGS, ids=[c[0] for c in BINDINGS])
+def test_a_name_bound_in_the_body_hides_the_function(label, path, source, name, want):
+    assert _cognitive(path, source, name) == want
+
+
+ARROWS = [  # an arrow's body can be an expression, which starts after its `=>`
+    ("a.ts", "const fact = (n: number): number => n ? n * fact(n - 1) : 1;\n", "fact", 2),
+    ("a.js", "function outer() {\n  const go = (n) => go(n - 1);\n  return go;\n}\n", "go", 1),
+]
+
+
+@pytest.mark.parametrize("path,source,name,want", ARROWS)
+def test_an_arrow_with_an_expression_body_calls_itself(path, source, name, want):
+    assert _cognitive(path, source, name) == want

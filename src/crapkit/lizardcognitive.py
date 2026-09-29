@@ -84,6 +84,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections import deque
 from typing import NamedTuple
 
 from .lizardrust import implements_for
@@ -245,6 +246,15 @@ class _Dialect(NamedTuple):
     go without braces (C, C++, Objective-C, Java, JavaScript, TypeScript, Zig).
     `line_statements`: a line break can end a statement that has no `;`
     (JavaScript, TypeScript).
+    `imports`: the words that start an import statement, whose list binds
+    names (Python's `import`, Rust's `use`).
+    `classes`: the words that open a class body in braces, whose methods the
+    token stream has to name, because lizard does not (JavaScript,
+    TypeScript). `self_only`: a method is reached only through its object or
+    its class, and a bare name in its body is looked up outside the class
+    (Python, JavaScript, TypeScript, Go). `binders`: the words before a name
+    that bind it in the body, and `assigns`: the operators after one, so a
+    call to that name reaches the value bound (see _binds).
     """
 
     rust: bool = False
@@ -266,6 +276,11 @@ class _Dialect(NamedTuple):
     overloads: bool = False
     braceless: bool = False
     line_statements: bool = False
+    classes: frozenset = frozenset()
+    self_only: bool = False
+    binders: frozenset = frozenset()
+    assigns: frozenset = frozenset()
+    imports: frozenset = frozenset()
 
 
 # Keyed on the reader's exact class name, never on an issubclass test: JavaReader,
@@ -275,11 +290,16 @@ class _Dialect(NamedTuple):
 # for the same reason: the discriminator is the language. A reader absent from the
 # table reads under the defaults.
 _DEFAULT_DIALECT = _Dialect()
-_RUST = _Dialect(counting=_RUST_COUNTING, do_loops=frozenset(), goto=False, labels=_rust_label)
+_RUST = _Dialect(counting=_RUST_COUNTING, do_loops=frozenset(), goto=False, labels=_rust_label,
+                 binders=frozenset({"let", "mut", "as"}), imports=frozenset({"use"}))
 _PYTHON = _Dialect(counting=_PYTHON_COUNTING, do_loops=frozenset(), goto=False, word_ops=_AND_OR,
-                   openers=_PYTHON_OPENERS, closers=_PYTHON_CLOSERS)
+                   openers=_PYTHON_OPENERS, closers=_PYTHON_CLOSERS, self_only=True,
+                   binders=frozenset({"import", "as", "for"}), assigns=frozenset({"=", ":="}),
+                   imports=frozenset({"import"}))
 _JAVASCRIPT = _Dialect(counting=_C_FAMILY_COUNTING, goto=False, labels=_named_label,
-                       braceless=True, line_statements=True)
+                       braceless=True, line_statements=True, classes=frozenset({"class"}),
+                       self_only=True,
+                       binders=frozenset({"const", "let", "var", "function", "class"}))
 _DIALECTS = {
     "CLikeReader": _Dialect(counting=_C_FAMILY_COUNTING, declarator_and=True, word_ops=_AND_OR,
                             elvis=True, overloads=True, braceless=True),
@@ -291,9 +311,10 @@ _DIALECTS = {
     "TypeScriptReader": _JAVASCRIPT,
     "TSXReader": _JAVASCRIPT,
     "VueReader": _JAVASCRIPT,
-    "GoReader": _Dialect(counting=_GO_COUNTING, do_loops=frozenset(), labels=_named_label),
+    "GoReader": _Dialect(counting=_GO_COUNTING, do_loops=frozenset(), labels=_named_label,
+                         self_only=True, binders=frozenset({"var"}), assigns=frozenset({":="})),
     "SwiftReader": _Dialect(counting=_SWIFT_COUNTING, do_loops=frozenset({"repeat"}), goto=False,
-                            labels=_named_label, overloads=True),
+                            labels=_named_label, overloads=True, binders=frozenset({"let", "var"})),
     "RustReader": _RUST,
     "CorrectedRustReader": _RUST,
     "ShellReader": _Dialect(labels=_shell_label, shell_blocks=True, command_leads=_SHELL_LEADS),
@@ -314,9 +335,10 @@ _DIALECTS["ZigReader"] = _DIALECTS["ZigReader"]._replace(error_sets=True)
 _DIALECTS.update({f"Corrected{stock}": _DIALECTS.get(stock, _DEFAULT_DIALECT)
                   for stock in ("GoReader", "SwiftReader", "ZigReader")})
 
-# What a function calls itself through: nothing, one of these receivers, its
-# own qualifier (`Calc::fact`, `K.fact`) or, in Go, its receiver's name. A call
-# through any other receiver is another object's method with the same name.
+# What a function calls itself through: nothing (but see _Dialect.self_only),
+# one of these receivers, its own qualifier (`Calc::fact`, `K.fact`), its
+# class's name or, in Go, its receiver's name. A call through any other
+# receiver is another object's method with the same name.
 _SELF_RECEIVERS = frozenset({"self", "this", "Self", "cls"})
 _MEMBER_ACCESS = frozenset({".", "->", "::", "?."})
 
@@ -335,6 +357,71 @@ class _Own(NamedTuple):
     bare: str               # the name without its qualifier
     receivers: frozenset    # what a call to it can be made through
     arity: tuple            # the fewest and the most arguments a call passes
+    bare_calls: bool        # a call through no receiver reaches it; see _bare_calls
+
+
+# How a call to the function's own name reaches it: through no receiver, which
+# a name bound in the body can hide (see _cognitive), or through one of its own.
+_BARE, _THROUGH = "bare", "through"
+
+# A word as the pass reads a parameter: its name is the first word of `apply`,
+# `apply: Fn` or `apply=None`, or the last of `Fn apply`.
+_WORD = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+class _Scope(NamedTuple):
+    """A class body, a def or a brace open in the token stream (see _Scopes).
+    `indent` is a Python class's or def's; a brace has none. `kind` is
+    "class", "def" or "" (a JavaScript block or object literal)."""
+
+    indent: object
+    kind: str
+    name: str = ""
+
+
+_BLOCK = _Scope(None, "")
+
+
+class _Around(NamedTuple):
+    """The stream where lizard starts a JavaScript function: the tokens before
+    it, padded with two Nones in front and one behind, the brace open around
+    it and the innermost class open. See _js_member."""
+
+    recent: tuple
+    top: object
+    cls: str
+
+
+# The Python words that open a scope a def can be defined in.
+_PYTHON_SCOPES = frozenset({"class", "def"})
+
+# A JavaScript name after one of these is the function's own binding.
+_JS_DECLARERS = frozenset({"function", "const", "let", "var"})
+
+# A JavaScript function's name followed by one of these is a method's: `walk(n)
+# {` and `walk<T>(n: T) {` in a class body or an object literal, `walk: (n) =>`
+# in an object literal or a class field with a type.
+_METHOD_AFTER = frozenset({"(", "<", ":"})
+
+
+class _Scopes:
+    """The classes and defs open in the token stream, one per analysis pass.
+
+    lizard names a Python or JavaScript method without its class (`open` for
+    `A.open`), and a function's own tokens start after its name, so neither
+    can tell a method from a function. The stream can: this reads what each
+    function lizard starts is defined in (see _home).
+    """
+
+    __slots__ = ("classes", "open", "naming", "pending", "home", "recent")
+
+    def __init__(self, classes: bool):
+        self.classes = classes  # the language has classes in braces; see _Dialect.classes
+        self.open = []          # a _Scope per open class or def (Python) or brace
+        self.naming = False     # Python: the next token names the scope just opened
+        self.pending = None     # JavaScript: a class awaiting its name or its `{`
+        self.home = None        # Python: the scope the last `def` stands in
+        self.recent = deque(maxlen=8)  # the stream's last tokens
 
 # Shell's block openers. `until` and `select` are here and not in `_COUNTING`
 # because no other language crapkit reads spells a loop that way; `case` is
@@ -373,12 +460,17 @@ class _FnState:
                  "prev", "prev2", "label_check", "dialect", "call_pending", "call",
                  "messages", "runs", "run_break", "word_op", "braces", "closed_do",
                  "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies",
-                 "ended", "brace_base")
+                 "ended", "brace_base", "scopes", "home", "bare_call", "shadowed", "importing")
 
-    def __init__(self, fn=None, dialect: _Dialect = _DEFAULT_DIALECT):
+    def __init__(self, fn=None, dialect: _Dialect = _DEFAULT_DIALECT, scopes: _Scopes | None = None):
         self.dialect = dialect
         self.fn = fn
+        self.scopes = scopes     # the stream's, shared by every state of the pass
+        self.home = _home(scopes) if scopes is not None else None  # what fn is defined in
         self.own = None          # see _own
+        self.bare_call = False   # the body calls its own name through no receiver
+        self.shadowed = False    # the body binds its own name; see _cognitive
+        self.importing = False   # Python: inside an import statement; see _binds
         self.total = 0
         self.stack = []          # (entry_brace_depth) or python header indents
         self.max_depth = 0       # the deepest the stack has been
@@ -429,20 +521,21 @@ class LizardExtension:
         is_python = reader_name.lower().startswith("python")
         dialect = _DIALECTS.get(reader_name, _DEFAULT_DIALECT)._replace(
             conditions=getattr(reader, "conditions", _QUESTION))
+        scopes = _Scopes(bool(dialect.classes))
         last = None
         for token in tokens:
             if is_python:
                 yield token  # the owner is read after lizard has; see _state_for
             fn = reader.context.current_function
-            state = last = _state_for(states, fn, last, dialect)
+            state = last = _state_for(states, fn, last, dialect, scopes)
             _step(state, token, is_python)
-            fn.cognitive_complexity = state.total
+            fn.cognitive_complexity = _cognitive(state)
             fn.cognitive_nesting = state.max_depth
             if not is_python:
                 yield token
 
 
-def _state_for(states: dict, fn, last, dialect: _Dialect) -> _FnState:
+def _state_for(states: dict, fn, last, dialect: _Dialect, scopes: _Scopes) -> _FnState:
     """The state that owns this token, standing where the stream stands.
 
     A Python token's owner is read AFTER the token is yielded (see __call__).
@@ -476,7 +569,7 @@ def _state_for(states: dict, fn, last, dialect: _Dialect) -> _FnState:
     """
     state = states.get(fn)
     if state is None:
-        state = states[fn] = _FnState(fn, dialect)
+        state = states[fn] = _FnState(fn, dialect, scopes)
         state.brace_base = _stream_braces(last)
     if last is not None and state is not last:
         state.line_indent = last.line_indent
@@ -492,12 +585,132 @@ def _stream_braces(last) -> int:
     return last.brace_depth + last.brace_base if last is not None else 0
 
 
+# --- what a function is defined in ------------------------------------------------
+
+def _home(scopes: _Scopes):
+    """What the function lizard just started is defined in, read when its
+    state is made: in Python the scope its `def` stands in; in JavaScript the
+    stream around it, which _js_member reads once the name is final. Any
+    other language reads None: nothing the rules need."""
+    if not scopes.classes:
+        return scopes.home
+    top = scopes.open[-1] if scopes.open else _BLOCK
+    return _Around((None, None) + tuple(scopes.recent) + (None,), top, _innermost_class(scopes.open))
+
+
+def _innermost_class(open_scopes: list) -> str:
+    return next((s.name for s in reversed(open_scopes) if s.kind == "class"), "")
+
+
+def _track_scopes(state: _FnState, token: str, is_python: bool) -> None:
+    scopes = state.scopes
+    if is_python:
+        _python_scopes(scopes, state, token)
+    elif scopes.classes:
+        _brace_scopes(scopes, token)
+    scopes.recent.append(token)
+
+
+def _python_scopes(scopes: _Scopes, state: _FnState, token: str) -> None:
+    """A statement's first token closes the classes and defs its indent has
+    left; `class` and `def` open one, which the next token names."""
+    if _statement_start(state):
+        _leave_scopes(scopes, state.line_indent)
+    if scopes.naming:
+        scopes.naming = False
+        scopes.open[-1] = scopes.open[-1]._replace(name=token)
+    elif token in _PYTHON_SCOPES and _header_start(state, scopes):
+        _enter_scope(scopes, _Scope(state.line_indent, token))
+
+
+def _header_start(state: _FnState, scopes: _Scopes) -> bool:
+    return _statement_start(state) or _last(scopes.recent) == "async"
+
+
+def _last(recent) -> str:
+    return recent[-1] if recent else ""
+
+
+def _leave_scopes(scopes: _Scopes, indent: int) -> None:
+    while scopes.open and indent <= scopes.open[-1].indent:
+        scopes.open.pop()
+
+
+def _enter_scope(scopes: _Scopes, scope: _Scope) -> None:
+    scopes.home = scopes.open[-1] if scopes.open else None
+    scopes.open.append(scope)
+    scopes.naming = True
+
+
+def _brace_scopes(scopes: _Scopes, token: str) -> None:
+    """One scope per open brace: the class body a `class` word named, or a
+    block. lizard's JSX tokens swallow some braces, so the stack can drift in
+    a .tsx file; the rules read it only for a class field and a class's name
+    (see _js_member)."""
+    if token == "{":
+        scopes.open.append(_opened_scope(scopes))
+    elif token == "}":
+        _close_scope(scopes)
+    else:
+        _class_name(scopes, token)
+
+
+def _opened_scope(scopes: _Scopes) -> _Scope:
+    pending, scopes.pending = scopes.pending, None
+    return _BLOCK if pending is None else pending
+
+
+def _close_scope(scopes: _Scopes) -> None:
+    if scopes.open:
+        scopes.open.pop()
+
+
+def _class_name(scopes: _Scopes, token: str) -> None:
+    """`class A` names the class body the next `{` opens. `x.class` and a
+    `class:` key open nothing."""
+    if scopes.pending is not None and not scopes.pending.name:
+        scopes.pending = _named(scopes.pending, token)
+    elif token == "class" and _last(scopes.recent) not in _MEMBER_ACCESS:
+        scopes.pending = _Scope(None, "class")
+
+
+def _named(pending: _Scope, token: str):
+    return pending._replace(name=token) if _WORD.fullmatch(token) else None
+
+
+def _js_member(around: _Around, bare: str) -> bool:
+    """Whether a JavaScript function is a method or a property's value, read
+    off the tokens around its name. `function walk` and `const walk =` bind
+    the name to the function itself. `walk(n) {` in a class body or an object
+    literal, `walk: (n) =>` and `obj.walk = function` do not, and neither
+    does a class field, `walk = (n) =>`, whose brace is a class body. A name
+    the window does not hold reads as a function, as every name did before."""
+    recent = around.recent
+    if bare not in recent:
+        return False
+    i = len(recent) - 1 - recent[::-1].index(bare)
+    if _declared(recent[i - 2], recent[i - 1]):
+        return False
+    return recent[i + 1] in _METHOD_AFTER or (recent[i + 1] == "=" and _property(recent[i - 1], around))
+
+
+def _declared(second: str, first: str) -> bool:
+    """`function walk`, `function* walk`, `const walk`."""
+    return first in _JS_DECLARERS or (first == "*" and second == "function")
+
+
+def _property(before: str, around: _Around) -> bool:
+    """`obj.walk = ...`, or a class field."""
+    return before == "." or around.top.kind == "class"
+
+
 def _step(state: _FnState, token: str, is_python: bool) -> None:
     if not token.strip():
         _line_event(state, token)
         return
     if token.startswith(("#", "//", "/*")):
         return  # a comment token must never read as code, whatever it contains
+    _track_scopes(state, token, is_python)
     _settle_line(state, token, is_python)
     if not _resolve_lookbehinds(state, token, is_python):
         _consume(state, token, is_python)
@@ -548,10 +761,11 @@ def _settle_line(state: _FnState, token: str, is_python: bool) -> None:
 
 def _python_dedent(state: _FnState) -> None:
     """At a statement line's first real token, close every block its indent
-    has left. A line inside a bracket continues a statement, and its indent
-    closes nothing."""
+    has left, and the import statement the line before held. A line inside a
+    bracket continues a statement, and its indent closes nothing."""
     if not _statement_start(state):
         return
+    state.importing = False
     _close_comprehensions(state)
     while state.stack and state.line_indent <= state.stack[-1]:
         state.stack.pop()
@@ -688,14 +902,28 @@ def _resolve_call(state: _FnState, token: str) -> None:
     takes, which is known at the closing bracket; see _follow_call. The pass
     sees no types, so an overload that takes as many arguments of other types
     still reads as a call to this one, and so does a call a macro qualifies
-    (`FMT_POSIX_CALL(close(fd))` expands to `::close`)."""
-    state.call_pending = False
-    if token != "(":
-        return
+    (`FMT_POSIX_CALL(close(fd))` expands to `::close`).
+
+    The bare name followed by `=` or `:=` instead binds it (see _binds)."""
+    kind, state.call_pending = state.call_pending, None
+    bare = kind == _BARE
+    if token == "(":
+        _call(state, bare)
+    elif bare and _assigns(state, token):
+        state.shadowed = True
+
+
+def _call(state: _FnState, bare: bool) -> None:
     if state.dialect.overloads:
-        state.call = [len(state.runs) + 1, 0, -1]  # depth inside, commas, tokens
+        state.call = [len(state.runs) + 1, 0, -1, bare]  # depth inside, commas, tokens
     else:
-        _count_recursion(state, True)
+        _count_recursion(state, True, bare)
+
+
+def _assigns(state: _FnState, token: str) -> bool:
+    """`walk = ...` or `walk := ...`. A `=` inside a bracket passes a keyword
+    argument, `dumps(obj, dumps=1)`, and binds nothing."""
+    return token in state.dialect.assigns and (token == ":=" or not state.runs)
 
 
 def _resolve_word_op(state: _FnState, token: str) -> None:
@@ -756,7 +984,7 @@ def _follow_call(state: _FnState, token: str) -> None:
     call = state.call
     if len(state.runs) < call[0]:
         state.call = None
-        _count_recursion(state, token not in state.dialect.closers or _fits(state, call))
+        _count_recursion(state, token not in state.dialect.closers or _fits(state, call), call[3])
     elif token == "," and len(state.runs) == call[0]:
         call[1] += 1
     call[2] += 1
@@ -1092,29 +1320,72 @@ def _match_line_ends(state: _FnState) -> None:
 
 
 def _jumps_and_recursion(state: _FnState, token: str, is_python: bool) -> None:
-    if token == "?":
-        # A C ternary, a Swift optional or a Kotlin elvis waits one token to be
-        # told apart, where the reader counts a `?` at all. Rust's `?` is none of
-        # them: it returns early on an error or relaxes a `?Sized` bound, and an
-        # early return is no increment.
-        state.question_pending = _counts_question(state)
-    elif token in ("break", "continue"):
-        state.label_check = not is_python
-    elif token == "goto" and state.dialect.goto:
+    step = _WORD_STEPS.get(token)
+    if step is None:
+        _recursion(state, token)
+    else:
+        step(state, token, is_python)
+
+
+def _question(state: _FnState, _token: str, _is_python: bool) -> None:
+    """A C ternary, a Swift optional or a Kotlin elvis waits one token to be
+    told apart, where the reader counts a `?` at all. Rust's `?` is none of
+    them: it returns early on an error or relaxes a `?Sized` bound, and an
+    early return is no increment."""
+    state.question_pending = _counts_question(state)
+
+
+def _jump(state: _FnState, _token: str, is_python: bool) -> None:
+    state.label_check = not is_python
+
+
+def _goto(state: _FnState, token: str, _is_python: bool) -> None:
+    if state.dialect.goto:
         state.total += 1
     else:
         _recursion(state, token)
+
+
+def _arrow(state: _FnState, _token: str, _is_python: bool) -> None:
+    """An arrow's body starts after its `=>`, and it can be an expression that
+    no brace opens: `(n) => n ? n * fact(n - 1) : 1`."""
+    state.body_started = True
+
+
+def _import(state: _FnState, token: str, _is_python: bool) -> None:
+    """An import statement binds the names it lists (see _binds). In a
+    language without one the word is a name."""
+    if token in state.dialect.imports:
+        state.importing = True
+    else:
+        _recursion(state, token)
+
+
+def _statement_end(state: _FnState, _token: str, _is_python: bool) -> None:
+    state.importing = False
+
+
+# The words the jump and recursion rules read, each to the rule that reads it.
+_WORD_STEPS = {"?": _question, "break": _jump, "continue": _jump, "goto": _goto,
+               "=>": _arrow, "import": _import, "use": _import, ";": _statement_end}
+
+# In an import statement a name after one of these is one the statement binds:
+# `from json import loads, dumps`, `use std::os::unix::fs::symlink;`.
+_IMPORTED_AFTER = frozenset({",", "(", "{", "::"})
 
 
 def _recursion(state: _FnState, token: str) -> None:
     """+1 once when the body calls the function itself (Sonar B1: each method
     in a recursion cycle). The token must name the function and stand where a
     call stands; a local variable, a field or another object's method spelled
-    the same way calls nothing."""
+    the same way calls nothing, and a name the body binds is that value's
+    (see _binds)."""
     if state.recursed or not _in_body(state):
         return
     if state.dialect.command_leads is not None:
         _count_recursion(state, _commands_itself(state, token))
+    elif _binds(state, token):
+        state.shadowed = True
     else:
         state.call_pending = _names_itself(state, token)
 
@@ -1125,14 +1396,27 @@ def _in_body(state: _FnState) -> bool:
     return state.body_started or state.brace_depth > 0 or state.dialect.shell_blocks
 
 
-def _names_itself(state: _FnState, token: str) -> bool:
-    """The function's own name, reached through no receiver or through one of
-    its own (see _SELF_RECEIVERS). A `(` next makes it a call; see
-    _resolve_call."""
+def _binds(state: _FnState, token: str) -> bool:
+    """The token binds the function's own name in the body: after one of the
+    language's binders (`const walk`, `import walk`, `for walk in`), or in an
+    import statement's list (see _IMPORTED_AFTER). `walk = ...` binds it
+    too, which the token after the name says; see _resolve_call."""
+    if token != _own(state).bare:
+        return False
+    return state.prev in state.dialect.binders or (state.importing and state.prev in _IMPORTED_AFTER)
+
+
+def _names_itself(state: _FnState, token: str):
+    """How the function's own name would call it if a `(` came next (see
+    _resolve_call): _BARE through no receiver, where a bare call reaches it at
+    all (see _bare_calls), _THROUGH one of its own receivers (see
+    _SELF_RECEIVERS), and None when it does not name the function."""
     own = _own(state)
     if token != own.bare:
-        return False
-    return state.prev not in _MEMBER_ACCESS or state.prev2 in own.receivers
+        return None
+    if state.prev in _MEMBER_ACCESS:
+        return _THROUGH if state.prev2 in own.receivers else None
+    return _BARE if own.bare_calls else None
 
 
 def _own(state: _FnState) -> _Own:
@@ -1141,16 +1425,64 @@ def _own(state: _FnState) -> _Own:
     name: empty in Go and PowerShell, `K::int` for a Java method returning int,
     the class alone for `File File::open(`."""
     if state.own is None:
-        state.own = _own_of(state.fn)
+        state.own = _own_of(state)
     return state.own
 
 
-def _own_of(fn) -> _Own:
+def _own_of(state: _FnState) -> _Own:
+    fn = state.fn
     name = getattr(fn, "name", "")
     parts = _QUALIFIER.split(name)
-    receivers = _SELF_RECEIVERS.union(parts[-2:-1],
-                                      _GO_RECEIVER.findall(getattr(fn, "long_name", "")))
-    return _Own(name, parts[-1], receivers, _arity(getattr(fn, "full_parameters", ())))
+    go_receiver = _GO_RECEIVER.findall(getattr(fn, "long_name", ""))
+    parameters = getattr(fn, "full_parameters", ())
+    method, cls = _membership(state.home, parts[-1])
+    receivers = _SELF_RECEIVERS.union(parts[-2:-1], go_receiver, cls)
+    return _Own(name, parts[-1], receivers, _arity(parameters),
+                _bare_calls(state.dialect, parts[-1], parameters, method or bool(go_receiver)))
+
+
+def _membership(home, bare: str) -> tuple:
+    """Whether the function is a method, and the class whose name reaches it:
+    `T.walk(n - 1)`."""
+    if isinstance(home, _Around):
+        return _js_membership(home, bare)
+    if home is not None and home.kind == "class":
+        return True, [home.name]
+    return False, []
+
+
+def _js_membership(around: _Around, bare: str) -> tuple:
+    member = _js_member(around, bare)
+    return member, [around.cls] if member and around.cls else []
+
+
+def _bare_calls(dialect: _Dialect, bare: str, parameters, method: bool) -> bool:
+    """Whether a call to the bare name reaches the function.
+
+    Not from a method, where a method is reached only through its object or
+    its class (see _Dialect.self_only): `return open(self.path)` in a method
+    `open` calls the builtin. Not where a parameter spelled like the function
+    hides it, in the languages whose bindings the pass reads (see
+    _Dialect.binders); Java looks a method's name up apart from a variable's.
+    """
+    if method and dialect.self_only:
+        return False
+    return not (dialect.binders and _is_parameter(bare, parameters))
+
+
+def _is_parameter(name: str, parameters) -> bool:
+    return any(name in _parameter_names(spelled) for spelled in parameters)
+
+
+def _parameter_names(spelled: str):
+    """The words a parameter may be named by: the last one before a type's
+    `:` (`apply: Fn`, Swift's `_ apply: Fn`), otherwise the first or the last
+    (`apply func()` in Go, `Fn apply` in C++). A default is no name."""
+    head, colon, _ = spelled.split("=")[0].partition(":")
+    words = _WORD.findall(head)
+    if colon:
+        return words[-1:]
+    return (words[0], words[-1]) if words else ()
 
 
 def _arity(parameters) -> tuple:
@@ -1180,10 +1512,25 @@ def _same_command(state: _FnState, token: str) -> bool:
     return token == name
 
 
-def _count_recursion(state: _FnState, calls_itself: bool) -> None:
-    if calls_itself and not state.recursed:
+def _count_recursion(state: _FnState, calls_itself: bool, bare: bool = False) -> None:
+    """A call to the function itself. One through no receiver waits for the
+    end of the body, where a binding of the name still hides it."""
+    if not calls_itself:
+        return
+    if bare:
+        state.bare_call = True
+    else:
         state.recursed = True
-        state.total += 1
+
+
+def _cognitive(state: _FnState) -> int:
+    """The total so far, and +1 for recursion. A bare call counts unless the
+    body binds the name anywhere: Python makes a bound name local to the whole
+    body, so `dumps(obj)` before `from json import dumps` never reaches the
+    function, and JavaScript's `const` and `let` shadow from the start of
+    their block."""
+    recursed = state.recursed or (state.bare_call and not state.shadowed)
+    return state.total + recursed
 
 
 def _counts_question(state: _FnState) -> bool:
