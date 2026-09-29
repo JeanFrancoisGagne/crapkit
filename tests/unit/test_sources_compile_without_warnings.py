@@ -16,6 +16,15 @@ from hang_guard import HANG_SECONDS
 
 ROOT = Path(__file__).resolve().parents[2]
 TREES = ("src/crapkit", "tests", "tools")
+# Sources the accuracy suite hands the analysis and its oracles as input and
+# never runs: the small corpus, scored from recorded coverage, and the analysis
+# probes. Each is written for the Python its syntax needs (PEP 695, 701, 750,
+# 758), so an older interpreter cannot compile it, and no run prints its warning.
+READ_ONLY = ("tests/accuracy/corpus_goldens/small/", "tests/accuracy/analysis_oracles/probes/")
+
+
+def _measured(relative: str) -> bool:
+    return relative.startswith(READ_ONLY)
 
 
 def _warning(path: Path) -> str | None:
@@ -29,8 +38,14 @@ def _warning(path: Path) -> str | None:
     return None
 
 
+def _compiled() -> list[Path]:
+    """Every file here some run compiles."""
+    return sorted(path for tree in TREES for path in (ROOT / tree).rglob("*.py")
+                  if not _measured(path.relative_to(ROOT).as_posix()))
+
+
 def test_every_file_compiles_with_warnings_as_errors():
-    paths = sorted(path for tree in TREES for path in (ROOT / tree).rglob("*.py"))
+    paths = _compiled()
     problems = [problem for problem in map(_warning, paths) if problem]
 
     assert len(paths) > 600, paths

@@ -21,9 +21,10 @@ import os
 from pathlib import Path
 import re
 
+from .repotext import plain_utf8
 from .sourcelines import ECMASCRIPT, LF_ONLY, line_starts
 
-_DISPUTED = (" ".encode(), " ".encode())
+_DISPUTED = ("\u2028".encode(), "\u2029".encode())
 _NAME = re.compile(r"[A-Za-z_$][\w$]*")
 # The positions attribution reads: a function's declaration start and body end,
 # a branch's start, a statement's start.
@@ -161,7 +162,7 @@ def _disputed_text(cov: dict, source: Path) -> str | None:
     """The source's text, when the record names a function to decide by and the
     rules can number the source differently."""
     raw = _source_bytes(source) if _members(cov, "fnMap") else None
-    return raw.decode("utf-8", "replace") if raw is not None and _disputed(raw) else None
+    return plain_utf8(raw) if raw is not None and _disputed(raw) else None
 
 
 def on_reader_lines(cov: object, source: Path) -> object:

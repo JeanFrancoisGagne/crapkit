@@ -21,7 +21,7 @@ _LINE = re.compile(r".*?(?:\r\n|\r|\n)|.+", re.DOTALL)
 # LF, CRLF, a lone CR, U+2028 and U+2029.
 READER = re.compile(r"\r\n|\r|\n")
 LF_ONLY = re.compile(r"\n")
-ECMASCRIPT = re.compile(r"\r\n|[\r\n  ]")
+ECMASCRIPT = re.compile(r"\r\n|[\r\n\u2028\u2029]")
 
 
 def line_starts(text: str, ends: re.Pattern[str] = READER) -> list[int]:

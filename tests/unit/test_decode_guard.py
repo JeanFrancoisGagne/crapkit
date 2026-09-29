@@ -77,6 +77,8 @@ ALLOWED = {
         "hex object ids a regular expression matched",
     ("gitio.py", "_log_entry", "decode"):
         "a hex commit id a regular expression matched",
+    ("gitio.py", "line_commits", "decode"):
+        "the hex commit ids a regular expression matched in git log -L's headers",
     ("gitpaths.py", "split_record", "decode"):
         "the mode, object id and stage fields of an ls-files record, ASCII by construction",
     ("packet.py", "_windows_encoded", "decode"):

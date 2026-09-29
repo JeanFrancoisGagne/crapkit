@@ -12,11 +12,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TREES = ("src", "tools", "tests", "docs")
 NOT_OURS = {".venv", "venv", "node_modules", "__pycache__", ".git"}
+# Sources the accuracy suite hands the analysis and its oracles as input and
+# never runs: the small corpus, scored from recorded coverage, and the analysis
+# probes. Each is written for the Python its syntax needs (PEP 695, 701, 750,
+# 758), so an older interpreter cannot compile it, and no run prints its warning.
+READ_ONLY = ("tests/accuracy/corpus_goldens/small/", "tests/accuracy/analysis_oracles/probes/")
+
+
+def _measured(relative: str) -> bool:
+    return relative.startswith(READ_ONLY)
+
+
+def _ours(path: Path) -> bool:
+    relative = path.relative_to(ROOT)
+    return not NOT_OURS.intersection(relative.parts) and not _measured(relative.as_posix())
 
 
 def sources() -> list[Path]:
     found = (path for tree in TREES for path in sorted((ROOT / tree).rglob("*.py")))
-    return [path for path in found if not NOT_OURS.intersection(path.relative_to(ROOT).parts)]
+    return [path for path in found if _ours(path)]
 
 
 def complaint(path: Path, root: Path = ROOT) -> str:
