@@ -73,6 +73,23 @@ def test_a_dash_body_strips_tabs_only_from_its_delimiter(terminator, ends):
     assert (("probe", 3, 5, 2) in functions(code)) is ends
 
 
+@pytest.mark.parametrize("source, stripped", [
+    # a body with no lines: the delimiter on the very next line closes it, and is blanked
+    ("cat <<EOF\nEOF\necho\n", "cat <<EOF\n\necho\n"),
+    # a body that ends the file with no line break: blanked to nothing, so no line is added
+    ("cat <<EOF\nx\nEOF", "cat <<EOF\n\n"),
+    # a delimiter ending in X, and a dash delimiter starting with X: every letter is the word's
+    ("cat <<BOX\nif\nBOX\n", "cat <<BOX\n\n\n"),
+    ("cat <<-XY\n\tif\n\tXY\n", "cat <<-XY\n\n\n"),
+])
+def test_the_stripper_blanks_each_body_line_and_keeps_the_line_count(source, stripped):
+    assert lizardshell._HeredocStripper().strip(source) == stripped
+
+
+def test_a_slash_star_glob_gets_a_space_and_nothing_else():
+    assert lizardshell._defuse_block_comments("ls /* /*/x") == "ls / * / */x"
+
+
 def test_a_delimiter_above_the_opener_does_not_close_it():
     """Only a terminator below the opener makes it one."""
     code = f"EOF\ncat <<EOF\n{PROBE}"
