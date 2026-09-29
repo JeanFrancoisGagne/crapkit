@@ -23,7 +23,9 @@ a member access is not part of the sequence around it: in `a && (b || c) == d
 && e` the `==` takes the group, so the outer sequence is `a && ... && e` and
 the group's `||` is a sequence of its own. Each operand of a conditional
 expression is an expression of its own too: `x && y ? a && b : c && d` holds
-three sequences.
+three sequences. A conditional inside a plain group makes the group one
+operand of the sequence around it, so `a && (b ? c : d) && e` holds one
+sequence and the conditional, and costs 2.
 
 Three spellings that are not sequences at all: `??` and `??=` coalesce a null,
 which the paper ignores (Ignore shorthand); `and` and `or` are identifiers
@@ -139,6 +141,61 @@ CASES = [  # (label, path, source, Sonar value)
 
 @pytest.mark.parametrize("label,path,source,want", CASES, ids=[c[0] for c in CASES])
 def test_a_sequence_costs_one_whatever_its_layout(label, path, source, want):
+    assert _cognitive(path, source) == want
+
+
+GROUPED_CONDITIONALS = [  # (label, path, source, Sonar value)
+    ("JavaScript", "a.js", "function f(a, b, c, d, e) {\n  return a && (b ? c : d) && e;\n}\n", 2),
+    ("TypeScript", "a.ts", "function f(a, b, c, d, e) {\n  return a && (b ? c : d) && e;\n}\n", 2),
+    ("C", "a.c", "int f(int a, int b, int c, int d, int e) {\n  return a && (b ? c : d) && e;\n}\n", 2),
+    ("Java", "a.java", "class A {\n  boolean f(boolean a, boolean b, boolean c, boolean d, boolean e) {\n"
+     "    return a && (b ? c : d) && e;\n  }\n}\n", 2),
+    ("Swift", "a.swift", "func f(a: Bool, b: Bool, c: Bool, d: Bool, e: Bool) -> Bool {\n"
+     "  return a && (b ? c : d) && e\n}\n", 2),
+    ("Python", "a.py", "def f(a, b, c, d, e):\n    return a and (b if c else d) and e\n", 2),
+    ("Python, in an if's condition", "a.py",
+     "def f(a, b, c, d, e):\n    if a and (b if c else d) and e:\n        return 1\n", 4),
+    ("an operand's own sequence", "a.js",
+     "function f(a, b, c, d, e, g) {\n  return a && (b ? c : d || e) && g;\n}\n", 3),
+    ("a group inside a group", "a.js",
+     "function f(a, b, c, d, e) {\n  return a && (b || (c ? d : e)) && a;\n}\n", 4),
+    ("before the sequence", "a.js", "function f(a, b, c) {\n  return (a ? b : c) && a && b;\n}\n", 2),
+    ("the condition's own sequence", "a.js",
+     "function f(a, b, c, d, e) {\n  return a && (b && c ? d : e) && a;\n}\n", 3),
+    ("the condition's own sequence in a group", "a.js",
+     "function f(a, b, c, d, e) {\n  return a && ((b && c) ? d : e) && a;\n}\n", 3),
+    ("the value's own sequence, Python", "a.py",
+     "def f(a, b, c, d, e):\n    return a and (b and c if d else e) and a\n", 3),
+]
+
+
+@pytest.mark.parametrize("label,path,source,want", GROUPED_CONDITIONALS,
+                         ids=[c[0] for c in GROUPED_CONDITIONALS])
+def test_a_conditional_in_a_group_is_one_operand_of_the_sequence_around_it(label, path, source, want):
+    """The conditional ends its condition's sequence, and it used to end the
+    one around the group too: `a && (b ? c : d) && e` read 3. The operators
+    before it are a sequence of their own even when they match the one outside
+    the group: `a && (b && c ? d : e) && a` read 2."""
+    assert _cognitive(path, source) == want
+
+
+OPERAND_GROUPS = [  # (label, path, source, Sonar value)
+    ("JavaScript", "a.js", "function f(a, b, c, d, e) {\n  return a && (b && c) == d && e;\n}\n", 2),
+    ("Python", "a.py", "def f(a, b, c, d, e):\n    return a and (b and c) == d and e\n", 2),
+    ("PowerShell", "a.ps1",
+     "function Test-Same($a, $b, $c, $d) {\n    return $a -and ($b -and $c) -eq $d -and $c\n}\n", 2),
+    ("a group in the operand", "a.js",
+     "function f(a, b, c, d, e) {\n  return a && ((b && c) || d) == e && a;\n}\n", 3),
+    ("a group in the sequence stays in it", "a.js",
+     "function f(a, b, c, d) {\n  return a && (b && c) && d;\n}\n", 1),
+]
+
+
+@pytest.mark.parametrize("label,path,source,want", OPERAND_GROUPS, ids=[c[0] for c in OPERAND_GROUPS])
+def test_a_group_compared_holds_a_sequence_of_its_own_operator(label, path, source, want):
+    """A group compared is the comparison's operand, so its operators are a
+    sequence apart from the one around it, even when they are the same
+    operator: `a && (b && c) == d && e` read 1."""
     assert _cognitive(path, source) == want
 
 

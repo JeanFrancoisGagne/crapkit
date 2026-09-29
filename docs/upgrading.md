@@ -381,9 +381,10 @@ the MCP tools on the first run after upgrading, most often by 1:
   through its type's name (`R::spin(n - 1)`).
 - A sequence of logical operators continued on the next line, or split by a comma in a
   call's arguments, costs +1 once where it cost 2. A negated group such as
-  `a && !(b && c)` costs its own +1, and `??` costs nothing. A group of the other
-  operator inside a sequence, `a && (b || c) && d`, costs one more, because the
-  operators read left to right through it.
+  `a && !(b && c)` costs its own +1, and `??` costs nothing. Each operand of a
+  conditional expression holds a sequence of its own, so `x && y ? a && b : c && d`
+  costs 4 where it cost 2, and so does a group compared: `a && (b && c) == d && e`
+  costs 2 where it cost 1.
 - Swift's `repeat` and `guard`, Rust's `loop`, Go's `select`, PowerShell's `trap` and
   a Python `match` statement cost what a loop, an `if` or a `switch` costs; they cost
   nothing before. Words that are a keyword in another language, such as Python's

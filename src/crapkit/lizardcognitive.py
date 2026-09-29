@@ -995,8 +995,31 @@ def _resolve_question(state: _FnState, token: str, is_python: bool) -> bool:
         return True
     if _is_conditional(state, token):
         state.total += 1 + _nesting(state, is_python)
-        state.bool_op = None  # the condition's run ends; each operand has its own
+        _conditional_run(state)
     return False
+
+
+def _conditional_run(state: _FnState) -> None:
+    """A conditional ends its condition's run, and each operand has its own.
+    In a plain group the conditional makes the group one operand of the
+    sequence around it, which resumes after the group as it does after a
+    call's arguments: `a && (b ? c : d) && e` is one sequence and the
+    conditional, 2. Read left to right through the group, the `&&` after it
+    started a new sequence, and the shape read 3. The condition is a
+    sequence of its own too; see _operand_group."""
+    state.bool_op = None
+    if state.runs and state.runs[-1][1]:
+        _operand_group(state, state.runs[-1])
+        state.runs[-1][1] = False
+
+
+def _operand_group(state: _FnState, run: list) -> None:
+    """A plain group turned out to be an operand, of a conditional or a
+    comparison, so the operators in it were a sequence of their own. When the
+    first of them continued the run outside the group it paid nothing, and
+    it pays its +1 now: `a && (b && c ? d : e) && a` holds three sequences,
+    3, where it read 2."""
+    state.total += run[2] is True
 
 
 def _is_conditional(state: _FnState, token: str) -> bool:
@@ -1192,7 +1215,7 @@ def _open_run(state: _FnState, token: str) -> None:
     group, which continues the run outside it: `a && (b && c)` is one. See
     _close_run."""
     grouping = token == "(" and _groups(state)
-    state.runs.append((state.bool_op, grouping))
+    state.runs.append([state.bool_op, grouping, None])  # see _first_in_groups
     if not grouping:
         state.bool_op = None
 
@@ -1225,9 +1248,10 @@ def _close_run(state: _FnState) -> None:
     if not state.runs:
         state.bool_op = None
         return
-    outer, grouping = state.runs.pop()
+    run = state.runs.pop()
+    outer, grouping, _ = run
     if grouping:
-        state.after_group = (outer,)  # the next token decides; see _after_group
+        state.after_group = run  # the next token decides; see _after_group
     else:
         state.bool_op = outer
     _close_comprehensions(state)
@@ -1238,9 +1262,10 @@ def _after_group(state: _FnState, token: str) -> None:
     the sequence around it. An operator that binds tighter, a call, an index
     or a member access makes it the operand of something else, `(a || b) ==
     c`, and the run outside the group resumes, as after a call's arguments."""
-    (outer,), state.after_group = state.after_group, None
+    run, state.after_group = state.after_group, None
     if token in _APPLIED or _binds_tighter(state, token):
-        state.bool_op = outer
+        _operand_group(state, run)
+        state.bool_op = run[0]
 
 
 def _message_token(state: _FnState, token: str) -> None:
@@ -1368,9 +1393,20 @@ def _bool_op(state: _FnState, token: str) -> None:
     if _declarator_and(state, token) or _error_set_merge(state, token):
         return
     op = {"and": "&&", "or": "||"}.get(token, token)
+    _first_in_groups(state, op)
     if op != state.bool_op:
         state.total += 1
         state.bool_op = op
+
+
+def _first_in_groups(state: _FnState, op: str) -> None:
+    """Note, in each plain group open around the operator that holds no
+    operator yet, whether this first one continues the run outside the group
+    and so pays nothing (see _operand_group)."""
+    for run in reversed(state.runs):
+        if not run[1] or run[2] is not None:
+            return
+        run[2] = op == state.bool_op
 
 
 def _keywords(state: _FnState, token: str, is_python: bool) -> None:
@@ -1758,7 +1794,7 @@ def _counts_question(state: _FnState) -> bool:
 def _if_token(state: _FnState, is_python: bool) -> None:
     if is_python and not _statement_start(state):
         state.total += 1 + _nesting(state, is_python)  # ternary expression form
-        state.bool_op = None  # each operand is an expression of its own
+        _conditional_run(state)
         return
     state.total += 1 + _nesting(state, is_python)
     _push_structure(state, is_python, "if")

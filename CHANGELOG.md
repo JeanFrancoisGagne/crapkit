@@ -1151,10 +1151,13 @@ and missed some that were. Each rule now reads the language it is in:
   costs what a conditional operator costs.
 - The operators of a sequence read left to right through a plain group, as Sonar's
   reference implementation flattens a logical expression: `a && (b || c) && d` changes
-  operator twice and costs 3, where it read 2. A group that is the operand of a
-  comparison, an arithmetic operator or a call, `(a || b) == c`, holds a sequence of its
-  own, as a list, a dict and an Objective-C message do, and so does each operand of a
-  conditional expression: `x && y ? a && b : c && d` reads 4 where it read 2. A braceless
+  operator twice and costs 3. A group that is the operand of a comparison, an
+  arithmetic operator or a call, `(a || b) == c`, holds a sequence of its own, even of
+  the same operator: `a && (b && c) == d && e` reads 2 where it read 1. So do a list, a
+  dict and an Objective-C message, and each operand of a conditional expression:
+  `x && y ? a && b : c && d` reads 4 where it read 2. A conditional inside a group makes
+  the group one operand of the sequence around it, so `a && (b ? c : d) && e` costs 2,
+  and `a && (b && c ? d : e) && a` costs 3 where it read 2. A braceless
   body's statement is a sequence apart from its header's, so `if (a && b) return c && d;`
   reads 3 like its braced form. In shell and PowerShell a line break inside `( ... )` or
   `$( ... )` ends a sequence, because those brackets hold commands.
