@@ -1080,7 +1080,7 @@ cells = ["lin-up-pip-0.7.6", "lin-up-pip-n1", "win-up-pip-0.7.6"]
 
 [[doc]]
 page = "docs/upgrading.md"
-headings = ["Analysis version 12", "Analysis version 11"]
+headings = ["Analysis version 13", "Analysis version 11"]
 cells = ["lin-up-pip-0.7.6", "win-up-pip-0.7.6"]
 
 [[doc]]

@@ -195,7 +195,7 @@ def test_the_library_section_names_the_new_signature_and_return_type():
     assert "`MutantVerdict`" in library and "`bool(MutantVerdict.SURVIVED)` is `True`" in library
 
 
-# --- the version 12 notes (scores-10rh199) ---------------------------------------------
+# --- the version 12 notes, shipped as version 13 (scores-10rh199) ---------------------
 
 UNDEFINED = "\x81"
 SAMPLES = {
@@ -209,7 +209,7 @@ SAMPLES = {
 
 
 @pytest.mark.parametrize("language", sorted(SAMPLES))
-def test_version_12_names_each_language_whose_cp1252_function_is_newly_scored(language):
+def test_version_13_names_each_language_whose_cp1252_function_is_newly_scored(language):
     """0.8.0 scored no function there; 0.8.1 scores it under its own name."""
     from crapkit.analyze import analyze_source, decode_source
 
@@ -217,11 +217,11 @@ def test_version_12_names_each_language_whose_cp1252_function_is_newly_scored(la
     rows = analyze_source(path, decode_source(text.encode("latin-1")), note=False)
 
     assert [r.ccn for r in rows] == [2] and "cafƁ" in rows[0].long_name, rows
-    assert language in _section(GUIDE, "### Analysis version 12"), language
+    assert language in _section(GUIDE, "### Analysis version 13"), language
 
 
-def test_version_12_names_the_letter_case_joins():
-    notes = _section(GUIDE, "### Analysis version 12")
+def test_version_13_names_the_letter_case_joins():
+    notes = _section(GUIDE, "### Analysis version 13")
 
     assert "`PKG/mod.py`" in notes and "`SRC/app.ts`" in notes
     assert "`untested`" in notes and "`measured`" in notes
