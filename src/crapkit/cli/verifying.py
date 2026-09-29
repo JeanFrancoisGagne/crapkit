@@ -437,6 +437,19 @@ def _require_override_reason(reason: str | None) -> None:
         raise ConfigError("an override requires a non-empty reason")
 
 
+def _require_override_alert(reason: str | None, cfg) -> None:
+    """Refuse an override no alert could carry, before any lane runs or any
+    run is stored.
+
+    The audit refused it too, but only after verify had run every lane and
+    stored a run with no verdict, and after the hook had stored a run of its
+    own; the pages promise the refusal comes before anything happens."""
+    from ..override import _require_auditable_override
+
+    if reason is not None:
+        _require_auditable_override(reason, cfg.alert_command)
+
+
 def _refuse_override(verdict, reason: str | None) -> None:
     """One stderr line when a reason was given and something disqualified it.
 
@@ -993,6 +1006,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _require_override_reason(args.override)
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
+    _require_override_alert(args.override, cfg)
     _refuse_lane_less_verify(cfg)
     _refuse_unwritable_outputs(root, {"--sarif": args.sarif, "--emit-baseline": args.emit_baseline})
     store = _verify_store(root, args.baseline_tsv)
@@ -1315,6 +1329,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
     from ..verify import GateViolation
     from ._shared import _check_ratchet_identity
 
+    _require_override_alert(reason, cfg)
     db_path = root / ".crapkit" / "crap.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = SnapshotStore(db_path)

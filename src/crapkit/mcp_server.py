@@ -282,10 +282,10 @@ TOOLS: tuple[dict, ...] = (
         "description": ("Reports the ratchet debt burn-down: open marks with their age, repayments "
         "and policy findings. Use it to judge whether marked debt is repaid or piling "
         "up, and get_function_history for one function's mark. It reads the marks "
-        "file and its git log only, ages count back from the newest commit touching "
-        "that file, never the clock, and no marks file means zeros. repo can be any "
-        "directory under a measured checkout, and an unmeasured one answers isError "
-        "true with the setup pointer."),
+        "file and its git log only, and ages count from the newest commit touching "
+        "that file, never the clock. A repo that never committed a marks file reports "
+        "zeros, and a deleted or emptied one reports the marks its history last held as "
+        "open, none repaid. repo may be any directory under a measured checkout."),
         "properties": {},
         "output": PAYLOADS["ratchet report --json"],
     },

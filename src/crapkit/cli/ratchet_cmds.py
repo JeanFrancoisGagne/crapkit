@@ -477,6 +477,34 @@ def _working_marks(root: Path, ratchet_file: str) -> dict:
     return {(e.path, e.long_name): e.crap for e in entries}
 
 
+def _report_basis(root: Path, ratchet_file: str) -> tuple[list, dict | None]:
+    """The history the report replays and the marks it reads as open.
+
+    A marks file that is missing or holds only blank lines is not a repo that
+    repaid every mark: verify judges it against the newest committed marks, so
+    the report reads those as open (working None, the committed state) and the
+    commit that deleted or emptied the file repays none (held_history)."""
+    from ..marks_history import marks_history
+    from ..ratchet_report import held_history
+    from ..ratchetfile import RatchetFile
+
+    patches = marks_history(root, ratchet_file)
+    if RatchetFile.read(root / ratchet_file).blank:
+        return held_history(patches), None
+    return patches, _working_marks(root, ratchet_file)
+
+
+def _warn_marks_stand_in(root: Path, ratchet_file: str, report: dict, working) -> None:
+    """One line when the open marks came from history, not from the file."""
+    if working is not None or not report["open"]:
+        return
+    state, act = ("empty", "emptying") if (root / ratchet_file).exists() else ("missing", "deleting")
+    print(f"warning: {ratchet_file} is {state}, so the report reads the {report['open']} "
+          "mark(s) its history last committed as open, the marks verify judges against, and "
+          f"{act} the file repays none. `git log -- {ratchet_file}` shows the commits that "
+          "held them", file=sys.stderr)
+
+
 def _judges_policy(cfg, enforce: bool) -> bool:
     """--enforce with a debt knob in [crapkit]: the one case the report judges."""
     knobs = (cfg.debt_max_age_months, cfg.repayment_min_per_30d)
@@ -524,15 +552,15 @@ def _warn_history(shallow: bool) -> None:
 
 def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
     from ..gitio import shallow_checkout
-    from ..marks_history import marks_history
     from ..ratchet_report import mark_events, report_from_events
 
     shallow = shallow_checkout(root)
     _refuse_a_cut_history(cfg, enforce, shallow)
-    report = report_from_events(mark_events(marks_history(root, cfg.ratchet_file)),
-                                working=_working_marks(root, cfg.ratchet_file))
+    patches, working = _report_basis(root, cfg.ratchet_file)
+    report = report_from_events(mark_events(patches), working=working)
     violations = _policy_findings(cfg, report, enforce)
     _warn_history(shallow)
+    _warn_marks_stand_in(root, cfg.ratchet_file, report, working)
     if as_json:
         _print_json({**report, "policy_violations": violations, "shallow": shallow})
     else:

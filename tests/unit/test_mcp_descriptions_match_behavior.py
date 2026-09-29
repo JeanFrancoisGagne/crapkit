@@ -9,6 +9,8 @@ and git status which scored files changed. list_coupled_files said it read git
 log on every call when a warm call reads its cache. The `name` and `path`
 properties named two name forms and forward slashes only, while both tools
 resolve a start line, a twin handle, a backslash path and an absolute one.
+get_ratchet_report said no marks file means zeros; a deleted marks file reads
+as the marks its history last held.
 
 Each test reads the description and runs the call it describes. The CLI the
 server spawns runs in this process (the `exits` fixture), and GIT_TRACE, which
@@ -172,3 +174,25 @@ def test_both_tools_describe_name_and_path_by_one_rule(tool):
     assert "next_item printed" not in mcp_server._NAME_DESCRIPTION.replace("get_next_item", "")
     assert mcp_server._PATH_DESCRIPTION == ("source file, repo-relative or absolute inside the "
                                             "repo; either slash works")
+
+
+# --- get_ratchet_report: a deleted marks file is not zeros -----------------------
+
+def test_a_deleted_marks_file_reports_what_the_description_says(scored, exits):
+    from cli_inproc_repo import commit_all, git
+    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+
+    marks = [RatchetEntry("src/app.ts", "dispatch ( kind )", 60.0)]
+    (scored / "crapkit-ratchet.tsv").write_text(dump_ratchet(marks, stamp=metric_version()),
+                                                encoding="utf-8", newline="\n")
+    commit_all(scored, "a mark")
+    git(scored, "rm", "-q", "crapkit-ratchet.tsv")
+    commit_all(scored, "delete it")
+
+    report = _call(scored, "get_ratchet_report")["structuredContent"]
+
+    assert (report["open"], report["dropped_total"]) == (1, 0), report
+    description = _tool("get_ratchet_report")["description"]
+    assert "no marks file means zeros" not in description
+    assert "A repo that never committed a marks file reports zeros, and a deleted or emptied " \
+           "one reports the marks its history last held as open, none repaid." in description
