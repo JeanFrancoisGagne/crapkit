@@ -48,15 +48,19 @@ def test_a_jump_pays_only_for_a_label(path, code, score):
 
 
 @pytest.mark.parametrize("path, code, score", [
-    # C#'s null-conditional `?.`: only the `??` run pays
-    ("a.cs", "class C {\n  int F(C a) {\n    return a?.G() ?? 1;\n  }\n}\n", 1),
+    # C#'s null-conditional `?.` and its `??` are both null shorthands
+    ("a.cs", "class C {\n  int F(C a) {\n    return a?.G() ?? 1;\n  }\n}\n", 0),
     # a nullable type in a cast decides nothing
     ("a.cs", "class C {\n  object F(object a) {\n    return (int?)a;\n  }\n}\n", 0),
-    # GNU C's `?:` supplies a default the way `??` does, and has no second branch to read
-    ("a.c", "int f(int a) {\n  return a ?: 1;\n}\n", 0),
 ])
 def test_a_question_mark_that_is_no_conditional_pays_nothing(path, code, score):
     assert cognitive(path, code) == [score]
+
+
+def test_gnu_c_s_conditional_without_its_middle_operand_pays_as_a_ternary():
+    """GCC 6.8 "Conditionals with Omitted Operands": `a ?: 1` is `a ? a : 1`
+    with `a` read once, so it pays the conditional operator's +1 (B1)."""
+    assert cognitive("a.c", "int f(int a) {\n  return a ?: 1;\n}\n") == [1]
 
 
 @pytest.mark.parametrize("code", [
