@@ -23,6 +23,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tomllib
 
 import pytest
 
@@ -107,6 +108,23 @@ def test_no_module_sits_under_two_floors():
     paths = [path for path, _ in pairs]
 
     assert sorted({path for path in paths if paths.count(path) > 1}) == []
+
+
+def _mutated() -> set[str]:
+    """Every file a mutation config mutates: pyproject.toml's paths_to_mutate for the
+    weekly run and TOOL_TARGETS for the tools config."""
+    with (REPO / "pyproject.toml").open("rb") as handle:
+        weekly = tomllib.load(handle)["tool"]["mutmut"]["paths_to_mutate"]
+    return set(weekly) | set(mutation.TOOL_TARGETS)
+
+
+def test_every_file_under_a_floor_is_mutated():
+    """A floor counts only the mutants of the files a config mutates. paths_to_mutate is
+    the union of the calcs.tsv modules, so a reader no calcs.tsv row names is never
+    mutated and the readers floor passes without it."""
+    names = sorted({path.relative_to(REPO).as_posix() for path, _ in _floor_of_each_file()})
+
+    assert [name for name in names if name not in _mutated()] == []
 
 
 def test_kit_exact_has_no_grade_for_an_empty_target():
