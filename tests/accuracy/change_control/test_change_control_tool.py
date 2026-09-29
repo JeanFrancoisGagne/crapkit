@@ -1065,7 +1065,7 @@ def test_the_declare_summary_counts_cells_oracles_rulings_and_the_digest_row():
         "2 moved cells have no oracle here; their packet's oracle checks judge them",
         "metric-digests: new row for analysis 12, lizard 1.24.0 (ANALYSIS_VERSION was 11 at the "
         "base)",
-        "add to CHANGELOG.md under ## Unreleased:",
+        f"add to the newest `## X.Y.Z {chr(0x2014)} unreleased` section of CHANGELOG.md:",
         "- f1 fixed. (accuracy change C3)"]
     assert cc.summary(_plan(kind="none"), cc.Running("11", "1.24.0")) == (
         "declared C3 (none: no calc): 2 locked files relocked, 0 golden cells moved, 0 judged "
@@ -1082,7 +1082,7 @@ def test_a_table_written_from_nothing_gets_its_header(tmp_path):
 
     assert (tmp_path / cc.CHANGES).read_text() == (
         "id\tdate\tkind\tcalcs\tanalysis_version\tlizard_version\tchangelog\treason\n"
-        "C3\t2026-09-25\tfix\tCRAP score\t12\t1.24.0\t#unreleased\tf1 fixed.\n")
+        "C3\t2026-09-25\tfix\tCRAP score\t12\t1.24.0\t\tf1 fixed.\n")
     assert (tmp_path / cc.LOCK).read_text() == "path\tsha256\tchange\nx.tsv\tab\tC3\n"
     assert (tmp_path / cc.DIGESTS).read_text() == (
         "analysis_version\tlizard_version\tcorpus\tdigest\tchange\n12\t1.24.0\tc\td\tC3\n")

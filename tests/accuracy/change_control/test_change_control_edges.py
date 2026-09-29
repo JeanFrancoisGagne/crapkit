@@ -329,11 +329,82 @@ def test_a_change_that_moves_nothing_is_told_its_kind():
     assert cc.moved_block(_tree({}), []) == ["moved calcs: none (no golden cell or file moved)"]
 
 
-def test_a_written_change_row_joins_its_calcs_with_semicolons(tmp_path):
+UNRELEASED_LOG = (f"# Changelog\n\n## 0.9.0 {chr(0x2014)} unreleased\n\n- x\n\n"
+                  f"## 0.8.1 {chr(0x2014)} 2026-10-01\n\n- y\n").encode("utf-8")
+
+
+def test_a_written_change_row_joins_its_calcs_and_names_the_unreleased_version(tmp_path):
+    """The changelog cell is the version whose CHANGELOG section the change's line
+    goes in: the newest `## X.Y.Z <dash> unreleased` heading."""
+    (tmp_path / cc.CHANGELOG).write_bytes(UNRELEASED_LOG)
+
     cc.write_plan(tmp_path, _plan(), cc.Running("7", "1.24.0"))
 
     row = (tmp_path / cc.CHANGES).read_bytes().decode("utf-8").splitlines()[-1]
-    assert row == "C9\t2026-01-01\tfix\ta; b\t7\t1.24.0\t#unreleased\twhy"
+    assert row == "C9\t2026-01-01\tfix\ta; b\t7\t1.24.0\t0.9.0\twhy"
+
+
+@pytest.mark.parametrize("kind, log, cell", [
+    ("none", UNRELEASED_LOG, ""), ("fix", None, ""),
+    ("feature", b"# Changelog\n\n## Unreleased\n", ""),
+    ("definition", UNRELEASED_LOG, "0.9.0")])
+def test_the_changelog_cell_is_empty_for_kind_none_and_with_no_unreleased_heading(
+        tmp_path, kind, log, cell):
+    if log is not None:
+        (tmp_path / cc.CHANGELOG).write_bytes(log)
+
+    assert cc.changelog_cell(tmp_path, kind) == cell
+
+
+def test_the_changelog_hints_name_the_unreleased_section_the_release_script_dates():
+    section = f"the newest `## X.Y.Z {chr(0x2014)} unreleased` section of CHANGELOG.md"
+    tree = _tree({cc.CHANGES: b"id\tkind\nC9\tfix\n", cc.CHANGELOG: UNRELEASED_LOG})
+
+    [problem] = cc.changelog_problems(tree)
+
+    assert problem.fix == f"add a line to {section} that ends `(accuracy change C9)`"
+    assert cc._changelog_lines(cc.Request("C9", "fix", (), "why.")) == [
+        f"add to {section}:", "- why. (accuracy change C9)"]
+    assert cc.unreleased_version(UNRELEASED_LOG.decode("utf-8")) == "0.9.0"
+
+
+def _row_cell(golden: str, column: str = "row", old: str = "absent") -> cc.Cell:
+    return cc.Cell(golden, "src/a.py", "f", column, old, "present")
+
+
+SMALL = "tests/accuracy/corpus_goldens/goldens/small"
+
+
+@pytest.mark.parametrize("cells, only", [
+    ([_row_cell(f"{SMALL}/scored.tsv")], True),
+    ([_row_cell(f"{SMALL}/scored.tsv"), _row_cell(f"{SMALL}/inventory.tsv", "ccn", "2")], True),
+    ([_row_cell(f"{SMALL}/scored.tsv"), _row_cell(f"{SMALL}/scored.tsv", "ccn", "2")], False),
+    ([_row_cell(f"{SMALL}/scored.tsv", old="present")], False),
+    ([_row_cell("tests/accuracy/corpus_goldens/goldens/history/scored.tsv")], False),
+    ([], False)])
+def test_only_scored_rows_that_appear_let_the_digest_move_under_one_version(cells, only):
+    """A scored row that appears moves no function that was there; any other cell
+    of the small scored golden does, and so does nothing moving at all."""
+    tree = _tree({f"{SMALL}/scored.tsv": b"scope\tpath\tlong_name\n"})
+
+    assert cc.only_added_rows(cells, tree) is only
+
+
+def test_a_digest_row_of_added_rows_under_the_last_version_is_not_refused():
+    row = {"analysis_version": "7", "lizard_version": "1.24.0", "corpus": "c", "digest": "d"}
+    moved = {**row, "digest": "e"}
+
+    assert cc._digest_refusal([row], moved, cc.Running("7", "1.24.0"), added=True) == []
+    assert "to 8 (A1)" in cc._digest_refusal([row], moved, cc.Running("7", "1.24.0"))[0]
+
+
+def test_a_row_appended_under_a_held_version_with_a_new_digest_is_found():
+    old = [{"analysis_version": "7", "lizard_version": "1.24.0", "corpus": "c", "digest": "d"}]
+    same, moved = dict(old[0]), {**old[0], "digest": "e"}
+    bumped = {**moved, "analysis_version": "8"}
+
+    assert cc.moved_under_held_version(old, [*old, same, bumped]) == []
+    assert cc.moved_under_held_version(old, [*old, moved]) == [moved]
 
 
 def test_a_digest_that_moved_under_no_version_asks_for_version_1():
