@@ -85,15 +85,15 @@ def _clone(origin: Path, dest: Path, shallow: bool) -> Path:
 
 
 def _run(tmp_path: Path, *, shallow=False, broken_lane=False, stale=False, env=None,
-         path=None):
+         path=None, gate="true", gh=""):
     origin = repos.build(_spec(broken_lane), tmp_path / "origin").root
     base_sha = repos.git(origin, "rev-parse", "HEAD~1").strip()
     checkout = _clone(origin, tmp_path / "checkout", shallow)
     if stale:
         (checkout / ".crapkit" / "cov").mkdir(parents=True)
         (checkout / ".crapkit" / "cov" / "py.json").write_text(ARTIFACT, encoding="utf-8")
-    event = action_runs.Event(base_sha=base_sha, inputs={"gate": "true"}, date_now=NOW,
-                              env=env or {})
+    event = action_runs.Event(base_sha=base_sha, inputs={"gate": gate}, date_now=NOW,
+                              env=env or {}, gh=gh)
     return action_runs.run_action(checkout, event, tmp_path / "runner", path)
 
 
@@ -233,6 +233,43 @@ def test_a_pass_reads_passed_and_a_pass_without_a_base_run_says_so(tmp_path):
     assert _verdict_line(unbased) == ("**verify judged no changed function:** the base run was "
                                       "not made (no base commit). Run 3 against baseline 2, 1 "
                                       "changed file.")
+
+
+# docs/agent-json.md "Errors": a command that dies under --json prints one object,
+# {"error": {"exit", "kind", "message"}, "schema": 1}; CHANGELOG: the verdict line
+# reads that object from `verify --json` (a missing baseline commit, exit 4) as
+# **`crapkit verify` exited 4 and wrote no verdict: <message>.**, never as a verdict.
+VERIFY_ERROR = {"error": {"exit": 4, "kind": "git", "message": "no baseline commit 1a2b3c here\n"
+                                                               "fetch it, then rerun"},
+                "schema": 1}
+
+
+def test_an_error_object_is_not_read_as_a_verdict(tmp_path):
+    """R152: an error object holds no run, baseline or finding, so the comment
+    quotes its message's first line and counts nothing."""
+    line = _verdict_line(_comment(tmp_path, VERIFY_ERROR, 4))
+
+    assert line == "**`crapkit verify` exited 4 and wrote no verdict: no baseline commit 1a2b3c here.**"
+
+
+# A fork's pull request carries a read-only token, so gh api answers 403 (GitHub
+# REST: "Resource not accessible by integration"). A stand-in gh answers that.
+READ_ONLY_GH = "#!/bin/sh\necho 'HTTP 403: Resource not accessible by integration' >&2\nexit 1\n"
+
+
+def test_a_fork_token_does_not_fail_a_passing_check(tmp_path):
+    """R163: action.yml, above its post step: a fork's 403 is the consumer's
+    permissions, not a finding, and the gate step decides the job (CHANGELOG "A
+    fork's read-only token no longer fails the whole action"). With the gate off,
+    a pull request's scoring passes, so every step exits 0, the post step too."""
+    folder = tmp_path / "gh-bin"
+    folder.mkdir()
+    (folder / "gh").write_bytes(READ_ONLY_GH.encode())
+    (folder / "gh").chmod(0o755)
+    run = _run(tmp_path / "pr", gate="false", gh=str(folder))
+
+    assert "post the comment" in [step.name for step in run.steps]
+    assert [(step.name, step.code) for step in run.steps if step.code] == []
 
 
 def test_a_retro_replay_runs_the_action_its_commit_holds(tmp_path, monkeypatch):

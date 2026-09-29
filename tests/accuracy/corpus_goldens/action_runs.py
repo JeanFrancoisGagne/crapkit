@@ -7,7 +7,9 @@ step's `env:` and every `${{ }}` expression answered for one Event. Three kinds
 of step are left out: `uses:` steps and the pip install (crapkit is already
 installed where kit.drive finds it), the step that makes the state directory
 (run_action makes it), and any step that calls `gh api` (there is no pull
-request to post to). An expression this module does not know stops the run,
+request to post to), unless the Event names a directory holding a stand-in
+`gh`: then that step runs too, with the stand-in first on PATH, for pull
+request 7 of owner/repo. An expression this module does not know stops the run,
 so a new one in action.yml fails here instead of reading as empty.
 
 The result holds each step's exit status and output, the comment the build
@@ -46,6 +48,7 @@ class Event:
     inputs: dict = field(default_factory=dict)
     date_now: int | None = None
     env: dict = field(default_factory=dict)
+    gh: str = ""
 
 
 INPUT_DEFAULTS = {"gate": "false", "delta": "true", "top": "5", "python-version": "3.12"}
@@ -111,7 +114,15 @@ def _answers(event: Event, state: Path) -> dict:
         "github.token": "", "github.event.pull_request.number": "", "github.repository": "",
         "github.event.pull_request.head.repo.full_name": "",
     })
+    if event.gh:
+        answers.update(_POSTED)
     return answers
+
+
+# The pull request a run with a stand-in gh posts to.
+_POSTED = {"github.token": "read-only", "github.event.pull_request.number": "7",
+           "github.repository": "owner/repo",
+           "github.event.pull_request.head.repo.full_name": "fork/repo"}
 
 
 def _answer(answers: dict, expression: str) -> str:
@@ -125,9 +136,9 @@ def expand(text: str, answers: dict) -> str:
     return _EXPRESSION.sub(lambda match: _answer(answers, match.group(1)), str(text))
 
 
-def _left_out(step: dict) -> bool:
+def _left_out(step: dict, gh: str = "") -> bool:
     body = step.get("run", "")
-    return ("uses" in step or "pip install" in body or "gh api" in body
+    return ("uses" in step or "pip install" in body or ("gh api" in body and not gh)
             or "GITHUB_OUTPUT" in body)
 
 
@@ -155,13 +166,16 @@ def _run_step(step: dict, answers: dict, env: dict, checkout: Path) -> StepRun:
 
 def _base_env(path: Path, scratch: Path, event: Event) -> dict:
     clock = {} if event.date_now is None else {"GIT_TEST_DATE_NOW": str(event.date_now)}
-    return drive.child_env({"GITHUB_ACTION_PATH": path.as_posix(),
-                            "RUNNER_TEMP": scratch.as_posix(),
-                            "PYTHONIOENCODING": "utf-8", **clock, **event.env})
+    env = drive.child_env({"GITHUB_ACTION_PATH": path.as_posix(),
+                           "RUNNER_TEMP": scratch.as_posix(),
+                           "PYTHONIOENCODING": "utf-8", **clock, **event.env})
+    if event.gh:
+        env["PATH"] = os.pathsep.join([event.gh, env["PATH"]])
+    return env
 
 
-def _chosen(path: Path, answers: dict) -> list[dict]:
-    return [step for step in steps(path) if not _left_out(step) and _runs(step, answers)]
+def _chosen(path: Path, answers: dict, gh: str = "") -> list[dict]:
+    return [step for step in steps(path) if not _left_out(step, gh) and _runs(step, answers)]
 
 
 def run_action(checkout: Path, event: Event, scratch: Path, path: Path | None = None) -> ActionRun:
@@ -172,4 +186,4 @@ def run_action(checkout: Path, event: Event, scratch: Path, path: Path | None = 
     state.mkdir(parents=True)
     answers, env = _answers(event, state), _base_env(path, scratch, event)
     return ActionRun(tuple(_run_step(step, answers, env, checkout)
-                           for step in _chosen(path, answers)), state)
+                           for step in _chosen(path, answers, event.gh)), state)

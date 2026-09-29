@@ -21,8 +21,14 @@ Expected values come from the docs, never from a crapkit run:
 """
 from __future__ import annotations
 
+import importlib
 import json
+import os
+from pathlib import Path
+import shutil
+import sysconfig
 import tomllib
+import venv
 
 from hypothesis import given, strategies as st
 import pytest
@@ -188,6 +194,186 @@ def test_scoped_tests_form_follows_the_test_files(extra, form, tmp_path):
     has = ("{files}" in words, "tests" in words)
     assert has == {"files": (True, False), "names tests": (False, True),
                    "whole suite": (False, False)}[form]
+
+
+# gitformat-index(5), index entry: "'/' is used as path separator", so every
+# path git lists uses / and a backslash is part of a name, which Linux and macOS
+# allow.
+@pytest.mark.platform("linux", "darwin")
+def test_a_backslash_in_a_listed_name_is_part_of_the_filename(tmp_path):
+    """R135: a root-level file named `tests\\test_grade.py` is one file in no
+    directory, so no tests/ directory exists and the scoped_tests line names
+    none (docs/configuration.md: the whole-suite form names the test directory
+    only when there is one), and no scope but calc is proposed."""
+    test = {"tests\\test_grade.py": "def test_grade():\n    pass\n"}
+    root, done = _init({**PYPROJECT, **SOURCE, **test}, tmp_path)
+    assert done.code == 0, done.stderr
+    config = _config(root)
+
+    assert _scopes(config) == {"calc": (["calc"], ["python"], False)}
+    assert "tests" not in config["crapkit"]["scoped_tests"]["calc"].split()
+
+
+# docs/configuration.md "[[scope]]": `paths = ["."]` claims the repo root; docs/lanes.md
+# "nearest wins": init refuses, exit 3, under a directory an ancestor's scope
+# path already claims, since a nested configuration would shadow it.
+ROOT_SCOPE = ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "whole"\npaths = ["."]\n'
+              'languages = ["python"]\n')
+
+
+def test_init_refuses_a_scope_an_ancestor_claims(tmp_path):
+    """R147: the root scope `.` claims child/, so init there exits 3 and writes
+    no crapkit.toml of its own."""
+    files = {"crapkit.toml": ROOT_SCOPE, **{f"child/{path}": text for path, text in SOURCE.items()}}
+    top = analysis_inventory.build(files, tmp_path / "repo")
+    done = drive.Driver(top / "child").run("init")
+
+    assert (done.code, (top / "child" / "crapkit.toml").exists()) == (3, False), done.stderr
+
+
+def _commented_command(root) -> str:
+    """The command line of the commented coveragepy [[lane]] template."""
+    lines = (root / "crapkit.toml").read_text(encoding="utf-8").splitlines()
+    return next(line for line in lines if line.startswith("# command = ") and "pytest" in line)
+
+
+def test_the_commented_template_keeps_the_lockfile_prefix(tmp_path):
+    """R165: docs/lanes.md "The interpreter a lane binds to": every python line
+    init writes carries the lockfile's prefix, the commented [[lane]] template
+    of a repo with no pytest marker file too, so on a uv.lock repo it reads
+    `uv run python -m pytest`."""
+    root, done = _init({**SOURCE, "uv.lock": ""}, tmp_path)
+    assert done.code == 0, done.stderr
+
+    assert _commented_command(root).startswith('# command = "uv run python -m pytest ')
+
+
+WORKSPACES = {
+    "package.json": json.dumps({"private": True, "workspaces": ["web"],
+                                "scripts": {"test": "npm run test --workspaces"}}),
+    "web/package.json": json.dumps({"name": "web", "scripts": {"test": "vitest run"},
+                                    "devDependencies": {"vitest": "^3.0.0"}}),
+    "web/src/a.ts": "export const a = 1;\n",
+}
+
+
+def test_init_writes_a_monorepo_js_lane_that_runs(tmp_path):
+    """R162: CHANGELOG "`init` puts the js lane in the workspace that owns the
+    runner": when the root package.json names no runner and exactly one
+    workspace does, the lane's `cwd` is that directory, every path in its command
+    climbs back to the root (`--coverage.reportsDirectory=../.crapkit/cov/js`),
+    and `artifact` stays root-relative."""
+    root, done = _init(WORKSPACES, tmp_path)
+    assert done.code == 0, done.stderr
+    (lane,) = _config(root)["lane"]
+
+    assert (lane.get("cwd"), lane["artifact"]) == ("web", ".crapkit/cov/js/coverage-final.json")
+    assert "--coverage.reportsDirectory=../.crapkit/cov/js" in lane["command"].split()
+
+
+def _venv_with_pytest(root) -> None:
+    """A real venv at root/.venv whose interpreter imports pytest: a .pth file in
+    its site-packages names the site-packages this suite runs from."""
+    venv_dir = root / ".venv"
+    venv.create(venv_dir, with_pip=False)
+    site = Path(sysconfig.get_paths(vars={"base": str(venv_dir), "platbase": str(venv_dir)})
+                ["purelib"])
+    site.mkdir(parents=True, exist_ok=True)
+    (site / "outer.pth").write_text(Path(pytest.__file__).parents[1].as_posix() + "\n",
+                                    encoding="utf-8")
+
+
+# docs/lanes.md "The interpreter a lane binds to", the lockfile table's row "none,
+# and a venv in the tree": `.venv/bin/python -m pytest …` (`.venv\Scripts\python.exe`
+# on Windows, the path the loader hands back from the doubled TOML spelling).
+VENV_LAUNCHER = ".venv\\Scripts\\python.exe" if os.name == "nt" else ".venv/bin/python"
+
+
+def test_init_binds_the_lane_to_the_repo_venv(tmp_path):
+    """R161: with no lockfile, a .venv holding pyvenv.cfg whose interpreter imports
+    pytest is the environment the lane runs, not the bare name the PATH answers."""
+    root = analysis_inventory.build({**PYPROJECT, **SOURCE}, tmp_path / "repo")
+    _venv_with_pytest(root)
+    done = drive.Driver(root).run("init")
+    assert done.code == 0, done.stderr
+
+    assert _config(root)["lane"][0]["command"].startswith(f"{VENV_LAUNCHER} -m pytest ")
+
+
+def _shim_path(tmp_path, shims: dict[str, str]) -> dict:
+    """A PATH holding only `shims` ({name.bat: body}), git and System32: no python a
+    machine may carry elsewhere can answer."""
+    folder = tmp_path / "shims"
+    folder.mkdir()
+    for name, body in shims.items():
+        (folder / name).write_text(body, encoding="ascii")
+    system = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+    return {"PATH": os.pathsep.join([str(folder), str(Path(shutil.which("git")).parent),
+                                     str(system)])}
+
+
+@pytest.mark.platform("win32")
+def test_init_falls_back_to_the_py_launcher(tmp_path):
+    """R179: docs/lanes.md's lockfile table, row "none at all": `python -m pytest …`
+    (or python3, or py on Windows: the first that resolves). On a PATH where only
+    the py launcher resolves, the lane runs py, not a python3 nothing can start."""
+    env = _shim_path(tmp_path, {"py.bat": "@exit /b 1\n"})
+    root = analysis_inventory.build({**PYPROJECT, **SOURCE}, tmp_path / "repo")
+    done = drive.Driver(root, env=env).run("init")
+    assert done.code == 0, done.stderr
+
+    assert _config(root)["lane"][0]["command"].startswith("py -m pytest ")
+
+
+@pytest.mark.platform("win32")
+def test_a_9009_is_not_a_missing_pytest_cov(tmp_path):
+    """R180: README: when cmd.exe cannot start the interpreter at all (exit 9009,
+    the Store alias), init names that instead of guessing at pytest-cov, so no note
+    asks for pytest_cov in an interpreter that never ran."""
+    env = _shim_path(tmp_path, {"python.bat": "@exit /b 9009\n"})
+    root = analysis_inventory.build({**PYPROJECT, **SOURCE}, tmp_path / "repo")
+    done = drive.Driver(root, env=env).run("init")
+    assert done.code == 0, done.stderr
+
+    assert "cannot import pytest_cov" not in done.stdout + done.stderr
+
+
+# docs/lanes.md "The interpreter a lane binds to": every python line init writes
+# carries the same prefix, so the scoped-tests entry takes a lane's python exactly
+# when init reads that lane as the one that runs pytest. The lane commands below
+# end at `-m pytest` or carry flags after it; init's own lanes always do the latter.
+PYTEST_COMMANDS = ("uv run python -m pytest", "uv run python -m pytest --cov",
+                   "poetry run python -m pytest", "python -m pytest -q")
+
+
+@pytest.mark.parametrize("command", PYTEST_COMMANDS)
+def test_one_rule_names_the_pytest_lane(command):
+    """R166: the launcher init writes into the scoped-tests entry and the lane it
+    confirms as the pytest lane come from one reading of the lane command: the
+    lane's own python (the words before `-m pytest`) when init confirms it, the
+    bare default when it does not. crapkit.scaffold is loaded at run time, so
+    the crapkit under test answers."""
+    scaffold = importlib.import_module("crapkit.scaffold")
+    lanes = (scaffold.LaneSpec("py", command, ".crapkit/cov/py.json", "coveragepy",
+                               ("python",)),)
+    confirmed = "python" in scaffold._confirmed_languages(lanes)
+    lane_python = command.partition(" -m pytest")[0]
+
+    assert scaffold.python_launcher(lanes) == (lane_python if confirmed else "python")
+
+
+GO = "package main\n\nfunc main() {\n}\n"
+
+
+def test_a_cc_only_repo_gets_coverage_optional(tmp_path):
+    """R181: README "Languages": init writes `coverage_optional = true` on every
+    scope whose languages all lack a parser, so the 60-second start runs on a Go
+    repo: `crapkit coverage` scores it with no lane at all and writes the run."""
+    root, done = _init({"cmd/main.go": GO}, tmp_path)
+    assert done.code == 0, done.stderr
+
+    assert _scopes(_config(root)) == {"cmd": (["cmd"], ["go"], True)}
+    assert drive.Driver(root).run("coverage").code == 0
 
 
 def test_init_refuses_to_clobber_a_config(tmp_path):

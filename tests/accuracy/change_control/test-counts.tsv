@@ -1,8 +1,8 @@
 packet	tests
-analysis_oracles	259
+analysis_oracles	268
 change_control	155
-corpus_goldens	130
-coverage_oracles	93
+corpus_goldens	135
+coverage_oracles	94
 definitions	39
 history_oracles	75
 kit	255

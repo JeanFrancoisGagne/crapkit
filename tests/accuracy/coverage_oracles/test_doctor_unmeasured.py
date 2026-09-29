@@ -293,3 +293,30 @@ def _flags(counts: list[tuple[str, int, int]]) -> list[tuple[str, str]]:
     """One (path, flag) per function: the first `others` measured, the rest untested."""
     return [(path, "measured" if index < others else "untested")
             for path, functions, others in counts for index in range(functions)]
+
+
+# --- 4. the commit-graph warning under a nested root (R176) -------------------------------------
+
+GRAPH_CONFIG = ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "s"\npaths = ["src"]\n'
+                'languages = ["python"]\ncoverage_optional = true\n')
+
+
+def _graph_warnings(root: Path) -> list[str]:
+    return [line for line in drive.Driver(root).json("doctor")["warnings"]
+            if "commit-graph" in line]
+
+
+@pytest.mark.process
+def test_commit_graph_warning_under_a_nested_root(tmp_path):
+    """R176: with GIT_DIR unset, git finds the repository by searching the working
+    directory and then its parents (git(1), GIT_DIR), so a crapkit root one level
+    below the top shares the top's object store and its commit-graph. A graph
+    written with --no-changed-paths carries no Bloom filters, and doctor's warning
+    about it reads the same at both roots."""
+    files = {"crapkit.toml": GRAPH_CONFIG, "src/a.py": "def f(x):\n    return x\n",
+             "app/crapkit.toml": GRAPH_CONFIG, "app/src/b.py": "def g(y):\n    return y\n"}
+    top = repos.build(repos.Spec(steps=(repos.Commit(files=files),)), tmp_path / "repo").root
+    repos.git(top, "commit-graph", "write", "--reachable", "--no-changed-paths")
+
+    assert len(_graph_warnings(top)) == 1
+    assert _graph_warnings(top / "app") == _graph_warnings(top)

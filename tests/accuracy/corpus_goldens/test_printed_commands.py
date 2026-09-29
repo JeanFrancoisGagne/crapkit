@@ -24,6 +24,7 @@ starts a PowerShell.
 import base64
 import json
 import os
+import re
 import sys
 
 import pytest
@@ -241,6 +242,71 @@ def test_brief_commands_spell_the_console_script(run, source):
 
     assert len(brief) == len(run.rows)
     assert [text for text in brief if not spells_the_console_script(text)] == []
+
+
+def test_the_report_prints_the_crapkit_explain_call(run):
+    """R155: README's command table, `report`: every row "prints the `crapkit
+    explain` call for the rest". The page travels to readers on other machines,
+    so the call is the console script's, never the generating interpreter's path
+    (on Windows a name cmd.exe cannot carry prints the encoded PowerShell form,
+    which looks crapkit up by name)."""
+    report = [item.text for item in run.printed if item.source == "report"]
+
+    assert len(report) == len(run.rows)
+    assert [text for text in report if not spells_the_console_script(text)] == []
+
+
+# pytest's own answer when pytest-cov is not installed: argparse rejects --cov.
+UV_STAND_IN = {"uv": "#!/bin/sh\necho 'pytest: error: unrecognized arguments: --cov=src' >&2\n"
+                     "exit 4\n",
+               "uv.bat": "@echo pytest: error: unrecognized arguments: --cov=src 1>&2\n"
+                         "@exit /b 4\n"}
+MANAGED_LANE = ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src"]\n'
+                'languages = ["python"]\n\n[[lane]]\nname = "py"\n'
+                'command = "uv run pytest --cov=src --cov-report=json:.crapkit/cov/py.json"\n'
+                'artifact = ".crapkit/cov/py.json"\nparser = "coveragepy"\nscopes = ["src"]\n'
+                'container_ok = true\n')
+
+
+def test_a_managed_lane_s_plugin_hint_runs_no_pip_on_its_runner(tmp_path):
+    """R156: docs/lanes.md, the refusal for a missing pytest-cov: `uv run pytest
+    --cov` names the environment and stops there, since `uv` has no `-m pip
+    install` and a reader who ran one would get a second, unrelated failure. A
+    stand-in uv answers the way pytest does without the plugin."""
+    folder = tmp_path / "bin"
+    folder.mkdir()
+    for name, body in UV_STAND_IN.items():
+        (folder / name).write_bytes(body.encode())
+        (folder / name).chmod(0o755)
+    files = {"crapkit.toml": MANAGED_LANE, "src/a.py": "def f(x):\n    return x\n"}
+    root = repos.build(repos.Spec(steps=(repos.Commit(files=files),)), tmp_path / "repo").root
+    done = drive.Driver(root, env={"PATH": os.pathsep.join([str(folder), os.environ["PATH"]])}
+                        ).run("coverage")
+
+    assert "pytest-cov" in done.stderr, done.stderr
+    assert "uv -m pip" not in done.stderr
+
+
+CWD_LANE = ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "web"\npaths = ["web"]\n'
+            'languages = ["python"]\n\n[[lane]]\nname = "py"\ncwd = "web"\n'
+            'command = "python -c \\"import sys; sys.exit(1)\\""\n'
+            'artifact = ".crapkit/cov/py.json"\nparser = "coveragepy"\nscopes = ["web"]\n'
+            'container_ok = true\n')
+
+
+def test_the_shard_hint_writes_the_file_crapkit_reads(tmp_path):
+    """R160: docs/lanes.md "A killed run leaves its coverage shards behind": the
+    `-o` target is written relative to the shard directory, where the message
+    says to stand, so on a lane with `cwd = "web"` it resolves, from web/, to the
+    artifact crapkit reads at the root. Path resolution is the oracle."""
+    files = {"crapkit.toml": CWD_LANE, "web/a.py": "def f(x):\n    return x\n"}
+    root = repos.build(repos.Spec(steps=(repos.Commit(files=files),)), tmp_path / "repo").root
+    (root / "web" / ".coverage.box.pid5.aaaa").write_bytes(b"")
+    done = drive.Driver(root).run("coverage")
+    found = re.search(r"coverage json -o ([^`\s]+)", done.stderr)
+
+    assert found, done.stderr
+    assert (root / "web" / found.group(1)).resolve() == (root / ".crapkit/cov/py.json").resolve()
 
 
 def _step_param(shell: str, source: str):
