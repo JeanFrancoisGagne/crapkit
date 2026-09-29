@@ -1377,9 +1377,17 @@ each marks file re-seed once.
 - A `//` or a `/*` in a word hides nothing. PowerShell has neither comment, but lizard's
   C rules read `Invoke-RestMethod https://h/p ; while ($a) { }` as one token from the
   `//` on, the loop and its braces with it, and `Get-Item a/*` ran on to the next `*/`
-  in the file, every function between the two included. No row moved in the 1,608
-  functions measured (a large consumer repo, posh-git, and the modules Windows
-  PowerShell ships).
+  in the file, every function between the two included.
+- A `#` inside a word is part of the word, as PowerShell reads it: `Write-Host a#b;
+  if ($a) {` counts its `if`, and `C#`, `https://h/p#top`, `1#c` in a command's
+  arguments and `function Get-A#B` keep what follows them on the line. The `#` opened
+  a comment that took the rest of the line, a `{` with it, so the function ended at the
+  first `}` after it. A `#` after a space, a key, a closed string, a `)`, or a number or
+  a variable in an expression (`$x = 1#c`) still opens a comment.
+- Neither change moved a row in the 2,000 PowerShell functions measured (a large
+  consumer repo, posh-git, and the modules Windows PowerShell ships): their URLs and
+  hashes sit in strings. Reading a word through its `#` costs the tokenizer about a
+  quarter more time on PowerShell files.
 - `params` counts the parameters of the `param(...)` block that opens a function body,
   so an advanced function no longer reads 0. The long name, which is the ratchet key,
   still holds only the header list, so no key changes.

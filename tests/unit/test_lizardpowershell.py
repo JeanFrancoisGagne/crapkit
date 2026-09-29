@@ -438,6 +438,95 @@ def test_a_glob_and_its_mirror_image_hide_no_function_between_them():
     assert _rows(code) == [("A", 1, 3, 1), ("B", 4, 6, 2), ("C", 7, 9, 1)]
 
 
+# --- hazard: a # inside a word -------------------------------------------------
+
+def _get_a(body):
+    (record,) = analyze_source("probe.ps1", f"function Get-A($a, $b) {{\n    {body}\n}}\n")
+    return record.ccn_std, record.cognitive, record.end
+
+
+# (body, ccn_std, cognitive, end line). Each ccn_std is what Windows PowerShell
+# 5.1's parser reads (1 + if clauses + loops), and each # below sits inside one
+# Generic token there, so the if, elseif or while after the `;` is a statement.
+HASH_INSIDE_A_WORD = [
+    ("Write-Host a#b; if ($a) {\n        1\n    }", 2, 1, 5),
+    ("Write-Output C#; if ($a) { 1 } elseif ($b) { 2 }", 3, 2, 3),
+    ("Invoke-RestMethod https://h/p#frag ; while ($a) { 1 }", 2, 1, 3),
+    ("Write-Host 1#c; if ($a) { 1 }", 2, 1, 3),
+    ("Write-Host $a#b; if ($a) { 1 }", 2, 1, 3),
+    ("Write-Host -a#b; if ($a) { 1 }", 2, 1, 3),
+    ("Write-Host [int]#c; if ($a) { 1 }", 2, 1, 3),
+    ("Write-Host a[1]#b; if ($a) { 1 }", 2, 1, 3),
+    ('Write-Host a#"b; c" ; if ($a) { 1 }', 2, 1, 3),
+    ("Write-Host a#b`; c; if ($a) { 1 }", 2, 1, 3),
+    ("Write-Host x#-and; if ($a) { 1 }", 2, 1, 3),
+    ("$x = foo#bar; if ($a) { 1 }", 2, 1, 3),
+    ("$h = @{ k = v#w }; if ($a) { 1 }", 2, 1, 3),
+    ("$a | foo#bar; if ($a) { 1 }", 2, 1, 3),
+    ('Write-Host a"b"#c; if ($a) { 1 }', 2, 1, 3),
+    ("Write-Host -a:$b#c; if ($a) { 1 }", 2, 1, 3),
+    # `else#c` is one word, a command name: the if has no else clause.
+    ("if ($a) { 1 } else#c\n    { 2 }", 2, 1, 4),
+]
+
+
+@pytest.mark.parametrize("body, ccn, cognitive, end", HASH_INSIDE_A_WORD)
+def test_a_hash_inside_a_word_opens_no_comment(body, ccn, cognitive, end):
+    """PowerShell opens a comment at a # only where a token starts. A word that
+    starts with a letter, and any word in a command's arguments, reads on
+    through the #, up to a space or one of , | & ; ( ) { }. As a comment the #
+    took the rest of the line: the if after `a#b;` counted nothing, and the
+    `{` it opened was gone, so the function ended at the first `}` after it."""
+    assert _get_a(body) == (ccn, cognitive, end)
+
+
+def test_a_line_of_many_words_that_hold_a_hash_is_read_to_its_end():
+    """Each such word hands the rest of its line to a new token stream. They
+    stack rather than nest, so no line is too long to read."""
+    words = " ".join(f"a{n}#b" for n in range(3000))
+
+    assert _get_a(f"Write-Host {words}; if ($a) {{ 1 }}") == (2, 1, 3)
+
+
+# (body, ccn_std, cognitive, end line). Here PowerShell 5.1 reads a Comment
+# token at the #: after a number, a variable or a member in an expression,
+# after a `)`, a `}` or a closed string, and after a space.
+HASH_OPENING_A_COMMENT = [
+    ("$x = 1#c; if ($a) { 1 }", 1, 0, 3),
+    ("Write-Host $a.b#c; if ($a) { 1 }", 1, 0, 3),
+    ("Write-Host $a[0]#c; if ($a) { 1 }", 1, 0, 3),
+    ("Write-Host (1)#c; if ($a) { 1 }", 1, 0, 3),
+    ('Write-Host "x"#c; if ($a) { 1 }', 1, 0, 3),
+    ("Write-Host 'x'#c; if ($a) { 1 }", 1, 0, 3),
+    ("$h = @{ k = 1 }#c; if ($a) { 1 }", 1, 0, 3),
+    ("1#c; if ($a) { 1 }", 1, 0, 3),
+    ("$a#c; if ($a) { 1 }", 1, 0, 3),
+    ("Write-Host a #c; if ($a) { 1 }", 1, 0, 3),
+]
+
+
+@pytest.mark.parametrize("body, ccn, cognitive, end", HASH_OPENING_A_COMMENT)
+def test_a_hash_where_powershell_reads_a_comment_still_opens_one(body, ccn, cognitive, end):
+    assert _get_a(body) == (ccn, cognitive, end)
+
+
+def test_a_hashtable_key_ends_at_a_hash():
+    """A key is read in expression mode: `@{ a#b = 1 }` is Identifier[a] and
+    Comment[#b = 1 }] to PowerShell 5.1, although a value's `b#c` is one word."""
+    tokens = [t for t in PowerShellReader.generate_tokens("@{ a#b = 1 }") if not t.isspace()]
+
+    assert tokens == ["@", "{", "a", "#b = 1 }"]
+
+
+@pytest.mark.parametrize("keyword", ["function", "filter"])
+def test_a_hash_inside_a_declared_name_keeps_the_name_and_the_body(keyword):
+    """`function Get-A#B { }` declares Get-A#B to PowerShell 5.1. Read as a
+    comment, the # took the body's `{` and the function never opened."""
+    code = f"{keyword} Get-A#B {{\n    if ($a) {{ 1 }}\n}}\n"
+
+    assert _rows(code) == [("Get-A#B", 1, 3, 2)]
+
+
 # --- hazard: here-strings ------------------------------------------------------
 
 def test_a_double_quoted_here_string_leaks_no_conditions():

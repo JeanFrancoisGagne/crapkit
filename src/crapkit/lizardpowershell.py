@@ -151,8 +151,23 @@ TOKENIZER
     anywhere in the file, every function between them included. The source
     gets a space between the two characters before it is tokenized, as the
     shell reader's does; that adds no line and no token this reader counts.
+
     The `#` line-comment rule comes from ScriptLanguageMixIn, the same one
-    PythonReader uses.
+    PythonReader uses, and it opens a comment wherever a token starts.
+    PowerShell opens one only where its own tokenizer starts a token; inside
+    a word a # is text (checked on Windows PowerShell 5.1's
+    Parser.ParseInput). A word that starts with a letter reads on through a #
+    anywhere but in a hashtable key, and any word in a command's arguments
+    does: `Write-Host a#b`, `C#`, `https://h/p#frag`, `1#c`, `-a#b`,
+    `$x = foo#bar`, `else#c`, `function Get-A#B`. A word ends at a space or
+    at one of `, | & ; ( ) { }`, and a quoted run or a backtick escape stays
+    inside it. After a number or a variable in an expression, a key, a
+    member, a `)`, a `}` or a closed string, the # opens a comment:
+    `$x = 1#c`, `$a.b#c`, `"x"#c`. `_Spelling` knows the place each word
+    stands in, so `_spelled` hands a glued comment's word part back to its
+    word and tokenizes the rest of the line again. As a comment, the # took
+    the rest of the line: `Write-Host a#b; if ($x) {` lost its `if` and its
+    `{`, and the function ended at the first `}` after it.
 
 SUBEXPRESSIONS INSIDE STRINGS
     `"$($a -and $b)"` evaluates `$a -and $b`: the quotes make its value text,
@@ -182,6 +197,14 @@ KNOWN LIMITS
       this reader does not check either, so `@"` inside an expression opens a
       body that runs to the next `"@`.
     - A class's methods get no row, so their complexity is not gated.
+    - An enum member glued to a comment (`Green# note`) reads the note as
+      code, where PowerShell reads a comment. An enum body counts toward no
+      function, so only a brace in the note can move anything.
+    - A command path that starts with a dot or a slash still ends at its #:
+      `./run#1.ps1 -x` is one word to PowerShell, and here the rest of the
+      line from the # is a comment.
+    - A quoted run inside a word that does not close on its line (`a#"b`)
+      ends the word at its quote.
 
 REGISTRATION
     lizard resolves a filename through `lizard_languages.get_reader_for`, which
@@ -307,6 +330,27 @@ _LABEL = re.compile(r":[A-Za-z_]")
 _BLOCK_COMMENT = "<#"
 _COMMENT_OPENERS = ("#", _BLOCK_COMMENT)
 
+# A word ends at a space, a line break or one of these tokens, where
+# PowerShell's tokenizer starts a new token in a command's arguments.
+_WORD_ENDS = frozenset({",", "|", "&", ";", "(", ")", "{", "}", "&&", "||"})
+
+# What a # glued to the word read so far does (see TOKENIZER). A word that
+# starts with a letter takes it anywhere but in a hashtable key, and so does
+# any word in a command's arguments: `$x = foo#bar`, `Write-Host 1#c`. One that
+# starts with a variable takes it only right after the variable, `$a#b` but
+# not `$a.b#c`. Anywhere else the # opens a comment: after a key, a quoted
+# string, or a number or a variable in an expression (`$x = 1#c`).
+_JOINS = "joins"
+_JOINS_ONCE = "joins right after the variable"
+_ENDS = "ends"
+_TAKES_A_HASH = frozenset({_JOINS, _JOINS_ONCE})
+_ARGUMENT_WORD = {"$": _JOINS_ONCE}
+_QUOTES = ('"', "'", '@"', "@'")
+
+# The word part of a comment token glued to a word: up to what ends the word.
+# A quoted run and a backtick escape stay inside, as in `a#"b; c"`.
+_WORD_TAIL = re.compile(r"(?:`.|\"(?:`.|[^\"`])*\"|'(?:''|[^'])*'|[^\s,|&;(){}`\"'])*")
+
 
 def _begins_statement(previous: str, new_line: bool) -> bool:
     """Whether the token after `previous` is a statement's first word.
@@ -323,6 +367,27 @@ def _begins_statement(previous: str, new_line: bool) -> bool:
 def _is_name(token: str) -> bool:
     """A word that can name a function or a type, as `=`, `$x` and `{` cannot."""
     return token[:1].isalnum() or token[:1] == "_"
+
+
+def _word(token: str, place: str, word: str | None) -> str | None:
+    """What a # glued right after `token` does, given what one glued to the
+    token before it did (`word`, None when a space or a word end came between).
+    """
+    if token in _WORD_ENDS:
+        return None
+    if word is None:
+        return _word_start(token, place)
+    return _ENDS if word == _JOINS_ONCE else word
+
+
+def _word_start(token: str, place: str) -> str:
+    """What a # glued to a word does, read off the word's first token and the
+    place it stands in."""
+    if place == _KEY or token.startswith(_QUOTES):
+        return _ENDS
+    if place == _ARGUMENT:
+        return _ARGUMENT_WORD.get(token[:1], _JOINS)
+    return _JOINS if token[:1].isidentifier() else _ENDS
 
 
 def _takes_no_keyword(previous: str) -> bool:
@@ -387,7 +452,8 @@ class _Spelling:
 
     A stack of `_Frame`s, one per open bracket, knows which pipeline elements
     are commands: `Test-Path $a -or $b` inside `if (...)` is one, and
-    `(Test-Path $a) -or $b` is an expression holding one.
+    `(Test-Path $a) -or $b` is an expression holding one. The same places
+    decide whether a # glued to a word goes on with it (`word`).
     """
 
     def __init__(self):
@@ -395,15 +461,20 @@ class _Spelling:
         self.new_line = False    # a line break since then
         self.head = ""           # the current statement's first token, as spelled
         self.frames = [_Frame()]
+        self.word = None         # what a # glued to the last token does, see _word
 
     def __call__(self, token: str) -> str:
         if token.isspace():
             self.new_line = self.new_line or "\n" in token
+            self.word = None
             return token
         if token.startswith(_COMMENT_OPENERS):
+            self.word = None
             return token
         statement = _begins_statement(self.previous, self.new_line)
-        spelled = self._spell(token, self._place(token, statement))
+        place = self._place(token, statement)
+        spelled = self._spell(token, place)
+        self.word = _word(token, place, self.word)
         if statement:
             self.head = spelled
         self._follow(spelled, statement)
@@ -459,9 +530,48 @@ class _Spelling:
         return _takes_no_keyword(self.previous)
 
 
-def _spelled(tokens):
-    spelling = _Spelling()
-    return (spelling(token) for token in tokens)
+class _Words:
+    """The spelled tokens, each held back until the next one is read, so the
+    word part of a comment glued to it can still join it."""
+
+    def __init__(self, rescan):
+        self._spelling = _Spelling()
+        self._rescan = rescan    # tokenizes the rest of a line after a word's #
+        self._held = ()          # the last token spelled, not yet handed on
+
+    def drain(self, streams: list):
+        """Spell the innermost stream's tokens until it ends, or until a comment
+        goes on with the held word: that gives the word its word part, and the
+        rest of the line becomes the stream to read next."""
+        spelling, held = self._spelling, self._held
+        for token in streams[-1]:
+            if token[:1] == "#" and spelling.word in _TAKES_A_HASH:
+                tail = _WORD_TAIL.match(token).group()
+                self._held = (held[0] + tail,)
+                streams.append(iter(self._rescan(token[len(tail):])))
+                return
+            yield from held
+            held = (spelling(token),)
+        self._held = held
+        streams.pop()
+
+    def rest(self) -> tuple:
+        return self._held
+
+
+def _spelled(tokens, rescan):
+    """Every token as `_Spelling` spells it, each word that holds a # whole.
+
+    lizard's `#` rule opens a comment wherever a token starts, so `a#b; if`
+    read as `a` and a comment. A stack of token streams rather than recursion
+    reads the rest of such a line, since one line can hold any number of these
+    words.
+    """
+    words = _Words(rescan)
+    streams = [iter(tokens)]
+    while streams:
+        yield from words.drain(streams)
+    yield from words.rest()
 
 # The keywords that declare something with a name and a brace body, and the
 # state that reads the name. A class or an enum is read only to skip its body.
@@ -821,14 +931,19 @@ class PowerShellReader(CodeReader, ScriptLanguageMixIn):
         subexpression inside a double-quoted string read as code.
 
         ScriptLanguageMixIn supplies the `#` line-comment rule (PythonReader
-        uses the same one), so comment handling is not written here. The one
-        rewrite in the source is `/*` to `/ *` (see TOKENIZER), and nothing is
-        materialized: the subexpressions are opened by a generator over lizard's,
-        and `_spelled` respells keyword tokens one at a time as they come, so the
-        token stage still yields as it reads, which is what crapkit's two-chain
-        analyze.py depends on (tests/unit/test_cognitive_reader_chain.py).
+        uses the same one), and `_spelled` hands a word that holds a # its
+        comment's word part back. The one rewrite in the source is `/*` to
+        `/ *` (see TOKENIZER), and nothing is materialized: the subexpressions
+        are opened by a generator over lizard's, and `_spelled` respells keyword
+        tokens one at a time as they come, rescanning through the same
+        generator, so the token stage still yields as it reads, which is what
+        crapkit's two-chain analyze.py depends on
+        (tests/unit/test_cognitive_reader_chain.py).
         """
-        return _spelled(_tokens(source_code.replace("/*", "/ *"), addition, token_class))
+        def tokens(source):
+            return _tokens(source, addition, token_class)
+
+        return _spelled(tokens(source_code.replace("/*", "/ *")), tokens)
 
 
 def _tokens(source: str, addition: str, token_class):
