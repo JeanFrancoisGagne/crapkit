@@ -309,4 +309,4 @@ def test_register_raises_when_lizard_resolves_something_else(monkeypatch):
 def test_other_languages_keep_their_readers():
     register()
     assert lizard.get_reader_for("module.js").__name__ == "JavaScriptReader"
-    assert lizard.get_reader_for("module.swift").__name__ == "SwiftReader"
+    assert lizard.get_reader_for("module.ts").__name__ == "TypeScriptReader"
