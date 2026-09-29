@@ -1486,8 +1486,10 @@ _COVERAGE = {
     "kind": {"type": "string", "enum": ("coverage", "partial"),
              "description": ("coverage for a full run, partial when a lane was skipped (--lane) "
                              "or failed; a partial run is never a baseline")},
-    "measured": _count("functions flagged measured; the four flag counts sum to functions"),
+    "measured": _count("functions flagged measured; the five flag counts sum to functions"),
     "untested": _count("functions flagged untested"),
+    "excluded": _count("functions flagged excluded: a lane's artifact measured the file and was "
+                       "told to leave the function out"),
     "no_lane": _count("functions flagged no-lane: no lane covers their scope"),
     "cc_only": _count("functions flagged cc-only: their scope asks for no coverage"),
     "over_target": _count("functions over their scope's ceiling, counted over the scopes this "

@@ -211,7 +211,8 @@ def test_doctor_tune_with_no_lane_measured_says_so(tmp_path, monkeypatch, capsys
 
 def test_a_junit_report_that_is_not_utf8_costs_nothing_and_crashes_nothing(tmp_path):
     """doctor --tune caught a report that was not XML and let one that was not
-    UTF-8 end the command with a traceback."""
+    UTF-8 end the command with a traceback. The lane is named as one that left
+    no duration, never summed as 0."""
     from crapkit.cli.admin import _lane_durations
     from crapkit.config import load_config_text
 
@@ -220,7 +221,7 @@ def test_a_junit_report_that_is_not_utf8_costs_nothing_and_crashes_nothing(tmp_p
         '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n\n'
         '[[lane]]\nname = "b"\ncommand = "y"\nartifact = "cov/b.json"\n'
         'parser = "istanbul"\nscopes = ["src"]\nresults_artifact = "b-results.xml"\n')
-    assert _lane_durations(tmp_path, cfg) == ()
+    assert _lane_durations(tmp_path, cfg) == ((), ("b",))
 
 
 def test_junit_reports_its_own_wall_seconds():

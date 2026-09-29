@@ -127,8 +127,8 @@ SUMMARY = {"run_id": 7, "functions": 3, "measured": 3, "untested": 0, "excluded"
      "functions 3, over_target 0, crap_load 2.0", inv.PRINTED),
     (lambda: inv.check_verdict(VERDICT._replace(gate_violations=[1]), 0, kept=inv.UNSETTLED),
      "verify exits 6 by the README precedence 6 > 7 > 8 > 9 > 0, and stores ok only with exit 0",
-     "exit 0, ok True, gate_violations 1, ratchet_regressions 0, new_failures 0, "
-     "uncovered_violations 0", inv.UNSETTLED),
+     "exit 0, ok True, gate_violations 1, unread_files 0, ratchet_regressions 0, "
+     "new_failures 0, uncovered_violations 0", inv.UNSETTLED),
     (lambda: inv.check_worklist([_entry()], [], 0, {}),
      "every row over its ceiling is admitted to the worklist",
      "0 row(s) over their ceiling, 1 admitted", inv.PRINTED),
