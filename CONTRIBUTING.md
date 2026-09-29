@@ -6,6 +6,7 @@
 git clone https://github.com/JeanFrancoisGagne/crapkit
 cd crapkit
 pip install -e ".[dev,accuracy-push]"
+npm ci --prefix tools/accuracy/node/push
 git config core.hooksPath git-hooks
 ```
 
@@ -20,7 +21,10 @@ coverage and worker flags. Run the shared test schedule below after setup.
 your pushes. Without it your commits pass locally and get rejected in review. The
 `accuracy-push` extra is what the pre-push hook runs on: the pinned oracles of the
 calculation-accuracy suite ([docs/accuracy.md](docs/accuracy.md)). Without it the hook
-stops the push and prints the install line.
+stops the push and prints the install line. The Node tools `npm ci` puts under
+`tools/accuracy/node/push` are what the pre-push checks of a JavaScript or TypeScript
+calculation and `change_control.py declare` run; without them both stop and print the
+`npm ci` line.
 
 ## Tests
 
@@ -44,9 +48,9 @@ A change to anything crapkit computes, a score, a label, a ranking or a pass/fai
 also runs the calculation-accuracy suite: `python tools/accuracy/run.py --tier push -n 4`
 ([docs/accuracy.md](docs/accuracy.md) has every tier). The pre-push hook runs the
 accuracy checks of each calculation whose module your branch touches. A fix to a
-calculation adds a row to `tests/accuracy/suite_strength/retro/bugs.tsv` whose check
-fails at the commit before the fix, and a change that moves a golden declares itself
-with `python tools/accuracy/change_control.py declare`.
+calculation needs the rows [docs/accuracy.md: past bugs](docs/accuracy.md#past-bugs)
+names, and a change that moves a golden declares itself with
+`python tools/accuracy/change_control.py declare`.
 
 Add `--coverage` to the shared runner to combine branch coverage, subprocess
 measurements, configured test contexts and JUnit results. Every direct run retains its
@@ -72,8 +76,10 @@ while it owns those measurement artifacts, and the CI verdict driver uses that l
 in its private checkout. A direct run should keep the default destination so it cannot
 change an active lane's evidence.
 
-`python tools/docs/generate.py` updates the marked version and command facts and
-the editor schema. CI checks these generated sections through the unit suite.
+`python tools/docs/generate.py` rewrites every generated block: SECURITY.md's version
+support, the test schedule here and in AGENTS.md, docs/accuracy.md's calcs, rulings and
+conventions tables, pyproject.toml's mutmut paths, and the editor schema,
+`crapkit.schema.json`. CI checks these generated sections through the unit suite.
 
 `tests/unit` covers pure seams, including `cli/verifying.py` and `cli/scoring.py`, which it
 drives in process rather than through a subprocess. `tests/e2e` drives `python -m crapkit`
@@ -113,9 +119,9 @@ so no global Git configuration is required.
 
 ## The rules the repo holds itself to
 
-- **The complexity gate is real.** Every function you add or touch must sit at ccn 6 or
-  lower, the `target = 6` in this repo's own `crapkit.toml`. Comprehension `for`/`if`
-  clauses, ternaries, and `and`/`or` all count. `git-hooks/pre-commit` runs
+- **The complexity gate is real.** Every function you add or touch must sit at or under
+  its scope's `target` in this repo's own `crapkit.toml`: 6 for `src` and `tools`, 5 for
+  `tools/accuracy`. Comprehension `for`/`if` clauses, ternaries, and `and`/`or` all count. `git-hooks/pre-commit` runs
   `python -m crapkit hook-precommit` over your staged blobs, which exits 6 on a breach and
   turns into a git exit 1. Decompose; never widen the gate. A refusal is design feedback.
 - **Tests first.** A behavior change starts with the failing test that proves it: unit
@@ -213,15 +219,24 @@ prove it:
 | File | Change |
 |---|---|
 | `src/crapkit/config_contract.py` | add the label to the scope languages enum; `SUPPORTED_LANGUAGES` derives from it |
-| `src/crapkit/universe.py` | add its suffixes to `LANGUAGE_EXTENSIONS` |
+| `src/crapkit/languages.py` | add its suffixes to `LANGUAGE_EXTENSIONS` |
 | `src/crapkit/_pygdefer.py` | name it in the module docstring's list, which a test pins to the language set |
 
 Run `python tools/docs/generate.py` to update the editor schema. Then regenerate
-`plugin/hooks/hooks.json` from `LANGUAGE_EXTENSIONS` (a test rebuilds it
+`plugin/hooks/hooks.json` from `languages.LANGUAGE_EXTENSIONS` (a test rebuilds it
 and diffs), and name the language in the README intro and the handbook standfirst, both
 pinned to the same set. Bump `ANALYSIS_VERSION` in `analyze.py` so existing stores
 re-analyze. Coverage joins only where a parser exists, so a new language's scopes declare
 `coverage_optional = true` until one does.
+
+Bumping `ANALYSIS_VERSION` touches `analyze.py`, which `calcs.tsv` rows name, so declare
+the change: `python tools/accuracy/change_control.py declare <id> --kind feature --calcs
+"<the calcs declare lists as moved>" --reason "<language> support"`. It regenerates the
+goldens, appends the `metric-digests.tsv` row for the new version and prints the
+CHANGELOG line. Re-measure `GOLDEN_RECORDS` and set `GOLDEN_ANALYSIS_VERSION` in
+`tests/unit/test_analysis_cache_identity.py`. A new reader module also gets a
+`calcs.tsv` row in `tests/accuracy/analysis_oracles` naming the module, its functions
+and an independent test; then run `python tools/docs/generate.py`.
 
 `mutate.py` needs nothing unless the language spells its operators differently. Anything
 unnamed there falls through to the C-family table, which is right for Swift, Go, Vue, Zig,

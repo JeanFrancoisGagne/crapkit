@@ -63,7 +63,7 @@ missing=[]
 for link in parser.links:
     if link.startswith('#'):
         if link[1:] not in parser.ids:missing.append(link)
-    elif not link.startswith(('https:','http:')) and link != 'evidence.zip':
+    elif not link.startswith(('https:','http:')):
         if not (target/link).is_file():missing.append(link)
 assert not missing,missing
 assert parser.articles==18 and len(parser.ids)==len(set(parser.ids))
@@ -73,8 +73,12 @@ for path in sorted(target.rglob('*')):
         manifest[path.relative_to(target).as_posix()]={'bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
 (target/'manifest.json').write_text(json.dumps({'reviewed_commit':'499d9db4f9ff4d212fb94ea3975c7477b6b1c968','files':manifest},indent=2)+'\n',encoding='utf-8')
 outputs.mkdir(parents=True,exist_ok=True)
-for suffix in ('.html','.json'):
-    shutil.copyfile(target/(NAME+suffix),outputs/(NAME+suffix))
+shutil.copyfile(target/(NAME+'.json'),outputs/(NAME+'.json'))
+# The archive exists only beside the published copy, so only that copy links it.
+page=(target/(NAME+'.html')).read_bytes()
+nav_end=b'Candidate data</a></nav>'
+assert page.count(nav_end)==1
+(outputs/(NAME+'.html')).write_bytes(page.replace(nav_end,b'Candidate data</a><a href="evidence.zip">Evidence bundle</a></nav>'))
 shutil.copytree(evidence,outputs/evidence.name,dirs_exist_ok=True)
 archive=outputs/'evidence.zip'
 with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED) as z:
