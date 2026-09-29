@@ -82,7 +82,9 @@ well: the body of a structure that has no braces (`if (a) return 0;`, see
 arrives (see `_arms_token`).
 A structure's body is the first `{` at its keyword's own bracket depth, so a
 literal or a lambda inside its header is not; see `_open_brace`,
-`_brace_body` and, for headers without parentheses, `_resolve_reopen`.
+`_brace_body` and, for headers without parentheses, `_resolve_reopen`. A body
+without braces in the function's declaration ends at the function's `{`
+(`_function_body`).
 A word spelled like a keyword is a name where the language or the tokens
 around it say so: a structure keyword followed by a `:` (see
 `_resolve_structure`), a word the language's `counting` set leaves out
@@ -250,7 +252,8 @@ class _Dialect(NamedTuple):
     `rust`: Rust's own syntax, a `for` that loops over nothing, a signature
     that never counts and a `?` that is no conditional (see _resolve_for,
     _signature, _counts_question). `error_sets`: `||` merges two error sets
-    (Zig; see _error_set_merge). `conditions`: the reader's condition set,
+    (Zig; see _error_set_merge). `if_types`: an `if` can be a type, whose arms
+    end at the `=` after it (Zig; see _initializer). `conditions`: the reader's condition set,
     read at each `?`, and set from the reader for each file (see
     LizardExtension.__call__). `bare_headers`: a structure's header goes
     without parentheses, so a literal or a block in it sits at the body's depth
@@ -301,6 +304,7 @@ class _Dialect(NamedTuple):
 
     rust: bool = False
     error_sets: bool = False
+    if_types: bool = False
     conditions: frozenset = _QUESTION
     bare_headers: bool = False
     counting: frozenset = _COUNTING
@@ -458,14 +462,14 @@ _DIALECTS = {
 }
 
 # The rules crapkit's reader fixes add: Rust's own syntax (see _Dialect.rust),
-# the headers without parentheses of Go, Rust and Swift (_Dialect.bare_headers)
-# and Zig's `||`, which merges error sets. A reader crapkit subclasses reads
-# under the rules of the lizard reader it corrects.
+# the headers without parentheses of Go, Rust and Swift (_Dialect.bare_headers),
+# Zig's `||`, which merges error sets, and Zig's `if` in a type. A reader crapkit
+# subclasses reads under the rules of the lizard reader it corrects.
 _DIALECTS.update(dict.fromkeys(("RustReader", "CorrectedRustReader"),
                                _RUST._replace(rust=True, bare_headers=True)))
 _DIALECTS.update({reader: _DIALECTS[reader]._replace(bare_headers=True)
                   for reader in ("GoReader", "SwiftReader")})
-_DIALECTS["ZigReader"] = _DIALECTS["ZigReader"]._replace(error_sets=True)
+_DIALECTS["ZigReader"] = _DIALECTS["ZigReader"]._replace(error_sets=True, if_types=True)
 _DIALECTS.update({f"Corrected{stock}": _DIALECTS.get(stock, _DEFAULT_DIALECT)
                   for stock in ("GoReader", "SwiftReader", "ZigReader")})
 
@@ -621,7 +625,8 @@ class _FnState:
                  "bool_op", "fn", "own", "recursed", "body_started", "signature_depth",
                  "prev", "prev2", "label_check", "dialect", "call_pending", "call",
                  "messages", "runs", "run_break", "word_op", "braces", "closed_do",
-                 "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies", "do_tail",
+                 "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies", "annotation",
+                 "do_tail",
                  "ended", "questions", "arms", "next_rule", "brace_base", "scopes", "home", "bare_call",
                  "shadowed", "importing",
                  "after_group", "own_calls", "closed_call", "signature")
@@ -648,6 +653,7 @@ class _FnState:
         self.questions = []      # bracket depths of `?`s whose `:` has not come
         self.arms = []           # bracket depths of conditional operators past their `:`
         self.bodies = []          # [bracket depth, phase, structure] per body; see _open_body
+        self.annotation = None    # Zig: the bracket depth of an `if` in a type; see _initializer
         self.ended = None         # the depth a statement just ended at; see _end_statement
         self.else_pending = False
         self.else_payload = False  # Zig: inside an else's `|err|`; see _resolve_else
@@ -2209,7 +2215,9 @@ def _push_structure(state: _FnState, is_python: bool, token: str = "") -> None:
 # A body ends with its statement: at a `;` or a `,` at its own bracket depth, at
 # the close of a bracket around it, at the `}` of a braced statement that was
 # the body (`for (...) if (x) { ... }`), and in JavaScript at a line break that
-# neither the line before nor the next one continues. The token after that end
+# neither the line before nor the next one continues. A body in the function's
+# declaration, a Zig return type's `if (A) u8 else u16`, ends at the function's
+# `{`, and one in a Zig field's or variable's type at the `=` after the type. The token after that end
 # decides: an `else` ends the body of the if it belongs to and keeps the bodies
 # around that one (`for (...) if (a) b(); else c();`), a `catch` or `finally`
 # keeps them all, and anything else ends them all. A Zig loop's own `else`
@@ -2222,7 +2230,17 @@ def _open_body(state: _FnState, token: str) -> None:
     whichever way the body turns out."""
     phase = _AWAITING if token in state.dialect.do_loops else _FRESH
     _reach(state, _nesting(state, False) + 1)
+    _note_annotation(state, token)
     state.bodies.append([state.bracket_depth, phase, token])
+
+
+def _note_annotation(state: _FnState, token: str) -> None:
+    """An `if` right after a `:` in Zig is a type, a field's or a variable's
+    (`called: if (safety) bool else void = ...`), and the `=` after the type
+    ends its arms; see _initializer. The `:` is two tokens back, since the
+    `if` is charged at the token after it."""
+    if token == "if" and state.prev2 == ":" and state.dialect.if_types:
+        state.annotation = state.bracket_depth
 
 
 def _body_token(state: _FnState, token: str) -> None:
@@ -2329,11 +2347,24 @@ def _brace_body(state: _FnState) -> None:
     depth, and of no other: a `{` in a header's brackets (`for (int x : {1,
     2})`, a lambda in a condition) or in a body that has begun (`return {k:
     1}`) is a literal's or a lambda's. `_body_token` has already counted this
-    `{`, so the depth outside it is one less."""
+    `{`, so the depth outside it is one less. The `{` that starts the
+    function's body ends the bodies in its declaration; see _function_body."""
     body = _innermost_at(state, state.bracket_depth - 1)
-    if body is not None and body[1] == _AWAITING:
+    if _function_body(state, body):
+        _close_bodies(state, 0)
+    elif body is not None and body[1] == _AWAITING:
         body[1] = _BRACED
         _push(state, state.brace_depth)
+
+
+def _function_body(state: _FnState, body) -> bool:
+    """Whether a `{` starts the function's body, where lizard starts it, rather
+    than a structure's block: it stands outside every bracket and block, after
+    a body with no braces has begun. That body sits in the function's
+    declaration, as the arms of an `if` in a Zig return type do (`fn f(x:
+    anytype) if (A) u8 else u16 {`), and ends there. Held open, the else's body
+    put every structure in the function one level down."""
+    return state.brace_depth == 0 and body is not None and body[0] == 0 and body[1] == _BEGUN
 
 
 def _open_bracket(state: _FnState, _token: str) -> None:
@@ -2382,13 +2413,26 @@ def _else_ends_body(state: _FnState, _token: str) -> None:
             return
 
 
+def _initializer(state: _FnState, _token: str) -> None:
+    """The `=` after a type ends the arms of an `if` in that type: in
+    `called: if (safety) bool else void = if (safety) false else {},` the
+    second `if` is the field's value, beside the first, not in its else. In a
+    statement, `if (a) x = 1 else y = 2;`, the `=` is in the arm and ends
+    nothing."""
+    if state.annotation == state.bracket_depth:
+        _close_bodies(state, state.bracket_depth)
+
+
 def _close_bodies(state: _FnState, depth: int) -> None:
-    """Close the bodies at `depth` or deeper, whose statement has ended."""
+    """Close the bodies at `depth` or deeper, whose statement has ended, and
+    the type they sat in."""
     while state.bodies and state.bodies[-1][0] >= depth:
         state.bodies.pop()
+    if state.annotation is not None and state.annotation >= depth:
+        state.annotation = None
 
 
 # The tokens the body rules read, each to the rule that reads it.
-_BODY_STEPS = {";": _semicolon, ",": _comma, "else": _else_ends_body,
+_BODY_STEPS = {";": _semicolon, ",": _comma, "else": _else_ends_body, "=": _initializer,
                **dict.fromkeys(("(", "[", "{"), _open_bracket),
                **dict.fromkeys((")", "]", "}"), _close_bracket)}

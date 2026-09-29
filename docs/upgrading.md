@@ -452,6 +452,10 @@ re-seeds once, with the same three commands as version 11 below.
   Zig standard library lose a level and 12 cost less; 8 gain a level, where a
   `switch` follows `else |err|` and now sits in the else's body as it does after a
   plain `else`.
+- In Zig both columns go down in a function whose return type holds an `if`
+  (`fn f(x: anytype) if (A) u8 else u16 {`), whose whole body read one level deep,
+  as it did in 0.8.0. 3 of the 3,487 Zig standard library functions lose a level
+  and cost less.
 - `nesting` and `cognitive` are reported and never gated, so no verdict moves with
   them. Expect both columns to change in `next-item --json`, exports and `brief` on
   the first run after upgrading; the [`nesting` row](agent-json.md#item-fields) says

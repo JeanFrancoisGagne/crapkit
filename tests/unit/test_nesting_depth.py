@@ -430,6 +430,73 @@ SCRIPT_DEPTHS = {
     # ND 0: the switch opened no level.
     "switch.ps1": ('function F($k) {\n    switch ($k) {\n        1 { go }\n        2 { go }\n'
                    '        default { go }\n    }\n}\n', 1),
+    # ND 2: `&&` and `||` between two pipelines each opened a level.
+    "chain.ps1": ("function F($p) {\n    Get-Item $p && Write-Output 'found'\n"
+                  "    Get-Item $p || Write-Output 'missing'\n}\n", 0),
+}
+
+# Zig and Kotlin write `if (a) g() else { ... }` on one line, with no `;` and no
+# line break to end the arm, so the `else` ends it. The last two rows put an `if`
+# in a Zig return type, whose arms end at the function's `{`: its else took that
+# `{` for its block, and they read (2, 4) and (2, 5), as 0.8.0 did, the body's
+# `if` paying +2. field.zig puts one in a field's type, which ends at the `=`: the
+# value's `if` sat in the type's else and read (2, 5). file: (source, (nesting,
+# cognitive))
+_IF_B = "        if (b) {\n            h();\n        }\n    }\n}\n"
+ELSE_ARMS = {
+    "if.zig": ("fn f(a: bool, b: bool) void {\n    if (a) g() else {\n" + _IF_B, (2, 4)),
+    "while.zig": ("fn f(a: bool, b: bool) void {\n    while (a) g() else {\n" + _IF_B, (2, 4)),
+    "for.zig": ("fn f(xs: []u8, b: bool) void {\n    for (xs) |x| g(x) else {\n" + _IF_B, (2, 4)),
+    "payload.zig": ("fn f(a: anytype, b: bool) void {\n    if (a) |v| g(v) else {\n" + _IF_B, (2, 4)),
+    "chain.zig": ("fn f(a: bool, b: bool, c: bool) void {\n    if (a) g() else if (b) h() else {\n"
+                  "        if (c) {\n            k();\n        }\n    }\n}\n", (2, 5)),
+    "labeled.zig": ("fn f(a: bool, b: bool) u8 {\n    return if (a) 1 else blk: {\n        if (b) {\n"
+                    "            break :blk 2;\n        }\n        break :blk 3;\n    };\n}\n", (2, 6)),
+    "field.zig": ("pub fn F(comptime size: usize) type {\n    return struct {\n        buffer: [size]u8,\n"
+                  "        called: if (safety) bool else void =\n            if (safety) false else {},\n"
+                  "    };\n}\n", (1, 4)),
+    "if.kt": ("fun f(a: Boolean, b: Boolean) {\n    if (a) g() else {\n        if (b) {\n            h()\n"
+              "        }\n    }\n}\n", (2, 4)),
+    "value.kt": ("fun f(a: Boolean, b: Boolean): Int {\n    val v = if (a) 1 else {\n        if (b) {\n"
+                 "            h()\n        }\n        2\n    }\n    return v\n}\n", (2, 4)),
+    "return-type.zig": ("fn f(x: anytype) if (A) u8 else u16 {\n    if (x) {\n        return 1;\n    }\n"
+                        "    return 0;\n}\n", (1, 3)),
+    "return-type-chain.zig": ("fn f(x: anytype) if (A) u8 else if (B) u16 else u32 {\n    if (x) {\n"
+                              "        return 1;\n    }\n    return 0;\n}\n", (1, 4)),
+}
+
+# The same arm before an else that holds a switch: its prongs sit one level below
+# the if. The last row puts an `if` in the function's return type, and read 3.
+# file: (source, nesting)
+ELSE_SWITCH_DEPTHS = {
+    "statement.zig": ("fn f(a: bool, e: E) void {\n    if (a) g() else switch (e) {\n        .x => h(),\n"
+                      "        .y => k(),\n    }\n}\n", 2),
+    "value.zig": ("fn f(a: bool, e: E) u8 {\n    return if (a) 1 else switch (e) {\n        .x => 0,\n"
+                  "        .y => 2,\n    };\n}\n", 2),
+    "payload.zig": ("pub inline fn initComptime(comptime s: []const u8) View {\n"
+                    "    return comptime if (init(s)) |r| r else |err| switch (err) {\n"
+                    "        error.Invalid => {\n            @compileError(\"invalid\");\n        },\n    };\n}\n", 2),
+    "return-type.zig": ("pub fn toRadians(ang: anytype) if (@TypeOf(ang) == comptime_int) comptime_float "
+                        "else @TypeOf(ang) {\n    switch (@typeInfo(@TypeOf(ang))) {\n"
+                        "        .float => return ang * per_deg,\n"
+                        "        .vector => |V| if (@typeInfo(V.child) == .float) return ang * per_deg,\n"
+                        "        .int => {},\n    }\n    @compileError(\"x\");\n}\n", 2),
+}
+
+
+# An `if` right after a `:` in Zig is a type, and only there does the `=` after
+# it end its arms. In a statement's arm the `=` is an assignment inside the arm,
+# a parameter's type ends at its `)` before the body's `=` is read, and C's `:`
+# before an `if` is a case label. file: (source, (nesting, cognitive))
+TYPE_IFS = {
+    "variable.zig": ("fn f(b: bool) void {\n    const x: if (safe) u8 else u16 = if (b) 1 else 2;\n"
+                     "    _ = x;\n}\n", (1, 4)),
+    "statement.zig": ("fn f(a: bool, b: bool) u8 {\n    var x: u8 = 0;\n"
+                      "    if (a) x = 1 else x = if (b) 2 else 3;\n    return x;\n}\n", (2, 5)),
+    "parameter.zig": ("fn f(x: if (A) u8 else u16, a: bool, b: bool) void {\n    var y: u8 = 0;\n"
+                      "    if (a) y = if (b) 1 else 2;\n    _ = x;\n}\n", (2, 6)),
+    "case.c": ("int f(int k, int a, int b) {\n    int x = 0;\n    switch (k) {\n"
+               "    case 1: if (a) x = b ? 1 : 2;\n    }\n    return x;\n}\n", (3, 6)),
 }
 
 
@@ -636,6 +703,29 @@ def test_a_zig_payload_else_before_an_if_is_one_else_if_link():
     (record,) = analyze_source("payload-if.zig", source)
 
     assert (record.nesting, record.cognitive) == (1, 2)
+
+
+@pytest.mark.parametrize("name", sorted(ELSE_ARMS))
+def test_an_else_ends_the_arm_with_no_braces_before_it(name):
+    source, (nesting, cognitive) = ELSE_ARMS[name]
+    (record,) = analyze_source(name, source)
+
+    assert (record.nesting, record.cognitive) == (nesting, cognitive)
+
+
+@pytest.mark.parametrize("name", sorted(ELSE_SWITCH_DEPTHS))
+def test_a_switch_after_an_else_sits_one_level_below_its_if(name):
+    source, depth = ELSE_SWITCH_DEPTHS[name]
+
+    assert _nesting(name, source) == depth
+
+
+@pytest.mark.parametrize("name", sorted(TYPE_IFS))
+def test_only_the_equals_after_a_zig_type_ends_the_if_in_it(name):
+    source, (nesting, cognitive) = TYPE_IFS[name]
+    (record,) = analyze_source(name, source)
+
+    assert (record.nesting, record.cognitive) == (nesting, cognitive)
 
 
 @pytest.mark.parametrize("name", sorted(SCRIPT_DEPTHS))

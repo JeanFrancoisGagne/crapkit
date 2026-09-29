@@ -1269,10 +1269,10 @@ analysis-version bump, so each marks file re-seeds once
   the `do`'s block (or a Swift `repeat`'s). Every `while` after a `}` read as a tail,
   so a loop after an `if` block, an object literal or a Python dict cost nothing and
   opened no level: a C function with an `if` block and then a loop holding one `if`
-  read `nesting` 1 and `cognitive` 2, and reads 2 and 4. lizard's ND read that
-  `nesting` right, so those rows would have lost a level with the move to the
-  cognitive pass. Go has no `while`, so there the word is a name, as `do` is: a Go
-  variable named `while` cost +1 at each use.
+  read `cognitive` 2 and reads 4. lizard's ND read its `nesting` right, 2, where the
+  cognitive pass read 1, so without this rule those rows would have lost a level
+  with the move to the cognitive pass. Go has no `while`, so there the word is a
+  name, as `do` is: a Go variable named `while` cost +1 at each use.
 - Zig's `else =>` is a switch's default prong and opens no level, as a `case` label
   opens none; it waited for a block and took the prong's `{` for a level. An else
   with a payload and no braces, `else |err| return err;`, ends at its `;`: the
@@ -1283,6 +1283,15 @@ analysis-version bump, so each marks file re-seeds once
   `else |err|` sits in the else's body, as after a plain `else`. In the Zig standard
   library this rule alone moves `nesting` in 45 of 3,475 functions, 37 down and 8
   up, and lowers `cognitive` in 12.
+- An `if` in a Zig return type, `fn f(x: anytype) if (A) u8 else u16 {`, sits in the
+  function's declaration, and its arms end at the function's `{`. Its else took that
+  `{` for its block and held the whole body one level down: a body holding one `if`
+  read `nesting` 2 and `cognitive` 4, as 0.8.0 did, and reads 1 and 3.
+  `std.simd.prefixScanWithFunc` reads `cognitive` 15 where 0.8.0 read 21. An `if` in
+  a Zig field's or variable's type ends at the `=` after the type, so the `if` in
+  `called: if (safety) bool else void = if (safety) false else {},` that gives the
+  value sits beside the first, not in its else. In the Zig standard library these
+  two rules alone lower both columns in 4 of 3,487 functions.
 - Measured over 21,099 functions in 20 open-source projects: 1,489 of the 6,465
   functions outside Python move `nesting`, 1,289 down and 200 up, and 54 move
   `cognitive`, 36 down and 18 up. No Python row moves `nesting`, 3 move `cognitive`
