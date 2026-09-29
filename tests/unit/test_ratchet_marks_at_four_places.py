@@ -111,3 +111,58 @@ def test_marks_read_before_reader_10_name_every_file_whose_callbacks_moved():
         "expression reader 10 changed anonymous function ordinals in src/a.ts, src/b.js; refresh "
         "coverage and reconcile any saved marks with their original functions before reseeding")
     assert ratchet.check_reader_version(entries, 10) is None
+
+
+STAMP = "crapkit-analysis=12 lizard=1.24.0"
+
+
+def test_an_old_mark_named_by_its_exact_twin_key_proves_the_new_identity():
+    """`f#2` is present by that exact key, so the file reads as key version 1."""
+    text = ratchet.dump_ratchet([RatchetEntry("src/a.py", "f#2", 9.0)], stamp=STAMP)
+
+    assert ratchet.check_key_groups(text, {("src/a.py", "f#2")}, set()) == ratchet.KEY_VERSION
+
+
+def test_a_directory_move_keeps_every_letter_of_the_new_name():
+    moved = ratchet.move_marks([RatchetEntry("old/a.py", "f( )", 3.0)], "old/", "UX/")
+
+    assert moved == ([RatchetEntry("UX/a.py", "f( )", 3.0)], 1)
+
+
+def test_an_unknown_record_encoding_is_named_in_the_line_s_complaint():
+    assert ratchet.read_ratchet("@crapkit-record-v9\t[]\n") == ([], [
+        "ratchet line 1 has an unreadable record: "
+        "unsupported portable record encoding '@crapkit-record-v9'"])
+
+
+@pytest.mark.parametrize("stamp, refused", [
+    ("crapkit-analysis=12", False),                  # the version alone, no lizard field
+    ("crapkit_analysis=12 lizard=1.24.0", True),     # another spelling proves nothing
+])
+def test_only_crapkit_s_own_stamp_proves_the_expression_reader(stamp, refused):
+    text = ratchet.dump_ratchet([RatchetEntry("src/a.ts", "(anonymous)", 9.0)], stamp=stamp)
+
+    try:
+        ratchet.check_reader_keys(text)
+    except ValueError:
+        assert refused
+    else:
+        assert not refused
+
+
+TWICE = [RatchetEntry("src/a.py", "f( )", 9.0), RatchetEntry("src/a.py", "f( )", 5.0)]
+
+
+def test_a_key_listed_twice_keeps_its_lines_in_the_order_they_came():
+    """Only keys are sorted: a reader that takes a key's last line reads what the file said."""
+    written = ratchet.dump_ratchet(TWICE, stamp="")
+
+    assert [line.rsplit("\t", 1)[1] for line in written.splitlines()[1:]] == ["9.0000", "5.0000"]
+    assert ratchet.update_ratchet(TWICE, [], target=6) == TWICE
+
+
+def test_a_move_onto_a_key_the_destination_holds_keeps_both_marks_in_order():
+    marks = [RatchetEntry("src/a.py", "f( )", 9.0), RatchetEntry("src/b.py", "f( )", 5.0)]
+
+    assert ratchet.move_marks(marks, "src/a.py", "src/b.py") == (
+        [RatchetEntry("src/b.py", "f( )", 9.0), RatchetEntry("src/b.py", "f( )", 5.0)], 1)

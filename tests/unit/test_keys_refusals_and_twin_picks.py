@@ -81,3 +81,12 @@ def test_a_row_that_records_no_place_within_its_line_is_a_legacy_row():
     assert keys.position(SimpleNamespace(start=3)) == (3, 0)
     assert keys.ambiguous_groups([SimpleNamespace(path=PATH, long_name="f( )", start=3),
                                   fn(3, 1)], legacy_only=True) == {(PATH, "f( )")}
+
+
+def test_legacy_anonymous_functions_on_one_line_are_numbered_by_their_long_names():
+    """Distinct long names are no twins, so legacy rows pass, and with no place
+    within the line to order them, their names do: every process numbers them alike."""
+    rows = [fn(3, 0, name=f"(anonymous) ( {c} )") for c in "fedcba"]
+
+    assert [place[1] for place in keys.anonymous_positions(rows)] == [
+        f"(anonymous) ( {c} )" for c in "abcdef"]

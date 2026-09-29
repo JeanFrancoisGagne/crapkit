@@ -5,7 +5,8 @@ with it rounded to 4 places, and equal scores at 4 places list by path.
 """
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
-from crapkit.verify import _ratchet_regressions, _within_mark, unmarked_over_ceiling
+from crapkit.verify import (UncoveredViolation, _ratchet_regressions, _within_mark, dirty_failure_ids,
+                            evaluate, parse_baseline_tsv, unmarked_over_ceiling, with_diff_coverage)
 
 
 def row(path: str, crap: float, scope: str = "src", name: str = "f( )") -> ScoredRow:
@@ -43,3 +44,43 @@ def test_a_mark_that_rose_reports_the_fresh_score_at_4_places():
                                         [RatchetEntry("src/a.py", "f( )", 12.0)], set())
 
     assert (regression.recorded, regression.fresh_crap) == (12.0, 12.3)
+
+
+def test_marks_that_rose_list_the_largest_rise_first_at_4_places():
+    """b rose 1.4 and a 1.2: rounded to whole numbers both rose 1, and a would lead."""
+    marks = [RatchetEntry("src/a.py", "f( )", 10.0), RatchetEntry("src/b.py", "f( )", 10.0)]
+
+    regressions = _ratchet_regressions([row("src/a.py", 11.2), row("src/b.py", 11.4)], marks, set())
+
+    assert [r.path for r in regressions] == ["src/b.py", "src/a.py"]
+
+
+def test_gate_violations_list_the_worst_first_with_each_row_s_remedy():
+    fresh = [row("src/a.py", 20.0), row("src/b.py", 40.0)._replace(remedy="decompose")]
+
+    verdict = evaluate(fresh=fresh, changed_ranges={"src/a.py": [(1, 9)], "src/b.py": [(1, 9)]},
+                       ratchet=[], baseline_failures=set(), fresh_failures=set(), target=6)
+
+    assert [(v.path, v.remedy) for v in verdict.gate_violations] == [
+        ("src/b.py", "decompose"), ("src/a.py", "add-tests")]
+
+
+def test_an_edited_typescript_file_dirties_no_python_module_of_its_stem():
+    """`web/a.ts` is not `web/a.py`: the failure in module web.a stays committed."""
+    assert dirty_failure_ids(["web.a::test_x", "web/a.ts::t"], {"web/a.ts"}) == ["web/a.ts::t"]
+
+
+def test_a_breached_changed_line_ceiling_keeps_each_line_and_whether_it_is_dirty():
+    base = evaluate(fresh=[], changed_ranges={}, ratchet=[], baseline_failures=set(),
+                    fresh_failures=set(), target=6)
+
+    verdict = with_diff_coverage(base, [("src/a.py", 3), ("src/b.py", 8)], 1, {"src/b.py"})
+
+    assert (verdict.ok, verdict.uncovered_violations) == (
+        False, (UncoveredViolation("src/a.py", 3, False), UncoveredViolation("src/b.py", 8, True)))
+
+
+def test_a_baseline_stamp_value_keeps_every_equals_sign_after_the_first():
+    parsed = parse_baseline_tsv("# commit=abc run_kind=verify failures=t::a=b\n")
+
+    assert (parsed.commit, parsed.failures) == ("abc", frozenset({"t::a=b"}))
