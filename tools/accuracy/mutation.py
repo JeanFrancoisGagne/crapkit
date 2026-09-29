@@ -975,6 +975,25 @@ COPY_BOUND = {
     "tests/accuracy/runtime_guards/test_guard_cost.py::test_the_row_check_over_a_large_repo_s_run":
         "times the row check against a ceiling, and in the copy every call it makes runs "
         "through a trampoline first",
+    "tests/unit/test_config_shape.py::test_reading_the_config_module_costs_no_dataclasses_import":
+        "lists the modules a child imports with crapkit.config, and on the copy every mutated "
+        "module imports mutmut's trampoline, which imports dataclasses",
+    "tests/unit/test_config_shape.py::"
+    "test_the_probe_child_stays_untraced_under_coverages_subprocess_patch":
+        "lists the modules a child imports with crapkit.config, and on the copy every mutated "
+        "module imports mutmut's trampoline, which imports dataclasses",
+    "tests/unit/test_version_metadata_cost.py::"
+    "test_an_agreeing_distribution_answers_without_importing_metadata":
+        "asks whether a child imported importlib.metadata, and on the copy every mutated module "
+        "imports mutmut, which does",
+    "tests/unit/test_version_metadata_cost.py::"
+    "test_a_source_tree_with_nothing_installed_falls_back_to_the_package":
+        "starts a child with -S on a copy of the package, and every mutated module there "
+        "imports mutmut, which -S leaves off sys.path",
+    "tests/unit/test_version_metadata_cost.py::"
+    "test_a_dist_info_with_no_version_header_defers_to_metadata":
+        "starts a child with -S on the copy, and every mutated module there imports mutmut, "
+        "which -S leaves off sys.path",
 }
 
 
