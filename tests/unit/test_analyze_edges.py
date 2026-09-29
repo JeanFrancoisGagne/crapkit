@@ -188,10 +188,12 @@ def test_exactly_five_noted_files_print_no_count_line(capsys):
 
 
 def test_a_function_lizard_gave_no_extra_attributes_reads_zero_for_each():
+    """nesting is the cognitive pass's depth in every language, so a Python path
+    and a C path read the same 0 when the pass left no attribute."""
     fn = SimpleNamespace(cyclomatic_complexity=2, long_name="f", start_line=1, end_line=3, nloc=3,
                          parameters=[])
 
-    assert (analyze._nesting_depth("a.py", object()), analyze._nesting_depth("a.c", object())) == (0, 0)
+    assert analyze._record("a.py", fn) == FunctionRecord("a.py", *VALUES[1:])
     assert analyze._record("a.c", fn) == FunctionRecord(*VALUES)
 
 
