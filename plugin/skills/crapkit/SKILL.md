@@ -78,7 +78,11 @@ means no artifact named lines for this file, and `flag` says which case you are 
 - `untested`: write the first test at the public seam, then `crapkit coverage`. The lines appear. The exception is `remedy: split-lines`: another function shares the source lines, or a Python def's body starts on the line its signature ends, so no test moves the score. Put each definition on its own lines, and such a def's body on its own line after the signature, first.
 - `measured`: the file's bytes changed since a lane measured it. Rerun `crapkit coverage`; committing changes nothing.
 - `cc-only`: the scope sets `coverage_optional`, so only decompose clears it. Most languages land here, because only Python and JS/TS have coverage parsers.
-- `[]`: the artifact answered and nothing is dark.
+- `no-lane`: no lane measures this scope, so no test run can name lines. Declare a `[[lane]]` for it, or set `coverage_optional` when no test can reach it. `next-item` never hands one out; `brief` can.
+
+An `uncovered_lines` of `[]` means the artifact answered and nothing is dark. An `excluded`
+function also reads `[]`: its artifact was told to leave it out, so `crap` is `ccn` and
+only decompose moves it.
 
 ## Decompose: subtract first
 
@@ -116,5 +120,5 @@ it. The function's start line is the fallback handle.
 
 ## Routing
 
-- A command refused (exit 5, 6, 7, 8 or 9, a lane with no artifact, a ratchet conflict), or printed a line that reads like a refusal and is not: the `crapkit-recover` skill.
+- A command refused (exit 3 to 9, a lane with no artifact, a ratchet conflict), or printed a line that reads like a refusal and is not: the `crapkit-recover` skill.
 - An unattended or multi-phase run: `show-me-your-work`, with `verify`'s `run_id` in the evidence cell.

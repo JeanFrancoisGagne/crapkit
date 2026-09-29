@@ -53,11 +53,18 @@ measurements, configured test contexts and JUnit results. Every direct run retai
 evidence in a unique `.crapkit/test-runs/run-*` directory and prints the absolute path
 before starting. Either suite failing makes the runner fail. The next suite starts
 only after the previous suite's owned descendants stop. Cancellation stops the run.
-Default evidence expires after seven days or beyond the ten most recent runs;
-active runs and unrecognized directories are preserved. Change the limits with
-`--retention-days N` and `--retention-count N` (0 disables a limit), or print the runs
-they would remove, without running a suite, with `--preview-retention`. See
-[resource policies](docs/resources.md).
+The runner marks default `.crapkit/test-runs/run-*` directories and is the only
+command that removes them. At each default start it expires idle runs older than
+`--retention-days` (7) or beyond the `--retention-count` (10) most recent; active runs
+and unrecognized directories are preserved. Zero disables a limit, and setting both to
+zero keeps all recognized runs. `--preview-retention` prints the runs the limits would
+remove, as JSON, and runs no suite. A run the filesystem will not fully delete, such as
+one holding a read-only file, keeps its receipt: `--preview-retention` still lists it
+and the next start tries again. Explicitly selecting an existing retained run, or a
+directory inside it, removes its retention receipt under the same lease and makes that
+run caller-managed. Retention runs once at startup, outside individual tests and
+analysis calls. See [resource policies](docs/resources.md) for the locks and logs a
+run shares with crapkit itself.
 
 `--output DIR` replaces evidence in a caller-managed directory inside `--repo`; relative
 paths resolve from that repository. Crapkit's own lane supplies `--output .crapkit/cov`

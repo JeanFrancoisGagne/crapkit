@@ -101,10 +101,10 @@ A comprehension's `for` and `if` clauses count toward ccn exactly like a stateme
 a dense one hides its cost behind one line. Split the filter from the shape.
 
 ```python
-# before: three clauses, one line, ccn 3
+# before: two fors, an if and an and on one line; the function scores ccn 5
 rows = [shape(r) for group in groups for r in group if r.live and r.owner]
 
-# after: the filter is named and the comprehension is one clause
+# after: the filter is named; the function scores ccn 3 and is_live 2
 def is_live(row):
     return row.live and row.owner
 

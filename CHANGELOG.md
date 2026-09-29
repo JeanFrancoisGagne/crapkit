@@ -133,9 +133,11 @@ crapkit computes against outside tools and hand tables. This release fixes what 
   table](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) now has
   rows for pip --user, pipx, uvx, the Copilot CLI plugin, the Docker image, the
   pre-commit `rev` and the Action's `uses:` pin.
-- Codex users: Codex refreshes git marketplaces each time it starts, so upgrade the CLI
-  before the next Codex start, and the plugin arrives with a `.codex-plugin/plugin.json`
-  that keeps Claude Code's hook out of Codex.
+- Codex users: a marketplace added at a tag stays at that tag. After upgrading the CLI,
+  run `codex plugin marketplace remove crapkit`, the README's `codex plugin marketplace
+  add` line at the new `--ref`, and `codex plugin add crapkit@crapkit`, then start a new
+  thread. The plugin arrives with a `.codex-plugin/plugin.json` that keeps Claude Code's
+  hook out of Codex.
 - Restart each MCP session after the upgrade. A 0.8.0 server does not notice the new
   files under it; from 0.8.1 on, a server that outlives an upgrade says so on every call.
 - An MCP client that negotiates `2024-11-05` or `2025-03-26` no longer gets

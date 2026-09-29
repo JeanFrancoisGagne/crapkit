@@ -81,7 +81,7 @@ haven't granted it yet.` in place of the answer (measured, 2.1.281). Pass
 | Config file | The plugin carries this server already: `claude plugin install crapkit@crapkit` ([README](../README.md#the-claude-code-plugin)). Without the plugin, the block goes in `.mcp.json` at the repository root, or `claude mcp add --scope user crapkit -- crapkit mcp --repo /absolute/path/to/your/repo` writes it into `~/.claude.json`. A user entry named `crapkit` hides the plugin's server. |
 | Starts in | The directory Claude Code runs in (measured, 2.1.281). A project `.mcp.json` can drop `--repo`. |
 | Environment | Claude Code's own environment, plus `CLAUDE_PROJECT_DIR` and `CLAUDECODE` (measured). `env` adds variables. |
-| Versions | Any release with plugin support runs the plugin's hook, which is one shell command; the deploy cells run it on 2.1.138 as well. A plugin from 0.8.0 or earlier passes the hook's arguments in `args`, which releases before 2.1.139 drop; beside such a plugin, `crapkit doctor --plugin-root` names a Claude Code below 2.1.139. The deploy suite runs 2.1.281. |
+| Versions | Any release with plugin support runs the plugin's hook, which is one shell command; crapkit's install tests run it on Claude Code 2.1.138 as well. A plugin from 0.8.0 or earlier passes the hook's arguments in `args`, which releases before 2.1.139 drop; beside such a plugin, `crapkit doctor --plugin-root` names a Claude Code below 2.1.139. The deploy suite runs 2.1.281. |
 | Plugin hooks | Runs the advisory PostToolUse hook on `Edit` and `Write`. Add the `Bash` entry yourself ([README](../README.md#the-claude-code-plugin)). |
 | After an upgrade | `claude plugin marketplace update crapkit`, then `claude plugin update crapkit@crapkit --scope user`, then restart the session. A server from `.mcp.json` restarts with the session, or from `/mcp`. |
 
@@ -211,7 +211,7 @@ args = ["mcp", "--repo", "/absolute/path/to/your/repo"]
 | Environment | Only the variables on Codex's allowlist, when they are set: `HOME`, `LOGNAME`, `PATH`, `SHELL`, `USER`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR` and `TZ` on Linux and macOS. An activated virtualenv's `VIRTUAL_ENV` does not reach the server (measured, 0.156.1). `env = { KEY = "value" }` sets more, and `env_vars = ["VIRTUAL_ENV"]` passes named variables through. |
 | Versions | The README's two plugin lines need 0.131.0 or later: 0.130.0 has no `codex plugin add` (measured). The config block needs no plugin support. The deploy suite runs 0.156.1. |
 | Plugin hooks | None. The plugin's `.codex-plugin/plugin.json` empties `hooks`, because Codex reports an edit as `apply_patch` patch text, which the advisory does not read. A plugin from 0.8.0 or earlier has no Codex manifest, and Codex lists its hooks as untrusted PostToolUse hooks that each run a bare `crapkit`: leave them so. |
-| After an upgrade | Start a new thread. Codex upgrades configured git marketplaces when it starts, so upgrade the CLI first ([docs: upgrading](upgrading.md#plugin-and-mcp-clients)). |
+| After an upgrade | Upgrade the CLI, then move the plugin to the same tag: `codex plugin marketplace remove crapkit`, the README's `codex plugin marketplace add` line at the new `--ref`, and `codex plugin add crapkit@crapkit` ([docs: upgrading](upgrading.md#plugin-and-mcp-clients)). Then start a new thread. A marketplace added at a tag stays at that tag. |
 
 ## Cursor
 
