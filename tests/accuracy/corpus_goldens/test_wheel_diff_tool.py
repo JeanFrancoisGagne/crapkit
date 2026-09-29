@@ -11,6 +11,7 @@
   ulp cases, worked from math.ulp.
 """
 import csv
+import hashlib
 import io
 import json
 import math
@@ -366,3 +367,518 @@ def test_a_failed_release_fetch_is_noted_as_an_infra_miss(monkeypatch, tmp_path)
     notes = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert [(note["kind"], note["message"]) for note in notes] == [
         ("infra", "fetching https://pypi.org/pypi/crapkit/json failed: offline")]
+
+
+# --- the command line -------------------------------------------------------------------
+# The usage lines are the module docstring's, as argparse spells them.
+
+USAGE = {
+    ("--help",): ("usage: wheel_diff.py [-h] {diff,xplat} ... Run two crapkit wheels on one corpus "
+                  "and map every value that moved."),
+    ("diff", "--help"): (
+        "usage: wheel_diff.py diff [-h] --base-wheel BASE_WHEEL --candidate-wheel CANDIDATE_WHEEL "
+        "[--corpus {small,full}] [--corpus-dir CORPUS_DIR] [--out OUT] [--wheelhouse WHEELHOUSE] "
+        "[--expect-calcs EXPECT_CALCS] [--declared-since DECLARED_SINCE]"),
+    ("xplat", "--help"): "usage: wheel_diff.py xplat [-h] receipts [receipts ...]",
+}
+
+
+@pytest.mark.parametrize("argv", sorted(USAGE))
+def test_each_command_shows_the_usage_the_docstring_gives(argv, capsys):
+    with pytest.raises(SystemExit) as stopped:
+        wheel_diff.main(list(argv))
+
+    assert stopped.value.code == 0
+    assert " ".join(capsys.readouterr().out.split()).startswith(USAGE[argv])
+
+
+@pytest.mark.parametrize("argv", [
+    [],
+    ["diff", "--candidate-wheel", "c.whl"],
+    ["diff", "--base-wheel", "b.whl"],
+    ["diff", "--base-wheel", "b.whl", "--candidate-wheel", "c.whl", "--corpus", "medium"],
+    ["xplat"],
+])
+def test_a_missing_or_unknown_argument_is_a_usage_error(argv, capsys):
+    with pytest.raises(SystemExit) as stopped:
+        wheel_diff.main(argv)
+
+    assert stopped.value.code == 2
+    assert "error:" in capsys.readouterr().err
+
+
+def test_each_command_reads_its_defaults_and_paths(monkeypatch, tmp_path):
+    monkeypatch.setenv(wheel_diff.WHEELHOUSE_ENV, str(tmp_path))
+    parse = wheel_diff._parser().parse_args
+    sides = ["diff", "--base-wheel", "b.whl", "--candidate-wheel", "c.whl"]
+    named = ["--corpus", "full", "--corpus-dir", "members", "--out", "out", "--wheelhouse",
+             "house", "--expect-calcs", "nloc", "--declared-since", "v0.9.0"]
+
+    assert vars(parse(sides)) == {
+        "command": "diff", "base_wheel": "b.whl", "candidate_wheel": "c.whl", "corpus": "small",
+        "corpus_dir": None, "out": None, "wheelhouse": tmp_path, "expect_calcs": None,
+        "declared_since": None}
+    assert vars(parse(sides + named)) == {
+        "command": "diff", "base_wheel": "b.whl", "candidate_wheel": "c.whl", "corpus": "full",
+        "corpus_dir": Path("members"), "out": Path("out"), "wheelhouse": Path("house"),
+        "expect_calcs": "nloc", "declared_since": "v0.9.0"}
+    assert vars(parse(["xplat", "one.json", "two.json"])) == {
+        "command": "xplat", "receipts": [Path("one.json"), Path("two.json")]}
+
+
+def test_the_default_wheelhouse_is_a_per_user_cache(monkeypatch, tmp_path):
+    """LOCALAPPDATA on Windows, ~/.cache elsewhere (XDG's default cache home)."""
+    monkeypatch.delenv(wheel_diff.WHEELHOUSE_ENV, raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    local = wheel_diff.default_wheelhouse()
+    monkeypatch.delenv("LOCALAPPDATA")
+    for name in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(name, str(tmp_path / "home"))
+
+    assert local == tmp_path / "local" / "crapkit-accuracy" / "wheelhouse"
+    assert wheel_diff.default_wheelhouse() == (tmp_path / "home" / ".cache" / "crapkit-accuracy"
+                                               / "wheelhouse")
+
+
+# --- what diff hands each piece -----------------------------------------------------------
+
+_BASE_ROW = {"path": "src/a.py", "long_name": "g( x )", "occurrence": "1", "ccn": "3",
+             "crap": "12.0", "remedy": "add-tests"}
+SIDES = {"base": {"one/inventory.tsv": _tsv([_BASE_ROW])},
+         "candidate": {"one/inventory.tsv": _tsv([{**_BASE_ROW, "crap": "12.5"}])}}
+MOVED_LINES = ["1 value(s) moved", "  CRAP score: 1", "  src/a.py g( x ) crap: 12.0 -> 12.5"]
+
+
+def _stand_ins(monkeypatch, declared: set) -> tuple[list, list]:
+    """resolve, unpack, measure and declared_since replaced by recorders, and the
+    scratch directory's arguments recorded: (the calls in order, the scratch kwargs)."""
+    calls, made = [], []
+    real = wheel_diff.tempfile.TemporaryDirectory
+
+    def scratch(**kwargs):
+        made.append(kwargs)
+        return real(**kwargs)
+
+    def resolve(spec, wheelhouse):
+        calls.append(("resolve", spec, wheelhouse))
+        return Path(spec)
+
+    def unpack(wheel, dest):
+        calls.append(("unpack", wheel, dest.name))
+        return dest
+
+    def measure(site, work, corpus, corpus_dir):
+        calls.append(("measure", site.name, work.name, corpus, corpus_dir))
+        return SIDES[work.name]
+
+    def since(ref):
+        calls.append(("declared_since", ref))
+        return declared
+
+    monkeypatch.setattr(wheel_diff.tempfile, "TemporaryDirectory", scratch)
+    for name, stand_in in (("resolve", resolve), ("unpack", unpack), ("measure", measure),
+                           ("declared_since", since)):
+        monkeypatch.setattr(wheel_diff, name, stand_in)
+    return calls, made
+
+
+def _sides_measured(corpus: str, corpus_dir) -> list:
+    return [("resolve", "b.whl", Path("house")), ("resolve", "c.whl", Path("house")),
+            ("unpack", Path("b.whl"), "base-site"),
+            ("measure", "base-site", "base", corpus, corpus_dir),
+            ("unpack", Path("c.whl"), "candidate-site"),
+            ("measure", "candidate-site", "candidate", corpus, corpus_dir)]
+
+
+DIFF = ["diff", "--base-wheel", "b.whl", "--candidate-wheel", "c.whl", "--wheelhouse", "house"]
+
+
+def test_diff_hands_each_piece_what_the_command_line_names(monkeypatch, tmp_path, capsys):
+    """The scratch directory ignores cleanup errors: a file an unpacked wheel left
+    open on Windows must not turn a finished comparison into a failure."""
+    calls, made = _stand_ins(monkeypatch, {"CRAP score"})
+    out = tmp_path / "out"
+
+    code = wheel_diff.main([*DIFF, "--corpus", "full", "--corpus-dir", "members", "--out",
+                            str(out), "--expect-calcs", "CRAP score", "--declared-since",
+                            "v0.9.0"])
+
+    assert (code, capsys.readouterr().out.splitlines()) == (0, MOVED_LINES)
+    assert calls == _sides_measured("full", Path("members")) + [("declared_since", "v0.9.0")]
+    assert made == [{"prefix": "crapkit-wheel-diff-", "ignore_cleanup_errors": True}]
+
+
+def test_diff_names_an_undeclared_and_an_unexpected_move(monkeypatch, capsys):
+    _stand_ins(monkeypatch, set())
+
+    code = wheel_diff.main([*DIFF, "--expect-calcs", "nloc", "--declared-since", "v0.9.0"])
+
+    assert (code, capsys.readouterr().out.splitlines()) == (1, MOVED_LINES + [
+        "the wheels moved ['CRAP score'], the change declares ['nloc']",
+        "no CHANGES row since the previous tag names ['CRAP score']"])
+
+
+def test_diff_asks_no_ref_it_was_not_given(monkeypatch, tmp_path, capsys):
+    calls, _ = _stand_ins(monkeypatch, set())
+    monkeypatch.chdir(tmp_path)
+
+    code = wheel_diff.main(DIFF)
+
+    assert (code, capsys.readouterr().out.splitlines()) == (0, MOVED_LINES)
+    assert calls == _sides_measured("small", None)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_out_holds_both_sides_the_map_and_the_summary(tmp_path):
+    rows = wheel_diff.diff_exports(SIDES["base"], SIDES["candidate"])
+
+    wheel_diff.write_out(tmp_path, (SIDES["base"], SIDES["candidate"]), rows)
+
+    assert sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*.*")) == [
+        "base/one/inventory.tsv", "candidate/one/inventory.tsv", "moved.tsv", "summary.json"]
+    assert (tmp_path / "candidate" / "one" / "inventory.tsv").read_bytes() == (
+        SIDES["candidate"]["one/inventory.tsv"].encode("utf-8"))
+    assert (tmp_path / "moved.tsv").read_bytes() == (
+        b"export\tpath\tlong_name\toccurrence\tcolumn\told\tnew\tcalc\n"
+        b"one/inventory.tsv\tsrc/a.py\tg( x )\t1\tcrap\t12.0\t12.5\tCRAP score\n")
+    assert (tmp_path / "summary.json").read_text(encoding="utf-8") == (
+        '{\n "moved_rows": 1,\n "calcs": {\n  "CRAP score": 1\n }\n}\n')
+
+
+def test_a_side_that_cannot_run_exits_3_with_one_line(capsys):
+    code = wheel_diff.main(["diff", "--base-wheel", "no-such.whl", "--candidate-wheel",
+                            "no-such.whl"])
+
+    assert code == wheel_diff.EXIT_INFRA == 3
+    assert capsys.readouterr() == ("", "wheel_diff.py: no wheel or hand-off at no-such.whl\n")
+
+
+# --- measuring --------------------------------------------------------------------------
+
+def _recorder(calls: list, kind: str, answer):
+    def record(*args):
+        calls.append((kind, *args))
+        return answer
+    return record
+
+
+def test_measure_runs_the_small_corpus_or_each_full_member(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(wheel_diff, "measure_tree", _recorder(calls, "tree", {"t": "1"}))
+    monkeypatch.setattr(wheel_diff, "measure_full", _recorder(calls, "full", {"f": "2"}))
+    monkeypatch.setattr(wheel_diff.corpus_run, "date_now", lambda: 1234)
+    site, work, members = tmp_path / "site", tmp_path / "work", tmp_path / "members"
+
+    assert wheel_diff.measure(site, work, "small", None) == {"t": "1"}
+    assert wheel_diff.measure(site, work, "full", members) == {"f": "2"}
+    assert calls == [("tree", wheel_diff.corpus_run.SMALL, site, work, wheel_diff.SMALL_COMMANDS,
+                      1234), ("full", members, site, work, 1234)]
+    with pytest.raises(wheel_diff.WheelDiffError,
+                       match=r"^--corpus full needs --corpus-dir \(corpus\.py build or fetch\)$"):
+        wheel_diff.measure(site, work, "full", None)
+
+
+def test_the_full_corpus_measures_each_member_in_its_own_directory(monkeypatch, tmp_path):
+    calls = []
+    for member in ("one", "two"):
+        (tmp_path / "corpus" / member).mkdir(parents=True)
+        (tmp_path / "corpus" / member / "crapkit.toml").write_bytes(b"")
+    (tmp_path / "corpus" / "loose").mkdir()
+    monkeypatch.setattr(wheel_diff, "measure_tree", _recorder(calls, "tree", {"inventory.tsv": "x"}))
+    site, work = tmp_path / "site", tmp_path / "work"
+
+    found = wheel_diff.measure_full(tmp_path / "corpus", site, work, 99)
+
+    assert found == {"one/inventory.tsv": "x", "two/inventory.tsv": "x"}
+    assert calls == [("tree", tmp_path / "corpus" / member, site, work / member,
+                      wheel_diff.FULL_COMMANDS, 99) for member in ("one", "two")]
+
+
+def test_a_tree_is_committed_under_repo_and_exported_under_out(monkeypatch, tmp_path):
+    calls = []
+    built = repos.Built(tmp_path / "top", tmp_path / "top")
+    monkeypatch.setattr(wheel_diff.repos, "build", _recorder(calls, "build", built))
+    monkeypatch.setattr(wheel_diff.repos, "tree_spec", _recorder(calls, "spec", "the spec"))
+    monkeypatch.setattr(wheel_diff, "run_commands", _recorder(calls, "run", {"a": "b"}))
+    work = tmp_path / "two" / "deep"
+
+    assert wheel_diff.measure_tree(tmp_path / "tree", tmp_path / "site", work, "cmds", 7) == {
+        "a": "b"}
+    assert calls == [("spec", tmp_path / "tree"), ("build", "the spec", work / "repo"),
+                     ("run", built.root, tmp_path / "site", work / "out", "cmds", 7)]
+    assert (work / "out").is_dir()
+
+
+class _Result:
+    def __init__(self, code: int, stderr: str = ""):
+        self.code, self.stderr = code, stderr
+
+
+def _driver(made: list, code: int, stderr: str = ""):
+    class Driver:
+        def __init__(self, root, **kwargs):
+            made.append((root, kwargs))
+
+        def run(self, *argv):
+            made.append(argv)
+            Path(argv[-1]).write_bytes(b"row\n")
+            return _Result(code, stderr)
+    return Driver
+
+
+def test_each_command_runs_on_the_side_s_site_at_the_frozen_clock(monkeypatch, tmp_path):
+    made = []
+    monkeypatch.setattr(wheel_diff.drive, "Driver", _driver(made, 0))
+    site = tmp_path / "site"
+
+    found = wheel_diff.run_commands(tmp_path, site, tmp_path, wheel_diff.FULL_COMMANDS, 42)
+
+    assert found == {"inventory.tsv": "row\n"}
+    assert made == [(tmp_path, {"date_now": 42, "spawn": True, "env": {"PYTHONPATH": str(site)}}),
+                    ("inventory", "--export", f"{tmp_path.as_posix()}/inventory.tsv")]
+
+
+def test_a_command_that_fails_names_itself_the_site_and_its_stderr_tail(monkeypatch, tmp_path):
+    monkeypatch.setattr(wheel_diff.drive, "Driver", _driver([], 2, "a" * 100 + "b" * 800))
+
+    with pytest.raises(wheel_diff.WheelDiffError) as refused:
+        wheel_diff.run_commands(tmp_path, tmp_path / "site", tmp_path, wheel_diff.FULL_COMMANDS, 1)
+
+    assert str(refused.value) == ("crapkit inventory --export {out}/inventory.tsv exited 2 under "
+                                  "site: " + "b" * 800)
+
+
+def test_a_wheel_whose_python_prints_nothing_resolves_to_a_question_mark(monkeypatch, tmp_path):
+    wheel = tmp_path / "w.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("crapkit/__init__.py", "")
+    monkeypatch.setattr(wheel_diff.subprocess, "run",
+                        lambda *args, **kwargs: wheel_diff.subprocess.CompletedProcess(args, 0, "", ""))
+
+    with pytest.raises(wheel_diff.WheelDiffError) as refused:
+        wheel_diff.unpack(wheel, tmp_path / "site")
+
+    assert str(refused.value) == f"w.whl: import crapkit resolved to ?, not {tmp_path / 'site'}"
+
+
+# --- sides --------------------------------------------------------------------------------
+
+def test_a_side_is_a_cached_release_a_fetched_one_a_hand_off_or_a_wheel(monkeypatch, tmp_path):
+    house = tmp_path / "house"
+    house.mkdir()
+    kept = house / "crapkit-0.9.0-py3-none-any.whl"
+    kept.write_bytes(b"")
+    fetched = []
+    monkeypatch.setattr(wheel_diff, "download",
+                        lambda version, wheelhouse: fetched.append((version, wheelhouse))
+                        or wheelhouse / "fetched.whl")
+    hand = tmp_path / "hand"
+    hand.mkdir()
+    (hand / "crapkit-1.0.0-py3-none-any.whl").write_bytes(b"")
+
+    assert wheel_diff.resolve("crapkit==0.9.0", house) == kept
+    assert wheel_diff.resolve("crapkit==0.9.1", house) == house / "fetched.whl"
+    assert fetched == [("0.9.1", house)]
+    assert wheel_diff.resolve(str(hand), house) == hand / "crapkit-1.0.0-py3-none-any.whl"
+    assert wheel_diff.resolve(str(kept), house) == kept
+    with pytest.raises(wheel_diff.WheelDiffError, match=r"^no wheel or hand-off at gone\.whl$"):
+        wheel_diff.resolve("gone.whl", house)
+
+
+def test_the_cache_answers_with_the_first_wheel_of_that_version(tmp_path):
+    for name in ("crapkit-0.9.0-py3-none-any.whl", "crapkit-0.9.0-py2.py3-none-any.whl",
+                 "crapkit-0.9.01-py3-none-any.whl"):
+        (tmp_path / name).write_bytes(b"")
+
+    assert wheel_diff.cached("0.9.0", tmp_path) == tmp_path / "crapkit-0.9.0-py2.py3-none-any.whl"
+    assert wheel_diff.cached("0.8.0", tmp_path) is None
+
+
+def test_a_hand_off_s_skip_names_its_side(tmp_path):
+    side = tmp_path / "candidate"
+    side.mkdir()
+    (side / "failure.json").write_text(json.dumps({"phase": "build", "error": "no sdist"}),
+                                       encoding="utf-8")
+
+    assert wheel_diff.hand_off(side) == wheel_diff.Skip("candidate",
+                                                        "stopped at build: no sdist")
+
+
+def _release(version: str, *kinds: str) -> dict:
+    return {"urls": [{"packagetype": kind, "filename": f"crapkit-{version}-py3-none-any.whl",
+                      "url": f"https://files.invalid/{version}.whl",
+                      "digests": {"sha256": hashlib.sha256(b"wheel " + version.encode()).hexdigest()},
+                      "upload_time_iso_8601": "2026-09-23T20:04:49Z"} for kind in kinds]}
+
+
+def _pypi(monkeypatch, *versions: str) -> list:
+    """PyPI's JSON and each wheel's bytes, served from memory; the URLs asked, in order."""
+    asked = []
+    answers = {wheel_diff.PYPI.format(version=v): json.dumps(_release(v, "bdist_wheel")).encode()
+               for v in versions}
+    answers.update({f"https://files.invalid/{v}.whl": b"wheel " + v.encode() for v in versions})
+    monkeypatch.setattr(wheel_diff, "_fetch", lambda url: asked.append(url) or answers[url])
+    return asked
+
+
+def test_a_release_is_fetched_once_into_a_wheelhouse_made_on_demand(monkeypatch, tmp_path):
+    asked = _pypi(monkeypatch, "9.9.8", "9.9.9")
+    house = tmp_path / "cache" / "wheelhouse"
+
+    first = wheel_diff.download("9.9.9", house)
+    again = wheel_diff.download("9.9.9", house)
+    other = wheel_diff.download("9.9.8", house)
+
+    assert first == again == house / "crapkit-9.9.9-py3-none-any.whl"
+    assert first.read_bytes() == b"wheel 9.9.9" and other.read_bytes() == b"wheel 9.9.8"
+    assert asked == ["https://pypi.org/pypi/crapkit/9.9.9/json", "https://files.invalid/9.9.9.whl",
+                     "https://pypi.org/pypi/crapkit/9.9.9/json",
+                     "https://pypi.org/pypi/crapkit/9.9.8/json", "https://files.invalid/9.9.8.whl"]
+
+
+def test_a_release_without_a_wheel_is_named(monkeypatch):
+    monkeypatch.setattr(wheel_diff, "_fetch",
+                        lambda url: json.dumps(_release("0.1.0", "sdist")).encode())
+
+    with pytest.raises(wheel_diff.WheelDiffError, match=r"^PyPI lists no wheel for crapkit 0\.1\.0$"):
+        wheel_diff.download("0.1.0", Path("unused"))
+    with pytest.raises(wheel_diff.WheelDiffError, match=r"^PyPI lists no wheel for crapkit 0\.1\.0$"):
+        wheel_diff.upload_date("0.1.0")
+    with pytest.raises(wheel_diff.WheelDiffError, match=r"^PyPI lists no wheel for crapkit 0\.2\.0$"):
+        wheel_diff._wheel_entry({}, "0.2.0")
+
+
+def test_the_upload_date_asks_for_that_release(monkeypatch):
+    asked = _pypi(monkeypatch, "0.9.0")
+
+    assert wheel_diff.upload_date("0.9.0") == "2026-09-23"
+    assert asked == ["https://pypi.org/pypi/crapkit/0.9.0/json"]
+
+
+class _Answer:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *failure):
+        return False
+
+    def read(self) -> bytes:
+        return b"body"
+
+
+def test_a_fetch_waits_a_minute_and_a_failed_one_is_an_infra_failure(monkeypatch):
+    asked = []
+    monkeypatch.setattr(wheel_diff.urllib.request, "urlopen",
+                        lambda url, timeout: asked.append((url, timeout)) or _Answer())
+
+    assert wheel_diff._fetch("https://pypi.invalid/x") == b"body"
+    assert asked == [("https://pypi.invalid/x", 60)]
+
+    def offline(url, timeout):
+        raise OSError("no route")
+    monkeypatch.setattr(wheel_diff.urllib.request, "urlopen", offline)
+    with pytest.raises(wheel_diff.WheelDiffError,
+                       match=r"^fetching https://pypi\.invalid/x failed: no route$"):
+        wheel_diff._fetch("https://pypi.invalid/x")
+
+
+# --- declared since a ref -------------------------------------------------------------------
+
+CHANGES_HEADER = "id\tdate\tkind\tcalcs\tanalysis_version\tlizard_version\tchangelog\treason\n"
+
+
+@pytest.mark.process
+def test_the_calcs_declared_since_a_ref_are_the_rows_it_lacks(tmp_path):
+    old = CHANGES_HEADER + "C1\t2026-09-01\tfix\tnloc\t11\t1.24.0\t\twhy\n"
+    root = repos.build(repos.Spec(steps=(repos.Commit(files={wheel_diff.CHANGES: old}),)),
+                       tmp_path / "repo").root
+    repos.git(root, "tag", "v1")
+    (root / wheel_diff.CHANGES).write_bytes((
+        old + "C2\t2026-09-02\tfix\tCRAP score; nloc ;\t11\t1.24.0\t\twhy\n"
+        "C3\t2026-09-03\tnone\t\t11\t1.24.0\t\twhy\n"
+        "C4\t2026-09-04\tfix\tRemedy label\nC5\tthree\tcells\n").encode("utf-8"))
+
+    assert wheel_diff.declared_since("v1", root) == {"CRAP score", "nloc", "Remedy label"}
+    assert wheel_diff.changes_calcs(wheel_diff.changes_text(root, "v1")) == {"C1": {"nloc"}}
+    assert wheel_diff.changes_calcs(wheel_diff.changes_text(root, None)) == {
+        "C1": {"nloc"}, "C2": {"CRAP score", "nloc"}, "C3": set(), "C4": {"Remedy label"}}
+    assert wheel_diff.changes_text(root, "no-such-ref") == ""
+    assert wheel_diff.changes_text(tmp_path, None) == ""
+
+
+# --- the map's pieces ---------------------------------------------------------------------
+
+def test_a_row_without_an_occurrence_keys_as_the_empty_occurrence():
+    assert wheel_diff.keyed("path\tlong_name\toccurrence\tccn\nsrc/a.py\tf\n") == {
+        ("src/a.py", "f", ""): {"path": "src/a.py", "long_name": "f"}}
+
+
+def test_only_the_columns_both_sides_hold_are_compared():
+    base = "path\tlong_name\toccurrence\tccn\textra\nsrc/a.py\tf\t1\t3\tx\n"
+    candidate = "path\tlong_name\toccurrence\tccn\nsrc/a.py\tf\t1\t4\n"
+
+    assert wheel_diff.moved("e.tsv", base, candidate) == [
+        wheel_diff.Moved("e.tsv", "src/a.py", "f", "1", "ccn", "3", "4")]
+
+
+def test_an_export_one_side_lacks_moves_every_row_it_holds():
+    rows = wheel_diff.diff_exports({"a.tsv": _tsv([_BASE_ROW])}, {})
+
+    assert rows == [wheel_diff.Moved("a.tsv", "src/a.py", "g( x )", "1", "row", "present",
+                                     "absent")]
+
+
+def _moves(count: int) -> list:
+    return [wheel_diff.Moved("e.tsv", f"src/{n}.py", "f", "1", column, "1", "2")
+            for n, column in zip(range(count), ["crap", "nloc", "crap"] * count)]
+
+
+def test_the_counts_the_map_and_the_summary_lines():
+    rows = _moves(11)
+
+    assert wheel_diff.moved_calcs(_moves(3)) == {"CRAP score": 2, "nloc": 1}
+    assert wheel_diff.moved_tsv(_moves(1)) == (
+        "export\tpath\tlong_name\toccurrence\tcolumn\told\tnew\tcalc\n"
+        "e.tsv\tsrc/0.py\tf\t1\tcrap\t1\t2\tCRAP score\n")
+    lines = wheel_diff.summary_lines(rows)
+    assert lines[:3] == ["11 value(s) moved", "  CRAP score: 7", "  nloc: 4"]
+    assert lines[3:] == [f"  src/{n}.py f {rows[n].column}: 1 -> 2" for n in range(10)]
+    assert wheel_diff.verdict(rows[:1], [None, "late"], " in x") == (
+        1, ["1 value(s) moved in x", "  CRAP score: 1", "  src/0.py f crap: 1 -> 2", "late"])
+
+
+def test_what_the_declared_calcs_are_checked_against():
+    both = _moves(2)
+
+    assert wheel_diff.expectation_problem(both, " CRAP score , nloc,") is None
+    assert wheel_diff.expectation_problem(both, "") == (
+        "the wheels moved ['CRAP score', 'nloc'], the change declares nothing")
+    assert wheel_diff.undeclared_problem(both, {"nloc"}) == (
+        "no CHANGES row since the previous tag names ['CRAP score']")
+    assert wheel_diff.undeclared_problem(both, {"nloc", "CRAP score"}) is None
+    assert wheel_diff.undeclared_problem(both, None) is None
+
+
+# --- xplat on the command line ------------------------------------------------------------
+
+def test_xplat_reads_its_receipts_from_the_command_line(tmp_path, capsys):
+    text = _tsv([_BASE_ROW])
+    paths = []
+    for name, receipt in (("a", _receipt("linux", text)), ("b", _receipt("windows", text)),
+                          ("c", {"os": "macos", "python": "3.13", "exports": {}})):
+        paths.append(tmp_path / f"{name}.json")
+        paths[-1].write_text(json.dumps(receipt), encoding="utf-8")
+
+    agreed = wheel_diff.main(["xplat", str(paths[0]), str(paths[1])])
+    said = capsys.readouterr().out
+    apart = wheel_diff.main(["xplat", str(paths[0]), str(paths[2])])
+
+    assert (agreed, said) == (0, "2 receipts agree on 1 export(s)\n")
+    assert (apart, capsys.readouterr().out) == (
+        1, "linux-3.12 and macos-3.13 noted different exports: ['small/scored.tsv']\n")
+
+
+def test_an_export_note_without_text_is_not_an_export():
+    noted = {"exports": {"a": {"sha256": "x"}, "b": {"sha256": "y", "text": "t"}, "c": "text"}}
+
+    assert wheel_diff._exports(noted) == {"b": "t"}

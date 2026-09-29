@@ -144,6 +144,12 @@ def test_a_commit_outside_the_window_is_refused():
         exact.recency_weight(999, 1_000, 2_000)
 
 
+@pytest.mark.parametrize("covered, total", [(0, 1), (1, 1)])
+def test_a_one_line_function_has_a_ratio(covered, total):
+    """A function of one measurable line is the smallest total there is."""
+    assert exact.ratio(covered, total) == Fraction(covered, total)
+
+
 @pytest.mark.parametrize("covered, total", [(0, 0), (3, 2), (-1, 2)])
 def test_no_ratio_without_counts(covered, total):
     with pytest.raises(ValueError, match="no coverage ratio"):

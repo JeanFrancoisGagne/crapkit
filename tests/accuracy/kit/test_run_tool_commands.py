@@ -2,8 +2,12 @@
 import importlib.metadata
 import json
 from pathlib import Path
+import sys
+import time
 
-from accuracy.kit import docrange, strategies
+import pytest
+
+from accuracy.kit import docrange, goldens, oracles, strategies
 from accuracy.kit.test_run_tool import REPO, run_tool
 
 
@@ -91,3 +95,152 @@ def test_oracle_versions_names_a_drifted_and_a_missing_oracle(tmp_path, capsys):
 
 def test_the_repo_pins_file_is_the_default():
     assert run_tool.PINS == REPO / "tools" / "accuracy" / "pins.toml"
+
+
+# --- the command line's contract -------------------------------------------------------------
+# Each command's usage line and the help it shows, as the module docstring states the
+# commands; the options only a test or a packet author passes stay out of the help.
+
+HELP = {
+    (): ("usage: run.py [-h] [--tier {push,nightly,weekly,release}] [--shard SHARD] "
+         "[--os-sensitive] [-n WORKERS] [--receipt RECEIPT] Run an accuracy tier.", (
+             "--shard SHARD run only the checks modules whose SHARD is this",
+             "--os-sensitive run only the checks whose answer can change with the OS "
+             "(CI's Windows push job)",
+             "-n WORKERS, --workers WORKERS pytest-xdist workers for the pytest session",
+             "--receipt RECEIPT where to write the receipt")),
+    ("merge",): ("usage: run.py merge [-h] --out OUT receipts [receipts ...]", ()),
+    ("kit-goldens",): ("usage: run.py kit-goldens [-h] --declare ID --kind KIND --reason REASON "
+                       "[--calcs CALCS] Remeasure the kit's seed corpus, rewrite its goldens "
+                       "and declare the change.", ()),
+    ("doc-range",): ("usage: run.py doc-range [-h] path start end", ()),
+    ("events",): ("usage: run.py events [-h] [--min FLOOR] receipts [receipts ...]", ()),
+    ("oracle-versions",): ("usage: run.py oracle-versions [-h] [--tier {push,nightly}]", ()),
+}
+
+
+@pytest.mark.parametrize("command", sorted(HELP))
+def test_each_command_shows_its_usage_and_help(command, capsys):
+    usage, shown = HELP[command]
+
+    with pytest.raises(SystemExit) as stopped:
+        run_tool.main([*command, "--help"])
+    text = " ".join(capsys.readouterr().out.split())
+
+    assert stopped.value.code == 0 and text.startswith(usage)
+    assert [line for line in shown if line not in text] == []
+    assert [hidden for hidden in ("--checks", "--base", "--pins") if hidden in text] == []
+
+
+@pytest.fixture
+def no_regeneration(monkeypatch):
+    """kit-goldens must refuse before it remeasures anything."""
+    def refuse(base, change):
+        raise AssertionError(f"kit-goldens regenerated under {change}")
+    monkeypatch.setattr(goldens, "regenerate_seed", refuse)
+
+
+@pytest.mark.parametrize("argv", [
+    ["--tier", "hourly"],
+    ["merge", "missing.json"],
+    ["kit-goldens", "--kind", "fix", "--reason", "why"],
+    ["kit-goldens", "--declare", "T1", "--reason", "why"],
+    ["kit-goldens", "--declare", "T1", "--kind", "fix"],
+    ["oracle-versions", "--tier", "weekly"],
+    ["events"],
+])
+def test_a_missing_or_unknown_argument_is_a_usage_error(argv, tmp_path, capsys, no_regeneration):
+    tail = ["--checks", str(tmp_path), "--receipt", str(tmp_path / "r.json")] if (
+        argv[0] == "--tier") else ["--pins", str(_pins(tmp_path))] if argv[0] == "oracle-versions" else []
+
+    with pytest.raises(SystemExit) as stopped:
+        run_tool.main(argv + tail)
+
+    assert stopped.value.code == 2
+    assert "error:" in capsys.readouterr().err
+
+
+def test_the_run_command_reads_its_defaults_and_types():
+    parse = run_tool._run_parser().parse_args
+
+    assert vars(parse([])) == {"tier": "push", "shard": None, "os_sensitive": False, "workers": 0,
+                               "receipt": None, "checks": run_tool.CHECKS_DIR}
+    assert vars(parse(["--tier", "nightly", "--shard", "one", "--os-sensitive", "-n", "3",
+                       "--receipt", "r.json", "--checks", "c"])) == {
+        "tier": "nightly", "shard": "one", "os_sensitive": True, "workers": 3,
+        "receipt": Path("r.json"), "checks": Path("c")}
+
+
+def _recorder(seen: list, name: str, answer):
+    def record(*args):
+        seen.append((name, *args))
+        return answer
+    return record
+
+
+def test_the_run_command_hands_each_argument_on(monkeypatch, tmp_path):
+    seen = []
+    for name, answer in (("load_checks", ["loaded"]), ("selected", ["chosen"]),
+                         ("run_tier", {"outcome": "infra"}), ("_publish", None)):
+        monkeypatch.setattr(run_tool, name, _recorder(seen, name, answer))
+
+    code = run_tool.main(["--tier", "nightly", "--shard", "one", "--os-sensitive", "-n", "2",
+                          "--checks", str(tmp_path)])
+
+    assert code == 3
+    assert seen == [("load_checks", tmp_path),
+                    ("selected", ["loaded"], "nightly", "one", sys.platform, True),
+                    ("run_tier", ["chosen"], "nightly", "one", 2),
+                    ("_publish", {"outcome": "infra"}, run_tool.default_receipt("nightly", "one"))]
+
+
+def test_no_arguments_run_the_push_tier_and_none_read_the_command_line(monkeypatch, capsys):
+    seen = []
+    monkeypatch.setattr(run_tool, "_run_main", _recorder(seen, "run", 5))
+    monkeypatch.setattr(run_tool.sys, "argv", ["run.py", "doc-range", "README.md", "1", "3"])
+
+    assert run_tool.main([]) == 5 and seen == [("run", [])]
+    assert run_tool.main() == 0
+    assert capsys.readouterr().out.strip() == docrange.header("README.md", 1, 3)
+
+
+def test_kit_goldens_declares_the_change_it_is_given(monkeypatch, tmp_path, capsys):
+    asked = []
+    monkeypatch.setattr(goldens, "regenerate_seed",
+                        lambda base, change: asked.append((base, change))
+                        or [Path("b.json"), Path("c.tsv")])
+    monkeypatch.setattr(run_tool.time, "gmtime",
+                        lambda *args: time.struct_time((2001, 2, 3, 4, 5, 6, 5, 34, 0)))
+
+    first = run_tool.main(["kit-goldens", "--declare", "T9", "--kind", "fix", "--reason", "moved"])
+    second = run_tool.main(["kit-goldens", "--declare", "T8", "--kind", "none", "--reason", "r",
+                            "--calcs", "nloc", "--base", str(tmp_path)])
+
+    assert (first, second) == (0, 0)
+    assert asked == [
+        (run_tool.REPO, {"id": "T9", "date": "2001-02-03", "kind": "fix", "calcs": "",
+                         "reason": "moved"}),
+        (tmp_path, {"id": "T8", "date": "2001-02-03", "kind": "none", "calcs": "nloc",
+                    "reason": "r"})]
+    assert capsys.readouterr().out.splitlines() == [
+        "relocked b.json under T9", "relocked c.tsv under T9",
+        "relocked b.json under T8", "relocked c.tsv under T8"]
+
+
+def test_events_asks_for_50_of_each_shape_unless_told(tmp_path):
+    names = sorted({name for table in strategies.REQUIRED.values() for name in table})
+    enough = _receipt(tmp_path, "enough", events={name: 50 for name in names})
+    one_short = _receipt(tmp_path, "short", events={name: 49 for name in names})
+
+    assert run_tool.main(["events", str(enough)]) == 0
+    assert run_tool.main(["events", str(one_short)]) == 1
+    assert run_tool.main(["events", "--min", "49", str(one_short)]) == 0
+    assert run_tool.main(["events", "--min", "1", str(_receipt(tmp_path, "none", events={}))]) == 1
+
+
+def test_oracle_versions_reads_the_repo_pins_unless_told(monkeypatch):
+    read = []
+    monkeypatch.setattr(oracles, "load_pins", lambda path: read.append(path) or {})
+
+    assert run_tool.main(["oracle-versions"]) == 0
+    assert read == [run_tool.PINS]

@@ -3,10 +3,14 @@
 Each test plants a checks directory in tmp_path: modules declaring CHECKS over
 planted test files, the way tools/accuracy/checks/<key>.py declares a packet's.
 """
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
@@ -55,10 +59,40 @@ def _plant(tmp_path: Path, modules: dict) -> Path:
     return checks
 
 
-def _run(checks: Path, receipt: Path, *args: str, env: dict | None = None):
-    argv = [sys.executable, str(RUN), "--checks", str(checks), "--receipt", str(receipt), *args]
-    done = hang_guard.run(argv, cwd=REPO, env=env, text=True, encoding="utf-8",
-                          errors="replace")
+def _spawned(argv: list[str], env: dict | None = None) -> subprocess.CompletedProcess:
+    return hang_guard.run([sys.executable, str(RUN), *argv], cwd=REPO, env=env, text=True,
+                          encoding="utf-8", errors="replace")
+
+
+def _set_environ(values: dict) -> None:
+    os.environ.clear()
+    os.environ.update(values)
+
+
+def in_process(argv: list[str], env: dict | None = None,
+               where: Path = REPO) -> subprocess.CompletedProcess:
+    """run.py's main in this process, as `python run.py ARGV` would run it from
+    `where` with `env` as its whole environment: what it prints is caught, and the
+    working directory and environment come back afterwards."""
+    out, err = io.StringIO(), io.StringIO()
+    saved, cwd = dict(os.environ), os.getcwd()
+    try:
+        _set_environ(env or saved)
+        os.chdir(where)
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = run_tool.main(argv)
+    finally:
+        _set_environ(saved)
+        os.chdir(cwd)
+    return subprocess.CompletedProcess(argv, code, out.getvalue(), err.getvalue())
+
+
+def _run(checks: Path, receipt: Path, *args: str, env: dict | None = None, spawn: bool = False):
+    """A tier over the planted checks; in process unless `spawn`, which starts
+    run.py the way CI does. In process it starts outside the repo, where nothing
+    it runs may depend on the working directory."""
+    argv = ["--checks", str(checks), "--receipt", str(receipt), *args]
+    done = _spawned(argv, env) if spawn else in_process(argv, env, checks.parent)
     saved = json.loads(receipt.read_text(encoding="utf-8")) if receipt.exists() else None
     return done, saved
 
@@ -72,7 +106,7 @@ def _outcomes(receipt: dict) -> dict:
 def test_a_passing_tier_exits_0_and_writes_its_receipt(tmp_path):
     checks = _plant(tmp_path, {"alpha": ("one", [("passes", "test_pass.py", 3)])})
 
-    done, receipt = _run(checks, tmp_path / "r.json", "--tier", "push")
+    done, receipt = _run(checks, tmp_path / "r.json", "--tier", "push", spawn=True)
 
     assert done.returncode == 0, done.stdout + done.stderr
     assert receipt["tier"] == "push" and receipt["outcome"] == "pass"
@@ -185,9 +219,8 @@ def test_shards_merge_to_the_receipt_of_the_whole_tier(tmp_path):
     _, one = _run(checks, tmp_path / "one.json", "--shard", "one")
     _, two = _run(checks, tmp_path / "two.json", "--shard", "two")
 
-    done = hang_guard.run([sys.executable, str(RUN), "merge", str(tmp_path / "two.json"),
-                           str(tmp_path / "one.json"), "--out", str(tmp_path / "merged.json")],
-                          cwd=REPO, text=True)
+    done = in_process(["merge", str(tmp_path / "two.json"), str(tmp_path / "one.json"),
+                       "--out", str(tmp_path / "merged.json")])
 
     assert done.returncode == 0, done.stderr
     merged = json.loads((tmp_path / "merged.json").read_text(encoding="utf-8"))
@@ -351,3 +384,212 @@ def test_a_refusal_exits_1_with_one_line(tmp_path, capsys):
 
     assert run_tool.main(["--checks", str(tmp_path)]) == 1
     assert capsys.readouterr().err == "run.py: bad: check 'x' declares no seconds\n"
+
+
+# --- what a receipt holds -------------------------------------------------------------------
+
+OS_NAME = {"win32": "windows", "linux": "linux", "darwin": "macos"}.get(sys.platform, sys.platform)
+PYTHON = f"{sys.version_info.major}.{sys.version_info.minor}"
+RECEIPT_KEYS = ["attempts", "checks", "digests", "events", "exports", "head", "hypothesis_seed",
+                "image", "infra", "oracles", "os", "outcome", "python", "schema", "shard",
+                "skipped_files", "tier"]
+
+
+def _repo_head() -> str:
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True,
+                          text=True).stdout.strip()
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_the_receipt_names_the_run_it_came_from(tmp_path):
+    checks = _plant(tmp_path, {"alpha": ("one", [("passes", "test_pass.py", 3)])})
+    image = {**os.environ, "CRAPKIT_ACCURACY_IMAGE": "acc:1", "CRAPKIT_ACCURACY_IMAGE_DIGEST": "d"}
+    bare = {key: value for key, value in os.environ.items()
+            if not key.startswith("CRAPKIT_ACCURACY_IMAGE")}
+
+    _, tagged = _run(checks, tmp_path / "tagged.json", "--shard", "one", env=image)
+    _, untagged = _run(checks, tmp_path / "untagged.json", env=bare)
+
+    assert sorted(tagged) == RECEIPT_KEYS
+    assert (tagged["schema"], tagged["tier"], tagged["shard"], tagged["os"], tagged["python"],
+            tagged["head"], tagged["image"], tagged["exports"]) == (
+        1, "push", "one", OS_NAME, PYTHON, _repo_head(), {"tag": "acc:1", "digest": "d"}, {})
+    assert (untagged["shard"], untagged["image"]) == (None, {"tag": "", "digest": ""})
+    assert tagged["checks"] == [{"key": "alpha", "name": "passes", "shard": "one", "declared": 3,
+                                 "seconds": tagged["checks"][0]["seconds"], "outcome": "pass",
+                                 "tests": 1}]
+
+
+def test_the_default_receipt_is_named_after_the_tier_shard_os_and_python():
+    home = REPO / ".crapkit" / "accuracy"
+
+    assert run_tool.default_receipt("nightly", "one") == home / f"nightly-one-{OS_NAME}-{PYTHON}.json"
+    assert run_tool.default_receipt("push", None) == home / f"push-{OS_NAME}-{PYTHON}.json"
+
+
+SAVED = {"tier": "nightly", "shard": "one", "os": "linux", "python": "3.12", "outcome": "fail",
+         "checks": [{"key": "a", "name": "x", "declared": 7, "seconds": 1.234, "outcome": "fail"},
+                    {"key": "b", "name": "y", "declared": 0.5, "seconds": 0, "outcome": "pass"}]}
+TABLE = ("### accuracy nightly one (linux, 3.12): fail\n\n"
+         "| check | declared s | measured s | outcome |\n|---|---:|---:|---|\n"
+         "| a: x | 7 | 1.23 | fail |\n| b: y | 0.5 | 0.00 | pass |\n")
+
+
+def test_the_time_table_lists_each_check():
+    assert run_tool.table(SAVED) == TABLE
+    assert run_tool.table({**SAVED, "shard": None}).splitlines()[0] == (
+        "### accuracy nightly (linux, 3.12): fail")
+
+
+def test_publish_writes_the_receipt_prints_the_table_and_appends_to_the_summary(
+        tmp_path, monkeypatch, capsys):
+    summary = tmp_path / "summary.md"
+    summary.write_bytes(b"before\n")
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    target = tmp_path / "two" / "deep" / "r.json"
+
+    run_tool._publish(SAVED, target)
+
+    text = target.read_bytes().decode("utf-8").replace("\r\n", "\n")
+    assert json.loads(text) == SAVED and text.endswith("}\n")
+    assert text.startswith('{\n "checks": [\n  {\n   "declared": 7,')
+    assert capsys.readouterr().out == TABLE + "\n"
+    assert summary.read_bytes().decode("utf-8").replace("\r\n", "\n") == "before\n" + TABLE + "\n"
+
+
+def _shard(**fields) -> dict:
+    common = {"tier": "nightly", "os": "linux", "python": "3.12", "head": "h",
+              "hypothesis_seed": 7, "image": {"tag": ""}, "digests": {"a": "1"}}
+    return {**common, **fields}
+
+
+def test_merge_joins_the_shards_notes_and_counts():
+    one = _shard(shard="one", first="kept", attempts=2, outcome="pass",
+                 checks=[{"key": "b", "name": "y", "outcome": "pass"}], exports={"e": "1"},
+                 oracles={"radon": "6"}, events={"R1": 2}, skipped_files={"ast": 1},
+                 infra=["z"])
+    two = _shard(shard="two", first="dropped", attempts=1, outcome="fail",
+                 checks=[{"key": "a", "name": "x", "outcome": "fail"}], exports={"f": "2"},
+                 oracles={"radon": "6", "lizard": "1"}, events={"R1": 3, "R2": 1},
+                 skipped_files={}, infra=["a"])
+
+    assert run_tool.merge([one, two]) == {
+        **one, "shard": None, "attempts": 2, "outcome": "fail",
+        "checks": [two["checks"][0], one["checks"][0]], "exports": {"e": "1", "f": "2"},
+        "oracles": {"radon": "6", "lizard": "1"}, "events": {"R1": 5, "R2": 1},
+        "skipped_files": {"ast": 1}, "infra": ["a", "z"]}
+    bare = run_tool.merge([_shard(), _shard()])
+    assert (bare["checks"], bare["attempts"], bare["outcome"], bare["infra"]) == ([], 1, "pass", [])
+
+
+@pytest.mark.parametrize("field, clash, what", [
+    ("exports", {"e": "9"}, "export e"), ("oracles", {"radon": "7"}, "oracle radon")])
+def test_merge_refuses_two_values_for_one_note(field, clash, what):
+    one = _shard(exports={"e": "1"}, oracles={"radon": "6"})
+
+    with pytest.raises(run_tool.CheckError, match=f"^the receipts disagree on {what}$"):
+        run_tool.merge([one, {**one, field: clash}])
+
+
+# --- running a tier's pieces ------------------------------------------------------------------
+
+def test_a_nightly_seed_is_a_random_32_bit_value_and_the_rest_are_derandomized():
+    seeds = [run_tool._seed("nightly") for _ in range(200)]
+
+    assert all(isinstance(seed, int) and 0 <= seed < 2 ** 32 for seed in seeds)
+    assert max(seeds) >= 2 ** 31 and len(set(seeds)) > 190
+    assert [run_tool._seed(tier) for tier in ("push", "weekly", "release")] == ["derandomized"] * 3
+
+
+def test_the_child_env_leaves_out_the_parent_test_s_identity(monkeypatch, tmp_path):
+    for name in run_tool.PARENT_ONLY:
+        monkeypatch.setenv(name, "parent")
+    monkeypatch.setenv("PYTHONPATH", "elsewhere")
+    monkeypatch.setenv("CRAPKIT_KEPT", "1")
+
+    env = run_tool._child_env("nightly", tmp_path / "log.jsonl")
+    monkeypatch.delenv("PYTHONPATH")
+
+    assert [name for name in run_tool.PARENT_ONLY if name in env] == [] and env["CRAPKIT_KEPT"] == "1"
+    assert env["PYTHONPATH"] == os.pathsep.join([str(REPO / "tests"), "elsewhere"])
+    assert (env[run_tool.tiers.TIER_ENV], env[run_tool.runlog.LOG_ENV]) == (
+        "nightly", str(tmp_path / "log.jsonl"))
+    assert run_tool._child_env("push", tmp_path)["PYTHONPATH"] == str(REPO / "tests")
+
+
+def test_the_session_argv(tmp_path):
+    junit = tmp_path / "j.xml"
+
+    assert run_tool._pytest_argv(["a.py"], REPO, 0, junit, "derandomized") == [
+        sys.executable, "-m", "pytest", "a.py", "--rootdir", str(REPO), "-q", "-p",
+        "no:cacheprovider", "-p", "no:randomly", "-o", "junit_family=xunit1", "--junitxml",
+        str(junit)]
+    assert run_tool._pytest_argv(["a.py"], REPO, 3, junit, 12)[-3:] == [
+        "-n", "3", "--hypothesis-seed=12"]
+
+
+JUNIT = ('<testsuites><testsuite>'
+         '<testcase file="t/a.py" name="test_x" time="1.5"/>'
+         '<testcase file="t/a.py" name="test_y" time="0.5"><failure/></testcase>'
+         '<testcase file="t/b.py" name="test_z" time=""><error/></testcase>'
+         '<testcase name="test_w" time="0.25"/><testcase file="t/c.py"/>'
+         '</testsuite></testsuites>')
+
+
+def test_the_junit_file_s_cases(tmp_path):
+    junit = tmp_path / "j.xml"
+    junit.write_text(JUNIT, encoding="utf-8")
+    Case = run_tool.Case
+
+    assert run_tool._cases(junit, tmp_path) == [
+        Case((tmp_path / "t" / "a.py").resolve(), "test_x", 1.5, False),
+        Case((tmp_path / "t" / "a.py").resolve(), "test_y", 0.5, True),
+        Case((tmp_path / "t" / "b.py").resolve(), "test_z", 0.0, True),
+        Case(tmp_path.resolve(), "test_w", 0.25, False),
+        Case((tmp_path / "t" / "c.py").resolve(), "", 0.0, False)]
+    assert run_tool._cases(tmp_path / "none.xml", tmp_path) == []
+
+
+@pytest.mark.parametrize("code, outcome, verdict", [
+    (0, "pass", "pass"), (1, "pass", "pass"), (5, "empty", "empty"), (2, "pass", "fail"),
+    (6, "empty", "fail"), (4, "infra", "infra"), (4, "fail", "fail")])
+def test_a_session_that_broke_fails_the_checks_it_did_not_run(code, outcome, verdict):
+    assert run_tool._broken(code, outcome) == verdict
+
+
+def test_a_record_rounds_its_seconds_to_the_millisecond():
+    check = run_tool.Check("k", "n", "s", 3, pytest=("a",))
+
+    assert run_tool._record(check, 1.23456, "pass", 2) == {
+        "key": "k", "name": "n", "shard": "s", "declared": 3, "seconds": 1.235, "outcome": "pass",
+        "tests": 2}
+
+
+def _argv_checks(tmp_path: Path, code_for_push: int) -> Path:
+    """One argv check: python from the repo, exiting `code_for_push` in the push tier
+    when it runs in the repo with the attempt's notes log beside it, 9 otherwise."""
+    script = ("import os, sys; log = os.environ.get('CRAPKIT_ACCURACY_LOG', ''); "
+              f"sys.exit({code_for_push} if os.environ.get('CRAPKIT_ACCURACY_TIER') == 'push' "
+              "and os.path.samefile(os.getcwd(), sys.argv[1]) "
+              "and os.path.basename(log) == 'notes.jsonl' "
+              "and os.path.basename(os.path.dirname(log)).startswith('crapkit-accuracy-run-') "
+              "else 9)")
+    row = {"name": "argv", "argv": ["python", "-c", script, str(REPO)], "tiers": ["push"],
+           "seconds": 1}
+    checks = tmp_path / "checks"
+    checks.mkdir()
+    (checks / "beta.py").write_text(f"SHARD = 'two'\nCHECKS = [{row!r}]\n", encoding="utf-8")
+    return checks
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+@pytest.mark.parametrize("code, outcome, attempts", [(0, "pass", 1), (3, "infra", 2)])
+def test_an_argv_check_runs_python_from_the_repo_in_its_tier(tmp_path, code, outcome, attempts):
+    _, receipt = _run(_argv_checks(tmp_path, code), tmp_path / "r.json")
+
+    [check] = receipt["checks"]
+    assert (receipt["outcome"], receipt["attempts"]) == (outcome, attempts)
+    assert (check["name"], check["outcome"], check["tests"]) == ("argv", outcome, None)
+    assert 0 <= check["seconds"] < 60

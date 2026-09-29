@@ -284,10 +284,13 @@ def cached(version: str, wheelhouse: Path) -> Path | None:
     return found[0] if found else None
 
 
+RELEASE_SPEC = "crapkit=="
+
+
 def resolve(spec: str, wheelhouse: Path) -> Path | Skip:
     """A side named on the command line, as a wheel path or a Skip."""
-    if spec.startswith("crapkit=="):
-        version = spec.split("==", 1)[1]
+    version = spec.removeprefix(RELEASE_SPEC)
+    if version != spec:
         return cached(version, wheelhouse) or download(version, wheelhouse)
     path = Path(spec)
     if path.is_dir():
