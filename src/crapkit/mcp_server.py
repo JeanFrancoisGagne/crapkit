@@ -37,13 +37,17 @@ _REPO = {"repo": {"type": "string", "description": (
     "path to the scored repo's root (default: the repo the server was started in); a leading ~ "
     "is the home directory")}}
 
-# brief and explain resolve NAME by one rule, so they describe it with one
-# string. The bare identifier is the long name's leading token, which is all
-# there is before the parameters in Rust and Go.
-_NAME_DESCRIPTION = ("the bare identifier (classify, or route for a Rust "
-                     "`route cmd : & Cmd`) or the whole long_name next_item "
-                     "printed (classify( score , late )); both resolve, exact "
-                     "match first")
+# brief and explain resolve NAME by one rule (keys.select), so they describe
+# it with one string. The bare identifier is the long name's leading token,
+# which is all there is before the parameters in Rust and Go.
+_NAME_DESCRIPTION = ("the long_name get_next_item printed (classify( score , late )), the "
+                     "bare identifier (classify, or route for a Rust `route cmd : & Cmd`), "
+                     "a fragment of either, the line the function starts on, or a handle "
+                     "such as NAME#2 for a twin or (anonymous)#2; exact match first")
+
+# Both read PATH through the CLI's path rules (repopath), which fold a
+# backslash and place an absolute path inside the repo.
+_PATH_DESCRIPTION = "source file, repo-relative or absolute inside the repo; either slash works"
 
 # The partition a large repo needs before `top` means anything: one --scope
 # per element, exact names as declared in crapkit.toml.
@@ -98,11 +102,11 @@ TOOLS: tuple[dict, ...] = (
             "scope": "--scope"},
         "description": ("Lists the newest trusted run's whole risk ranking, every admitted function "
         "ordered by ccn times recency-weighted churn. Use it to survey a repo or "
-        "split work by file, and get_next_item for the one crap-ranked packet to fix "
-        "now. It runs no tests, keeps finished rows so it never empties, and reads "
-        "the churn cache, not git. scope narrows before top caps, so scope [\"core\"] "
-        "with top 20 returns the 20 riskiest in core, an unknown scope name is a "
-        "config error, and repo may be any directory under the measured checkout."),
+        "split work, and get_next_item for the one packet to fix now. It runs no tests "
+        "and keeps finished rows, so it never empties. Churn comes from a cache, not "
+        "git log, and git ls-files and git status count the scored files that changed "
+        "(scored_changes). scope narrows before top caps, and an unknown scope is a "
+        "config error. repo may be any directory under the measured checkout."),
         "properties": {
             "top": {
                 "type": "integer",
@@ -119,12 +123,12 @@ TOOLS: tuple[dict, ...] = (
         "flags": {},
         "description": ("Lists every run in the store, oldest first by id. Use it to date the store "
         "or to see which commit the other tools answer from. Use get_trend for "
-        "per-run totals and get_function_history for one function's scores per run. "
-        "It reads the store only and spawns no git. repo may be any directory under "
-        "the checkout, because the server walks up to the nearest crapkit.toml, and a "
-        "relative path resolves from the server's start directory. No crapkit.toml "
-        "above it answers an init pointer, and a checkout never scored answers a "
-        "coverage pointer, both as isError true."),
+        "totals and get_function_history for one function's scores. It reads the "
+        "store and runs one git ancestry check to mark the baseline run. repo may be "
+        "any directory under the checkout (the server walks up to the nearest "
+        "crapkit.toml), and a relative path resolves from the server's start "
+        "directory. With no crapkit.toml above it, or before the first coverage run, "
+        "it answers isError true with the command to run."),
         "properties": {},
         "output": PAYLOADS["runs --json"],
     },
@@ -157,18 +161,15 @@ TOOLS: tuple[dict, ...] = (
         "lines, none of them run. Use it once a function is chosen. Skip it for "
         "picking what to fix, that is get_next_item, and for a score across runs, "
         "get_function_history. Twins come from the run's stored index, whose first "
-        "build takes seconds. name must live in path. name takes the long name, a "
-        "bare identifier, a start line or NAME#2, exact match first. A miss lists the "
-        "file's functions instead of erroring."),
+        "build takes seconds. name must live in path. A miss is a tool error (isError "
+        "true, the exit-1 error object) whose message lists the file's functions."),
         "properties": {
             "path": {
                 "type": "string",
-                "description": "repo-relative source file, forward slashes"},
+                "description": _PATH_DESCRIPTION},
             "name": {
                 "type": "string",
-                "description": ("the bare identifier (classify, or route for a Rust `route cmd : & "
-                "Cmd`) or the whole long_name get_next_item printed (classify( score "
-                ", late )); both resolve, exact match first")}},
+                "description": _NAME_DESCRIPTION}},
         "output": PAYLOADS["brief --json"],
     },
     {
@@ -191,12 +192,10 @@ TOOLS: tuple[dict, ...] = (
         "properties": {
             "path": {
                 "type": "string",
-                "description": "repo-relative source file, forward slashes"},
+                "description": _PATH_DESCRIPTION},
             "name": {
                 "type": "string",
-                "description": ("the bare identifier (classify, or route for a Rust `route cmd : & "
-                "Cmd`) or the whole long_name get_next_item printed (classify( score "
-                ", late )); both resolve, exact match first")},
+                "description": _NAME_DESCRIPTION},
             "history": {
                 "type": "boolean",
                 "description": ("also list the commits that touched this function (git log -L), as "
@@ -236,12 +235,12 @@ TOOLS: tuple[dict, ...] = (
             "min_confidence": "--min-confidence"},
         "description": ("Lists file pairs that keep landing in the same commits over the churn "
         "window, strongest first, at most 50. Use it before editing a file to learn "
-        "what an edit drags along. Use list_duplicate_functions for copied code "
-        "rather than co-change. It reads git log once per call, not the scored run. "
-        "An empty list means no pair cleared both thresholds, not a missing run. A "
-        "pair must clear both thresholds: min_support 5 needs five shared commits, "
-        "min_confidence 0.5 means the rarer file moved with its partner half the "
-        "time. repo defaults to the server's own root."),
+        "what an edit drags along, and list_duplicate_functions for copied code. It "
+        "reads a cached ranking, not the scored run, and walks git log again only when "
+        "HEAD, the churn window or the clone depth moved. An empty list means no pair "
+        "cleared both thresholds, not a missing run: min_support 5 needs five shared "
+        "commits, and min_confidence 0.5 means the rarer file moved with its partner "
+        "half the time."),
         "properties": {
             "min_support": {
                 "type": "integer",

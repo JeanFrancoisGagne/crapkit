@@ -350,7 +350,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="print the program name and its version; on a terminal, a crapkit "
                              "built from a git checkout, other than a release, adds that commit "
                              "and whether the checkout was dirty. --version --json prints one "
-                             "object: version, commit, dirty and analysis_version")
+                             "object: version, commit, dirty, analysis_version and schema")
     sub = parser.add_subparsers(dest="command", required=True)
 
     inv = sub.add_parser("inventory", help="build the per-function complexity inventory snapshot")
@@ -452,7 +452,7 @@ def build_parser() -> argparse.ArgumentParser:
     brf.add_argument("--json", action="store_true", help="machine output (default: a short summary)")
     brf.set_defaults(func=_Handler("queue", "cmd_brief"))
 
-    rsc = sub.add_parser("rescore", help="fresh complexity for named files overlaid on the latest run's coverage")
+    rsc = sub.add_parser("rescore", help="fresh complexity for named files overlaid on the baseline run's coverage")
     rsc.add_argument("files", nargs="+", help="source files to re-analyze" + _WHERE)
     rsc.add_argument("--repo", **_REPO_FLAG)
     rsc.add_argument("--json", action="store_true", help="machine output (default: table)")
@@ -491,7 +491,8 @@ def build_parser() -> argparse.ArgumentParser:
     # one baseline, named one way: two of these would leave the losing flag
     # silently ignored, and which one lost would be argument order
     picked = ver.add_mutually_exclusive_group()
-    picked.add_argument("--baseline", type=int, default=None, help="baseline run id (default: latest scored run)")
+    picked.add_argument("--baseline", type=int, default=None,
+                        help="baseline run id (default: the trusted run `crapkit runs` marks `baseline`)")
     picked.add_argument("--base", default=None, metavar="REF",
                         help="measure the diff from merge-base(REF, HEAD); the baseline run must "
                              "then sit at or behind that fork point")
@@ -553,7 +554,9 @@ def build_parser() -> argparse.ArgumentParser:
     wl.set_defaults(func=_Handler("queue", "cmd_worklist"))
 
     ini = sub.add_parser("init", help="sniff the repo and write a starter crapkit.toml")
-    ini.add_argument("--repo", **_REPO_FLAG)
+    ini.add_argument("--repo", default=None,
+                     help="directory to write crapkit.toml in (default: the current directory; "
+                          "init never walks up)")
     ini.set_defaults(func=_Handler("admin", "cmd_init"))
 
     doc = sub.add_parser("doctor", help="check that crapkit.toml still describes this repo")
@@ -583,7 +586,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     rat = sub.add_parser("ratchet", help="manage the committed marks file: seed new debt, prune gone code")
     rat.add_argument("action", choices=("seed", "prune", "merge", "move", "report"),
-                     help="seed: mark over-target functions from the latest run; "
+                     help="seed: mark over-target functions from the run verify would compare "
+                          "against; "
                           "prune: drop marks whose functions left the codebase "
                           "(a mark whose file git renamed follows it instead); "
                           "merge: 3-way git merge driver (BASE OURS THEIRS), which a "
@@ -668,7 +672,7 @@ def build_parser() -> argparse.ArgumentParser:
     clean = sub.add_parser("clean", help="remove abandoned temporary mutation checkouts")
     clean.add_argument("--repo", **_REPO_FLAG)
     clean.add_argument("--dry-run", action="store_true", help="report eligible paths without removing them")
-    clean.add_argument("--json", action="store_true")
+    clean.add_argument("--json", action="store_true", help="machine output")
     clean.set_defaults(func=_Handler("maintenance", "cmd_clean"))
 
     hlp = sub.add_parser("help", help="print one subcommand's help, or the command list")
