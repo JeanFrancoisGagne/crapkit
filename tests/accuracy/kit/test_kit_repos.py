@@ -101,6 +101,26 @@ def test_each_copy_starts_from_the_template(make_repo, repo_templates):
     assert not [name for name in names if name.endswith(".building")]
 
 
+@pytest.mark.process
+def test_a_build_under_an_inherited_git_dir_leaves_that_repo_alone(tmp_path, monkeypatch):
+    """git exports GIT_DIR to a hook and to `git bisect run`. The kit's git
+    commands read it, so a suite run from either wrote the kit's identity and
+    core.bare=true into the repo that ran it, and every commit after that went
+    out as A U Thor."""
+    enclosing = tmp_path / "enclosing"
+    hang_guard.run(["git", "init", "-q", str(enclosing)])
+    config = (enclosing / ".git" / "config").read_bytes()
+    monkeypatch.setenv("GIT_DIR", str(enclosing / ".git"))
+    spec = repos.Spec(steps=(repos.Commit(files={"a.py": "x = 1\n"}),))
+
+    built = repos.build(spec, tmp_path / "r")
+    repos.git(tmp_path, "init", "-q", "--bare", str(tmp_path / "remote.git"))
+
+    assert (enclosing / ".git" / "config").read_bytes() == config
+    assert len(_log(built.top, "%H")) == 1
+    assert (tmp_path / "remote.git" / "HEAD").is_file()
+
+
 def test_the_digest_moves_with_any_byte_date_or_root():
     base = repos.Spec(steps=(repos.Commit(files={"a": b"1"}, date=5),))
     variants = [repos.Spec(steps=(repos.Commit(files={"a": b"2"}, date=5),)),

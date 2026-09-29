@@ -8,6 +8,13 @@ import venv
 
 import pytest
 
+import git_env
+
+# Run from a hook or `git bisect run`, the suite inherits the variables that
+# point git at the repo running it; each test's git works in its own repo.
+for _name in git_env.repo_env_names():
+    os.environ.pop(_name, None)
+
 
 def _key(path: str) -> str:
     return os.path.normcase(os.path.abspath(path))
