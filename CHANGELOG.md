@@ -1374,6 +1374,12 @@ each marks file re-seed once.
   after a later token, such as `$c`, could take its place.
 - The decisions in a class's methods count toward no function. They counted toward the
   function whose body declares the class. Methods still get no row.
+- A `//` or a `/*` in a word hides nothing. PowerShell has neither comment, but lizard's
+  C rules read `Invoke-RestMethod https://h/p ; while ($a) { }` as one token from the
+  `//` on, the loop and its braces with it, and `Get-Item a/*` ran on to the next `*/`
+  in the file, every function between the two included. No row moved in the 1,608
+  functions measured (a large consumer repo, posh-git, and the modules Windows
+  PowerShell ships).
 - `params` counts the parameters of the `param(...)` block that opens a function body,
   so an advanced function no longer reads 0. The long name, which is the ratchet key,
   still holds only the header list, so no key changes.

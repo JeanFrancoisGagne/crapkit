@@ -376,7 +376,9 @@ go, and their marks are left under names the run no longer has.
   the phantom rows those words opened go. A function whose header list writes a
   parameter in braces changes its key: `function A(${x})` reads `A ${x}` where it read
   `A $ { x }`. A class method's decisions leave the function that declares the class.
-  A function that gains a row, or keeps one and gains decisions, can be over its
+  An unquoted URL's `//` and a glob's `/*` no longer hide the code after them, so a
+  function on the same line or between `a/*` and a later `*/` can gain decisions or a
+  row. A function that gains a row, or keeps one and gains decisions, can be over its
   ceiling and fails the gate the next time its file changes.
 - A shell function whose name holds `-`, `.` or `:` keeps the whole name: `do-thing`
   read `thing`, and `function log::info` had no row. A keyword inside a longer word,

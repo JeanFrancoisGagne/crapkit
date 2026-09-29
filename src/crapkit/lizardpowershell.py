@@ -112,7 +112,7 @@ KEYWORDS IN ANY CASE
 
 TOKENIZER
     The added alternatives are tried ahead of lizard's shared C-family rules,
-    and they exist because nine PowerShell constructs read as something else
+    and they exist because ten PowerShell constructs read as something else
     there. Each is pinned by a test.
       - `<# ... #>` block comment. Left alone, `<` and `#` tokenize apart and
         the comment's keywords and braces all count.
@@ -141,6 +141,16 @@ TOKENIZER
       - `:label` as one token, so a labeled loop or switch still starts its
         statement. The colon in `script:Name` has a word before it and stays
         apart.
+      - `//` as one token. PowerShell has no `//` comment: it is the `//` of a
+        URL, as in `Invoke-RestMethod https://h/p`. lizard's C++ line comment
+        rule took the rest of the line as one code token, an if or a while and
+        its braces with it.
+    One C rule cannot be preempted that way. lizard's `/* */` block comment
+    sits ahead of the one place a reader may extend the pattern, and
+    PowerShell has no such comment, so `Get-Item a/*` ran on to the next `*/`
+    anywhere in the file, every function between them included. The source
+    gets a space between the two characters before it is tokenized, as the
+    shell reader's does; that adds no line and no token this reader counts.
     The `#` line-comment rule comes from ScriptLanguageMixIn, the same one
     PythonReader uses.
 
@@ -234,6 +244,7 @@ _TOKEN_ADDITION = (
     r"|\?[.\[]"                 # ?. and ?[, null-conditional access
     r"|[A-Za-z_]\w*(?:-\w+)+"   # Verb-Noun, one token
     r"|-\w+"                    # -and, -or, -eq, -Path
+    r"|//"                      # a URL's //, ahead of lizard's C++ line comment
 )
 
 # A subexpression inside a double-quoted token. The escape comes first, so a
@@ -810,14 +821,14 @@ class PowerShellReader(CodeReader, ScriptLanguageMixIn):
         subexpression inside a double-quoted string read as code.
 
         ScriptLanguageMixIn supplies the `#` line-comment rule (PythonReader
-        uses the same one), so comment handling is not written here. Nothing is
-        rewritten in the source and nothing is materialized: the subexpressions
-        are opened by a generator over lizard's, and `_spelled` respells keyword
-        tokens one at a time as they come, so the token stage still yields as it
-        reads, which is what crapkit's two-chain analyze.py depends on
-        (tests/unit/test_cognitive_reader_chain.py).
+        uses the same one), so comment handling is not written here. The one
+        rewrite in the source is `/*` to `/ *` (see TOKENIZER), and nothing is
+        materialized: the subexpressions are opened by a generator over lizard's,
+        and `_spelled` respells keyword tokens one at a time as they come, so the
+        token stage still yields as it reads, which is what crapkit's two-chain
+        analyze.py depends on (tests/unit/test_cognitive_reader_chain.py).
         """
-        return _spelled(_tokens(source_code, addition, token_class))
+        return _spelled(_tokens(source_code.replace("/*", "/ *"), addition, token_class))
 
 
 def _tokens(source: str, addition: str, token_class):

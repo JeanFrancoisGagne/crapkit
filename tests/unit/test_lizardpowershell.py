@@ -404,6 +404,40 @@ def test_a_commented_out_function_is_not_a_function():
     assert [fn.name for fn in _functions(code)] == ["real"]
 
 
+# --- hazard: slashes -----------------------------------------------------------
+
+def _rows(code):
+    return [(bare_name(r.long_name), r.start, r.end, r.ccn_std)
+            for r in analyze_source("probe.ps1", code)]
+
+
+# (line, end line). PowerShell has no `//` or `/* */` comment: to Windows
+# PowerShell 5.1's parser `https://h/p`, `a//b`, `a/*` and `*/b` are words, and
+# each function below is 1 + one if or while, so ccn 2.
+SLASHES_IN_A_WORD = [
+    ("Invoke-RestMethod https://h/p ; while ($a) { 1 }", 3),
+    ("Write-Host a//b; if ($a) { 1 }", 3),
+    ("Get-Item a/* ; if ($a) { 1 } ; Get-Item */b", 3),
+    ("Remove-Item C:/tmp/* -Recurse; if ($a) {\n        1\n    }", 5),
+    ("$x = 6 /2 /3; if ($a) { 1 }", 3),
+]
+
+
+@pytest.mark.parametrize("line, end", SLASHES_IN_A_WORD)
+def test_slashes_open_no_c_comment(line, end):
+    """lizard's shared pattern reads `//` as a C++ line comment and `/*` as a C
+    block comment. As one token the `//` took the rest of its line, the while
+    or if and its braces with it, and the `/*` ran on to the next `*/`."""
+    assert _rows(f"function Get-A($a) {{\n    {line}\n}}\n") == [("Get-A", 1, end, 2)]
+
+
+def test_a_glob_and_its_mirror_image_hide_no_function_between_them():
+    code = ("function A {\n    Get-Item a/*\n}\nfunction B($a) {\n    if ($a) { 1 }\n}\n"
+            "function C {\n    Get-Item */b\n}\n")
+
+    assert _rows(code) == [("A", 1, 3, 1), ("B", 4, 6, 2), ("C", 7, 9, 1)]
+
+
 # --- hazard: here-strings ------------------------------------------------------
 
 def test_a_double_quoted_here_string_leaks_no_conditions():
