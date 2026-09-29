@@ -8,7 +8,7 @@ the totals counted it, seed marked it, the gate refused it.
 """
 from types import SimpleNamespace
 
-from crapkit.cli.scoring import _coverage_summary
+from crapkit.cli.scoring import _Corpus, _coverage_summary
 from crapkit.digest import build_digest, totals
 from crapkit.packet import file_totals
 from crapkit.ratchet import RatchetEntry, seed_ratchet, update_ratchet
@@ -108,7 +108,7 @@ def test_sarif_reports_no_over_target_result():
 
 def test_the_coverage_summary_counts_nothing_over_target():
     run = SimpleNamespace(scored=[at_30()], commit="c1", cache_hits=0, provenance={},
-                          lane_errors={}, corpus=SimpleNamespace(files=1, skipped_max_bytes=0))
+                          lane_errors={}, corpus=_Corpus(files=1, skipped_max_bytes=0))
     cfg = SimpleNamespace(target=30, scope_targets={"src": 30}, ceilings={"default": 30},
                           ceiling_of=lambda scope: 30)
     shape = SimpleNamespace(kind="coverage", unmeasured=[])

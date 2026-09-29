@@ -66,8 +66,8 @@ _LOW, _HIGH = 1.0 - _REL, 1.0 + _REL
 # README "Grade and CRAP load": A under 2%, B under 5%, C under 10%, D under 20%.
 _BANDS = ((2, "A"), (5, "B"), (10, "C"), (20, "D"))
 # README "Exit codes": verify reports the first of these that fires.
-_PRECEDENCE = ((6, "gate_violations"), (7, "ratchet_regressions"), (8, "new_failures"),
-               (9, "uncovered_violations"))
+_PRECEDENCE = ((6, "gate_violations"), (6, "unread_files"), (7, "ratchet_regressions"),
+               (8, "new_failures"), (9, "uncovered_violations"))
 
 COST: dict[str, list[int]] = {}
 _BORN = [perf_counter_ns()]  # when this process's tally began
@@ -435,15 +435,17 @@ def _bucket_problem(summary: dict) -> str | None:
 
 
 def check_summary(summary: dict, judged: int) -> None:
-    """cli/scoring._coverage_summary: `judged` is how many rows the grade is over."""
+    """cli/scoring._coverage_summary: `judged` is how many rows the grade and
+    the crap_load are over. A partial run leaves out the scopes no lane
+    measured, so its load is bounded by the judged rows, not every function."""
     began = perf_counter_ns()
     at = f"run {summary['run_id']}"
     problem = _bucket_problem(summary)
     if problem:
         _stop(problem, f"{at}, functions {summary['functions']}", PRINTED)
-    check_totals(summary["functions"], summary["over_target"], summary["crap_load"])
     if not summary["over_target"] <= judged <= summary["functions"]:
         _stop("over_target <= judged rows <= functions", f"{at}, judged {judged}", PRINTED)
+    check_totals(judged, summary["over_target"], summary["crap_load"])
     check_grade(summary["over_target"], judged, summary["grade"], at)
     _spent("summary", began)
 

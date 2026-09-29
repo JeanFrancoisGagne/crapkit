@@ -400,6 +400,14 @@ def test_a_summary_inside_its_bounds_passes():
     inv.check_summary(summary(), judged=10)  # 1 of 10 is 10%: not under 10%, so D
 
 
+def test_a_partial_run_sums_its_load_over_the_rows_it_judged():
+    """A scope no lane measured this run is left out of the grade and the load,
+    so the load is bounded by the judged rows, not by every function scored."""
+    inv.check_summary(summary(over_target=0, grade="A+", crap_load=4.0), judged=4)
+    assert "at least one per function" in stopped(
+        inv.check_summary, summary(over_target=0, grade="A+", crap_load=3.0), 4)
+
+
 def test_each_summary_bound_stops_its_wrong_count():
     assert "five flag counts sum" in stopped(inv.check_summary, summary(measured=4), 10)
     assert "five flag counts sum" in stopped(inv.check_summary, summary(excluded=0), 10)
@@ -484,18 +492,24 @@ def test_the_gate_checks_its_rows_and_its_breaches():
 # --- the verify verdict ------------------------------------------------------------------
 
 # README "Exit codes": the first of 6, 7, 8, 9 that fires, in that order; else 0.
-_EXIT_OF = {(g, r, n, u): (6 if g else 7 if r else 8 if n else 9 if u else 0)
-            for g, r, n, u in itertools.product((False, True), repeat=4)}
+# A changed file no reader could read (x) fails the gate as a violation does: 6.
+_EXIT_OF = {(g, x, r, n, u): (6 if g or x else 7 if r else 8 if n else 9 if u else 0)
+            for g, x, r, n, u in itertools.product((False, True), repeat=5)}
 
 
-def verdict(g: bool, r: bool, n: bool, u: bool, ok: bool) -> Verdict:
-    return Verdict(ok=ok, gate_violations=["g"] if g else [],
-                   ratchet_regressions=["r"] if r else [], new_failures=["n"] if n else [],
-                   dirty_failures=[], uncovered_violations=("u",) if u else ())
+def _found(fired: bool, finding: str) -> tuple:
+    return (finding,) if fired else ()
+
+
+def verdict(g: bool, x: bool, r: bool, n: bool, u: bool, ok: bool) -> Verdict:
+    return Verdict(ok=ok, gate_violations=list(_found(g, "g")),
+                   ratchet_regressions=list(_found(r, "r")), new_failures=list(_found(n, "n")),
+                   dirty_failures=[], uncovered_violations=_found(u, "u"),
+                   unread_files=_found(x, "x"))
 
 
 @pytest.mark.parametrize("findings", sorted(_EXIT_OF))
-def test_all_sixteen_finding_sets_pass_at_the_readme_exit(findings):
+def test_all_thirty_two_finding_sets_pass_at_the_readme_exit(findings):
     code = _EXIT_OF[findings]
     inv.check_verdict(verdict(*findings, ok=code == 0), code, kept=inv.STORED)
     assert inv.verdict_exit(verdict(*findings, ok=code == 0)) == code
@@ -591,7 +605,7 @@ _SITES = [
     ("cli/verifying.py", "_settle_verify", "check_verdict"),
     ("cli/scoring.py", "_gate_verdict", "check_gate"),
     ("cli/scoring.py", "_coverage_summary", "check_summary"),
-    ("cli/claude_hook.py", "_judge", "_check_advisory"),
+    ("cli/claude_hook.py", "_answer", "_check_advisory"),
     ("cli/claude_hook.py", "_check_advisory", "check_advisory"),
 ]
 

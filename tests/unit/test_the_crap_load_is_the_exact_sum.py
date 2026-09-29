@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import math
 
 import pytest
-from crapkit.cli.scoring import _coverage_summary
+from crapkit.cli.scoring import _Corpus, _coverage_summary
 from crapkit.digest import totals, totals_from_counts
 from crapkit.packet import file_totals
 from crapkit.score import ScoredRow, crap
@@ -71,7 +71,7 @@ def test_a_brief_s_file_totals_do_not_follow_row_order(order):
 @pytest.mark.parametrize("order", both_orders(TIE_ROWS), ids=["drawn", "by-crap"])
 def test_the_coverage_summary_does_not_follow_row_order(order):
     run = SimpleNamespace(scored=order, commit="c1", cache_hits=0, provenance={},
-                          lane_errors={}, corpus=SimpleNamespace(files=1, skipped_max_bytes=0))
+                          lane_errors={}, corpus=_Corpus(files=1, skipped_max_bytes=0))
     cfg = SimpleNamespace(target=6, scope_targets={}, ceilings={"default": 6},
                           ceiling_of=lambda scope: 6)
     shape = SimpleNamespace(kind="coverage", unmeasured=[])
