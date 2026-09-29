@@ -86,7 +86,8 @@ literal or a lambda inside its header is not; see `_open_brace`,
 A word spelled like a keyword is a name where the language or the tokens
 around it say so: a structure keyword followed by a `:` (see
 `_resolve_structure`), a word the language's `counting` set leaves out
-(`do` in Go and Zig) and a word after a member access (`_names_a_member`).
+(`do` and `while` in Go, `do` in Zig) and a word after a member access
+(`_names_a_member`).
 
 Where this extension sits in lizard's chain is load-bearing and differs by
 reader: the python rules read whitespace tokens that lizard's own

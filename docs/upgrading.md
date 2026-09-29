@@ -403,9 +403,9 @@ them by 1 and 1,014 by 3 or less, and 69 Python rows move `nesting`. The
 
 ### Next analysis version: nesting in every language
 
-The release after 0.8.0 moves `nesting` outside Python, so it raises the analysis
-version and every marks file re-seeds once, with the same three commands as version 11
-below.
+The release after 0.8.0 moves `nesting` outside Python, and `cognitive` in a few
+functions in every language, so it raises the analysis version and every marks file
+re-seeds once, with the same three commands as version 11 below.
 
 - A function's `nesting` in C, C++, Objective-C, Java, JavaScript, TypeScript, Go,
   Rust, Swift, Zig, PowerShell and shell reads the depth crapkit's cognitive pass
@@ -438,7 +438,13 @@ below.
   Swift argument label `g(for: x)`. The word no longer costs +1, and in Go the
   structures inside a method named `do` no longer pay a level of nesting for it. 6
   of the 24,540 Go functions moved, one of them from 45 to 9. A keyword key inside a
-  function also stops opening a `nesting` level per key.
+  function also stops opening a `nesting` level per key. A Go variable named `while`
+  stops costing +1 at each use, since Go has no `while` loop.
+- Both columns go up, in every language, where a `while` loop comes right after a
+  `}` that closed anything but a do-while's block, such as an `if` block, an object
+  literal or a Python dict. The loop read as the tail of a do-while, cost nothing and
+  opened no level. 16 of the 21,099 functions in the measuring corpus move
+  `cognitive`, 3 of them in Python, and 6 move `nesting`.
 - `nesting` and `cognitive` are reported and never gated, so no verdict moves with
   them. Expect both columns to change in `next-item --json`, exports and `brief` on
   the first run after upgrading; the [`nesting` row](agent-json.md#item-fields) says

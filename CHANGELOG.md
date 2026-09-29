@@ -1265,15 +1265,25 @@ analysis-version bump, so each marks file re-seeds once
   move for it; a keyword key opened a level per key, so a function holding `{if: 1,
   for: 2, while: 3, do: 4, switch: 5, catch: 6}` read `nesting` 4 and `cognitive` 6,
   and reads 0 and 0.
-- Measured over 21,099 functions in 20 open-source projects: 1,486 of the 6,465
-  functions outside Python move `nesting`, 1,290 down and 196 up, and 39 move
-  `cognitive`, 33 down and 6 up. No Python row and no `ccn` value moves. Against an
-  independent tree-sitter reading of Sonar's nesting rules over 3,228 functions in C,
-  C++, Objective-C, Java, Go, Rust, Swift, Zig and shell, crapkit agreed on 2,295
-  before and 2,956 now. Most of the rest are closures, which open no level in
-  crapkit's reading and one in that oracle's. Over 24,540 functions in the Go
-  standard library and actionlint, 4,137 move `nesting`, 3,387 down and 750 up, and
-  270 move `cognitive`: 264 up from the header literals above and 6 down from `do`.
+- A `while` right after a `}` is the tail of a do-while only where that `}` closed
+  the `do`'s block (or a Swift `repeat`'s). Every `while` after a `}` read as a tail,
+  so a loop after an `if` block, an object literal or a Python dict cost nothing and
+  opened no level: a C function with an `if` block and then a loop holding one `if`
+  read `nesting` 1 and `cognitive` 2, and reads 2 and 4. lizard's ND read that
+  `nesting` right, so those rows would have lost a level with the move to the
+  cognitive pass. Go has no `while`, so there the word is a name, as `do` is: a Go
+  variable named `while` cost +1 at each use.
+- Measured over 21,099 functions in 20 open-source projects: 1,489 of the 6,465
+  functions outside Python move `nesting`, 1,289 down and 200 up, and 51 move
+  `cognitive`, 33 down and 18 up. No Python row moves `nesting`, 3 move `cognitive`
+  (a `while` after a dict literal), and no `ccn` value moves. Against an independent
+  tree-sitter reading of Sonar's nesting rules over 3,228 functions in C, C++,
+  Objective-C, Java, Go, Rust, Swift, Zig and shell, crapkit agreed on 2,295 before
+  and 2,962 now. Most of the rest are closures, which open no level in crapkit's
+  reading and one in that oracle's. Over 24,540 functions in the Go standard library
+  and actionlint, 4,137 move `nesting`, 3,387 down and 750 up, and 271 move
+  `cognitive`: 264 up from the header literals above and 7 down from `do` and
+  `while`.
 - `nesting` and `cognitive` are reported and never gated, so no gate verdict moves
   with them. The change needs an analysis-version bump, which makes each marks file
   re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-nesting-in-every-language)).

@@ -342,6 +342,49 @@ KEYWORD_KEYS = {
                   "    return 0;\n}\n", (2, 3)),
 }
 
+# A `while` right after a `}` is a do-while's tail only where that `}` closed a
+# `do`'s block. Read after any `}`, the loop after an if block or a literal paid
+# nothing and opened no level, so the if inside it read one level short: nesting
+# 1 and cognitive 2 in each brace row below, where the loop is +1 and the if in
+# it +2 (ND read nesting 2, and right). file: (source, (nesting, cognitive))
+_THEN_WHILE = "while (b) {\n        if (a) {\n            h();\n        }\n    }\n"
+LOOP_AFTER_BLOCK = {
+    "while.c": ("void f(int a, int b) {\n    if (a) {\n        g();\n    }\n    " + _THEN_WHILE + "}\n",
+                (2, 4)),
+    "while.java": ("class K {\n  void f(boolean a, boolean b) {\n    if (a) {\n      g();\n    }\n"
+                   "    while (b) {\n      if (a) {\n        h();\n      }\n    }\n  }\n}\n", (2, 4)),
+    "while.ts": ("function f(a: boolean, b: boolean) {\n  if (a) {\n    g()\n  }\n  while (b) {\n"
+                 "    if (a) {\n      h()\n    }\n  }\n}\n", (2, 4)),
+    "while.ps1": ("function F($a, $b) {\n    if ($a) {\n        g\n    }\n    while ($b) {\n"
+                  "        if ($a) {\n            h\n        }\n    }\n}\n", (2, 4)),
+    "while.rs": ("fn f(a: bool, b: bool) {\n    if a {\n        g();\n    }\n    while b {\n"
+                 "        if a {\n            h();\n        }\n    }\n}\n", (2, 4)),
+    "while.swift": ("func f(a: Bool, b: Bool) {\n    if a {\n        g()\n    }\n    while b {\n"
+                    "        if a {\n            h()\n        }\n    }\n}\n", (2, 4)),
+    "while.zig": ("fn f(a: bool, b: bool) void {\n    if (a) {\n        g();\n    }\n    " + _THEN_WHILE
+                  + "}\n", (2, 4)),
+    "literal.js": ("function f(b) {\n  const o = {a: 1}\n  while (b) {\n    if (o.a) {\n      h()\n"
+                   "    }\n  }\n}\n", (2, 3)),
+    # The pass read (0, 0) in Python, where a dict literal ends in `}` too.
+    "table.py": ("def dict_then_while(e):\n    table = {1: 2}\n    while e:\n        e = table.get(e)\n"
+                 "    return e\n", (1, 1)),
+    # A do-while's `while` stays its tail, on the `}`'s line or the next, and so
+    # does an inner one's; a loop after a whole do-while is a loop.
+    "do-next-line.c": ("int f(int a) {\n    do {\n        a--;\n    }\n    while (a);\n    return a;\n}\n",
+                       (1, 1)),
+    "do-in-do.c": ("int f(int a, int b) {\n    do {\n        do {\n            b--;\n        } while (b);\n"
+                   "    } while (a--);\n    return a;\n}\n", (2, 3)),
+    "do-then-while.c": ("int f(int a, int b) {\n    do {\n        a--;\n    } while (a);\n"
+                        "    while (b) {\n        b--;\n    }\n    return a;\n}\n", (1, 2)),
+    # Go has no `while`, so the word is a name wherever it stands. 0.8.0 read
+    # both rows (3, 5): each use of the word paid as a loop.
+    "after-brace.go": ("package p\n\nfunc F(what string) string {\n\tif what == \"\" {\n\t\treturn \"\"\n"
+                       "\t}\n\twhile := \" while \" + what\n\tif what != \"x\" {\n\t\twhile = \"y\"\n\t}\n"
+                       "\treturn while\n}\n", (1, 2)),
+    "first.go": ("package p\n\nfunc F(what string) string {\n\twhile := what\n\tif what != \"x\" {\n"
+                 "\t\twhile = \"y\"\n\t}\n\treturn while\n}\n", (1, 1)),
+}
+
 # Shell and PowerShell rows read ND through their readers' own keyword lists,
 # which held the logical operators. Each comment says what ND read.
 SCRIPT_DEPTHS = {
@@ -526,6 +569,14 @@ def test_a_do_that_names_something_is_no_loop(name):
 @pytest.mark.parametrize("name", sorted(KEYWORD_KEYS))
 def test_a_keyword_before_a_colon_is_a_key_or_a_label(name):
     source, (nesting, cognitive) = KEYWORD_KEYS[name]
+    (record,) = analyze_source(name, source)
+
+    assert (record.nesting, record.cognitive) == (nesting, cognitive)
+
+
+@pytest.mark.parametrize("name", sorted(LOOP_AFTER_BLOCK))
+def test_a_while_after_a_block_is_a_do_while_tail_only_after_a_do(name):
+    source, (nesting, cognitive) = LOOP_AFTER_BLOCK[name]
     (record,) = analyze_source(name, source)
 
     assert (record.nesting, record.cognitive) == (nesting, cognitive)
