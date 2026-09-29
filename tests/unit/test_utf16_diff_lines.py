@@ -16,7 +16,7 @@ import pytest
 from raw_git import checkout, commit, git, repository, stage
 
 from crapkit.cli.parser import main
-from crapkit.diffparse import changed_ranges, utf16_line_spans
+from crapkit.diffparse import changed_ranges, git_span, reader_ranges, utf16_line_spans
 from crapkit.gitio import SourcePatch, diff_since, staged_diff
 
 CONFIG = b'[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n'
@@ -164,3 +164,31 @@ SPANS = [
 @pytest.mark.parametrize("raw, spans", [row[1:] for row in SPANS], ids=[row[0] for row in SPANS])
 def test_each_line_git_counts_maps_onto_the_text_lines_it_covers(raw, spans):
     assert utf16_line_spans(raw) == spans
+
+
+# --- the lone-CR map leaves a UTF-16 file to the map above ---------------------------------
+#
+# A reader also ends a line at a CR no LF follows (reader_ranges, git_span). In UTF-16 a
+# CR is 0D 00 or 00 0D, and no 0A byte follows its 0D, so every CR of a CRLF file read as
+# lone: ranges the patch reader had put on text lines moved a second time, and a span
+# handed to git named other lines.
+
+CRLF_TEXT = "# x\r\nx = 1\r\ny = 2\r\n"
+
+
+@pytest.mark.parametrize("encode", [_le, _be], ids=["utf16-le", "utf16-be"])
+def test_a_utf16_file_s_ranges_stay_on_the_text_lines_the_patch_reader_gave(encode):
+    raw = encode(CRLF_TEXT)
+
+    assert reader_ranges({"src/a.py": [(2, 2)]}, lambda path: raw) == {"src/a.py": [(2, 2)]}
+
+
+@pytest.mark.parametrize("first, span, held", [
+    ("# x", (2, 3), (2, 4)),
+    ("# 上", (2, 3), (3, 5)),
+    ("# 上", (1, 1), (1, 2)),
+], ids=["ascii", "cjk-below-the-split", "cjk-the-split-line"])
+def test_a_span_goes_to_git_as_the_git_lines_that_hold_its_text_lines(first, span, held):
+    """git ends a line at every 0A byte: the LF of the last CRLF leaves its 00
+    as one more git line, and 上 (0A 4E) splits text line 1 in two."""
+    assert git_span(_le(f"{first}\r\nx = 1\r\ny = 2\r\n"), *span) == held

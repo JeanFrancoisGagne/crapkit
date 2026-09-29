@@ -21,12 +21,13 @@ the other way, for a function's span handed to git (`git log -L`).
 """
 from __future__ import annotations
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 import re
 from pathlib import Path
 from typing import Callable
 
 from .gitpaths import header_path
+from .repotext import utf16_marked
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 # What ends a line for the reader: an LF, alone or after a CR, and a CR no LF follows.
@@ -216,7 +217,7 @@ def _on_reader_lines(ranges: list[tuple[int, int]], raw: bytes | None) -> list[t
     A git line past the end, which only bytes read after the diff was taken can
     produce, is read as the last git line.
     """
-    if raw is None or not _LONE_CR.search(raw):
+    if not _lone_crs(raw):
         return ranges
     starts = _git_line_starts(raw)
     last = len(starts) - 1
@@ -258,7 +259,24 @@ def git_span(raw: bytes | None, start: int, end: int) -> tuple[int, int]:
     `raw` is the file at the revision git will number the span in, or None where
     there is none. A reader line past the end reads as the last git line.
     """
-    if raw is None or not _LONE_CR.search(raw):
+    if raw is not None and utf16_marked(raw):
+        return _utf16_git_span(utf16_line_spans(raw), start, end)
+    if not _lone_crs(raw):
         return start, end
     starts = _git_line_starts(raw)[:-1]
     return bisect_right(starts, start), bisect_right(starts, end)
+
+
+def _lone_crs(raw: bytes | None) -> bool:
+    """Whether a reader and git can number these bytes apart at a lone CR. A
+    UTF-16 file cannot: its CR is 0D 00 or 00 0D, no 0A byte follows its 0D, and
+    utf16_line_spans already maps its git lines onto its text lines."""
+    return raw is not None and not utf16_marked(raw) and _LONE_CR.search(raw) is not None
+
+
+def _utf16_git_span(spans: list[tuple[int, int]], start: int, end: int) -> tuple[int, int]:
+    """The git lines that hold text lines `start` to `end`, from each git
+    line's (first, last) text line (utf16_line_spans): a text line a 0A byte
+    inside a code unit splits sits on two git lines."""
+    first = bisect_left([last for _, last in spans], start) + 1
+    return min(first, len(spans)), bisect_right([first for first, _ in spans], end)
