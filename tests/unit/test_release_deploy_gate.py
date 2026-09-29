@@ -1,4 +1,4 @@
-"""A release waits for the deploy suite at the commit it tags (Q75).
+"""A release waits for the deploy suite at the commit it tags.
 
 `check` once demanded a green release-cadence run of deploy.yml at the
 pre-bump HEAD. The release never tags that commit, so the run proved nothing

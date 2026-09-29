@@ -1,4 +1,4 @@
-"""candidate.py's hash-only run, which keys the release's deploy record (Q75).
+"""candidate.py's hash-only run, which keys the release's deploy record.
 
 `release.py run deploy` runs export.py and then candidate.py with --no-build on
 the tag commit's tree, and dispatches deploy.yml's release cadence with the

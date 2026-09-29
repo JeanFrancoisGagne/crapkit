@@ -869,7 +869,7 @@ def _guard_verified(root: Path, version: str) -> dict:
 
 
 def _guard_publish(root: Path, version: str) -> dict:
-    """One record per required check (arch-23): the verify run, then the
+    """One record per required check: the verify run, then the
     accuracy and deploy records, each at the tag commit."""
     receipt = _guard_verified(root, version)
     accuracy_gate(root, version, receipt["head"])
@@ -1130,7 +1130,7 @@ def _run_accuracy(step: Step, root: Path, version: str, receipt: dict) -> None:
 # The deploy stage runs deploy.yml's release cadence on the tag commit through a
 # scratch branch, as the accuracy stage runs accuracy.yml. Its record in the
 # release receipt is keyed on that commit's sha and on candidate.json's
-# source_hash (Q75): the stage hashes the tagged tree with the deploy kit's own
+# source_hash: the stage hashes the tagged tree with the deploy kit's own
 # export.py and candidate.py, dispatches the run with that hash, and the
 # workflow's scope job refuses a tree that hashes otherwise, so the run's name
 # carries the hash of the source it tested. Stage 2b checks the record's sha
