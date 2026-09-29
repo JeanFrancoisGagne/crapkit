@@ -133,6 +133,17 @@ def test_the_command_a_path_refusal_prints_keeps_the_path_one_argument(arg, caps
     assert [Path(word) for word in shlex.split(printed.group(1))] == [Path(arg)]
 
 
+class _OsNamed:
+    """The os module with `name` alone replaced: the refusal also quotes the path
+    (`os.fspath`) and looks for crapkit on PATH through the real module."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __getattr__(self, attr: str):
+        return getattr(os, attr)
+
+
 # Only Windows reads a backslash as a separator, so only there does a backslash
 # path reach the refusal; elsewhere argparse answers it with its own dump.
 WINDOWS_REFUSALS = ([(r"C:\my repos\app", '"C:/my repos/app"'), (r"C:\work\app", "C:/work/app")]
@@ -147,12 +158,10 @@ def test_a_refused_windows_path_that_needs_quotes_goes_in_one_pair(arg, word, ca
     so `--repo "my repos"/app` reached crapkit as `my repos` and `/app`. One pair
     of quotes around the whole path is one argument in cmd.exe, PowerShell and
     Git Bash. `test_self_invocation` spells the backslash cases on every OS."""
-    from types import SimpleNamespace
-
     from crapkit import invocation
     from crapkit.cli import main
 
-    monkeypatch.setattr(invocation, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(invocation, "os", _OsNamed("nt"))
     main([arg])
 
     assert f" inventory --repo {word}` " in capsys.readouterr().err

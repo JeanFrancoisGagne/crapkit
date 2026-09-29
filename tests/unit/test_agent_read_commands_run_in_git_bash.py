@@ -149,11 +149,12 @@ def test_a_console_script_on_path_is_named_and_runs_in_every_shell(unmeasured_re
 # --- an interpreter path that holds a space -----------------------------------
 #
 # A venv under C:\Users\Jane Doe or an install under C:\Program Files puts a
-# space in the interpreter path, and the next step quotes it. Git Bash, cmd.exe,
-# bash and sh run the quoted line as printed. PowerShell reads a line that opens
-# with a quoted string as an expression and refuses the arguments after it, so
-# there the reader types the call operator `& ` first. No one spelling runs
-# unchanged in all of them, and README.md and CONTEXT.md say so.
+# space in the interpreter path. On Windows the next step names the same file
+# without the space where a link or an 8.3 name allows, and otherwise quotes the
+# spaced segment alone, so the line never opens with a quote and PowerShell runs
+# it as printed; only cmd.exe loses a venv in a spaced directory with no 8.3 name
+# (docs/adr/0003). sh reads the path in single quotes. README.md and CONTEXT.md
+# say so.
 
 def _link_directory(link: Path, target: Path) -> None:
     """`link` reaches `target`: a junction on Windows, which needs no
@@ -188,35 +189,27 @@ def _advised_by(interpreter: Path, repo: Path, env: dict) -> str:
     return found.group(1)
 
 
-def _typed_in(shell: str, advised: str) -> str:
-    """The line a reader types in `shell` for a next step: the call operator in
-    front of a quoted interpreter in PowerShell, the line as printed elsewhere."""
-    if shell == "powershell" and advised.startswith('"'):
-        return f"& {advised}"
-    return advised
-
-
 @pytest.mark.parametrize("shell", _shells())
-def test_a_quoted_interpreter_runs_in_every_shell_as_the_docs_say(unmeasured_repo, tmp_path,
-                                                                  spaced_interpreter, shell):
+def test_a_spaced_interpreter_runs_in_every_shell_as_printed(unmeasured_repo, tmp_path,
+                                                             spaced_interpreter, shell):
     env = _environment(console_script=False)
     advised = _advised_by(spaced_interpreter, unmeasured_repo, env)
-    assert advised.startswith('"') and "my python" in advised, advised
+    assert not advised.startswith('"'), advised
 
-    result = _run_in(shell, f"{_typed_in(shell, advised)} --version", tmp_path, env)
+    result = _run_in(shell, f"{advised} --version", tmp_path, env)
 
     assert result.returncode == 0, f"{shell}: {advised}\n{result.stdout}{result.stderr}"
     assert result.stdout.startswith("crapkit "), result.stdout
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell runs on Windows only")
-def test_powershell_refuses_a_quoted_interpreter_without_the_call_operator(unmeasured_repo, tmp_path,
-                                                                           spaced_interpreter):
-    """The `& ` the docs ask for is needed only while this refusal holds."""
+def test_powershell_refuses_the_whole_path_in_double_quotes(tmp_path, spaced_interpreter):
+    """0.8.0 printed a spaced interpreter path whole in double quotes. PowerShell
+    reads that line as a string and stops at `-m`, so a next step never opens
+    with a quote; docs/adr/0003's trade holds only while this refusal does."""
     env = _environment(console_script=False)
-    advised = _advised_by(spaced_interpreter, unmeasured_repo, env)
 
-    result = _run_in("powershell", f"{advised} --version", tmp_path, env)
+    result = _run_in("powershell", f'"{spaced_interpreter}" -m crapkit --version', tmp_path, env)
 
     assert result.returncode != 0 and "UnexpectedToken" in result.stderr, result.stdout + result.stderr
 
@@ -225,11 +218,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize("page", ["README.md", "CONTEXT.md"])
-def test_a_page_that_says_powershell_runs_the_next_step_names_the_call_operator(page):
+def test_a_page_that_says_powershell_runs_the_next_step_names_the_case_cmd_loses(page):
     """Each paragraph that tells a reader PowerShell runs the interpreter
-    spelling also tells them to put `& ` before it when it is quoted."""
+    spelling names docs/adr/0003, the one case cmd.exe loses, and asks for no
+    call operator: the line runs in PowerShell as printed."""
     paragraphs = (ROOT / page).read_text(encoding="utf-8").split("\n\n")
     promising = [p for p in paragraphs if "next step" in p.lower() and "PowerShell" in p]
 
     assert promising, f"{page} no longer says which shells run the next step"
-    assert all("`& `" in p for p in promising), promising
+    assert all("docs/adr/0003" in p for p in promising), promising
+    assert "`& `" not in "\n\n".join(promising), promising

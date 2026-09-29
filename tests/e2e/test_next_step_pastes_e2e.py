@@ -1,9 +1,9 @@
 """The next step crapkit prints under `python -m crapkit` runs in every shell a
 reader pastes it into.
 
-Every refusal and next step names the command to run next, and when `python -m
-crapkit` started crapkit that command opens with the interpreter's path
-(`invocation._self`). On Windows the line used to print that path as it is: bare
+Every refusal and next step names the command to run next, and when PATH finds
+no console script this installation owns, as in a source checkout, that command
+opens with the interpreter's path (`invocation._self`). On Windows the line used to print that path as it is: bare
 backslashes, which Git Bash reads as escapes and answers with exit 127, and a
 path holding a space in double quotes, which PowerShell reads at the start of a
 line as a string and stops at `-m` with a parse error.
@@ -27,6 +27,7 @@ from pathlib import Path
 import hang_guard
 import pytest
 
+from crapkit import invocation
 from crapkit.invocation import _self, shell_path
 
 STUB = "import json, sys\nprint(json.dumps(sys.argv[1:]))\n"
@@ -116,9 +117,16 @@ def _relinked(executable: Path, link) -> Path:
     return link(root) / executable.relative_to(root)
 
 
+def _off_path(monkeypatch) -> None:
+    """PATH finds no crapkit this interpreter installed, so a next step names the
+    interpreter. The suite's own venv puts one on PATH under CI."""
+    monkeypatch.setattr(invocation, "_runs_here", lambda found: False)
+
+
 def _printed(monkeypatch, executable: Path) -> str:
-    """The next step crapkit prints when `executable -m crapkit` started it."""
-    monkeypatch.setattr(sys, "argv", [str(Path("crapkit") / "__main__.py")])
+    """The next step crapkit prints from `executable` with no console script of
+    its own on PATH."""
+    _off_path(monkeypatch)
     monkeypatch.setattr(sys, "executable", str(executable))
     return f"{_self()} coverage"
 
@@ -184,7 +192,7 @@ def test_the_repo_path_a_refusal_prints_reaches_crapkit_as_one_argument(shell, t
     The reader pastes from the directory they typed the path in."""
     from crapkit.cli import main
 
-    monkeypatch.setattr(sys, "argv", [str(Path("crapkit") / "__main__.py")])
+    _off_path(monkeypatch)
     repo = tmp_path / "my repos" / "app"
     main([str(repo) if typed == "absolute" else "my repos/app"])
     line = re.search(r"e\.g\. `([^`]+)`", capsys.readouterr().err).group(1)
@@ -202,12 +210,17 @@ def test_the_install_line_a_pytest_cov_note_prints_runs_the_lanes_python(shell, 
     Windows (`.venv\Scripts\python.exe`), got the install line
     `.venv\Scripts\python.exe -m pip install pytest-cov`. Git Bash ran that as
     `.venvScriptspython.exe` and exited 127, and from any directory but the
-    lane's no shell found the file. Pasted here from another directory."""
+    lane's no shell found the file. Pasted here from another directory.
+
+    The lane's venv is one `python -m venv` made, so the line runs its pip. A
+    venv uv made gets `uv pip install --python` with the same interpreter word
+    (tests/unit/test_doctor_uv_venv_remedy.py)."""
     from crapkit.cli.admin import _missing_pytest_cov_note
     from crapkit.lane_command import LaunchSpec
 
-    executable = Path(sys.executable)
-    root = _install_root(executable)
+    root = tmp_path / "lane" / "venv"
+    hang_guard.run([sys.executable, "-m", "venv", "--without-pip", str(root)])
+    executable = root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     word = str(executable.relative_to(root.parent))
     note = _missing_pytest_cov_note("py", word, LaunchSpec(root.parent))
     line = re.search(r"run `([^`]+)` in the environment", note).group(1)

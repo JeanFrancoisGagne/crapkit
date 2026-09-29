@@ -283,9 +283,11 @@ crapkit 0.8.0
 source checkout. A next step crapkit prints names `crapkit` when PATH finds this
 installation's console script, and otherwise the interpreter running it, spelled with
 forward slashes (`C:/venv/Scripts/python.exe -m crapkit coverage`) so Git Bash, cmd.exe
-and PowerShell all run it as printed. A path that holds a space is quoted
-(`"C:/Program Files/Python312/python.exe" -m crapkit coverage`): Git Bash and cmd.exe run
-that as printed, and PowerShell runs it with the call operator `& ` typed in front.
+and PowerShell all run it as printed. A segment that holds a space is quoted on its own
+(`C:/"Program Files"/Python312/python.exe -m crapkit coverage`), so the line never opens
+with a quote and runs in PowerShell too. One case loses cmd.exe: a venv's `python.exe` in
+a spaced directory with no 8.3 short name, where you put the whole path in double quotes
+by hand ([docs/adr/0003](docs/adr/0003-a-pasted-command-never-opens-with-a-quote.md)).
 Every subcommand accepts `--repo PATH` (default: the nearest `crapkit.toml`
 at or above the current directory, so a monorepo workspace finds the root's), and with it
 you never have to `cd` into the repo you are scoring; [Subcommands](#subcommands) shows

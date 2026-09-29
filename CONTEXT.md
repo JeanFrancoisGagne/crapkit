@@ -185,7 +185,7 @@ _Avoid_: killed, for a suite that never ran a test
 ### What crapkit prints
 
 **Next step**:
-The command a refusal or note tells its reader to run next. It names `crapkit` when PATH finds this installation's console script, and otherwise the running interpreter spelled with forward slashes, so Git Bash, cmd.exe and PowerShell run it as printed. An interpreter path that holds a space is quoted, and PowerShell runs that line with `& ` typed in front. The brief packet's `commands.*` always say `crapkit`.
+The command a refusal or note tells its reader to run next. It names `crapkit` when PATH finds this installation's console script, and otherwise the running interpreter spelled with forward slashes, so Git Bash, cmd.exe and PowerShell run it as printed. A segment of the interpreter path that holds a space is quoted on its own, so the line never opens with a quote; only cmd.exe loses one case, a venv in a spaced directory with no 8.3 short name (docs/adr/0003). The brief packet's `commands.*` always say `crapkit`.
 
 **Typed path**:
 A path a message quotes back the way the reader typed it, in single quotes with one backslash where they typed one. A lane or scope name keeps its repr.
