@@ -593,3 +593,183 @@ def test_an_argv_check_runs_python_from_the_repo_in_its_tier(tmp_path, code, out
     assert (receipt["outcome"], receipt["attempts"]) == (outcome, attempts)
     assert (check["name"], check["outcome"], check["tests"]) == ("argv", outcome, None)
     assert 0 <= check["seconds"] < 60
+
+
+# --- the pieces' exact words and values ----------------------------------------------------
+
+def _refusal(tmp_path: Path, row: dict) -> str:
+    (tmp_path / "bad.py").write_text(f"SHARD = 's'\nCHECKS = [{row!r}]\n", encoding="utf-8")
+    with pytest.raises(run_tool.CheckError) as refused:
+        run_tool.load_checks(tmp_path)
+    return str(refused.value)
+
+
+@pytest.mark.parametrize("row, message", [
+    ({"seconds": 1}, "check '?' names neither pytest targets nor argv"),
+    ({"name": "x", "pytest": ["a"], "argv": ["b"], "seconds": 1},
+     "check 'x' names both pytest targets and argv"),
+    ({"name": "x", "argv": ["b"], "seconds": 1},
+     "check 'x' is an argv check: an argv check names its tiers"),
+    ({"name": "x", "pytest": ["a"], "seconds": 1, "os_sensitive": "yes"},
+     "check 'x' sets os_sensitive to something other than True or False"),
+    ({"name": "x", "pytest": ["t.py", "t.py::a", "t.py::b"], "seconds": 1},
+     "check 'x' names node id t.py::a; a check names files or directories"),
+])
+def test_each_refusal_says_every_word(tmp_path, row, message):
+    assert _refusal(tmp_path, row) == f"bad: {message}"
+
+
+def test_a_check_keeps_the_os_tiers_and_os_sensitivity_it_declares(tmp_path):
+    row = {"name": "x", "argv": ["python"], "seconds": 1, "os": ["win32"], "tiers": ["nightly"],
+           "os_sensitive": True}
+    (tmp_path / "m.py").write_text(f"CHECKS = [{row!r}]\n", encoding="utf-8")
+    (tmp_path / "none.py").write_text("SHARD = 's'\n", encoding="utf-8")
+    (tmp_path / "_shared.py").write_text(f"CHECKS = [{{**{row!r}, 'name': 'y'}}]\n",
+                                         encoding="utf-8")
+
+    [check] = run_tool.load_checks(tmp_path)
+
+    assert (check.name, check.shard, check.os, check.tiers, check.os_sensitive) == (
+        "x", "", ("win32",), ("nightly",), True)
+
+
+def test_a_checks_module_is_a_module_its_own_classes_can_look_up(tmp_path):
+    """dataclass reads a postponed annotation through sys.modules[__module__]."""
+    (tmp_path / "typed.py").write_text(
+        "from __future__ import annotations\nfrom dataclasses import dataclass\n\n\n"
+        "@dataclass\nclass Row:\n    name: str\n\n\n"
+        "CHECKS = [{'name': Row('x').name, 'pytest': ['a'], 'seconds': 1}]\n", encoding="utf-8")
+
+    assert [check.name for check in run_tool.load_checks(tmp_path)] == ["x"]
+
+
+def test_two_checks_naming_one_target_are_refused_by_name(tmp_path):
+    for key, name in (("one", "x"), ("two", "y")):
+        row = {"name": name, "pytest": ["tests/a.py"], "seconds": 1}
+        (tmp_path / f"{key}.py").write_text(f"CHECKS = [{row!r}]\n", encoding="utf-8")
+
+    with pytest.raises(run_tool.CheckError) as refused:
+        run_tool.load_checks(tmp_path)
+
+    assert str(refused.value) == "tests/a.py is named by both one: x and two: y"
+
+
+def test_a_session_runs_in_the_repo_with_the_workers_and_seed_it_was_handed(tmp_path,
+                                                                            monkeypatch):
+    here = tmp_path / "test_here.py"
+    here.write_text("def test_ok():\n    pass\n", encoding="utf-8")
+    started = []
+    monkeypatch.setattr(run_tool.subprocess, "run", lambda argv, **kw: started.append(
+        (argv, kw["cwd"])) or run_tool.subprocess.CompletedProcess(argv, 0))
+    env = {run_tool.runlog.LOG_ENV: str(tmp_path / "notes.jsonl")}
+
+    run_tool._pytest_records([run_tool.Check("k", "here", "s", 1, pytest=(here.as_posix(),))],
+                             env, tmp_path, 2, 12)
+
+    [(argv, cwd)] = started
+    assert (argv[-3:], cwd) == (["-n", "2", "--hypothesis-seed=12"], REPO)
+
+
+def test_an_argv_check_s_python_is_this_interpreter(monkeypatch):
+    started = []
+    monkeypatch.setattr(run_tool.subprocess, "run", lambda argv, **kw: started.append(
+        argv) or run_tool.subprocess.CompletedProcess(argv, 0))
+
+    run_tool._argv_record(run_tool.Check("k", "a", "s", 1, argv=("python", "-c", "pass")), {})
+
+    assert started == [[sys.executable, "-c", "pass"]]
+
+
+def test_a_target_s_node_id_is_left_off_before_its_path_is_looked_for(tmp_path):
+    here = tmp_path / "test_here.py"
+    here.write_text("", encoding="utf-8")
+
+    assert run_tool.missing_targets(
+        run_tool.Check("k", "a", "s", 1, pytest=(f"{here.as_posix()}::test_x",))) == []
+
+
+def test_an_infra_miss_inside_a_class_keys_as_its_file_and_test_name(tmp_path):
+    notes = [{"kind": "infra", "test": "t/a.py::TestC::test_x"}]
+
+    assert run_tool._infra_keys(notes, tmp_path) == {((tmp_path / "t" / "a.py").resolve(),
+                                                     "test_x")}
+
+
+def test_a_session_root_is_the_repo_or_the_directory_a_target_names(tmp_path):
+    suite = tmp_path / "suite"
+    suite.mkdir()
+
+    assert run_tool.session_root(["tests/accuracy"]) == REPO
+    assert run_tool.session_root([str(suite)]) == suite.resolve()
+
+
+def test_the_image_tag_of_a_tree_without_its_inputs_hashes_each_as_absent(tmp_path):
+    hashed = hashlib.sha256()
+    for relative in run_tool.IMAGE_INPUTS:
+        hashed.update(relative.encode("utf-8") + b"\0" + b"<absent>")
+
+    assert run_tool.image_tag(tmp_path) == hashed.hexdigest()[:12]
+
+
+def test_a_failed_head_read_is_no_head_whatever_git_printed(monkeypatch):
+    """git rev-parse HEAD on an unborn branch prints HEAD itself and exits 128."""
+    monkeypatch.setattr(run_tool.subprocess, "run", lambda argv, **kw: (
+        run_tool.subprocess.CompletedProcess(argv, 128, "HEAD\n", "fatal: ambiguous argument")))
+
+    assert run_tool._head() == ""
+
+
+@pytest.mark.parametrize("platform, name", [("win32", "windows"), ("freebsd14", "freebsd14")])
+def test_a_receipt_names_its_os_the_way_ci_does(monkeypatch, platform, name):
+    monkeypatch.setattr(run_tool, "_head", lambda: "h")
+    monkeypatch.setattr(run_tool.sys, "platform", platform)
+    notes = {"exports": {}, "oracles": {}, "events": {}, "skipped_files": {}, "infra": []}
+
+    saved = run_tool.receipt("push", None, [], notes, "derandomized", 1)
+    path = run_tool.default_receipt("push", None)
+
+    assert (saved["os"], path.name) == (name, f"push-{name}-{PYTHON}.json")
+
+
+def test_a_tier_hands_both_attempts_its_workers_and_one_seed(monkeypatch):
+    calls = []
+    outcomes = iter(["infra", "pass"])
+    monkeypatch.setattr(run_tool, "_attempt", lambda checks, tier, workers, seed: calls.append(
+        (workers, seed)) or ([{"key": "k", "name": "n", "outcome": next(outcomes)}], {
+            "exports": {}, "oracles": {}, "events": {}, "skipped_files": {}, "infra": []}))
+    monkeypatch.setattr(run_tool, "_head", lambda: "h")
+
+    saved = run_tool.run_tier([], "nightly", None, 3)
+    outcomes = iter(["pass"])
+    run_tool.run_tier([], "push", None)
+
+    seed = calls[0][1]
+    assert isinstance(seed, int) and calls == [(3, seed), (3, seed), (0, "derandomized")]
+    assert (saved["hypothesis_seed"], saved["attempts"]) == (seed, 2)
+
+
+def test_an_attempt_hands_the_session_its_workers_and_seed(monkeypatch):
+    seen = []
+    monkeypatch.setattr(run_tool, "_pytest_records", lambda checks, env, scratch, workers, seed: (
+        seen.append((workers, seed)) or []))
+
+    run_tool._attempt([run_tool.Check("k", "a", "s", 1, pytest=("a",))], "push", 2, 7)
+
+    assert seen == [(2, 7)]
+
+
+def test_receipts_agree_whatever_order_a_field_s_keys_were_written_in():
+    first = _shard(image={"tag": "t", "digest": "d"}, checks=[])
+    second = _shard(image={"digest": "d", "tag": "t"}, checks=[])
+
+    assert run_tool.merge([first, second])["image"] == {"tag": "t", "digest": "d"}
+
+
+def test_the_summary_is_utf8_whatever_the_locale(tmp_path, monkeypatch, capsys):
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    saved = {**SAVED, "checks": [{**SAVED["checks"][0], "name": "café"}]}
+
+    run_tool._publish(saved, tmp_path / "r.json")
+
+    assert "| a: café |".encode("utf-8") in summary.read_bytes()

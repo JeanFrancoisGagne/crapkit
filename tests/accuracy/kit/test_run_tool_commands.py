@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -244,3 +245,54 @@ def test_oracle_versions_reads_the_repo_pins_unless_told(monkeypatch):
 
     assert run_tool.main(["oracle-versions"]) == 0
     assert read == [run_tool.PINS]
+
+
+# --- each command's exact lines ------------------------------------------------------------------
+
+def test_xplat_prints_one_line_per_export_that_differs_with_each_cell_s_shard(tmp_path, capsys):
+    bare = tmp_path / "bare.json"
+    bare.write_text(json.dumps({"os": "macos", "python": "3.13"}), encoding="utf-8")
+    paths = [_receipt(tmp_path, "linux", shard="one", exports={"a.tsv": "1", "b.tsv": "2"}),
+             _receipt(tmp_path, "windows", os="windows", shard="one",
+                      exports={"a.tsv": "9", "b.tsv": "8"}), bare]
+
+    assert run_tool.main(["xplat", *map(str, paths)]) == 1
+    assert capsys.readouterr().out == (
+        "xplat: a.tsv differs: linux-3.12-one 1, windows-3.12-one 9, macos-3.13 <missing>\n"
+        "xplat: b.tsv differs: linux-3.12-one 2, windows-3.12-one 8, macos-3.13 <missing>\n")
+
+
+def test_events_says_each_rare_shape_on_its_own_prefixed_line(tmp_path, capsys):
+    names = sorted({name for table in strategies.REQUIRED.values() for name in table})
+    receipt = _receipt(tmp_path, "r", events={name: 50 for name in names[2:]})
+
+    assert run_tool.main(["events", "--min", "50", str(receipt)]) == 1
+    assert capsys.readouterr().err == "".join(
+        f"events: {name} occurred 0 times, fewer than 50\n" for name in names[:2])
+
+
+def test_oracle_versions_prints_a_line_per_oracle_and_prefixes_each_problem(tmp_path, capsys):
+    extra = ('\n[oracle.nothing]\nkind = "binary"\ntier = "nightly"\nversion = "1"\n'
+             'url = "https://example.invalid/n"\nsha256 = "' + "0" * 64 + '"\n'
+             'version_line = "1"\ncommand = ["crapkit-no-such-binary", "--version"]\n'
+             '\n[oracle.other]\nkind = "binary"\ntier = "nightly"\nversion = "1"\n'
+             'url = "https://example.invalid/o"\nsha256 = "' + "0" * 64 + '"\n'
+             'version_line = "1"\ncommand = ["crapkit-no-such-binary-2", "--version"]\n')
+
+    assert run_tool.main(["oracle-versions", "--pins", str(_pins(tmp_path, extra))]) == 1
+    out, err = capsys.readouterr()
+    assert out.splitlines() == [f"hypothesis: {importlib.metadata.version('hypothesis')}",
+                                "nothing: missing", "other: missing"]
+    assert [line.split(": ", 1)[0] for line in err.splitlines()] == ["oracle-versions"] * 2
+
+
+def _pin(kind: str, tier: str) -> SimpleNamespace:
+    return SimpleNamespace(kind=kind, tier=tier)
+
+
+def test_push_reads_only_push_pins_and_no_tier_reads_a_producer():
+    pins = {"a": _pin("python", "push"), "b": _pin("binary", "nightly"),
+            "c": _pin("producer", "push")}
+
+    assert (run_tool._checked_pins(pins, "push"), run_tool._checked_pins(pins, "nightly")) == (
+        ["a"], ["a", "b"])
