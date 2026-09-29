@@ -43,7 +43,8 @@ A mutant no test reaches (`no tests`) counts as a survivor. floors.tsv gives
 each module group its kill-rate floor after equivalents, computed on the
 independent-only suite (golden, change_control and cross_surface tests
 deselected); a group below its floor fails the run as a new survivor does.
-Timeouts get one serial rerun and never count as kills.
+Timeouts, and mutants whose test process a signal ended (mutmut's `segfault`),
+get one serial rerun and never count as kills.
 
 `tools` is the second config: tests/accuracy/kit/exact.py (floor 100 percent)
 and the tools under tools/accuracy (floor 90 percent), each run against the
@@ -87,14 +88,19 @@ KILLED = frozenset({"killed", "caught by type check"})
 SURVIVED = "survived"
 NO_TESTS = "no tests"
 TIMEOUT = "timeout"
+# A test process that died by SIGSEGV or SIGKILL: a mutant that never finishes
+# (endless recursion, a loop that fills memory until the kernel stops it).
+SEGFAULT = "segfault"
 # A mutant no test reaches lives as surely as one the tests run and miss.
 ALIVE = frozenset({SURVIVED, NO_TESTS})
+# The verdicts that neither kill nor keep a mutant: each gets one serial rerun.
+UNFINISHED = frozenset({TIMEOUT, SEGFAULT})
 # Every status that is a verdict on the mutant. Anything else ("not checked",
-# "suspicious", a crash) means mutmut never judged it, and the run proves nothing.
-JUDGED = KILLED | ALIVE | {TIMEOUT, "skipped"}
+# "suspicious") means mutmut never judged it, and the run proves nothing.
+JUDGED = KILLED | ALIVE | UNFINISHED | {"skipped"}
 STATUS_BY_EXIT = {1: "killed", 3: "killed", 0: SURVIVED, 5: "no tests", 33: "no tests",
                   34: "skipped", 36: TIMEOUT, 37: "caught by type check", -24: TIMEOUT,
-                  24: TIMEOUT, 152: TIMEOUT, 255: TIMEOUT, -11: "segfault", -9: "segfault",
+                  24: TIMEOUT, 152: TIMEOUT, 255: TIMEOUT, -11: SEGFAULT, -9: SEGFAULT,
                   None: "not checked"}
 # The floors' suite: every test but those comparing crapkit with a copy of itself.
 FLOOR_SUITE = "not golden and not change_control and not cross_surface"
@@ -646,8 +652,8 @@ def _wanted(name: str, globs: list[str] | None) -> bool:
 
 
 def keyed_names(statuses: dict[str, str]) -> list[str]:
-    """Survivors, unreached mutants and timeouts carry their key; a kill needs none."""
-    return [name for name, status in statuses.items() if status in ALIVE | {TIMEOUT}]
+    """Survivors, unreached mutants and unfinished ones carry their key; a kill needs none."""
+    return [name for name, status in statuses.items() if status in ALIVE | UNFINISHED]
 
 
 def collect(repo: Path, wanted: list[str] | None = None, mutmut: tuple = LAUNCH) -> list[Result]:
@@ -660,8 +666,8 @@ def collect(repo: Path, wanted: list[str] | None = None, mutmut: tuple = LAUNCH)
 
 def _rerun_timeouts(repo: Path, rows: list[Result], mutmut: tuple = LAUNCH,
                     env: dict | None = None) -> list[Result]:
-    """One serial rerun per timeout; what still times out stays a timeout."""
-    names = [row.name for row in rows if row.status == TIMEOUT]
+    """One serial rerun per unfinished mutant; what still does not finish keeps its status."""
+    names = [row.name for row in rows if row.status in UNFINISHED]
     if not names:
         return rows
     _run_mutmut(repo, ["run", "--max-children", "1", *names], None, mutmut, env)

@@ -305,6 +305,20 @@ def test_a_timeout_is_not_a_kill():
     assert (core.rate, core.ok) == (50.0, False)
 
 
+def test_a_test_process_a_signal_ended_is_judged_like_a_timeout():
+    """mutmut reads a test process that died by SIGSEGV or SIGKILL as `segfault`:
+    a mutant that never finishes (endless recursion, a loop that fills memory
+    until the kernel stops it). The run judged it, so it voids nothing, and it
+    is no kill."""
+    run = [_crap(KEYS[0], "killed"), _crap(KEYS[1], "segfault")]
+
+    (core, _) = mutation.floors(run, [], GROUPS)
+
+    assert mutation.unjudged_problem(run) == ""
+    assert (core.rate, core.ok) == (50.0, False)
+    assert [mutation.STATUS_BY_EXIT[code] for code in (-11, -9)] == ["segfault", "segfault"]
+
+
 # --- what the nightly run mutates ------------------------------------------------------------------
 
 def _utc(*args):
@@ -615,9 +629,9 @@ def test_the_launcher_s_diffs_read_as_a_map_and_mutmut_s_chatter_is_left_out():
 
 def test_survivors_unreached_mutants_and_timeouts_carry_a_key_and_kills_do_not():
     statuses = {"a": "killed", "b": "survived", "c": "no tests", "d": "timeout",
-                "e": "caught by type check", "f": "skipped"}
+                "e": "caught by type check", "f": "skipped", "g": "segfault"}
 
-    assert mutation.keyed_names(statuses) == ["b", "c", "d"]
+    assert mutation.keyed_names(statuses) == ["b", "c", "d", "g"]
 
 
 @pytest.mark.parametrize("module", ["tools/accuracy/mutation.py", "tools/accuracy/retro.py",
@@ -869,6 +883,19 @@ def test_a_timeout_gets_one_serial_rerun(tmp_path):
     assert ["run", "--max-children", "1", "crapkit.score.x_crap__mutmut_4"] in _calls(tree)
     assert {row.name: row.status for row in again}["crapkit.score.x_crap__mutmut_4"] == "killed"
     assert len(again) == len(rows)
+
+
+@pytest.mark.nightly
+def test_a_signal_ended_mutant_gets_the_serial_rerun_too(tmp_path):
+    ended = {**META, "crapkit.score.x_crap__mutmut_6": -11}
+    tree = _mutmut_tree(tmp_path, ended)
+    rows = mutation.collect(tree, ["crapkit.score.*"], ("fake_launch.py",))
+
+    again = mutation._rerun_timeouts(tree, rows, ("fake_launch.py",), dict(mutation.os.environ))
+
+    assert ["run", "--max-children", "1", "crapkit.score.x_crap__mutmut_4",
+            "crapkit.score.x_crap__mutmut_6"] in _calls(tree)
+    assert {row.name: row.status for row in again}["crapkit.score.x_crap__mutmut_6"] == "killed"
 
 
 def test_a_run_without_a_timeout_reruns_nothing(tmp_path):
