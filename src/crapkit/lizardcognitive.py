@@ -254,7 +254,8 @@ class _Dialect(NamedTuple):
     brackets a run of logical operators is kept per. `overloads`: one name can
     belong to several functions that differ in their parameters (C++, Java,
     Swift), so a call to the name is a call to this one only when it passes a
-    number of arguments this one takes. `braceless`: a structure's body can
+    number of arguments this one takes and no other function of the name in
+    the file takes it too (see _settle_overloads). `braceless`: a structure's body can
     go without braces (C, C++, Objective-C, Java, JavaScript, TypeScript, Zig).
     `line_statements`: a line break can end a statement that has no `;`
     (JavaScript, TypeScript).
@@ -275,7 +276,9 @@ class _Dialect(NamedTuple):
     them with it: a Rust impl or trait, a Swift class, struct, enum, actor or
     extension, a Zig container (see _rust_type, _swift_type, _zig_type).
     `argument_labels`: a function's name holds its parameters' argument labels,
-    so `d(for: x)` does not call `d(of:)` (Swift; see _labels_fit).
+    so `d(for: x)` does not call `d(of:)` (Swift; see _labels_fit), a closure
+    after a call's `)` is one more argument (see _trailing_closure), and the
+    parameters are read off the stream (see _swift_signature).
     """
 
     rust: bool = False
@@ -565,6 +568,10 @@ _SHELL_BLOCK = None
 # default, a slice in an annotation or a type parameter's bound is not the end.
 _SIGNATURE_DEPTH = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
+# What a bracket does to the depth a Swift parameter list is read at; see
+# _swift_signature. A generic's angle brackets hold commas too.
+_SWIFT_BRACKETS = {"(": 1, "[": 1, "<": 1, ")": -1, "]": -1, ">": -1, ">>": -2}
+
 
 class _FnState:
     __slots__ = ("for_pending", "total", "stack", "max_depth", "brace_depth", "line_indent",
@@ -574,7 +581,7 @@ class _FnState:
                  "messages", "runs", "run_break", "word_op", "braces", "closed_do",
                  "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies", "do_tail",
                  "ended", "brace_base", "scopes", "home", "bare_call", "shadowed", "importing",
-                 "after_group")
+                 "after_group", "own_calls", "closed_call", "signature")
 
     def __init__(self, fn=None, dialect: _Dialect = _DEFAULT_DIALECT, scopes: _Scopes | None = None):
         self.dialect = dialect
@@ -609,6 +616,9 @@ class _FnState:
         self.for_pending = False  # Rust only: just saw a `for` that may be a binder's
         self.call_pending = False  # the name was just spelled; a `(` makes it a call
         self.call = None          # that call's arguments so far; see _follow_call
+        self.closed_call = None   # Swift: a call's `)` just closed; see _trailing_closure
+        self.own_calls = []       # calls that fit the function; see _settle_overloads
+        self.signature = [""] if dialect.argument_labels else None  # see _swift_signature
         self.messages = []        # Objective-C: one entry per open `[`, see _message_token
         self.runs = []            # per open bracket: the run outside it; see _open_run
         self.after_group = None   # a plain group just closed; see _after_group
@@ -649,6 +659,7 @@ class LizardExtension:
             fn.cognitive_nesting = state.max_depth
             if not is_python:
                 yield token
+        _settle_overloads(states)
 
 
 def _state_for(states: dict, fn, last, dialect: _Dialect, scopes: _Scopes) -> _FnState:
@@ -1051,16 +1062,22 @@ def _resolve_label(state: _FnState, token: str) -> None:
 def _resolve_call(state: _FnState, token: str) -> None:
     """The name followed by `(` is a call. Where a name can be overloaded the
     call is to this function only if it passes as many arguments as this one
-    takes, which is known at the closing bracket; see _follow_call. The pass
-    sees no types, so an overload that takes as many arguments of other types
-    still reads as a call to this one, and so does a call a macro qualifies
-    (`FMT_POSIX_CALL(close(fd))` expands to `::close`).
+    takes, which is known at the closing bracket (see _follow_call), and no
+    other function of the name in the file takes them too (see
+    _settle_overloads). The pass sees no types, so a call to an overload that
+    takes as many arguments of other types reads as a call to neither, and a
+    call a macro qualifies (`FMT_POSIX_CALL(close(fd))` expands to `::close`)
+    reads as a call to this one.
 
-    The bare name followed by `=` or `:=` instead binds it (see _binds)."""
+    In Swift the name followed by `{` passes a trailing closure and nothing
+    else (see _takes_closure). The bare name followed by `=` or `:=` instead
+    binds it (see _binds)."""
     kind, state.call_pending = state.call_pending, None
     bare = kind == _BARE
     if token == "(":
         _call(state, bare)
+    elif _takes_closure(state, token):
+        _called(state, _Call(bare, 1, {0: None}, True))
     elif bare and _assigns(state, token):
         state.shadowed = True
 
@@ -1119,12 +1136,51 @@ def _observe(state: _FnState, token: str) -> None:
     if state.after_group is not None:
         _after_group(state, token)
     _follow_runs(state, token)
-    if state.call is not None:
-        _follow_call(state, token)
+    if isinstance(state.signature, list):
+        _swift_signature(state, token)
+    _follow_calls(state, token)
     if state.dialect.messages:
         _message_token(state, token)
     if state.dialect.braceless:
         _body_token(state, token)
+
+
+def _swift_signature(state: _FnState, token: str) -> None:
+    """Swift: split the parameter list at its own commas, as lizard does not.
+    lizard splits it at every comma, inside a closure's type too, so
+    `perform handler: (_ r: R, _ done: D) -> Void` read as two parameters,
+    and a call that passes one closure fit no function of the name. The
+    list is the first bracket before the body; see _parameters."""
+    if _before_parameters(state, token):
+        return
+    inside = state.signature_depth
+    state.signature_depth += _SWIFT_BRACKETS.get(token, 0)
+    if state.signature_depth == 0:
+        state.signature = _closed_signature(state.signature)
+    elif inside:
+        _parameter_token(state.signature, token, state.signature_depth)
+
+
+def _closed_signature(pieces: list) -> tuple:
+    return tuple(piece.strip() for piece in pieces if piece.strip())
+
+
+def _before_parameters(state: _FnState, token: str) -> bool:
+    return state.brace_depth > 0 or (state.signature_depth == 0 and token != "(")
+
+
+def _parameter_token(pieces: list, token: str, depth: int) -> None:
+    if token == "," and depth == 1:
+        pieces.append("")
+    else:
+        pieces[-1] += " " + token
+
+
+def _follow_calls(state: _FnState, token: str) -> None:
+    if state.closed_call is not None:
+        _trailing_closure(state, token)
+    if state.call is not None:
+        _follow_call(state, token)
 
 
 def _follow_call(state: _FnState, token: str) -> None:
@@ -1133,13 +1189,13 @@ def _follow_call(state: _FnState, token: str) -> None:
 
     `format(date)` inside `format(Date date, boolean millis)` delegates to
     another overload, and one argument is not two. A statement that ends
-    inside the brackets, a lambda's block in an argument, leaves the count
-    unknown, and the call counts.
+    inside the brackets, a lambda's block in an argument, leaves the rest of
+    the arguments unknown, and the call is judged by those seen so far.
     """
     call = state.call
     if len(state.runs) < call[0]:
         state.call = None
-        _count_recursion(state, token not in state.dialect.closers or _fits(state, call), call[3])
+        _call_ended(state, call, token in state.dialect.closers)
     elif len(state.runs) == call[0]:
         _argument_token(state, token, call)
     call[2] += 1
@@ -1154,28 +1210,86 @@ def _argument_token(state: _FnState, token: str, call: list) -> None:
         call[4][call[1]] = state.prev
 
 
-def _fits(state: _FnState, call: list) -> bool:
-    passed = call[1] + 1 if call[2] else 0
-    fewest, most = _own(state).arity
-    return fewest <= passed <= most and _labels_fit(state, call[4], passed)
+class _Call(NamedTuple):
+    """A call to the function's own name, as far as its arguments go. `labels`
+    maps an argument's position to its Swift label, None for a trailing
+    closure's. `closed`: its bracket closed, so `passed` is every argument."""
+
+    bare: bool
+    passed: int
+    labels: dict
+    closed: bool
 
 
-def _labels_fit(state: _FnState, given: dict, passed: int) -> bool:
+def _call_ended(state: _FnState, call: list, closed: bool) -> None:
+    """In Swift a closure after the `)` passes one more argument, which the
+    next token shows; see _trailing_closure."""
+    ended = _Call(call[3], call[1] + 1 if call[2] else 0, call[4], closed)
+    if closed and state.dialect.argument_labels:
+        state.closed_call = ended
+    else:
+        _called(state, ended)
+
+
+def _trailing_closure(state: _FnState, token: str) -> None:
+    """The token after a Swift call's `)`. A `{` there passes a trailing
+    closure, `each(n - 1) { body($0) }`, which the call used to lose, so a
+    function taking the closure read no recursion."""
+    call, state.closed_call = state.closed_call, None
+    if _takes_closure(state, token):
+        call = call._replace(passed=call.passed + 1, labels={**call.labels, call.passed: None})
+    _called(state, call)
+
+
+def _takes_closure(state: _FnState, token: str) -> bool:
+    """A Swift `{` right after a call passes a closure, unless the call ends
+    a structure's header, `if valid(n - 1) {`, where the `{` opens the
+    structure's block."""
+    return token == "{" and state.dialect.argument_labels and not (state.pending or state.guard_else)
+
+
+def _called(state: _FnState, call: _Call) -> None:
+    """A call to the function's own name that passes what the function takes
+    is recursion unless another function of the name takes it too, which
+    the end of the file shows; see _settle_overloads."""
+    if _fits(_own(state), call, state.dialect):
+        state.own_calls.append(call)
+
+
+def _fits(own: _Own, call: _Call, dialect: _Dialect) -> bool:
+    """Whether the call passes as many arguments as the function takes, and in
+    Swift with its labels. A call whose bracket did not close passed at least
+    the arguments seen so far."""
+    fewest, most = own.arity
+    if call.passed > most or (call.closed and call.passed < fewest):
+        return False
+    return _labels_fit(own, call, dialect)
+
+
+def _labels_fit(own: _Own, call: _Call, dialect: _Dialect) -> bool:
     """Swift: each argument takes the next parameter with its label, `_` for
     none; a parameter with a default can be passed over, and one after the
     last argument must have a default. A variadic parameter's labels are not
     followed."""
-    own = _own(state)
-    if not state.dialect.argument_labels or own.arity[1] == math.inf:
+    if not dialect.argument_labels or own.arity[1] == math.inf:
         return True
-    return _labels_in_order([given.get(number, "_") for number in range(passed)], own.labels)
+    labels = [call.labels.get(number, "_") for number in range(call.passed)]
+    return _labels_in_order(labels, own.labels, call.closed)
 
 
-def _labels_in_order(labels: list, parameters: tuple) -> bool:
+def _labels_in_order(labels: list, parameters: tuple, closed: bool) -> bool:
+    """A call cut short by a closure's block, `cancel(other: { _ in })`,
+    fits by the labels seen so far. It used to count whatever they were."""
     rest = list(parameters)
     for label in labels:
-        rest = _after_label(rest, label)
-    return rest is not None and all(default for _, default in rest)
+        rest = _after_argument(rest, label)
+    return rest is not None and (not closed or all(default for _, default in rest))
+
+
+def _after_argument(rest, label):
+    if label is None:
+        return _after_closure(rest)
+    return _after_label(rest, label)
 
 
 def _after_label(rest, label: str):
@@ -1186,6 +1300,16 @@ def _after_label(rest, label: str):
         if not default:
             return None
     return None
+
+
+def _after_closure(rest):
+    """A trailing closure takes the next parameter without a default, past
+    those with one, as Swift matches it forward to the parameter that takes a
+    function; when every parameter left has a default, it takes the last."""
+    if not rest:
+        return None
+    required = [number for number, (_, default) in enumerate(rest) if not default]
+    return rest[required[0] + 1:] if required else []
 
 
 def _follow_runs(state: _FnState, token: str) -> None:
@@ -1673,12 +1797,20 @@ def _own_of(state: _FnState) -> _Own:
     name = getattr(fn, "name", "")
     parts = _QUALIFIER.split(name)
     go_receiver = _GO_RECEIVER.findall(getattr(fn, "long_name", ""))
-    parameters = getattr(fn, "full_parameters", ())
+    parameters = _parameters(state)
     method, cls = _membership(state.home, parts[-1])
     receivers = _SELF_RECEIVERS.union(parts[-2:-1], go_receiver, cls)
     return _Own(name, parts[-1], receivers, _arity(parameters),
                 _bare_calls(state.dialect, parts[-1], parameters, method or bool(go_receiver)),
                 _labels(parameters))
+
+
+def _parameters(state: _FnState):
+    """The function's parameters as spelled, one string each: the ones the
+    stream read in Swift (see _swift_signature), lizard's elsewhere."""
+    if isinstance(state.signature, tuple):
+        return state.signature
+    return getattr(state.fn, "full_parameters", ())
 
 
 def _membership(home, bare: str) -> tuple:
@@ -1762,6 +1894,34 @@ def _same_command(state: _FnState, token: str) -> bool:
     if state.dialect.fold_case:
         return token.casefold() == name.casefold()
     return token == name
+
+
+def _settle_overloads(states: dict) -> None:
+    """Judge each call to a function's own name once the file has shown every
+    function of that name (C++, Java, Swift). A call that another of them
+    takes too is that one's as much as this one's, and the pass sees no types
+    to tell them apart, so only a call no other one takes is recursion:
+    `starts_with(V(s))` inside `starts_with(const char* s)` forwards to
+    `starts_with(V sv)`, and read 1."""
+    for state in states.values():
+        if state.own_calls:
+            _settle(state, [other for other in states.values() if _overloads(other, state)])
+
+
+def _overloads(other: _FnState, state: _FnState) -> bool:
+    """Another function of the same name in the same type. One with the same
+    parameters is the same function written twice, in two preprocessor
+    branches, and no overload."""
+    if other is state or other.fn.name != state.fn.name or other.home != state.home:
+        return False
+    return list(_parameters(other)) != list(_parameters(state))
+
+
+def _settle(state: _FnState, others: list) -> None:
+    for call in state.own_calls:
+        if not any(_fits(_own(other), call, state.dialect) for other in others):
+            _count_recursion(state, True, call.bare)
+    state.fn.cognitive_complexity = _cognitive(state)
 
 
 def _count_recursion(state: _FnState, calls_itself: bool, bare: bool = False) -> None:

@@ -1126,9 +1126,14 @@ and missed some that were. Each rule now reads the language it is in:
   shell and PowerShell, as a message to `self` with the whole selector in Objective-C,
   and through a Go method's own receiver. In C++, Java and Swift, where several
   functions can share a name, it must also pass as many arguments as the function
-  takes, so an overload that forwards to another is not recursion. Swift's argument
-  labels are part of a function's name, so `description(for: headers)` inside
-  `description(of request:)` calls another function.
+  takes, and no other function of that name in the file may take them too, so an
+  overload that forwards to another is not recursion. crapkit reads no types, so a
+  function that calls itself with the same number of arguments as another overload
+  takes, `walk(n - 1)` beside `walk(String s)`, reads no recursion either. Swift's
+  argument labels are part of a function's name, so `description(for: headers)`
+  inside `description(of request:)` calls another function, and a closure after the
+  call's `)` is one more argument: `each(n - 1) { body($0) }` inside
+  `each(_ n:, _ body:)` is recursion.
 - In Python, JavaScript, TypeScript, Go and Rust a method is reached only through its
   object or its type, so a bare name in its body is another function: `return
   open(self.path)` in a method `open` calls the builtin and costs nothing, and so does

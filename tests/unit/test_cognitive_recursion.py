@@ -201,6 +201,92 @@ def test_a_swift_type_name_call_with_another_label_is_another_function():
     assert _cognitive("a.swift", source, "description") == 0
 
 
+def _cognitive_at(path: str, source: str, line: int) -> int:
+    rows = [r for r in analyze_source(path, source, note=False) if r.start == line]
+    assert len(rows) == 1, [(r.long_name, r.start) for r in analyze_source(path, source, note=False)]
+    return rows[0].cognitive
+
+
+# A call that another function of the same name in the file takes too is that
+# one's as much as this one's, and the pass sees no types to tell them apart,
+# so only a call no other one takes is recursion. Each read 1 where the body
+# forwards to the other overload.
+OVERLOAD_SETS = [  # (label, path, source, start line of the row read, Sonar value)
+    ("C++ forwards with as many arguments", "a.cpp",
+     "struct V {\n  bool starts_with(V sv) const { return true; }\n"
+     "  bool starts_with(const char* s) const { return starts_with(V(s)); }\n};\n", 3, 0),
+    ("Java forwards to an overload defined after it", "A.java",
+     "class A {\n  Object fromJson(String json) { return fromJson(new StringReader(json)); }\n"
+     "  Object fromJson(Reader in) { return null; }\n}\n", 2, 0),
+    ("Java recursion no other overload takes", "A.java",
+     "class A {\n  boolean isAssignableFrom(Type from) { return isAssignableFrom(from, null, null); }\n"
+     "  boolean isAssignableFrom(Type from, P to, Map m) { return isAssignableFrom(to, to, m); }\n}\n", 3, 1),
+    ("Java forwards to a longer overload", "A.java",
+     "class A {\n  boolean isAssignableFrom(Type from) { return isAssignableFrom(from, null, null); }\n"
+     "  boolean isAssignableFrom(Type from, P to, Map m) { return isAssignableFrom(to, to, m); }\n}\n", 2, 0),
+    ("Swift forwards through a default", "a.swift",
+     "class S {\n  func request(_ r: Req) -> Int { return 1 }\n"
+     "  func request(_ url: String, method: Int = 0) -> Int { return request(r) }\n}\n", 3, 0),
+    ("Swift overloads in two extensions of one type", "a.swift",
+     "extension S {\n  func load(_ r: Req) -> Int { return 1 }\n}\n"
+     "extension S {\n  func load(_ url: String) -> Int { return load(Req(url)) }\n}\n", 5, 0),
+    ("Swift: another type's function of the name is no overload", "a.swift",
+     "struct A {\n  func walk(_ n: Int) { walk(n - 1) }\n}\n"
+     "struct B {\n  func walk(_ s: String) {}\n}\n", 2, 1),
+    ("C: one function written twice is no overload", "a.c",
+     "#ifdef WIN\nint walk(int n) { return walk(n - 1); }\n#else\n"
+     "int walk(int n) { return walk(n - 1); }\n#endif\n", 2, 1),
+    # The limit: the same count of arguments of other types reads as the other
+    # overload's too, and a real call to itself is missed.
+    ("Java: same count, other types", "A.java",
+     "class A {\n  int walk(int n) { return walk(n - 1); }\n  int walk(String s) { return 0; }\n}\n", 2, 0),
+]
+
+
+@pytest.mark.parametrize("label,path,source,line,want", OVERLOAD_SETS, ids=[c[0] for c in OVERLOAD_SETS])
+def test_a_call_another_overload_takes_too_is_no_recursion(label, path, source, line, want):
+    assert _cognitive_at(path, source, line) == want
+
+
+def _swift_cancel(call: str) -> str:
+    return ("class D {\n  func cancel(producingResumeData flag: Bool) {\n"
+            f"    {call}\n  }}\n}}\n")
+
+
+# A closure passed in the parentheses used to cut the call short, and a call
+# cut short counted whatever its labels; a closure after the `)` was not
+# counted as an argument at all.
+SWIFT_CLOSURES = [  # (label, source, start line, Sonar value)
+    ("a closure with another label", _swift_cancel("cancel(optionallyProducingResumeData: { _ in })"), 2, 0),
+    ("an empty closure with another label", _swift_cancel("cancel(optionallyProducingResumeData: { })"), 2, 0),
+    ("a shorthand closure with another label", _swift_cancel("cancel(optionallyProducingResumeData: { $0 })"),
+     2, 0),
+    ("a closure with the function's label", _swift_cancel("cancel(producingResumeData: { $0 }())"), 2, 1),
+    ("a trailing closure", "func each(_ n: Int, _ body: (Int) -> Void) {\n  if n > 0 {\n"
+     "    each(n - 1) { body($0) }\n  }\n}\n", 1, 2),
+    ("a trailing closure and no parentheses", "func run(_ body: () -> Void) {\n  run { }\n}\n", 1, 1),
+    ("a trailing closure past a default", "func load(_ url: String, retries: Int = 0, done: () -> Void) {\n"
+     "  load(url) { }\n}\n", 1, 1),
+    ("a trailing closure where no parameter is left", "func each(_ n: Int) {\n  each(n - 1) { }\n}\n", 1, 0),
+    ("a structure's block is no closure", "func valid(_ n: Int, _ strict: Bool) -> Bool {\n"
+     "  if valid(n - 1) {\n    return true\n  }\n  return false\n}\n", 1, 1),
+    ("a closure type's own parameters", "class R {\n"
+     "  func on(_ q: Int = 0, perform handler: (_ r: Int, _ done: (Int) -> Void) -> Void) {}\n"
+     "  func on(_ q: Int = 0, perform handler: (Int) -> Void) {\n    on(q) { r, done in done(r) }\n  }\n}\n",
+     3, 0),
+    ("a generic's commas", "class R {\n  func add(on queue: Q, stream: Handler<S, F>) {\n"
+     "    if more { self.add(on: queue, stream: stream) }\n  }\n}\n", 2, 2),
+]
+
+
+@pytest.mark.parametrize("label,source,line,want", SWIFT_CLOSURES, ids=[c[0] for c in SWIFT_CLOSURES])
+def test_a_swift_closure_is_one_argument_wherever_it_is_passed(label, source, line, want):
+    """The last two cases: lizard splits a parameter list at every comma, in a
+    closure type's parameters and a generic's arguments too, so the function
+    read more parameters than it takes."""
+    assert _cognitive_at("a.swift", source, line) == want
+
+
 def test_a_go_method_calls_itself_through_its_receiver():
     source = ("package p\n\nfunc (c *Command) Traverse(args []string) int {\n\tif len(args) == 0 {\n"
               "\t\treturn 0\n\t}\n\treturn c.Traverse(args[1:])\n}\n\n"
