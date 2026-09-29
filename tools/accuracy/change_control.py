@@ -73,6 +73,8 @@ before it only the in-tree rules do, since no change can be declared yet.
 - B10 the fresh changes' calcs equal the moved calcs: every moved cell's calc is
   declared, and nothing is declared that did not move. A calc no golden shows
   (the pre-commit gate, say) counts as moved when the diff touches its module.
+  Against a base from before the first lock every golden is new, so B10 judges
+  nothing there.
 - B11 each fresh change's moved.tsv lists exactly the cells it moved, each
   oracle value is what the oracle says now, and each disagreement names a
   ruling of that calc and oracle.
@@ -1660,6 +1662,10 @@ def _drop(calc: str) -> str:
 
 
 def rule_b10(diff: Diff) -> list[Problem]:
+    """Against a base from before the first lock every golden is new, and a new
+    golden moves nothing, so no calc can show a move and none is judged."""
+    if not _initialized(diff.base):
+        return []
     declared = diff.declared()
     missing = [Problem("B10", f"moved calc not declared: {' or '.join(sorted(options))}",
                        _suggestion(diff))

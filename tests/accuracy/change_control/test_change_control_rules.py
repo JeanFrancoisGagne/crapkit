@@ -1427,6 +1427,19 @@ def test_declare_refuses_before_the_first_lock():
         cc.plan_declare(bare, bare, _request(kind="none", calcs=()), cc.running(bare, LIZARD))
 
 
+def test_a_base_from_before_the_first_lock_holds_no_golden_to_move():
+    """A branch that brings the suite to a main without it: the base holds no
+    lock, no golden and no bugs.tsv, so every golden is new and a new golden moves
+    nothing. A fix the head declared against its own first lock (C2) cannot show
+    a move here, and B10 judges nothing; the other base-aware rules still hold."""
+    bare = seeds.uninitialized()
+    main = {path: text for path, text in bare.items()
+            if path not in seeds.LOCKED and path not in (seeds.BUGS, seeds.RETRO)}
+
+    assert pure_rules(main, BASE) == set()
+    assert "B7" in pure_rules(main, seeds.without_line(BASE, seeds.RETRO, "R01\t"))
+
+
 def test_the_commit_that_takes_the_first_lock_is_judged_by_the_base_aware_rules():
     """kit-close's commit locks for the first time: the base has no lock, the head
     has one, so a bugs.tsv row the same commit deletes is still refused (B2)."""
