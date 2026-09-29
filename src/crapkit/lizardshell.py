@@ -9,8 +9,10 @@ WHAT IS REPORTED
     that is the intended answer, not a parse failure.
 
 CCN CONVENTION
-    Conditions counted: `if`, `elif`, `while`, `until`, `for`, `&&`, `||`, and
-    `;;`. Pipes (`|`) are data flow, not branches, and are not counted.
+    Conditions counted: `if`, `elif`, `while`, `until`, `for`, `&&`, `||`, `;;`,
+    and the `?` of arithmetic's `a ? b : c`, which is C's conditional operator and
+    counts as a C ternary does. Pipes (`|`) are data flow, not branches, and are
+    not counted.
 
     Inside arithmetic, `(( ))` and `$(( ))`, bash reads C: the `?` of `a ? b : c`
     counts as C's does, and the `;;` of `for ((;;))` is no case arm. Outside it
@@ -41,7 +43,16 @@ RESERVED WORDS
     word, and it reaches the counters as text (_CommandWords): `echo done` closes
     no loop, the `for` of `git for-each-ref` and the `select` of `xcode-select`
     open no block, `done=1` assigns a variable, and a case pattern such as
-    `--exit-if-exists)` or `(done|fi)` is a pattern.
+    `--exit-if-exists)` or `(done|fi)` is a pattern. An array literal's words
+    are words over every line they span, `arr=(\\n if\\n done\\n)` included.
+
+    Three more words the counters read follow the same rule. `break` and
+    `continue` are built-in commands, and `break 2` pays the cognitive +1 of a
+    jump past the nearest loop only as a command, not as the words of
+    `echo break 2`. A `?` is a decision only inside arithmetic: `$(( ))`,
+    `(( ))` and `for (( ))`, found as two `(` with nothing between them.
+    Anywhere else it matches one character, as in `ls a?b`, `-[PUGOF]?*)` or a
+    `=~` regex, and is text. Shell has no `goto`, so the word is always text.
 
 HEREDOCS
     A heredoc body is data, so it is blanked out of the source before tokenizing:
@@ -128,6 +139,8 @@ KNOWN LIMITS
       as shell. Only a script shell itself rejects, such as an unpaired `'` in a
       bare word, leaves one open. A case opens a context only when `case WORD
       in` sits on one line.
+    - `$[ ]`, bash's old spelling of `$(( ))`, is not read as arithmetic, so a
+      `?:` in it counts nothing.
     - A function defined inside another function's body is not reported; its braces
       are counted, so the outer function still closes on the right `}`.
     - A name containing `-` or `.` reaches the reader split into several tokens, so
@@ -546,12 +559,15 @@ _COMMAND, _ARGUMENT, _PATTERN, _SUBJECT, _LOOP_NAME, _AFTER_NAME = range(6)
 
 # The words a counter reads (ccn, the cognitive pass, ShellStates), and `time`,
 # which a command follows. `in` stays as it is: nothing counts it, and
-# ShellStates finds a case's `in` by it.
+# ShellStates finds a case's `in` by it. `break` and `continue` are built-in
+# commands, not reserved words, and the cognitive pass reads them for the +1 of
+# `break 2`; like a reserved word, each is one only where a command starts.
 _RESERVED = frozenset({"if", "then", "elif", "else", "fi", "for", "select", "while",
-                       "until", "do", "done", "case", "esac", "function", "time"})
+                       "until", "do", "done", "case", "esac", "function", "time",
+                       "break", "continue"})
 # Where a reserved word leaves the next word; one not listed leaves a command.
 _RESERVED_NEXT = {"case": _SUBJECT, "for": _LOOP_NAME, "select": _LOOP_NAME,
-                  "function": _ARGUMENT}
+                  "function": _ARGUMENT, "break": _ARGUMENT, "continue": _ARGUMENT}
 # The two reserved words shell reads where no command starts.
 _RESERVED_ELSEWHERE = {("do", _AFTER_NAME), ("esac", _PATTERN)}
 # Where an operator leaves the next word. A redirection sign is followed by a file.
@@ -563,6 +579,9 @@ _OPERATOR_NEXT = {";": _COMMAND, "&&": _COMMAND, "||": _COMMAND, "|": _COMMAND,
 _WORD_NEXT = {_LOOP_NAME: _AFTER_NAME, _SUBJECT: _SUBJECT}
 # After `in`, a case reads patterns and a loop reads its words.
 _IN_NEXT = {_SUBJECT: _PATTERN, _AFTER_NAME: _ARGUMENT}
+# What an open `(` holds: commands (a subshell, `$(`, a function's `()`), an
+# array's words (after `=` or `+=`), or arithmetic (`((`, `$((`, `for ((`).
+_COMMANDS, _WORDS, _ARITHMETIC = range(3)
 
 
 def _with_next(tokens):
@@ -589,11 +608,13 @@ def _delimited(following: str) -> bool:
 
 class _CommandWords:
     """Reads the token stream the way shell finds where each command starts, and
-    quotes each reserved word that stands anywhere else."""
+    quotes each reserved word that stands anywhere else, and each `?` outside
+    arithmetic."""
 
     def __init__(self) -> None:
         self._at = _COMMAND
-        self._closes: list = []  # where each open `(` leaves the word after its `)`
+        # for each open `(`: where it leaves the word after its `)`, and what it holds
+        self._closes: list = []
         self._cases = 0          # open cases, so `;;` in `for ((;;))` starts no pattern
         self._last = ""          # the last token that was not blank
 
@@ -607,29 +628,45 @@ class _CommandWords:
             return token
         recognized = self._recognizes(token, following)
         text = self._is_text(token, recognized)
-        self._at = self._next(token, recognized)
+        self._at = self._next(token, recognized, following)
         self._last = token
         return '"' + token + '"' if text else token
 
     def _is_text(self, token: str, recognized: bool) -> bool:
-        """A reserved word where shell reads none, and a `;;` with no case open, as
-        in `for ((;;))`, where it ends no arm."""
-        return (token in _RESERVED and not recognized) or (token == ";;" and not self._cases)
+        """A reserved word where shell reads none; a `;;` with no case open, as in
+        `for ((;;))`, where it ends no arm; a `?` outside arithmetic, which
+        matches one character of a file name or pattern; and `goto`, which shell
+        does not have."""
+        if token in _RESERVED:
+            return not recognized
+        if token == ";;":
+            return not self._cases
+        if token == "?":
+            return self._inside() != _ARITHMETIC
+        return token == "goto"
 
     def _line_end(self, token: str) -> None:
-        """A newline ends a command, but not a case's subject or its patterns."""
-        if "\n" in token and token.isspace() and self._at not in (_PATTERN, _SUBJECT):
+        """A newline ends a command, but not a case's subject or its patterns,
+        nor an array's words."""
+        if "\n" in token and token.isspace() and not self._reads_words():
             self._at = _COMMAND
+
+    def _reads_words(self) -> bool:
+        return self._at in (_PATTERN, _SUBJECT) or self._inside() == _WORDS
+
+    def _inside(self):
+        """What the innermost open `(` holds; commands at the top level."""
+        return self._closes[-1][1] if self._closes else _COMMANDS
 
     def _recognizes(self, token: str, following: str) -> bool:
         return (token in _RESERVED and _delimited(following)
                 and (self._at == _COMMAND or (token, self._at) in _RESERVED_ELSEWHERE))
 
-    def _next(self, token: str, recognized: bool):
+    def _next(self, token: str, recognized: bool, following: str):
         if self._at == _PATTERN:
             return self._in_pattern(token, recognized)
         if token in ("(", ")"):
-            return self._paren(token)
+            return self._paren(token, following)
         if recognized:
             return self._reserved(token)
         return self._plain(token)
@@ -645,13 +682,22 @@ class _CommandWords:
         self._cases = max(0, self._cases + {"case": 1, "esac": -1}.get(token, 0))
         return _RESERVED_NEXT.get(token, _COMMAND)
 
-    def _paren(self, token: str):
-        """A `(` opens commands, or an array's words after `=`; its `)` returns to
-        where a word in the `(`'s place would have left the next one."""
+    def _paren(self, token: str, following: str):
+        """A `(` opens commands, an array's words or arithmetic; its `)` returns
+        to where a word in the `(`'s place would have left the next one."""
         if token == ")":
-            return self._closes.pop() if self._closes else _ARGUMENT
-        self._closes.append(_WORD_NEXT.get(self._at, _ARGUMENT))
-        return _ARGUMENT if self._last in ("=", "+=") else _COMMAND
+            return self._closes.pop()[0] if self._closes else _ARGUMENT
+        holds = self._holds(following)
+        self._closes.append((_WORD_NEXT.get(self._at, _ARGUMENT), holds))
+        return _ARGUMENT if holds == _WORDS else _COMMAND
+
+    def _holds(self, following: str):
+        """`((` with nothing between the two opens arithmetic, and so does every
+        `(` inside it but a `$(`, which holds commands again. After `=` or `+=` a
+        `(` holds an array's words."""
+        if following == "(" or (self._inside() == _ARITHMETIC and self._last != "$"):
+            return _ARITHMETIC
+        return _WORDS if self._last in ("=", "+=") else _COMMANDS
 
     def _plain(self, token: str):
         if token in _OPERATOR_NEXT:
@@ -803,7 +849,7 @@ class ShellReader(CodeReader, ScriptLanguageMixIn):
     _control_flow_keywords = {"if", "elif", "for", "while", "until", ";;"}
     _logical_operators = {"&&", "||"}
     _case_keywords = set()      # arms are counted as ';;', see the module docstring
-    _ternary_operators = set()  # '?' decides only inside (( )), see _Arithmetic
+    _ternary_operators = {"?"}  # arithmetic's `?:`; outside (( )) a `?` arrives quoted
 
     def __init__(self, context):
         super().__init__(context)

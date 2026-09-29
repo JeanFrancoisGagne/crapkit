@@ -343,6 +343,11 @@ version 11 below.
   `))` or `then` hidden there had left the function open to the end of its file. A
   file like that gains every function after it: one script went from 16 rows to 101,
   and a new row can be over its ceiling.
+- A shell `?` outside arithmetic, as in `ls a?b` or a `=~` regex, no longer costs a
+  ternary's cognitive +1 and its nesting, nor do the words of `echo break 2`, an array
+  literal's words on later lines, or `goto`. These only lower numbers (on a large
+  consumer repo 14 functions fell in cognitive, by 1 to 4), except that a `?:` inside
+  `$(( ))` or `(( ))` now adds 1 to ccn, as a C ternary does.
 - A PowerShell expression inside a `$( )` subexpression in a double-quoted string
   counts: `"$($a -and $b)"` reads ccn 2 where it read 1, up to eight levels of
   parens deep. Its cognitive score rises by the same decisions, and an `if` or loop

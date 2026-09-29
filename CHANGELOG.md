@@ -1060,6 +1060,14 @@ re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-shell-and-powe
   One 3,500-line script in a branch of a large consumer repo reported 16 of its 101
   functions and reports all 101 now; on the repo's main line 5 functions rise in
   ccn, by 1 to 5.
+- A `?` is a decision only inside arithmetic. Outside `$(( ))`, `(( ))` and
+  `for (( ))` it matches one character, as in `ls a?b`, a `-[PUGOF]?*)` pattern or a
+  `=~` regex, and the cognitive pass charged each one as a ternary, +1 and its
+  nesting. Inside arithmetic it is C's `?:`, and ccn now counts it there as it counts
+  a C ternary. `break 2` and `continue 1` pay their cognitive +1 only as commands, not
+  as the words of `echo break 2`; an array literal's words stay words over every line
+  they span; and `goto`, which shell does not have, costs nothing. On a large consumer
+  repo 14 functions fall in cognitive, by 1 to 4, and no ccn moves.
 - An unpaired double quote before many substitutions no longer stalls the shell
   reader. With no closing quote left in the file, the string rule tried every way of
   reading each `$( )` after it, twice the time per substitution: 7 s for 24 of them.

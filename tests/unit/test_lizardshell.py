@@ -532,6 +532,7 @@ HOLES = {
                                       'x=$(case "$y" in a) echo "b";; esac)'),
     "eight levels of parens": ('x="$(' + " (" * 7 + " a && b" + " )" * 8 + '"',
                                "x=$(" + " (" * 7 + " a && b" + " )" * 8),
+    "an arithmetic ternary": ('x="$(( a ? b : c ))"', "x=$(( a ? b : c ))"),
 }
 
 
@@ -632,6 +633,16 @@ ARGUMENTS = {
     "an array": "arr=(if then done)",
     "a continued line": "cmd \\\n      done",
     "after a redirection": "cmd 2>&1 >/dev/null done",
+    # `break 2` pays the +1 of a jump past the nearest loop; printed, it is text
+    "a leveled break as an argument": "echo break 2",
+    "a leveled continue as an argument": "echo continue 1",
+    "an array over several lines": "arr=(\n      if\n      done\n    )",
+    "an array holding a substitution": "arr=(\n      $(a)\n      done\n    )",
+    # outside arithmetic a `?` matches one character; it decides nothing
+    "globs": "ls a?b ?? file?.txt",
+    "a glob in a test": "[[ $x == a? ]]",
+    "a glob in an array": "arr=(a?b)",
+    "a goto, which shell has none of": "goto x",
 }
 
 
@@ -674,6 +685,14 @@ COMMAND_STARTS = {
     # for, if = 3: the `;;` of `((;;))` ends no case arm; for 1, if 2 = 3
     "an arithmetic for with no condition": (
         "for ((;;)); do if a; then break; fi; done", (3, 3, 2)),
+    # for, if = 3; for 1, if 2, `break 2` +1 for the jump past the nearest loop = 4
+    "a leveled break": ("for x in y; do if a; then break 2; fi; done", (3, 4, 2)),
+    # arithmetic has C's `?:`: base 1 + ternary = 2; the ternary +1 at nesting 0
+    "a ternary in an arithmetic expansion": ("x=$(( a ? 1 : 2 ))", (2, 1, 0)),
+    "a ternary in an arithmetic command": ("(( n > 0 ? 1 : 0 ))", (2, 1, 0)),
+    "a ternary in parens in arithmetic": ("x=$(( (a ? 1 : 2) + 1 ))", (2, 1, 0)),
+    # if = 2, if +1: a `$(` inside arithmetic holds commands again
+    "a substitution inside arithmetic": ("x=$(( $(if a; then echo 1; fi) + 1 ))", (2, 1, 1)),
 }
 
 
