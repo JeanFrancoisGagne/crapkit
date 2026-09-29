@@ -14,7 +14,9 @@ long_name):
   and its source shows the patch's construct. Swift, the C family, Java, Go and
   Zig run on crapkit's readers, which find, name and count what stock lizard
   misses, so their patches excuse every column. Rust and the JavaScript family
-  excuse a difference only near the constructs crapkit reads differently.
+  excuse a difference only near the constructs crapkit reads differently, except
+  in the nesting column, which crapkit reads off its cognitive pass in every
+  language and lizard off its ND extension (TRIP-NESTING).
 - Each patch must still excuse at least one probe difference, so a patch
   upstream has made redundant shows up here.
 - A language no patch names excuses nothing.
@@ -100,6 +102,10 @@ PATCHES = (
           "README.md 'Expression arrows in arrays and argument lists are measured "
           "separately'; docs/architecture/2026-09-06/arrow-reader-review.md line 7 (comma, "
           "bracket and ternary-colon states)"),
+    Patch("TRIP-NESTING", (*JS_FAMILY, ".rs"), ("nesting",), None,
+          "docs/agent-json.md `nesting` row: 'Maximum nesting depth, read off crapkit's "
+          "cognitive pass in every language'; the other languages' patches already excuse "
+          "every column"),
 )
 
 
@@ -230,6 +236,19 @@ def test_crapkits_c_family_and_java_readers_excuse_every_column():
                         {"a.cpp": source, "b.java": source})
     assert [(d.path, d.column, excused_by(d)) for d in found] == [
         ("a.cpp", "params", "TRIP-C-FAMILY"), ("b.java", "row", "TRIP-JAVA")]
+
+
+def test_a_nesting_difference_needs_no_construct_in_javascript_or_rust():
+    """crapkit reads nesting off its cognitive pass and lizard off ND, so the column
+    moves in functions with none of the constructs the JavaScript and Rust patches
+    name; another column moved there is still unexcused."""
+    sources = {"a.js": "function f(a) {\n  while (a) { a--; }\n}\n",
+               "a.rs": "fn f(a: i32) {\n    while a > 0 {}\n}\n"}
+    for path, source in sources.items():
+        found = differences([_hand_row(path, 1, 3, nesting=2)],
+                            [_hand_row(path, 1, 3, nesting=1, ccn_std=2)], {path: source})
+        assert [(d.column, excused_by(d)) for d in found] == [("ccn_std", None),
+                                                             ("nesting", "TRIP-NESTING")]
 
 
 def test_a_js_row_needs_an_arrow_template_or_ternary_near_it():

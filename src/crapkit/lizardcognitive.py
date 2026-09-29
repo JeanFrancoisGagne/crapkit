@@ -1007,11 +1007,15 @@ def _resolve_lookbehinds(state: _FnState, token: str, is_python: bool) -> bool:
     if state.for_pending:
         _resolve_for(state, token, is_python)
     _resolve_words(state, token)
+    return _resolve_branch(state, token, is_python)
+
+
+def _resolve_branch(state: _FnState, token: str, is_python: bool) -> bool:
+    """The token after a `?` or an `else`, which says what the word was. True =
+    this token is consumed."""
     if state.question_pending and _resolve_question(state, token, is_python):
         return True
-    if state.else_pending:
-        return _resolve_else(state, token)
-    return False
+    return state.else_pending and _resolve_else(state, token)
 
 
 def _resolve_else(state: _FnState, token: str) -> bool:
@@ -1299,6 +1303,12 @@ def _consume(state: _FnState, token: str, is_python: bool) -> None:
     _observe(state, token)
     if not is_python:
         _arms_token(state, token)
+    _operate(state, token, is_python)
+
+
+def _operate(state: _FnState, token: str, is_python: bool) -> None:
+    """What the token does: a brace opens or closes a block, a logical operator
+    joins a run, and a keyword may open a structure."""
     if token in ("{", "}"):
         _brace(state, token)
     elif token in _BOOL_OPS:

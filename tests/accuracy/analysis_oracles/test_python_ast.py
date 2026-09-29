@@ -85,10 +85,11 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # 2,554 once the C-family and Java readers (lizardclike, lizardjava) landed,
 # 2,591 once the Swift reader (lizardswift) landed, 2,637 once the shell and
 # PowerShell string and reserved-word passes landed, 2,767 once the cognitive
-# pass read each language's own rules (dialects, recursion by call, bodies).
+# pass read each language's own rules (dialects, recursion by call, bodies),
+# 2,784 once the nesting column read that pass in every language.
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 2767
+SRC_DEFS = 2784
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
